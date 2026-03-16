@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "CompiledFunc.hpp"
 #include "FunctionInfo.hpp"
 #include "../Types.hpp"
 #include "../SysGlobals.hpp"
@@ -26,9 +27,6 @@
 
 namespace Nova64 {
 namespace Recompiler {
-
-// Forward declaration
-class CCompiledFunc;
 
 /**
  * @class CFunctionMap

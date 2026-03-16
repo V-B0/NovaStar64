@@ -7,7 +7,11 @@
  */
 
 #include "ExitInfo.hpp"
+#include <sstream>
+#include <iomanip>
 #include "CodeBlock.hpp"
+// #include "../MIPSY/Register.hpp" // Direct include for CRegisters // Avoid duplicate/conflicting includes
+#include "../../common/log.hpp" // For Trace logging
 #include "CodeSection.hpp"
 #include "RegInfo.hpp"
 #include "../MainSYS.hpp"
@@ -16,17 +20,16 @@
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Vmem.hpp"
 #include "../MIPSY/R4300Instruction.hpp"
-#include "../../common/log.hpp"
 #include "../../common/trace.hpp"
 #include "../../common/MemoryManagment.hpp"
 
-#include <algorithm>
-#include <numeric>
-#include <cmath>
-#include <sstream>
-#include <iomanip>
+// If TRACE is used as a macro, we need to ensure its expansion is valid.
+#ifndef TRACE
+#define TRACE(fmt, ...) Log::debugf(fmt, ##__VA_ARGS__)
+#endif
 
-namespace Nova64::Recompiler {
+namespace Nova64 {
+namespace Recompiler {
 
 // ============================================================================
 // ExitRegisterState Implementation
@@ -236,28 +239,28 @@ void ExitInfo::set_exception_info(const ExceptionInfo& exception) {
     flags_ = flags_ | ExitFlags::ExceptionPossible;
 }
 
-void ExitInfo::capture_register_state(const CpuRegisters& registers) {
+void ExitInfo::capture_register_state(const ::CRegisters& registers) {
     if (!config_.enable_register_state) return;
     
     // Capture current register state
     for (size_t i = 0; i < 32; ++i) {
         auto& snap = register_state_.gpr[i];
         snap.valid = true;
-        snap.value = registers.gpr[i];
+        snap.value = static_cast<uint32_t>(registers.m_GPR[i]); // Explicit cast
         // Would need additional info to determine if constant/dirty
     }
     
     register_state_.pc.valid = true;
-    register_state_.pc.value = registers.pc;
+    register_state_.pc.value = registers.m_PROGRAM_COUNTER; // Use correct member m_PROGRAM_COUNTER
 }
 
-void ExitInfo::restore_register_state(CpuRegisters& registers) const {
+void ExitInfo::restore_register_state(::CRegisters& registers) const {
     if (!config_.enable_register_state) return;
     
     // Restore register state (mainly for debugging/validation)
     for (size_t i = 0; i < 32; ++i) {
         if (register_state_.gpr[i].valid && register_state_.gpr[i].constant) {
-            registers.gpr[i] = register_state_.gpr[i].value;
+            registers.m_GPR[i] = register_state_.gpr[i].value; // Use correct member m_GPR
         }
     }
 }
@@ -429,7 +432,8 @@ void ExitInfo::update_probability() {
 }
 
 void ExitInfo::log_exit(const std::string& message) {
-    TRACE(TraceLevel::Info, "Exit {}: {}", static_cast<uint32_t>(id_), message);
+    // TRACE(TraceLevel::Info, "Exit {}: {}", static_cast<uint32_t>(id_), message);
+    Log::debugf("Exit %u: %s", static_cast<uint32_t>(id_), message.c_str());
 }
 
 void ExitInfo::apply_peephole_optimization() {
@@ -978,3 +982,5 @@ bool ExitPredictor::matches_pattern(const BranchHistory& history,
 }
 
 } // namespace Nova64::Recompiler
+
+} // namespace Nova64

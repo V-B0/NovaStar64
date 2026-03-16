@@ -12,13 +12,13 @@
 #include "Register.hpp"
 #include "../Types.hpp"
 
-namespace N64System {
-
 // Forward declarations
 class CN64System;
 class CRegisters;
 class RomMemoryHandler;
 class AudioInterfaceHandler;
+
+namespace N64System {
 
 // Timer type enumeration
 enum class TimerType : uint8_t {
@@ -99,6 +99,13 @@ public:
     void reset();
     void sync_to_real_time();
     
+    // Get the current Count register value accounting for elapsed cycles since last update
+    uint32_t get_current_count() const;
+
+    // Legacy compatibility wrappers (used by interpreter)
+    void UpdateTimers();
+    void TimerDone();
+    
     // CPU compare timer (special handling)
     void update_compare_timer();
     void set_compare_timer(uint32_t value);
@@ -162,9 +169,9 @@ private:
     
     // System references
     CN64System& system;
-    CRegisters& registers;
-    RomMemoryHandler& rom_memory;
-    AudioInterfaceHandler& audio_interface;
+    CRegisters* registers = nullptr;
+    RomMemoryHandler* rom_memory = nullptr;
+    AudioInterfaceHandler* audio_interface = nullptr;
     
     // Real-time synchronization
     HighResolutionTimer real_time_timer;
@@ -362,7 +369,7 @@ namespace GlobalTimers {
     N64System::SystemTimer& get_main_timer();
     
     
-    std::unique_ptr<N64System::SystemTimer> create_timer(N64System::CN64System& system);
+    std::unique_ptr<N64System::SystemTimer> create_timer(::CN64System& system);
     
     
     uint64_t get_global_cycles();

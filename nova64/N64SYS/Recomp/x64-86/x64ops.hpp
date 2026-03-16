@@ -30,7 +30,7 @@ namespace Nova64 {
 namespace Recompiler {
 
 // Forward declarations
-class CCodeBlock;
+class CodeBlock;
 
 /**
  * @enum EmitMode
@@ -127,7 +127,7 @@ public:
      * @param codeBlock Reference to the containing code block
      * @param options Code generation options
      */
-    explicit CX64Ops(CCodeBlock& codeBlock, EmitOptions options = {});
+    explicit CX64Ops(CodeBlock& codeBlock, EmitOptions options = {});
     ~CX64Ops();
     
     // Non-copyable, movable
@@ -164,7 +164,7 @@ public:
         bool isImported = false;
         std::string section;
         
-        bool IsValid() const noexcept { return label.isValid(); }
+        bool IsValid() const noexcept { return label.is_valid(); }
     };
     
     /**
@@ -264,15 +264,15 @@ public:
         explicit RegisterAllocator(CX64Ops& assembler);
         
         asmjit::x86::Gp AllocateGp();
-        asmjit::x86::Xmm AllocateXmm();
+        asmjit::x86::Vec AllocateXmm();
         asmjit::x86::Gp AllocateGp64();  // 64-bit GP
         asmjit::x86::Gp AllocateGp32();  // 32-bit GP
         
         void Free(asmjit::x86::Gp reg);
-        void Free(asmjit::x86::Xmm reg);
+        void Free(asmjit::x86::Vec reg);
         
         bool IsAllocated(asmjit::x86::Gp reg) const;
-        bool IsAllocated(asmjit::x86::Xmm reg) const;
+        bool IsAllocated(asmjit::x86::Vec reg) const;
         
         void Reset();
         
@@ -368,7 +368,7 @@ private:
     LabelMap m_LabelSymbols;
     
     // State
-    CCodeBlock& m_CodeBlock;
+    CodeBlock& m_CodeBlock;
     EmitOptions m_Options;
     EmitMode m_EmitMode = EmitMode::Fast;
     

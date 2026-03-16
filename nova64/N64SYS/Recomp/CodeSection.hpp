@@ -31,12 +31,15 @@
 #include <mutex>
 #include <array>
 
+// Forward declarations
+class CN64System;
+
 namespace Nova64 {
     
 // Forward declarations
 class CpuRegisters;
 class MipsMemory;
-class N64System;
+// using N64System = ::CN64System; // Prevent redefinition
 
 namespace Recompiler {
 
@@ -44,7 +47,7 @@ namespace Recompiler {
 class CodeBlock;
 class RegisterInfo;
 class RecompilerOperations;
-class JumpInfo;
+class CJumpInfo;
 
 // Strongly typed identifiers
 enum class SectionId : uint32_t {};
@@ -209,7 +212,7 @@ public:
     };
     
     // Construction/Destruction
-    CodeSection(CodeBlock& parent_block, 
+    CodeSection(CodeBlock* parent_block, 
                 uint32_t entry_pc, 
                 SectionId id,
                 bool allow_linking = true,
@@ -228,6 +231,17 @@ public:
     void set_jump_target(uint32_t branch_pc, uint32_t target_pc, bool permanent_loop);
     void set_continue_target(uint32_t branch_pc, uint32_t target_pc);
     void set_type(SectionType type) { type_ = type; }
+
+    // Helpers for CodeBlock construction
+    void add_instruction(uint32_t address, uint32_t opcode) {
+        instructions_.push_back(opcode);
+    }
+    void add_successor(uint32_t target_address) {
+        successor_addresses_.push_back(target_address);
+    }
+    void add_predecessor(uint32_t source_address) {
+        predecessor_addresses_.push_back(source_address);
+    }
     
     // Code generation
     enum class GenerationResult {
@@ -301,8 +315,8 @@ public:
     uint32_t end_pc() const { return metadata_.end_pc; }
     SectionType type() const { return type_; }
     SectionFlags flags() const { return flags_; }
-    CodeBlock& parent_block() { return parent_block_; }
-    const CodeBlock& parent_block() const { return parent_block_; }
+    CodeBlock& parent_block() { return *parent_block_; }
+    const CodeBlock& parent_block() const { return *parent_block_; }
     
     bool is_linked() const { return has_flag(flags_, SectionFlags::Linked); }
     bool is_compiled() const { return has_flag(flags_, SectionFlags::Compiled); }
@@ -399,7 +413,7 @@ private:
     
 private:
     // Parent relationship
-    CodeBlock& parent_block_;
+    CodeBlock* parent_block_;
     SectionId id_;
     
     // Section properties
@@ -435,6 +449,10 @@ private:
     std::string debug_log_;
     std::vector<uint32_t> instructions_;
     
+    // Temporary storage for graph construction
+    std::vector<uint32_t> successor_addresses_;
+    std::vector<uint32_t> predecessor_addresses_;
+
     // Cache for frequently accessed data
     static constexpr size_t CACHE_LINE_SIZE = 64;
     alignas(CACHE_LINE_SIZE) mutable uint64_t last_access_ = 0;
@@ -547,19 +565,13 @@ private:
 } // namespace Recompiler
 } // namespace Nova64
 
-// Hash specializations
-template<>
-struct std::hash<Nova64::Recompiler::SectionId> {
-    size_t operator()(Nova64::Recompiler::SectionId id) const noexcept {
-        return static_cast<size_t>(id);
-    }
-};
-
-template<>
-struct std::hash<Nova64::Recompiler::ControlFlowEdge> {
-    size_t operator()(const Nova64::Recompiler::ControlFlowEdge& edge) const noexcept {
-        size_t h1 = std::hash<size_t>{}(static_cast<size_t>(edge.source));
-        size_t h2 = std::hash<size_t>{}(static_cast<size_t>(edge.target));
-        return h1 ^ (h2 << 1);
-    }
-};
+namespace std {
+    template<>
+    struct hash<Nova64::Recompiler::ControlFlowEdge> {
+        size_t operator()(const Nova64::Recompiler::ControlFlowEdge& edge) const noexcept {
+            size_t h1 = std::hash<size_t>{}(static_cast<size_t>(edge.source));
+            size_t h2 = std::hash<size_t>{}(static_cast<size_t>(edge.target));
+            return h1 ^ (h2 << 1);
+        }
+    };
+}

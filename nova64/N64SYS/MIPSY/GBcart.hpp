@@ -292,6 +292,10 @@ private:
     void set_ram_bank(uint8_t bank);
     uint16_t get_rom_bank() const { return current_rom_bank; }
     uint8_t get_ram_bank() const { return current_ram_bank; }
+
+    uint8_t read_rom_bank(uint16_t bank, uint16_t offset) const;
+    uint8_t read_ram_bank(uint8_t bank, uint16_t offset) const;
+    void write_ram_bank(uint8_t bank, uint16_t offset, uint8_t value);
 };
 
 // Utility functions

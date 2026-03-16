@@ -1,7 +1,8 @@
+#pragma once
 #include <cstdint>
 #include <memory>
-#include <span>
 #include "Memoryhandler.hpp"
+#include "../../common/log.hpp"
 
 
 
@@ -44,16 +45,46 @@ public:
     bool isInterruptPending() const { return (*MI_INTR_REG & *MI_INTR_MASK_REG) != 0; }
 };
 
-class Cregisters;
+class CRegisters;
 
 class MIPSYInterfaceHandler:
-  public Memoryhandler,
+  public MemoryHandler,
   public MIPSYInterface
 {
   public: 
-    MIPSYInterfaceHandler(const MIPSYInterfaceHandler&);
-    MIPSYInterfaceHandler & operator=(const MIPSYInterfaceHandler &);
+    enum class LogLevel {
+        Trace,
+        Debug,
+        Info,
+        Warning,
+        Error
+    };
 
-    Cregisters & m_Reg;
-    uint64_t & m_PC;
+    MIPSYInterfaceHandler(CRegisters& reg);
+    MIPSYInterfaceHandler(const MIPSYInterfaceHandler&) = delete;
+    MIPSYInterfaceHandler & operator=(const MIPSYInterfaceHandler &) = delete;
+
+    bool Read32(uint32_t addr, uint32_t& val) override;
+    bool Write32(uint32_t addr, uint32_t val, uint32_t mask) override;
+
+    void WriteLog(LogLevel level, const char* format, ...);
+    void ClearInterrupt(uint32_t mask);
+    void SetInterrupt(uint32_t interruptBit);
+    
+    bool IsInterruptPending() const;
+    uint32_t GetPendingInterrupts() const;
+    
+    bool IsInitMode() const;
+    bool IsEBusMode() const;
+    bool IsRDRAMRegMode() const;
+    
+    void Reset();
+
+  private:
+    void ProcessModeWrite(uint32_t val);
+    void ProcessMaskWrite(uint32_t val);
+
+  public:
+    CRegisters & m_Reg;
+    uint64_t & m_PC; // This was here, maybe from earlier edit or original file.
 };

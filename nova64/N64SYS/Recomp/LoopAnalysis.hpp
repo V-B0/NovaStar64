@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "RegBase.hpp"
 #include "RegInfo.hpp"
 #include "CodeSection.hpp"
 #include "CodeBlock.hpp"
@@ -34,245 +35,151 @@ namespace Nova64 {
 namespace Recompiler {
 
 // Forward declarations
-class CCodeSection;
-class CCodeBlock;
-
-/**
- * @enum AnalysisPhase
- * @brief Phase of loop analysis
- */
-enum class AnalysisPhase {
-    InitialScan,
-    DataFlow,
-    Optimization,
-    Finalize
-};
-
-/**
- * @struct AnalysisState
- * @brief Current state of loop analysis
- */
-struct AnalysisState {
-    uint32_t pc = 0;
-    PipelineStage pipelineStage = PipelineStage::Execute;
-    R4300iOps command{};
-    uint32_t test = 0;
-    bool changed = false;
-    bool skippedSection = false;
-    
-    void Reset() {
-        pc = 0;
-        pipelineStage = PipelineStage::Execute;
-        test = 0;
-        changed = false;
-        skippedSection = false;
-    }
-};
+class CodeSection;
+class CodeBlock;
 
 /**
  * @class LoopAnalysis
  * @brief Analyzes loops for register allocation optimization using data flow analysis
  * 
- * This class implements a flow-sensitive analysis that tracks register liveness
- * and values across loop iterations to determine which registers can be:
- * 1. Kept in host registers across loop boundaries
- * 2. Pre-loaded before loop entry
- * 3. Spilled/reloaded only when necessary
- * 
- * The analysis proceeds in multiple phases:
- * 1. Initial scan to identify loop structure
- * 2. Data flow analysis for register liveness
- * 3. Optimization decisions
- * 4. Finalization of register allocation plan
+ * Implements P64-style loop register usage analysis. Walks through all instructions
+ * in sections that form a loop, tracking register state (constant propagation,
+ * 32/64-bit width, modified flags) to determine optimal register allocation at
+ * loop entry and continuation points.
  */
 class LoopAnalysis {
 public:
     /**
      * @brief Construct loop analysis for a code block
      * @param codeBlock Reference to the containing code block
-     * @param entrySection Entry point section of the loop (nullptr for whole-block analysis)
+     * @param entrySection Entry point section of the loop
      */
-    explicit LoopAnalysis(CCodeBlock& codeBlock, 
-                         CCodeSection* entrySection = nullptr);
+    explicit LoopAnalysis(CodeBlock& codeBlock, CodeSection* entrySection);
     
-    ~LoopAnalysis() = default;
+    ~LoopAnalysis();
     
-    // Non-copyable, movable
+    // Non-copyable, non-movable
     LoopAnalysis(const LoopAnalysis&) = delete;
     LoopAnalysis& operator=(const LoopAnalysis&) = delete;
-    LoopAnalysis(LoopAnalysis&&) = default;
-    LoopAnalysis& operator=(LoopAnalysis&&) = default;
-    
+
     /**
-     * @brief Perform complete loop analysis and setup register allocation
+     * @brief Check loop register usage and set up entry/continue register sets
      * @return true if analysis successful and optimizations can be applied
      */
-    bool AnalyzeAndOptimize();
-    
+    bool CheckLoopRegisterUsage();
+
     /**
-     * @brief Get the recommended register set for loop entry
-     * @return Const reference to optimized register set for loop entry
+     * @brief Get the recommended register set for loop entry  
+     * @return Reference to optimized register set for loop entry
      */
-    const CRegInfo& GetEntryRegisterSet() const noexcept;
-    
+    CRegBase& GetEnterRegisterSet() { return m_EnterRegisters; }
+    const CRegBase& GetEnterRegisterSet() const { return m_EnterRegisters; }
+
     /**
      * @brief Get the recommended register set for loop continuation
-     * @return Const reference to optimized register set for loop continuation
+     * @return Reference to optimized register set for loop continuation
      */
-    const CRegInfo& GetContinueRegisterSet() const noexcept;
-    
-    /**
-     * @brief Check if a specific register should be kept in host register
-     * @param regIndex MIPS register index (0-31)
-     * @return true if register should remain in host register across loop
-     */
-    bool ShouldKeepInRegister(uint32_t regIndex) const noexcept;
-    
-    /**
-     * @brief Get analysis statistics for debugging/profiling
-     */
-    struct Statistics {
-        size_t instructionsAnalyzed = 0;
-        size_t registersOptimized = 0;
-        size_t loopIterationsAnalyzed = 0;
-        std::chrono::microseconds analysisTime;
-        
-        void Reset() {
-            instructionsAnalyzed = 0;
-            registersOptimized = 0;
-            loopIterationsAnalyzed = 0;
-            analysisTime = std::chrono::microseconds(0);
-        }
-    };
-    
-    const Statistics& GetStatistics() const noexcept { return m_Stats; }
-    
-    /**
-     * @brief Reset analysis state for reuse
-     */
-    void Reset() noexcept;
-    
+    CRegBase& GetContinueRegisterSet() { return m_ContinueRegisters; }
+    const CRegBase& GetContinueRegisterSet() const { return m_ContinueRegisters; }
+
 private:
-    // Phase handlers
-    bool PerformInitialScan();
-    bool PerformDataFlowAnalysis();
-    bool PerformOptimization();
-    bool FinalizeAnalysis();
-    
-    // Section analysis
-    bool AnalyzeSection(CCodeSection* section);
-    bool ProcessSectionEnter(CCodeSection* section);
-    bool ProcessSectionExit(CCodeSection* section);
-    
-    // Register state management
-    using RegisterLivenessMap = std::unordered_map<int32_t, bool>;
-    using RegisterValueMap = std::unordered_map<int32_t, uint64_t>;
-    
-    struct RegisterInfo {
-        bool isLive = false;
-        bool isModified = false;
-        bool isLoopInvariant = false;
-        bool canBeHostRegister = false;
-        uint64_t constantValue = 0;
-        bool hasConstantValue = false;
-    };
-    
-    void UpdateRegisterLiveness(CCodeSection* section);
-    bool IsRegisterLoopInvariant(int32_t regIndex) const;
-    void PropagateRegisterStates();
-    
-    // Instruction analysis
-    using InstructionHandler = std::function<void()>;
-    using InstructionHandlerMap = std::unordered_map<uint32_t, InstructionHandler>;
-    
-    void InitializeInstructionHandlers();
-    void AnalyzeInstruction(const R4300iOps& opcode);
-    void DefaultInstructionHandler();
-    
-    // MIPS instruction handlers grouped by category
-    void HandleArithmeticInstruction();
-    void HandleShiftInstruction();
-    void HandleBranchInstruction(CCodeSection* section);
-    void HandleJumpInstruction(CCodeSection* section);
-    void HandleLoadStoreInstruction();
-    void HandleSpecialInstruction(CCodeSection* section);
-    void HandleCoprocessorInstruction();
-    
-    // Individual instruction handlers (only for SPECIAL opcodes that need specific handling)
-    void HandleSPECIAL_SLL();
-    void HandleSPECIAL_SRL();
-    void HandleSPECIAL_SRA();
-    void HandleSPECIAL_SLLV();
-    void HandleSPECIAL_SRLV();
-    void HandleSPECIAL_SRAV();
-    void HandleSPECIAL_JR(CCodeSection* section);
-    void HandleSPECIAL_JALR(CCodeSection* section);
-    void HandleSPECIAL_SYSCALL(CCodeSection* section);
-    void HandleSPECIAL_BREAK(CCodeSection* section);
-    void HandleSPECIAL_MFHI();
-    void HandleSPECIAL_MTHI();
-    void HandleSPECIAL_MFLO();
-    void HandleSPECIAL_MTLO();
-    void HandleSPECIAL_DSLLV();
-    void HandleSPECIAL_DSRLV();
-    void HandleSPECIAL_DSRAV();
-    void HandleSPECIAL_ADD();
-    void HandleSPECIAL_ADDU();
-    void HandleSPECIAL_SUB();
-    void HandleSPECIAL_SUBU();
-    void HandleSPECIAL_AND();
-    void HandleSPECIAL_OR();
-    void HandleSPECIAL_XOR();
-    void HandleSPECIAL_NOR();
-    void HandleSPECIAL_SLT();
-    void HandleSPECIAL_SLTU();
-    void HandleSPECIAL_DADD();
-    void HandleSPECIAL_DADDU();
-    void HandleSPECIAL_DSUB();
-    void HandleSPECIAL_DSUBU();
-    void HandleSPECIAL_DSLL();
-    void HandleSPECIAL_DSRL();
-    void HandleSPECIAL_DSRA();
-    void HandleSPECIAL_DSLL32();
-    void HandleSPECIAL_DSRL32();
-    void HandleSPECIAL_DSRA32();
-    
-    // Register set synchronization
-    bool SynchronizeRegisterState(CRegInfo& target, const CRegInfo& source);
-    void MergeRegisterStates(CRegInfo& result, const CRegInfo& a, const CRegInfo& b);
-    
+    // Helper to extract MIPS instruction fields correctly
+    // Note: Rtype bitfields are incorrectly named in R4300iOps.hpp
+    // Use Itype.rs/rt/op (correct) and bit extraction for rd/sa/funct
+    static uint32_t Cmd_op(const R4300iOps& c)    { return c.Itype.op; }
+    static uint32_t Cmd_rs(const R4300iOps& c)    { return c.Itype.rs; }
+    static uint32_t Cmd_rt(const R4300iOps& c)    { return c.Itype.rt; }
+    static uint32_t Cmd_rd(const R4300iOps& c)    { return (c.Value >> 11) & 0x1F; }
+    static uint32_t Cmd_sa(const R4300iOps& c)    { return (c.Value >> 6) & 0x1F; }
+    static uint32_t Cmd_funct(const R4300iOps& c) { return c.Value & 0x3F; }
+    static uint32_t Cmd_imm(const R4300iOps& c)   { return c.Itype.imm; }
+    static int16_t  Cmd_imm_s(const R4300iOps& c) { return static_cast<int16_t>(c.Value & 0xFFFF); }
+
+    // Core analysis: walk through a section checking register usage
+    bool CheckSectionRegisterUsage(CodeSection* section);
+
+    // Set up the "enter" register set from the analysis section mappings
+    void SetupEnterSection(CodeSection* section, bool bRecursive);
+
+    // Set up register states for the loop from section analysis
+    void SetupRegisterForLoop(CodeSection* section);
+
+    // Synchronize register state between analysis and stored section state
+    bool SyncRegState(CRegBase& RegSet, const CRegBase& SyncReg);
+
+    // Set the jump target register set for a section
+    void SetJumpRegSet(CodeSection* section, const CRegBase& Reg);
+
+    // Set the continue register set for a section
+    void SetContinueRegSet(CodeSection* section, const CRegBase& Reg);
+
+    // Get the jump register set for a section (nullptr if not set)
+    CRegBase* GetJumpRegSet(CodeSection* section);
+    const CRegBase* GetJumpRegSet(CodeSection* section) const;
+
+    // Get the continue register set for a section (nullptr if not set)
+    CRegBase* GetContinueRegSet(CodeSection* section);
+    const CRegBase* GetContinueRegSet(CodeSection* section) const;
+
+    // SPECIAL opcode instruction handlers for register analysis
+    void SPECIAL_SLL(CRegBase& Reg);
+    void SPECIAL_SRL(CRegBase& Reg);
+    void SPECIAL_SRA(CRegBase& Reg);
+    void SPECIAL_SLLV(CRegBase& Reg);
+    void SPECIAL_SRLV(CRegBase& Reg);
+    void SPECIAL_SRAV(CRegBase& Reg);
+    void SPECIAL_DSLLV(CRegBase& Reg);
+    void SPECIAL_DSRLV(CRegBase& Reg);
+    void SPECIAL_DSRAV(CRegBase& Reg);
+    void SPECIAL_ADD(CRegBase& Reg);
+    void SPECIAL_ADDU(CRegBase& Reg);
+    void SPECIAL_SUB(CRegBase& Reg);
+    void SPECIAL_SUBU(CRegBase& Reg);
+    void SPECIAL_AND(CRegBase& Reg);
+    void SPECIAL_OR(CRegBase& Reg);
+    void SPECIAL_XOR(CRegBase& Reg);
+    void SPECIAL_NOR(CRegBase& Reg);
+    void SPECIAL_SLT(CRegBase& Reg);
+    void SPECIAL_SLTU(CRegBase& Reg);
+    void SPECIAL_DADD(CRegBase& Reg);
+    void SPECIAL_DADDU(CRegBase& Reg);
+    void SPECIAL_DSUB(CRegBase& Reg);
+    void SPECIAL_DSUBU(CRegBase& Reg);
+    void SPECIAL_DSLL(CRegBase& Reg);
+    void SPECIAL_DSRL(CRegBase& Reg);
+    void SPECIAL_DSRA(CRegBase& Reg);
+    void SPECIAL_DSLL32(CRegBase& Reg);
+    void SPECIAL_DSRL32(CRegBase& Reg);
+    void SPECIAL_DSRA32(CRegBase& Reg);
+
     // Member variables
-    CCodeBlock& m_CodeBlock;
-    CCodeSection* m_EntrySection;
-    
-    // Analysis state
-    AnalysisState m_State;
-    AnalysisPhase m_CurrentPhase = AnalysisPhase::InitialScan;
-    
-    // Register information
-    CRegInfo m_EntryRegSet;
-    CRegInfo m_ContinueRegSet;
-    CRegInfo m_CurrentRegSet;
-    
-    // Section mappings (use pointers since CRegInfo is move-only)
-    std::unordered_map<CCodeSection*, CRegInfo*> m_SectionEntryStates;
-    std::unordered_map<CCodeSection*, CRegInfo*> m_SectionExitStates;
-    std::unordered_map<CCodeSection*, CRegInfo*> m_JumpTargetStates;
-    
-    // Register analysis
-    std::array<RegisterInfo, 32> m_GPRInfo;  // GPRs 0-31
-    RegisterInfo m_HIInfo;
-    RegisterInfo m_LOInfo;
-    
-    // Instruction handler dispatch
-    InstructionHandlerMap m_InstructionHandlers;
-    
-    // Statistics
-    Statistics m_Stats;
-    
+    CodeBlock& m_CodeBlock;
+    CodeSection* m_EntrySection;
+
+    // The command being analyzed
+    R4300iOps m_Command{};
+
+    // Pipeline tracking during analysis
+    // Uses N64Types::PipelineStage for recompiler-level pipeline tracking
+    // (Normal, DelaySlot, EndBlock etc.) - NOT the ExitInfo PipelineStage
+    N64Types::PipelineStage m_PipelineStage = N64Types::PipelineStage::Normal;
+
+    // PC during analysis walk
+    uint32_t m_PC = 0;
+    uint32_t m_NextInstruction = 0;
+    uint32_t m_Test = 0;
+
+    // Result register sets
+    CRegBase m_EnterRegisters;
+    CRegBase m_ContinueRegisters;
+
+    // Per-section register state maps (section -> register set)
+    std::unordered_map<CodeSection*, CRegBase*> m_JumpRegSets;
+    std::unordered_map<CodeSection*, CRegBase*> m_ContinueRegSets;
+    std::unordered_map<CodeSection*, CRegBase*> m_EnterRegSets;
+
     // Flags
-    bool m_AnalysisComplete = false;
-    bool m_HasLoop = false;
+    bool m_Changed = false;
 };
 
 } // namespace Recompiler

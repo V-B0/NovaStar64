@@ -13,7 +13,12 @@
 #include "RecompilerMemory.hpp"
 #include "FunctionMap.hpp"
 #include "FunctionInfo.hpp"
+#include "CompiledFunc.hpp"
 #include "LoopAnalysis.hpp"
+#include "RecompilerOps.hpp"
+#if defined(__amd64__) || defined(_M_X64)
+#include "x64-86/x64RecompilerOps.hpp"
+#endif
 #include "../MainSYS.hpp"
 #include "../SysGlobals.hpp"
 #include "../Types.hpp"
@@ -32,13 +37,13 @@ namespace Nova64::Recompiler {
 // CRecompiler Implementation
 // =============================================================================
 
-CRecompiler::CRecompiler(CN64System& system, std::atomic<bool>& endEmulation)
+CRecompiler::CRecompiler(::CN64System& system, std::atomic<bool>& endEmulation)
     : m_System(system)
     , m_MMU(*system.GetMemory())
     , m_Reg(*system.GetRegisters())
     , m_TLB(*system.GetTLB())
     , m_EndEmulation(endEmulation)
-    , m_ProgramCounter(m_Reg.GetPC())
+    , m_ProgramCounter(m_Reg.m_PROGRAM_COUNTER)
     , m_LastProfilingReset(std::chrono::high_resolution_clock::now())
 {
     Log::info("CRecompiler: Initializing dynamic recompiler");
@@ -50,13 +55,13 @@ CRecompiler::CRecompiler(CN64System& system, std::atomic<bool>& endEmulation)
     }
     
     // Allocate memory for compiled code
-    if (!AllocateMemory()) {
+    if (!EnsureSpace(DEFAULT_INITIAL_SIZE)) {
         Log::error("CRecompiler: Failed to allocate recompiler memory");
         throw std::runtime_error("Failed to allocate recompiler memory");
     }
     
     // Initialize memory stack
-    m_MemoryStack = GetMemoryStackBase();
+    m_MemoryStack = GetWritePosition();
     
     Log::info("CRecompiler: Initialization complete");
 }
@@ -72,8 +77,8 @@ CRecompiler::~CRecompiler() {
     // Clear all compiled functions
     Reset(false);
     
-    // Free memory
-    FreeMemory();
+    // Free memory (handled by CRecompMemory destructor via RAII)
+    CRecompMemory::Reset();
     
     Log::info("CRecompiler: Shutdown complete");
 }
@@ -134,11 +139,11 @@ void CRecompiler::Reset(bool allocateMemory) {
     
     // Re-allocate memory if requested
     if (allocateMemory) {
-        FreeMemory();
-        if (!AllocateMemory()) {
+        CRecompMemory::Reset();
+        if (!EnsureSpace(DEFAULT_INITIAL_SIZE)) {
             Log::error("CRecompiler: Failed to re-allocate memory");
         }
-        m_MemoryStack = GetMemoryStackBase();
+        m_MemoryStack = GetWritePosition();
     }
     
     // Re-initialize function map
@@ -155,8 +160,8 @@ void CRecompiler::ClearRecompCode_Virt(uint32_t virtualAddress, size_t length, R
     uint32_t endAddress = virtualAddress + static_cast<uint32_t>(length);
     
     // Check memory usage before clearing - uses RecompilerMemory
-    if (m_RecompMemory) {
-        const auto& memStats = m_RecompMemory->GetStats();
+    {
+        const auto& memStats = CRecompMemory::GetStats();
         Log::debugf("CRecompiler: Memory before clear - %u KB used / %u KB allocated",
                    memStats.usedBytes / 1024, memStats.allocatedBytes / 1024);
     }
@@ -165,8 +170,8 @@ void CRecompiler::ClearRecompCode_Virt(uint32_t virtualAddress, size_t length, R
     ClearCodeRange(virtualAddress, endAddress, reason);
     
     // Update memory statistics
-    if (m_RecompMemory) {
-        const auto& memStats = m_RecompMemory->GetStats();
+    {
+        const auto& memStats = CRecompMemory::GetStats();
         Log::debugf("CRecompiler: Memory after clear - %u KB used / %u KB allocated",
                    memStats.usedBytes / 1024, memStats.allocatedBytes / 1024);
     }
@@ -185,7 +190,7 @@ void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, 
 }
 
 void CRecompiler::ResetMemoryStackPos() noexcept {
-    m_MemoryStack = GetMemoryStackBase();
+    m_MemoryStack = GetWritePosition();
 }
 
 void CRecompiler::ResetFunctionTimes() {
@@ -293,25 +298,61 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     
     ++m_Stats.cacheMisses;
     
-    // Create new code block
     CCompiledFunc* compiledFunc = nullptr;
     
     try {
-        // Allocate code block
-        // Note: Actual compilation would create CCodeBlock, analyze, and generate native code
-        // For now we create a placeholder
-        compiledFunc = reinterpret_cast<CCompiledFunc*>(AllocateCodeBlock(4096));
-        
-        if (compiledFunc) {
-            // Store in function map
-            Store(address, compiledFunc);
-            
-            // Add to active functions
-            m_ActiveFunctions.push_back(compiledFunc);
-            
-            // Update memory usage
-            m_Stats.memoryUsed += 4096;
+        // ---- Step 1: Create and analyse the CodeBlock -------------------
+        CodeBlock::Config blockCfg;
+        blockCfg.enable_profiling = m_ProfilingEnabled;
+        blockCfg.enable_optimizations = true;
+        blockCfg.max_instructions = 500;
+
+        auto codeBlock = std::make_unique<CodeBlock>(
+            m_System, address, blockCfg);
+
+        CodeBlock::CompileOptions opts;
+        opts.optimization_level = 2;
+
+        auto compileResult = codeBlock->compile(opts);
+        if (compileResult != CodeBlock::CompileResult::Success) {
+            Log::debugf("CRecompiler: CodeBlock analysis/codegen failed at 0x%08X (result=%d)",
+                        address, static_cast<int>(compileResult));
+            return nullptr;
         }
+
+        // ---- Step 2: Finalize – get executable memory from AsmJit ------
+        // finalize() calls runtime_->add() which copies the code into
+        // executable (RWX) memory and returns the entry-point address.
+        // We pass a dummy RecompilationMemory – the actual backing comes
+        // from AsmJit's JitRuntime which internally uses VirtualAlloc/mmap.
+        auto entryOpt = codeBlock->finalize(
+            *reinterpret_cast<RecompilationMemory*>(this));  // unused param
+
+        if (!entryOpt.has_value()) {
+            Log::debugf("CRecompiler: Finalize failed at 0x%08X", address);
+            return nullptr;
+        }
+
+        auto entryPtr = reinterpret_cast<BlockFunction>(entryOpt.value());
+
+        // ---- Step 3: Wrap in CCompiledFunc and store in map ------------
+        auto* funcMem = new CCompiledFunc(
+            address,
+            codeBlock->start_address(),
+            codeBlock->end_address(),
+            entryPtr,
+            std::move(codeBlock));
+
+        // Store in function map (O(1) lookup by virtual address)
+        Store(address, funcMem);
+
+        // Track for cleanup
+        m_ActiveFunctions.push_back(funcMem);
+
+        compiledFunc = funcMem;
+        m_Stats.memoryUsed += funcMem->GetCodeBlock()
+            ? funcMem->GetCodeBlock()->statistics().generated_bytes
+            : 0;
     }
     catch (const std::exception& e) {
         Log::errorf("CRecompiler: Compilation failed at 0x%08X: %s", address, e.what());
@@ -355,10 +396,7 @@ void CRecompiler::Execute_VirtualTable() {
         
         // Execute compiled function
         ++m_Stats.blocksExecuted;
-        
-        // TODO: Call func->Execute() or similar
-        // For now, just break to avoid infinite loop
-        break;
+        func->Execute();
     }
 }
 
@@ -372,18 +410,12 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         auto* func = Lookup(pc);
         
         if (func) {
-            // Validate function is still valid
-            // Check if code memory has changed (self-modifying code detection)
-            if (m_EnableSelfModifyingCodeDetection) {
-                // Read current instruction at PC
-                uint32_t currentInstr = 0;
-                if (m_MMU.Read32(pc, currentInstr)) {
-                    // Would compare against stored hash/checksum
-                    // For now, assume valid
-                } else {
-                    // Memory read failed, invalidate
-                    func = nullptr;
-                }
+            // Validate function is still valid (self-modifying code detection)
+            if (m_EnableSelfModifyingCodeDetection && !func->MemoryValid()) {
+                // Code changed – invalidate and recompile
+                ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                     RemoveReason::StoreInstruc);
+                func = nullptr;
             }
         }
         
@@ -393,9 +425,7 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         }
         
         ++m_Stats.blocksExecuted;
-        
-        // TODO: Execute
-        break;
+        func->Execute();
     }
 }
 
@@ -405,18 +435,12 @@ void CRecompiler::Execute_MemoryChange() {
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
         
-        // Check for memory changes
+        // Check for memory changes before executing
         if (m_EnableSelfModifyingCodeDetection) {
-            // Check if memory at PC has changed
             auto* existingFunc = Lookup(pc);
-            if (existingFunc) {
-                // Read current instruction
-                uint32_t currentInstr = 0;
-                if (m_MMU.Read32(pc, currentInstr)) {
-                    // Would verify against stored code
-                    // If mismatch detected, clear the function
-                    // For now, assume no change
-                }
+            if (existingFunc && !existingFunc->MemoryValid()) {
+                ClearRecompCode_Virt(pc, existingFunc->MaxPC() - existingFunc->MinPC() + 4,
+                                     RemoveReason::StoreInstruc);
             }
         }
         
@@ -427,7 +451,7 @@ void CRecompiler::Execute_MemoryChange() {
         }
         
         ++m_Stats.blocksExecuted;
-        break;
+        func->Execute();
     }
 }
 
@@ -444,7 +468,7 @@ void CRecompiler::Execute_Lookup() {
         }
         
         ++m_Stats.blocksExecuted;
-        break;
+        func->Execute();
     }
 }
 
@@ -456,13 +480,10 @@ void CRecompiler::Execute_Lookup_Validate() {
         
         auto* func = Lookup(pc);
         
-        if (func) {
-            // Validate function hasn't been invalidated
-            uint32_t currentInstr = 0;
-            if (!m_MMU.Read32(pc, currentInstr)) {
-                // Memory read failed
-                func = nullptr;
-            }
+        if (func && m_EnableSelfModifyingCodeDetection && !func->MemoryValid()) {
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::StoreInstruc);
+            func = nullptr;
         }
         
         if (!func) {
@@ -471,7 +492,7 @@ void CRecompiler::Execute_Lookup_Validate() {
         }
         
         ++m_Stats.blocksExecuted;
-        break;
+        func->Execute();
     }
 }
 

@@ -27,6 +27,8 @@
 #include <shared_mutex>
 
 // Forward declarations
+#include "CodeBlock.hpp"
+
 namespace Nova64 {
     namespace Recompiler {
         class CodeBlock;
@@ -39,7 +41,7 @@ namespace Nova64 {
 // Forward declarations
 class CpuRegisters;
 class MipsMemory;
-class N64System;
+// using N64System = CN64System; // Removed to prevent redefinition conflicts
 
 namespace Recompiler {
 
@@ -49,7 +51,27 @@ class ProfileData;
 
 // Strongly typed identifiers
 enum class FunctionId : uint32_t {};
-enum class BlockId : uint32_t {};
+
+} // namespace Recompiler
+} // namespace Nova64
+
+// Hash specializations must be defined before usage
+#ifndef FUNCTION_ID_HASH_DEFINED
+#define FUNCTION_ID_HASH_DEFINED
+namespace std {
+    template<>
+    struct hash<Nova64::Recompiler::FunctionId> {
+        size_t operator()(Nova64::Recompiler::FunctionId id) const noexcept {
+            return static_cast<size_t>(id);
+        }
+    };
+}
+#endif // FUNCTION_ID_HASH_DEFINED
+
+namespace Nova64 {
+namespace Recompiler {
+
+enum class BlockId : uint32_t;
 
 // Function compilation status
 enum class CompilationStatus : uint8_t {
@@ -93,7 +115,8 @@ enum class FunctionFlags : uint32_t {
     Atomic              = 1 << 14,  // Contains atomic operations
     Critical            = 1 << 15,  // Critical execution path
     Linked              = 1 << 16,  // Has been linked to other functions
-    Specialized         = 1 << 17   // Has been specialized for specific inputs
+    Specialized         = 1 << 17,  // Has been specialized for specific inputs
+    Inlined             = 1 << 18   // Has been inlined by other functions
 };
 
 inline FunctionFlags operator|(FunctionFlags a, FunctionFlags b) {
@@ -109,7 +132,7 @@ inline bool has_flag(FunctionFlags value, FunctionFlags flag) {
 }
 
 // Function signature for compiled code
-using CompiledFunction = void(*)(CpuRegisters&, MipsMemory&, void*);
+using NativeFunction = void(*)(CpuRegisters&, MipsMemory&, void*);
 
 // Function metadata for optimization and analysis
 struct FunctionMetadata {
@@ -262,6 +285,10 @@ struct SpecializationContext {
         uint32_t reg;
         uint32_t value;
         bool constant;
+
+        bool operator==(const RegisterValue& other) const {
+            return reg == other.reg && value == other.value && constant == other.constant;
+        }
     };
     
     std::vector<RegisterValue> register_values;
@@ -340,6 +367,17 @@ public:
         bool generate_debug_info = false;
     };
     
+    struct SerializedFunction {
+        FunctionId id;
+        FunctionMetadata metadata;
+        FunctionStatistics stats;
+        MemorySnapshot snapshot;
+        FunctionFlags flags;
+        CompilationStatus status;
+        std::vector<uint8_t> native_code;
+        std::vector<uint32_t> linked_functions;
+    };
+
     CompileResult compile(const CompileOptions& options = {});
     bool recompile(const CompileOptions& options = {});
     
@@ -353,6 +391,10 @@ public:
     bool specialize(const SpecializationContext& context);
     bool apply_profile_guided_optimization(const ProfileData& profile);
     
+    // Serialization
+    SerializedFunction serialize() const;
+    bool deserialize(const SerializedFunction& data);
+
     // Validation and verification
     bool verify() const;
     bool verify_memory_snapshot() const;
@@ -379,7 +421,7 @@ public:
     CompiledFunction* next() const { return next_.get(); }
     
     // Function pointer access
-    CompiledFunction* function_pointer() const { return function_ptr_; }
+    NativeFunction function_pointer() const { return function_ptr_; }
     void* code_pointer() const { return code_ptr_; }
     size_t code_size() const { return code_size_; }
     
@@ -392,21 +434,6 @@ public:
     // Linking (for function chaining)
     void link_to(CompiledFunction* target, uint32_t branch_pc);
     void unlink_from(uint32_t branch_pc);
-    
-    // Serialization for save states
-    struct SerializedFunction {
-        FunctionId id;
-        FunctionMetadata metadata;
-        FunctionStatistics stats;
-        MemorySnapshot snapshot;
-        FunctionFlags flags;
-        CompilationStatus status;
-        std::vector<uint8_t> native_code;
-        std::vector<uint32_t> linked_functions;
-    };
-    
-    SerializedFunction serialize() const;
-    bool deserialize(const SerializedFunction& data);
     
 private:
     // Internal compilation helpers
@@ -454,7 +481,7 @@ private:
     OptimizationLevel optimization_level_ = OptimizationLevel::None;
     
     // Native code
-    CompiledFunction* function_ptr_ = nullptr;
+    NativeFunction function_ptr_ = nullptr;
     void* code_ptr_ = nullptr;
     size_t code_size_ = 0;
     
@@ -589,9 +616,11 @@ public:
 private:
     struct FunctionEntry {
         std::unique_ptr<CompiledFunction> function;
-        uint64_t last_access;
-        uint64_t access_count;
-        bool is_hot;
+        uint64_t last_access = 0;
+        uint64_t access_count = 0;
+        bool is_hot = false;
+        
+        FunctionEntry() = default;
         
         FunctionEntry(std::unique_ptr<CompiledFunction> func, uint64_t timestamp)
             : function(std::move(func)), last_access(timestamp), 
@@ -708,25 +737,8 @@ private:
 } // namespace Recompiler
 } // namespace Nova64
 
-// Hash specializations
-template<>
-struct std::hash<Nova64::Recompiler::FunctionId> {
-    size_t operator()(Nova64::Recompiler::FunctionId id) const noexcept {
-        return static_cast<size_t>(id);
-    }
-};
-
-template<>
-struct std::hash<Nova64::Recompiler::CompiledFunction*> {
-    size_t operator()(Nova64::Recompiler::CompiledFunction* func) const noexcept {
-        return reinterpret_cast<size_t>(func);
-    }
-};
-
-template<>
-struct std::equal_to<Nova64::Recompiler::CompiledFunction*> {
-    bool operator()(Nova64::Recompiler::CompiledFunction* a, 
-                   Nova64::Recompiler::CompiledFunction* b) const noexcept {
-        return a == b;
-    }
-};
+// Hash specializations (Moved to top of file)
+/* 
+   Moved hash specialization to after FunctionId definition to prevent
+   implicit instantiation errors (C2908/C2766).
+*/

@@ -310,8 +310,6 @@ public:
     virtual ~CRegBase() = default;
     
     // Non-copyable, movable
-    CRegBase(const CRegBase&) = delete;
-    CRegBase& operator=(const CRegBase&) = delete;
     CRegBase(CRegBase&&) = default;
     CRegBase& operator=(CRegBase&&) = default;
     

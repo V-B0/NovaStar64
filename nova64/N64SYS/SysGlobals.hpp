@@ -15,6 +15,12 @@
 #include <memory>
 #include <array>
 #include <vector>
+#include "Types.hpp"
+
+using N64Types::CountryCode;
+using N64Types::SystemType; 
+// Add others if needed by IsPalCountry implementation
+
 
 // ============================================================================
 // Namespace Forward Declarations
@@ -47,9 +53,11 @@ namespace N64 {
     }
 }
 
+class CN64System;
+
 namespace Nova64 {
     // Core system classes
-    class N64System;
+    using N64System = ::CN64System;
     class MipsMemoryVM;
     
     // CPU components
@@ -156,184 +164,6 @@ class R4300iInstruction;
 
 namespace N64Types {
 
-/**
- * @enum PauseType
- * @brief Reasons for pausing emulation
- */
-enum class PauseType : uint8_t {
-    None,
-    FromMenu,
-    AppLostActive,
-    AppLostFocus,
-    SaveGame,
-    LoadGame,
-    DumpMemory,
-    SearchMemory,
-    Settings,
-    Cheats,
-    ChangingBreakpoints,
-    Enhancement
-};
-
-/**
- * @enum CpuType
- * @brief CPU execution modes
- */
-enum class CpuType : int8_t {
-    Default = -1,
-    Interpreter = 1,
-    Recompiler = 2,
-    SyncCores = 3
-};
-
-/**
- * @enum FramerateType
- * @brief Framerate display modes
- */
-enum class FramerateType : uint8_t {
-    VIs,
-    DLs,
-    Percent,
-    VIsAndDLs
-};
-
-/**
- * @enum SaveChipType
- * @brief Save hardware types
- */
-enum class SaveChipType : int8_t {
-    Auto = -1,
-    Eeprom4K,
-    Eeprom16K,
-    Sram,
-    FlashRam,
-    ControllerPak,
-    None
-};
-
-/**
- * @enum SaveDiskType
- * @brief Save disk format types
- */
-enum class SaveDiskType : uint8_t {
-    ShadowFile,
-    RamFile
-};
-
-/**
- * @enum DiskSeekType
- * @brief Disk seek speed modes
- */
-enum class DiskSeekType : uint8_t {
-    Turbo,
-    Slow
-};
-
-/**
- * @enum FuncLookupMethod
- * @brief Function lookup methods for recompiler
- */
-enum class FuncLookupMethod : int8_t {
-    Default = -1,
-    PhysicalLookup = 1,
-    VirtualLookup = 2,
-    ChangeMemory = 3
-};
-
-/**
- * @enum SystemType
- * @brief Video system types
- */
-enum class SystemType : uint8_t {
-    NTSC = 0,
-    PAL = 1,
-    MPAL = 2
-};
-
-/**
- * @enum CicChip
- * @brief CIC chip types for copy protection
- */
-enum class CicChip : int8_t {
-    Unknown = -1,
-    NUS_6101 = 1,
-    NUS_6102,
-    NUS_6103,
-    NUS_6104,
-    NUS_6105,
-    NUS_6106,
-    NUS_5167,
-    NUS_8303,
-    NUS_8501,
-    NUS_8401,
-    NUS_5101,
-    MiniIpl3
-};
-
-/**
- * @enum CountryCode
- * @brief Country/region codes (ISO 3166-1 where applicable)
- */
-enum class CountryCode : uint8_t {
-    Unknown = 0,
-    NTSC_Beta = 0x37,
-    Asian_NTSC = 0x41,      // A
-    Brazil = 0x42,          // B
-    China = 0x43,           // C
-    Germany = 0x44,         // D
-    USA = 0x45,             // E
-    France = 0x46,          // F
-    Gateway64_NTSC = 0x47,  // G
-    Netherlands = 0x48,     // H
-    Italy = 0x49,           // I
-    Japan = 0x4A,           // J
-    Korea = 0x4B,           // K
-    Gateway64_PAL = 0x4C,   // L
-    Canada = 0x4E,          // N
-    Europe = 0x50,          // P
-    Spain = 0x53,           // S
-    Australia = 0x55,       // U
-    Scandinavia = 0x57,     // W
-    EuropeanX_PAL = 0x58,   // X
-    EuropeanY_PAL = 0x59    // Y
-};
-
-/**
- * @enum ProfileTimer
- * @brief Profiling timer types
- */
-enum class ProfileTimer : uint8_t {
-    None = 0,
-    R4300,
-    RSP_Dlist,
-    RSP_Alist,
-    RSP_Unknown,
-    RefreshScreen,
-    UpdateScreen,
-    UpdateFPS,
-    Idle,
-    Count
-};
-
-/**
- * @enum PipelineStage
- * @brief CPU pipeline stages
- */
-enum class PipelineStage : uint8_t {
-    Normal,
-    DoDelaySlot,
-    DoEndDelaySlot,
-    DelaySlot,
-    EndDelaySlot,
-    LikelyDelaySlot,
-    Jump,
-    JumpDelaySlot,
-    DelaySlotDone,
-    LikelyDelaySlotDone,
-    EndBlock,
-    PermanentLoopDoDelay,
-    PermanentLoopDelayDone
-};
 
 /**
  * @enum ExceptionCode
@@ -363,46 +193,8 @@ enum class ExceptionCode : uint8_t {
 // Helper Functions
 // ============================================================================
 
-/**
- * @brief Convert SystemType to string
- */
-constexpr const char* to_string(SystemType type) {
-    switch (type) {
-        case SystemType::NTSC: return "NTSC";
-        case SystemType::PAL:  return "PAL";
-        case SystemType::MPAL: return "MPAL";
-        default: return "Unknown";
-    }
-}
+// Helper functions removed to avoid redefinition (present in Types.hpp)
 
-/**
- * @brief Check if country code is PAL region
- */
-constexpr bool IsPalCountry(CountryCode code) {
-    switch (code) {
-        case CountryCode::Germany:
-        case CountryCode::France:
-        case CountryCode::Netherlands:
-        case CountryCode::Italy:
-        case CountryCode::Europe:
-        case CountryCode::Spain:
-        case CountryCode::Australia:
-        case CountryCode::Scandinavia:
-        case CountryCode::EuropeanX_PAL:
-        case CountryCode::EuropeanY_PAL:
-        case CountryCode::Gateway64_PAL:
-            return true;
-        default:
-            return false;
-    }
-}
-
-/**
- * @brief Check if country code is NTSC region
- */
-constexpr bool IsNtscCountry(CountryCode code) {
-    return !IsPalCountry(code) && code != CountryCode::Unknown;
-}
 
 // ============================================================================
 // String Conversion Functions (implemented in SysGlobals.cpp)

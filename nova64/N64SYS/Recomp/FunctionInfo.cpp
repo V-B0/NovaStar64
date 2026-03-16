@@ -598,7 +598,8 @@ void CompiledFunction::update_hash() {
 
 void CompiledFunction::log_compilation(const std::string& message) {
     debug_log_ += message + "\n";
-    TRACE(TraceLevel::Info, "Function {}: {}", static_cast<uint32_t>(id_), message);
+    // TRACE(TraceLevel::Info, "Function {}: {}", static_cast<uint32_t>(id_), message);
+    Log::infof("Function %u: %s", static_cast<uint32_t>(id_), message.c_str());
 }
 
 void CompiledFunction::set_status(CompilationStatus status) {
@@ -933,7 +934,7 @@ FunctionManager::SerializedManager FunctionManager::serialize() const {
     data.config = config_;
     
     for (const auto& [id, entry] : functions_) {
-        SerializedFunctionEntry se;
+        SerializedManager::SerializedFunctionEntry se;
         se.function = entry.function->serialize();
         se.is_hot = entry.is_hot;
         data.functions.push_back(se);

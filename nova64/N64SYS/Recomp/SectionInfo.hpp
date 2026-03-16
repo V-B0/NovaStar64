@@ -25,7 +25,7 @@ namespace Recompiler {
 
 // Forward declarations
 class CCodeSection;
-class CCodeBlock;
+class CodeBlock;
 class CJumpInfo;
 
 /**

@@ -1,53 +1,38 @@
 #pragma once
 #include "MemoryHandler.hpp"
 #include "../../common/log.hpp"
+#include "../../common/Span.hpp"
 #include <cstdint>
-#include <span>
 #include <array>
 
 // Forward declaration
 class CRegisters;
 
 namespace RDRAM {
-    // Register offsets from 0x03F00000
+    // Register offsets from 0x04700000 (RI - RDRAM Interface)
     enum class Register : uint32_t {
-        CONFIG           = 0x00,
-        DEVICE_ID        = 0x04,
-        DELAY            = 0x08,
-        MODE             = 0x0C,
-        REF_INTERVAL     = 0x10,
-        REF_ROW          = 0x14,
-        RAS_INTERVAL     = 0x18,
-        MIN_INTERVAL     = 0x1C,
-        ADDR_SELECT      = 0x20,
-        DEVICE_MANUF     = 0x24,
-        REGISTER_COUNT   = 10
+        MODE             = 0x00,
+        CONFIG           = 0x04,
+        CURRENT_LOAD     = 0x08,
+        SELECT           = 0x0C,
+        REFRESH          = 0x10, // Also COUNT
+        LATENCY          = 0x14,
+        RERROR           = 0x18,
+        WERROR           = 0x1C,
+        REGISTER_COUNT   = 8
     };
     
-    // RDRAM configuration flags (RD_CONFIG register)
+    // RDRAM configuration flags (RI_CONFIG)
     enum class ConfigFlags : uint32_t {
+        // Standard RI definitions can go here
         ENABLE           = 0x00000001,
-        ADDR_SKEW        = 0x00000002,
-        COLUMN_SIZE_256  = 0x00000004,
-        COLUMN_SIZE_512  = 0x00000008,
-        COLUMN_SIZE_1024 = 0x0000000C,
-        ROW_SIZE_8       = 0x00000010,
-        ROW_SIZE_9       = 0x00000020,
-        ROW_SIZE_10      = 0x00000030,
-        BANK_OVERLAP     = 0x00000040,
-        REFRESH_ENABLE   = 0x00000080
+        RESET            = 0x00000002
     };
     
-    // Mode register flags (RD_MODE register)
+    // Mode register flags (RI_MODE)
     enum class ModeFlags : uint32_t {
-        ACTIVE_POWER_DOWN = 0x00000001,
-        STANDBY_POWER_DOWN = 0x00000002,
-        SELF_REFRESH      = 0x00000004,
-        CLOCK_SUSPEND     = 0x00000008,
-        DLL_RESET         = 0x00000010,
-        DLL_BYPASS        = 0x00000020,
-        DLL_LOCK          = 0x00000040,
-        DLL_UNLOCK        = 0x00000080
+        RESET             = 0x00000001,
+        STOP              = 0x00000002,
     };
     
     // Helper functions
@@ -64,64 +49,37 @@ namespace RDRAM {
 class RDRAMInterfaceReg {
 public:
     // Accessor methods
-    uint32_t& config() { return m_registers[static_cast<size_t>(RDRAM::Register::CONFIG)]; }
-    uint32_t& device_id() { return m_registers[static_cast<size_t>(RDRAM::Register::DEVICE_ID)]; }
-    uint32_t& delay() { return m_registers[static_cast<size_t>(RDRAM::Register::DELAY)]; }
-    uint32_t& mode() { return m_registers[static_cast<size_t>(RDRAM::Register::MODE)]; }
-    uint32_t& ref_interval() { return m_registers[static_cast<size_t>(RDRAM::Register::REF_INTERVAL)]; }
-    uint32_t& ref_row() { return m_registers[static_cast<size_t>(RDRAM::Register::REF_ROW)]; }
-    uint32_t& ras_interval() { return m_registers[static_cast<size_t>(RDRAM::Register::RAS_INTERVAL)]; }
-    uint32_t& min_interval() { return m_registers[static_cast<size_t>(RDRAM::Register::MIN_INTERVAL)]; }
-    uint32_t& addr_select() { return m_registers[static_cast<size_t>(RDRAM::Register::ADDR_SELECT)]; }
-    uint32_t& device_manuf() { return m_registers[static_cast<size_t>(RDRAM::Register::DEVICE_MANUF)]; }
+    uint32_t& mode() { return m_registers[0]; }
+    uint32_t& config() { return m_registers[1]; }
+    uint32_t& current_load() { return m_registers[2]; }
+    uint32_t& select() { return m_registers[3]; }
+    uint32_t& refresh() { return m_registers[4]; }
+    uint32_t& latency() { return m_registers[5]; }
+    uint32_t& rerror() { return m_registers[6]; }
+    uint32_t& werror() { return m_registers[7]; }
     
     // Const accessors
-    uint32_t config() const { return m_registers[static_cast<size_t>(RDRAM::Register::CONFIG)]; }
-    uint32_t device_id() const { return m_registers[static_cast<size_t>(RDRAM::Register::DEVICE_ID)]; }
-    uint32_t delay() const { return m_registers[static_cast<size_t>(RDRAM::Register::DELAY)]; }
-    uint32_t mode() const { return m_registers[static_cast<size_t>(RDRAM::Register::MODE)]; }
-    uint32_t ref_interval() const { return m_registers[static_cast<size_t>(RDRAM::Register::REF_INTERVAL)]; }
-    uint32_t ref_row() const { return m_registers[static_cast<size_t>(RDRAM::Register::REF_ROW)]; }
-    uint32_t ras_interval() const { return m_registers[static_cast<size_t>(RDRAM::Register::RAS_INTERVAL)]; }
-    uint32_t min_interval() const { return m_registers[static_cast<size_t>(RDRAM::Register::MIN_INTERVAL)]; }
-    uint32_t addr_select() const { return m_registers[static_cast<size_t>(RDRAM::Register::ADDR_SELECT)]; }
-    uint32_t device_manuf() const { return m_registers[static_cast<size_t>(RDRAM::Register::DEVICE_MANUF)]; }
+    uint32_t mode() const { return m_registers[0]; }
+    uint32_t config() const { return m_registers[1]; }
+    uint32_t current_load() const { return m_registers[2]; }
+    uint32_t select() const { return m_registers[3]; }
+    uint32_t refresh() const { return m_registers[4]; }
+    uint32_t latency() const { return m_registers[5]; }
+    uint32_t rerror() const { return m_registers[6]; }
+    uint32_t werror() const { return m_registers[7]; }
     
     // Helper methods
-    bool is_enabled() const {
-        return has_flag(config(), RDRAM::ConfigFlags::ENABLE);
-    }
-    
-    bool is_self_refresh() const {
-        return has_flag(mode(), RDRAM::ModeFlags::SELF_REFRESH);
-    }
-    
-    uint32_t get_column_size() const {
-        uint32_t col_bits = config() & 0x0C;
-        switch (col_bits) {
-            case 0x04: return 256;
-            case 0x08: return 512;
-            case 0x0C: return 1024;
-            default: return 256;  // Default
-        }
-    }
-    
-    uint32_t get_row_size() const {
-        uint32_t row_bits = config() & 0x30;
-        switch (row_bits) {
-            case 0x10: return 8;
-            case 0x20: return 9;
-            case 0x30: return 10;
-            default: return 8;  // Default
-        }
+    bool is_reset() const {
+        return has_flag(mode(), RDRAM::ModeFlags::RESET);
     }
 
-protected:
-    explicit RDRAMInterfaceReg(std::span<uint32_t, static_cast<size_t>(RDRAM::Register::REGISTER_COUNT)> registers)
+    explicit RDRAMInterfaceReg(Common::Span<uint32_t> registers)
         : m_registers(registers) {}
 
+protected:
+
 private:
-    std::span<uint32_t, static_cast<size_t>(RDRAM::Register::REGISTER_COUNT)> m_registers;
+   Common::Span<uint32_t> m_registers;
     
     // Prevent copying
     RDRAMInterfaceReg() = delete;

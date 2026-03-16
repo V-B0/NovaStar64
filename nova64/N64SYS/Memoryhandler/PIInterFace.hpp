@@ -12,15 +12,16 @@
 // Forward declarations
 class CN64System;
 class CRegisters;
-class CMipsMemoryVM;
+namespace Nova64 { class MipsMemoryVM; }
 class UncachedRom;
+class CEeprom;
 
 namespace PI { 
 
     enum class Status : uint32_t {
         DMA_BUSY      = 0x01,
         IO_BUSY       = 0x02,
-        ERROR         = 0x04,
+        PI_ERROR      = 0x04,
         INTERRUPT     = 0x08
     };
     
@@ -58,6 +59,7 @@ namespace PI {
     };
         
     struct DMAState {
+        bool active;
         bool is_read;
         uint32_t dram_address;
         uint32_t cart_address;
@@ -80,9 +82,17 @@ namespace PI {
         }
     };
     
-    explicit PeripheralInterfaceHandler(
-        CN64System& system,
-        CMipsMemoryVM& mmu,
+    class PeripheralInterfaceHandler : public MemoryHandler {
+    public:
+        struct Config {
+            bool allow_unaligned_dma = true;
+            bool allow_rom_writes = false;
+            bool randomize_interrupts = true;
+        };
+
+        explicit PeripheralInterfaceHandler(
+            CN64System& system,
+        Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
         CEeprom& eeprom,
         UncachedRom& domain2_handler,
@@ -144,7 +154,42 @@ namespace PI {
     [[nodiscard]] bool is_dma_active() const { return m_dma_state.active; }
     [[nodiscard]] const DMAState& get_dma_state() const { return m_dma_state; }
     void force_dma_completion();
-{ 
+
+    struct PeripheralInterfaceReg {
+        std::array<uint32_t, PI::REGISTER_COUNT>& r;
+        
+        PeripheralInterfaceReg(std::array<uint32_t, PI::REGISTER_COUNT>& regs) 
+            : r(regs)
+            , PI_DRAM_ADDR_REG(r[PI::PI_DRAM_ADDR])
+            , PI_CART_ADDR_REG(r[PI::PI_CART_ADDR])
+            , PI_RD_LEN_REG(r[PI::PI_RD_LEN])
+            , PI_WR_LEN_REG(r[PI::PI_WR_LEN])
+            , PI_STATUS_REG(r[PI::PI_STATUS])
+            , PI_DOMAIN1_REG(r[PI::PI_BSD_DOM1_LAT])
+            , PI_BSD_DOM1_PWD_REG(r[PI::PI_BSD_DOM1_PWD])
+            , PI_BSD_DOM1_PGS_REG(r[PI::PI_BSD_DOM1_PGS])
+            , PI_BSD_DOM1_RLS_REG(r[PI::PI_BSD_DOM1_RLS])
+            , PI_DOMAIN2_REG(r[PI::PI_BSD_DOM2_LAT])
+            , PI_BSD_DOM2_PWD_REG(r[PI::PI_BSD_DOM2_PWD])
+            , PI_BSD_DOM2_PGS_REG(r[PI::PI_BSD_DOM2_PGS])
+            , PI_BSD_DOM2_RLS_REG(r[PI::PI_BSD_DOM2_RLS])
+        {}
+
+        uint32_t& PI_DRAM_ADDR_REG;
+        uint32_t& PI_CART_ADDR_REG;
+        uint32_t& PI_RD_LEN_REG;
+        uint32_t& PI_WR_LEN_REG;
+        uint32_t& PI_STATUS_REG;
+        uint32_t& PI_DOMAIN1_REG;
+        uint32_t& PI_BSD_DOM1_PWD_REG;
+        uint32_t& PI_BSD_DOM1_PGS_REG;
+        uint32_t& PI_BSD_DOM1_RLS_REG;
+        uint32_t& PI_DOMAIN2_REG;
+        uint32_t& PI_BSD_DOM2_PWD_REG;
+        uint32_t& PI_BSD_DOM2_PGS_REG;
+        uint32_t& PI_BSD_DOM2_RLS_REG;
+    };
+
 private:
     
     PeripheralInterfaceHandler() = delete;
@@ -154,20 +199,16 @@ private:
     PeripheralInterfaceHandler& operator=(PeripheralInterfaceHandler&&) = delete;
     
     
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
-    
-    
     CN64System& m_system;
-    CMipsMemoryVM& m_mmu;
+    Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;
     CEeprom& m_eeprom;
     UncachedRom& m_uncached_rom;
     Config m_config;
     
     // Registers
-    std::array<uint32_t, PI::REGISTER_COUNT> m_registers{};
-    PeripheralInterfaceReg m_pi_regs{m_registers};
+    std::array<uint32_t, PI::REGISTER_COUNT> m_pi_registers_array{};
+    PeripheralInterfaceReg m_pi_regs{m_pi_registers_array};
     
     // DMA state
     DMAState m_dma_state;
@@ -188,17 +229,16 @@ private:
     std::unique_ptr<class FileSystem::File> m_log_file;
     
     // Internal methods
-    void handle_dma_read();
-    void handle_dma_write();
-    void process_dma_transfer();
-    void complete_dma_transfer();
-    void trigger_pi_interrupt();
-    void update_dma_state(uint64_t current_cycle);
-    
-    // Address validation
-    [[nodiscard]] bool validate_dma_addresses(uint32_t dram_addr, 
-                                              uint32_t cart_addr, 
-                                              uint32_t length) const;
+    void HandleDMARead();
+    void HandleDMAWrite();
+    void ProcessStatusWrite(uint32_t val);
+    void PerformStandardDMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length);
+    void PerformDDIPLDMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length);
+    void ReadBlock(uint32_t addr, uint8_t* block, uint32_t blockLen);
+public:
+    void CompleteDMA();  // Called by PiTimer handler in Systiming.cpp
+private:
+    void OnFirstDMA();
     
     // Timing calculations
     [[nodiscard]] uint64_t calculate_dma_duration(uint32_t length) const;

@@ -12,6 +12,7 @@
 #include "RegInfo.hpp"
 #include "ExitInfo.hpp"
 #include "JumpInfo.hpp"
+#include "CodeSection.hpp"
 #include "../../common/MemoryManagment.hpp"
 #include <cstdint>
 #include <cstddef>
@@ -32,12 +33,14 @@
 // Third-party libraries
 #include "asmjit.hpp"  // AsmJit wrapper (currently stubbed)
 
+class CN64System;
+class CRegisters;
+
 namespace Nova64 {
     
 // Forward declarations
-class MipsMemory;
-class CpuRegisters;
-class N64System;
+class MipsMemoryVM;
+
 
 namespace Recompiler {
 
@@ -45,10 +48,6 @@ namespace Recompiler {
 class Recompiler;
 class RecompilationMemory;
 class RecompilerOperations;
-
-// Strongly typed identifiers
-enum class BlockId : uint32_t {};
-enum class SectionId : uint32_t {};
 
 // Block execution flags
 enum class BlockFlags : uint8_t {
@@ -104,8 +103,8 @@ struct BlockHash {
         k ^= k >> 33;
         
         return BlockHash{
-            .low = low ^ k,
-            .high = high ^ (k >> 32)
+            low ^ k,
+            high ^ (k >> 32)
         };
     }
 };
@@ -143,52 +142,13 @@ struct BasicBlockInfo {
 };
 
 /**
- * @brief Code section within a block
- */
-class CodeSection {
-private:
-    uint32_t start_address_;
-    uint32_t end_address_;
-    std::vector<uint32_t> instructions_;
-    std::vector<uint32_t> successors_;
-    std::vector<uint32_t> predecessors_;
-
-public:
-    CodeSection(uint32_t start_address, uint32_t end_address)
-        : start_address_(start_address), end_address_(end_address) {}
-    
-    // Section properties
-    uint32_t start_address() const noexcept { return start_address_; }
-    uint32_t end_address() const noexcept { return end_address_; }
-    size_t instruction_count() const noexcept { return instructions_.size(); }
-    
-    // Instruction management
-    void add_instruction(uint32_t address, uint32_t opcode);
-    const std::vector<uint32_t>& instructions() const noexcept { return instructions_; }
-    
-    // Control flow
-    void add_successor(uint32_t target_address);
-    void add_predecessor(uint32_t source_address);
-    const std::vector<uint32_t>& successors() const noexcept { return successors_; }
-    const std::vector<uint32_t>& predecessors() const noexcept { return predecessors_; }
-    
-    // Hashing
-    uint64_t calculate_hash() const noexcept {
-        if (instructions_.empty()) {
-            return start_address_;
-        }
-        return fnv1a_hash(instructions_.data(), instructions_.size() * sizeof(uint32_t), start_address_);
-    }
-};
-
-/**
  * @brief Recompiled code block with JIT compilation
  * 
  * Uses RAII for resource management and modern C++ features for safety.
  * 
  * NOTE: Currently stubbed - requires AsmJit library integration
  */
-class CodeBlock {
+class CodeBlock : public asmjit::ErrorHandler {
 public:
     // Configuration
     struct Config {
@@ -202,7 +162,7 @@ public:
     
     // Construction/Destruction
     CodeBlock(N64System& system, uint32_t entry_address, const Config& config = {});
-    ~CodeBlock() noexcept override;
+    ~CodeBlock() noexcept;
     
     // Non-copyable, movable
     CodeBlock(const CodeBlock&) = delete;
@@ -238,6 +198,15 @@ public:
     BlockHash hash() const noexcept { return hash_; }
     BlockFlags flags() const noexcept { return flags_; }
     bool is_valid() const noexcept { return is_valid_; }
+
+    asmjit::CodeHolder* GetCodeHolder() { return code_holder_.get(); }
+    
+    /// Get the system registers (used by platform-specific recompiler register allocators)
+    ::CRegisters* GetRegisters() const noexcept { return registers_; }
+    
+    /// Get the N64 system reference
+    N64System* GetSystem() const noexcept { return system_; }
+    
     bool is_compiled() const noexcept { return compiled_function_ != nullptr; }
     
     // Execution
@@ -426,7 +395,7 @@ private:
     
     // Error handling
     void handleError(asmjit::Error error, const char* message, 
-                    asmjit::BaseEmitter* origin) override;
+                    asmjit::BaseEmitter* origin);
     
     // Helper functions
     void log_compilation(const std::string& message);
@@ -436,9 +405,9 @@ private:
     
 private:
     // System references
-    N64System& system_;
-    MipsMemory& memory_;
-    CpuRegisters& registers_;
+    N64System* system_;
+    MipsMemoryVM* memory_;
+    ::CRegisters* registers_;
     
     // Block properties
     uint32_t entry_address_;
@@ -640,15 +609,5 @@ struct std::hash<Nova64::Recompiler::BlockHash> {
         size_t seed = static_cast<size_t>(h.low);
         seed ^= static_cast<size_t>(h.high) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         return seed;
-    }
-};
-
-// Hash specialization for std::pair (for patch points)
-template<typename T1, typename T2>
-struct std::hash<std::pair<T1, T2>> {
-    size_t operator()(const std::pair<T1, T2>& p) const noexcept {
-        size_t h1 = std::hash<T1>{}(p.first);
-        size_t h2 = std::hash<T2>{}(p.second);
-        return h1 ^ (h2 << 1);
     }
 };

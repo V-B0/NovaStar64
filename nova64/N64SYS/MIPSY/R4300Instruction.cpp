@@ -5,7 +5,7 @@
 
 #include "R4300Instruction.hpp"
 #include "R4300Iops.hpp"
-#include "register.hpp"
+#include "Register.hpp"
 #include <cassert>
 #include <sstream>
 #include <iomanip>

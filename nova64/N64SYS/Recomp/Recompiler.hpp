@@ -25,19 +25,26 @@
 #include <chrono>
 #include <memory>
 
-namespace Nova64 {
 
-// Forward declarations
+// Global Forward declarations
 class CN64System;
-class CMipsMemoryVM;
 class CRegisters;
-class CTLB;
 class CLog;
 
-namespace Recompiler {
+namespace N64System {
+    class CTLB;
+}
 
-// Forward declaration
-class CCompiledFunc;
+namespace Nova64 {
+
+using ::N64System::CTLB;
+using ::CRegisters;
+using ::CN64System;
+using ::CLog;
+
+class MipsMemoryVM;
+
+namespace Recompiler {
 
 /**
  * @enum RemoveReason
@@ -243,7 +250,7 @@ private:
     
     // Member variables
     CN64System&         m_System;
-    CMipsMemoryVM&      m_MMU;
+    MipsMemoryVM&       m_MMU;
     CRegisters&         m_Reg;
     CTLB&               m_TLB;
     std::atomic<bool>&  m_EndEmulation;

@@ -27,23 +27,29 @@
 #include <mutex>
 #include <shared_mutex>
 
+class CRegisters;
+class CN64System;
+
 namespace Nova64 {
     
 // Forward declarations
-class CodeBlock;
+// class CodeBlock; // Moved to Recompiler namespace
 class RegisterState;
-class CpuRegisters;
+// class CRegisters; // Removed to avoid conflict with global CRegisters
 class MipsMemory;
-class N64System;
+using ::CN64System;
+// using N64System = CN64System; // Prevent redefinition
 
 namespace Recompiler {
 
 // Forward declarations
+class CodeBlock;
 class RecompilerOperations;
 
 // Strongly typed identifiers
 enum class ExitId : uint32_t {};
-enum class BlockId : uint32_t {};
+// enum class BlockId : uint32_t {}; // Forward declared here, defined in CodeSection.hpp or consistent
+enum class BlockId : uint32_t;
 
 // Pipeline stages for precise exception handling
 enum class PipelineStage : uint8_t {
@@ -147,6 +153,28 @@ enum class ExitFlags : uint32_t {
     RollbackSafe            = 1 << 21,   // Safe to rollback from this exit
     Checkpoint              = 1 << 22    // Creates a checkpoint
 };
+
+} // namespace Recompiler
+} // namespace Nova64
+
+// Hash specializations
+template<>
+struct std::hash<Nova64::Recompiler::ExitId> {
+    size_t operator()(Nova64::Recompiler::ExitId id) const noexcept {
+        return static_cast<size_t>(id);
+    }
+};
+
+template<>
+struct std::hash<Nova64::Recompiler::ExitReason> {
+    size_t operator()(Nova64::Recompiler::ExitReason reason) const noexcept {
+        return static_cast<size_t>(reason);
+    }
+};
+
+namespace Nova64 {
+// class CRegisters;
+namespace Recompiler {
 
 inline ExitFlags operator|(ExitFlags a, ExitFlags b) {
     return static_cast<ExitFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
@@ -254,6 +282,7 @@ struct BranchPrediction {
     void update(bool actually_taken, uint32_t actual_target);
     double get_confidence() const { return confidence; }
     bool should_predict() const { return confidence > 0.7; }
+    double prediction_accuracy() const { return confidence; } // Added simplest implementation
 };
 
 /**
@@ -294,8 +323,8 @@ public:
     void set_pipeline_stage(PipelineStage stage) { pipeline_stage_ = stage; }
     
     // Register state management
-    void capture_register_state(const CpuRegisters& registers);
-    void restore_register_state(CpuRegisters& registers) const;
+    void capture_register_state(const ::CRegisters& registers);
+    void restore_register_state(::CRegisters& registers) const;
     const ExitRegisterState& get_register_state() const { return register_state_; }
     
     // Branch prediction
@@ -476,7 +505,7 @@ private:
     CodeBlock& parent_block_;
     ExitMap exits_;
     std::unordered_map<uint32_t, ExitId> pc_to_exit_id_;
-    std::unordered_map<asmjit::Label, ExitId> label_to_exit_id_;
+    std::unordered_map<asmjit::Label, ExitId, AsmJitLabelHash> label_to_exit_id_;
     
     // Thread safety
     mutable std::shared_mutex mutex_;
@@ -576,21 +605,6 @@ private:
 
 } // namespace Recompiler
 } // namespace Nova64
-
-// Hash specializations
-template<>
-struct std::hash<Nova64::Recompiler::ExitId> {
-    size_t operator()(Nova64::Recompiler::ExitId id) const noexcept {
-        return static_cast<size_t>(id);
-    }
-};
-
-template<>
-struct std::hash<Nova64::Recompiler::ExitReason> {
-    size_t operator()(Nova64::Recompiler::ExitReason reason) const noexcept {
-        return static_cast<size_t>(reason);
-    }
-};
 
 // Formatter for ExitReason (enable if using fmt library)
 #if defined(FMT_VERSION)

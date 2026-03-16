@@ -1,17 +1,17 @@
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
-#include "../Eeprom.hpp"
+#include "../../common/Span.hpp"
+#include "../Savetypes/Eeprom.hpp"
 #include <cstdint>
 #include <array>
-#include <span>
 #include <string>
 #include <memory>
 #include <functional>
 
 // Forward declarations
 class CN64System;
-class CMipsMemoryVM;
+namespace Nova64 { class MipsMemoryVM; }
 class CRegisters;
 
 namespace PIF {
@@ -87,13 +87,13 @@ public:
     
     explicit PifRamHandler(
         CN64System& system,
-        CMipsMemoryVM& mmu,
+        Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
         CEeprom& Eeprom,
         const Config& config = {}
     );
     
-    ~PifRamHandler() override;
+    ~PifRamHandler() noexcept override;
     
     // MemoryHandler interface
     [[nodiscard]] bool Read32(uint32_t address, uint32_t& value) override;
@@ -160,7 +160,7 @@ private:
     
     // Member variables
     CN64System& m_system;
-    CMipsMemoryVM& m_mmu;
+    Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;
     Config m_config;
     
@@ -172,7 +172,7 @@ private:
     std::array<PIF::ControllerState, 4> m_controllers{};
     
     // EEPROM (can be 4K or 16K)
-    std::unique_ptr<class Eeprom> m_eeprom;
+    CEeprom& m_eeprom;
     
     // CIC state
     PIF::CicType m_cic_type;
@@ -194,26 +194,31 @@ private:
     uint64_t m_last_update_cycle = 0;
     
     // Internal methods
-    // PIF command processing
-    void process_pif_commands();
-    void process_controller_command(size_t port, std::span<uint8_t> command);
-    void process_eeprom_command(std::span<uint8_t> command);
-    void process_cic_command(std::span<uint8_t> command);
+    // PIF command processing  (P64-style)
+    void process_pif_commands();              // Legacy wrapper -> calls pif_control_write()
+    void pif_control_read();                  // P64 ControlRead  — before DMA_READ
+    void pif_control_write();                 // P64 ControlWrite — after DMA_WRITE
+
+    // Controller command handlers  (P64-style, pointer to TX byte)
+    void ReadControllerCommand(int channel, uint8_t* Command);
+    void ProcessControllerCommand(int channel, uint8_t* Command);
+
+    // Legacy / unused — kept for compile compat
+    void process_controller_command(size_t port, Common::Span<uint8_t> command);
+    void process_eeprom_command(Common::Span<uint8_t> command);
     
     // CIC security
-    void cic_nus_6105_challenge(std::span<const uint8_t> challenge, 
-                                std::span<uint8_t> response);
-    void cic_nus_6102_challenge(std::span<const uint8_t> challenge,
-                                std::span<uint8_t> response);
-    void cic_nus_6106_challenge(std::span<const uint8_t> challenge,
-                                std::span<uint8_t> response);
+    void CicNus6105(const char* Challenge, char* Response, int Length);
+    void cic_nus_6105_challenge(Common::Span<const uint8_t> challenge, 
+                                Common::Span<uint8_t> response);
+    void cic_nus_6102_challenge(Common::Span<const uint8_t> challenge,
+                                Common::Span<uint8_t> response);
+    void cic_nus_6106_challenge(Common::Span<const uint8_t> challenge,
+                                Common::Span<uint8_t> response);
     [[nodiscard]] bool validate_cic() const;
     
-    // Controller handling
-    void update_controller_states();
-    void read_controller_buttons(size_t port, std::span<uint8_t> buffer);
-    void read_controller_accessory(size_t port, std::span<uint8_t> buffer);
-    void write_controller_accessory(size_t port, std::span<const uint8_t> data);
+    // Controller input handling
+    void update_controller_inputs();
     
     // Controller Pak (memory card) emulation
     class ControllerPak {
@@ -239,7 +244,7 @@ private:
     // Helper methods
     [[nodiscard]] bool is_pif_address(uint32_t address) const;
     [[nodiscard]] uint32_t pif_address_to_index(uint32_t address) const;
-    void log_pif_command(const std::string& description, std::span<const uint8_t> data);
+    void log_pif_command(const std::string& description, Common::Span<const uint8_t> data);
     
     // Byte swapping (N64 is big-endian)
     static constexpr uint32_t swap_bytes_32(uint32_t value) noexcept {

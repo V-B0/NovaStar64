@@ -129,12 +129,14 @@ public:
      */
     void ShowMemoryUsage() const;
     
-private:
+protected:
     /// Memory size constants
     static constexpr uint32_t DEFAULT_INITIAL_SIZE = 5 * 1024 * 1024;  // 5 MB
     static constexpr uint32_t MAX_BUFFER_SIZE = 60 * 1024 * 1024;      // 60 MB
     static constexpr uint32_t GROWTH_INCREMENT = 1 * 1024 * 1024;      // 1 MB
     static constexpr uint32_t GROWTH_FACTOR = 2;                       // Double when growing
+
+private:
     
     /**
      * @brief Grow the buffer to accommodate more code

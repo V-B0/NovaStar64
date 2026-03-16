@@ -8,7 +8,12 @@
  */
 
 #include "Register.hpp"
+#include "Sysevents.hpp"
+#include "Systiming.hpp"
+#include "Vmem.hpp"
+#include "TLB.hpp"
 #include "../SysGlobals.hpp"
+#include "../MainSYS.hpp"
 #include "../N64Rom.hpp"
 #include "../N64DD.hpp"
 #include "../../common/log.hpp"
@@ -91,10 +96,11 @@ const char* const CRegName::FPR_Ctrl[32] = {
 // ============================================================================
 
 CRegisters::CRegisters(CN64System& System, CSystemEvents& SystemEvents)
-    : m_System(System)
+    : CP0registers()
+    , m_System(System)
     , m_SystemEvents(SystemEvents)
-    , m_SystemTimer(System.m_SystemTimer)
-    , m_TLB(System.m_TLB)
+    , m_SystemTimer(*System.GetSystemTimer())
+    , m_TLB(*System.GetTLB())
     , m_FirstInterrupt(true)
 {
     Init();
@@ -105,13 +111,13 @@ void CRegisters::Init()
     m_FirstInterrupt = true;
 
     // Clear all general purpose registers
-    m_GPR.fill(MIPS_DWORD());
+    m_GPR.fill(0);
     
     // Clear COP0 registers
     m_CP0.fill(0);
     
     // Clear floating point registers
-    m_FPR.fill(MIPS_DWORD());
+    m_FPR.fill(0);
     m_FPCR.fill(0);
     m_FPCR[0] = 0xA00;  // FPU revision register
     
@@ -120,8 +126,8 @@ void CRegisters::Init()
     m_CP2Latch = 0;
     
     // Clear HI/LO registers
-    m_HI.UDW = 0;
-    m_LO.UDW = 0;
+    m_HI = 0;
+    m_LO = 0;
     
     // Clear LL bit
     m_LLBit = 0;
@@ -151,14 +157,14 @@ void CRegisters::Init()
     FixFpuLocations();
 }
 
-void CRegisters::Reset(bool bPostPif, CMipsMemoryVM& MMU)
+void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
 {
     Init();
 
     // COP0 registers initial values
     RANDOM_REGISTER = 0x1F;
     COUNT_REGISTER = 0x5000;
-    m_Mips_Interface[2] = 0x02020102;  // MI_VERSION_REG
+    m_Mips_Interface[1] = 0x02020102;  // MI_VERSION_REG (index 1, not 2)
     m_SigProcessor_Interface[4] = 0x00000001;  // SP_STATUS_REG
     CAUSE_REGISTER.Value = 0x0000005C;
     CONTEXT_REGISTER.Value = 0x007FFFF0;
@@ -179,42 +185,116 @@ void CRegisters::Reset(bool bPostPif, CMipsMemoryVM& MMU)
     {
         m_PROGRAM_COUNTER = 0xFFFFFFFFA4000040;
 
-        m_GPR[0].UDW = 0x0000000000000000;
-        m_GPR[6].UDW = 0xFFFFFFFFA4001F0C;
-        m_GPR[7].UDW = 0xFFFFFFFFA4001F08;
-        m_GPR[8].UDW = 0x00000000000000C0;
-        m_GPR[9].UDW = 0x0000000000000000;
-        m_GPR[10].UDW = 0x0000000000000040;
-        m_GPR[11].UDW = 0xFFFFFFFFA4000040;
-        m_GPR[16].UDW = 0x0000000000000000;
-        m_GPR[17].UDW = 0x0000000000000000;
-        m_GPR[18].UDW = 0x0000000000000000;
-        m_GPR[19].UDW = 0x0000000000000000;
-        m_GPR[21].UDW = 0x0000000000000000;
-        m_GPR[26].UDW = 0x0000000000000000;
-        m_GPR[27].UDW = 0x0000000000000000;
-        m_GPR[28].UDW = 0x0000000000000000;
-        m_GPR[29].UDW = 0xFFFFFFFFA4001FF0;
-        m_GPR[30].UDW = 0x0000000000000000;
+        m_GPR[0] = 0x0000000000000000;
+        m_GPR[6] = 0xFFFFFFFFA4001F0C;
+        m_GPR[7] = 0xFFFFFFFFA4001F08;
+        m_GPR[8] = 0x00000000000000C0;
+        m_GPR[9] = 0x0000000000000000;
+        m_GPR[10] = 0x0000000000000040;
+        m_GPR[11] = 0xFFFFFFFFA4000040;
+        m_GPR[16] = 0x0000000000000000;
+        m_GPR[17] = 0x0000000000000000;
+        m_GPR[18] = 0x0000000000000000;
+        m_GPR[19] = 0x0000000000000000;
+        m_GPR[21] = 0x0000000000000000;
+        m_GPR[26] = 0x0000000000000000;
+        m_GPR[27] = 0x0000000000000000;
+        m_GPR[28] = 0x0000000000000000;
+        m_GPR[29] = 0xFFFFFFFFA4001FF0;
+        m_GPR[30] = 0x0000000000000000;
 
         // Default NTSC values
-        m_GPR[20].UDW = 0x0000000000000001;
-        m_GPR[23].UDW = 0x0000000000000000;
-        m_GPR[24].UDW = 0x0000000000000003;
-        m_GPR[31].UDW = 0xFFFFFFFFA4001550;
+        m_GPR[20] = 0x0000000000000001;
+        m_GPR[23] = 0x0000000000000000;
+        m_GPR[24] = 0x0000000000000003;
+        m_GPR[31] = 0xFFFFFFFFA4001550;
 
-        // CIC-specific register initialization (CIC-6102 defaults)
-        m_GPR[1].UDW = 0x0000000000000001;
-        m_GPR[2].UDW = 0x000000000EBDA536;
-        m_GPR[3].UDW = 0x000000000EBDA536;
-        m_GPR[4].UDW = 0x000000000000A536;
-        m_GPR[5].UDW = 0xFFFFFFFFC95973D5;
-        m_GPR[12].UDW = 0xFFFFFFFFED10D0B3;
-        m_GPR[13].UDW = 0x000000001402A4CC;
-        m_GPR[14].UDW = 0x000000002449A366;
-        m_GPR[15].UDW = 0x000000003103E121;
-        m_GPR[22].UDW = 0x000000000000003F;
-        m_GPR[25].UDW = 0xFFFFFFFF9DEBB54F;
+        // CIC-specific register initialization
+        // Detect CIC type from PIF config (default NUS_6105 for OoT)
+        // TODO: auto-detect CIC from ROM header CRC
+        int cicType = 6105; // hardcoded for now — matches PIF::Config default
+
+        switch (cicType)
+        {
+        case 6101:
+            m_GPR[1]  = 0x0000000000000000;
+            m_GPR[2]  = 0xFFFFFFFFF58B0FBF;
+            m_GPR[3]  = 0xFFFFFFFFF58B0FBF;
+            m_GPR[4]  = 0x0000000000000FBF;
+            m_GPR[5]  = 0xFFFFFFFF25613A26;
+            m_GPR[12] = 0xFFFFFFFFED10D0B3;
+            m_GPR[13] = 0x000000001402A4CC;
+            m_GPR[14] = 0x000000002DE108EA;
+            m_GPR[15] = 0x000000003103E121;
+            m_GPR[22] = 0x000000000000003F;
+            m_GPR[25] = 0xFFFFFFFF9DEBB54F;
+            break;
+        case 6102:
+            m_GPR[1]  = 0x0000000000000001;
+            m_GPR[2]  = 0x000000000EBDA536;
+            m_GPR[3]  = 0x000000000EBDA536;
+            m_GPR[4]  = 0x000000000000A536;
+            m_GPR[5]  = 0xFFFFFFFFC95973D5;
+            m_GPR[12] = 0xFFFFFFFFED10D0B3;
+            m_GPR[13] = 0x000000001402A4CC;
+            m_GPR[14] = 0x000000002449A366;
+            m_GPR[15] = 0x000000003103E121;
+            m_GPR[22] = 0x000000000000003F;
+            m_GPR[25] = 0xFFFFFFFF9DEBB54F;
+            break;
+        case 6103:
+            m_GPR[1]  = 0x0000000000000001;
+            m_GPR[2]  = 0x0000000049A5EE96;
+            m_GPR[3]  = 0x0000000049A5EE96;
+            m_GPR[4]  = 0x000000000000EE96;
+            m_GPR[5]  = 0xFFFFFFFFD4646273;
+            m_GPR[12] = 0xFFFFFFFFCE9DFBF7;
+            m_GPR[13] = 0xFFFFFFFFCE9DFBF7;
+            m_GPR[14] = 0x000000001AF99984;
+            m_GPR[15] = 0x0000000018B63D28;
+            m_GPR[22] = 0x0000000000000078;
+            m_GPR[25] = 0xFFFFFFFF825B21C9;
+            break;
+        case 6105:
+            m_GPR[1]  = 0x0000000000000000;
+            m_GPR[2]  = 0xFFFFFFFFF58B0FBF;
+            m_GPR[3]  = 0xFFFFFFFFF58B0FBF;
+            m_GPR[4]  = 0x0000000000000FBF;
+            m_GPR[5]  = 0xFFFFFFFFDECAAAD1;
+            m_GPR[12] = 0xFFFFFFFF9651F81E;
+            m_GPR[13] = 0x000000002D42AAC5;
+            m_GPR[14] = 0x000000005CD2B70F;
+            m_GPR[15] = 0x0000000056584D60;
+            m_GPR[22] = 0x0000000000000091;
+            m_GPR[25] = 0xFFFFFFFFCDCE565F;
+            break;
+        case 6106:
+            m_GPR[1]  = 0x0000000000000000;
+            m_GPR[2]  = 0xFFFFFFFFA95930A4;
+            m_GPR[3]  = 0xFFFFFFFFA95930A4;
+            m_GPR[4]  = 0x00000000000030A4;
+            m_GPR[5]  = 0xFFFFFFFFB04DC903;
+            m_GPR[12] = 0xFFFFFFFFBCB59510;
+            m_GPR[13] = 0xFFFFFFFFBCB59510;
+            m_GPR[14] = 0x000000000CF85C13;
+            m_GPR[15] = 0x000000007A3C07F4;
+            m_GPR[22] = 0x0000000000000085;
+            m_GPR[25] = 0x00000000465E3F72;
+            break;
+        default: // Fall back to CIC-6102
+            m_GPR[1]  = 0x0000000000000001;
+            m_GPR[2]  = 0x000000000EBDA536;
+            m_GPR[3]  = 0x000000000EBDA536;
+            m_GPR[4]  = 0x000000000000A536;
+            m_GPR[5]  = 0xFFFFFFFFC95973D5;
+            m_GPR[12] = 0xFFFFFFFFED10D0B3;
+            m_GPR[13] = 0x000000001402A4CC;
+            m_GPR[14] = 0x000000002449A366;
+            m_GPR[15] = 0x000000003103E121;
+            m_GPR[22] = 0x000000000000003F;
+            m_GPR[25] = 0xFFFFFFFF9DEBB54F;
+            break;
+        }
     }
     else
     {
@@ -242,7 +322,9 @@ uint64_t CRegisters::Cop0_MF(COP0Reg Reg)
 {
     uint8_t regIndex = static_cast<uint8_t>(Reg);
     
-    // Update timers for time-sensitive registers
+    // Count/Wired/Random: bring the timer system fully up-to-date first.
+    // Like Project64, UpdateTimers() modifies COUNT_REGISTER in place,
+    // decrements all timer counters, and fires any expired timers.
     if (Reg == COP0Reg::Count || Reg == COP0Reg::Wired || Reg == COP0Reg::Random)
     {
         m_SystemTimer.UpdateTimers();
@@ -304,7 +386,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
     case COP0Reg::Count:
         m_SystemTimer.UpdateTimers();
         m_CP0[regIndex] = Value;
-        m_SystemTimer.UpdateCompareTimer();
+        m_SystemTimer.update_compare_timer();
         break;
         
     case COP0Reg::EntryHi:
@@ -315,7 +397,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         m_SystemTimer.UpdateTimers();
         m_CP0[regIndex] = Value;
         CAUSE_REGISTER.PendingInterrupts &= ~COP0Flags::CAUSE_IP7;
-        m_SystemTimer.UpdateCompareTimer();
+        m_SystemTimer.update_compare_timer();
         break;
         
     case COP0Reg::Status:
@@ -431,10 +513,6 @@ void CRegisters::CheckInterrupts()
     // Check if there are pending interrupts to service
     if ((STATUS_REGISTER_Value.Value & CAUSE_REGISTER.Value & 0xFF00) != 0)
     {
-        if (m_FirstInterrupt)
-        {
-            m_FirstInterrupt = false;
-        }
         m_SystemEvents.QueueEvent(SysEvent_ExecuteInterrupt);
     }
 }
@@ -530,12 +608,12 @@ void CRegisters::FixFpuLocations()
         if (STATUS_REGISTER.FR == 0)
         {
             // 32-bit FPU mode - pairs of registers share 64-bit storage
-            m_FPR_Union[i].u32 = m_FPR[i & ~1].UW[i & 1];
+            m_FPR_Union[i].u32 = static_cast<uint32_t>(m_FPR[i & ~1] >> (32 * (i & 1)));
         }
         else
         {
             // 64-bit FPU mode - each register is independent
-            m_FPR_Union[i].u64 = m_FPR[i].UDW;
+            m_FPR_Union[i].u64 = m_FPR[i];
         }
     }
 }

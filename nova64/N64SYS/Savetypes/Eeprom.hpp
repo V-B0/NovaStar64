@@ -5,13 +5,13 @@
 class CEeprom
 {
 public:
+    CEeprom(void);
     CEeprom(bool ReadOnly);
     ~CEeprom();
 
     void EepromCommand(uint8_t * Command);
 
 private:
-    CEeprom(void);
     CEeprom(const CEeprom &);
     CEeprom & operator=(const CEeprom &);
 

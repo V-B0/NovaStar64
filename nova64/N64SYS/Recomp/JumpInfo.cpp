@@ -23,6 +23,25 @@
 
 namespace Nova64::Recompiler {
 
+// Helper for string conversion
+static const char* GetJumpTypeName(JumpType type) {
+    switch (type) {
+        case JumpType::Direct:      return "Direct";
+        case JumpType::Indirect:    return "Indirect";
+        case JumpType::Conditional: return "Conditional";
+        case JumpType::Call:        return "Call";
+        case JumpType::Return:      return "Return";
+        case JumpType::Link:        return "Link";
+        case JumpType::System:      return "System";
+        case JumpType::Unknown:     return "Unknown";
+        default:                    return "Invalid";
+    }
+}
+
+static std::string GetExitReasonName(ExitReason reason) {
+    return std::to_string(static_cast<uint16_t>(reason));
+}
+
 // Note: Some CCodeBlock methods are used but require the full definition
 // These will be moved to inline implementations or use simpler accessors
 
@@ -30,7 +49,7 @@ namespace Nova64::Recompiler {
 // CJumpInfo Implementation
 // =============================================================================
 
-CJumpInfo::CJumpInfo(CCodeBlock& codeBlock)
+CJumpInfo::CJumpInfo(CodeBlock& codeBlock)
     : m_JumpPC(0)
     , m_TargetPC(0)
     , m_LinkAddress(std::nullopt)
@@ -153,45 +172,6 @@ std::string CJumpInfo::ToString() const {
     
     result += "]";
     return result;
-}
-
-// Helper function to get jump type name
-const char* GetJumpTypeName(JumpType type) {
-    switch (type) {
-        case JumpType::Direct:      return "Direct";
-        case JumpType::Indirect:    return "Indirect";
-        case JumpType::Conditional: return "Conditional";
-        case JumpType::Call:        return "Call";
-        case JumpType::Return:      return "Return";
-        case JumpType::Link:        return "Link";
-        case JumpType::System:      return "System";
-        case JumpType::Unknown:     return "Unknown";
-        default:                    return "Invalid";
-    }
-}
-
-// Helper function to get exit reason name
-const char* GetExitReasonName(ExitReason reason) {
-    switch (reason) {
-        case ExitReason::NormalBlockEnd:            return "NormalBlockEnd";
-        case ExitReason::ConditionalBranchTaken:    return "ConditionalBranchTaken";
-        case ExitReason::ConditionalBranchNotTaken: return "ConditionalBranchNotTaken";
-        case ExitReason::UnconditionalJump:         return "UnconditionalJump";
-        case ExitReason::JumpRegister:              return "JumpRegister";
-        case ExitReason::JumpAndLink:               return "JumpAndLink";
-        case ExitReason::TLBReadMiss:               return "TLBReadMiss";
-        case ExitReason::TLBWriteMiss:              return "TLBWriteMiss";
-        case ExitReason::Syscall:                   return "Syscall";
-        case ExitReason::Breakpoint:                return "Breakpoint";
-        case ExitReason::InterruptPending:          return "InterruptPending";
-        case ExitReason::ProfileThreshold:          return "ProfileThreshold";
-        case ExitReason::HotPathDetected:           return "HotPathDetected";
-        case ExitReason::BreakpointHit:             return "BreakpointHit";
-        case ExitReason::SingleStep:                return "SingleStep";
-        case ExitReason::CacheFull:                 return "CacheFull";
-        case ExitReason::MemoryLimit:               return "MemoryLimit";
-        default:                                    return "Unknown";
-    }
 }
 
 bool CJumpInfo::NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CRegInfo& targetReg) const {

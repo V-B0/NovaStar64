@@ -25,7 +25,7 @@ namespace Nova64 {
 namespace Recompiler {
 
 // Forward declarations
-class CCodeBlock;
+class CodeBlock;
 class CRegInfo;
 class CExitInfo;
 
@@ -59,7 +59,7 @@ public:
      * @brief Construct a jump info for a specific code block
      * @param codeBlock Reference to the containing code block
      */
-    explicit CJumpInfo(CCodeBlock& codeBlock);
+    explicit CJumpInfo(CodeBlock& codeBlock);
     
     /**
      * @brief Construct a jump info with specific parameters
@@ -77,6 +77,8 @@ public:
     CJumpInfo& operator=(const CJumpInfo&) = default;
     CJumpInfo& operator=(CJumpInfo&&) = default;
     ~CJumpInfo() = default;
+
+    std::string ToString() const;
 
     // Getters
     uint32_t GetJumpPC() const noexcept { return m_JumpPC; }
@@ -117,7 +119,7 @@ public:
      * @brief Check if this jump requires linking at runtime
      */
     bool RequiresLinking() const noexcept {
-        return !m_LinkLocation.isValid() || !m_SecondaryLinkLocation.isValid();
+        return !m_LinkLocation.is_valid() || !m_SecondaryLinkLocation.is_valid();
     }
     
     /**
@@ -160,11 +162,6 @@ public:
         m_Type = JumpType::Unknown;
         m_IsResolved = false;
     }
-    
-    /**
-     * @brief Get a string representation for debugging
-     */
-    std::string ToString() const;
     
     /**
      * @brief Check if registers need synchronization for this jump

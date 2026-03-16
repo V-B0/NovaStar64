@@ -11,12 +11,13 @@
 
 #pragma once
 
+#include "../Memoryhandler/AudioInterfaceHandler.hpp"
 #include "../Memoryhandler/CachedRom.hpp"
 #include "../Memoryhandler/UnCachedRom.hpp"
 #include "../Memoryhandler/CachedSysMemory.hpp"
 #include "../Memoryhandler/UnCachedSysMemory.hpp"
 #include "../Memoryhandler/DisplayCtrlReg.hpp"
-#include "../Memoryhandler/MIPSYinterfacehandler.hpp"
+#include "../Memoryhandler/MIPSYInterfaceHandler.hpp"
 #include "../Memoryhandler/PIInterFace.hpp"
 #include "../Memoryhandler/PifInterface.hpp"
 #include "../Memoryhandler/RDRAMInterFaceHandler.hpp"
@@ -24,9 +25,10 @@
 #include "../Memoryhandler/RomMemHandler.hpp"
 #include "../Memoryhandler/SIInterfaceHandler.hpp"
 #include "../Memoryhandler/SPregistersHandler.hpp"
-#include "../Memoryhandler/VideoInterfaceHeader.hpp"
+#include "../Memoryhandler/VideoInterfaceHandler.hpp"
 #include "../Savetypes/SRam.hpp"
 #include "../Savetypes/FRam.hpp"
+#include "../Savetypes/Eeprom.hpp"
 
 #include <cstdint>
 #include <cstddef>
@@ -37,17 +39,27 @@
 // Forward declarations from global namespace
 class CN64System;
 
+// using DPCRegisters::DisplayProcessorHandler; // Global
+using PI::PeripheralInterfaceHandler;
+// using PIF::PifRamHandler; // Global
+// using RDRAM::RDRAMInterfaceHandler; // Global
+// using RDRAM::RDRAMRegistersHandler; // Global
+// using SI::SerialInterfaceHandler; // Global
+// using VI::VideoInterfaceHandler; // Global
+// using AI::AudioInterfaceHandler; // Global
+
 // Forward declarations from N64System namespace
 namespace N64System {
     class CTLB;
 }
+class CRegisters;
 
 namespace Nova64 {
 
 // Forward declarations
-class N64System;
-class Registers;
-class TLB;
+// using N64System = ::CN64System;
+// using Registers = ::CRegisters;
+// using TLB = ::N64System::CTLB;
 class N64Rom;
 
 namespace Recompiler {
@@ -448,23 +460,22 @@ private:
     ::CN64System& m_System;
     ::N64System::CTLB& m_TLB;
 
+    std::unique_ptr<CEeprom> m_Eeprom;
+    std::unique_ptr<CSram> m_Sram;
+    std::unique_ptr<CFlashRam> m_FlashRam;
+    UncachedRom* m_RomMemoryHandler;
+
     // Memory handlers (initialized in Initialize())
     DisplayProcessorHandler* m_DPCommandRegistersHandler;
     MIPSYInterfaceHandler* m_MIPSInterfaceHandler;
     PeripheralInterfaceHandler* m_PeripheralInterfaceHandler;
     PifRamHandler* m_PifRamHandler;
-    RomMemoryHandler* m_RomMemoryHandler;
     RDRAMInterfaceHandler* m_RDRAMInterfaceHandler;
-    RDRAMRegHandler* m_RDRAMRegistersHandler;
+    RDRAMRegistersHandler* m_RDRAMRegistersHandler;
     SerialInterfaceHandler* m_SerialInterfaceHandler;
     SRegistersHandler* m_SPRegistersHandler;
     VideoInterfaceHandler* m_VideoInterfaceHandler;
-
-    // Placeholder for audio
-    struct AudioInterfaceHandlerStub {
-        bool Read32(uint32_t, uint32_t& value) { value = 0; return true; }
-        bool Write32(uint32_t, uint32_t, uint32_t) { return true; }
-    } m_AudioInterfaceHandler;
+    AudioInterfaceHandler* m_AudioInterfaceHandler;
 
     // Main memory
     uint8_t* m_RDRAM = nullptr;

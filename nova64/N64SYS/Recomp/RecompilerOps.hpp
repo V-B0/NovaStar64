@@ -24,16 +24,31 @@
 namespace Nova64 {
 
 // Forward declarations for system components
+// class CN64System; // Global
+class MipsMemoryVM;
+// class CRegisters; // Global
+
+} // namespace Nova64
+
+// Global forward declarations
 class CN64System;
-class CMipsMemoryVM;
 class CRegisters;
-class CTLB;
+
+namespace N64System {
+    class CTLB;
+}
+
+namespace Nova64 {
+
+using ::N64System::CTLB;
+using ::CRegisters;
+using ::CN64System;
 
 namespace Recompiler {
 
 // Forward declarations
-class CCodeBlock;
-class CCodeSection;
+class CodeBlock;
+class CodeSection;
 class ICodeGenerator;
 class IRegisterAllocator;
 
@@ -115,12 +130,12 @@ enum class InstructionCategory : uint8_t {
  */
 struct RecompilerContext {
     CN64System& system;
-    CMipsMemoryVM& mmu;
+    MipsMemoryVM& mmu;
     CRegisters& registers;
     CTLB& tlb;
     std::atomic<bool>& endEmulation;
     
-    RecompilerContext(CN64System& sys, CMipsMemoryVM& mem, 
+    RecompilerContext(CN64System& sys, MipsMemoryVM& mem, 
                       CRegisters& regs, CTLB& t, std::atomic<bool>& end)
         : system(sys), mmu(mem), registers(regs), tlb(t), endEmulation(end) {}
 };
@@ -135,10 +150,10 @@ struct InstructionContext {
     uint32_t virtualAddress;
     uint32_t physicalAddress;
     PipelineStage pipelineStage;
-    CCodeSection* currentSection;
+    CodeSection* currentSection;
     
     InstructionContext(const R4300iInstruction& inst, uint32_t vaddr, 
-                      uint32_t paddr, PipelineStage stage, CCodeSection* section)
+                      uint32_t paddr, PipelineStage stage, CodeSection* section)
         : instruction(inst)
         , opcode{inst.GetInstruction()}
         , virtualAddress(vaddr)
@@ -160,7 +175,7 @@ public:
     virtual ~IRecompilerOps() = default;
     
     // Setup and teardown
-    virtual bool Initialize(RecompilerContext& context, CCodeBlock& codeBlock) = 0;
+    virtual bool Initialize(RecompilerContext& context, CodeBlock& codeBlock) = 0;
     virtual void Cleanup() = 0;
     
     // Code generation
@@ -221,7 +236,7 @@ public:
     RecompilerOpsBase& operator=(RecompilerOpsBase&&) = default;
     
     // IRecompilerOps interface
-    bool Initialize(RecompilerContext& context, CCodeBlock& codeBlock) override final;
+    bool Initialize(RecompilerContext& context, CodeBlock& codeBlock) override final;
     void Cleanup() override final;
     
 protected:
@@ -238,8 +253,8 @@ protected:
     CN64System& GetSystem() noexcept { return m_Context.system; }
     const CN64System& GetSystem() const noexcept { return m_Context.system; }
     
-    CMipsMemoryVM& GetMMU() noexcept { return m_Context.mmu; }
-    const CMipsMemoryVM& GetMMU() const noexcept { return m_Context.mmu; }
+    MipsMemoryVM& GetMMU() noexcept { return m_Context.mmu; }
+    const MipsMemoryVM& GetMMU() const noexcept { return m_Context.mmu; }
     
     CRegisters& GetRegisters() noexcept { return m_Context.registers; }
     const CRegisters& GetRegisters() const noexcept { return m_Context.registers; }
@@ -250,12 +265,12 @@ protected:
     std::atomic<bool>& GetEndEmulationFlag() noexcept { return m_Context.endEmulation; }
     
     // Current compilation state
-    CCodeBlock* GetCurrentBlock() noexcept { return m_CurrentBlock; }
-    const CCodeBlock* GetCurrentBlock() const noexcept { return m_CurrentBlock; }
+    CodeBlock* GetCurrentBlock() noexcept { return m_CurrentBlock; }
+    const CodeBlock* GetCurrentBlock() const noexcept { return m_CurrentBlock; }
     
-    void SetCurrentSection(CCodeSection* section) noexcept { m_CurrentSection = section; }
-    CCodeSection* GetCurrentSection() noexcept { return m_CurrentSection; }
-    const CCodeSection* GetCurrentSection() const noexcept { return m_CurrentSection; }
+    void SetCurrentSection(CodeSection* section) noexcept { m_CurrentSection = section; }
+    CodeSection* GetCurrentSection() noexcept { return m_CurrentSection; }
+    const CodeSection* GetCurrentSection() const noexcept { return m_CurrentSection; }
     
     // Statistics
     struct CompilationStats {
@@ -284,8 +299,8 @@ private:
     
     // Common state
     RecompilerContext m_Context;
-    CCodeBlock* m_CurrentBlock = nullptr;
-    CCodeSection* m_CurrentSection = nullptr;
+    CodeBlock* m_CurrentBlock = nullptr;
+    CodeSection* m_CurrentSection = nullptr;
     
     // Statistics
     CompilationStats m_Stats;

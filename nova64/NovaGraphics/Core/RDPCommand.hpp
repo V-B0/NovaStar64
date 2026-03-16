@@ -1,0 +1,246 @@
+/**
+ * @file RDPCommand.hpp
+ * @brief RDP command parsing and decoding
+ *
+ * Decodes raw 64-bit RDP command words into structured representations.
+ * Handles all RDP commands: triangles, rectangles, texture loads, mode setting,
+ * syncs, and color/image setup.
+ */
+
+#pragma once
+
+#include "N64Types.hpp"
+#include "RDPState.hpp"
+
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <string>
+
+namespace Nova64::Video {
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Decoded Triangle Edge Coefficients
+// ═══════════════════════════════════════════════════════════════════════════
+
+struct TriangleEdge {
+    // Major edge (longest edge)
+    float yh;           // Y top (s11.2 → float, top of triangle)
+    float ym;           // Y middle
+    float yl;           // Y bottom (s11.2 → float, bottom of triangle)
+    
+    float xh;           // X at top (s15.16 → float)
+    float xm;           // X at middle
+    float xl;           // X at bottom
+    
+    float dxhDy;        // dX/dY for high edge
+    float dxmDy;        // dX/dY for middle edge
+    float dxlDy;        // dX/dY for low edge
+    
+    bool  leftMajor;    // Left-major triangle
+};
+
+/// Shade (color) coefficients for a triangle
+struct TriangleShade {
+    float r, g, b, a;           // Color at start pixel
+    float drDx, dgDx, dbDx, daDx;
+    float drDe, dgDe, dbDe, daDe;
+    float drDy, dgDy, dbDy, daDy;
+};
+
+/// Texture coefficients for a triangle
+struct TriangleTexture {
+    float s, t, w;              // Start values
+    float dsDx, dtDx, dwDx;    // X derivatives
+    float dsDe, dtDe, dwDe;    // Edge derivatives
+    float dsDy, dtDy, dwDy;    // Y derivatives
+};
+
+/// Depth (Z) coefficients for a triangle
+struct TriangleDepth {
+    float z;
+    float dzDx, dzDe, dzDy;
+};
+
+/// Fully decoded triangle command
+struct DecodedTriangle {
+    TriangleEdge    edge;
+    TriangleShade   shade;
+    TriangleTexture texture;
+    TriangleDepth   depth;
+    
+    uint8_t tileIndex;
+    bool    hasShade;
+    bool    hasTexture;
+    bool    hasDepth;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Decoded Rectangle Command
+// ═══════════════════════════════════════════════════════════════════════════
+
+struct DecodedRectangle {
+    float x0, y0, x1, y1;      // Screen coordinates
+    float s, t;                 // Texture start (s10.5 → float)
+    float dsDx, dtDy;           // Texture slopes
+    uint8_t tileIndex;
+    bool    flipped;            // TextureRectFlip swaps S/T increments
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RDP Command Decoder
+// ═══════════════════════════════════════════════════════════════════════════
+
+class RDPCommandDecoder {
+public:
+    RDPCommandDecoder() = default;
+    
+    /// Set the RDRAM pointer for reading RDP commands
+    void SetRDRAM(const uint8_t* rdram, size_t rdramSize) {
+        m_rdram = rdram;
+        m_rdramSize = rdramSize;
+    }
+    
+    /// Decode a command starting at the given 64-bit word pointer
+    /// Returns the command ID and advances the pointer
+    RDPCommandID DecodeCommand(const uint32_t* cmdWords, int wordCount);
+    
+    // ─── State-Setting Command Decoders ───
+    
+    /// Set Other Modes (0x2F): 64-bit mode word
+    void DecodeSetOtherModes(const uint32_t* words, RDPState& state);
+    
+    /// Set Combine (0x3C): 64-bit combine mode
+    void DecodeSetCombine(const uint32_t* words, RDPState& state);
+    
+    /// Set Tile (0x35): Configure a tile descriptor
+    void DecodeSetTile(const uint32_t* words, TileDescriptor& tile);
+    
+    /// Set Tile Size (0x32): Set the rectangle within the tile
+    void DecodeSetTileSize(const uint32_t* words, TileDescriptor& tile);
+    
+    /// Set Scissor (0x2D)
+    void DecodeSetScissor(const uint32_t* words, ScissorRect& scissor);
+    
+    /// Set Color Image (0x3F)
+    void DecodeSetColorImage(const uint32_t* words, ImageDescriptor& img);
+    
+    /// Set Mask Image (0x3E, Z-buffer)
+    void DecodeSetMaskImage(const uint32_t* words, ImageDescriptor& img);
+    
+    /// Set Texture Image (0x3D, source for loads)
+    void DecodeSetTextureImage(const uint32_t* words, ImageDescriptor& img);
+    
+    /// Set Fill Color (0x37)
+    void DecodeSetFillColor(const uint32_t* words, RDPColor& color);
+    
+    /// Set Fog Color (0x38)
+    void DecodeSetFogColor(const uint32_t* words, RDPColor& color);
+    
+    /// Set Blend Color (0x39)
+    void DecodeSetBlendColor(const uint32_t* words, RDPColor& color);
+    
+    /// Set Prim Color (0x3A)
+    void DecodeSetPrimColor(const uint32_t* words, RDPState& state);
+    
+    /// Set Env Color (0x3B)
+    void DecodeSetEnvColor(const uint32_t* words, RDPColor& color);
+    
+    /// Set Prim Depth (0x2E)
+    void DecodeSetPrimDepth(const uint32_t* words, uint16_t& depth, uint16_t& deltaZ);
+    
+    /// Set Convert (0x2C)
+    void DecodeSetConvert(const uint32_t* words, int16_t convertK[6]);
+    
+    /// Set Key GB (0x2A), Set Key R (0x2B)
+    void DecodeSetKeyGB(const uint32_t* words, RDPState& state);
+    void DecodeSetKeyR(const uint32_t* words, RDPState& state);
+    
+    // ─── Texture Load Decoders ───
+    
+    /// Load Block (0x33): Load a contiguous block of texels into TMEM
+    void DecodeLoadBlock(const uint32_t* words, int& tile, int& uls, int& ult,
+                         int& texels, int& dxt);
+    
+    /// Load Tile (0x34): Load a rectangular region into TMEM
+    void DecodeLoadTile(const uint32_t* words, int& tile,
+                        float& sl, float& tl, float& sh, float& th);
+    
+    /// Load TLUT (0x30): Load a palette into TMEM
+    void DecodeLoadTLUT(const uint32_t* words, int& tile, int& count);
+    
+    // ─── Primitive Decoders ───
+    
+    /// Decode a triangle command (0x08-0x0F)
+    void DecodeTriangle(const uint32_t* words, int wordCount, DecodedTriangle& tri);
+    
+    /// Decode TextureRectangle (0x24)
+    void DecodeTextureRect(const uint32_t* words, DecodedRectangle& rect);
+    
+    /// Decode TextureRectFlip (0x25)
+    void DecodeTextureRectFlip(const uint32_t* words, DecodedRectangle& rect);
+    
+    /// Decode Fill Rectangle (0x36)
+    void DecodeFillRect(const uint32_t* words, float& x0, float& y0, float& x1, float& y1);
+    
+    // ─── Debug ───
+    
+    /// Get a human-readable description of a command
+    static std::string DescribeCommand(RDPCommandID cmd);
+    
+    /// Get command name
+    static const char* GetCommandName(RDPCommandID cmd);
+
+private:
+    const uint8_t* m_rdram = nullptr;
+    size_t m_rdramSize = 0;
+    
+    /// Read big-endian 32-bit word from RDRAM
+    uint32_t ReadWord(uint32_t address) const;
+    
+    /// Read a signed fixed-point value and convert to float
+    static float ReadFixed_S15_16(uint32_t hi, uint32_t lo);
+    static float ReadFixed_S11_2(uint32_t packed);
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RDP Command Buffer
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Buffered RDP commands waiting to be processed
+class RDPCommandBuffer {
+public:
+    static constexpr size_t MAX_BUFFER_SIZE = 0x100000;  // 1 MB max
+    
+    RDPCommandBuffer();
+    ~RDPCommandBuffer();
+    
+    /// Reset buffer to empty
+    void Reset();
+    
+    /// Push raw command words into the buffer
+    void Push(const uint32_t* words, int count);
+    
+    /// Get pointer to next command to process
+    const uint32_t* Peek() const;
+    
+    /// Advance past N words
+    void Advance(int wordCount);
+    
+    /// Check if buffer has unprocessed commands
+    bool HasCommands() const { return m_readOffset < m_writeOffset; }
+    
+    /// Get number of unprocessed words
+    size_t GetPendingWordCount() const { return m_writeOffset - m_readOffset; }
+    
+    /// Compact buffer (move unread data to front)
+    void Compact();
+
+private:
+    uint32_t* m_buffer;
+    size_t    m_readOffset;
+    size_t    m_writeOffset;
+    size_t    m_capacity;
+};
+
+} // namespace Nova64::Video

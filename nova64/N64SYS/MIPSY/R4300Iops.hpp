@@ -6,49 +6,48 @@ union R4300iOps {
 
   uint32_t Value;
 
-  struct Rtype {
+  struct {
     unsigned funct: 6;
     unsigned rt: 5;
     unsigned rs: 5;
     unsigned rd: 5;
     unsigned sa: 5;
     unsigned op: 6; 
-  };
+  } Rtype;
 
-  struct Itype {
+  struct {
     unsigned imm:16;
     unsigned rt:5;
     unsigned rs:5;
     unsigned op:6;
-  };
+  } Itype;
 
-  struct Jtype {
+  struct {
     unsigned target:26;
     unsigned op:6;
-  };
+  } Jtype;
 
-  struct Ftype //Float type
-  {
+  struct { //Float type
     unsigned op: 6;
     unsigned base:5;
     unsigned ft:5;
     unsigned fs:5;
     unsigned fd: 5;
     unsigned funct:6;
-  };
+  } Ftype;
 
-  struct Memtype { //MEMORY TYPE
+  struct { //MEMORY TYPE
     unsigned op:6;
     unsigned base:5;
     unsigned rt:5;
     unsigned offset:16;
-  };
+  } Memtype;
 
-  struct SYScallType { 
+  struct { 
     unsigned code:20;
     unsigned func:6;
     unsigned op:6;
-  };
+  } SYScallType;
 };
 
 enum R4300iopInstr { //R4300I OPCODE INSTRUCTIONS

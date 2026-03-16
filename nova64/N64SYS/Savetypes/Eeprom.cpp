@@ -12,12 +12,16 @@
 
 #include "Eeprom.hpp"
 #include "../MainSYS.hpp"
+#include "../N64Rom.hpp"
 #include "../Types.hpp"
 #include "../../common/log.hpp"
 #include "../../common/path.hpp"
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
+#include <filesystem>
+
+extern N64::Rom::N64Rom* g_Rom;
 
 // EEPROM command codes
 enum class EepromCmd : uint8_t {
@@ -34,6 +38,13 @@ static inline uint8_t IntToBCD(int32_t value)
 {
     value %= 100;
     return static_cast<uint8_t>(((value / 10) << 4) | (value % 10));
+}
+
+// CEeprom default constructor
+CEeprom::CEeprom(void)
+    : m_ReadOnly(false)
+{
+    std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM));
 }
 
 // CEeprom constructor
@@ -220,27 +231,27 @@ void CEeprom::HandleRTCReadCommand(uint8_t* Command)
     case 2: // Read RTC time
     {
         std::time_t currentTime = std::time(nullptr);
-        std::tm* localTime = std::localtime(&currentTime);
+        std::tm localTime;
         
-        if (localTime)
+        if (localtime_s(&localTime, &currentTime) == 0)
         {
-            Command[4] = IntToBCD(localTime->tm_sec);
-            Command[5] = IntToBCD(localTime->tm_min);
-            Command[6] = 0x80 + IntToBCD(localTime->tm_hour);  // 0x80 = 24-hour format
-            Command[7] = IntToBCD(localTime->tm_mday);
-            Command[8] = IntToBCD(localTime->tm_wday);
-            Command[9] = IntToBCD(localTime->tm_mon + 1);  // tm_mon is 0-11
-            Command[10] = IntToBCD(localTime->tm_year % 100);  // Last 2 digits
-            Command[11] = IntToBCD(localTime->tm_year / 100);  // Century
+            Command[4] = IntToBCD(localTime.tm_sec);
+            Command[5] = IntToBCD(localTime.tm_min);
+            Command[6] = 0x80 + IntToBCD(localTime.tm_hour);  // 0x80 = 24-hour format
+            Command[7] = IntToBCD(localTime.tm_mday);
+            Command[8] = IntToBCD(localTime.tm_wday);
+            Command[9] = IntToBCD(localTime.tm_mon + 1);  // tm_mon is 0-11
+            Command[10] = IntToBCD(localTime.tm_year % 100);  // Last 2 digits
+            Command[11] = IntToBCD(localTime.tm_year / 100);  // Century
             Command[12] = 0x00;  // Status byte
             
             Log::debugf("RTC read: %04d-%02d-%02d %02d:%02d:%02d",
-                       localTime->tm_year + 1900,
-                       localTime->tm_mon + 1,
-                       localTime->tm_mday,
-                       localTime->tm_hour,
-                       localTime->tm_min,
-                       localTime->tm_sec);
+                       localTime.tm_year + 1900,
+                       localTime.tm_mon + 1,
+                       localTime.tm_mday,
+                       localTime.tm_hour,
+                       localTime.tm_min,
+                       localTime.tm_sec);
         }
         else
         {
@@ -279,13 +290,22 @@ void CEeprom::LoadEeprom()
 
     // Build save file path
     // Format: <SaveDir>/<GameName>.eep
-    std::string savePath = "Saves";  // TODO: Get from settings
-    std::string gameName = "game";    // TODO: Get from ROM
+    std::string savePath = "Saves";
+    std::string gameName = "game";
+    if (g_Rom && g_Rom->IsLoaded()) {
+        gameName = g_Rom->GetImage().GetRomName();
+        for (char& c : gameName) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' ||
+                c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+                c = '_';
+        }
+        while (!gameName.empty() && gameName.back() == ' ') gameName.pop_back();
+    }
     std::string fileName = gameName + ".eep";
     std::string fullPath = savePath + "/" + fileName;
 
-    // TODO: Create save directory if it doesn't exist
-    // TODO: Handle unique save directories per game
+    // Create save directory if it doesn't exist
+    std::filesystem::create_directories(savePath);
 
     // Try to open the file
     FileSystem::OpenMode openMode = m_ReadOnly ? 

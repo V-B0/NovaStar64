@@ -288,6 +288,14 @@ public:
      * @brief Unload current disk image
      */
     void UnloadDisk() noexcept;
+
+    // Helper functions needed by CPP
+    DiskType GetDiskType() const;
+    uint8_t GetZoneForTrack(uint16_t track, uint16_t head) const;
+    uint32_t LBAToVZone(uint32_t lba) const;
+    uint8_t VZoneToPZone(uint32_t vzone, uint8_t diskType) const;
+    uint32_t LBAToByte(uint32_t startLba, uint32_t numLbas) const;
+    uint16_t LBAToPhys(uint32_t lba) const;
     
     /**
      * @brief Check if a disk image is valid
@@ -457,6 +465,13 @@ private:
     // LBA conversion table
     std::vector<uint16_t> m_LBAToPhysTable;
     
+    // Helper methods
+    bool AllocateAndLoadDiskImage(const fs::path& filePath);
+    bool LoadDiskRAMImage(); // Fixed signature
+    
+    // Cache
+    // m_LBAToPhysTable removed (duplicate)
+
     // D64-specific data
     struct D64Data;
     std::unique_ptr<D64Data> m_D64Data;

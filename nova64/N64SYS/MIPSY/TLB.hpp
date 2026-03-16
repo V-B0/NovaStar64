@@ -8,16 +8,24 @@
 #include <string>
 #include <optional>
 #include <functional>
-#include "../../log.hpp"
+#include "../../common/Log.hpp"
 #include "Register.hpp"
+
+// Global Forward declarations
+class CRegisters;
+class CRecompiler;
+class CGameSettings;
+namespace Nova64 { class MipsMemoryVM; }
 
 namespace N64System {
 
 // Forward declarations
-class CMipsMemoryVM;
-class CRegisters;
-class CRecompiler;
-class CGameSettings;
+using CMipsMemoryVM = ::Nova64::MipsMemoryVM;
+
+// Import global classes
+using ::CRegisters;
+using ::CRecompiler;
+using ::CGameSettings;
 
 // Memory access permissions
 enum class MemoryAccessPermission : uint8_t {
@@ -169,9 +177,14 @@ public:
     static constexpr size_t FAST_TLB_ENTRY_COUNT = 64; // Fast TLB cache entries
     
     // Constructor/Destructor
-    TranslationLookasideBuffer(CMipsMemoryVM& mmu, CRegisters& registers, CRecompiler* recompiler);
+    TranslationLookasideBuffer(Nova64::MipsMemoryVM& mmu, CRegisters& registers, CRecompiler* recompiler);
+    TranslationLookasideBuffer(); // Default constructor for MainSYS
     ~TranslationLookasideBuffer();
     
+    using CTLB = TranslationLookasideBuffer;
+
+    void Initialize(Nova64::MipsMemoryVM* mmu, CRegisters* registers, CRecompiler* recompiler);
+
     // No copying
     TranslationLookasideBuffer(const TranslationLookasideBuffer&) = delete;
     TranslationLookasideBuffer& operator=(const TranslationLookasideBuffer&) = delete;
@@ -264,9 +277,9 @@ private:
     TlbStatistics statistics;
     
     // System dependencies
-    CMipsMemoryVM& memory_management_unit;
-    CRegisters& registers;
-    CRecompiler* recompiler;
+    Nova64::MipsMemoryVM* memory_management_unit = nullptr;
+    CRegisters* registers = nullptr;
+    CRecompiler* recompiler = nullptr;
     
     // Fast TLR hash table for quicker lookups
     static constexpr size_t FAST_TLB_HASH_SIZE = 256;
@@ -302,8 +315,10 @@ public:
         // For now, we'll use placeholder types
         struct COP0PageMask { uint64_t Value; } PageMask;
         struct COP0EntryHi { uint64_t Value; } EntryHi;
-        struct COP0EntryLo { uint64_t Value; } EntryLo0;
-        struct COP0EntryLo { uint64_t Value; } EntryLo1;
+        // struct COP0EntryLo { uint64_t Value; }; // Use global definition if available, or define local
+        struct LocalCOP0EntryLo { uint64_t Value; };
+        LocalCOP0EntryLo EntryLo0;
+        LocalCOP0EntryLo EntryLo1;
     };
 
     struct FASTTLB {
@@ -321,8 +336,11 @@ public:
         bool Probed;
     };
 
-    CTLB(CMipsMemoryVM& MMU, CRegisters& Reg, CRecompiler*& Recomp);
+    CTLB(Nova64::MipsMemoryVM& MMU, CRegisters& Reg, CRecompiler*& Recomp);
+    CTLB(); // Public default constructor
     ~CTLB();
+
+    void Initialize(Nova64::MipsMemoryVM* MMU, CRegisters* Reg, CRecompiler* Recomp);
 
     void Reset(bool InvalidateTLB);
     void Probe();
@@ -342,8 +360,10 @@ public:
     bool operator==(const CTLB& rTLB) const;
     bool operator!=(const CTLB& rTLB) const;
 
+    CRegisters& GetRegisters() const { return *m_Reg; }
+
 private:
-    CTLB();
+    // CTLB();  // Removed conflicting private default constructor
     CTLB(const CTLB&);
     CTLB& operator=(const CTLB&);
 
@@ -352,11 +372,11 @@ private:
     MemorySegment VAddrMemorySegment(uint64_t VAddr);
 
     // Member variables
-    PriviligeMode m_PrivilegeMode;
+    PrivilegeMode m_PrivilegeMode;
     bool m_AddressSize32bit;
-    CMipsMemoryVM& m_MMU;
-    CRegisters& m_Reg;
-    CRecompiler*& m_Recomp;
+    Nova64::MipsMemoryVM* m_MMU;
+    CRegisters* m_Reg;
+    CRecompiler* m_Recomp;
     TLB_ENTRY m_tlb[32];
     FASTTLB m_FastTlb[64];
 };
@@ -433,7 +453,7 @@ namespace GlobalTlb {
     
     // Create a new TLB instance
     std::unique_ptr<N64System::TranslationLookasideBuffer> create_tlb(
-        N64System::CMipsMemoryVM& mmu,
+        Nova64::MipsMemoryVM& mmu,
         N64System::CRegisters& registers,
         N64System::CRecompiler* recompiler);
 }

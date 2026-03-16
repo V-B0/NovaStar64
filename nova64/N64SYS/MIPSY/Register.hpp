@@ -9,10 +9,19 @@
 #include "../Memoryhandler/RDRAMRegHandler.hpp"
 #include "../Memoryhandler/SPregistersHandler.hpp"
 #include "../Memoryhandler/SIInterfaceHandler.hpp"
-#include "../Memoryhandler/VideoInterfaceHeader.hpp"
+#include "../Memoryhandler/VideoInterfaceHandler.hpp"
 #include "../Types.hpp"
 #include <cstdint>
 #include <array>
+
+// Avoid conflict with SysGlobals.hpp union definition
+using MipsRegisterType = uint64_t;
+
+namespace Nova64 {
+    namespace Interpreter {
+        class R4300iInterpreter;
+    }
+}
 
 
 #pragma warning(push)
@@ -83,7 +92,7 @@ union COP0EntryHi {
 };
 
 
-enum PrivilegeMode : uint8_t {
+enum PrivilegeMode : unsigned int {
     PrivilegeMode_Kernel = 0,
     PrivilegeMode_Supervisor = 1,
     PrivilegeMode_User = 2
@@ -97,7 +106,7 @@ union COP0Status {
         unsigned InterruptEnable : 1;      // IE bit
         unsigned ExceptionLevel : 1;       // EXL bit
         unsigned ErrorLevel : 1;           // ERL bit
-        PrivilegeMode PrevMode : 2;        // Previous mode (KSU)
+        unsigned PrevMode : 2;             // Previous mode (KSU) - uses PrivilegeMode values
         unsigned UserEXAddr : 1;           // UX bit (User Extended Addressing)
         unsigned SuperVisorEXAddr : 1;     // SX bit
         unsigned KernelEXAddr : 1;         // KX bit
@@ -181,7 +190,7 @@ union FPStatusReg {
     uint32_t Value;
     
     struct {
-        FPRoundingMode RoundingMode : 2;
+        unsigned RoundingMode : 2;         // Uses FPRoundingMode values
         unsigned : 22;
         unsigned FlushSubnormals : 1;
         unsigned : 7;
@@ -225,28 +234,33 @@ union FPStatusReg {
 
 
 class CP0registers {
+    friend class Nova64::Interpreter::R4300iInterpreter;
+    friend class CN64System;
 protected:
-    CP0registers(uint64_t* _CP0) :
-        INDEX_REGISTER(_CP0[0]),
-        RANDOM_REGISTER(_CP0[1]),
-        ENTRYLO0_REGISTER(*reinterpret_cast<COP0EntryLo*>(&_CP0[2])),
-        ENTRYLO1_REGISTER(*reinterpret_cast<COP0EntryLo*>(&_CP0[3])),
-        CONTEXT_REGISTER(*reinterpret_cast<COP0Context*>(&_CP0[4])),
-        PAGE_MASK_REGISTER(*reinterpret_cast<COP0PageMask*>(&_CP0[5])),
-        WIRED_REGISTER(_CP0[6]),
-        BAD_VADDR_REGISTER(_CP0[8]),
-        COUNT_REGISTER(_CP0[9]),
-        ENTRYHI_REGISTER(*reinterpret_cast<COP0EntryHi*>(&_CP0[10])),
-        COMPARE_REGISTER(_CP0[11]),
-        STATUS_REGISTER(*reinterpret_cast<COP0Status*>(&_CP0[12])),
-        CAUSE_REGISTER(*reinterpret_cast<COP0Cause*>(&_CP0[13])),
-        EPC_REGISTER(_CP0[14]),
-        PREVID_REGISTER(_CP0[15]),
-        CONFIG_REGISTER(_CP0[16]),
-        XCONTEXT_REGISTER(*reinterpret_cast<COP0XContext*>(&_CP0[20])),
-        TAGLO_REGISTER(_CP0[28]),
-        TAGHI_REGISTER(_CP0[29]),
-        ERROREPC_REGISTER(_CP0[30]) {
+    std::array<uint64_t, 32> m_CP0;
+
+    CP0registers() :
+        m_CP0(),
+        INDEX_REGISTER(m_CP0[0]),
+        RANDOM_REGISTER(m_CP0[1]),
+        ENTRYLO0_REGISTER(*reinterpret_cast<COP0EntryLo*>(&m_CP0[2])),
+        ENTRYLO1_REGISTER(*reinterpret_cast<COP0EntryLo*>(&m_CP0[3])),
+        CONTEXT_REGISTER(*reinterpret_cast<COP0Context*>(&m_CP0[4])),
+        PAGE_MASK_REGISTER(*reinterpret_cast<COP0PageMask*>(&m_CP0[5])),
+        WIRED_REGISTER(m_CP0[6]),
+        BAD_VADDR_REGISTER(m_CP0[8]),
+        COUNT_REGISTER(m_CP0[9]),
+        ENTRYHI_REGISTER(*reinterpret_cast<COP0EntryHi*>(&m_CP0[10])),
+        COMPARE_REGISTER(m_CP0[11]),
+        STATUS_REGISTER(*reinterpret_cast<COP0Status*>(&m_CP0[12])),
+        CAUSE_REGISTER(*reinterpret_cast<COP0Cause*>(&m_CP0[13])),
+        EPC_REGISTER(m_CP0[14]),
+        PREVID_REGISTER(m_CP0[15]),
+        CONFIG_REGISTER(m_CP0[16]),
+        XCONTEXT_REGISTER(*reinterpret_cast<COP0XContext*>(&m_CP0[20])),
+        TAGLO_REGISTER(m_CP0[28]),
+        TAGHI_REGISTER(m_CP0[29]),
+        ERROREPC_REGISTER(m_CP0[30]) {
     }
 
 public:
@@ -273,8 +287,7 @@ public:
     uint64_t& ERROREPC_REGISTER;
 
 private:
-    // Disable default construction, copying, assignment
-    CP0registers() = delete;
+    // Disable copying, assignment
     CP0registers(const CP0registers&) = delete;
     CP0registers& operator=(const CP0registers&) = delete;
 };
@@ -446,12 +459,14 @@ public:
 
 class CN64System;
 class CSystemEvents;
-class CTLB;
-class CSystemTimer;
-class CMipsMemoryVM;
+namespace Nova64 { namespace Interpreter { class R4300iInterpreter; } }
+namespace N64System { class CTLB; }
+using N64System::CTLB;
+namespace N64System { class SystemTimer; }
+namespace Nova64 { class MipsMemoryVM; }
 
 // Fix 19: Major refactor of CRegisters class - use composition instead of inheritance
-class CRegisters {
+class CRegisters : public CP0registers {
 public:
     // COP0 register enum
     enum class COP0Reg : uint8_t {
@@ -489,9 +504,18 @@ public:
     void DoAddressError(uint64_t BadVaddr, bool FromRead);
     bool DoIntrException();
     void FixFpuLocations();
-    void Reset(bool bPostPif, CMipsMemoryVM& MMU);
+    void Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU);
     void TriggerAddressException(uint64_t Address, uint32_t ExceptionCode);
     void TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor = 0);
+    
+    // Timer access for deferred SP interrupt scheduling
+    N64System::SystemTimer& GetSystemTimer() { return m_SystemTimer; }
+
+    // Deferred RSP interrupt delivery: when true, RSP HLE code should NOT set
+    // MI_INTR bits or call CheckInterrupts. Instead, accumulate bits in
+    // m_deferred_mi_intr for the RspTimer to apply later.
+    bool m_defer_hle_interrupts{false};
+    uint32_t m_deferred_mi_intr{0};
     
     uint64_t Cop0_MF(COP0Reg Reg);
     void Cop0_MT(COP0Reg Reg, uint64_t Value);
@@ -501,17 +525,17 @@ public:
     
     // General registers - use std::array for bounds safety
     uint64_t m_PROGRAM_COUNTER;
-    std::array<MIPS_DWORD, 32> m_GPR;
-    std::array<uint64_t, 32> m_CP0;
+    std::array<MipsRegisterType, 32> m_GPR;
+    // std::array<uint64_t, 32> m_CP0; // Moved to CP0registers
     uint64_t m_CP0Latch;
     uint64_t m_CP2Latch;
-    MIPS_DWORD m_HI;
-    MIPS_DWORD m_LO;
+    MipsRegisterType m_HI;
+    MipsRegisterType m_LO;
     uint32_t m_LLBit;
     
     // Floating point registers
     std::array<uint32_t, 32> m_FPCR;
-    std::array<MIPS_DWORD, 32> m_FPR;
+    std::array<MipsRegisterType, 32> m_FPR;
     
     // Fix 20: Remove pointer arrays - use union for type punning
     union FPReg {
@@ -519,7 +543,8 @@ public:
         uint64_t u64;
         float f32;
         double f64;
-        MIPS_DWORD dword;
+        MipsRegisterType dword;
+        FPReg() { u64 = 0; }
     };
     std::array<FPReg, 32> m_FPR_Union;  // Single unified FP register array
     
@@ -549,7 +574,7 @@ private:
     bool m_FirstInterrupt; 
     CN64System& m_System;
     CSystemEvents& m_SystemEvents;
-    CSystemTimer& m_SystemTimer;
+    N64System::SystemTimer& m_SystemTimer;
     CTLB& m_TLB;
     
     // Helper method to access COP0 registers safely

@@ -30,9 +30,7 @@ namespace Recompiler {
 
 // Forward declarations
 class CX64Ops;
-struct CJumpInfo;
-class IInstructionTranslator;
-class IRegisterAllocator;
+class CJumpInfo;
 
 /**
  * @enum TranslationResult
@@ -83,7 +81,7 @@ public:
      * @param codeBlock Code block being compiled
      */
     explicit CX64RecompilerOps(RecompilerContext& context, 
-                               CCodeBlock& codeBlock);
+                               CodeBlock& codeBlock);
     ~CX64RecompilerOps() override;
     
     // Non-copyable, movable
@@ -93,7 +91,7 @@ public:
     CX64RecompilerOps& operator=(CX64RecompilerOps&&) = delete;
     
     // IRecompilerOps interface
-    bool Initialize(RecompilerContext& context, CCodeBlock& codeBlock) override;
+    bool Initialize(RecompilerContext& context, CodeBlock& codeBlock) override;
     void Cleanup() override;
     
     bool CompileInstruction(const InstructionContext& ctx) override;
@@ -157,7 +155,7 @@ public:
     void EnterCodeBlock();
     void ExitCodeBlock(ExitReason reason = ExitReason::NormalBlockEnd);
     void LinkJump(CJumpInfo& jumpInfo);
-    void LinkJumpToSection(CCodeSection* section);
+    void LinkJumpToSection(CodeSection* section);
     void LinkJumpToUnknown(CJumpInfo* jumpInfo);
     
     // Register state management
@@ -354,6 +352,10 @@ private:
     TranslationResult HandleSDC1(const TranslationContext& ctx);
     
     // Helper methods
+    void EmitRegisterCallback(void* callback, uint32_t opcVal);
+    void EmitMemoryCallback(void* callback, uint32_t opcVal);
+    void EmitTlbCallback(void* callback, uint32_t opcVal);
+    void EmitBranchCallback(void* callback, uint32_t opcVal, uint32_t pc);
     void EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, 
                           asmjit::x86::Gp dest, const asmjit::x86::Mem& src);
     void EmitStoreOperation(uint32_t size, bool is64Bit,
@@ -381,13 +383,183 @@ private:
     void DeadCodeElimination();
     void RedundantMoveElimination();
     
+    // Branch comparison instructions
+    void BNE_Compare();
+    void BEQ_Compare();
+    void BGTZ_Compare();
+    void BLEZ_Compare();
+    void BLTZ_Compare();
+    void BGEZ_Compare();
+    void BLTZAL_Compare();
+    void BGEZAL_Compare();
+    void COP1_BCF_Compare();
+    void COP1_BCT_Compare();
+    
+    // Jump instructions
+    void J();
+    void JAL();
+    
+    // Immediate arithmetic instructions
+    void ADDI();
+    void ADDIU();
+    void SLTI();
+    void SLTIU();
+    void ANDI();
+    void ORI();
+    void XORI();
+    void LUI();
+    void DADDI();
+    void DADDIU();
+    
+    // Load instructions
+    void LB();
+    void LH();
+    void LWL();
+    void LW();
+    void LBU();
+    void LHU();
+    void LWR();
+    void LWU();
+    void LD();
+    void LDL();
+    void LDR();
+    void LL();
+    void LWC1();
+    void LDC1();
+    
+    // Store instructions
+    void SB();
+    void SH();
+    void SWL();
+    void SW();
+    void SWR();
+    void SD();
+    void SDL();
+    void SDR();
+    void SC();
+    void SWC1();
+    void SDC1();
+    void CACHE();
+    
+    // SPECIAL format instructions
+    void SPECIAL_SLL();
+    void SPECIAL_SRL();
+    void SPECIAL_SRA();
+    void SPECIAL_SLLV();
+    void SPECIAL_SRLV();
+    void SPECIAL_SRAV();
+    void SPECIAL_JR();
+    void SPECIAL_JALR();
+    void SPECIAL_SYSCALL();
+    void SPECIAL_BREAK();
+    void SPECIAL_SYNC();
+    void SPECIAL_MFLO();
+    void SPECIAL_MTLO();
+    void SPECIAL_MFHI();
+    void SPECIAL_MTHI();
+    void SPECIAL_DSLLV();
+    void SPECIAL_DSRLV();
+    void SPECIAL_DSRAV();
+    void SPECIAL_MULT();
+    void SPECIAL_MULTU();
+    void SPECIAL_DIV();
+    void SPECIAL_DIVU();
+    void SPECIAL_DMULT();
+    void SPECIAL_DMULTU();
+    void SPECIAL_DDIV();
+    void SPECIAL_DDIVU();
+    void SPECIAL_ADD();
+    void SPECIAL_ADDU();
+    void SPECIAL_SUB();
+    void SPECIAL_SUBU();
+    void SPECIAL_AND();
+    void SPECIAL_OR();
+    void SPECIAL_XOR();
+    void SPECIAL_NOR();
+    void SPECIAL_SLT();
+    void SPECIAL_SLTU();
+    void SPECIAL_DADD();
+    void SPECIAL_DADDU();
+    void SPECIAL_DSUB();
+    void SPECIAL_DSUBU();
+    void SPECIAL_DSLL();
+    void SPECIAL_DSRL();
+    void SPECIAL_DSRA();
+    void SPECIAL_DSLL32();
+    void SPECIAL_DSRL32();
+    void SPECIAL_DSRA32();
+    
+    // COP0 instructions
+    void COP0_MF();
+    void COP0_DMF();
+    void COP0_MT();
+    void COP0_DMT();
+    void COP0_CO_TLBR();
+    void COP0_CO_TLBWI();
+    void COP0_CO_TLBWR();
+    void COP0_CO_TLBP();
+    void COP0_CO_ERET();
+    
+    // COP1 (FPU) instructions
+    void COP1_MF();
+    void COP1_DMF();
+    void COP1_CF();
+    void COP1_MT();
+    void COP1_DMT();
+    void COP1_CT();
+    void COP1_S_ADD();
+    void COP1_S_SUB();
+    void COP1_S_MUL();
+    void COP1_S_DIV();
+    void COP1_S_ABS();
+    void COP1_S_NEG();
+    void COP1_S_SQRT();
+    void COP1_S_MOV();
+    void COP1_S_ROUND_L();
+    void COP1_S_TRUNC_L();
+    void COP1_S_CEIL_L();
+    void COP1_S_FLOOR_L();
+    void COP1_S_ROUND_W();
+    void COP1_S_TRUNC_W();
+    void COP1_S_CEIL_W();
+    void COP1_S_FLOOR_W();
+    void COP1_S_CVT_D();
+    void COP1_S_CVT_W();
+    void COP1_S_CVT_L();
+    void COP1_S_CMP();
+    void COP1_D_ADD();
+    void COP1_D_SUB();
+    void COP1_D_MUL();
+    void COP1_D_DIV();
+    void COP1_D_ABS();
+    void COP1_D_NEG();
+    void COP1_D_SQRT();
+    void COP1_D_MOV();
+    void COP1_D_ROUND_L();
+    void COP1_D_TRUNC_L();
+    void COP1_D_CEIL_L();
+    void COP1_D_FLOOR_L();
+    void COP1_D_ROUND_W();
+    void COP1_D_TRUNC_W();
+    void COP1_D_CEIL_W();
+    void COP1_D_FLOOR_W();
+    void COP1_D_CVT_S();
+    void COP1_D_CVT_W();
+    void COP1_D_CVT_L();
+    void COP1_D_CMP();
+    void COP1_W_CVT_S();
+    void COP1_W_CVT_D();
+    void COP1_L_CVT_S();
+    void COP1_L_CVT_D();
+    
+    // Unknown/unimplemented instruction
+    void UnknownOpcode();
+    
     // Configuration and state
     RecompilerContext& m_Context;
-    CCodeBlock& m_CodeBlock;
+    CodeBlock& m_CodeBlock;
     std::unique_ptr<CX64Ops> m_Assembler;
     std::unique_ptr<CX64RegInfo> m_RegisterSet;
-    std::unique_ptr<IInstructionTranslator> m_Translator;
-    std::unique_ptr<IRegisterAllocator> m_RegisterAllocator;
     
     // Instruction dispatch
     InstructionHandlerMap m_InstructionHandlers;
@@ -396,7 +568,7 @@ private:
     InstructionHandlerMap m_Cop1Handlers;
     
     // Current translation state
-    TranslationContext m_CurrentContext;
+    std::optional<TranslationContext> m_CurrentContext;
     OptimizationLevel m_OptimizationLevel = OptimizationLevel::Basic;
     bool m_InDelaySlot = false;
     bool m_BlockEnded = false;
@@ -412,7 +584,7 @@ private:
 // Factory function
 std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(
     RecompilerContext& context, 
-    CCodeBlock& codeBlock);
+    CodeBlock& codeBlock);
 
 } // namespace Recompiler
 } // namespace Nova64

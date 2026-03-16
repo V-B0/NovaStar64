@@ -2,15 +2,15 @@
 #include "MIPSYInterfaceHandler.hpp"
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
+#include "../../common/Span.hpp"
 #include <cstdint>
-#include <span>
 #include <array>
 #include <string>
 #include <memory>
 
 
 class PifRamHandler;
-class CMipsMemoryVM;
+namespace Nova64 { class MipsMemoryVM; }
 class CRegisters;
 class Logger;
 
@@ -23,12 +23,12 @@ namespace SI {
         INTERRUPT  = 0x1000   // SI interrupt pending
     };
     
-    // Register offsets (from 0x04800000)
+    // Register indices for m_SerialInterface array
     enum class Register : uint32_t {
-        DRAM_ADDR      = 0x00,  // RDRAM address
-        PIF_ADDR_READ  = 0x04,  // PIF read address (64-byte block)
-        PIF_ADDR_WRITE = 0x08,  // PIF write address (64-byte block)
-        STATUS         = 0x0C,  // Status register
+        DRAM_ADDR      = 0,  // RDRAM address (0x00)
+        PIF_ADDR_READ  = 1,  // PIF read address (0x04)
+        PIF_ADDR_WRITE = 2,  // PIF write address (0x10)
+        STATUS         = 3,  // Status register (0x18)
         REGISTER_COUNT = 4
     };
     
@@ -97,12 +97,12 @@ public:
         }
     }
 
-protected:
-    explicit SerialInterfaceReg(std::span<uint32_t, static_cast<size_t>(SI::Register::REGISTER_COUNT)> registers)
+public:
+    explicit SerialInterfaceReg(Common::Span<uint32_t, static_cast<size_t>(SI::Register::REGISTER_COUNT)> registers)
         : m_registers(registers) {}
 
 private:
-    std::span<uint32_t, static_cast<size_t>(SI::Register::REGISTER_COUNT)> m_registers;
+    Common::Span<uint32_t, static_cast<size_t>(SI::Register::REGISTER_COUNT)> m_registers;
     
     
     SerialInterfaceReg() = delete;
@@ -135,7 +135,7 @@ public:
     };
     
     explicit SerialInterfaceHandler(
-        CMipsMemoryVM& mmu,
+        Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
         PifRamHandler& pif_handler,
         const Config& config = {}
@@ -196,15 +196,14 @@ private:
     std::unique_ptr<Impl> m_impl;
     
     // Member variables
-    CMipsMemoryVM& m_mmu;
+    Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;
     PifRamHandler& m_pif_handler;
     Config m_config;
-    logging::Logger m_logger;
+    Logging::Logger m_logger;
     
     // SI registers
-    std::array<uint32_t, static_cast<size_t>(SI::Register::REGISTER_COUNT)> m_registers{};
-    SerialInterfaceReg m_si_regs{m_registers};
+    SerialInterfaceReg m_si_regs;
     
     // DMA state
     DMAState m_dma_state;

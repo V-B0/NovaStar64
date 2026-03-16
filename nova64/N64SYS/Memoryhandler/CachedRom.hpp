@@ -6,10 +6,10 @@
 #include <bitset>
 #include <optional>
 
+class CRegisters;
+
 namespace DD64 {
 
-  
-   
     enum class DDStatus : uint32_t {
         DATA_REQUEST    = 0x40000000,
         C2_TRANSFER     = 0x10000000,
@@ -28,7 +28,7 @@ namespace DD64 {
 
     enum class DDBMStatus : uint32_t {
         RUNNING         = 0x80000000,
-        ERROR           = 0x04000000,
+        BM_ERROR        = 0x04000000,
         MICRO_MODE      = 0x02000000,
         BLOCK_MODE      = 0x01000000
     };
@@ -90,26 +90,108 @@ namespace DD64 {
         uint32_t & ASIC_TEST_PIN_SEL;
     };
     class CachedRom :
-    public Memoryhandler,
+    public MemoryHandler,
     private DiskInterfaceReg
     {
     public:
-        CachedRom(Cregisters & Reg, uint32_t* diskRegs)
-            : DiskInterfaceReg(diskRegs), m_Reg(Reg) 
-        {
-        }
+        // Member definitions need CRegisters
+        CachedRom(CRegisters & Reg, uint32_t* diskRegs);
         
         ~CachedRom()= default;
         
         bool Read32(uint32_t Address, uint32_t & Value) override;
         bool Write32(uint32_t Address, uint32_t Value, uint32_t Mask) override;
+        
+        // RDRAM access for DMA
+        void SetRDRAM(uint8_t* rdram, uint32_t size) {
+            m_RDRAM = rdram;
+            m_RDRAMSize = size;
+        }
+        
+        // Interrupt callback
+        using InterruptCallback = void(*)();
+        void SetInterruptCallback(InterruptCallback callback) {
+            m_InterruptCallback = callback;
+        }
+        
+        // Update function called periodically
+        void Update();
+        
+        // DMA check
+        bool IsDMAActive() const { return m_DMAActive; }
+        
+        // ROM/Disk data access
+        void SetRomData(const uint8_t* data, uint32_t size) {
+            m_RomData = data;
+            m_RomSize = size;
+        }
+        
+        void SetDiskData(const uint8_t* data, uint32_t size) {
+            m_DiskData = data;
+            m_DiskSize = size;
+            // Update status to show disk present
+            if (data && size > 0) {
+                ASIC_STATUS |= static_cast<uint32_t>(DDStatus::DISK_PRESENT);
+            }
+        }
+        
+        bool IsDiskPresent() const {
+            return (ASIC_STATUS & static_cast<uint32_t>(DDStatus::DISK_PRESENT)) != 0;
+        }
 
     private:
-        Cregisters & m_Reg;
+        CRegisters & m_Reg;
         std::array<uint32_t, 32> m_DiskRegStorage; // If we need to own it
         
+        // ROM/Disk data pointers (not owned)
+        const uint8_t* m_RomData;
+        uint32_t m_RomSize;
+        const uint8_t* m_DiskData;
+        uint32_t m_DiskSize;
+        
+        // RDRAM access (not owned)
+        uint8_t* m_RDRAM;
+        uint32_t m_RDRAMSize;
+        
+        // C2 buffer - 32KB sector buffer
+        static constexpr uint32_t C2_BUFFER_SIZE = 0x8000; // 32KB
+        std::array<uint8_t, C2_BUFFER_SIZE> m_C2Buffer;
+        uint32_t m_C2BufferOffset = 0;
+        
+        // DMA state
+        bool m_DMAActive;
+        uint32_t m_DMALength;
+        uint32_t m_DMAAddress;
+        uint32_t m_CurrentSector;
+        bool m_IsWrite;
+        
+        // Interrupt callback
+        InterruptCallback m_InterruptCallback;
+        
+        // Hardware emulation helpers
+        void ProcessCommand(uint32_t Command);
+        void ProcessBMControl(uint32_t Control);
+        void HardReset();
+        bool ReadDiskSector(uint32_t sector, uint8_t* buffer, uint32_t length);
+        bool WriteDiskSector(uint32_t sector, const uint8_t* buffer, uint32_t length);
+        
+        // DMA operations
+        void StartDMARead();
+        void StartDMAWrite();
+        void ProcessDMA();
+        void CompleteDMA();
+        
+        // C2 buffer operations
+        void LoadSectorToC2Buffer(uint32_t sector);
+        void FlushC2BufferToDisk(uint32_t sector);
+        
+        // Helper functions
+        void TriggerInterrupt();
+        bool IsRDRAMAddressValid(uint32_t address, uint32_t length) const;
+        uint32_t CalculateSectorFromPosition() const;
+        
         // Delete with = delete
-        CachedRom() = delete;
+        // CachedRom() = delete;
         CachedRom(const CachedRom &) = delete;
         CachedRom & operator=(const CachedRom &) = delete;
     };

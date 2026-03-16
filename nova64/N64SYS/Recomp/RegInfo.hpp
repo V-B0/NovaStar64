@@ -234,7 +234,9 @@ void RegisterCustomPlatform(PlatformType type,
 #endif
 
 #if defined(__x86_64__) || defined(_M_X64)
-    #define NOVA64_ARCH_X64 1
+    #ifndef NOVA64_ARCH_X64
+        #define NOVA64_ARCH_X64 1
+    #endif
 #elif defined(__i386__) || defined(_M_IX86)
     #define NOVA64_ARCH_X86 1
 #elif defined(__aarch64__) || defined(_M_ARM64)

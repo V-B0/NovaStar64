@@ -12,11 +12,15 @@
 
 #include "FRam.hpp"
 #include "../MainSYS.hpp"
+#include "../N64Rom.hpp"
 #include "../Types.hpp"
 #include "../../common/log.hpp"
 #include "../../common/path.hpp"
 #include <cstring>
 #include <algorithm>
+#include <filesystem>
+
+extern N64::Rom::N64Rom* g_Rom;
 
 // Flash RAM constants
 constexpr size_t FLASHRAM_SIZE = 128 * 1024;  // 128 KB
@@ -296,13 +300,22 @@ bool CFlashRam::LoadFlashram()
 
     // Build save file path
     // Format: <SaveDir>/<GameName>.fla
-    std::string savePath = "Saves";  // TODO: Get from settings
-    std::string gameName = "game";    // TODO: Get from ROM
+    std::string savePath = "Saves";
+    std::string gameName = "game";
+    if (g_Rom && g_Rom->IsLoaded()) {
+        gameName = g_Rom->GetImage().GetRomName();
+        for (char& c : gameName) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' ||
+                c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+                c = '_';
+        }
+        while (!gameName.empty() && gameName.back() == ' ') gameName.pop_back();
+    }
     std::string fileName = gameName + ".fla";
     std::string fullPath = savePath + "/" + fileName;
 
-    // TODO: Create save directory if it doesn't exist
-    // TODO: Handle unique save directories per game
+    // Create save directory if it doesn't exist
+    std::filesystem::create_directories(savePath);
 
     // Try to open the file
     FileSystem::OpenMode openMode = m_ReadOnly ? 

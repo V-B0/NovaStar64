@@ -44,6 +44,20 @@ public:
      * @brief The log file (public for internal use by LoggingConfig)
      */
     static FileSystem::File log_file;
+
+    class Logger {
+    public:
+        template<typename... Args>
+        void debug(const char* fmt, Args&&... args) {}
+        template<typename... Args>
+        void info(const char* fmt, Args&&... args) {}
+        template<typename... Args>
+        void warn(const char* fmt, Args&&... args) {}
+        template<typename... Args>
+        void error(const char* fmt, Args&&... args) {}
+        template<typename... Args>
+        void critical(const char* fmt, Args&&... args) {}
+    };
 };
 
 /**

@@ -259,32 +259,24 @@ void N64Disk::LoadDisk(const fs::path& filePath) {
     
     // Try to load RAM save file
     LoadDiskRAMImage();
-}
 
-void N64Disk::SaveDisk(const std::optional<fs::path>& filePath) {
-    if (!IsLoaded()) {
-        throw DiskError(DiskError::Type::WriteError, "No disk loaded");
-    }
-    
-    CleanupD64Data();
-    
     // No need to save if disk type is 6 (no RAM area)
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     if (diskType == 6) {
         return;
     }
     
-    fs::path savePath = filePath.value_or(m_Image->m_FilePath);
+    fs::path savePath = filePath.empty() ? m_Image->m_FilePath : filePath;
     
     if (m_Image->m_Format == DiskFormat::MAME) {
         // Shadow file for MAME format
-        fs::path shadowPath = savePath;
-        shadowPath.replace_extension(".ndr");
+        fs::path mameShadowPath = savePath;
+        mameShadowPath.replace_extension(".ndr");
         
-        std::ofstream file(shadowPath, std::ios::binary);
+        std::ofstream file(mameShadowPath, std::ios::binary);
         if (!file) {
             throw DiskError(DiskError::Type::WriteError, 
-                "Failed to open shadow file: " + shadowPath.string());
+                "Failed to open shadow file: " + mameShadowPath.string());
         }
         
         ForceByteSwap();
@@ -507,9 +499,9 @@ uint32_t N64Disk::AddressToOffset(const DiskAddress& address) const {
     } else {
         // D64 format calculation
         uint16_t lba = AddressToLBA(address);
-        uint16_t romLbaEnd = m_D64Data ? m_D64Data->romLbaEnd : 0;
-        uint16_t ramLbaStart = m_D64Data ? m_D64Data->ramLbaStart : 0;
-        uint16_t ramLbaEnd = m_D64Data ? m_D64Data->ramLbaEnd : 0;
+        uint16_t romLbaEnd = m_D64Data ? m_D64Data->romLbaEnd : static_cast<uint16_t>(0);
+        uint16_t ramLbaStart = m_D64Data ? m_D64Data->ramLbaStart : static_cast<uint16_t>(0);
+        uint16_t ramLbaEnd = m_D64Data ? m_D64Data->ramLbaEnd : static_cast<uint16_t>(0);
         
         if (lba < DISKID_LBA) {
             offset = m_SystemAreaOffset;
@@ -672,17 +664,16 @@ void N64Disk::DetectSystemArea() {
     if (m_Image->m_Format == DiskFormat::MAME || m_Image->m_Format == DiskFormat::SDK) {
         // MAME / SDK (system area can be handled identically)
         m_SystemAreaOffset = 0;
-        m_IdentifierOffset = DISKID_LBA * 0x4D08;
-        m_RomOffset = SYSTEM_LBAS * 0x4D08;
+        m_IdentifierOffset = static_cast<uint32_t>(DISKID_LBA * 0x4D08);
+        m_RomOffset = static_cast<uint32_t>(SYSTEM_LBAS * 0x4D08);
         
         // Handle system data - check for valid system blocks
         const uint16_t sysblocks[4] = {9, 8, 1, 0};
         bool isDevDisk = false;
         
-        // Check if disk is development disk
         for (int i = 0; i < 4; i++) {
             if (IsSystemSectorValid(sysblocks[i] + 2, 0xC0)) {
-                m_SystemAreaOffset = (sysblocks[i] + 2) * 0x4D08;
+                m_SystemAreaOffset = static_cast<uint32_t>((sysblocks[i] + 2) * 0x4D08);
                 isDevDisk = true;
                 break;
             }
@@ -691,20 +682,20 @@ void N64Disk::DetectSystemArea() {
         if (!isDevDisk) {
             for (int i = 0; i < 4; i++) {
                 if (IsSystemSectorValid(sysblocks[i], 0xE8)) {
-                    m_SystemAreaOffset = sysblocks[i] * 0x4D08;
+                    m_SystemAreaOffset = static_cast<uint32_t>(sysblocks[i] * 0x4D08);
                     break;
                 }
             }
         }
         
         // Handle disk ID
-        for (int i = 2; i > 0; i--) {
-            if (IsSystemSectorValid(DISKID_LBA + i, 0xE8)) {
-                m_IdentifierOffset = (DISKID_LBA + i) * 0x4D08;
-                break;
-            }
+
+    for (int i = 2; i > 0; i--) {
+        if (IsSystemSectorValid(DISKID_LBA + i, 0xE8)) {
+            m_IdentifierOffset = static_cast<uint32_t>((DISKID_LBA + i) * 0x4D08);
+            break;
         }
-    } else { // D64 format
+    }
         m_SystemAreaOffset = 0x000;
         m_IdentifierOffset = 0x100;
         m_RomOffset = 0x200;
@@ -716,7 +707,7 @@ void N64Disk::DetectRamArea() {
         return;
     }
     
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     
     if (m_Image->m_Format == DiskFormat::MAME) {
         // MAME format doesn't support RAM saves directly
@@ -834,7 +825,7 @@ void N64Disk::InitializeD64Data() {
     data[m_SystemAreaOffset + (4 ^ 3)] = 0x10;
     data[m_SystemAreaOffset + (5 ^ 3)] |= 0x10;
     
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     if (diskType < 6) {
         // Expand RAM area
         uint16_t ramStart = RAM_START_LBA[diskType] - SYSTEM_LBAS;
@@ -977,8 +968,9 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         
         // Read in chunks
         size_t totalRead = 0;
+        const size_t chunkSize = 1024 * 1024; 
         while (totalRead < fileSize) {
-            size_t toRead = std::min(READ_CHUNK_SIZE, fileSize - totalRead);
+            size_t toRead = std::min(chunkSize, fileSize - totalRead);
             if (m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead) != toRead) {
                 m_DiskFile->Close();
                 return false;
@@ -1002,8 +994,8 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         uint16_t ramLbaEnd = (testData[0xE4] << 8) | testData[0xE5];
         
         // Validate D64 structure
-        if ((romLbaEnd + SYSTEM_LBAS) >= RAM_START_LBA[diskType] ||
-            ((ramLbaStart + SYSTEM_LBAS) != RAM_START_LBA[diskType] && ramLbaStart != 0xFFFF)) {
+        if ((romLbaEnd + SYSTEM_LBAS) >= DiskGeometry::RAM_START_LBAS[diskType] ||
+            ((ramLbaStart + SYSTEM_LBAS) != DiskGeometry::RAM_START_LBAS[diskType] && ramLbaStart != 0xFFFF)) {
             m_DiskFile->Close();
             return false;
         }
@@ -1013,7 +1005,7 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         if (ramLbaStart != 0xFFFF && ramLbaEnd != 0xFFFF) {
             ramSize = LBAToByte(SYSTEM_LBAS + ramLbaStart, ramLbaEnd + 1 - ramLbaStart);
         }
-        uint32_t fullRamSize = RAM_SIZES[diskType];
+        uint32_t fullRamSize = DiskGeometry::RAM_SIZES[diskType];
         
         if ((0x200 + romSize + ramSize) != fileSize) {
             m_DiskFile->Close();
@@ -1026,8 +1018,11 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         // Read file
         m_DiskFile->SeekToBegin();
         size_t totalRead = 0;
+        const size_t chunkSize = 1024 * 1024;
         while (totalRead < fileSize) {
-            size_t toRead = std::min(READ_CHUNK_SIZE, fileSize - totalRead);
+            size_t remaining = fileSize - totalRead;
+            size_t toRead = (chunkSize < remaining) ? chunkSize : remaining;
+            
             if (m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead) != toRead) {
                 m_DiskFile->Close();
                 return false;
@@ -1083,17 +1078,17 @@ bool N64Disk::LoadDiskRAMImage() {
     return ramFile.good();
 }
 
-uint8_t N64Disk::GetDiskType() const {
+DiskType N64Disk::GetDiskType() const {
     if (!IsLoaded()) {
-        return 0;
+        return DiskType::Unknown;
     }
     
     auto sysData = GetSystemArea();
     if (sysData.empty() || sysData.size < 6) {
-        return 0;
+        return DiskType::Unknown;
     }
     
-    return sysData.data[5 ^ 3] & 0x0F;
+    return static_cast<DiskType>(sysData.data[5 ^ 3] & 0x0F);
 }
 
 uint8_t N64Disk::GetZoneForTrack(uint16_t track, uint16_t head) const {
@@ -1108,7 +1103,7 @@ uint8_t N64Disk::GetZoneForTrack(uint16_t track, uint16_t head) const {
 }
 
 uint32_t N64Disk::LBAToVZone(uint32_t lba) const {
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     for (uint32_t vzone = 0; vzone < 16; ++vzone) {
         if (lba < VZONE_LBA_TBL[diskType][vzone]) {
             return vzone;
@@ -1129,7 +1124,7 @@ uint32_t N64Disk::LBAToByte(uint32_t startLba, uint32_t numLbas) const {
         return 0;
     }
     
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     bool initFlag = true;
     uint32_t totalBytes = 0;
     uint32_t blockSize = 0;
@@ -1164,7 +1159,7 @@ uint16_t N64Disk::LBAToPhys(uint32_t lba) const {
         return 0xFFFF;
     }
     
-    uint8_t diskType = GetDiskType();
+    uint8_t diskType = static_cast<uint8_t>(GetDiskType());
     
     // Get block 0/1 on disk track
     uint8_t block = 1;

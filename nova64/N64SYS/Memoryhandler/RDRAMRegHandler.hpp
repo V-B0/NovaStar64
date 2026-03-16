@@ -1,9 +1,9 @@
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
+#include "../../common/Span.hpp"
 #include <cstdint>
 #include <array>
-#include <span>
 #include <string>
 
 // Forward declarations
@@ -89,8 +89,7 @@ namespace RDRAM {
 
 class RDRAMDeviceRegisters {
 public:
-    explicit RDRAMDeviceRegisters(std::span<uint32_t, 
-        static_cast<size_t>(RDRAM::DeviceRegister::REGISTER_COUNT)> registers)
+    explicit RDRAMDeviceRegisters(Common::Span<uint32_t> registers)
         : m_registers(registers) {}
     
     // Accessor methods
@@ -137,8 +136,7 @@ public:
     }
 
 private:
-    std::span<uint32_t, 
-        static_cast<size_t>(RDRAM::DeviceRegister::REGISTER_COUNT)> m_registers;
+   Common::Span<uint32_t> m_registers;
 };
 
 
@@ -201,11 +199,9 @@ private:
     RDRAMRegistersHandler& operator=(RDRAMRegistersHandler&&) = delete;
     
     
-    Registers& m_registers;
+    CRegisters& m_registers;
     Config m_config;
-    logging::Logger m_logger;
 
-    
     // Device states
     std::array<RDRAM::DeviceState, RDRAM::MAX_DEVICES> m_devices;
     size_t m_device_count;

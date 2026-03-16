@@ -1,9 +1,14 @@
 #pragma once
 #include "Memoryhandler.hpp"
-#include "SPregistersHandler.hpp"
 #include <cstdint>
 #include <array>
 #include <span>
+
+// Forward declarations
+class CRegisters;
+namespace Plugins {
+    class GFXPlugin;
+}
 
 namespace DPCRegisters {
     // Use enum classes for type safety
@@ -56,3 +61,44 @@ namespace DPCRegisters {
         REGISTER_COUNT
     };
 }
+
+class DisplayProcessorHandler : public MemoryHandler {
+public:
+    DisplayProcessorHandler(CRegisters& reg, Plugins::GFXPlugin* gfxPlugin = nullptr);
+    virtual ~DisplayProcessorHandler() = default;
+
+    // MemoryHandler interface
+    bool Read32(uint32_t addr, uint32_t& val) override;
+    bool Write32(uint32_t addr, uint32_t val, uint32_t mask) override;
+
+    // Plugin Management
+    void SetGraphicsPlugin(Plugins::GFXPlugin* plugin);
+    Plugins::GFXPlugin* GetGraphicsPlugin() const;
+
+    // Status Queries
+    bool IsProcessing() const;
+    bool IsFrozen() const;
+    bool IsFlushed() const;
+    uint32_t GetStatus() const;
+
+    /// Get a mutable pointer to a specific DPC register (for plugin wiring)
+    [[nodiscard]] uint32_t* GetRegisterPtr(DPCRegisters::RegisterIndex index) noexcept {
+        return &m_Registers[index];
+    }
+
+    // Reset
+    void Reset();
+
+private:
+    void ProcessStatusCommand(uint32_t cmd);
+    void ProcessDisplayList();
+
+    CRegisters& m_Reg;
+    Plugins::GFXPlugin* m_GfxPlugin;
+    uint32_t* m_Registers;
+    
+    // State
+    bool m_ProcessingDList;
+    uint32_t m_DListStart;
+    uint32_t m_DListEnd;
+};

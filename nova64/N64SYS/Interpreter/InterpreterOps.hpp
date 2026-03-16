@@ -1,56 +1,54 @@
 /**
  * @file InterpreterOps.hpp
  * @brief MIPS R4300i Interpreter for the N64 emulator
- * 
+ *
  * Provides software interpretation of MIPS R4300i instructions.
  * This is the fallback execution path when dynamic recompilation
  * is not available or for debugging purposes.
- * 
+ *
  * Based on Project64's interpreter implementation.
  */
 
 #pragma once
 
 #include "../MIPSY/R4300Iops.hpp"
+#include "../MIPSY/Register.hpp"
+#include "../Types.hpp"
 #include <cstdint>
+#include <cstring>
+#include <cmath>
+#include <cfenv>
+#include <cfloat>
 #include <array>
 #include <functional>
 
-namespace Nova64 {
-
 // Forward declarations
-class N64System;
-class Registers;
-class TLB;
-class MipsMemoryVM;
+class CN64System;
+namespace N64System { class CTLB; class SystemTimer; }
+namespace Nova64 { class MipsMemoryVM; }
+class CSystemEvents;
 
+namespace Nova64 {
 namespace Interpreter {
 
 /**
- * @brief FPU rounding modes
- */
-enum class FPRoundingMode : uint8_t {
-    Nearest = 0,    ///< Round to nearest
-    ToZero = 1,     ///< Round toward zero (truncate)
-    ToPlusInf = 2,  ///< Round toward +infinity
-    ToMinusInf = 3  ///< Round toward -infinity
-};
-
-/**
  * @brief R4300i Interpreter class
- * 
+ *
  * Provides instruction-by-instruction interpretation of MIPS R4300i code.
  * Used as fallback when recompilation isn't possible and for debugging.
  */
 class R4300iInterpreter {
 public:
+    // Instruction handler function pointer type
+    using OpcodeFunc = void (R4300iInterpreter::*)();
+
     /**
      * @brief Construct the interpreter
      * @param system Reference to the N64 system
      * @param force32bit If true, use 32-bit optimized paths
      */
-    R4300iInterpreter(N64System& system, bool force32bit = false);
-    
+    R4300iInterpreter(CN64System& system, bool force32bit = false);
+
     /**
      * @brief Destructor
      */
@@ -85,9 +83,6 @@ public:
     }
 
 private:
-    // Instruction handler function pointer type
-    using OpcodeFunc = void (R4300iInterpreter::*)();
-
     /**
      * @brief Build the instruction dispatch tables
      * @param force32bit If true, use 32-bit optimized handlers
@@ -97,7 +92,7 @@ private:
     // ========================================================================
     // Opcode Dispatch Functions
     // ========================================================================
-    
+
     void SPECIAL();
     void REGIMM();
     void COP0();
@@ -114,7 +109,7 @@ private:
     // ========================================================================
     // Primary Opcode Functions
     // ========================================================================
-    
+
     void J();
     void JAL();
     void BNE();
@@ -139,11 +134,9 @@ private:
     // ========================================================================
     // Load Instructions (64-bit and 32-bit versions)
     // ========================================================================
-    
+
     void LDL();
-    void LDL_32();
     void LDR();
-    void LDR_32();
     void LB();
     void LB_32();
     void LH();
@@ -174,7 +167,7 @@ private:
     // ========================================================================
     // Store Instructions (64-bit and 32-bit versions)
     // ========================================================================
-    
+
     void SB();
     void SB_32();
     void SH();
@@ -201,13 +194,13 @@ private:
     // ========================================================================
     // Cache Operations
     // ========================================================================
-    
+
     void CACHE();
 
     // ========================================================================
     // R4300i SPECIAL Opcodes
     // ========================================================================
-    
+
     void SPECIAL_SLL();
     void SPECIAL_SRL();
     void SPECIAL_SRA();
@@ -264,7 +257,7 @@ private:
     // ========================================================================
     // R4300i REGIMM Opcodes
     // ========================================================================
-    
+
     void REGIMM_BLTZ();
     void REGIMM_BGEZ();
     void REGIMM_BLTZL();
@@ -282,7 +275,7 @@ private:
     // ========================================================================
     // COP0 Functions
     // ========================================================================
-    
+
     void COP0_MF();
     void COP0_DMF();
     void COP0_MT();
@@ -298,7 +291,7 @@ private:
     // ========================================================================
     // COP1 Functions
     // ========================================================================
-    
+
     void CPO1_UNIMPLEMENTED_OP();
     void COP1_MF();
     void COP1_DMF();
@@ -316,7 +309,7 @@ private:
     // ========================================================================
     // COP1 Single Precision Functions
     // ========================================================================
-    
+
     void COP1_S_ADD();
     void COP1_S_SUB();
     void COP1_S_MUL();
@@ -341,7 +334,7 @@ private:
     // ========================================================================
     // COP1 Double Precision Functions
     // ========================================================================
-    
+
     void COP1_D_ADD();
     void COP1_D_SUB();
     void COP1_D_MUL();
@@ -366,21 +359,21 @@ private:
     // ========================================================================
     // COP1 Word Functions
     // ========================================================================
-    
+
     void COP1_W_CVT_S();
     void COP1_W_CVT_D();
 
     // ========================================================================
     // COP1 Long Functions
     // ========================================================================
-    
+
     void COP1_L_CVT_S();
     void COP1_L_CVT_D();
 
     // ========================================================================
     // COP2 Functions
     // ========================================================================
-    
+
     void CPO2_INVALID_OP();
     void COP2_MF();
     void COP2_DMF();
@@ -392,110 +385,62 @@ private:
     // ========================================================================
     // Error Handling
     // ========================================================================
-    
+
     void ReservedInstruction();
     void UnknownOpcode();
 
     // ========================================================================
     // FPU Helper Functions
     // ========================================================================
-    
-    /**
-     * @brief Test if COP1 is usable, throw exception if not
-     * @return true if COP1 is usable
-     */
+
     bool TestCop1UsableException();
-
-    /**
-     * @brief Check 32-bit FPU input for NaN/denormal
-     * @param value Input value
-     * @return true if valid
-     */
     bool CheckFPUInput32(const uint32_t& value);
-
-    /**
-     * @brief Check two 32-bit FPU inputs for NaN/denormal
-     * @param value First input value
-     * @param value2 Second input value
-     * @return true if both valid
-     */
     bool CheckFPUInputs32(const uint32_t& value, const uint32_t& value2);
-
-    /**
-     * @brief Check 32-bit FPU input for conversion
-     * @param value Input value
-     * @return true if valid
-     */
     bool CheckFPUInput32Conv(const float& value);
-
-    /**
-     * @brief Check 64-bit FPU input for NaN/denormal
-     * @param value Input value
-     * @return true if valid
-     */
     bool CheckFPUInput64(const double& value);
-
-    /**
-     * @brief Check two 64-bit FPU inputs for NaN/denormal
-     * @param value First input value
-     * @param value2 Second input value
-     * @return true if both valid
-     */
     bool CheckFPUInputs64(const double& value, const double& value2);
-
-    /**
-     * @brief Check 64-bit FPU input for conversion
-     * @param value Input value
-     * @return true if valid
-     */
     bool CheckFPUInput64Conv(const double& value);
-
-    /**
-     * @brief Check 32-bit FPU result for NaN/overflow
-     * @param result Result value (may be modified)
-     * @return true if valid
-     */
     bool CheckFPUResult32(float& result);
-
-    /**
-     * @brief Check 64-bit FPU result for NaN/overflow
-     * @param result Result value (may be modified)
-     * @return true if valid
-     */
     bool CheckFPUResult64(double& result);
-
-    /**
-     * @brief Check for invalid FPU exception
-     * @return true if invalid exception occurred
-     */
     bool CheckFPUInvalidException();
-
-    /**
-     * @brief Initialize FPU operation with rounding mode
-     * @param roundingModel Rounding mode to use
-     * @return true if successful
-     */
-    bool InitFpuOperation(FPRoundingMode roundingModel);
-
-    /**
-     * @brief Set FPU exception flags
-     * @return true if exception should be raised
-     */
+    bool InitFpuOperation(unsigned int roundingModel);
     bool SetFPUException();
-
-    /**
-     * @brief Update instruction memory pointer after PC change
-     */
     void UpdateInstructionMemory();
+
+    // ========================================================================
+    // Opcode field access helpers
+    // These adapt the R4300iOps union fields to flat-style access
+    // matching Project64's m_Opcode.rs, m_Opcode.rt, etc.
+    // ========================================================================
+
+    // Note: Itype and Jtype fields are correct. Rtype/Ftype/Memtype have
+    // incorrect field naming (bit positions don't match MIPS standard).
+    // These helpers extract the correct bits using verified-correct structs
+    // or direct bit extraction from Value.
+    inline uint32_t op() const    { return m_Opcode.Itype.op; }                           // bits 31:26
+    inline uint32_t rs() const    { return m_Opcode.Itype.rs; }                           // bits 25:21
+    inline uint32_t rt() const    { return m_Opcode.Itype.rt; }                           // bits 20:16
+    inline uint32_t rd() const    { return (m_Opcode.Value >> 11) & 0x1F; }               // bits 15:11
+    inline uint32_t sa() const    { return (m_Opcode.Value >>  6) & 0x1F; }               // bits 10:6
+    inline uint32_t funct() const { return m_Opcode.Value & 0x3F; }                       // bits 5:0
+    inline uint32_t imm() const   { return m_Opcode.Itype.imm; }                          // bits 15:0
+    inline int16_t  offset() const { return static_cast<int16_t>(m_Opcode.Value & 0xFFFF); } // bits 15:0 signed
+    inline uint32_t target() const { return m_Opcode.Jtype.target; }                      // bits 25:0
+    inline uint16_t immediate() const { return static_cast<uint16_t>(m_Opcode.Value & 0xFFFF); } // bits 15:0
+    inline uint32_t base() const  { return m_Opcode.Itype.rs; }                           // bits 25:21 = rs
+    inline uint32_t ft() const    { return m_Opcode.Itype.rt; }                           // bits 20:16 = rt
+    inline uint32_t fs() const    { return (m_Opcode.Value >> 11) & 0x1F; }               // bits 15:11 = rd
+    inline uint32_t fd() const    { return (m_Opcode.Value >>  6) & 0x1F; }               // bits 10:6  = sa
+    inline uint32_t fmt() const   { return m_Opcode.Itype.rs; }                           // bits 25:21 = rs
 
     // ========================================================================
     // Member Variables
     // ========================================================================
-    
+
     // System references
-    N64System& m_System;
-    Registers& m_Reg;
-    TLB& m_TLB;
+    CN64System& m_System;
+    CRegisters& m_Reg;
+    N64System::CTLB& m_TLB;
     MipsMemoryVM& m_MMU;
 
     // Current instruction
@@ -503,77 +448,55 @@ private:
 
     // Register references (for fast access)
     uint64_t& m_PROGRAM_COUNTER;
-    MIPS_DWORD* m_GPR = nullptr;
-    MIPS_DWORD* m_FPR = nullptr;
-    uint64_t* m_CP0 = nullptr;
-    MIPS_DWORD& m_RegHI;
-    MIPS_DWORD& m_RegLO;
+    N64Types::MIPS_DWORD* m_GPR;
+    N64Types::MIPS_DWORD* m_FPR;
+    uint64_t* m_CP0;
+    N64Types::MIPS_DWORD& m_RegHI;
+    N64Types::MIPS_DWORD& m_RegLO;
 
     // FPU register access pointers
-    uint32_t** m_FPR_UW = nullptr;
-    uint64_t** m_FPR_UDW = nullptr;
-    float** m_FPR_S = nullptr;
-    float** m_FPR_S_L = nullptr;
-    double** m_FPR_D = nullptr;
-    uint32_t* m_FPCR = nullptr;
-    uint32_t& m_LLBit;
+    uint32_t** m_FPR_UW;
+    uint64_t** m_FPR_UDW;
+    float**    m_FPR_S;
+    float**    m_FPR_S_L;
+    double**   m_FPR_D;
+    uint32_t*  m_FPCR;
+    uint32_t&  m_LLBit;
 
     // Instruction memory cache
-    uint64_t m_InstructionRegion = 0;
-    uint8_t* m_InstructionMemory = nullptr;
-    uint32_t* m_InstructionPtr = nullptr;
+    uint64_t   m_InstructionRegion;
+    uint8_t*   m_InstructionMemory;
+    uint32_t*  m_InstructionPtr;
 
     // ========================================================================
     // Dispatch Tables
     // ========================================================================
-    
-    std::array<OpcodeFunc, 64> Jump_Opcode{};
-    std::array<OpcodeFunc, 64> Jump_Special{};
-    std::array<OpcodeFunc, 32> Jump_Regimm{};
-    std::array<OpcodeFunc, 32> Jump_CoP0{};
-    std::array<OpcodeFunc, 64> Jump_CoP0_Function{};
-    std::array<OpcodeFunc, 32> Jump_CoP1{};
-    std::array<OpcodeFunc, 32> Jump_CoP1_BC{};
-    std::array<OpcodeFunc, 64> Jump_CoP1_S{};
-    std::array<OpcodeFunc, 64> Jump_CoP1_D{};
-    std::array<OpcodeFunc, 64> Jump_CoP1_W{};
-    std::array<OpcodeFunc, 64> Jump_CoP1_L{};
-    std::array<OpcodeFunc, 32> Jump_CoP2{};
+
+    OpcodeFunc Jump_Opcode[64];
+    OpcodeFunc Jump_Special[64];
+    OpcodeFunc Jump_Regimm[32];
+    OpcodeFunc Jump_CoP0[32];
+    OpcodeFunc Jump_CoP0_Function[64];
+    OpcodeFunc Jump_CoP1[32];
+    OpcodeFunc Jump_CoP1_BC[32];
+    OpcodeFunc Jump_CoP1_S[64];
+    OpcodeFunc Jump_CoP1_D[64];
+    OpcodeFunc Jump_CoP1_W[64];
+    OpcodeFunc Jump_CoP1_L[64];
+    OpcodeFunc Jump_CoP2[32];
 
     // ========================================================================
-    // Static Data
+    // Static Data - Shift/mask tables for unaligned memory access
     // ========================================================================
-    
-    // Shift/mask tables for unaligned memory access
-    static const std::array<uint32_t, 4> SWL_MASK;
-    static const std::array<uint32_t, 4> SWR_MASK;
-    static const std::array<uint32_t, 4> LWL_MASK;
-    static const std::array<uint32_t, 4> LWR_MASK;
-    static const std::array<int32_t, 4> SWL_SHIFT;
-    static const std::array<int32_t, 4> SWR_SHIFT;
-    static const std::array<int32_t, 4> LWL_SHIFT;
-    static const std::array<int32_t, 4> LWR_SHIFT;
-};
 
-/**
- * @brief MIPS DWORD (64-bit) union for register access
- */
-union MIPS_DWORD {
-    uint64_t UDW;     ///< Unsigned 64-bit
-    int64_t SDW;      ///< Signed 64-bit
-    
-    struct {
-        uint32_t UW[2]; ///< Unsigned 32-bit words
-    };
-    
-    struct {
-        int32_t SW[2];  ///< Signed 32-bit words
-    };
-    
-    struct {
-        uint32_t LO;    ///< Low 32 bits
-        uint32_t HI;    ///< High 32 bits
-    } W;
+    static const uint32_t SWL_MASK[4];
+    static const uint32_t SWR_MASK[4];
+    static const uint32_t LWL_MASK[4];
+    static const uint32_t LWR_MASK[4];
+    static const int32_t SWL_SHIFT[4];
+    static const int32_t SWR_SHIFT[4];
+    static const int32_t LWL_SHIFT[4];
+    static const int32_t LWR_SHIFT[4];
 };
 
 } // namespace Interpreter

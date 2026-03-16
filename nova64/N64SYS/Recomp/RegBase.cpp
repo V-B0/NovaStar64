@@ -428,25 +428,25 @@ bool AnalyzeRegisterTransition(const RegisterState& from, const RegisterState& t
                                uint64_t fromValue, uint64_t toValue) {
     // If both are constant with same value, no transition needed
     if (from.IsConstant() && to.IsConstant() && fromValue == toValue) {
-        Log::trace("RegBase: Constant value unchanged, no transition needed");
+        Log::debug("RegBase: Constant value unchanged, no transition needed");
         return false;
     }
     
     // If transitioning from unknown to known, that's always worthwhile
     if (from.IsUnknown() && to.IsKnown()) {
-        Log::trace("RegBase: Transitioning from unknown to known state");
+        Log::debug("RegBase: Transitioning from unknown to known state");
         return true;
     }
     
     // If transitioning from constant to mapped, need to load
     if (from.IsConstant() && to.IsMapped()) {
-        Log::trace("RegBase: Transitioning from constant to mapped");
+        Log::debug("RegBase: Transitioning from constant to mapped");
         return true;
     }
     
     // If width changes, need to handle extension
     if (from.width != to.width && from.width != RegisterWidth::Unknown) {
-        Log::tracef("RegBase: Width transition %s -> %s",
+        Log::debugf("RegBase: Width transition %s -> %s",
                    from.Is32Bit() ? "32" : "64",
                    to.Is32Bit() ? "32" : "64");
         return true;
@@ -464,19 +464,19 @@ bool AnalyzeRegisterTransition(const RegisterState& from, const RegisterState& t
 bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) {
     // Dirty registers always need sync
     if (state.isDirty) {
-        Log::trace("RegBase: Register is dirty, needs sync");
+        Log::debug("RegBase: Register is dirty, needs sync");
         return true;
     }
     
     // Modified registers need sync if not written back
     if (state.isModified && !state.isDirty) {
-        Log::trace("RegBase: Register is modified but clean");
+        Log::debug("RegBase: Register is modified but clean");
         return false; // Already synced
     }
     
     // Mapped registers might need sync depending on calling convention
     if (state.IsMapped()) {
-        Log::trace("RegBase: Mapped register may need sync");
+        Log::debug("RegBase: Mapped register may need sync");
         return true;
     }
     
@@ -517,12 +517,11 @@ void AnalyzeRegisterUsage(const CRegBase& regBase, const char* contextName) {
     
     // Use CRegInfo to compare against platform capabilities
     CRegInfo regInfo;
-    const auto& stats = regInfo.GetStatistics();
     
-    Log::debugf("RegBase: Platform supports %zu host registers (using %zu)",
-               stats.totalHostRegisters, mappedRegs);
+    Log::debugf("RegBase: Platform: %s (using %zu mapped registers)",
+               regInfo.GetPlatformName().c_str(), mappedRegs);
     
-    if (mappedRegs > stats.totalHostRegisters) {
+    if (mappedRegs > regInfo.GetNumGeneralPurposeRegisters()) {
         Log::warning("RegBase: More MIPS regs mapped than host regs available - spilling needed");
     }
 }
@@ -547,12 +546,12 @@ void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase,
         uint64_t dstValue = targetBase.GetMipsReg(i);
         
         if (NeedsSynchronizationAtBoundary(srcState, srcValue)) {
-            Log::tracef("RegBase: Syncing register $%d", i);
+            Log::debugf("RegBase: Syncing register $%d", i);
             syncedRegs++;
         }
         
         if (AnalyzeRegisterTransition(srcState, dstState, srcValue, dstValue)) {
-            Log::tracef("RegBase: Register $%d requires transition handling", i);
+            Log::debugf("RegBase: Register $%d requires transition handling", i);
         }
     }
     

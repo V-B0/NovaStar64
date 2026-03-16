@@ -1,15 +1,14 @@
 #pragma once
 #include "Memoryhandler.hpp"
-#include "../SRam.hpp"
-#include "../FRam.hpp"
+#include "../Savetypes/SRam.hpp"
+#include "../Savetypes/FRam.hpp"
 
 class CN64System;
-class CMipsMemoryVM;
+namespace Nova64 { class MipsMemoryVM; }
 class CRegisters;
 
 class UncachedRom final : 
-    public MemoryHandler,
-    private CDebugSettings
+    public MemoryHandler
 {
 public:
     struct Config {
@@ -22,10 +21,8 @@ public:
     explicit UncachedRom(
         CN64System& system,
         CRegisters& registers,
-        CMipsMemoryVM& mmu,
-        const Config& config = {}
-    );
-    
+        Nova64::MipsMemoryVM& mmu,
+        const Config& config = {});
     ~UncachedRom() override = default;
     
     // MemoryHandler interface
@@ -33,8 +30,8 @@ public:
     [[nodiscard]] bool Write32(uint32_t address, uint32_t value, uint32_t mask) override;
     
     // DMA operations
-    [[nodiscard]] bool DMARead();
-    void DMAWrite();
+    [[nodiscard]] bool DMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length);
+    bool DMAWrite(uint32_t dramAddr, uint32_t cartAddr, uint32_t length);
     
     // Save memory access
     CSram& getSram() { return *m_sram; }
@@ -65,13 +62,9 @@ private:
     UncachedRom& operator=(UncachedRom&&) = delete;
     
     
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
-    
-    
     CN64System& m_system;
     CRegisters& m_registers;
-    CMipsMemoryVM& m_mmu;
+    Nova64::MipsMemoryVM& m_mmu;
     Config m_config;
     
     

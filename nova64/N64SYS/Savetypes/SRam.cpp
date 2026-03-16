@@ -3,14 +3,17 @@
 #include "../../common/path.hpp"
 #include "../../common/MemoryManagment.hpp"
 #include "../MainSYS.hpp"
+#include "../N64Rom.hpp"
 #include <cstring>
 #include <algorithm>
+#include <filesystem>
 
 // SRAM constants
 static constexpr uint32_t SRAM_SIZE = 32 * 1024; // 32 KB
 
 // External globals
 extern CN64System* g_System;
+extern N64::Rom::N64Rom* g_Rom;
 
 // Constructor - Initialize SRAM
 CSram::CSram(bool ReadOnly)
@@ -184,15 +187,33 @@ bool CSram::LoadSram()
         return false;
     }
 
-    std::string savePath = "Saves";  // TODO: Get from settings
-    std::string fileName = "game.sra"; // TODO: Use actual ROM name
+    std::string savePath = "Saves";
+    
+    // Derive filename from ROM name
+    std::string romName = "game";
+    if (g_Rom && g_Rom->IsLoaded())
+    {
+        romName = g_Rom->GetImage().GetRomName();
+        // Sanitize filename - remove invalid characters
+        for (char& c : romName) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || 
+                c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+                c = '_';
+        }
+        // Trim trailing spaces
+        while (!romName.empty() && romName.back() == ' ')
+            romName.pop_back();
+    }
+    std::string fileName = romName + ".sra";
+    
+    // Ensure save directory exists
+    std::filesystem::create_directories(savePath);
+    
     CPath fullPathObj(savePath);
     fullPathObj.AppendDirectory(fileName);
     std::string fullPath = fullPathObj.GetString();
 
     Log::debugf("CSram::LoadSram - Save path: %s", fullPath.c_str());
-
-    // TODO: Ensure save directory exists
 
     // Try to open existing file first
     FileSystem::OpenMode openMode = FileSystem::OpenMode::Read | FileSystem::OpenMode::Write;

@@ -29,7 +29,7 @@ namespace Nova64 {
 namespace Recompiler {
 
 // Forward declarations
-class CCodeBlock;
+class CodeBlock;
 class CX64Ops;
 
 /**
@@ -118,14 +118,14 @@ struct X64RegisterInfo {
 };
 
 /**
- * @class RegisterMapping
+ * @class RegisterMappingInfo
  * @brief Represents a mapping between MIPS and x64 registers
  */
-class RegisterMapping {
+class RegisterMappingInfo {
 public:
-    RegisterMapping() = default;
+    RegisterMappingInfo() = default;
     
-    RegisterMapping(uint32_t mipsReg, X64RegisterType hostReg, 
+    RegisterMappingInfo(uint32_t mipsReg, X64RegisterType hostReg, 
                    RegisterWidth width, bool isSigned)
         : m_MipsReg(mipsReg)
         , m_HostReg(hostReg)
@@ -151,11 +151,11 @@ public:
     void SetSigned(bool isSigned) noexcept { m_IsSigned = isSigned; }
     
     // Comparison
-    bool operator==(const RegisterMapping& other) const noexcept {
+    bool operator==(const RegisterMappingInfo& other) const noexcept {
         return m_MipsReg == other.m_MipsReg && m_HostReg == other.m_HostReg;
     }
     
-    bool operator!=(const RegisterMapping& other) const noexcept {
+    bool operator!=(const RegisterMappingInfo& other) const noexcept {
         return !(*this == other);
     }
     
@@ -203,7 +203,7 @@ public:
      * @param assembler Reference to x64 assembler
      * @param strategy Register allocation strategy (nullptr for default)
      */
-    explicit CX64RegInfo(CCodeBlock& codeBlock, CX64Ops& assembler,
+    explicit CX64RegInfo(CodeBlock& codeBlock, CX64Ops& assembler,
                         std::unique_ptr<IRegisterAllocationStrategy> strategy = nullptr);
     
     ~CX64RegInfo() override;
@@ -386,8 +386,8 @@ public:
     IRegisterAllocationStrategy* GetAllocationStrategy() noexcept { return m_AllocationStrategy.get(); }
     
     // Direct access (for advanced use)
-    CCodeBlock& GetCodeBlock() noexcept { return *m_CodeBlock; }
-    const CCodeBlock& GetCodeBlock() const noexcept { return *m_CodeBlock; }
+    CodeBlock& GetCodeBlock() noexcept { return *m_CodeBlock; }
+    const CodeBlock& GetCodeBlock() const noexcept { return *m_CodeBlock; }
     
     CX64Ops& GetAssembler() noexcept { return *m_Assembler; }
     const CX64Ops& GetAssembler() const noexcept { return *m_Assembler; }
@@ -407,16 +407,16 @@ private:
     
     // State tracking
     struct SavedState {
-        std::vector<RegisterMapping> mappings;
+        std::vector<RegisterMappingInfo> mappings;
         AllocationStats stats;
     };
     
     // Member variables
-    CCodeBlock* m_CodeBlock = nullptr;
+    CodeBlock* m_CodeBlock = nullptr;
     CX64Ops* m_Assembler = nullptr;
     
     // Register mappings
-    std::array<std::optional<RegisterMapping>, 32> m_MipsToHost;  ///< MIPS → host mapping
+    std::array<std::optional<RegisterMappingInfo>, 32> m_MipsToHost;  ///< MIPS → host mapping
     std::array<std::optional<uint32_t>, 256> m_HostToMips;        ///< Host → MIPS mapping
     
     // Register usage tracking

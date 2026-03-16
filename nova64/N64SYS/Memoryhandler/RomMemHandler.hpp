@@ -1,15 +1,16 @@
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
+#include "../../common/Span.hpp"
 #include <cstdint>
-#include <span>
 #include <vector>
 #include <string>
 #include <memory>
+#include <functional>
 
 // Forward declarations
 class CRegisters;
-class CN64Rom;
+namespace N64 { namespace Rom { class N64Rom; } }
 class CN64System;
 
 namespace ROM {
@@ -54,11 +55,11 @@ public:
     explicit RomMemoryHandler(
         CN64System& system,
         CRegisters& registers,
-        CN64Rom& rom,
+        N64::Rom::N64Rom& rom,
         const Config& config = {}
     );
     
-    ~RomMemoryHandler() override;
+    ~RomMemoryHandler() noexcept override;
     
     // MemoryHandler interface
     [[nodiscard]] bool Read32(uint32_t address, uint32_t& value) override;
@@ -107,7 +108,6 @@ public:
         uint64_t mirror_accesses = 0;
         uint64_t out_of_bounds_accesses = 0;
     };
-    logging::Logger m_logger;
     [[nodiscard]] const Statistics& get_statistics() const { return m_stats; }
     void reset_statistics() { m_stats = {}; }
     
@@ -126,11 +126,11 @@ private:
     // Member variables
     CN64System& m_system;
     CRegisters& m_registers;
-    CN64Rom& m_rom;
+    N64::Rom::N64Rom& m_rom;
     Config m_config;
     
     // ROM data access
-    std::span<const uint8_t> m_rom_data;
+    Common::Span<const uint8_t> m_rom_data;
     size_t m_rom_size;
     uint32_t m_rom_mask;  // For mirroring calculations
     
@@ -154,6 +154,11 @@ private:
     // Timing
     uint64_t m_last_decay_check = 0;
     
+    // Latch emulation
+    uint32_t m_latch_value = 0;
+    bool m_latch_active = false;
+    uint64_t m_latch_decay_time = 0;
+
     // Helper methods
     [[nodiscard]] bool is_rom_address(uint32_t address) const;
     [[nodiscard]] ROM::Region get_rom_region(uint32_t address) const;
