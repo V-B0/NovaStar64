@@ -603,7 +603,6 @@ public:
     SerializedManager serialize() const;
     bool deserialize(const SerializedManager& data);
     
-    // Getters
     size_t count() const { return functions_.size(); }
     size_t native_code_size() const;
     

@@ -1,3 +1,7 @@
+/**
+ * @file DynamicLibrary.hpp
+ * @brief Platform-independent dynamic library loader declarations.
+ */
 #pragma once
 
 #include <filesystem>

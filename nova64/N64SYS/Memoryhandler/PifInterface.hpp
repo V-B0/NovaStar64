@@ -19,7 +19,6 @@ namespace Nova64 { class MipsMemoryVM; }
 class CRegisters;
 
 namespace PIF {
-    // Constants
     static constexpr size_t PIF_ROM_SIZE = 0x7C0;    // 1984 bytes
     static constexpr size_t PIF_RAM_SIZE = 0x40;     // 64 bytes
     
@@ -162,7 +161,6 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
     
-    // Member variables
     CN64System& m_system;
     Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;

@@ -347,7 +347,6 @@ public:
     std::string get_register_state_string() const;
     std::string get_statistics_string() const;
     
-    // Getters
     ExitId id() const { return id_; }
     uint32_t target_pc() const { return target_pc_; }
     ExitReason reason() const { return reason_; }
@@ -491,7 +490,6 @@ public:
     SerializedExitManager serialize() const;
     bool deserialize(const SerializedExitManager& data);
     
-    // Getters
     size_t count() const { return exits_.size(); }
     bool empty() const { return exits_.empty(); }
     

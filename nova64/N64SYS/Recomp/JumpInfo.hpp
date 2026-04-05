@@ -80,7 +80,6 @@ public:
 
     std::string ToString() const;
 
-    // Getters
     uint32_t GetJumpPC() const noexcept { return m_JumpPC; }
     uint32_t GetTargetPC() const noexcept { return m_TargetPC; }
     std::optional<uint32_t> GetLinkAddress() const noexcept { return m_LinkAddress; }
@@ -98,7 +97,6 @@ public:
     const asmjit::Label& GetSecondaryLinkLocation() const noexcept { return m_SecondaryLinkLocation; }
     asmjit::Label& GetSecondaryLinkLocation() noexcept { return m_SecondaryLinkLocation; }
     
-    // Setters
     void SetTargetPC(uint32_t targetPC) noexcept { m_TargetPC = targetPC; }
     void SetLinkAddress(std::optional<uint32_t> linkAddr) noexcept { m_LinkAddress = linkAddr; }
     void SetJumpType(JumpType type) noexcept { m_Type = type; }

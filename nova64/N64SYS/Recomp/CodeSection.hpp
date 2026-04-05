@@ -309,7 +309,6 @@ public:
     const Statistics& statistics() const { return stats_; }
     const SectionMetadata& metadata() const { return metadata_; }
     
-    // Getters
     SectionId id() const { return id_; }
     uint32_t entry_pc() const { return metadata_.entry_pc; }
     uint32_t end_pc() const { return metadata_.end_pc; }

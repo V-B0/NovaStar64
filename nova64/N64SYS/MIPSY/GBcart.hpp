@@ -84,7 +84,6 @@ struct RTCData {
     uint8_t days_low = 0;
     uint8_t days_high = 0;  // Bit 0: Day counter MSB, Bit 6: Halt, Bit 7: Day counter carry
     
-    // Constructor
     RTCData() = default;
     
     // Get current days (9-bit value)

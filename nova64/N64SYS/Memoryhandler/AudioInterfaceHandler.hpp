@@ -108,7 +108,6 @@ private:
     uint32_t m_pending_len = 0;
     bool m_pending_valid = false;
     
-    // Constants
     static constexpr uint32_t AI_BASE_FREQ = 48681812; // NTSC DAC Clock
     
     // WASAPI audio output

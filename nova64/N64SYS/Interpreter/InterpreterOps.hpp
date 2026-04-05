@@ -433,10 +433,6 @@ private:
     inline uint32_t fd() const    { return (m_Opcode.Value >>  6) & 0x1F; }               // bits 10:6  = sa
     inline uint32_t fmt() const   { return m_Opcode.Itype.rs; }                           // bits 25:21 = rs
 
-    // ========================================================================
-    // Member Variables
-    // ========================================================================
-
     // System references
     CN64System& m_System;
     CRegisters& m_Reg;

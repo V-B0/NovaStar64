@@ -211,12 +211,7 @@ void DiskController::StartDMA(uint32_t address, uint32_t length, bool is_write) 
 void DiskController::ProcessDMA() {
     if (!dma_active) return;
     
-    // To Be Implemented: RDRAM access.
-    // Simulation:
-    // if (is_write) { memcpy(sector_buffer, RDRAM[dma_start_address], dma_length); }
-    // else { memcpy(RDRAM[dma_start_address], sector_buffer, dma_length); }
-    
-    // For now, assume transfer completes instantly
+    // Transfer completes instantly for now
     dma_active = false;
     dma_length = 0;
     status.command_complete = true;
@@ -242,7 +237,6 @@ bool DiskController::SeekToSector(uint32_t track, uint32_t sector) {
     return true;
 }
 
-// Helpers
 const ZoneInfo& DiskController::GetZoneInfo(DiskZone zone) {
     return ZONE_TABLE[static_cast<uint8_t>(zone) & 0xF];
 }

@@ -1,3 +1,7 @@
+/**
+ * @file IniFile.hpp
+ * @brief INI file parsing and manipulation declarations.
+ */
 #pragma once
 
 #include <atomic>

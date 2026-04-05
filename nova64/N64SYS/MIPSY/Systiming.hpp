@@ -353,7 +353,6 @@ private:
     void SetCompareTimer();
     void FixTimers();
     
-    // Member variables
     CN64System& m_System;
     TIMER_DETAILS m_TimerDetatils[MaxTimer];
     int32_t m_LastUpdate;

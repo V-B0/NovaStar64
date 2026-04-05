@@ -499,7 +499,6 @@ public:
         ErrorEPC = 30
     };
     
-    // Constructor
     CRegisters(CN64System& System, CSystemEvents& SystemEvents);
     
     // Public methods
@@ -579,7 +578,6 @@ private:
     CRegisters(const CRegisters&) = delete;
     CRegisters& operator=(const CRegisters&) = delete;
     
-    // Member variables
     bool m_FirstInterrupt; 
     CN64System& m_System;
     CSystemEvents& m_SystemEvents;

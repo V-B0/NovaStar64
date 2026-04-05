@@ -375,7 +375,6 @@ private:
     void TLB_Unmaped(uint32_t VAddr, uint32_t Len);
     MemorySegment VAddrMemorySegment(uint64_t VAddr);
 
-    // Member variables
     PrivilegeMode m_PrivilegeMode;
     bool m_AddressSize32bit;
     Nova64::MipsMemoryVM* m_MMU;

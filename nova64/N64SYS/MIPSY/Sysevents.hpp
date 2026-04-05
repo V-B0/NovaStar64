@@ -1,3 +1,7 @@
+/**
+ * @file Sysevents.hpp
+ * @brief System event queue declarations.
+ */
 #pragma once
 #include <cstdint>
 #include <algorithm>

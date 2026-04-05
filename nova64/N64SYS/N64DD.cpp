@@ -16,10 +16,6 @@
 namespace N64 {
 namespace Disk {
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 static constexpr uint32_t MAME_FORMAT_SIZE = 0x0435B0C0;
 static constexpr uint32_t SDK_FORMAT_SIZE = 0x03DEC800;
 static constexpr uint32_t READ_CHUNK_SIZE = 0x100000; // 1MB chunks for reading

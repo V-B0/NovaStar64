@@ -442,7 +442,6 @@ void CX64RspRegInfo::EmitEpilogue(CX64RspOps& ops)
     SpillAll(ops);
 
     // Store cycle count result
-    // ops.MovMemReg(someAddress, REG_CYCLE_COUNT); // caller reads RAX
     ops.MovRegReg(GpReg::RAX, REG_CYCLE_COUNT);
 
     // Restore callee-saved XMM registers

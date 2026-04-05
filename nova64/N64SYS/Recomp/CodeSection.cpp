@@ -1626,8 +1626,6 @@ CodeSection::CodeGenerator::CodeGenerator(
     , entry_state_(entry_state)
 {
 #ifdef NOVA64_ASMJIT_ENABLED
-    // In full integration, create assembler from code holder
-    // assembler_ = new asmjit::x86::Assembler(&code);
     (void)code;
 #else
     (void)code;

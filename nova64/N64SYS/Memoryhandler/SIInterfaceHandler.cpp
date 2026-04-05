@@ -60,9 +60,6 @@ bool SerialInterfaceHandler::Read32(uint32_t address, uint32_t& value)
         break;
     default:
         value = 0;
-        // P64: BreakPoint(__FILE__, __LINE__)
-        // We log warning
-        // m_logger.warn("Read from write-only/unknown SI register 0x%08X", address);
         break;
     }
 
@@ -105,30 +102,14 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
 
     case 0x04800018: // SI_STATUS_REG
         {
-            // P64: 
-            // MI_INTR_REG &= ~MI_INTR_SI;
-            // m_Reg.SI_STATUS_REG &= ~SI_STATUS_INTERRUPT;
-            // m_Reg.CheckInterrupts();
-            
-            // 1. Clear SI Interrupt in MI (MIPS Interface)
-            // MI_INTR_REG is index 2 of m_Mips_Interface (MI_INTR = 0x00200000?)
-            // We need to use CRegisters methods if available or access array directly.
-            // Register.hpp CRegisters has CheckInterrupts().
-            // MI_INTR_REG is defined in P64 as part of Reg struct.
-            
-            // Accessing MI_INTR_REG directly via array:
-            // Assuming MI_INTR is index 2 (from standard N64 offsets 0x04300008)
-            // m_registers.m_Mips_Interface[2] &= ~MI_INTR_SI_MASK;
-            // We need the mask. 
-            // Typically MI_INTR_SI is bit 1 (0x2).
-            
+            // Clear SI Interrupt in MI
             constexpr uint32_t MI_INTR_SI_MASK = 0x02;
             m_registers.m_Mips_Interface[2] &= ~MI_INTR_SI_MASK;
             
-            // 2. Clear SI Status Interrupt Bit
+            // Clear SI Status Interrupt Bit
             m_si_regs.set_interrupt(false);
             
-            // 3. Trigger interrupt check
+            // Trigger interrupt check
             m_registers.CheckInterrupts();
             
             m_stats.register_writes++; // Counting this as a generic write
@@ -136,7 +117,6 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
         break;
         
     default:
-        // P64 BreakPoint
         break;
     }
     

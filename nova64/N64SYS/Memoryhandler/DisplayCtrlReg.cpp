@@ -14,10 +14,6 @@
 #include "../../common/log.hpp"
 #include <cstring>
 
-// ============================================================================
-// Constructor
-// ============================================================================
-
 DisplayProcessorHandler::DisplayProcessorHandler(CRegisters& reg, Plugins::GFXPlugin* gfxPlugin) :
     m_Reg(reg),
     m_GfxPlugin(gfxPlugin),

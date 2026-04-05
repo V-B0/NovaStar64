@@ -1,3 +1,7 @@
+/**
+ * @file Timestamp.hpp
+ * @brief High-resolution timestamp declarations.
+ */
 #pragma once
 
 #include <chrono>
@@ -10,7 +14,6 @@
 class HighResolutionTimestamp
 {
 public:
-    // Construction
     HighResolutionTimestamp();
     
     // Core functionality

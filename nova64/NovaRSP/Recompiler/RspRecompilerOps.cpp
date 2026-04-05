@@ -23,10 +23,6 @@
 
 namespace Nova64::RSP::Recompiler {
 
-// ──────────────────────────────────────────────
-// Constructor
-// ──────────────────────────────────────────────
-
 CRSPRecompilerOps::CRSPRecompilerOps(CRSPSystem& system, CRSPRecompiler& recompiler)
     : m_System(system)
     , m_Recompiler(recompiler)

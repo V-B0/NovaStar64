@@ -152,7 +152,6 @@ private:
     void SPECIAL_DSRL32(CRegBase& Reg);
     void SPECIAL_DSRA32(CRegBase& Reg);
 
-    // Member variables
     CodeBlock& m_CodeBlock;
     CodeSection* m_EntrySection;
 

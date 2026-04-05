@@ -119,7 +119,6 @@ private:
     RDRAMInterfaceHandler& operator=(const RDRAMInterfaceHandler&) = delete;
     RDRAMInterfaceHandler& operator=(RDRAMInterfaceHandler&&) = delete;
     
-    // Member variables
     CRegisters& m_reg;
     const uint64_t& m_pc;
     

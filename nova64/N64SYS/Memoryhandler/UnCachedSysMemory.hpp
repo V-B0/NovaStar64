@@ -99,7 +99,6 @@ private:
     UnCachedSysMemory(const UnCachedSysMemory&) = delete;
     UnCachedSysMemory& operator=(const UnCachedSysMemory&) = delete;
 
-    // Member variables
     CN64System& m_System;        ///< N64 system reference
     CRegisters& m_Reg;           ///< Register interface
     Nova64::MipsMemoryVM& m_MMU;        ///< Memory management unit

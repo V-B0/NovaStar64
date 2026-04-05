@@ -199,7 +199,6 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
     
-    // Member variables
     Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;
     PifRamHandler& m_pif_handler;

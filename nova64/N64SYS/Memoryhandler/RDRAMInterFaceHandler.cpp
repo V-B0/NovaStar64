@@ -69,9 +69,6 @@ bool RDRAMInterfaceHandler::Read32(uint32_t address, uint32_t& value)
         return true; 
     }
 
-    // Optional logging here
-    // log_register_access(address, value, false);
-    
     return true;
 }
 
@@ -105,9 +102,6 @@ bool RDRAMInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
     } else if (offset == 0x04700004) {
         handle_config_write(m_regs.config(), mask);
     }
-    
-    // Log
-    // log_register_access(address, value, true);
     
     return true;
 }

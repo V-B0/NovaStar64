@@ -121,10 +121,6 @@ public:
     uint32_t& ASIC_TEST_PIN_SEL; // [21] Test pin select
 };
 
-// ============================================================================
-// Constructor
-// ============================================================================
-
 CachedSysMemory::CachedSysMemory(CRegisters& reg, N64::Rom::N64Rom& ddRom) :
     m_Reg(reg),
     m_DDRom(ddRom),

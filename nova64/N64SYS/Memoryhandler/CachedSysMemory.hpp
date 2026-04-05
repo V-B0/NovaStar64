@@ -94,7 +94,6 @@ private:
     void LoadCurrentSectorToC2Buffer();
     void FlushC2BufferToSector();
 
-    // Member variables
     CRegisters& m_Reg;           ///< Register interface
     N64::Rom::N64Rom& m_DDRom;   ///< 64DD ROM interface
     uint32_t* m_DiskInterface;   ///< Pointer to 22 ASIC registers

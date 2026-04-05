@@ -81,10 +81,6 @@ namespace MIMask {
     constexpr uint32_t SET_DP        = 0x0800;  // Set DP mask
 }
 
-// ============================================================================
-// Constructor
-// ============================================================================
-
 MIPSYInterfaceHandler::MIPSYInterfaceHandler(CRegisters& reg) :
     MIPSYInterface(
         &reg.m_Mips_Interface[0],  // MI_INIT_MODE_REG / MI_MODE_REG

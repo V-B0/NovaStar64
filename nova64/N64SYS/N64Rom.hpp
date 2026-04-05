@@ -354,7 +354,6 @@ private:
     
     static bool IsValidRomImage(const uint8_t* test) noexcept;
     
-    // Member variables
     std::unique_ptr<RomImage> m_Image;
 };
 

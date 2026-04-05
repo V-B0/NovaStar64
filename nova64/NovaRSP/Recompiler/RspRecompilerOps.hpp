@@ -121,7 +121,6 @@ public:
     void ExitCodeBlock();
 
 private:
-    // Helpers
     void LoadVectorRegister(uint8_t xmmReg, uint8_t vectorReg, uint8_t e);
     void Cheat_r4300iOpcode(void (RSPOp::*funcAddress)(), const char* funcName, bool commentOp = true);
     bool WriteToVectorDest(uint32_t destReg, uint32_t pc);

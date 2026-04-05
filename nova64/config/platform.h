@@ -1,3 +1,7 @@
+/**
+ * @file platform.h
+ * @brief Platform-specific defines for softfloat library.
+ */
 #ifndef PLATFORM_H
 #define PLATFORM_H
 

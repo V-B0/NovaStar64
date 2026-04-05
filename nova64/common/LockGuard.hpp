@@ -1,3 +1,7 @@
+/**
+ * @file LockGuard.hpp
+ * @brief Recursive mutex and lock guard declarations.
+ */
 #pragma once
 
 #include <atomic>

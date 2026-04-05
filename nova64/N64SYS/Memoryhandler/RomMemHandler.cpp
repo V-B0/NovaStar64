@@ -91,10 +91,6 @@ bool RomMemoryHandler::Write32(uint32_t address, uint32_t value, uint32_t mask)
     return true;
 }
 
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
-
 void RomMemoryHandler::rom_write_decayed()
 {
     m_latch_active = false;

@@ -347,7 +347,6 @@ private:
     VideoInterfaceHandler& operator=(VideoInterfaceHandler&&) = delete;
     
     
-    // Member variables
     CN64System& m_system;
     Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_sys_regs;

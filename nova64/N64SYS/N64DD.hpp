@@ -452,7 +452,6 @@ private:
         static const std::array<uint32_t, 16>& GetMAMEStartOffsets();
     };
     
-    // Member variables
     std::unique_ptr<DiskImage> m_Image;
     
     // Disk geometry state

@@ -296,9 +296,6 @@ void VideoInterfaceHandler::begin_frame() {
 
 void VideoInterfaceHandler::end_frame() {
     m_stats.total_frames++;
-    // Notify GFX plugin to update window
-    // Plugin interface usage not fully visible, assuming standard calls
-    // m_plugins->GFX()->UpdateScreen(); 
 }
 
 // ===================================

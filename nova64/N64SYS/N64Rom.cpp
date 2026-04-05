@@ -17,10 +17,6 @@
 namespace N64 {
 namespace Rom {
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 static constexpr uint32_t READ_CHUNK_SIZE = 0x100000; // 1MB chunks for reading
 static constexpr uint32_t BOOT_CODE_SIZE = 0x1000;
 

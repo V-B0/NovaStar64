@@ -513,8 +513,8 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
     // Complete DMA immediately — data is already copied to RDRAM above.
     // Many N64 emulators complete PI DMA instantly; delayed timing via PiTimer
     // requires careful timer bookkeeping that can cause DMA_BUSY to hang.
-    // TODO: Revisit timer-based PI DMA completion once the timer system
-    //       properly handles mid-period timer insertions.
+    // Timer-based completion could be revisited once the timer system
+    // properly handles mid-period timer insertions.
     CompleteDMA();
 }
 

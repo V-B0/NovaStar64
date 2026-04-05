@@ -135,7 +135,6 @@ public:
         , m_IsLocked(false)
     {}
     
-    // Getters
     uint32_t GetMipsReg() const noexcept { return m_MipsReg; }
     X64RegisterType GetHostReg() const noexcept { return m_HostReg; }
     RegisterWidth GetWidth() const noexcept { return m_Width; }
@@ -144,7 +143,6 @@ public:
     bool IsLocked() const noexcept { return m_IsLocked; }
     bool IsValid() const noexcept { return m_MipsReg < 32 && m_HostReg != X64RegisterType::Invalid; }
     
-    // Setters
     void SetDirty(bool dirty = true) noexcept { m_IsDirty = dirty; }
     void SetLocked(bool locked = true) noexcept { m_IsLocked = locked; }
     void SetWidth(RegisterWidth width) noexcept { m_Width = width; }
@@ -411,7 +409,6 @@ private:
         AllocationStats stats;
     };
     
-    // Member variables
     CodeBlock* m_CodeBlock = nullptr;
     CX64Ops* m_Assembler = nullptr;
     

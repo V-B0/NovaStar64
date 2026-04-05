@@ -256,7 +256,6 @@ private:
     
     using FunctionProfileMap = std::unordered_map<CCompiledFunc*, FunctionProfile>;
     
-    // Member variables
     CN64System&         m_System;
     MipsMemoryVM&       m_MMU;
     CRegisters&         m_Reg;

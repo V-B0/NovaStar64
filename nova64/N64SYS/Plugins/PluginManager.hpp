@@ -331,10 +331,6 @@ private:
      */
     std::string GetDefaultPluginPath(PluginType type) const;
     
-    // ========================================================================
-    // Member Variables
-    // ========================================================================
-    
     CN64System& m_System;
     CRegisters* m_Registers;
     Nova64::MipsMemoryVM* m_Memory;

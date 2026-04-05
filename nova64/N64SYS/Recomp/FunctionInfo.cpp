@@ -188,9 +188,6 @@ void CompiledFunction::execute(CpuRegisters& registers, MipsMemory& memory, void
     // Record execution for profiling
     uint64_t start_cycles = 0;  // Would get from system
     
-    // Execute the compiled function
-    // function_ptr_(registers, memory, context);
-    
     uint64_t end_cycles = 0;  // Would get from system
     uint64_t cycles = end_cycles - start_cycles;
     

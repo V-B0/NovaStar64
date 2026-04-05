@@ -406,7 +406,6 @@ struct CodeBufferInfo {
  * @brief Get human-readable error message for AsmJit error code
  */
 [[nodiscard]] inline const char* GetErrorString(asmjit::Error /*err*/) noexcept {
-    // return asmjit::DebugUtils::errorAsString(err);
     return "AsmJit Error (details unavailable)"; 
 }
 

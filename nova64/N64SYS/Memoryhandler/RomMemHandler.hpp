@@ -127,7 +127,6 @@ private:
     RomMemoryHandler& operator=(const RomMemoryHandler&) = delete;
     RomMemoryHandler& operator=(RomMemoryHandler&&) = delete;
     
-    // Member variables
     CN64System& m_system;
     CRegisters& m_registers;
     N64::Rom::N64Rom& m_rom;
