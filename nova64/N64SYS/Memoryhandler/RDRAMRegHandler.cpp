@@ -1,3 +1,7 @@
+/**
+ * @file RDRAMRegHandler.cpp
+ * @brief RDRAM Reg Handler implementation.
+ */
 #include "RDRAMRegHandler.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"

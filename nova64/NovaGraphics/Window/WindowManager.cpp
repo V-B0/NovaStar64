@@ -1,3 +1,7 @@
+/**
+ * @file WindowManager.cpp
+ * @brief Window Manager.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Window Manager Implementation
 // SDL2 window, OpenGL context, input, display management
@@ -367,6 +371,10 @@ bool WindowManager::ProcessEvents() {
         // F7 toggles the ImGui debug panels
         if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F7) {
             g_imguiDebugUI.Toggle();
+        }
+        // F8 cycles combiner debug output mode
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F8) {
+            g_imguiDebugUI.CycleDebugOutput();
         }
 
         HandleSDLEvent(&event);

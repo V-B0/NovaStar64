@@ -1,3 +1,7 @@
+/**
+ * @file GLBackend.cpp
+ * @brief OpenGL 4.6 Backend.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - OpenGL 4.6 Backend Implementation
 // Full GL4.6 Core Profile + DSA rendering backend

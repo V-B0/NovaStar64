@@ -1,3 +1,7 @@
+/**
+ * @file SRam.cpp
+ * @brief S Ram implementation.
+ */
 #include "SRam.hpp"
 #include "../../common/log.hpp"
 #include "../../common/path.hpp"

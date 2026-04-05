@@ -186,7 +186,7 @@ struct GeometryState {
     Matrix4x4 combinedMatrix;      // projection * modelView (alias: combined)
     bool      combinedDirty;
     
-    static constexpr int MAX_MATRIX_STACK = 18;
+    static constexpr int MAX_MATRIX_STACK = 32;
     Matrix4x4 modelViewStack[MAX_MATRIX_STACK];
     int       modelViewStackDepth;
     Matrix4x4 projectionStack[2];
@@ -214,6 +214,15 @@ struct GeometryState {
     // Fog parameters  
     int16_t fogMultiplier;
     int16_t fogOffset;
+
+    // Guard-band clip ratio (set by gSPClipRatio / MW_CLIP)
+    // N64 RSP clips at w*clipRatio instead of w, avoiding unnecessary
+    // clipping for triangles near screen edges.
+    float clipRatio = 1.0f;
+    
+    // Fog usage mode (set by microcode handler):
+    // 0 = no fog, 1 = standard fog (alpha), 2 = F3DAM mode 2 (RGB)
+    int fogUsage = 0;
     
     // LookAt vectors for environment map texture generation
     float    lookat[2][3];        // [0]=X (right), [1]=Y (up)
@@ -239,10 +248,12 @@ struct GeometryState {
         std::memset(&texture, 0, sizeof(texture));
         fogMultiplier = 0;
         fogOffset = 0;
-        // Default lookat: identity axes (X=right, Y=up)
-        lookat[0][0] = 1.0f; lookat[0][1] = 0.0f; lookat[0][2] = 0.0f;
-        lookat[1][0] = 0.0f; lookat[1][1] = 1.0f; lookat[1][2] = 0.0f;
-        lookatEnabled = false;
+        fogUsage = 0;
+        clipRatio = 1.0f;
+        // Default lookat: match GLideN64 (lookat[0]=Y-up, lookat[1]=X-right)
+        lookat[0][0] = 0.0f; lookat[0][1] = 1.0f; lookat[0][2] = 0.0f;
+        lookat[1][0] = 1.0f; lookat[1][1] = 0.0f; lookat[1][2] = 0.0f;
+        lookatEnabled = true;
         std::memset(segments, 0, sizeof(segments));
         // Default viewport: 320x240 centered (N64 standard)
         viewport.scaleX =  160.0f;
@@ -317,12 +328,17 @@ struct RDPState {
     
     // ── Colors ──
     RDPColor fillColor;
+    uint32_t fillColorRaw = 0;   // Raw 32-bit fill color register (decoded at draw-time)
     RDPColor fogColor;
     RDPColor blendColor;
     RDPColor primColor;
     RDPColor envColor;
     float    primLODFrac;           // Primitive LOD fraction (0-1)
     float    primLODMin;
+    
+    // ── Texture Scrolling ──
+    float scrollS[8] = {0};
+    float scrollT[8] = {0};
     
     // ── Scissor ──
     ScissorRect scissor;
@@ -344,7 +360,7 @@ struct RDPState {
     
     // ── Key (chroma key) ──
     struct {
-        uint8_t widthR, widthG, widthB;
+        uint16_t widthR, widthG, widthB;    // 12-bit fields
         uint8_t centerR, centerG, centerB;
         uint8_t scaleR, scaleG, scaleB;
     } chromaKey;
@@ -395,6 +411,7 @@ struct RDPState {
         tmem.Reset();
         
         fillColor = {};
+        fillColorRaw = 0;
         fogColor = {};
         blendColor = {};
         primColor = {};

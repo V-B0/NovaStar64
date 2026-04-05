@@ -1,3 +1,7 @@
+/**
+ * @file TransferPak.cpp
+ * @brief Transfer Pak implementation.
+ */
 #include "TransferPak.hpp"
 #include "GBcart.hpp"
 #include "../../common/Log.hpp"

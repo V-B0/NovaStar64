@@ -1,3 +1,7 @@
+/**
+ * @file PIInterFace.hpp
+ * @brief PI Inter Face declarations and types.
+ */
 #pragma once
 #include "../../common/log.hpp"
 #include "Memoryhandler.hpp"

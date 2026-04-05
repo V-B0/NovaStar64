@@ -26,7 +26,6 @@ extern N64::Rom::N64Rom* g_Rom;
 constexpr size_t FLASHRAM_SIZE = 128 * 1024;  // 128 KB
 constexpr size_t BLOCK_SIZE = 128;             // 128 bytes per block
 
-// CFlashRam constructor
 CFlashRam::CFlashRam(bool ReadOnly)
     : m_FlashRamPointer(nullptr)
     , m_FlashFlag(FLASHRAM_MODE_NOPES)
@@ -37,7 +36,6 @@ CFlashRam::CFlashRam(bool ReadOnly)
     Log::debugf("CFlashRam initialized (ReadOnly: %s)", ReadOnly ? "true" : "false");
 }
 
-// CFlashRam destructor
 CFlashRam::~CFlashRam()
 {
     if (m_File.is_open())

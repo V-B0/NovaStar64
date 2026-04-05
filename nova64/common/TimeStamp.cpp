@@ -1,3 +1,7 @@
+/**
+ * @file TimeStamp.cpp
+ * @brief Time Stamp implementation.
+ */
 #include "Timestamp.hpp"
 
 #ifdef _WIN32

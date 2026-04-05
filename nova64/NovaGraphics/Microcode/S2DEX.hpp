@@ -17,6 +17,8 @@
 
 #include "GBIHandler.hpp"
 #include "../Core/N64Types.hpp"
+#include <algorithm>
+#include <cmath>
 
 namespace Nova64::Video {
 
@@ -48,23 +50,21 @@ struct ObjBgSprite {
     int32_t     imageYorig;     // Y origin for scroll (s20.5)
 };
 
-/// Object sprite definition (uObjSprite)
+/// Object sprite definition (uObjSprite — matches N64 SDK layout)
 struct ObjSprite {
     int16_t     objX;           // Screen X (s10.2)
     int16_t     objY;           // Screen Y (s10.2)
     uint16_t    scaleW;         // H scale (u5.10)
     uint16_t    scaleH;         // V scale (u5.10)
-    uint16_t    imageW;         // Texture width (10.5)
-    uint16_t    imageH;         // Texture height (10.5)
+    uint16_t    imageW;         // Texture width (u10.5)
+    uint16_t    imageH;         // Texture height (u10.5)
     
-    uint16_t    imageSiz;       // Pixel size
-    uint16_t    imageFmt;       // Texture format
+    uint16_t    imageAdrs;      // TMEM word address (64-bit words)
     uint16_t    imageStride;    // Stride in 64-bit words
-    uint16_t    imageAdrs;      // TMEM address
-    
-    uint32_t    imageAddr;      // RDRAM address
-    uint8_t     imagePal;       // Palette index
     uint8_t     imageFlags;     // Flip flags
+    uint8_t     imagePal;       // Palette index (0-7)
+    uint8_t     imageSiz;       // Texel size (G_IM_SIZ_*)
+    uint8_t     imageFmt;       // Texture format (G_IM_FMT_*)
 };
 
 /// 2D Matrix (uObjMtx — 2D affine transform)
@@ -411,27 +411,32 @@ inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjB
     address = ctx.ResolveAddress(address);
     if (address + 40 > ctx.rdramSize) return false;
     
-    const uint8_t* src = ctx.rdram + address;
-    
-    bg.imageW     = (src[0] << 8) | src[1];
-    bg.imageH     = (src[2] << 8) | src[3];
-    bg.frameX     = static_cast<int16_t>((src[4] << 8) | src[5]);
-    bg.frameY     = static_cast<int16_t>((src[6] << 8) | src[7]);
-    bg.frameW     = (src[8] << 8) | src[9];
-    bg.frameH     = (src[10] << 8) | src[11];
-    bg.imageAddr  = ((src[12] << 24) | (src[13] << 16) | (src[14] << 8) | src[15]);
-    
-    uint16_t fmtSiz = (src[16] << 8) | src[17];
-    bg.imageFormat = static_cast<ImageFormat>((fmtSiz >> 5) & 0x7);
-    bg.imageSize   = static_cast<ImageSize>(fmtSiz & 0x3);
-    bg.imagePal    = (src[18] << 8) | src[19];
-    bg.imageFlip   = (src[20] & 0x01) != 0;
-    
-    bg.scaleW     = (src[24] << 8) | src[25];
-    bg.scaleH     = (src[26] << 8) | src[27];
-    bg.imageX     = (src[28] << 8) | src[29];
-    bg.imageY     = (src[30] << 8) | src[31];
-    bg.imageYorig = static_cast<int32_t>((src[32] << 24) | (src[33] << 16) | (src[34] << 8) | src[35]);
+    // N64 uObjScaleBg struct layout (40 bytes, big-endian):
+    //   0x00: imageW (u16), imageX (u16)
+    //   0x04: frameW (u16), frameX (s16)
+    //   0x08: imageH (u16), imageY (u16)
+    //   0x0C: frameH (u16), frameY (s16)
+    //   0x10: imagePtr (u32)
+    //   0x14: imageSiz (u8), imageFmt (u8), imageLoad (u16)
+    //   0x18: imageFlip (u16), imagePal (u16)
+    //   0x1C: scaleH (u16), scaleW (u16)
+    //   0x20: imageYorig (s32)
+    bg.imageW     = ctx.ReadHalf(address + 0x00);
+    bg.imageX     = ctx.ReadHalf(address + 0x02);
+    bg.frameW     = ctx.ReadHalf(address + 0x04);
+    bg.frameX     = static_cast<int16_t>(ctx.ReadHalf(address + 0x06));
+    bg.imageH     = ctx.ReadHalf(address + 0x08);
+    bg.imageY     = ctx.ReadHalf(address + 0x0A);
+    bg.frameH     = ctx.ReadHalf(address + 0x0C);
+    bg.frameY     = static_cast<int16_t>(ctx.ReadHalf(address + 0x0E));
+    bg.imageAddr  = ctx.ReadWord(address + 0x10);
+    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x14));
+    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x15));
+    bg.imageFlip  = (ctx.ReadHalf(address + 0x18) & 0x01) != 0;
+    bg.imagePal   = ctx.ReadHalf(address + 0x1A);
+    bg.scaleH     = ctx.ReadHalf(address + 0x1C);
+    bg.scaleW     = ctx.ReadHalf(address + 0x1E);
+    bg.imageYorig = static_cast<int32_t>(ctx.ReadWord(address + 0x20));
     
     return true;
 }
@@ -440,22 +445,27 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
     address = ctx.ResolveAddress(address);
     if (address + 24 > ctx.rdramSize) return false;
     
-    const uint8_t* src = ctx.rdram + address;
-    
-    obj.objX        = static_cast<int16_t>((src[0] << 8) | src[1]);
-    obj.scaleW      = (src[2] << 8) | src[3];
-    obj.imageW      = (src[4] << 8) | src[5];
-    obj.imagePal    = src[6];
-    obj.imageFlags  = src[7];
-    
-    obj.objY        = static_cast<int16_t>((src[8] << 8) | src[9]);
-    obj.scaleH      = (src[10] << 8) | src[11];
-    obj.imageH      = (src[12] << 8) | src[13];
-    obj.imageStride = (src[14] << 8) | src[15];
-    
-    obj.imageAddr   = ((src[16] << 24) | (src[17] << 16) | (src[18] << 8) | src[19]);
-    obj.imageFmt    = (src[20] << 8) | src[21];
-    obj.imageSiz    = (src[22] << 8) | src[23];
+    // N64 uObjSprite layout (24 bytes, big-endian):
+    //   0x00: scaleW (u16), objX (s16)
+    //   0x04: paddingX (u16), imageW (u16)
+    //   0x08: scaleH (u16), objY (s16)
+    //   0x0C: paddingY (u16), imageH (u16)
+    //   0x10: imageAdrs (u16), imageStride (u16)
+    //   0x14: imageFlags (u8), imagePal (u8), imageSiz (u8), imageFmt (u8)
+    obj.scaleW      = ctx.ReadHalf(address + 0x00);
+    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x02));
+    // skip paddingX at 0x04
+    obj.imageW      = ctx.ReadHalf(address + 0x06);
+    obj.scaleH      = ctx.ReadHalf(address + 0x08);
+    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x0A));
+    // skip paddingY at 0x0C
+    obj.imageH      = ctx.ReadHalf(address + 0x0E);
+    obj.imageAdrs   = ctx.ReadHalf(address + 0x10);
+    obj.imageStride = ctx.ReadHalf(address + 0x12);
+    obj.imageFlags  = ctx.ReadByte(address + 0x14);
+    obj.imagePal    = ctx.ReadByte(address + 0x15);
+    obj.imageSiz    = ctx.ReadByte(address + 0x16);
+    obj.imageFmt    = ctx.ReadByte(address + 0x17);
     
     return true;
 }
@@ -463,16 +473,18 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
 inline bool S2DEXHandler::ReadObjMatrix(DListContext& ctx, uint32_t address, ObjMatrix& mtx) {
     if (address + 24 > ctx.rdramSize) return false;
     
-    const uint8_t* src = ctx.rdram + address;
-    
-    mtx.A = static_cast<int32_t>((src[0] << 24) | (src[1] << 16) | (src[2] << 8) | src[3]);
-    mtx.B = static_cast<int32_t>((src[4] << 24) | (src[5] << 16) | (src[6] << 8) | src[7]);
-    mtx.C = static_cast<int32_t>((src[8] << 24) | (src[9] << 16) | (src[10] << 8) | src[11]);
-    mtx.D = static_cast<int32_t>((src[12] << 24) | (src[13] << 16) | (src[14] << 8) | src[15]);
-    mtx.X = static_cast<int16_t>((src[16] << 8) | src[17]);
-    mtx.Y = static_cast<int16_t>((src[18] << 8) | src[19]);
-    mtx.BaseScaleX = (src[20] << 8) | src[21];
-    mtx.BaseScaleY = (src[22] << 8) | src[23];
+    // N64 uObjMtx layout (24 bytes):
+    //   0x00: A (s15.16), 0x04: B, 0x08: C, 0x0C: D
+    //   0x10: X (s10.2), 0x12: Y (s10.2)
+    //   0x14: BaseScaleX (u5.10), 0x16: BaseScaleY (u5.10)
+    mtx.A = static_cast<int32_t>(ctx.ReadWord(address + 0x00));
+    mtx.B = static_cast<int32_t>(ctx.ReadWord(address + 0x04));
+    mtx.C = static_cast<int32_t>(ctx.ReadWord(address + 0x08));
+    mtx.D = static_cast<int32_t>(ctx.ReadWord(address + 0x0C));
+    mtx.X = static_cast<int16_t>(ctx.ReadHalf(address + 0x10));
+    mtx.Y = static_cast<int16_t>(ctx.ReadHalf(address + 0x12));
+    mtx.BaseScaleX = ctx.ReadHalf(address + 0x14);
+    mtx.BaseScaleY = ctx.ReadHalf(address + 0x16);
     
     return true;
 }
@@ -480,53 +492,157 @@ inline bool S2DEXHandler::ReadObjMatrix(DListContext& ctx, uint32_t address, Obj
 // ─── Rendering Helpers ──────────────────────────────────────────────────
 
 inline void S2DEXHandler::RenderBgSprite(DListContext& ctx, const ObjBgSprite& bg, bool copyMode) {
-    if (!ctx.rdpProcessor) return;
+    if (!ctx.rdpProcessor || !ctx.state) return;
     
-    // Background sprites are rendered as large texture rectangles
-    // They tile/scroll across the screen
     float frameX = static_cast<float>(bg.frameX) / 4.0f;
     float frameY = static_cast<float>(bg.frameY) / 4.0f;
     float frameW = static_cast<float>(bg.frameW) / 4.0f;
     float frameH = static_cast<float>(bg.frameH) / 4.0f;
     
-    float scaleW = static_cast<float>(bg.scaleW) / 1024.0f;
-    float scaleH = static_cast<float>(bg.scaleH) / 1024.0f;
+    float imageX = static_cast<float>(bg.imageX) / 32.0f;
+    float imageY = static_cast<float>(bg.imageY) / 32.0f;
     
-    // Set up RDP for background rendering
-    // In copy mode, uses cycle type COPY for bit-exact reproduction
-    // In 1-cycle mode, allows filtering/blending
+    // imageW/imageH are u10.2; round down to even pixel count (GLideN64 convention)
+    int imageWi = static_cast<int>((bg.imageW >> 2) & ~1u);
+    int imageHi = static_cast<int>((bg.imageH >> 2) & ~1u);
+    float imageW = static_cast<float>(imageWi);
     
-    // Point RDP state at the background image so TextureCache picks it up
-    if (ctx.state) {
-        uint32_t resolvedAddr = ctx.ResolveAddress(bg.imageAddr);
-        ctx.state->textureImage.address = resolvedAddr & 0x00FFFFFF;
-        ctx.state->textureImage.format  = static_cast<ImageFormat>(static_cast<uint8_t>(bg.imageFormat));
-        ctx.state->textureImage.size    = static_cast<ImageSize>(static_cast<uint8_t>(bg.imageSize));
-        ctx.state->textureImage.width   = static_cast<uint16_t>(bg.imageW >> 2); // imageW is 10.2
-    }
-
-    // Texture UV start (scrolled into the image)
-    float ulS = static_cast<float>(bg.imageX) / 32.0f;
-    float ulT = static_cast<float>(bg.imageY) / 32.0f;
-    // dsDx: texels advanced per screen pixel. scaleW=1 -> 1 texel/pixel; scaleW=2 -> stretch 2x -> 0.5 texels/pixel
-    float dsdx = (scaleW > 0.0f) ? (1.0f / scaleW) : 1.0f;
-    float dtdy = (scaleH > 0.0f) ? (1.0f / scaleH) : 1.0f;
+    float scaleW, scaleH;
     if (copyMode) {
-        dsdx *= 4.0f; // Copy mode S increment is in quarter-pixel units
+        scaleW = 1.0f;
+        scaleH = 1.0f;
+    } else {
+        scaleW = static_cast<float>(bg.scaleW) / 1024.0f;
+        scaleH = static_cast<float>(bg.scaleH) / 1024.0f;
     }
-
-    DecodedRectangle rect{};
-    rect.x0 = frameX;  rect.y0 = frameY;
-    rect.x1 = frameX + frameW;  rect.y1 = frameY + frameH;
-    rect.s = ulS;  rect.t = ulT;
-    rect.dsDx = dsdx;  rect.dtDy = dtdy;
-    rect.tileIndex = 0;
-    rect.flipped = bg.imageFlip;
-    ctx.rdpProcessor->DrawTextureRect(rect);
+    if (scaleW <= 0.0f) scaleW = 1.0f;
+    if (scaleH <= 0.0f) scaleH = 1.0f;
+    
+    // Force cycle type
+    if (copyMode)
+        ctx.state->otherModeH = (ctx.state->otherModeH & ~0x00300000u) | (2u << 20); // G_CYC_COPY
+    else
+        ctx.state->otherModeH = (ctx.state->otherModeH & ~0x00300000u) | (0u << 20); // G_CYC_1CYCLE
+    
+    uint32_t resolvedAddr = ctx.ResolveAddress(bg.imageAddr);
+    resolvedAddr &= 0x00FFFFFF;
+    
+    // Bits per pixel for this format
+    static const int bpp[] = { 4, 8, 16, 32 };
+    int bitsPerPixel = bpp[static_cast<uint8_t>(bg.imageSize) & 3];
+    
+    // TMEM line stride: 64-bit words per row
+    int lineWords = (imageWi * bitsPerPixel + 63) / 64;
+    int bytesPerRow = lineWords * 8;
+    
+    // How many rows fit in TMEM? (4096 bytes total)
+    int rowsPerStrip = (bytesPerRow > 0) ? (4096 / bytesPerRow) : imageHi;
+    if (rowsPerStrip <= 0) rowsPerStrip = 1;
+    if (rowsPerStrip > imageHi) rowsPerStrip = imageHi;
+    
+    // ── Strip loop ──
+    // Iterate over horizontal strips of the BG image. Each strip loads
+    // rowsPerStrip rows into TMEM via LoadBlock, then draws a TextureRect.
+    float screenY = frameY;
+    float texRowY = imageY;
+    int remainingRows = imageHi;
+    
+    // RDRAM bytes per row (source stride, NOT TMEM line stride)
+    int rdramBytesPerRow = (imageWi * bitsPerPixel + 7) / 8;
+    
+    while (remainingRows > 0 && screenY < frameY + frameH) {
+        int stripRows = std::min(rowsPerStrip, remainingRows);
+        int stripBytes = bytesPerRow * stripRows;
+        
+        // Source RDRAM address for this strip
+        int rowOffset = imageHi - remainingRows;
+        uint32_t stripAddr = resolvedAddr + static_cast<uint32_t>(rowOffset) * rdramBytesPerRow;
+        
+        // Point textureImage at this strip's RDRAM source
+        ctx.state->textureImage.address = stripAddr;
+        ctx.state->textureImage.format  = bg.imageFormat;
+        ctx.state->textureImage.size    = bg.imageSize;
+        ctx.state->textureImage.width   = static_cast<uint16_t>(imageWi);
+        
+        // Configure load tile (tile 7) for LoadBlock
+        auto& loadTile = ctx.state->tiles[7];
+        loadTile.format   = static_cast<uint8_t>(bg.imageFormat);
+        loadTile.size     = static_cast<uint8_t>(bg.imageSize);
+        loadTile.tmemAddr = 0;
+        loadTile.line     = 0;
+        loadTile.palette  = 0;
+        loadTile.clampS = 0; loadTile.clampT = 0;
+        loadTile.maskS = 0; loadTile.maskT = 0;
+        loadTile.shiftS = 0; loadTile.shiftT = 0;
+        
+        // LoadBlock: load strip texels into TMEM starting at address 0
+        // texels parameter is (count-1) for LoadBlock; bpp-based conversion to 16b words
+        int loadTexels = (stripBytes / 2) - 1; // Convert bytes to 16-bit RGBA words - 1
+        if (loadTexels < 0) loadTexels = 0;
+        ctx.rdpProcessor->ExecuteLoadBlock(7, 0, 0, loadTexels, 0);
+        
+        // Configure render tile (tile 0) with this strip's dimensions
+        auto& renderTile = ctx.state->tiles[0];
+        renderTile.format   = static_cast<uint8_t>(bg.imageFormat);
+        renderTile.size     = static_cast<uint8_t>(bg.imageSize);
+        renderTile.tmemAddr = 0;
+        renderTile.palette  = static_cast<uint8_t>(bg.imagePal & 0xF);
+        renderTile.line     = static_cast<uint16_t>(lineWords);
+        renderTile.sl = 0; renderTile.tl = 0;
+        renderTile.sh = static_cast<int32_t>(imageWi - 1) * 4;
+        renderTile.th = static_cast<int32_t>(stripRows - 1) * 4;
+        renderTile.clampS = 0; renderTile.clampT = 0;
+        renderTile.maskS = 0; renderTile.maskT = 0;
+        renderTile.shiftS = 0; renderTile.shiftT = 0;
+        
+        // Screen extents for this strip
+        float stripScreenH = static_cast<float>(stripRows) / scaleH;
+        float stripUlY = screenY;
+        float stripLrY = std::min(screenY + stripScreenH, frameY + frameH);
+        float ulx = frameX;
+        float lrx = ulx + std::min(frameW, imageW / scaleW);
+        
+        // Texture coordinates for this strip
+        float ulS = imageX;
+        float ulT = 0.0f; // Each strip starts at T=0 in its own TMEM load
+        float lrS = ulS + (lrx - ulx) * scaleW;
+        float lrT = (stripLrY - stripUlY) * scaleH;
+        
+        // Horizontal flip
+        float drawUlx = ulx, drawLrx = lrx;
+        if (bg.imageFlip) {
+            std::swap(drawUlx, drawLrx);
+        }
+        
+        float spanX = drawLrx - drawUlx;
+        float spanY = stripLrY - stripUlY;
+        float dsdx = (std::abs(spanX) > 0.001f) ? (lrS - ulS) / spanX : 1.0f;
+        float dtdy = (std::abs(spanY) > 0.001f) ? lrT / spanY : 1.0f;
+        if (copyMode) {
+            dsdx *= 4.0f;
+        }
+        
+        DecodedRectangle rect{};
+        rect.x0 = std::min(drawUlx, drawLrx);
+        rect.y0 = stripUlY;
+        rect.x1 = std::max(drawUlx, drawLrx);
+        rect.y1 = stripLrY;
+        rect.s  = bg.imageFlip ? lrS : ulS;
+        rect.t  = ulT;
+        rect.dsDx = bg.imageFlip ? -std::abs(dsdx) : dsdx;
+        rect.dtDy = dtdy;
+        rect.tileIndex = 0;
+        rect.flipped = false;
+        ctx.rdpProcessor->DrawTextureRect(rect);
+        
+        screenY += stripScreenH;
+        texRowY += static_cast<float>(stripRows);
+        remainingRows -= stripRows;
+    }
 }
 
 inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& obj) {
-    if (!ctx.rdpProcessor) return;
+    if (!ctx.rdpProcessor || !ctx.state) return;
     
     float x = static_cast<float>(obj.objX) / 4.0f;
     float y = static_cast<float>(obj.objY) / 4.0f;
@@ -557,18 +673,29 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
     float screenW = w * scaleW;
     float screenH = h * scaleH;
 
-    // Point RDP state at the sprite image so TextureCache picks it up
-    if (ctx.state) {
-        uint32_t resolvedAddr = ctx.ResolveAddress(obj.imageAddr);
-        ctx.state->textureImage.address = resolvedAddr & 0x00FFFFFF;
-        uint8_t fmt = (obj.imageFmt >> 5) & 0x07;
-        uint8_t siz = (obj.imageFmt >> 3) & 0x03;
-        ctx.state->textureImage.format  = static_cast<ImageFormat>(fmt);
-        ctx.state->textureImage.size    = static_cast<ImageSize>(siz);
-        ctx.state->textureImage.width   = static_cast<uint16_t>(obj.imageW >> 5); // imageW is 10.5
+    // Set up tile 0 with sprite's own format info (matches GLideN64 gSPSetSpriteTile)
+    {
+        uint32_t texW = std::max<uint32_t>(obj.imageW >> 5, 1u);
+        uint32_t texH = std::max<uint32_t>(obj.imageH >> 5, 1u);
+        auto& tile = ctx.state->tiles[0];
+        tile.format   = obj.imageFmt;
+        tile.size     = obj.imageSiz;
+        tile.line     = obj.imageStride;
+        tile.tmemAddr = obj.imageAdrs;
+        tile.palette  = obj.imagePal;
+        tile.clampS   = 2; tile.clampT = 2;  // clamp mode
+        tile.maskS    = 0; tile.maskT = 0;
+        tile.shiftS   = 0; tile.shiftT = 0;
+        tile.sl = 0; tile.tl = 0;
+        tile.sh = static_cast<int32_t>(texW - 1) << 2;
+        tile.th = static_cast<int32_t>(texH - 1) << 2;
+        // textureImage width for the tile (used by texture cache)
+        ctx.state->textureImage.width = static_cast<uint16_t>(texW);
+        ctx.state->textureImage.format = static_cast<ImageFormat>(obj.imageFmt);
+        ctx.state->textureImage.size   = static_cast<ImageSize>(obj.imageSiz);
     }
 
-    // dsDx/dtDy: texels per screen pixel (reciprocal of scale). scaleW=1.0 -> 1 texel/pixel
+    // dsDx/dtDy: texels per screen pixel (reciprocal of scale)
     float dsDx = (scaleW > 0.0f) ? (1.0f / scaleW) : 1.0f;
     float dtDy = (scaleH > 0.0f) ? (1.0f / scaleH) : 1.0f;
 
@@ -585,71 +712,105 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
 inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address) {
     address = ctx.ResolveAddress(address);
     if (address + 24 > ctx.rdramSize) return;
-    
-    // Read texture loading parameters from RDRAM
-    // S2DEX texture loading structure (big-endian):
-    //   0x00: type (u16) — 0 = LoadBlock, 1 = LoadTile
-    //   0x02: padding (u16)
-    //   0x04: image addr (u32) — RDRAM source (segmented)
-    //   0x08: tmem (u16) — TMEM destination (word address)
-    //   0x0A: tsize (u16) — format | size
-    //   0x0C: twidth (u16) — texture width for line calculation
-    //   0x0E: theight (u16) — texture height
-    const uint8_t* src = ctx.rdram + address;
-    
-    uint16_t type    = (src[0] << 8) | src[1];
-    uint32_t image   = ((src[4] << 24) | (src[5] << 16) | (src[6] << 8) | src[7]);
-    uint16_t tmem    = (src[8] << 8) | src[9];
-    uint16_t tsize   = (src[10] << 8) | src[11];
-    uint16_t twidth  = (src[12] << 8) | src[13];
-    uint16_t theight = (src[14] << 8) | src[15];
-    
     if (!ctx.state || !ctx.rdpProcessor) return;
     
-    // Parse format/size from tsize field
-    uint8_t fmt  = (tsize >> 5) & 0x07; // Image format (0=RGBA, 1=YUV, 2=CI, 3=IA, 4=I)
-    uint8_t siz  = (tsize >> 3) & 0x03; // Size (0=4b, 1=8b, 2=16b, 3=32b)
+    // N64 uObjTxtr (union of Block/Tile/TLUT, each 24 bytes):
+    //   0x00: type (u32) — G_OBJLT_TXTRBLOCK=0x00001033, G_OBJLT_TXTRTILE=0x00001034, G_OBJLT_TLUT=0x00001030
+    //   0x04: image (u32) — RDRAM source address (segmented)
+    //   0x08-0x17: type-specific fields
+    uint32_t type  = ctx.ReadWord(address + 0x00);
+    uint32_t image = ctx.ReadWord(address + 0x04);
     
-    // Set the source texture image in RDP state
+    // Resolve the texture source address
     uint32_t resolvedImage = ctx.ResolveAddress(image);
-    ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
-    ctx.state->textureImage.width   = twidth;
-    ctx.state->textureImage.format  = static_cast<ImageFormat>(fmt);
-    ctx.state->textureImage.size    = static_cast<ImageSize>(siz);
     
-    // Configure tile 0 for this load
-    auto& tile = ctx.state->tiles[0];
-    tile.format   = fmt;
-    tile.size     = siz;
-    tile.tmemAddr = tmem;
+    // Load tile index for S2DEX texture loads (tile 7 = G_TX_LOADTILE)
+    constexpr int loadTile = 7;
     
-    // Calculate line stride: bytes per row / 8 (64-bit words)
-    static const int bpp[] = { 4, 8, 16, 32 };
-    int bitsPerPixel = bpp[siz & 3];
-    uint16_t lineWords = static_cast<uint16_t>((twidth * bitsPerPixel + 63) / 64);
-    tile.line = lineWords;
-    
-    if (type == 0) {
-        // LoadBlock: load all texels in one DMA transfer
-        int totalTexels = twidth * theight;
-        // dxt = (1 << 11) / line — inverse of line for LoadBlock stride
-        int dxt = (lineWords > 0) ? ((1 << 11) / lineWords) : 0;
-        ctx.rdpProcessor->ExecuteLoadBlock(0, 0, 0, totalTexels - 1, dxt);
-    } else {
-        // LoadTile: load a rectangular region
-        tile.sl = 0;
-        tile.tl = 0;
-        tile.sh = static_cast<int32_t>(twidth - 1) << 2;
-        tile.th = static_cast<int32_t>(theight - 1) << 2;
-        ctx.rdpProcessor->ExecuteLoadTile(0, 0.0f, 0.0f,
-            static_cast<float>(twidth - 1), static_cast<float>(theight - 1));
+    switch (type) {
+    case 0x00001033: { // G_OBJLT_TXTRBLOCK
+        uint16_t tsize = ctx.ReadHalf(address + 0x08);
+        uint16_t tmem  = ctx.ReadHalf(address + 0x0A);
+        uint16_t tline = ctx.ReadHalf(address + 0x0E);
+        
+        // SetTextureImage: RGBA 16b, width = tsize+1
+        ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
+        ctx.state->textureImage.format  = ImageFormat::RGBA;
+        ctx.state->textureImage.size    = ImageSize::Bpp16;
+        ctx.state->textureImage.width   = tsize + 1;
+        
+        // SetTile for load tile
+        auto& lt = ctx.state->tiles[loadTile];
+        lt.format   = 0; // RGBA
+        lt.size     = 2; // 16b
+        lt.line     = 0;
+        lt.tmemAddr = tmem;
+        lt.palette  = 0;
+        lt.clampS = 0; lt.clampT = 0;
+        lt.maskS = 0; lt.maskT = 0;
+        lt.shiftS = 0; lt.shiftT = 0;
+        
+        // LoadBlock: sl=0, tl=0, sh = tsize<<2, dxt = tline
+        ctx.rdpProcessor->ExecuteLoadBlock(loadTile, 0, 0, tsize << 2, tline);
+        break;
     }
-    
-    // Set tile size for rendering
-    tile.sl = 0;
-    tile.tl = 0;
-    tile.sh = static_cast<int32_t>(twidth - 1) << 2;
-    tile.th = static_cast<int32_t>(theight - 1) << 2;
+    case 0x00001034: { // G_OBJLT_TXTRTILE
+        uint16_t twidth  = ctx.ReadHalf(address + 0x08);
+        uint16_t tmem    = ctx.ReadHalf(address + 0x0A);
+        uint16_t theight = ctx.ReadHalf(address + 0x0E);
+        
+        // SetTextureImage: RGBA 16b, width = twidth+1
+        ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
+        ctx.state->textureImage.format  = ImageFormat::RGBA;
+        ctx.state->textureImage.size    = ImageSize::Bpp16;
+        ctx.state->textureImage.width   = twidth + 1;
+        
+        // SetTile for load tile
+        auto& lt = ctx.state->tiles[loadTile];
+        lt.format   = 0; // RGBA
+        lt.size     = 2; // 16b
+        lt.line     = (twidth + 1) >> 2;
+        lt.tmemAddr = tmem;
+        lt.palette  = 0;
+        lt.clampS = 0; lt.clampT = 0;
+        lt.maskS = 0; lt.maskT = 0;
+        lt.shiftS = 0; lt.shiftT = 0;
+        
+        // LoadTile: 0,0 to twidth<<2, theight
+        ctx.rdpProcessor->ExecuteLoadTile(loadTile, 0.0f, 0.0f,
+            static_cast<float>(twidth << 2), static_cast<float>(theight));
+        break;
+    }
+    case 0x00001030: { // G_OBJLT_TLUT
+        uint16_t pnum  = ctx.ReadHalf(address + 0x08);
+        uint16_t phead = ctx.ReadHalf(address + 0x0A);
+        
+        // SetTextureImage: RGBA 16b, width = 1
+        ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
+        ctx.state->textureImage.format  = ImageFormat::RGBA;
+        ctx.state->textureImage.size    = ImageSize::Bpp16;
+        ctx.state->textureImage.width   = 1;
+        
+        // SetTile for load: 4b format, tmem = phead
+        auto& lt = ctx.state->tiles[loadTile];
+        lt.format   = 0; // RGBA
+        lt.size     = 0; // 4b
+        lt.line     = 0;
+        lt.tmemAddr = phead;
+        lt.palette  = 0;
+        lt.clampS = 0; lt.clampT = 0;
+        lt.maskS = 0; lt.maskT = 0;
+        lt.shiftS = 0; lt.shiftT = 0;
+        
+        // LoadTLUT: count = pnum<<2
+        ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum << 2);
+        break;
+    }
+    default:
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+                "S2DEX: Unknown ObjTxtr type 0x{:08X}", type);
+        break;
+    }
 }
 
 } // namespace Nova64::Video

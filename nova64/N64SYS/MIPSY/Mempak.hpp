@@ -1,3 +1,7 @@
+/**
+ * @file Mempak.hpp
+ * @brief Mempak declarations and types.
+ */
 #pragma once
 
 #include <cstdint>

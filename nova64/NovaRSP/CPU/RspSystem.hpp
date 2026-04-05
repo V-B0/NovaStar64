@@ -1,3 +1,7 @@
+/**
+ * @file RspSystem.hpp
+ * @brief RSP System.
+ */
 // SuperNova64 - N64 Emulator
 // RSP System - Modernized from Project64's RspSystem.h
 // C++20 central RSP subsystem tying together CPU, recompiler, and HLE

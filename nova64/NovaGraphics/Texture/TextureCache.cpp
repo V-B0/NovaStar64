@@ -1,3 +1,7 @@
+/**
+ * @file TextureCache.cpp
+ * @brief Texture Cache.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Texture Cache Implementation
 // N64 texture decoding, caching, and GPU upload
@@ -118,11 +122,11 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // the pointer already points at the tile data so we zero the offset locally.
     std::vector<uint32_t> pixels;
     if (tmem) {
-        DecodeTexture(key, tmem, pixels);
+        DecodeTexture(key, tmem, pixels, true);
     } else {
         TextureKey rawKey = key;
         rawKey.tmemOffset = 0;
-        DecodeTexture(rawKey, rdram + key.address, pixels);
+        DecodeTexture(rawKey, rdram + key.address, pixels, false);
     }
 
     if (pixels.empty()) return nullptr;
@@ -195,6 +199,163 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // Create cache entry
     m_lruList.push_front(key);
 
+    CacheEntry cacheEntry;
+    cacheEntry.texture.key = key;
+    cacheEntry.texture.gpuTexture = std::move(gpuTex);
+    cacheEntry.texture.realWidth = gpuWidth;
+    cacheEntry.texture.realHeight = gpuHeight;
+    cacheEntry.texture.sizeBytes = gpuWidth * gpuHeight * 4 * desc.mipLevels;
+    cacheEntry.texture.lastUsedFrame = m_frameCounter;
+    cacheEntry.texture.useCount = 1;
+    cacheEntry.texture.scaleS = static_cast<float>(key.width) / gpuWidth;
+    cacheEntry.texture.scaleT = static_cast<float>(key.height) / gpuHeight;
+    cacheEntry.lruIterator = m_lruList.begin();
+
+    m_stats.currentEntries++;
+    m_stats.currentBytes += cacheEntry.texture.sizeBytes;
+    m_stats.uploads++;
+    if (m_stats.currentBytes > m_stats.peakBytes)
+        m_stats.peakBytes = m_stats.currentBytes;
+
+    auto result = m_cache.emplace(key, std::move(cacheEntry));
+    return &result.first->second.texture;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  MIPMAPPED TEXTURE LOOKUP / CREATION (TILE-CHAIN)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram,
+                                          const uint8_t* tmem,
+                                          const MipTileInfo* mipTiles, int mipCount) {
+    // Look up in cache — same as non-mip path
+    auto it = m_cache.find(key);
+    if (it != m_cache.end()) {
+        m_stats.hits++;
+        auto& entry = it->second;
+        entry.texture.lastUsedFrame = m_frameCounter;
+        entry.texture.useCount++;
+        m_lruList.erase(entry.lruIterator);
+        m_lruList.push_front(key);
+        entry.lruIterator = m_lruList.begin();
+        return &entry.texture;
+    }
+
+    // Cache miss — decode base level
+    m_stats.misses++;
+    while (m_stats.currentEntries >= m_config.maxEntries ||
+           m_stats.currentBytes >= m_config.maxCacheBytes) {
+        if (m_lruList.empty()) break;
+        EvictLRU();
+    }
+
+    // Decode base tile (level 0)
+    std::vector<uint32_t> pixels;
+    if (tmem) {
+        DecodeTexture(key, tmem, pixels, true);
+    } else {
+        TextureKey rawKey = key;
+        rawKey.tmemOffset = 0;
+        DecodeTexture(rawKey, rdram + key.address, pixels, false);
+    }
+    if (pixels.empty()) return nullptr;
+
+    // Determine actual mip level count: base + mipCount additional levels
+    int totalLevels = 1 + std::min(mipCount, 7);
+
+    uint32_t gpuWidth = key.width;
+    uint32_t gpuHeight = key.height;
+    if (m_config.enableMipmaps) {
+        gpuWidth = NextPow2(key.width);
+        gpuHeight = NextPow2(key.height);
+    }
+
+    TextureDesc desc;
+    desc.width = gpuWidth;
+    desc.height = gpuHeight;
+    desc.format = TextureFormat::RGBA8;
+    desc.usage = BufferUsage::Dynamic;
+    desc.mipLevels = static_cast<uint32_t>(totalLevels);
+
+    auto gpuTex = m_renderer->CreateTexture(desc);
+    if (!gpuTex) return nullptr;
+
+    // Upload base level (level 0)
+    if (gpuWidth == key.width && gpuHeight == key.height) {
+        gpuTex->Upload(pixels.data(), pixels.size() * sizeof(uint32_t), 0);
+    } else {
+        std::vector<uint32_t> clearData(gpuWidth * gpuHeight, 0);
+        gpuTex->Upload(clearData.data(), clearData.size() * sizeof(uint32_t), 0);
+        gpuTex->UploadSubRegion(0, 0, key.width, key.height,
+                                  pixels.data(), pixels.size() * sizeof(uint32_t), 0);
+    }
+
+    // Upload each mip level from N64 tile chain TMEM data
+    for (int mip = 0; mip < mipCount; mip++) {
+        const auto& mt = mipTiles[mip];
+        uint16_t mipW = mt.width;
+        uint16_t mipH = mt.height;
+        if (mipW == 0 || mipH == 0) continue;
+
+        // Build a temporary key for this mip tile's format/size/TMEM location
+        TextureKey mipKey{};
+        mipKey.width      = mipW;
+        mipKey.height     = mipH;
+        mipKey.format     = static_cast<N64TexFormat>(mt.format);
+        mipKey.size       = static_cast<N64TexSize>(mt.size);
+        mipKey.line       = mt.line;
+        mipKey.tmemOffset = mt.tmemAddr;
+        mipKey.palette    = mt.palette;
+        mipKey.tlutType   = key.tlutType;
+
+        std::vector<uint32_t> mipPixels;
+        const uint8_t* mipData = tmem ? tmem : (rdram + key.address);
+            DecodeTexture(mipKey, mipData, mipPixels, tmem != nullptr);
+        if (mipPixels.empty()) continue;
+
+        uint32_t mipGpuW = std::max(1u, gpuWidth >> (mip + 1));
+        uint32_t mipGpuH = std::max(1u, gpuHeight >> (mip + 1));
+
+        if (mipGpuW == mipW && mipGpuH == mipH) {
+            gpuTex->Upload(mipPixels.data(), mipPixels.size() * sizeof(uint32_t),
+                           static_cast<uint32_t>(mip + 1));
+        } else {
+            // Mip level dimensions don't match the GL mip size — upload as sub-region
+            std::vector<uint32_t> clearMip(mipGpuW * mipGpuH, 0);
+            gpuTex->Upload(clearMip.data(), clearMip.size() * sizeof(uint32_t),
+                           static_cast<uint32_t>(mip + 1));
+            uint32_t uploadW = std::min(mipW, static_cast<uint16_t>(mipGpuW));
+            uint32_t uploadH = std::min(mipH, static_cast<uint16_t>(mipGpuH));
+            gpuTex->UploadSubRegion(0, 0, uploadW, uploadH,
+                                      mipPixels.data(), mipPixels.size() * sizeof(uint32_t),
+                                      static_cast<uint32_t>(mip + 1));
+        }
+    }
+
+    // Set sampler state
+    SamplerDesc samplerDesc;
+    if (m_config.forceLinearFilter) {
+        samplerDesc.minFilter = SamplerFilter::LinearMipLinear;
+        samplerDesc.magFilter = SamplerFilter::Linear;
+    } else if (m_config.enable3PointFilter) {
+        samplerDesc.minFilter = SamplerFilter::N64_3Point;
+        samplerDesc.magFilter = SamplerFilter::N64_3Point;
+    } else {
+        samplerDesc.minFilter = SamplerFilter::NearestMipNearest;
+        samplerDesc.magFilter = SamplerFilter::Nearest;
+    }
+    auto translateWrap = [](uint8_t mode) -> TextureWrap {
+        if (mode & 0x2) return TextureWrap::ClampToEdge;
+        if (mode & 0x1) return TextureWrap::MirroredRepeat;
+        return TextureWrap::Repeat;
+    };
+    samplerDesc.wrapS = translateWrap(key.cms);
+    samplerDesc.wrapT = translateWrap(key.cmt);
+    samplerDesc.maxAnisotropy = m_config.anisotropicLevel;
+    gpuTex->SetSampler(samplerDesc);
+
+    // Create cache entry
+    m_lruList.push_front(key);
     CacheEntry cacheEntry;
     cacheEntry.texture.key = key;
     cacheEntry.texture.gpuTexture = std::move(gpuTex);
@@ -297,8 +458,19 @@ void TextureCache::EvictLRU() {
 //  TEXTURE DECODING — DISPATCH
 // ═══════════════════════════════════════════════════════════════════════════════
 
+static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset,
+                                      uint32_t y, bool fromTMEM) {
+    // DWordInterleave at load time models the N64 TMEM write interleave.
+    // This read-time XOR models the TMEM read de-interleave: on odd rows,
+    // swap the two 32-bit halves of each 64-bit word (XOR byte offset by 4).
+    // Both operations are needed together (matching GLideN64's i=(ty&1)<<1 pattern).
+    if (fromTMEM && (y & 1))
+        byteOffset ^= 4;
+    return row[byteOffset];
+}
+
 void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
-                                   std::vector<uint32_t>& outPixels) {
+                                   std::vector<uint32_t>& outPixels, bool fromTMEM) {
     uint32_t count = key.width * key.height;
     outPixels.resize(count);
     m_stats.conversions++;
@@ -312,25 +484,29 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
     switch (key.format) {
         case N64TexFormat::RGBA:
             if (key.size == N64TexSize::Bits16)
-                DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes);
-            else if (key.size == N64TexSize::Bits32)
-                DecodeRGBA32(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+            else if (key.size == N64TexSize::Bits32) {
+                if (fromTMEM)
+                    DecodeRGBA32_TMEM(data, key.tmemOffset, key.line, outPixels.data(), key.width, key.height);
+                else
+                    DecodeRGBA32(tileData, outPixels.data(), key.width, key.height, lineBytes * 2, false);
+            }
             break;
 
         case N64TexFormat::IA:
             if (key.size == N64TexSize::Bits16)
-                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             else if (key.size == N64TexSize::Bits8)
-                DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             else if (key.size == N64TexSize::Bits4)
-                DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             break;
 
         case N64TexFormat::I:
             if (key.size == N64TexSize::Bits8)
-                DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             else if (key.size == N64TexSize::Bits4)
-                DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes);
+                DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             break;
 
         case N64TexFormat::CI:
@@ -338,21 +514,24 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
             // (palette lives at the upper TMEM half, data[TMEM_PALETTE_BASE+...])
             {
                 uint8_t pal = static_cast<uint8_t>(key.palette);
+                bool isIA = (key.tlutType == 3);  // G_TT_IA16
+
                 if (key.size == N64TexSize::Bits8)
-                    DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes);
+                    DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA);
                 else if (key.size == N64TexSize::Bits4)
-                    DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes);
+                    DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA);
             }
             break;
 
         case N64TexFormat::YUV:
-            DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes);
+            DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
             break;
 
         default:
             std::memset(outPixels.data(), 0xFF, count * 4);
             break;
     }
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -372,59 +551,91 @@ static inline uint32_t RGBA5551toRGBA8(uint16_t c) {
     return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
+// Convert N64 IA88 (8-bit intensity + 8-bit alpha) to RGBA8888
+static inline uint32_t IA88toRGBA8(uint16_t c) {
+    uint8_t i = static_cast<uint8_t>(c >> 8);
+    uint8_t a = static_cast<uint8_t>(c & 0xFF);
+    return (a << 24) | (i << 16) | (i << 8) | i;
+}
+
 void TextureCache::DecodeRGBA16(const uint8_t* src, uint32_t* dst,
-                                  uint32_t width, uint32_t height, uint32_t line) {
+                                  uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            // TMEM data was byte-swapped with ^3 during LoadBlock/LoadTile,
-            // placing bytes into native little-endian order within 32-bit words.
-            // Read as individual bytes to avoid alignment and endian assumptions.
-            uint16_t pixel = (static_cast<uint16_t>(row[x * 2]) << 8) | row[x * 2 + 1];
+            uint16_t pixel = (static_cast<uint16_t>(ReadTextureByte(row, x * 2, y, fromTMEM)) << 8) |
+                             ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
             dst[y * width + x] = RGBA5551toRGBA8(pixel);
         }
     }
 }
 
 void TextureCache::DecodeRGBA32(const uint8_t* src, uint32_t* dst,
-                                  uint32_t width, uint32_t height, uint32_t line) {
-    // NOTE: TMEM is stored flat by LoadBlock/LoadTile (sequential bytes with XOR 3),
-    // so we read sequentially here.  The N64 hardware has a bank-split layout
-    // (RG in low 2KB, BA in high 2KB), but since our TMEM store doesn't interleave,
-    // our read doesn't need to de-interleave.  Other decoders (TextureDecoder,
-    // TextureFormat, TexLoad) DO apply the bank split — those are only correct
-    // if fed pre-interleaved TMEM data (e.g. from a hardware-accurate TMEM model).
+                                  uint32_t width, uint32_t height, uint32_t lineBytes, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = src + y * lineBytes;
         for (uint32_t x = 0; x < width; x++) {
-            // TMEM bytes are in big-endian order (R, G, B, A)
-            uint8_t r = row[x * 4 + 0];
-            uint8_t g = row[x * 4 + 1];
-            uint8_t b = row[x * 4 + 2];
-            uint8_t a = row[x * 4 + 3];
+            uint8_t r = ReadTextureByte(row, x * 4 + 0, y, fromTMEM);
+            uint8_t g = ReadTextureByte(row, x * 4 + 1, y, fromTMEM);
+            uint8_t b = ReadTextureByte(row, x * 4 + 2, y, fromTMEM);
+            uint8_t a = ReadTextureByte(row, x * 4 + 3, y, fromTMEM);
             dst[y * width + x] = (a << 24) | (b << 16) | (g << 8) | r;
         }
     }
 }
 
+void TextureCache::DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr,
+                                      uint16_t tileLine, uint32_t* dst,
+                                      uint32_t width, uint32_t height) {
+    // Split-bank RGBA32 decode matching GLideN64's _getTextureDestData for 32b
+    const uint16_t* tmem16 = reinterpret_cast<const uint16_t*>(tmemBase);
+    const uint32_t tbase = static_cast<uint32_t>(tmemAddr) << 2;  // in u16 units
+
+    auto swapword = [](uint16_t v) -> uint16_t {
+        return static_cast<uint16_t>((v << 8) | (v >> 8));
+    };
+
+    // Compute line32 stride in u16 units (matching GLideN64)
+    int wid_64 = static_cast<int>(width) << 2;
+    if (wid_64 & 15) wid_64 += 16;
+    wid_64 &= 0xFFFFFFF0;
+    wid_64 >>= 3;
+    int line32 = static_cast<int>(tileLine) << 1;
+    line32 = (line32 - wid_64) << 3;
+    if (wid_64 < 1) wid_64 = 1;
+    int w = wid_64 << 1;
+    line32 = w + (line32 >> 2);
+
+    for (uint32_t y = 0; y < height; y++) {
+        uint32_t tline = tbase + static_cast<uint32_t>(line32) * y;
+        uint32_t xorval = (y & 1) ? 3u : 1u;
+        for (uint32_t x = 0; x < width; x++) {
+            uint32_t taddr = ((tline + x) ^ xorval) & 0x3ff;
+            uint16_t gr = swapword(tmem16[taddr]);
+            uint16_t ab = swapword(tmem16[taddr | 0x400]);
+            dst[y * width + x] = (static_cast<uint32_t>(ab) << 16) | gr;
+        }
+    }
+}
+
 void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst,
-                                uint32_t width, uint32_t height, uint32_t line) {
+                                uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t intensity = row[x * 2 + 0];
-            uint8_t alpha = row[x * 2 + 1];
+            uint8_t intensity = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
+            uint8_t alpha = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
             dst[y * width + x] = (alpha << 24) | (intensity << 16) | (intensity << 8) | intensity;
         }
     }
 }
 
 void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t val = row[x];
+            uint8_t val = ReadTextureByte(row, x, y, fromTMEM);
             uint8_t intensity = (val >> 4) & 0xF;
             uint8_t alpha = val & 0xF;
             intensity = (intensity << 4) | intensity; // 4→8 bit
@@ -435,15 +646,12 @@ void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t val;
-            if (x & 1)
-                val = row[x / 2] & 0xF;
-            else
-                val = (row[x / 2] >> 4) & 0xF;
+            uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
+            uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
 
             uint8_t intensity = (val >> 1) & 0x7;
             uint8_t alpha = val & 0x1;
@@ -455,26 +663,23 @@ void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line) {
+                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t i = row[x];
+            uint8_t i = ReadTextureByte(row, x, y, fromTMEM);
             dst[y * width + x] = (i << 24) | (i << 16) | (i << 8) | i;
         }
     }
 }
 
 void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line) {
+                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t val;
-            if (x & 1)
-                val = row[x / 2] & 0xF;
-            else
-                val = (row[x / 2] >> 4) & 0xF;
+            uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
+            uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
             uint8_t i = (val << 4) | val;
             dst[y * width + x] = (i << 24) | (i << 16) | (i << 8) | i;
         }
@@ -482,72 +687,57 @@ void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA) {
     if (!tmemBase) return;
+
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t idx = row[x];
-            // CI8: palette at TMEM_PALETTE_BASE, entries every 4 bytes, big-endian
-            uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(idx) * 4;
+            uint8_t idx = ReadTextureByte(row, x, y, fromTMEM);
+            // CI8: palette at TMEM_PALETTE_BASE, 8-byte stride (GLideN64 TLUT layout)
+            uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(idx) * 8;
             uint16_t color = (static_cast<uint16_t>(tmemBase[addr]) << 8) | tmemBase[addr + 1];
-            dst[y * width + x] = RGBA5551toRGBA8(color);
+            dst[y * width + x] = isIA ? IA88toRGBA8(color) : RGBA5551toRGBA8(color);
         }
     }
 }
 
 void TextureCache::DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette,
-                               uint32_t* dst, uint32_t width, uint32_t height, uint32_t line) {
+                               uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA) {
     if (!tmemBase) return;
+
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x++) {
-            uint8_t idx;
-            if (x & 1)
-                idx = row[x / 2] & 0xF;
-            else
-                idx = (row[x / 2] >> 4) & 0xF;
+            uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
+            uint8_t idx = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
 
-            // CI4: palette at TMEM_PALETTE_BASE + palette * 0x80, entries every 4 bytes
+            // CI4: palette at TMEM_PALETTE_BASE + palette * 0x80, 8-byte stride (GLideN64 TLUT layout)
             uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(palette) * 0x80 +
-                            static_cast<uint32_t>(idx) * 4;
+                            static_cast<uint32_t>(idx) * 8;
             uint16_t color = (static_cast<uint16_t>(tmemBase[addr]) << 8) | tmemBase[addr + 1];
-            dst[y * width + x] = RGBA5551toRGBA8(color);
+            dst[y * width + x] = isIA ? IA88toRGBA8(color) : RGBA5551toRGBA8(color);
         }
     }
 }
 
 void TextureCache::DecodeYUV(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
     // YUV422: 2 pixels per 32 bits (Y0 U Y1 V)
+    // Store raw Y/U/V in R/G/B channels — the shader performs the actual
+    // YUV→RGB conversion using the N64's programmable K coefficients.
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * line;
         for (uint32_t x = 0; x < width; x += 2) {
-            uint8_t y0 = row[x * 2 + 0];
-            uint8_t u  = row[x * 2 + 1];
-            uint8_t y1 = row[x * 2 + 2];
-            uint8_t v  = row[x * 2 + 3];
+            uint8_t y0 = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
+            uint8_t u  = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
+            uint8_t y1 = ReadTextureByte(row, x * 2 + 2, y, fromTMEM);
+            uint8_t v  = ReadTextureByte(row, x * 2 + 3, y, fromTMEM);
 
-            int c0 = y0 - 16;
-            int c1 = y1 - 16;
-            int d = u - 128;
-            int e = v - 128;
-
-            auto clamp8 = [](int val) -> uint8_t {
-                return static_cast<uint8_t>(std::max(0, std::min(255, val)));
-            };
-
-            uint8_t r0 = clamp8((298 * c0 + 409 * e + 128) >> 8);
-            uint8_t g0 = clamp8((298 * c0 - 100 * d - 208 * e + 128) >> 8);
-            uint8_t b0 = clamp8((298 * c0 + 516 * d + 128) >> 8);
-
-            uint8_t r1 = clamp8((298 * c1 + 409 * e + 128) >> 8);
-            uint8_t g1 = clamp8((298 * c1 - 100 * d - 208 * e + 128) >> 8);
-            uint8_t b1 = clamp8((298 * c1 + 516 * d + 128) >> 8);
-
-            dst[y * width + x + 0] = (0xFF << 24) | (b0 << 16) | (g0 << 8) | r0;
+            // RGBA8 layout: R=Y, G=U(Cb), B=V(Cr), A=255
+            dst[y * width + x + 0] = (0xFF << 24) | (v << 16) | (u << 8) | y0;
             if (x + 1 < width)
-                dst[y * width + x + 1] = (0xFF << 24) | (b1 << 16) | (g1 << 8) | r1;
+                dst[y * width + x + 1] = (0xFF << 24) | (v << 16) | (u << 8) | y1;
         }
     }
 }

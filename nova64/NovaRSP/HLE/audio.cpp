@@ -1,3 +1,7 @@
+/**
+ * @file audio.cpp
+ * @brief RSP HLE Audio ADPCM/Resample Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio ADPCM/Resample Implementation
 // Resample lookup table + ADPCM residual computation

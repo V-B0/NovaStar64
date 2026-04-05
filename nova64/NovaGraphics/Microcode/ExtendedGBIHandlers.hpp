@@ -1,3 +1,7 @@
+/**
+ * @file ExtendedGBIHandlers.hpp
+ * @brief Extended GBI Handlers.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Extended GBI Handlers
 // Proper GBIHandler subclasses for extended microcodes (Turbo3D, ZSort, DKR,
@@ -1040,6 +1044,11 @@ public:
         case 0x01: Cmd_F3DAM_Vtx(ctx, w0, w1); break;
         case 0xD7: Cmd_F3DAM_Texture(ctx, w0, w1); break;
         case 0xDB: Cmd_F3DAM_MoveWord(ctx, w0, w1); break;
+        case 0xD9:
+            // Geometry mode change — delegate to base then update F3DAM fog mode
+            F3DEX2Handler::ProcessCommand(ctx, w0, w1);
+            UpdateF3DAMFogUsage(ctx);
+            return !ctx.halted;
         default:
             return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
         }
@@ -1050,6 +1059,23 @@ private:
     // F3DAM-specific texture coordinate scaling registers
     uint32_t m_textureCoordScaleOrg = 0;
     uint32_t m_textureCoordScale[2] = {};
+
+    // ─── F3DAM fog usage: compute from geometryMode bits 13 and 16 ──────
+    // GLideN64: fogMode = ((geomMode >> 13) & 9) + 0xFFF8
+    //   fogMode == 0  → standard fog (alpha)
+    //   fogMode > 0   → F3DAM mode 2 (fog → shade RGB)
+    //   fogMode < 0   → no fog (but G_FOG bit may still be set)
+    void UpdateF3DAMFogUsage(DListContext& ctx) {
+        if (!ctx.state) return;
+        auto& geo = ctx.state->geometry;
+        int16_t fogMode = static_cast<int16_t>(((geo.geometryMode >> 13) & 9) + 0xFFF8);
+        if (fogMode == 0)
+            geo.fogUsage = 1; // standard fog
+        else if (fogMode > 0)
+            geo.fogUsage = 2; // F3DAM mode 2: fog replaces shade RGB
+        else
+            geo.fogUsage = (geo.geometryMode & 0x00010000) ? 1 : 0; // G_FOG flag
+    }
 
     // ─── F3DAM MoveWord: extends MW_FOG with texcoord scale registers ───
     void Cmd_F3DAM_MoveWord(DListContext& ctx, uint32_t w0, uint32_t w1) {

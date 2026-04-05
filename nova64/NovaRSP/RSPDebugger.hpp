@@ -1,3 +1,7 @@
+/**
+ * @file RSPDebugger.hpp
+ * @brief RSP Debugger Interface.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Debugger Interface - Modernized from Project64's RSPDebugger.h
 // C++20 abstract interface for RSP debugging integration

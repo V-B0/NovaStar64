@@ -1,3 +1,7 @@
+/**
+ * @file x64RspRegInfo.cpp
+ * @brief x64 RSP Register Info Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // x64 RSP Register Info Implementation
 // Register allocation, spilling, and calling convention management

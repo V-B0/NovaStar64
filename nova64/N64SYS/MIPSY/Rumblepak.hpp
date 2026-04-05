@@ -1,3 +1,7 @@
+/**
+ * @file Rumblepak.hpp
+ * @brief Rumblepak declarations and types.
+ */
 #pragma once
 #include <cstdint>
 

@@ -161,7 +161,8 @@ public:
     };
     
     // Construction/Destruction
-    CodeBlock(N64System& system, uint32_t entry_address, const Config& config = {});
+    CodeBlock(N64System& system, uint32_t entry_address, const Config& config = {},
+              asmjit::JitRuntime* shared_runtime = nullptr);
     ~CodeBlock() noexcept;
     
     // Non-copyable, movable
@@ -342,7 +343,7 @@ private:
     };
     
     std::optional<AnalysisResult> analyze_block();
-    std::optional<BasicBlockInfo> analyze_basic_block(uint32_t start_address);
+    std::optional<BasicBlockInfo> analyze_basic_block(uint32_t start_address, AnalysisResult& out_result);
     bool analyze_instruction(uint32_t address, uint32_t opcode, 
                            AnalysisResult& result, BasicBlockInfo& current_block);
     
@@ -425,7 +426,8 @@ private:
     std::unordered_map<uint32_t, size_t> address_to_section_;
     
     // JIT compilation
-    std::unique_ptr<asmjit::JitRuntime> runtime_;
+    std::unique_ptr<asmjit::JitRuntime> owned_runtime_;  // only set when no shared runtime
+    asmjit::JitRuntime* runtime_ = nullptr;              // points to shared or owned
     std::unique_ptr<asmjit::CodeHolder> code_holder_;
     ExecutionFunction compiled_function_ = nullptr;
     

@@ -1,3 +1,7 @@
+/**
+ * @file SIInterfaceHandler.hpp
+ * @brief SI Interface Handler declarations and types.
+ */
 #pragma once
 #include "MIPSYInterfaceHandler.hpp"
 #include "Memoryhandler.hpp"

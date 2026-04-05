@@ -1,3 +1,7 @@
+/**
+ * @file file.hpp
+ * @brief file declarations and types.
+ */
 #pragma once
 #include <cstdint>
 #include <cstddef>

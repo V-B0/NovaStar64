@@ -1,3 +1,7 @@
+/**
+ * @file AudioInterfaceHandler.hpp
+ * @brief Audio Interface Handler declarations and types.
+ */
 #pragma once
 
 #include "Memoryhandler.hpp"

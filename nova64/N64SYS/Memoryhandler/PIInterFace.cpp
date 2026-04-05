@@ -79,10 +79,6 @@ constexpr uint32_t SRAM_END         = 0x08088000;
 constexpr uint32_t EVERDRIVE_START  = 0x1F800000;
 constexpr uint32_t EVERDRIVE_END    = 0x1F810000;
 
-// ============================================================================
-// PeripheralInterfaceHandler Constructor / Destructor
-// ============================================================================
-
 PeripheralInterfaceHandler::PeripheralInterfaceHandler(
     CN64System& system,
     Nova64::MipsMemoryVM& mmu,
@@ -441,6 +437,11 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
     uint8_t* rdram = m_mmu.Rdram();
     uint32_t rdramSize = m_mmu.RdramSize();
     
+    // Save original DRAM start address for recompiler cache invalidation.
+    // dramAddr is modified during the copy loop below, so we need to
+    // remember where the transfer started.
+    const uint32_t dramStart = dramAddr;
+    
     // Complex block-based DMA algorithm matching N64 hardware behavior
     m_pi_regs.PI_WR_LEN_REG = length <= 8 ? 0x7F - (dramAddr & 7) : 0x7F;
     
@@ -502,6 +503,12 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
     }
     
     m_stats.bytes_read += transferLen;
+
+    // Invalidate any recompiler blocks that overlap this DMA target range
+    // so stale compiled code is discarded after ROM-to-RDRAM copies.
+    // Use the saved start address, NOT dramAddr (which has been advanced
+    // past the end of the transfer by the copy loop above).
+    m_system.NotifyDMAToRDRAM(dramStart, transferLen);
 
     // Complete DMA immediately — data is already copied to RDRAM above.
     // Many N64 emulators complete PI DMA instantly; delayed timing via PiTimer

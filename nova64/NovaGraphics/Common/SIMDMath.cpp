@@ -1,3 +1,7 @@
+/**
+ * @file SIMDMath.cpp
+ * @brief SIMD Math Acceleration Layer.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - SIMD Math Acceleration Layer Implementation
 

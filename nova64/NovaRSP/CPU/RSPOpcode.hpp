@@ -1,3 +1,7 @@
+/**
+ * @file RSPOpcode.hpp
+ * @brief RSP Opcode Encoding.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Opcode Encoding - Modernized from Project64's RSPOpcode.h
 // C++20 rewrite with strongly-typed enums and constexpr decode helpers

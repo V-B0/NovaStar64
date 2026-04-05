@@ -1,5 +1,5 @@
 ﻿/**
- * @file InetrpreterOps.cpp
+ * @file InterpreterOps.cpp
  * @brief MIPS R4300i Interpreter implementation
  */
 
@@ -18,7 +18,6 @@
 #include <math.h>
 
 // Softfloat library for IEEE 754 compliant FPU emulation
-// TODO: Add softfloat as a dependency if not already present
 extern "C"
 {
 #include "softfloat.h"

@@ -1,3 +1,7 @@
+/**
+ * @file VectorMath.hpp
+ * @brief High-Level Vector/Matrix Math Library.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - High-Level Vector/Matrix Math Library
 // Builds on SIMDMath to provide N64-specific geometry operations

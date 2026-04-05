@@ -1,3 +1,7 @@
+/**
+ * @file Thread.cpp
+ * @brief Thread implementation.
+ */
 #include "Thread.hpp"
 #include "trace.hpp"
 

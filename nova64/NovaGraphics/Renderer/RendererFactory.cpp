@@ -1,3 +1,7 @@
+/**
+ * @file RendererFactory.cpp
+ * @brief Renderer Factory & Utilities.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Renderer Factory & Utilities
 // Backend-agnostic renderer creation and utility functions

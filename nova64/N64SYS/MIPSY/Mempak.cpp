@@ -1,3 +1,7 @@
+/**
+ * @file Mempak.cpp
+ * @brief Mempak implementation.
+ */
 #include "Mempak.hpp"
 
 #include <iostream>

@@ -1,3 +1,7 @@
+/**
+ * @file VideoInterfaceHandler.hpp
+ * @brief Video Interface Handler declarations and types.
+ */
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"

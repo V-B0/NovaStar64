@@ -86,6 +86,11 @@ void RDPCommandDecoder::DecodeSetTile(const uint32_t* words, TileDescriptor& til
     tile.clampS   = static_cast<uint8_t>((((w1 >> 9) & 1) << 1) | ((w1 >> 8) & 1));
     tile.maskS    = static_cast<uint8_t>((w1 >> 4) & 0x0F);
     tile.shiftS   = static_cast<uint8_t>(w1 & 0x0F);
+
+    // N64 hardware rule: when mask is 0 (no wrap mask), force clamp ON.
+    // Without this, coordinates pass through unmodified causing texture bleeding.
+    if (tile.maskS == 0) tile.clampS |= 2;
+    if (tile.maskT == 0) tile.clampT |= 2;
 }
 
 void RDPCommandDecoder::DecodeSetTileSize(const uint32_t* words, TileDescriptor& tile) {
@@ -117,7 +122,7 @@ void RDPCommandDecoder::DecodeSetColorImage(const uint32_t* words, ImageDescript
     
     img.format  = static_cast<ImageFormat>((w0 >> 21) & 0x07);
     img.size    = static_cast<ImageSize>((w0 >> 19) & 0x03);
-    img.width   = (w0 & 0x3FF) + 1;
+    img.width   = (w0 & 0xFFF) + 1;
     img.address = w1 & 0x03FFFFFF;
 }
 
@@ -132,7 +137,7 @@ void RDPCommandDecoder::DecodeSetTextureImage(const uint32_t* words, ImageDescri
     
     img.format  = static_cast<ImageFormat>((w0 >> 21) & 0x07);
     img.size    = static_cast<ImageSize>((w0 >> 19) & 0x03);
-    img.width   = (w0 & 0x3FF) + 1;
+    img.width   = (w0 & 0xFFF) + 1;
     img.address = w1 & 0x03FFFFFF;
 }
 
@@ -153,7 +158,7 @@ void RDPCommandDecoder::DecodeSetBlendColor(const uint32_t* words, RDPColor& col
 
 void RDPCommandDecoder::DecodeSetPrimColor(const uint32_t* words, RDPState& state) {
     uint32_t w0 = words[0];
-    state.primLODMin  = static_cast<float>((w0 >> 8) & 0xFF) / 255.0f;
+    state.primLODMin  = static_cast<float>((w0 >> 8) & 0x1F) / 32.0f; // 5-bit minLevel [12:8]
     state.primLODFrac = static_cast<float>(w0 & 0xFF) / 255.0f;
     state.primColor.FromCommand(words[1]);
 }
@@ -172,21 +177,25 @@ void RDPCommandDecoder::DecodeSetConvert(const uint32_t* words, int16_t convertK
     uint32_t w0 = words[0];
     uint32_t w1 = words[1];
     
-    // K0-K5 are 9-bit signed values packed across the two words
-    convertK[0] = static_cast<int16_t>(((w0 >> 13) & 0x1FF) << 7) >> 7;
-    convertK[1] = static_cast<int16_t>(((w0 >> 4)  & 0x1FF) << 7) >> 7;
-    convertK[2] = static_cast<int16_t>((((w0 & 0x0F) << 5) | ((w1 >> 27) & 0x1F)) << 7) >> 7;
-    convertK[3] = static_cast<int16_t>(((w1 >> 18) & 0x1FF) << 7) >> 7;
-    convertK[4] = static_cast<int16_t>(((w1 >> 9)  & 0x1FF) << 7) >> 7;
-    convertK[5] = static_cast<int16_t>((w1 & 0x1FF) << 7) >> 7;
+    // K0-K3: 9-bit signed, reconstructed as (SIGN(k,9) * 2 + 1) per N64 hardware
+    auto signExt9 = [](uint32_t v) -> int16_t {
+        return static_cast<int16_t>(static_cast<int16_t>((v & 0x1FF) << 7) >> 7);
+    };
+    convertK[0] = static_cast<int16_t>(signExt9((w0 >> 13) & 0x1FF) * 2 + 1);
+    convertK[1] = static_cast<int16_t>(signExt9((w0 >> 4)  & 0x1FF) * 2 + 1);
+    convertK[2] = static_cast<int16_t>(signExt9(((w0 & 0x0F) << 5) | ((w1 >> 27) & 0x1F)) * 2 + 1);
+    convertK[3] = static_cast<int16_t>(signExt9((w1 >> 18) & 0x1FF) * 2 + 1);
+    // K4-K5: 9-bit unsigned (no sign extension, no *2+1)
+    convertK[4] = static_cast<int16_t>((w1 >> 9) & 0x1FF);
+    convertK[5] = static_cast<int16_t>(w1 & 0x1FF);
 }
 
 void RDPCommandDecoder::DecodeSetKeyGB(const uint32_t* words, RDPState& state) {
     uint32_t w0 = words[0];
     uint32_t w1 = words[1];
     
-    state.chromaKey.widthG  = (w0 >> 12) & 0xFF;
-    state.chromaKey.widthB  = w0 & 0xFF;
+    state.chromaKey.widthG  = (w0 >> 12) & 0xFFF;
+    state.chromaKey.widthB  = w0 & 0xFFF;
     state.chromaKey.centerG = (w1 >> 24) & 0xFF;
     state.chromaKey.scaleG  = (w1 >> 16) & 0xFF;
     state.chromaKey.centerB = (w1 >> 8) & 0xFF;
@@ -195,7 +204,7 @@ void RDPCommandDecoder::DecodeSetKeyGB(const uint32_t* words, RDPState& state) {
 
 void RDPCommandDecoder::DecodeSetKeyR(const uint32_t* words, RDPState& state) {
     uint32_t w1 = words[1];
-    state.chromaKey.widthR  = (w1 >> 16) & 0xFF;
+    state.chromaKey.widthR  = (w1 >> 16) & 0xFFF;
     state.chromaKey.centerR = (w1 >> 8) & 0xFF;
     state.chromaKey.scaleR  = w1 & 0xFF;
 }

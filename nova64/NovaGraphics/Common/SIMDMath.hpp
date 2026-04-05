@@ -1,3 +1,7 @@
+/**
+ * @file SIMDMath.hpp
+ * @brief SIMD Math Acceleration Layer.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - SIMD Math Acceleration Layer
 // Provides SSE2/SSE4.1/AVX/AVX2/AVX-512 accelerated math primitives

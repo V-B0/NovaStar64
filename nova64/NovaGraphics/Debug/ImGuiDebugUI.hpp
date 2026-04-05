@@ -1,3 +1,7 @@
+/**
+ * @file ImGuiDebugUI.hpp
+ * @brief ImGui Debug UI  (Nemu64-style debugger).
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — ImGui Debug UI  (Nemu64-style debugger)
 // Panels: Commands (CPU/RSP/RDP disasm), Registers (all tabs), Memory viewer
@@ -32,6 +36,9 @@ public:
 
     void Toggle() { m_visible = !m_visible; }
     bool IsVisible() const { return m_visible; }
+
+    // Cycle shader debug output mode (F8 key)
+    void CycleDebugOutput();
 
     // Bind the N64 system so we can read registers/memory live
     void SetSystem(CN64System* sys) { m_system = sys; }

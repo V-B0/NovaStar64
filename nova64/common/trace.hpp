@@ -1,3 +1,7 @@
+/**
+ * @file trace.hpp
+ * @brief trace declarations and types.
+ */
 #pragma once
 
 #include <cstdint>
@@ -16,8 +20,47 @@
 #include <cstdarg>
 #include <cstdio>
 
-// Forward declaration
-class CLog;
+/**
+ * @brief Simple file logger used by the recompiler and sync-CPU subsystems
+ */
+class CLog {
+public:
+    CLog() = default;
+    ~CLog() { Close(); }
+
+    CLog(const CLog&) = delete;
+    CLog& operator=(const CLog&) = delete;
+
+    bool Open(const char* path) {
+        Close();
+        m_Stream.open(path, std::ios::out | std::ios::trunc);
+        if (m_Stream.is_open()) { m_Path = path; return true; }
+        return false;
+    }
+
+    void Close() {
+        if (m_Stream.is_open()) { m_Stream.close(); }
+    }
+
+    bool IsOpen() const { return m_Stream.is_open(); }
+    const std::string& GetPath() const { return m_Path; }
+
+    void Log(const char* fmt, ...) {
+        if (!m_Stream.is_open()) return;
+        char buf[2048];
+        std::va_list args;
+        va_start(args, fmt);
+        std::vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        m_Stream << buf << '\n';
+    }
+
+    void Flush() { if (m_Stream.is_open()) m_Stream.flush(); }
+
+private:
+    std::ofstream m_Stream;
+    std::string   m_Path;
+};
 
 namespace Trace {
 

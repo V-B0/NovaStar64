@@ -1,3 +1,7 @@
+/**
+ * @file PluginConfig.cpp
+ * @brief Plugin Configuration.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Plugin Configuration Implementation
 // ══════════════════════════════════════════════════════════════════════════════

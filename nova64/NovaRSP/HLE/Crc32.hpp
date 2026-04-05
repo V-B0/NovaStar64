@@ -1,3 +1,7 @@
+/**
+ * @file Crc32.hpp
+ * @brief CRC32 utility for microcode identification.
+ */
 // SuperNova64 - N64 Emulator
 // CRC32 utility for microcode identification
 // Standard CRC32 (ISO 3309 / ITU-T V.42) with lookup table

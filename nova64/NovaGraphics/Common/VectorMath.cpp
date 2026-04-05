@@ -1,3 +1,7 @@
+/**
+ * @file VectorMath.cpp
+ * @brief High-Level Vector/Matrix Math.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - High-Level Vector/Matrix Math Implementation
 

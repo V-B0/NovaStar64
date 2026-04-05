@@ -1,3 +1,7 @@
+/**
+ * @file RspSettings.hpp
+ * @brief RSP Settings.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Settings - Modernized from Project64's RspSettings.h
 // C++20 with thread-safe settings and enum class CPU method

@@ -129,6 +129,11 @@ public:
     [[nodiscard]] uint32_t RdramSize() const noexcept { return m_AllocatedRdramSize; }
 
     /**
+     * @brief Get reference to owning N64 system
+     */
+    [[nodiscard]] ::CN64System* System() noexcept { return &m_System; }
+
+    /**
      * @brief Get pointer to DMEM (RSP data memory)
      * @return Pointer to DMEM
      */
@@ -335,6 +340,37 @@ public:
     [[nodiscard]] auto& SerialInterface() noexcept { return m_SerialInterfaceHandler; }
     [[nodiscard]] auto& RDRAMInterface() noexcept { return m_RDRAMInterfaceHandler; }
     [[nodiscard]] auto& RDRAMRegisters() noexcept { return m_RDRAMRegistersHandler; }
+
+    // ========================================================================
+    // TLB Map Management
+    // ========================================================================
+
+    /**
+     * @brief Update fast-path memory maps after a TLB entry is written.
+     *
+     * Called from CTLB::WriteEntry (TLBWI/TLBWR) to propagate TLB mappings
+     * into the page-table arrays used by LW_Memory / SW_Memory for direct
+     * pointer access.
+     *
+     * @param entryHi   CP0 EntryHi register value (contains VPN2 and ASID)
+     * @param pageMask  CP0 PageMask register value
+     * @param entryLo0  CP0 EntryLo0 register value (even page: PFN, V, D, G)
+     * @param entryLo1  CP0 EntryLo1 register value (odd page:  PFN, V, D, G)
+     */
+    void ApplyTLBMapping(uint64_t entryHi, uint64_t pageMask,
+                         uint64_t entryLo0, uint64_t entryLo1);
+
+    /**
+     * @brief Remove a TLB mapping that was previously applied.
+     *
+     * @param entryHi   Old EntryHi value
+     * @param pageMask  Old PageMask value
+     */
+    void RemoveTLBMapping(uint64_t entryHi, uint64_t pageMask);
+
+    // Accessors for diagnostics
+    const size_t* GetMemoryReadMap() const { return m_MemoryReadMap; }
+    const uint32_t* GetTLBReadMap() const { return m_TLB_ReadMap; }
 
 private:
     // Friends for internal access

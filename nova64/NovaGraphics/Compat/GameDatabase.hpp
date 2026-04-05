@@ -1,3 +1,7 @@
+/**
+ * @file GameDatabase.hpp
+ * @brief Game Compatibility Database.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Game Compatibility Database
 // Per-game overrides, known bugs workarounds, microcode detection,

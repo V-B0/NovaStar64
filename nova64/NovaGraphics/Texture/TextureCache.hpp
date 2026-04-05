@@ -1,3 +1,7 @@
+/**
+ * @file TextureCache.hpp
+ * @brief Texture Cache.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Texture Cache
 // N64 TMEM-to-GPU texture management, hash-based deduplication, LRU eviction
@@ -59,6 +63,8 @@ struct TextureKey {
     uint8_t  shiftT;
     uint16_t line;          // Tile line size (bytes per row / 8)
     uint16_t tmemOffset;    // Tile base offset in TMEM (in 64-bit words = tmemAddr)
+    uint8_t  tlutType;      // 0=none, 2=RGBA16, 3=IA16 (from otherModeH bits 15:14)
+    uint8_t  mipLevels;     // Number of mip levels in tile chain (0 = base only)
     uint32_t crc;           // Content hash for change detection
 
     bool operator==(const TextureKey& other) const {
@@ -72,6 +78,12 @@ struct TextureKey {
                cmt == other.cmt &&
                maskS == other.maskS &&
                maskT == other.maskT &&
+               shiftS == other.shiftS &&
+               shiftT == other.shiftT &&
+               line == other.line &&
+               tmemOffset == other.tmemOffset &&
+               tlutType == other.tlutType &&
+               mipLevels == other.mipLevels &&
                crc == other.crc;
     }
 };
@@ -89,6 +101,12 @@ struct TextureKeyHash {
         h ^= std::hash<uint8_t>{}(k.cmt) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint8_t>{}(k.maskS) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint8_t>{}(k.maskT) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint8_t>{}(k.shiftS) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint8_t>{}(k.shiftT) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint16_t>{}(k.line) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint16_t>{}(k.tmemOffset) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint8_t>{}(k.tlutType) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint8_t>{}(k.mipLevels) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };
@@ -170,6 +188,21 @@ public:
     /// Look up or create a texture from N64 state
     CachedTexture* GetTexture(const TextureKey& key, const uint8_t* rdram, const uint8_t* tmem);
 
+    /// Mip tile descriptor for tile-chain mipmapping
+    struct MipTileInfo {
+        uint16_t tmemAddr;  // TMEM word address
+        uint16_t line;      // Stride in 64-bit words
+        uint16_t width;
+        uint16_t height;
+        uint8_t  format;
+        uint8_t  size;
+        uint8_t  palette;
+    };
+
+    /// Look up or create a mipmapped texture with per-level N64 tile data
+    CachedTexture* GetTexture(const TextureKey& key, const uint8_t* rdram,
+                              const uint8_t* tmem, const MipTileInfo* mipTiles, int mipCount);
+
     /// Invalidate textures that might have been modified by CPU writes
     void InvalidateRange(uint32_t addressStart, uint32_t sizeBytes);
 
@@ -194,21 +227,23 @@ public:
 private:
     /// Decode N64 texture data into RGBA8888
     void DecodeTexture(const TextureKey& key, const uint8_t* tmem,
-                        std::vector<uint32_t>& outPixels);
+                        std::vector<uint32_t>& outPixels, bool fromTMEM);
 
     /// Decode specific N64 formats
-    void DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeRGBA32(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeIA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeIA8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeIA4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeI8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeI4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
+    void DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeRGBA32(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t lineBytes, bool fromTMEM);
+    void DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr, uint16_t tileLine,
+                           uint32_t* dst, uint32_t width, uint32_t height);
+    void DecodeIA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeIA8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeIA4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeI8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeI4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
     void DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst,
-                    uint32_t width, uint32_t height, uint32_t line);
+                    uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false);
     void DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette,
-                    uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
-    void DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line);
+                    uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false);
+    void DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
 
     /// Calculate CRC for texture data in RDRAM/TMEM
     uint32_t CalculateTextureCRC(const uint8_t* data, uint32_t sizeBytes);

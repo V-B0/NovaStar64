@@ -1,3 +1,7 @@
+/**
+ * @file stb_image_impl.cpp
+ * @brief stb_image_impl implementation.
+ */
 // stb_image implementation compilation unit
 // This file compiles the stb_image library for PNG/BMP/TGA/etc loading.
 

@@ -251,6 +251,7 @@ constexpr uint32_t G_TEXTURE_GEN          = 0x00040000;
 constexpr uint32_t G_TEXTURE_GEN_LINEAR   = 0x00080000;
 constexpr uint32_t G_LOD                  = 0x00100000;
 constexpr uint32_t G_SHADING_SMOOTH       = 0x00200000;
+constexpr uint32_t G_POINT_LIGHTING       = 0x00400000;
 constexpr uint32_t G_CLIPPING             = 0x00800000;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -313,6 +314,8 @@ struct TransformedVertex {
 
     uint32_t clipFlags;         // Clip test results
     bool     reject;            // Vertex rejected by clipping
+    bool     modifiedXY;        // True when gSPModifyVertex XYSCREEN was applied
+    bool     modifiedZ;         // True when gSPModifyVertex ZSCREEN was applied
 
     static constexpr uint32_t CLIP_LEFT   = 0x01;
     static constexpr uint32_t CLIP_RIGHT  = 0x02;
@@ -391,11 +394,14 @@ struct CombineMode {
         b_rgb1   = (lo >> 24) & 0x0F;
         a_alpha1 = (lo >> 21) & 0x07;
         c_alpha1 = (lo >> 18) & 0x07;
-        b_alpha0 = (lo >> 15) & 0x07;  // gbi.h: Ab0 at [17:15]
-        b_alpha1 = (lo >> 12) & 0x07;  // gbi.h: Ab1 at [14:12]
-        d_rgb0   = (lo >>  9) & 0x07;  // gbi.h: d0  at [11:9]
-        d_alpha0 = (lo >>  6) & 0x07;  // gbi.h: Ad0 at [8:6]
-        d_rgb1   = (lo >>  3) & 0x07;  // gbi.h: d1  at [5:3]
+        // gbi.h layout for lo word [17:0]:
+        //   d0  at [17:15], Ab0 at [14:12], Ad0 at [11:9]
+        //   d1  at [8:6],   Ab1 at [5:3],   Ad1 at [2:0]
+        d_rgb0   = (lo >> 15) & 0x07;  // gbi.h: d0  at [17:15]
+        b_alpha0 = (lo >> 12) & 0x07;  // gbi.h: Ab0 at [14:12]
+        d_alpha0 = (lo >>  9) & 0x07;  // gbi.h: Ad0 at [11:9]
+        d_rgb1   = (lo >>  6) & 0x07;  // gbi.h: d1  at [8:6]
+        b_alpha1 = (lo >>  3) & 0x07;  // gbi.h: Ab1 at [5:3]
         d_alpha1 = (lo >>  0) & 0x07;  // gbi.h: Ad1 at [2:0]
     }
     
@@ -411,11 +417,11 @@ struct CombineMode {
                       (static_cast<uint32_t>(b_rgb1)   << 24) |
                       (static_cast<uint32_t>(a_alpha1) << 21) |
                       (static_cast<uint32_t>(c_alpha1) << 18) |
-                      (static_cast<uint32_t>(b_alpha0) << 15) |
-                      (static_cast<uint32_t>(b_alpha1) << 12) |
-                      (static_cast<uint32_t>(d_rgb0)   << 9)  |
-                      (static_cast<uint32_t>(d_alpha0) << 6)  |
-                      (static_cast<uint32_t>(d_rgb1)   << 3)  |
+                      (static_cast<uint32_t>(d_rgb0)   << 15) |
+                      (static_cast<uint32_t>(b_alpha0) << 12) |
+                      (static_cast<uint32_t>(d_alpha0) << 9)  |
+                      (static_cast<uint32_t>(d_rgb1)   << 6)  |
+                      (static_cast<uint32_t>(b_alpha1) << 3)  |
                       (static_cast<uint32_t>(d_alpha1) << 0);
         return (static_cast<uint64_t>(hi) << 32) | lo;
     }
@@ -495,9 +501,15 @@ struct N64Light {
     // Float arrays for computation (filled by light loading routines)
     float color[3];         // Normalized color (0-1)
     float direction[3];     // Normalized direction vector
+
+    // Point light data (F3DEX2 extended light format)
+    float position[3];      // Light position (int16 from RDRAM)
+    float ca;               // Constant attenuation (nonzero = point light)
+    float la;               // Linear attenuation
+    float qa;               // Quadratic attenuation
 };
 
-constexpr int MAX_LIGHTS = 8;   // 7 directional + 1 ambient
+constexpr int MAX_LIGHTS = 12;  // Up to 11 directional + 1 ambient (matches GLideN64)
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Matrix Types (for modelview/projection)
@@ -605,8 +617,14 @@ struct TextureState {
     uint8_t  level;         // Mipmap level count
     uint8_t  tileIndex;     // gSPTexture tile override
     
-    float GetScaleSFloat() const { return static_cast<float>(scaleS) / 65536.0f; }
-    float GetScaleTFloat() const { return static_cast<float>(scaleT) / 65536.0f; }
+    float GetScaleSFloat() const {
+        float s = static_cast<float>(scaleS) / 65536.0f;
+        return (s == 0.0f) ? 1.0f : s;
+    }
+    float GetScaleTFloat() const {
+        float t = static_cast<float>(scaleT) / 65536.0f;
+        return (t == 0.0f) ? 1.0f : t;
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -629,6 +647,7 @@ constexpr int MAX_FRAME_BUFFERS = 6;
 enum class RDPCommandID : uint8_t {
     Nop                 = 0x00,
     // 0x01-0x07 reserved
+    ScrollTex           = 0x04,
     
     // Triangles
     TriNoShade          = 0x08,

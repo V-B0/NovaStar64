@@ -1,3 +1,7 @@
+/**
+ * @file MicrocodeRegistry.hpp
+ * @brief Microcode Registry - Maps ucode CRC32s to HLE handlers.
+ */
 // SuperNova64 - N64 Emulator
 // Microcode Registry - Maps ucode CRC32s to HLE handlers
 // Based on Project64's RSP HLE microcode identification database

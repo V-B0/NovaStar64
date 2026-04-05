@@ -1,3 +1,7 @@
+/**
+ * @file HleTypes.hpp
+ * @brief RSP HLE shared type definitions.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE shared type definitions
 // Task structures and enums used by both HleTask and TaskDispatcher

@@ -1,3 +1,7 @@
+/**
+ * @file Systiming.cpp
+ * @brief N64 system timer implementation: timer update, expiry, and scheduling.
+ */
 #include "Systiming.hpp"
 #include "../../common/Log.hpp"
 #include "../MainSYS.hpp"
@@ -43,6 +47,13 @@ SystemTimer::~SystemTimer() {
 
 void SystemTimer::set_timer(TimerType type, uint32_t cycles, bool relative) {
     if (static_cast<size_t>(type) >= static_cast<size_t>(TimerType::MaxTimers)) return;
+    
+    // Flush accumulated cycles before modifying the timer array.
+    // Without this, update_next_timer() resets last_update_cycles and any
+    // cycles elapsed since the last UpdateTimers/TimerDone are lost — COUNT
+    // doesn't advance for those cycles and other timers aren't decremented.
+    // This matches Project64's ChangeTimer which calls TimerCorrection first.
+    UpdateTimers();
     
     auto& timer = timers[static_cast<size_t>(type)];
     timer.active = true;
@@ -186,11 +197,17 @@ void SystemTimer::fire_timer(TimerType type) {
             }
             break;
         case TimerType::RspTimer:
-        case TimerType::RSPTimerDlist:
-            // MI_INTR bits were already set immediately in ClearHalt.
-            // This timer just triggers CheckInterrupts to deliver the exception
-            // at the next instruction boundary (matching Project64's SystemEvents).
+            // Fires at the block boundary after ClearHalt.
+            // Re-set the DP bit here because the game's CLR_DP_INTR cleanup
+            // (which clears OLD DP interrupts) runs within the same block and
+            // wipes out the DP bit that ClearHalt set. By re-setting it here,
+            // the DP interrupt survives past the cleanup code.
             if (registers) {
+                if (registers->m_DpFreshFromHLE) {
+                    registers->m_GfxIntrReg |= MIFlags::INTR_DP;
+                    registers->m_Mips_Interface[2] |= MIFlags::INTR_DP;
+                    registers->m_DpFreshFromHLE = false;
+                }
                 registers->CheckInterrupts();
             }
             break;

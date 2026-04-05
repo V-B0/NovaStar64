@@ -241,6 +241,9 @@ protected:
     /// Process G_BRANCH_Z
     void BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, uint32_t address);
     
+    /// Process G_BRANCH_W (F3DZEX2 — branch on clip-space W)
+    void BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, uint32_t address);
+    
     /// Process G_LOAD_UCODE
     void LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress);
     

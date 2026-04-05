@@ -1,3 +1,7 @@
+/**
+ * @file RSPInterpreterOps.hpp
+ * @brief RSP Interpreter Operations.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Interpreter Operations - Modernized from Project64's RSPInterpreterOps.h
 // C++20 with function pointer dispatch tables and clean member references

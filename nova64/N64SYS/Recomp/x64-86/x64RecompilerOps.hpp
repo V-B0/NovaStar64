@@ -158,6 +158,30 @@ public:
     void LinkJumpToSection(CodeSection* section);
     void LinkJumpToUnknown(CJumpInfo* jumpInfo);
     
+    // Bind the skip-delay-slot label after a branch-likely instruction.
+    // Called from generate_code after each instruction's compilation.
+    void BindPendingBranchLikelyLabel();
+    
+    // Emit a check after each instruction: if PipelineStage == Jump
+    // (exception occurred), skip remaining instructions and exit block.
+    void EmitPipelineStageCheck();
+    
+    // Set up correct CPU state before executing a branch delay slot.
+    // Saves the branch target (m_PROGRAM_COUNTER) into m_JumpToLocation,
+    // sets m_PROGRAM_COUNTER to the delay slot address, and sets
+    // m_PipelineStage to Jump.  This ensures TriggerException computes
+    // the correct BranchDelay bit and EPC if the delay slot faults.
+    void EmitDelaySlotSetup(uint32_t delaySlotAddr);
+    
+    // Emit per-instruction timer decrement: sub [&m_NextTimer], countPerOp.
+    // This keeps COUNT accurate within blocks and handles early exits correctly.
+    void EmitTimerDecrement();
+    
+    // Update m_PROGRAM_COUNTER to the current instruction address before
+    // callbacks that may generate exceptions (SYSCALL, BREAK, MTC0, traps).
+    // This ensures TriggerException saves the correct EPC.
+    void EmitPCUpdate();
+    
     // Register state management
     void SynchronizeRegisterState(const CX64RegInfo& other);
     void PropagateRegisterState();
@@ -352,10 +376,12 @@ private:
     TranslationResult HandleSDC1(const TranslationContext& ctx);
     
     // Helper methods
+    void EmitCop1UsableCheck();
     void EmitRegisterCallback(void* callback, uint32_t opcVal);
     void EmitMemoryCallback(void* callback, uint32_t opcVal);
     void EmitTlbCallback(void* callback, uint32_t opcVal);
     void EmitBranchCallback(void* callback, uint32_t opcVal, uint32_t pc);
+    void EmitBranchLikelyCallback(void* callback, uint32_t opcVal, uint32_t pc);
     void EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, 
                           asmjit::x86::Gp dest, const asmjit::x86::Mem& src);
     void EmitStoreOperation(uint32_t size, bool is64Bit,
@@ -395,6 +421,18 @@ private:
     void COP1_BCF_Compare();
     void COP1_BCT_Compare();
     
+    // Branch-likely comparison instructions (skip delay slot when not taken)
+    void BEQL_Compare_Likely();
+    void BNEL_Compare_Likely();
+    void BLEZL_Compare_Likely();
+    void BGTZL_Compare_Likely();
+    void BLTZL_Compare_Likely();
+    void BGEZL_Compare_Likely();
+    void BLTZALL_Compare_Likely();
+    void BGEZALL_Compare_Likely();
+    void BC1FL_Compare_Likely();
+    void BC1TL_Compare_Likely();
+    
     // Jump instructions
     void J();
     void JAL();
@@ -424,6 +462,7 @@ private:
     void LDL();
     void LDR();
     void LL();
+    void LLD();
     void LWC1();
     void LDC1();
     
@@ -437,6 +476,7 @@ private:
     void SDL();
     void SDR();
     void SC();
+    void SCD();
     void SWC1();
     void SDC1();
     void CACHE();
@@ -572,6 +612,16 @@ private:
     OptimizationLevel m_OptimizationLevel = OptimizationLevel::Basic;
     bool m_InDelaySlot = false;
     bool m_BlockEnded = false;
+    
+    // Branch-likely delay slot skip
+    asmjit::Label m_BranchLikelySkipLabel;
+    bool m_HasPendingBranchLikelySkip = false;
+public:
+    bool HasPendingBranchLikelySkip() const { return m_HasPendingBranchLikelySkip; }
+private:
+    
+    // Block exit label for early exit on exception
+    asmjit::Label m_BlockExitLabel;
     
     // Statistics
     TranslationStats m_Stats;

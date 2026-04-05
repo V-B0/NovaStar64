@@ -1,3 +1,7 @@
+/**
+ * @file GBcart.hpp
+ * @brief G Bcart declarations and types.
+ */
 #pragma once
 
 #include <cstddef>

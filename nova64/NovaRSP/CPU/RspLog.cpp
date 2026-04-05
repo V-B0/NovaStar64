@@ -1,3 +1,7 @@
+/**
+ * @file RspLog.cpp
+ * @brief RSP Logging Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Logging Implementation
 // CPU execution trace and RDP command logging

@@ -1,3 +1,7 @@
+/**
+ * @file alist.hpp
+ * @brief RSP HLE Audio List Operations.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio List Operations - Modernized from Project64's alist.h
 // C++20 audio list processing interface

@@ -1,3 +1,7 @@
+/**
+ * @file DepthBuffer.hpp
+ * @brief Depth Buffer System.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Depth Buffer System
 // N64 RDP depth buffer emulation: 18-bit Z + dZ, compare modes, Z-mode decode,
@@ -137,6 +141,10 @@ struct GPUDepthBuffer {
     uint32_t  glZImageTex     = 0;   // R32F — stores N64 14-bit Z as float
     uint32_t  glDeltaZImageTex = 0;  // R32F — stores delta-Z as float
     uint32_t  glZImageFBO     = 0;   // FBO for clearing Z-image textures
+    uint64_t  zImageHandle    = 0;   // Backend-native handle for imageLoad/imageStore
+    uint64_t  deltaZImageHandle = 0; // Backend-native handle for imageLoad/imageStore
+    uint32_t  zImageWidth     = 0;   // Actual Z-image texture width (may be scaled)
+    uint32_t  zImageHeight    = 0;   // Actual Z-image texture height (may be scaled)
 
     // MSAA resolve target (single-sample copy for shader reads)
     uint32_t  glResolvedDepthTex = 0;  // DEPTH32F single-sample
@@ -207,9 +215,10 @@ public:
     void CopyFromGPU(const GPUDepthBuffer& buf, uint8_t* rdram, uint32_t rdramSize);
 
     // Z-image textures for shader-based N64 depth compare
-    void InitDepthImageTextures(GPUDepthBuffer& buf);
+    void InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t resScale = 1);
     void ClearDepthImageTextures(GPUDepthBuffer& buf);
     void BindDepthImageTextures(const GPUDepthBuffer& buf, uint32_t zUnit, uint32_t dzUnit);
+    void UploadRDRAMToZImage(GPUDepthBuffer& buf, const uint8_t* rdram, uint32_t rdramSize);
 
     // Attach depth buffer to an FBO
     void SetDepthAttachment(const GPUDepthBuffer& buf, uint32_t fbo);

@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP HLE Core Implementation
-// CHle class: RSP high-level emulation core
+/**
+ * @file hle.cpp
+ * @brief RSP high-level emulation core: task detection, microcode dispatch, and audio output.
+ */
 
 #include "hle.hpp"
 #include "HleTask.hpp"
@@ -50,7 +51,6 @@ CHle::CHle(CRSPSystem& system)
     m_AudioHle    = CRSPSettings::IsAudioHle();
     m_GraphicsHle = CRSPSettings::IsGraphicsHle();
 
-    // Phase 1: Log HLE configuration at startup
     VerboseMessage("RSP HLE: AudioHle=%s, GraphicsHle=%s, CPUMethod=%u",
         m_AudioHle ? "ON" : "OFF",
         m_GraphicsHle ? "ON" : "OFF",
@@ -151,7 +151,6 @@ bool CHle::is_task()
     if (type != 1 && type != 2 && type != 4 && type != 7)
         return false;
 
-    // Phase 2: Validate critical task structure fields
     const uint32_t ucode_size      = *u32(m_dmem, TaskOffset::UcodeSize);
     const uint32_t ucode_data_size = *u32(m_dmem, TaskOffset::UcodeDataSize);
     const uint32_t ucode_addr      = *u32(m_dmem, TaskOffset::Ucode);
@@ -287,8 +286,10 @@ void CHle::FeedAudioDevice()
 // ──────────────────────────────────────────────
 bool CHle::Execute()
 {
-    // Phase 3: Track execution time for timeout detection
     const auto start_time = std::chrono::steady_clock::now();
+
+    uint32_t taskType = 0;
+    if (m_dmem) taskType = *u32(m_dmem, TaskOffset::Type);
 
     bool handled = false;
 
@@ -297,7 +298,6 @@ bool CHle::Execute()
         // Attempt fast audio dispatch first
         if (try_fast_audio_dispatching())
         {
-            // Phase 5: Always flush audio after task completes
             FeedAudioDevice();
             return true;
         }
@@ -318,10 +318,8 @@ bool CHle::Execute()
         return false;
     }
 
-    // Phase 5: Always flush audio at end of Execute (idempotent with rsp_break flush)
     FeedAudioDevice();
 
-    // Phase 3: Check for execution timeout
     const auto elapsed = std::chrono::steady_clock::now() - start_time;
     if (elapsed > kTaskTimeoutMs)
     {

@@ -1,8 +1,7 @@
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Framebuffer Manager Implementation
-// GPU/CPU framebuffer synchronization, VI output, format conversion,
-// RDRAM dirty tracking, and resolution scaling.
-// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * @file FramebufferManager.cpp
+ * @brief GPU/CPU framebuffer synchronization, VI output, and resolution scaling.
+ */
 
 #include "FramebufferManager.hpp"
 #include <cstdio>
@@ -99,7 +98,7 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
     glDeleteShader(vs);
     glDeleteShader(fs);
 
-    // VI filter shader (simple bilinear with optional AA divot + interlace)
+    // VI filter shader (AA + divot + dither removal + interlace)
     const char* viFilterFS = R"(
         #version 460 core
         in vec2 vTexCoord;
@@ -108,17 +107,34 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
         uniform vec2 uPixelSize;
         uniform int uEnableAA;
         uniform int uEnableDivot;
+        uniform int uEnableDedither;
         uniform int uInterlaced;
         uniform int uField;
 
+        // Dither removal: 2×2 box filter cancels the 4×4 ordered dithering pattern.
+        // The N64 VI applies this before AA; it averages a 2×2 block of N64 pixels
+        // so the alternating +/- dither offsets within each block cancel out.
+        vec4 sampleDedither(vec2 uv) {
+            if (uEnableDedither == 0) return texture(uTexture, uv);
+            vec4 tl = texture(uTexture, uv + vec2(-0.5, -0.5) * uPixelSize);
+            vec4 tr = texture(uTexture, uv + vec2( 0.5, -0.5) * uPixelSize);
+            vec4 bl = texture(uTexture, uv + vec2(-0.5,  0.5) * uPixelSize);
+            vec4 br = texture(uTexture, uv + vec2( 0.5,  0.5) * uPixelSize);
+            return (tl + tr + bl + br) * 0.25;
+        }
+
         vec4 sampleAA(vec2 uv) {
-            vec4 c = texture(uTexture, uv);
+            vec4 c = sampleDedither(uv);
             if (uEnableAA == 0) return c;
 
-            // 3-tap horizontal AA (N64 VI filter)
-            vec4 left  = texture(uTexture, uv + vec2(-uPixelSize.x, 0.0));
-            vec4 right = texture(uTexture, uv + vec2( uPixelSize.x, 0.0));
-            return mix(c, (left + c + right) / 3.0, 0.5);
+            // N64 VI AA: 5-tap diamond (plus) pattern, no diagonals.
+            // Matches the hardware's coverage-weighted filter shape.
+            // Diamond weights: center=2, cardinals=1 each, total=6.
+            vec4 up    = sampleDedither(uv + vec2(0.0, -uPixelSize.y));
+            vec4 down  = sampleDedither(uv + vec2(0.0,  uPixelSize.y));
+            vec4 left  = sampleDedither(uv + vec2(-uPixelSize.x, 0.0));
+            vec4 right = sampleDedither(uv + vec2( uPixelSize.x, 0.0));
+            return (c * 2.0 + up + down + left + right) / 6.0;
         }
 
         void main() {
@@ -135,12 +151,9 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
             }
 
             // Interlace simulation: dim scanlines belonging to the "off" field.
-            // N64 interlaced modes display only even or odd scanlines per field;
-            // we blend the off-field lines toward the adjacent on-field line.
             if (uInterlaced != 0) {
                 int scanline = int(gl_FragCoord.y);
                 if ((scanline & 1) != uField) {
-                    // Off-field line: blend with the on-field neighbor above
                     vec4 neighbor = texture(uTexture, vTexCoord + vec2(0.0, -uPixelSize.y));
                     color = mix(color, neighbor, 0.5);
                 }
@@ -235,7 +248,14 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     // new FBO objects.  Lazy FBO creation (after game textures are loaded) can
     // leave driver-internal state that causes texture sampling to silently
     // return zeros when rendering into the new FBO.
-    glFinish();
+    {
+        static int gpuIsIntel = -1;
+        if (gpuIsIntel < 0) {
+            const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            gpuIsIntel = (renderer && strstr(renderer, "Intel")) ? 1 : 0;
+        }
+        if (gpuIsIntel) glFinish();
+    }
 
     // Unbind all texture units to avoid Intel driver internal aliasing
     for (int i = 0; i < 8; ++i) {
@@ -287,6 +307,20 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         glNamedFramebufferTexture(fb.fbo, GL_DEPTH_STENCIL_ATTACHMENT, fb.depthTex, 0);
     }
 
+    // Create R8UI coverage image for MLE shader blender (not an FBO attachment —
+    // accessed via imageLoad/imageStore in the fragment shader).
+    glCreateTextures(GL_TEXTURE_2D, 1, &fb.coverageTex);
+    glTextureStorage2D(fb.coverageTex, 1, GL_R8UI, fb.scaledWidth, fb.scaledHeight);
+    glTextureParameteri(fb.coverageTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(fb.coverageTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // Clear coverage to 0 (no coverage before any geometry)
+    const GLuint zeroCvg = 0;
+    glClearTexImage(fb.coverageTex, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zeroCvg);
+
+    // Set backend-native image handles (GL: texture name → uint64_t)
+    fb.colorImageHandle    = static_cast<uint64_t>(fb.colorTex);
+    fb.coverageImageHandle = static_cast<uint64_t>(fb.coverageTex);
+
     // Verify completeness
     GLenum status = glCheckNamedFramebufferStatus(fb.fbo, GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
@@ -299,6 +333,12 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         const GLfloat depthOne = 1.0f;
         const GLint   stencilZero = 0;
         glClearNamedFramebufferfi(fb.fbo, GL_DEPTH_STENCIL, 0, depthOne, stencilZero);
+
+        // Clear color buffer with alpha=0 so that the blender's memColor read
+        // sees zero coverage for untouched pixels (matches real N64 behaviour
+        // where mem_cvg=0 before any geometry is drawn).
+        const GLfloat blackZeroAlpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        glClearNamedFramebufferfv(fb.fbo, GL_COLOR, 0, blackZeroAlpha);
     }
 
     m_stats.framebuffersCreated++;
@@ -308,7 +348,9 @@ void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
     if (fb.resolvedFbo) { glDeleteFramebuffers(1, &fb.resolvedFbo); fb.resolvedFbo = 0; }
     if (fb.resolvedTex) { glDeleteTextures(1, &fb.resolvedTex);     fb.resolvedTex = 0; }
     if (fb.snapshotTex) { glDeleteTextures(1, &fb.snapshotTex);     fb.snapshotTex = 0; }
+    if (fb.snapshotCvgTex) { glDeleteTextures(1, &fb.snapshotCvgTex); fb.snapshotCvgTex = 0; }
     if (fb.presentationTex) { glDeleteTextures(1, &fb.presentationTex); fb.presentationTex = 0; }
+    if (fb.coverageTex) { glDeleteTextures(1, &fb.coverageTex); fb.coverageTex = 0; }
     if (fb.fbo)      { glDeleteFramebuffers(1, &fb.fbo);      fb.fbo      = 0; }
     if (fb.colorTex) { glDeleteTextures(1,    &fb.colorTex);  fb.colorTex = 0; }
     if (fb.depthTex) { glDeleteTextures(1,    &fb.depthTex);  fb.depthTex = 0; }
@@ -349,6 +391,19 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
         glCopyImageSubData(fb->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                            fb->snapshotTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                            (GLsizei)fb->scaledWidth, (GLsizei)fb->scaledHeight, 1);
+
+        // Also snapshot coverage for MLE blender reads
+        if (fb->coverageTex != 0) {
+            if (fb->snapshotCvgTex == 0) {
+                glCreateTextures(GL_TEXTURE_2D, 1, &fb->snapshotCvgTex);
+                glTextureStorage2D(fb->snapshotCvgTex, 1, GL_R8UI, fb->scaledWidth, fb->scaledHeight);
+                glTextureParameteri(fb->snapshotCvgTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTextureParameteri(fb->snapshotCvgTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            }
+            glCopyImageSubData(fb->coverageTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+                               fb->snapshotCvgTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+                               (GLsizei)fb->scaledWidth, (GLsizei)fb->scaledHeight, 1);
+        }
         return fb->snapshotTex;
     }
 
@@ -373,9 +428,9 @@ void FramebufferManager::SnapshotForPresentation() {
         glTextureParameteri(m_currentColor->presentationTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    // Ensure all pending draws have completed before copying (Intel Iris
-    // Xe's DSA path can race with CopyImageSubData without an explicit sync).
-    glFinish();
+    // Ensure all pending draws have completed before copying.
+    // glMemoryBarrier is sufficient — avoids the full CPU-GPU stall of glFinish.
+    glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT);
 
     // GPU-side copy — no CPU round-trip, no pipeline stall
     glCopyImageSubData(m_currentColor->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
@@ -424,12 +479,18 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
         glScissor(0, 0, fb->scaledWidth, fb->scaledHeight);
 
-        // Clear depth/stencil so accumulated depth writes from previous frames
-        // don't reject new geometry.  The N64 game clears color via FillRect
-        // but typically doesn't clear the depth buffer explicitly.
-        glDepthMask(GL_TRUE);
-        glClearDepth(1.0);
-        glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        // When a depth image has been set (SetDepthImage called before this
+        // SetColorImage — the usual N64 display list order), clear the depth
+        // attachment on the NEW color FBO.  Without this, double-buffered
+        // games (alternating color addresses like OoT) never get their depth
+        // cleared: OnSetDepthImage clears the OLD FBO, not the new one.
+        // The flag ensures we only clear once per SetDepthImage call, so that
+        // multiple SetColorImage switches within one frame don't wipe depth
+        // that was written by earlier rendering passes.
+        if (m_depthClearPending && fb->fbo != 0) {
+            glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
+            m_depthClearPending = false;
+        }
     }
 }
 
@@ -449,9 +510,13 @@ void FramebufferManager::OnSetDepthImage(uint32_t address) {
         fb->lastUsedFrame = m_frameCounter;
     }
 
-    // The N64 assigns a new depth buffer at the start of every frame. Clear the GL depth
-    // attachment on the current color FBO so each frame starts with a clean z-buffer.
-    // Without this, fragments from previous frames sit at z=0 and block everything via LEQUAL.
+    // Mark depth clear as pending — the actual clear happens in OnSetColorImage
+    // on whichever FBO becomes current next.  This handles double-buffered games
+    // where SetDepthImage fires before SetColorImage switches to the new buffer.
+    m_depthClearPending = true;
+
+    // Also clear the GL depth attachment on the current color FBO (if already bound).
+    // This handles single-buffered games where the same FBO stays current.
     if (m_currentColor && m_currentColor->fbo != 0) {
         glClearNamedFramebufferfi(m_currentColor->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
@@ -620,10 +685,8 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     std::vector<uint8_t> rgba8(pixelCount * 4);
 
     if (m_resScale == 1 && fb->msaaSamples <= 1) {
-        // Non-MSAA, native resolution: apply VI filter then read directly
-        if (m_viConfig.antiAlias || m_viConfig.divot || m_viConfig.interlaced) {
-            ApplyVIFilter(fb);
-        }
+        // Non-MSAA, native resolution: read directly (no VI filter —
+        // VI filter is display-only and must not be baked into RDRAM data).
         glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(rgba8.size()), rgba8.data());
     } else {
@@ -639,16 +702,7 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
                                0, 0, fb->scaledWidth, fb->scaledHeight,
                                0, 0, w, h,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        // Apply VI filter to the resolved/downscaled image before readback
-        if (m_viConfig.antiAlias || m_viConfig.divot || m_viConfig.interlaced) {
-            GPUFramebuffer tmpShell{};
-            tmpShell.fbo          = tmpFBO;
-            tmpShell.colorTex     = tmpTex;
-            tmpShell.scaledWidth  = static_cast<int>(w);
-            tmpShell.scaledHeight = static_cast<int>(h);
-            tmpShell.msaaSamples  = 0;
-            ApplyVIFilter(&tmpShell);
-        }
+        // Read resolved pixels directly — no VI filter (display-only effect).
         glGetTextureImage(tmpTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(rgba8.size()), rgba8.data());
         glDeleteFramebuffers(1, &tmpFBO);
@@ -724,6 +778,19 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     uint32_t depthAddr = fb->desc.address;
     uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + depthAddr);
     ConvertDepthFloatToN64(depthFloat.data(), dst, pixelCount, w);
+
+    // Trace depth readback
+    {
+        uint32_t depthEnd = depthAddr + pixelCount * 2;
+        if (depthAddr <= 0x35CCFF && depthEnd > 0x35CC00) {
+            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x35CC00",
+                       depthAddr, pixelCount * 2, w, h);
+        }
+        if (depthAddr <= 0x1CAACF && depthEnd > 0x1CAA00) {
+            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x1CAA00",
+                       depthAddr, pixelCount * 2, w, h);
+        }
+    }
 
     MarkRDRAMDirty(depthAddr, pixelCount * 2);
     m_stats.gpuToRdramCopies++;
@@ -922,19 +989,43 @@ void FramebufferManager::UpdateVI(const VIConfig& config) {
     m_frameCounter++;
     m_depthCopiedThisFrame = false;  // Reset PD depth-once-per-frame flag
     m_stats.viUpdates++;
+
+    // Register the VI display buffer as a known framebuffer so that
+    // FindByAddress can match texture reads from the displayed image
+    // (e.g., OoT's cfb RGBA32 anti-aliasing filter reads the VI buffer
+    //  at offsets, not the RDP render target).
+    if (config.origin != 0 && config.width > 0) {
+        GPUFramebuffer* viFB = FindByAddress(config.origin);
+        if (!viFB) {
+            FramebufferDesc desc;
+            desc.address = config.origin & 0x7FFFFF;
+            desc.width   = config.width;
+            desc.height  = config.height > 0 ? config.height : 240;
+            desc.format  = FBFormat::RGBA16;
+            desc.size    = 2;
+            desc.stride  = config.width * 2;
+            desc.type    = FBType::Color;
+            viFB = FindOrCreate(desc);
+            if (viFB) {
+                viFB->lastUsedFrame = m_frameCounter;
+                // Upload RDRAM content to populate the GPU texture
+                if (m_rdram)
+                    CopyToGPU(viFB, m_rdram);
+            }
+        }
+    }
 }
 
 GPUFramebuffer* FramebufferManager::GetDisplayFramebuffer() {
     return FindByAddress(m_viConfig.origin);
 }
 
-void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeight) {
+void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeight, bool skipVIFilter) {
     GPUFramebuffer* displayFB = GetDisplayFramebuffer();
 
     // If VI_ORIGIN doesn't match any FBO (e.g., early boot frames before VI is set),
     // fall back to the last FBO that was actively rendered to.
     if (!displayFB) displayFB = m_currentColor;
-
 
     if (!displayFB) {
         // Still clear the back buffer so we don't present an undefined frame after SwapBuffers.
@@ -945,6 +1036,15 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     }
 
     m_stats.blitsToScreen++;
+
+    if (m_viConfig.gammaCorrect && m_gammaProgram)
+        ApplyGammaCorrection(displayFB, 2.0f);
+
+    // Apply VI divot/AA/dedither filter if enabled (N64 VI_STATUS bits)
+    // Skip for HLE-rendered content — the 3D pipeline already produces smooth output;
+    // the VI hardware filter only makes sense for raw software-rendered framebuffers.
+    if (!skipVIFilter && (m_viConfig.divot || m_viConfig.antiAlias || m_viConfig.dedither) && m_viFilterProgram)
+        ApplyVIFilter(displayFB);
 
     // Bind default framebuffer (screen)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1008,12 +1108,16 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
 
     glUseProgram(m_viFilterProgram);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, fb->colorTex);
+    // Apply to the texture that will actually be displayed (same logic as gamma).
+    GLuint targetTex = (fb->presentationTex != 0) ? fb->presentationTex : fb->colorTex;
+    glBindTexture(GL_TEXTURE_2D, targetTex);
     glUniform2f(glGetUniformLocation(m_viFilterProgram, "uPixelSize"),
                 1.0f / fb->scaledWidth, 1.0f / fb->scaledHeight);
     glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableAA"), 1);
     glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDivot"),
                 m_viConfig.divot ? 1 : 0);
+    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDedither"),
+                m_viConfig.dedither ? 1 : 0);
     // Interlace simulation: tell the shader which field is active
     glUniform1i(glGetUniformLocation(m_viFilterProgram, "uInterlaced"),
                 m_viConfig.interlaced ? 1 : 0);
@@ -1025,7 +1129,7 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
 
     // Copy result back
     glCopyImageSubData(tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       fb->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+                       targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        fb->scaledWidth, fb->scaledHeight, 1);
 
     glDeleteFramebuffers(1, &tmpFBO);
@@ -1045,6 +1149,11 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
 void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
     if (!fb || !m_gammaProgram || std::abs(gamma - 1.0f) < 0.001f) return;
 
+    // Apply to the texture that will actually be displayed.
+    // BlitToScreen reads presentationTex when available, so gamma must
+    // be applied there — not to colorTex (which is the render target).
+    GLuint targetTex = (fb->presentationTex != 0) ? fb->presentationTex : fb->colorTex;
+
     GLuint tmpTex;
     glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
     glTextureStorage2D(tmpTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
@@ -1058,14 +1167,14 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
 
     glUseProgram(m_gammaProgram);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, fb->colorTex);
+    glBindTexture(GL_TEXTURE_2D, targetTex);
     glUniform1f(glGetUniformLocation(m_gammaProgram, "uGamma"), gamma);
 
     glBindVertexArray(m_blitVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
     glCopyImageSubData(tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       fb->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+                       targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        fb->scaledWidth, fb->scaledHeight, 1);
 
     glDeleteFramebuffers(1, &tmpFBO);

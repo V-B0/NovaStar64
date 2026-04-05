@@ -1,3 +1,7 @@
+/**
+ * @file HiResTextures.hpp
+ * @brief Hi-Res Texture Loader.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Hi-Res Texture Loader
 // Load high-resolution replacement textures from PNG/DDS/KTX packs

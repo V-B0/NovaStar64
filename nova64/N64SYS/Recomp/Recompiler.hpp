@@ -72,6 +72,7 @@ struct RecompilerStats {
     uint64_t cacheHits = 0;             ///< Cache hit count
     uint64_t cacheMisses = 0;           ///< Cache miss count
     uint64_t codeInvalidations = 0;     ///< Number of code invalidations
+    uint64_t interpretedFallbacks = 0;  ///< Number of interpreter fallback invocations
     uint64_t totalCycles = 0;           ///< Total cycles executed
     uint64_t compilationTimeNs = 0;     ///< Total compilation time in nanoseconds
     size_t   memoryUsed = 0;            ///< Memory used by compiled code
@@ -82,6 +83,7 @@ struct RecompilerStats {
         cacheHits = 0;
         cacheMisses = 0;
         codeInvalidations = 0;
+        interpretedFallbacks = 0;
         totalCycles = 0;
         compilationTimeNs = 0;
         memoryUsed = 0;
@@ -218,6 +220,12 @@ private:
     void Execute_Lookup();
     void Execute_Lookup_Validate();
     
+    // Interpreter fallback when compilation fails
+    void FallbackToInterpreter();
+    
+    // Interpret a single instruction at current PC and advance
+    void InterpretSingleInstruction();
+    
     // Helper methods
     void ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reason);
     void HandleSelfModifyingCode(uint32_t address, RemoveReason reason);
@@ -280,6 +288,15 @@ private:
     bool                m_EnableSelfModifyingCodeDetection = true;
     bool                m_EnableCodeCache = true;
     size_t              m_MaxCodeCacheSize = 64 * 1024 * 1024;  // 64 MB
+
+    // SMC thrash guard: tracks per-PC recompilation count to suppress
+    // infinite recompilation loops. Reset for a given PC when DMA/CACHE
+    // performs a "known-good" code write (invalidation).
+    std::unordered_map<uint32_t, int> m_SmcThrashMap;
+
+    // Shared JIT runtime — all CodeBlocks share this single runtime so that
+    // compiled code lives in one virtual-memory pool instead of one pool per block.
+    std::unique_ptr<asmjit::JitRuntime> m_SharedJitRuntime;
 };
 
 } // namespace Recompiler

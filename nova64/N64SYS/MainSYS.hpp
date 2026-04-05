@@ -9,6 +9,7 @@
 #include <string>
 #include <memory>
 #include <atomic>
+#include <chrono>
 #include "Types.hpp"
 
 // Memory Handler Includes
@@ -101,6 +102,18 @@ public:
     [[nodiscard]] bool IsFrameLimitReached() const;
     [[nodiscard]] uint64_t GetCurrentFrameCount() const;
 
+    // Frame rate target (0=unlimited, 30, 60)
+    void SetTargetFPS(int fps) { m_TargetFPS = fps; }
+    [[nodiscard]] int GetTargetFPS() const { return m_TargetFPS; }
+    
+    // Static target FPS to pass through to system before creation
+    static int s_TargetFPS;
+
+    // Static window resolution to pass through before creation
+    static int s_WindowWidth;
+    static int s_WindowHeight;
+    static int s_InternalResScale;
+
     // Components
     CRegisters* GetRegisters() const { return m_Registers.get(); }
     Nova64::MipsMemoryVM* GetMemory() const { return m_Memory.get(); }
@@ -144,10 +157,16 @@ private:
     // Internal methods
     void StartEmulation2(bool NewThread);
     void StartEmulationThread();
-    void ExecuteInterpret();
     void ExecuteRecompiler();
     void ExecuteSyncCPU();
     void CpuStopped();
+
+public:
+    // Interpreter can be called from recompiler as fallback
+    void ExecuteInterpret();
+    
+    // Interpret a single instruction at current PC (used by recompiler fallback)
+    void ExecuteSingleOp();
 
 public:
     // System state
@@ -169,6 +188,13 @@ public:
     bool m_SavesReadOnly;
     uint32_t m_CountPerOp = 2; // Default: 2 cycles per op (N64 standard)
     uint64_t m_MaxFrames = 0; // 0 = unlimited, >0 = frame limit for CLI testing
+    
+    // Frame rate limiter
+    int m_TargetFPS = 60;  // 0=unlimited, 30=half speed, 60=full speed (NTSC)
+    std::chrono::steady_clock::time_point m_FramePaceStart;
+    bool m_FramePaceInitialized = false;
+    int m_FrameSkipCount = 0;    // Consecutive frames skipped
+    int m_MaxFrameSkip = 2;      // Max consecutive skipped renders
     
     // Pipeline stage
     N64Types::PipelineStage m_PipelineStage;
@@ -202,4 +228,16 @@ public:
 
     // Helper for DD regs
     std::array<uint32_t, 32> m_DDRegisters; // Initialized to 0
+
+    // DMA block invalidation callback for recompiler
+    // When set, called after PI/SP DMA copies data to RDRAM so the
+    // recompiler can discard stale compiled blocks in the target range.
+    using DMAInvalidateFunc = void(*)(void* ctx, uint32_t physAddr, uint32_t length);
+    DMAInvalidateFunc m_DMAInvalidateFn = nullptr;
+    void*             m_DMAInvalidateCtx = nullptr;
+
+    void NotifyDMAToRDRAM(uint32_t physAddr, uint32_t length) {
+        if (m_DMAInvalidateFn)
+            m_DMAInvalidateFn(m_DMAInvalidateCtx, physAddr, length);
+    }
 };

@@ -1,3 +1,7 @@
+/**
+ * @file CachedRom.hpp
+ * @brief Cached Rom declarations and types.
+ */
 #pragma once
 #include "Memoryhandler.hpp"
 #include <cstdint>

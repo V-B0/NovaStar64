@@ -1,3 +1,7 @@
+/**
+ * @file RspMemory.cpp
+ * @brief RSP Memory Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Memory Implementation
 // IMEM/DMEM management and recompiler code buffer allocation

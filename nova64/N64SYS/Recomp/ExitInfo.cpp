@@ -10,8 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include "CodeBlock.hpp"
-// #include "../MIPSY/Register.hpp" // Direct include for CRegisters // Avoid duplicate/conflicting includes
-#include "../../common/log.hpp" // For Trace logging
+#include "../../common/log.hpp"
 #include "CodeSection.hpp"
 #include "RegInfo.hpp"
 #include "../MainSYS.hpp"

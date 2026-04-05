@@ -1,3 +1,7 @@
+/**
+ * @file RomMemHandler.cpp
+ * @brief Rom Mem Handler implementation.
+ */
 #include "RomMemHandler.hpp"
 #include "../N64Rom.hpp"
 #include "../MainSYS.hpp"

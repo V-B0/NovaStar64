@@ -1,3 +1,7 @@
+/**
+ * @file IniFile.cpp
+ * @brief Ini File implementation.
+ */
 // IniFile.cpp - INI file parsing and manipulation
 // Inspired by Project64's CIniFileBase, modernized with C++17, string_view, optional
 #include "IniFile.hpp"

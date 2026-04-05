@@ -104,10 +104,14 @@ CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
         return nullptr;
     }
     
-    // Remove from jump table
+    // Remove from jump table (only if it belongs to this address)
     uint32_t jumpIdx = GetJumpTableIndex(vaddr);
     auto oldFunc = m_JumpTable[jumpIdx];
-    m_JumpTable[jumpIdx] = nullptr;
+    if (oldFunc && oldFunc->EnterPC() == vaddr) {
+        m_JumpTable[jumpIdx] = nullptr;
+    } else {
+        oldFunc = nullptr;  // not ours — don't return it
+    }
     
     // Remove from page table if it exists
     uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
@@ -130,9 +134,9 @@ bool CFunctionMap::Contains(uint32_t vaddr) const noexcept {
         return false;
     }
     
-    // Check if jump table has an entry
-    if (m_JumpTable[GetJumpTableIndex(vaddr)]) {
-        return true;
+    // Check if jump table has an entry (verify address to avoid collision)
+    if (auto func = m_JumpTable[GetJumpTableIndex(vaddr)]) {
+        if (func->EnterPC() == vaddr) return true;
     }
     
     // Check if page table has an entry

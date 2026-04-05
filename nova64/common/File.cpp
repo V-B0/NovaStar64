@@ -1,3 +1,7 @@
+/**
+ * @file File.cpp
+ * @brief File implementation.
+ */
 #include "file.hpp"
 
 #include <algorithm>

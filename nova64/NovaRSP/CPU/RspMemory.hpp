@@ -1,3 +1,7 @@
+/**
+ * @file RspMemory.hpp
+ * @brief RSP Memory.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Memory - Modernized from Project64's RspMemory.h
 // C++20 with bounds-safe IMEM/DMEM access

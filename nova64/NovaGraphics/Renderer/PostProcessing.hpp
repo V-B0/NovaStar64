@@ -1,3 +1,7 @@
+/**
+ * @file PostProcessing.hpp
+ * @brief Post-Processing Pipeline.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Post-Processing Pipeline
 // Gamma correction, FXAA, bloom, CRT filter, sharpening.

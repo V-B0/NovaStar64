@@ -1,3 +1,7 @@
+/**
+ * @file PluginConfig.hpp
+ * @brief Plugin Configuration.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Plugin Configuration
 // All user-facing settings for the video plugin with serialization.
@@ -73,9 +77,9 @@ enum class PostFilter : uint8_t {
 
 struct PluginConfig {
     // ── Resolution ────────────────────────────────────────────
-    int      windowWidth         = 640;
-    int      windowHeight        = 480;
-    int      internalResScale    = 1;      // 1 = native, 2 = 2x, etc.
+    int      windowWidth         = 1280;
+    int      windowHeight        = 960;
+    int      internalResScale    = 4;      // 1 = native, 2 = 2x, 4 = 4x, etc.
     bool     fullscreen          = false;
     int      fullscreenMonitor   = 0;      // Monitor index
     bool     vsync               = true;

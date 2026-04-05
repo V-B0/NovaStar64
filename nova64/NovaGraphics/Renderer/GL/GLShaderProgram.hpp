@@ -1,3 +1,7 @@
+/**
+ * @file GLShaderProgram.hpp
+ * @brief OpenGL Shader Program Management.
+ */
 // NovaGraphics — OpenGL Shader Program Management
 // Wraps GL shader compilation, linking, uniform management, pipeline objects.
 #pragma once

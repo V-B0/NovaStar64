@@ -1,3 +1,7 @@
+/**
+ * @file VideoPlugin.hpp
+ * @brief Video Plugin Interface.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Video Plugin Interface
 // Main entry point implementing SuperNova64's GFXPlugin abstract base.
@@ -153,6 +157,13 @@ public:
     void ApplyConfig(const PluginConfig& config);
     void OpenConfigDialog();
 
+    /// Override resolution after config-file load (set BEFORE Initialize).
+    void SetPendingResolution(int scale, int w, int h) {
+        m_pendingResScale = scale;
+        m_pendingWindowW  = w;
+        m_pendingWindowH  = h;
+    }
+
     // ── Status & Info ────────────────────────────────────────────
     PluginStatus        GetStatus() const   { return m_status.load(); }
     const std::string&  GetName() const     { return m_name; }
@@ -257,7 +268,12 @@ private:
     // Initialization Tracking
     bool                    m_isInitializationPhase = true;
     uint64_t                m_framesAfterRomOpen = 0;
-    static constexpr uint64_t ROM_INIT_GRACE_PERIOD = 120;
+    static constexpr uint64_t ROM_INIT_GRACE_PERIOD = 2;
+
+    // CLI resolution overrides (set before Initialize, applied after config load)
+    int                     m_pendingResScale = 0;
+    int                     m_pendingWindowW  = 0;
+    int                     m_pendingWindowH  = 0;
 
     bool IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint32_t height, uint32_t bpp) const;
 };

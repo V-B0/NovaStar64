@@ -1,3 +1,7 @@
+/**
+ * @file ShaderManager.hpp
+ * @brief Shader Management System.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Shader Management System
 // Manages shader compilation, caching, and uber-shader specialization
@@ -102,10 +106,19 @@ enum ShaderFeature : uint64_t {
     SF_DIVOT_ENABLE       = (1ULL << 37),
     SF_MONOCHROME         = (1ULL << 38), // Desaturate output (e.g. Zelda OoT cutscenes)
     SF_N64_DEPTH_COMPARE  = (1ULL << 39), // N64-accurate Z-image depth compare in shader
+    SF_DEPTH_RENDER       = (1ULL << 44), // ColorImage == DepthImage: write color.r as depth
+    SF_CHROMA_KEY         = (1ULL << 45), // N64 color key (chroma key alpha)
+    SF_MLE_BLENDER        = (1ULL << 46), // MLE: full shader blender via imageLoad/imageStore
+    SF_ALPHA_NOISE_DITHER = (1ULL << 47), // Alpha compare uses noise dither (mode 3)
 
     // Combiner complexity hints
     SF_COMBINER_SIMPLE    = (1ULL << 40), // Can use simplified combiner
     SF_COMBINER_COMPLEX   = (1ULL << 41), // Full 2-cycle combiner needed
+    SF_FORCE_BLEND        = (1ULL << 42), // Explicitly blending
+    SF_DUAL_SOURCE_BLEND  = (1ULL << 43), // Dual-source output for HW blender compositing
+
+    // Shadow map (depth-texture → TLUT → fog-color shadow overlay)
+    SF_SHADOW_MAP         = (1ULL << 49),
 
     // Resolution scale
     SF_HIRES              = (1ULL << 48),
@@ -149,8 +162,6 @@ struct ShaderUniforms {
     int mvpMatrix         = -1;
     int modelView         = -1;
     int projection        = -1;
-    int texMatrix0        = -1;
-    int texMatrix1        = -1;
 
     // Textures
     int texture0          = -1;
@@ -214,8 +225,42 @@ struct ShaderUniforms {
     int invScreenSize     = -1; // vec2
     int frameCount        = -1;
 
+    // Texture coordinate bounds
+    int texCoordBounds0   = -1; // vec4: minS, minT, maxS, maxT
+    int texCoordBounds1   = -1; // vec4: minS, minT, maxS, maxT
+    int useTexCoordBounds = -1; // int
+
+    // Texture perspective correction
+    int texturePersp      = -1; // int: 1 = perspective-correct, 0 = screen-space
+
+    // Framebuffer-as-texture parameters
+    int fbMonochrome0     = -1; // int: monochrome mode tile 0 (0=off,1=red,2=luma)
+    int fbMonochrome1     = -1; // int: monochrome mode tile 1
+    int fbFixedAlpha0     = -1; // int: fixed alpha tile 0 (0=off, 1=0.825)
+    int fbFixedAlpha1     = -1; // int: fixed alpha tile 1
+
+    // LOD screen scale
+    int screenScale       = -1; // vec2: resolution scale for LOD computation
+
+    // Chroma key width
+    int keyWidth          = -1; // vec3: chroma key width per channel
+
+    // LOD mipmap parameters
+    int minLod            = -1; // float: primLODMin (minimum LOD level)
+    int maxTile           = -1; // int: max mipmap tile index
+    int textureDetail     = -1; // int: 0=clamp, 1=sharpen, 2=detail
+
+    // Fog usage mode
+    int fogUsage          = -1; // int: 0=none, 1=standard, 2=F3DAM RGB
+
+    // Screen-space triangle (noperspective shade color)
+    int screenSpaceTriangle = -1; // int: 0=perspective, 1=screen-space
+
     // Resolution scale
     int resolutionScale   = -1; // vec2
+
+    // Combiner debug output mode
+    int debugOutput       = -1; // int: 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
 
     void Reset() {
         *this = ShaderUniforms();
@@ -430,21 +475,23 @@ private:
 
     // Combiner code generation
     std::string GenerateCombinerCode(uint64_t mux, uint64_t features) const;
-    std::string GenerateBlenderCode(uint32_t blenderBits, uint64_t features) const;
+    std::string GenerateBlenderCode(uint32_t blenderBits, uint32_t otherModeL, uint64_t features) const;
     std::string GenerateAlphaTestCode(uint64_t features) const;
     std::string GenerateFogCode(uint64_t features) const;
     std::string GenerateNoiseCode(uint64_t features) const;
     std::string GenerateTextureSampleCode(uint64_t features) const;
     std::string GenerateN64TexFilterCode() const; // 3-point filter
     std::string GenerateDepthCompareCode(uint64_t features) const;
+    std::string GenerateDepthRenderCode(uint64_t features) const;
     std::string GeneratePrimDepthCode(uint64_t features) const;
     std::string GenerateCoverageCode(uint64_t features) const;
-    std::string GenerateDitherCode(uint64_t features) const;
+    std::string GenerateDitherCode(uint64_t features, uint32_t otherModeH) const;
     std::string GenerateMonochromeCode(uint64_t features) const;
     std::string GenerateGammaCorrectionCode() const;
     std::string GenerateYUVConversionCode(uint64_t features) const;
     std::string GenerateLODCode(uint64_t features) const;
     std::string GenerateDetailSharpenCode(uint64_t features) const;
+    std::string GenerateShadowMapShader() const;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -469,7 +516,9 @@ public:
     void SetMatrixUniforms(const float* mvp, const float* modelView = nullptr);
     void SetColorUniforms(const float* primColor, const float* envColor,
                           const float* fogColor, const float* blendColor,
-                          float primLOD);
+                          float primLODFrac, float primLODMin,
+                          float centerR = 0.0f, float centerG = 0.0f, float centerB = 0.0f,
+                          float scaleR = 0.0f, float scaleG = 0.0f, float scaleB = 0.0f);
     void SetFillColor(float r, float g, float b, float a);
     void SetTextureUniforms(int tex0Unit, int tex1Unit,
                              const float* scale0, const float* scale1,
@@ -479,11 +528,21 @@ public:
                                const float* mask0, const float* mask1);
     void SetAlphaRef(float ref);
     void SetFogParams(float multiplier, float offset);
+    void SetTexCoordBounds(bool enabled, const float* bounds0, const float* bounds1);
     void SetDepthParams(float scale, float offset, float primDepth);
     void SetN64DepthMode(int zMode, float primDeltaZ);
+    void SetConvertK(const int16_t convertK[6]);
     void SetScreenSize(float width, float height);
     void SetFrameCount(uint32_t frame);
     void SetResolutionScale(float scaleX, float scaleY);
+    void SetTexturePersp(int persp);
+    void SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1);
+    void SetScreenScale(float scaleX, float scaleY);
+    void SetKeyWidth(float r, float g, float b);
+    void SetLODParams(float minLod, int maxTile, int textureDetail);
+    void SetFogUsage(int fogUsage);
+    void SetScreenSpaceTriangle(int screenSpace);
+    void SetDebugOutput(int mode);
 
     // Built-in shader programs
     const CompiledShader* GetDepthOnlyShader();

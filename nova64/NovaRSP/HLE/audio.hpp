@@ -1,3 +1,7 @@
+/**
+ * @file audio.hpp
+ * @brief RSP HLE Audio ADPCM/Resample.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio ADPCM/Resample - Modernized from Project64's audio.h
 // C++20 with constexpr LUT and inline helpers

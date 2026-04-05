@@ -1,3 +1,7 @@
+/**
+ * @file arithmetics.cpp
+ * @brief RSP HLE Audio Arithmetics.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio Arithmetics - Compilation unit
 // All functions are inline constexpr in the header; this unit

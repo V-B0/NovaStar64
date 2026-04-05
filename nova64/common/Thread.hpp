@@ -1,3 +1,7 @@
+/**
+ * @file Thread.hpp
+ * @brief Thread declarations and types.
+ */
 #pragma once
 
 #include <cstdint>

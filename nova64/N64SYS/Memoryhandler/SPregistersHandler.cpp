@@ -7,7 +7,6 @@
  * - Status register control (halt, break, interrupts, signals)
  * - Semaphore operations
  */
-
 #include "SPregistersHandler.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
@@ -18,6 +17,7 @@
 // MI Interrupt bits (matching MIPSYInterfaceHandler convention)
 namespace {
     constexpr uint32_t MI_INTR_SP = 0x01;
+    constexpr uint32_t MI_INTR_DP = 0x20;
 }
 
 // Constructor for SPRegisters base class
@@ -385,6 +385,12 @@ void SRegistersHandler::SP_DMA_WRITE()
  */
 void SRegistersHandler::ProcessStatusWrite(uint32_t Value)
 {
+    static int pswCount = 0;
+    pswCount++;
+    // Log first 20 entries, then every 100th for ongoing visibility
+    if (pswCount <= 20 || (pswCount % 100 == 0)) {
+        Log::infof("[PSW] ProcessStatusWrite(0x%08X) SP_STATUS_before=0x%08X (count=%d)", Value, SP_STATUS, pswCount);
+    }
     bool shouldClearHalt = false;
     bool shouldSetHalt   = false;
 
@@ -584,7 +590,7 @@ void SRegistersHandler::ClearHalt()
         return;
     }
     s_inClearHalt = true;
-    
+
     // Set defer flag so that RSP HLE code (ProcessDList, rsp_break) does NOT
     // set MI_INTR bits or call CheckInterrupts synchronously. Instead they
     // accumulate bits in m_deferred_mi_intr for the RspTimer to apply later.
@@ -609,22 +615,27 @@ void SRegistersHandler::ClearHalt()
         pendingBits |= MI_INTR_SP;  // 0x01
     }
     
-    // Apply SP+DP bits to MI_INTR_REG immediately
+    // Apply SP interrupt bit immediately (fires at next instruction boundary)
     if (pendingBits & MI_INTR_SP) {
         m_Reg.m_RspIntrReg |= MI_INTR_SP;
         m_Reg.m_Mips_Interface[2] |= MI_INTR_SP;
     }
-    if (pendingBits & 0x20) { // MI_INTR_DP
-        m_Reg.m_GfxIntrReg |= 0x20;
-        m_Reg.m_Mips_Interface[2] |= 0x20;
-    }
+    
+    // DP interrupt: set immediately AND via RspTimer. The game's cleanup code
+    // (MI_MODE CLR_DP_INTR) will clear the DP bit within the same block.
+    // The RspTimer fires at the block boundary (after cleanup has run) and
+    // re-sets the DP bit, ensuring the interrupt is properly delivered.
+    bool hasDP = (pendingBits & 0x20) != 0;
     m_Reg.m_deferred_mi_intr = 0;
     
-    // Schedule CheckInterrupts for the next instruction boundary.
-    // We can't call CheckInterrupts here because we're inside the SW handler;
-    // the CPU hasn't finished the current instruction context yet.
-    // A 2-cycle timer fires at the very next timer check = next instruction.
-    if (pendingBits != 0) {
+    if (hasDP) {
+        m_Reg.m_GfxIntrReg |= MI_INTR_DP;
+        m_Reg.m_Mips_Interface[2] |= MI_INTR_DP;
+        m_Reg.m_DpFreshFromHLE = true;  // Tell RspTimer handler to restore DP
+    }
+    
+    // Schedule SP+DP interrupt delivery via RspTimer (fires at block boundary)
+    if (pendingBits & (MI_INTR_SP | MI_INTR_DP)) {
         static constexpr uint32_t MIN_DELAY = 2; // 1 instruction at CountPerOp=2
         m_Reg.GetSystemTimer().set_timer(N64System::TimerType::RspTimer, MIN_DELAY, false);
     }

@@ -249,6 +249,91 @@ void MipsMemoryVM::FreeMemory()
 }
 
 // ============================================================================
+// TLB Map Management
+// ============================================================================
+
+void MipsMemoryVM::RemoveTLBMapping(uint64_t entryHi, uint64_t pageMask)
+{
+    if (!m_TLB_ReadMap || !m_MemoryReadMap) return;
+
+    uint32_t mask = static_cast<uint32_t>((pageMask >> 13) & 0xFFF);
+    uint32_t hi_vpn2 = static_cast<uint32_t>((entryHi >> 13) & 0x7FFFF);
+    uint32_t halfPageSize = (mask + 1) << 12;  // bytes per half-page
+
+    // Even page virtual base
+    uint32_t vBase = (hi_vpn2 & ~mask) << 13;
+
+    // Unmap both halves (even + odd)
+    for (uint32_t half = 0; half < 2; ++half)
+    {
+        uint32_t base = vBase + half * halfPageSize;
+        for (uint32_t off = 0; off < halfPageSize; off += 0x1000)
+        {
+            uint32_t vPage = (base + off) >> 12;
+            if (vPage >= 0x100000) continue;
+            // Only unmap if it's outside KSEG0/KSEG1 (those are hard-wired)
+            if (vPage >= 0x80000 && vPage < 0xC0000) continue;
+            m_TLB_ReadMap[vPage]    = static_cast<uint32_t>(-1);
+            m_TLB_WriteMap[vPage]   = static_cast<uint32_t>(-1);
+            m_MemoryReadMap[vPage]  = static_cast<size_t>(-1);
+            m_MemoryWriteMap[vPage] = static_cast<size_t>(-1);
+        }
+    }
+}
+
+void MipsMemoryVM::ApplyTLBMapping(uint64_t entryHi, uint64_t pageMask,
+                                   uint64_t entryLo0, uint64_t entryLo1)
+{
+    if (!m_TLB_ReadMap || !m_MemoryReadMap) return;
+
+    uint32_t mask = static_cast<uint32_t>((pageMask >> 13) & 0xFFF);
+    uint32_t hi_vpn2 = static_cast<uint32_t>((entryHi >> 13) & 0x7FFFF);
+    uint32_t halfPageSize = (mask + 1) << 12;
+
+    uint32_t vBase = (hi_vpn2 & ~mask) << 13;
+
+    // Process each half: 0 = even (Lo0), 1 = odd (Lo1)
+    for (uint32_t half = 0; half < 2; ++half)
+    {
+        uint64_t lo = (half == 0) ? entryLo0 : entryLo1;
+        bool valid   = (lo & 2) != 0;
+        bool dirty   = (lo & 4) != 0;
+        uint32_t pfn = static_cast<uint32_t>((lo >> 6) & 0xFFFFF);
+
+        uint32_t vHalfBase = vBase + half * halfPageSize;
+        uint32_t pHalfBase = (pfn & ~mask) << 12;
+
+        if (!valid) continue;
+
+        for (uint32_t off = 0; off < halfPageSize; off += 0x1000)
+        {
+            uint32_t vAddr = vHalfBase + off;
+            uint32_t vPage = vAddr >> 12;
+            if (vPage >= 0x100000) continue;
+            // Don't overwrite KSEG0/KSEG1 hard-wired mappings
+            if (vPage >= 0x80000 && vPage < 0xC0000) continue;
+
+            uint32_t pAddr = pHalfBase + off;
+
+            // TLB fast maps  (value = pAddr - vAddr, so pAddr = map[vPage] + vAddr)
+            m_TLB_ReadMap[vPage] = pAddr - vAddr;
+            if (dirty)
+                m_TLB_WriteMap[vPage] = pAddr - vAddr;
+
+            // Direct pointer maps  (only for RDRAM-backed physical addresses)
+            if (pAddr < m_AllocatedRdramSize)
+            {
+                m_MemoryReadMap[vPage] = reinterpret_cast<size_t>(
+                    (m_RDRAM + pAddr) - vAddr);
+                if (dirty)
+                    m_MemoryWriteMap[vPage] = reinterpret_cast<size_t>(
+                        (m_RDRAM + pAddr) - vAddr);
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Memory Region Access
 // ============================================================================
 
@@ -645,28 +730,6 @@ bool MipsMemoryVM::SD_Memory(uint64_t vAddr, uint64_t value)
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
-        // ── SD watchpoint: check if either word hits scheduler struct ──
-        {
-            constexpr uint32_t SCHED_BASE = 0x8011D948;
-            constexpr uint32_t W_curRSP  = SCHED_BASE + 0x14;
-            constexpr uint32_t W_curRDP  = SCHED_BASE + 0x18;
-            constexpr uint32_t W_retCnt  = SCHED_BASE + 0x1C;
-            static int sdWatchHits = 0;
-            uint32_t addrHi = vAddr32;       // high word address
-            uint32_t addrLo = vAddr32 + 4;   // low word address
-            uint32_t hiWord = *((uint32_t*)(&value) + 1);
-            uint32_t loWord = *((uint32_t*)(&value) + 0);
-            bool hitHi = (addrHi == W_curRSP || addrHi == W_curRDP || addrHi == W_retCnt);
-            bool hitLo = (addrLo == W_curRSP || addrLo == W_curRDP || addrLo == W_retCnt);
-            if ((hitHi || hitLo) && sdWatchHits < 30) {
-                sdWatchHits++;
-                auto* regs = m_System.GetRegisters();
-                uint32_t pc = regs ? static_cast<uint32_t>(regs->m_PROGRAM_COUNTER) : 0;
-                Log::infof("[SD_WATCH] SD @0x%08X = 0x%08X_%08X  PC=0x%08X  hi→0x%08X lo→0x%08X  hit#%d",
-                           vAddr32, hiWord, loWord, pc, addrHi, addrLo, sdWatchHits);
-            }
-        }
-        // Handle big-endian 64-bit store
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 0) = *((uint32_t*)(&value) + 1);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 4) = *((uint32_t*)(&value) + 0);
         return true;

@@ -1,3 +1,7 @@
+/**
+ * @file ClipMath.cpp
+ * @brief Clipping Mathematics.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Clipping Mathematics Implementation
 
@@ -122,15 +126,18 @@ static ClipVertex LerpClipVertex(const ClipVertex& a, const ClipVertex& b, float
 }
 
 // Get signed distance from point to clip plane
-static float PlaneDistance(const Vec4f& pos, ClipPlane plane) {
+// clipRatio scales the W comparand for X/Y planes (guard band)
+static float PlaneDistance(const Vec4f& pos, ClipPlane plane, float clipRatio = 1.0f) {
     float x = pos.f[0], y = pos.f[1], z = pos.f[2], w = pos.f[3];
+    float wg = w * clipRatio;  // guard-band scaled W (only used for X/Y)
     switch (plane) {
-        case PLANE_NEAR:   return z + w;       // z >= -w
-        case PLANE_FAR:    return w - z;       // z <= w
-        case PLANE_LEFT:   return x + w;       // x >= -w
-        case PLANE_RIGHT:  return w - x;       // x <= w
-        case PLANE_BOTTOM: return y + w;       // y >= -w
-        case PLANE_TOP:    return w - y;       // y <= w
+        case PLANE_NEAR:   return z + w;        // z >= -w
+        case PLANE_FAR:    return w - z;        // z <= w
+        case PLANE_LEFT:   return x + wg;       // x >= -w*ratio
+        case PLANE_RIGHT:  return wg - x;       // x <= w*ratio
+        case PLANE_BOTTOM: return y + wg;       // y >= -w*ratio
+        case PLANE_TOP:    return wg - y;       // y <= w*ratio
+        case PLANE_W_NEAR: return w - 0.01f;   // w >= 0.01 (behind-camera guard)
         default:           return 0.0f;
     }
 }
@@ -145,7 +152,8 @@ static float PlaneDistanceN64Near(const Vec4f& pos) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
-                            ClipVertex* vertsOut, ClipPlane plane) {
+                            ClipVertex* vertsOut, ClipPlane plane,
+                            float clipRatio) {
     if (vertCount < 3) return 0;
 
     int outCount = 0;
@@ -155,8 +163,8 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
         const ClipVertex& curr = vertsIn[i];
         const ClipVertex& nxt  = vertsIn[next];
 
-        float distCurr = PlaneDistance(curr.position, plane);
-        float distNext = PlaneDistance(nxt.position, plane);
+        float distCurr = PlaneDistance(curr.position, plane, clipRatio);
+        float distNext = PlaneDistance(nxt.position, plane, clipRatio);
         bool currInside = distCurr >= 0.0f;
         bool nextInside = distNext >= 0.0f;
 
@@ -184,7 +192,7 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
 }
 
 int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                 ClippedPolygon& result) {
+                 ClippedPolygon& result, float clipRatio) {
     // Early trivial rejection
     uint32_t andFlags = v0.clipFlags & v1.clipFlags & v2.clipFlags;
     if (andFlags != 0) {
@@ -211,19 +219,24 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
     ClipVertex* input = bufA;
     ClipVertex* output = bufB;
 
-    // Only clip against planes that are needed
+    // Only clip against planes that are needed.
+    // W (behind-camera guard) is clipped first to ensure all subsequent
+    // operations have valid w > 0 for perspective divide.
+    // Z planes (near/far) are omitted — the GPU handles depth clipping
+    // (GL_DEPTH_CLAMP for NoN microcodes).
     static const ClipPlane planes[] = {
-        PLANE_NEAR, PLANE_FAR, PLANE_LEFT, PLANE_RIGHT, PLANE_BOTTOM, PLANE_TOP
+        PLANE_W_NEAR, PLANE_LEFT, PLANE_RIGHT, PLANE_BOTTOM, PLANE_TOP
     };
     static const uint32_t planeFlags[] = {
-        CLIP_NEGZ, CLIP_POSZ, CLIP_NEGX, CLIP_POSX, CLIP_NEGY, CLIP_POSY
+        CLIP_W, CLIP_NEGX, CLIP_POSX, CLIP_NEGY, CLIP_POSY
     };
+    static const int NUM_CLIP_PLANES = 5;
 
-    for (int p = 0; p < PLANE_COUNT; p++) {
+    for (int p = 0; p < NUM_CLIP_PLANES; p++) {
         // Skip if no vertex crosses this plane
         if ((orFlags & planeFlags[p]) == 0) continue;
 
-        count = ClipPolygonAgainstPlane(input, count, output, planes[p]);
+        count = ClipPolygonAgainstPlane(input, count, output, planes[p], clipRatio);
         if (count < 3) {
             result.vertexCount = 0;
             return 0;

@@ -159,19 +159,27 @@ private:
 
 // Inline implementations for performance-critical methods
 inline CFunctionMap::CompiledFuncPtr CFunctionMap::Lookup(uint32_t vaddr) const noexcept {
-    // First try the fast jump table
+    // First try the fast jump table (indexed by lower 18 bits - instruction-level)
     if (auto func = m_JumpTable[GetJumpTableIndex(vaddr)]) {
-        return func;
+        // Must verify address: multiple vaddrs can hash to the same 18-bit index
+        if (func->EnterPC() == vaddr) {
+            return func;
+        }
     }
 
-    // Fall back to full page table lookup
+    // Fall back to full page table lookup (1KB granularity)
     uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
     const auto& pageTable = m_PageDirectory[dirIndex];
     if (!pageTable) {
         return nullptr;
     }
 
-    return pageTable[GetPageTableIndex(vaddr)];
+    auto func = pageTable[GetPageTableIndex(vaddr)];
+    // Page table has coarse granularity (1KB per entry) so verify exact match
+    if (func && func->EnterPC() != vaddr) {
+        return nullptr;
+    }
+    return func;
 }
 
 inline CFunctionMap::CompiledFuncPtr CFunctionMap::Store(

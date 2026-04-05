@@ -209,13 +209,13 @@ inline void F3DEXHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF) + 1;
+    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeH(ctx, shift, length, w1);
 }
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF) + 1;
+    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeL(ctx, shift, length, w1);
 }
 
@@ -224,14 +224,27 @@ inline void F3DEXHandler::Cmd_G_ENDDL(DListContext& ctx, uint32_t w0, uint32_t w
     EndDisplayList(ctx);
 }
 
+/// Translate GBI1 geometry mode bits to GBI2 (internal) format.
+static inline uint32_t TranslateGBI1ToGBI2_F3DEX(uint32_t gbi1) {
+    constexpr uint32_t GBI1_SHADING_SMOOTH = 0x00000200;
+    constexpr uint32_t GBI1_CULL_FRONT     = 0x00001000;
+    constexpr uint32_t GBI1_CULL_BACK      = 0x00002000;
+    constexpr uint32_t GBI1_MASK = GBI1_SHADING_SMOOTH | GBI1_CULL_FRONT | GBI1_CULL_BACK;
+    uint32_t result = gbi1 & ~GBI1_MASK;
+    if (gbi1 & GBI1_SHADING_SMOOTH) result |= 0x00200000; // G_SHADING_SMOOTH
+    if (gbi1 & GBI1_CULL_FRONT)     result |= 0x00000200; // G_CULL_FRONT
+    if (gbi1 & GBI1_CULL_BACK)      result |= 0x00000400; // G_CULL_BACK
+    return result;
+}
+
 inline void F3DEXHandler::Cmd_G_SETGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, 0, w0 & 0x00FFFFFF);
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2_F3DEX(w0 & 0x00FFFFFF));
 }
 
 inline void F3DEXHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, w0 & 0x00FFFFFF, 0);
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2_F3DEX(w0 & 0x00FFFFFF), 0);
 }
 
 inline void F3DEXHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {

@@ -1,3 +1,7 @@
+/**
+ * @file RDRAMInterFaceHandler.hpp
+ * @brief RDRAM Inter Face Handler declarations and types.
+ */
 #pragma once
 #include "MemoryHandler.hpp"
 #include "../../common/log.hpp"

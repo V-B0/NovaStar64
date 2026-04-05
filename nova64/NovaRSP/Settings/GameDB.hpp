@@ -1,3 +1,7 @@
+/**
+ * @file GameDB.hpp
+ * @brief RSP Per-Game Settings Database.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Per-Game Settings Database
 // Maps ROM CRC pairs to per-game RSP setting overrides

@@ -1,3 +1,7 @@
+/**
+ * @file RSPTypes.hpp
+ * @brief RSP Core Types.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Core Types - Modernized from Project64's RspTypes.h
 // C++20 rewrite with SIMD-friendly alignment and type safety

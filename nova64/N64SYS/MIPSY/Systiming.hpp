@@ -1,3 +1,7 @@
+/**
+ * @file Systiming.hpp
+ * @brief N64 system timer management: VI, Compare, and event scheduling.
+ */
 #pragma once
 
 #include <cstdint>

@@ -1,8 +1,7 @@
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Framebuffer Manager
-// Manages N64 color and depth framebuffers with read-back, copy-back,
-// format conversion, VI scaling, and GPU↔CPU synchronization.
-// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * @file FramebufferManager.hpp
+ * @brief N64 framebuffer management: read-back, copy-back, VI scaling, and GPU/CPU sync.
+ */
 #pragma once
 
 #include "N64Types.hpp"
@@ -72,11 +71,16 @@ struct GPUFramebuffer {
     uint32_t msaaSamples = 0;   // MSAA sample count used at creation (0/1 = no MSAA)
     uint32_t resolvedTex = 0;   // Non-MSAA resolved color tex (MSAA FBs only, lazy-init)
     uint32_t resolvedFbo = 0;   // FBO wrapping resolvedTex (MSAA only, lazy-init)
+    uint32_t coverageTex     = 0;   // R8UI coverage image for MLE blender (4-bit CVG per pixel)
+    uint64_t colorImageHandle    = 0; // Backend-native handle for imageLoad/imageStore
+    uint64_t coverageImageHandle = 0; // Backend-native handle for imageLoad/imageStore
     uint32_t snapshotTex     = 0;   // One-frame snapshot for self-texture reads (lazy-init)
+    uint32_t snapshotCvgTex  = 0;   // Coverage snapshot for self-texture reads (lazy-init)
     uint32_t presentationTex = 0;   // Snapshot of last completed scene for display
     bool     needsRead   = false;   // Needs GPU→CPU readback
     bool     needsCopy   = false;   // Needs CPU→GPU copy-back
     bool     isAux       = false;
+    bool     gpuModified = false;   // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
     uint64_t lastUsedFrame = 0;
     FramebufferDesc desc;
 };
@@ -96,6 +100,7 @@ struct VIConfig {
     uint32_t control    = 0;        // VI_CONTROL_REG
     bool     antiAlias  = false;    // AA enabled in control reg
     bool     divot      = false;    // Divot filter enabled
+    bool     dedither    = false;    // VI dither removal (AA mode 0)
     bool     gammaCorrect = false;  // Gamma correction enabled
     bool     gammaDither  = false;  // Gamma dither enabled
     bool     interlaced   = false;  // Interlaced mode
@@ -149,6 +154,9 @@ public:
     GPUFramebuffer* FindByAddress(uint32_t address);
     GPUFramebuffer* GetCurrentColor() { return m_currentColor; }
     GPUFramebuffer* GetCurrentDepth() { return m_currentDepth; }
+    uint32_t GetFBCount() const { return m_fbCount; }
+    GPUFramebuffer* GetFB(uint32_t idx) { return idx < m_fbCount ? &m_framebuffers[idx] : nullptr; }
+    uint64_t GetFrameCounter() const { return m_frameCounter; }
 
     // ── GPU ↔ CPU Sync ──
     /// Copy N64 RDRAM data into GPU color buffer
@@ -191,7 +199,7 @@ public:
     GPUFramebuffer* GetDisplayFramebuffer();
 
     /// Blit display framebuffer to screen with VI scaling/filtering
-    void BlitToScreen(uint32_t screenWidth, uint32_t screenHeight);
+    void BlitToScreen(uint32_t screenWidth, uint32_t screenHeight, bool skipVIFilter = false);
 
     /// Apply VI anti-aliasing filter
     void ApplyVIFilter(GPUFramebuffer* fb);
@@ -272,6 +280,9 @@ public:
 
     const VIConfig& GetVIConfig() const { return m_viConfig; }
 
+    /// Store the RDRAM base pointer for RDRAM→GPU uploads in UpdateVI
+    void SetRDRAM(const uint8_t* rdram) { m_rdram = rdram; }
+
     // Intel Iris Xe workaround: FBOs created lazily (after game textures)
     // can have broken texture sampling. Recreating gives a fresh GL object.
     void RecreateGPUFramebuffer(GPUFramebuffer& fb) {
@@ -307,7 +318,9 @@ private:
     std::array<bool, kPageCount> m_dirtyPages{};
 
     uint64_t m_frameCounter = 0;
+    bool     m_depthClearPending = false;     // Set by OnSetDepthImage, consumed by OnSetColorImage
     bool     m_depthCopiedThisFrame = false;  // PD hack: track depth copy per frame
+    const uint8_t* m_rdram = nullptr;        // Stored RDRAM pointer for CopyToGPU in UpdateVI
     Stats m_stats{};
     bool m_initialized = false;
 

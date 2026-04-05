@@ -12,6 +12,7 @@
 #pragma once
 
 #include "CodeBlock.hpp"
+#include "../../common/log.hpp"
 #include <cstdint>
 #include <memory>
 #include <chrono>
@@ -71,6 +72,8 @@ public:
     void Execute() const {
         if (m_Function) {
             m_Function();
+        } else {
+            Log::warningf("CCompiledFunc::Execute: null function pointer at PC 0x%08X", m_EnterPC);
         }
     }
 

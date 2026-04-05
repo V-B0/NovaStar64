@@ -1,3 +1,7 @@
+/**
+ * @file AudioInterfaceHandler.cpp
+ * @brief Audio Interface Handler implementation.
+ */
 #include "AudioInterfaceHandler.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"

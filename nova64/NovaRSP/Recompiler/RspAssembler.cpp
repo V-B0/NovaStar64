@@ -1,3 +1,7 @@
+/**
+ * @file RspAssembler.cpp
+ * @brief RSP Assembler Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Assembler Implementation
 // x64 code emitter wrapper with logging and symbol management

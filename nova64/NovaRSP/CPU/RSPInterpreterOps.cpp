@@ -1,3 +1,7 @@
+/**
+ * @file RSPInterpreterOps.cpp
+ * @brief RSP Interpreter Operations - Complete opcode implementations.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Interpreter Operations - Complete opcode implementations
 // Based on Project64's RSPInterpreterOps.cpp, modernized for C++20

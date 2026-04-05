@@ -1,3 +1,7 @@
+/**
+ * @file GameDatabase.cpp
+ * @brief Game Compatibility Database.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Game Compatibility Database Implementation
 // Built-in profiles for 200+ N64 titles with per-game rendering overrides.

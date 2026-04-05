@@ -1,3 +1,7 @@
+/**
+ * @file RspProfiling.cpp
+ * @brief RSP Profiling Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Profiling Implementation
 // Timer infrastructure for RSP performance analysis

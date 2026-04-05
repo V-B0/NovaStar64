@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP Register Handler - Modernized from Project64's RSPRegisterHandler.h
-// C++20 abstract DMA/register interface with proper length encoding
+/**
+ * @file RSPRegisterHandler.hpp
+ * @brief Abstract DMA/register interface for the RSP.
+ */
 
 #pragma once
 #include "RSPRegisters.hpp"

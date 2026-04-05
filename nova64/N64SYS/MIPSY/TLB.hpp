@@ -1,3 +1,7 @@
+/**
+ * @file TLB.hpp
+ * @brief TLB declarations and types.
+ */
 #pragma once
 
 #include <cstdint>

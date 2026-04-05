@@ -1,3 +1,7 @@
+/**
+ * @file RspRegState.cpp
+ * @brief RSP Register State Tracking Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Register State Tracking Implementation
 // XMM register allocation, GPR constant propagation, flag zero tracking

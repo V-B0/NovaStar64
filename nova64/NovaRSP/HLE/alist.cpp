@@ -1,3 +1,7 @@
+/**
+ * @file alist.cpp
+ * @brief RSP HLE Audio List Processing Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio List Processing Implementation
 // ADPCM, resampling, envelope mixing, interleaving

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file Recompiler.cpp
  * @brief Implementation of the main dynamic recompiler
  * 
@@ -13,11 +13,16 @@
 #include "RecompilerMemory.hpp"
 #include "FunctionMap.hpp"
 #include "FunctionInfo.hpp"
+
 #include "CompiledFunc.hpp"
 #include "LoopAnalysis.hpp"
 #include "RecompilerOps.hpp"
 #if defined(__amd64__) || defined(_M_X64)
 #include "x64-86/x64RecompilerOps.hpp"
+#elif defined(__i386__) || defined(_M_IX86)
+#include "x86/x86RecompilerOps.hpp"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include "Arm/ArmRecompilerOps.hpp"
 #endif
 #include "../MainSYS.hpp"
 #include "../SysGlobals.hpp"
@@ -26,10 +31,46 @@
 #include "../MIPSY/Vmem.hpp"
 #include "../MIPSY/TLB.hpp"
 #include "../MIPSY/R4300Instruction.hpp"
+#include "../MIPSY/Systiming.hpp"
+#include "../MIPSY/Sysevents.hpp"
 #include "../../common/log.hpp"
+#include "../../common/trace.hpp"
 #include "../../common/MemoryManagment.hpp"
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
+#include <filesystem>
+#include <unordered_map>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+// =============================================================================
+// SEH wrapper for safe JIT code execution (MSVC/Windows only)
+// =============================================================================
+// __try/__except cannot be used in functions with C++ objects that have
+// non-trivial destructors (MSVC restriction), so this must be a standalone
+// function.
+#ifdef _MSC_VER
+static bool SafeExecuteBlock(Nova64::Recompiler::CCompiledFunc* func, uint32_t pc) {
+    __try {
+        func->Execute();
+        return true;
+    }
+    __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
+              ? EXCEPTION_EXECUTE_HANDLER
+              : EXCEPTION_CONTINUE_SEARCH) {
+        Log::errorf("CRecompiler: Access violation executing compiled block at PC 0x%08X", pc);
+        return false;
+    }
+}
+#else
+static bool SafeExecuteBlock(Nova64::Recompiler::CCompiledFunc* func, uint32_t /*pc*/) {
+    func->Execute();
+    return true;
+}
+#endif
 
 namespace Nova64::Recompiler {
 
@@ -45,6 +86,7 @@ CRecompiler::CRecompiler(::CN64System& system, std::atomic<bool>& endEmulation)
     , m_EndEmulation(endEmulation)
     , m_ProgramCounter(m_Reg.m_PROGRAM_COUNTER)
     , m_LastProfilingReset(std::chrono::high_resolution_clock::now())
+    , m_SharedJitRuntime(std::make_unique<asmjit::JitRuntime>())
 {
     Log::info("CRecompiler: Initializing dynamic recompiler");
     
@@ -85,7 +127,16 @@ CRecompiler::~CRecompiler() {
 
 void CRecompiler::Run() {
     Log::info("CRecompiler: Starting execution");
-    
+
+    // Register DMA invalidation callback so PI/SP DMA invalidates
+    // any compiled blocks that overlap the RDRAM target range.
+    auto dmaInvalidate = [](void* ctx, uint32_t physAddr, uint32_t length) {
+        static_cast<CRecompiler*>(ctx)->ClearRecompCode_Phys(
+            physAddr, length, RemoveReason::DMA);
+    };
+    m_System.m_DMAInvalidateFn  = dmaInvalidate;
+    m_System.m_DMAInvalidateCtx = this;
+
     // Select execution mode
     switch (m_ExecutionMode) {
         case ExecutionMode::VirtualTable:
@@ -114,6 +165,17 @@ void CRecompiler::Run() {
     }
     
     Log::info("CRecompiler: Execution ended");
+    Log::infof("CRecompiler STATS: blocksCompiled=%llu blocksExecuted=%llu "
+               "cacheHits=%llu cacheMisses=%llu codeInvalidations=%llu "
+               "interpretedFallbacks=%llu memoryUsed=%zu compilationTimeNs=%llu",
+               m_Stats.blocksCompiled, m_Stats.blocksExecuted,
+               m_Stats.cacheHits, m_Stats.cacheMisses,
+               m_Stats.codeInvalidations, m_Stats.interpretedFallbacks,
+               m_Stats.memoryUsed, m_Stats.compilationTimeNs);
+
+    // Unregister DMA invalidation callback
+    m_System.m_DMAInvalidateFn  = nullptr;
+    m_System.m_DMAInvalidateCtx = nullptr;
 }
 
 void CRecompiler::Reset(bool allocateMemory) {
@@ -159,6 +221,20 @@ void CRecompiler::ClearRecompCode_Virt(uint32_t virtualAddress, size_t length, R
     
     uint32_t endAddress = virtualAddress + static_cast<uint32_t>(length);
     
+    // When DMA/CACHE invalidates code, reset the SMC thrash guard for
+    // any PCs in the cleared range. DMA provides a "known-good" state,
+    // so future MemoryValid() checks should recompile from fresh code
+    // instead of being suppressed by the stale thrash counter.
+    if (reason == RemoveReason::DMA) {
+        for (auto it = m_SmcThrashMap.begin(); it != m_SmcThrashMap.end(); ) {
+            if (it->first >= virtualAddress && it->first < endAddress) {
+                it = m_SmcThrashMap.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    
     // Check memory usage before clearing - uses RecompilerMemory
     {
         const auto& memStats = CRecompMemory::GetStats();
@@ -180,7 +256,8 @@ void CRecompiler::ClearRecompCode_Virt(uint32_t virtualAddress, size_t length, R
 }
 
 void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, RemoveReason reason) {
-    Log::debugf("CRecompiler: Clearing physical code at 0x%08X, length %zu", physicalAddress, length);
+    Log::debugf("CRecompiler: ClearRecompCode_Phys(0x%08X, len=%zu, reason=%d) activeFuncs=%zu",
+               physicalAddress, length, static_cast<int>(reason), m_ActiveFunctions.size());
     
     // Convert physical to virtual address
     // This is simplified - full implementation would handle TLB mapping
@@ -243,7 +320,14 @@ void CRecompiler::StartLog() {
         return;
     }
     
-    // TODO: Create log file
+    m_LogFile = new CLog();
+    if (!m_LogFile->Open("recompiler.log")) {
+        Log::error("CRecompiler: Failed to create log file");
+        delete m_LogFile;
+        m_LogFile = nullptr;
+        return;
+    }
+    
     Log::info("CRecompiler: Started logging");
 }
 
@@ -253,7 +337,8 @@ void CRecompiler::StopLog() {
         return;
     }
     
-    // TODO: Close log file
+    m_LogFile->Close();
+    delete m_LogFile;
     m_LogFile = nullptr;
     
     Log::info("CRecompiler: Stopped logging");
@@ -266,7 +351,8 @@ void CRecompiler::ResetLog() {
         StopLog();
     }
     
-    // TODO: Delete log file
+    // Delete existing log file
+    std::filesystem::remove("recompiler.log");
     
     if (wasLogging) {
         StartLog();
@@ -287,8 +373,6 @@ CCompiledFunc* CRecompiler::CompileCode() {
 CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    Log::debugf("CRecompiler: Compiling code at 0x%08X", address);
-    
     // Check if already compiled
     auto* existingFunc = Lookup(address);
     if (existingFunc) {
@@ -308,22 +392,32 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
         blockCfg.max_instructions = 500;
 
         auto codeBlock = std::make_unique<CodeBlock>(
-            m_System, address, blockCfg);
+            m_System, address, blockCfg, m_SharedJitRuntime.get());
 
         CodeBlock::CompileOptions opts;
         opts.optimization_level = 2;
 
         auto compileResult = codeBlock->compile(opts);
         if (compileResult != CodeBlock::CompileResult::Success) {
+            // Read the failing instruction to help debug
+            uint32_t failInstr = 0;
+            m_MMU.MemoryValue32(address, failInstr);
+            uint32_t failOp = (failInstr >> 26) & 0x3F;
+            uint32_t failFunct = failInstr & 0x3F;
             Log::debugf("CRecompiler: CodeBlock analysis/codegen failed at 0x%08X (result=%d)",
                         address, static_cast<int>(compileResult));
+            // Dump the internal log from CodeBlock for debugging
+            auto blockLog = codeBlock->get_code_log();
+            if (!blockLog.empty()) {
+                Log::debugf("CRecompiler: CodeBlock log: %s", blockLog.c_str());
+            }
             return nullptr;
         }
 
-        // ---- Step 2: Finalize – get executable memory from AsmJit ------
+        // ---- Step 2: Finalize -- get executable memory from AsmJit ------
         // finalize() calls runtime_->add() which copies the code into
         // executable (RWX) memory and returns the entry-point address.
-        // We pass a dummy RecompilationMemory – the actual backing comes
+        // We pass a dummy RecompilationMemory -- the actual backing comes
         // from AsmJit's JitRuntime which internally uses VirtualAlloc/mmap.
         auto entryOpt = codeBlock->finalize(
             *reinterpret_cast<RecompilationMemory*>(this));  // unused param
@@ -336,10 +430,15 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
         auto entryPtr = reinterpret_cast<BlockFunction>(entryOpt.value());
 
         // ---- Step 3: Wrap in CCompiledFunc and store in map ------------
+        
+        // Cache addresses BEFORE moving codeBlock (argument evaluation order is unspecified!)
+        uint32_t startAddr = codeBlock->start_address();
+        uint32_t endAddr   = codeBlock->end_address();
+
         auto* funcMem = new CCompiledFunc(
             address,
-            codeBlock->start_address(),
-            codeBlock->end_address(),
+            startAddr,
+            endAddr,
             entryPtr,
             std::move(codeBlock));
 
@@ -375,11 +474,16 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
 // =============================================================================
 
 void CRecompiler::Execute_VirtualTable() {
-    Log::debug("CRecompiler: Executing with VirtualTable mode");
+    Log::info("CRecompiler: Executing with VirtualTable mode");
+    
+    const uint32_t countPerOp = m_System.CountPerOp();
+    int32_t& nextTimer = m_System.m_NextTimer;
+    auto* systemTimer = m_System.m_SystemTimer.get();
+    auto* systemEvents = m_System.m_SystemEvents.get();
     
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
-        
+
         // Lookup compiled function
         auto* func = Lookup(pc);
         
@@ -388,20 +492,147 @@ void CRecompiler::Execute_VirtualTable() {
             func = CompileCode(pc);
             
             if (!func) {
-                // Compilation failed - fall back to interpreter
-                Log::debugf("CRecompiler: Compilation failed at 0x%08X, falling back to interpreter", pc);
-                break;
+                // For TLB-mapped regions (USEG or KSEG2), trigger I-TLB miss
+                // instead of silently skipping the instruction.
+                if (pc < 0x80000000 || pc >= 0xC0000000) {
+                    m_Reg.TriggerAddressException(
+                        static_cast<int32_t>(pc),
+                        2 /*EXC_RMISS*/);
+                    if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+                        m_ProgramCounter = m_System.m_JumpToLocation;
+                        m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+                    }
+                    continue;
+                }
+
+                // Compilation failed for this block (KSEG0/KSEG1).
+                // Interpret the instruction at current PC and continue.
+                InterpretSingleInstruction();
+                
+                // Timer and events already handled by interpreter.
+                if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+                    m_ProgramCounter = m_System.m_JumpToLocation;
+                    m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+                }
+                continue;
             }
         }
         
+        // Self-modifying code detection with thrash guard
+        // Check if compiled code still matches RDRAM. When a PC thrashes
+        // (continuously recompiled because a store keeps modifying it),
+        // stop checking until the next DMA/CACHE invalidation resets it.
+        if (func) {
+            auto thrashIt = m_SmcThrashMap.find(pc);
+            int thrashCount = (thrashIt != m_SmcThrashMap.end()) ? thrashIt->second : 0;
+            
+            if (thrashCount < 3 && !func->MemoryValid()) {
+                m_SmcThrashMap[pc] = thrashCount + 1;
+                ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                     RemoveReason::StoreInstruc);
+                func = nullptr;
+                continue;
+            }
+        }
+
         // Execute compiled function
         ++m_Stats.blocksExecuted;
-        func->Execute();
+        if (!SafeExecuteBlock(func, pc)) {
+            // JIT code crashed — invalidate this block and interpret instead
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::Cache);
+            InterpretSingleInstruction();
+            continue;
+        }
+        
+        // Apply any pending jump (branch target or synchronous exception vector).
+        // Unlike the old code this does NOT skip timer/event processing ? normal
+        // branches must still go through the timer gate so VI / RSP / compare
+        // interrupts fire on backward-branch boundaries.
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            uint64_t jumpTo = m_System.m_JumpToLocation;
+
+            m_ProgramCounter = jumpTo;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+        
+        // Timer handling: NextTimer is now decremented per-instruction inside
+        // compiled blocks (EmitTimerDecrement), so no bulk decrement here.
+        // We still need instrCount for blockEndPC computation and idle detection.
+        uint32_t instrCount = 1;
+        if (auto* block = func->GetCodeBlock()) {
+            instrCount = static_cast<uint32_t>(block->instruction_count());
+            if (instrCount == 0) instrCount = 1;
+        }
+        
+        // Idle loop detection: if the block is a tiny self-loop (e.g. `b .` + NOP),
+        // advance the timer directly to the next event instead of spinning.
+        // Match the interpreter's InPermLoop() exactly:
+        //  1. UpdateTimers() — sync timer array with current m_NextTimer
+        //  2. m_NextTimer = -CountPerOp — force timer expiry
+        //  3. UpdateTimers() — flush remaining elapsed into timers + COUNT
+        // This two-step sync is critical because periodic timers (e.g. audio)
+        // must see intermediate decrements to fire the correct number of times.
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+                systemTimer->UpdateTimers();
+                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
+                systemTimer->UpdateTimers();
+            }
+        }
+        
+        // Timer and event processing: match the interpreter's gating.
+        // The interpreter checks timers/events at PIPELINE_STAGE_JUMP when
+        // CheckTimer = (JumpToLocation < m_PROGRAM_COUNTER - 4 || TestTimer).
+        // At that point m_PROGRAM_COUNTER = delay_slot_addr + 4 = branch_addr + 8,
+        // so: CheckTimer = (target < branch_addr + 4 || TestTimer).
+        // blockEndPC = branch_addr + 8, so we must subtract 4 to match.
+        // TestTimer is set by JR/JALR/ERET callbacks for unconditional timer checks.
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            uint32_t blockEndPC = pc + instrCount * 4;
+            // Match interpreter: target < (blockEndPC - 4), i.e., true for
+            // backward branches past the branch instruction itself.
+            bool checkTimer = (newPC < blockEndPC - 4 || m_System.m_TestTimer);
+            if (checkTimer) {
+                m_System.m_TestTimer = false;
+                if (nextTimer < 0) {
+                    systemTimer->TimerDone();
+                }
+                // Match interpreter: events are ONLY checked when CheckTimer
+                // is true (backward branch or TestTimer).  Moving this outside
+                // checkTimer causes excess interrupt processing and kern64k
+                // RDRAM divergence from the interpreter.
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                }
+            }
+        }
+        
+        // After processing events, check if an async interrupt redirected
+        // execution via TriggerException (from ExecuteEvents -> DoIntrException).
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        // Check frame limit (for --frames N CLI option)
+        if (m_System.IsFrameLimitReached()) {
+            m_EndEmulation.store(true, std::memory_order_release);
+            break;
+        }
+        
     }
 }
 
 void CRecompiler::Execute_VirtualTable_Validate() {
-    Log::debug("CRecompiler: Executing with VirtualTable_Validate mode");
+    Log::info("CRecompiler: Executing with VirtualTable_Validate mode");
+    
+    const uint32_t countPerOp = m_System.CountPerOp();
+    int32_t& nextTimer = m_System.m_NextTimer;
+    auto* systemTimer = m_System.m_SystemTimer.get();
+    auto* systemEvents = m_System.m_SystemEvents.get();
     
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
@@ -412,7 +643,7 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         if (func) {
             // Validate function is still valid (self-modifying code detection)
             if (m_EnableSelfModifyingCodeDetection && !func->MemoryValid()) {
-                // Code changed – invalidate and recompile
+                // Code changed -- invalidate and recompile
                 ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
                                      RemoveReason::StoreInstruc);
                 func = nullptr;
@@ -421,16 +652,77 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         
         if (!func) {
             func = CompileCode(pc);
-            if (!func) break;
+            if (!func) {
+                Log::warningf("CRecompiler: Compilation failed at 0x%08X, interpreting instruction", pc);
+                InterpretSingleInstruction();
+                continue;
+            }
         }
         
         ++m_Stats.blocksExecuted;
-        func->Execute();
+        if (!SafeExecuteBlock(func, pc)) {
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::Cache);
+            InterpretSingleInstruction();
+            continue;
+        }
+        
+        // Apply any pending jump (branch or synchronous exception)
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+        
+        // Timer handling
+        uint32_t instrCount = 1;
+        if (auto* block = func->GetCodeBlock()) {
+            instrCount = static_cast<uint32_t>(block->instruction_count());
+            if (instrCount == 0) instrCount = 1;
+        }
+        // nextTimer decrement now done per-instruction inside compiled blocks
+        
+        // Idle loop detection
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
+            }
+        }
+        
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            uint32_t blockEndPC = pc + instrCount * 4;
+            bool checkTimer = (newPC < blockEndPC || m_System.m_TestTimer);
+            if (checkTimer) {
+                m_System.m_TestTimer = false;
+                if (nextTimer < 0) {
+                    systemTimer->TimerDone();
+                }
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                }
+            }
+        }
+        
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        if (m_System.IsFrameLimitReached()) {
+            m_EndEmulation.store(true, std::memory_order_release);
+            break;
+        }
     }
 }
 
 void CRecompiler::Execute_MemoryChange() {
-    Log::debug("CRecompiler: Executing with MemoryChange mode");
+    Log::info("CRecompiler: Executing with MemoryChange mode");
+    
+    const uint32_t countPerOp = m_System.CountPerOp();
+    int32_t& nextTimer = m_System.m_NextTimer;
+    auto* systemTimer = m_System.m_SystemTimer.get();
+    auto* systemEvents = m_System.m_SystemEvents.get();
     
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
@@ -447,16 +739,76 @@ void CRecompiler::Execute_MemoryChange() {
         auto* func = Lookup(pc);
         if (!func) {
             func = CompileCode(pc);
-            if (!func) break;
+            if (!func) {
+                Log::warningf("CRecompiler: Compilation failed at 0x%08X, interpreting instruction", pc);
+                InterpretSingleInstruction();
+                continue;
+            }
         }
         
         ++m_Stats.blocksExecuted;
-        func->Execute();
+        if (!SafeExecuteBlock(func, pc)) {
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::Cache);
+            InterpretSingleInstruction();
+            continue;
+        }
+        
+        // Apply any pending jump (branch or synchronous exception)
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+        
+        uint32_t instrCount = 1;
+        if (auto* block = func->GetCodeBlock()) {
+            instrCount = static_cast<uint32_t>(block->instruction_count());
+            if (instrCount == 0) instrCount = 1;
+        }
+        // nextTimer decrement now done per-instruction inside compiled blocks
+        
+        // Idle loop detection
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
+            }
+        }
+        
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            uint32_t blockEndPC = pc + instrCount * 4;
+            bool checkTimer = (newPC < blockEndPC || m_System.m_TestTimer);
+            if (checkTimer) {
+                m_System.m_TestTimer = false;
+                if (nextTimer < 0) {
+                    systemTimer->TimerDone();
+                }
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                }
+            }
+        }
+        
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        if (m_System.IsFrameLimitReached()) {
+            m_EndEmulation.store(true, std::memory_order_release);
+            break;
+        }
     }
 }
 
 void CRecompiler::Execute_Lookup() {
-    Log::debug("CRecompiler: Executing with Lookup mode");
+    Log::info("CRecompiler: Executing with Lookup mode");
+    
+    const uint32_t countPerOp = m_System.CountPerOp();
+    int32_t& nextTimer = m_System.m_NextTimer;
+    auto* systemTimer = m_System.m_SystemTimer.get();
+    auto* systemEvents = m_System.m_SystemEvents.get();
     
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
@@ -464,16 +816,76 @@ void CRecompiler::Execute_Lookup() {
         auto* func = Lookup(pc);
         if (!func) {
             func = CompileCode(pc);
-            if (!func) break;
+            if (!func) {
+                Log::warningf("CRecompiler: Compilation failed at 0x%08X, interpreting instruction", pc);
+                InterpretSingleInstruction();
+                continue;
+            }
         }
         
         ++m_Stats.blocksExecuted;
-        func->Execute();
+        if (!SafeExecuteBlock(func, pc)) {
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::Cache);
+            InterpretSingleInstruction();
+            continue;
+        }
+        
+        // Apply any pending jump (branch or synchronous exception)
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+        
+        uint32_t instrCount = 1;
+        if (auto* block = func->GetCodeBlock()) {
+            instrCount = static_cast<uint32_t>(block->instruction_count());
+            if (instrCount == 0) instrCount = 1;
+        }
+        // nextTimer decrement now done per-instruction inside compiled blocks
+        
+        // Idle loop detection
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
+            }
+        }
+        
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            uint32_t blockEndPC = pc + instrCount * 4;
+            bool checkTimer = (newPC < blockEndPC || m_System.m_TestTimer);
+            if (checkTimer) {
+                m_System.m_TestTimer = false;
+                if (nextTimer < 0) {
+                    systemTimer->TimerDone();
+                }
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                }
+            }
+        }
+        
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        if (m_System.IsFrameLimitReached()) {
+            m_EndEmulation.store(true, std::memory_order_release);
+            break;
+        }
     }
 }
 
 void CRecompiler::Execute_Lookup_Validate() {
-    Log::debug("CRecompiler: Executing with Lookup_Validate mode");
+    Log::info("CRecompiler: Executing with Lookup_Validate mode");
+    
+    const uint32_t countPerOp = m_System.CountPerOp();
+    int32_t& nextTimer = m_System.m_NextTimer;
+    auto* systemTimer = m_System.m_SystemTimer.get();
+    auto* systemEvents = m_System.m_SystemEvents.get();
     
     while (!m_EndEmulation.load(std::memory_order_acquire)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
@@ -488,12 +900,88 @@ void CRecompiler::Execute_Lookup_Validate() {
         
         if (!func) {
             func = CompileCode(pc);
-            if (!func) break;
+            if (!func) {
+                Log::warningf("CRecompiler: Compilation failed at 0x%08X, interpreting instruction", pc);
+                InterpretSingleInstruction();
+                continue;
+            }
         }
         
         ++m_Stats.blocksExecuted;
-        func->Execute();
+        if (!SafeExecuteBlock(func, pc)) {
+            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
+                                 RemoveReason::Cache);
+            InterpretSingleInstruction();
+            continue;
+        }
+        
+        // Apply any pending jump (branch or synchronous exception)
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+        
+        uint32_t instrCount = 1;
+        if (auto* block = func->GetCodeBlock()) {
+            instrCount = static_cast<uint32_t>(block->instruction_count());
+            if (instrCount == 0) instrCount = 1;
+        }
+        // nextTimer decrement now done per-instruction inside compiled blocks
+        
+        // Idle loop detection
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
+            }
+        }
+        
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            uint32_t blockEndPC = pc + instrCount * 4;
+            bool checkTimer = (newPC < blockEndPC || m_System.m_TestTimer);
+            if (checkTimer) {
+                m_System.m_TestTimer = false;
+                if (nextTimer < 0) {
+                    systemTimer->TimerDone();
+                }
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                }
+            }
+        }
+        
+        if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+            m_ProgramCounter = m_System.m_JumpToLocation;
+            m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        if (m_System.IsFrameLimitReached()) {
+            m_EndEmulation.store(true, std::memory_order_release);
+            break;
+        }
     }
+}
+
+// =============================================================================
+// Interpreter Fallback
+// =============================================================================
+
+void CRecompiler::FallbackToInterpreter() {
+    Log::info("CRecompiler: Falling back to interpreter for remaining execution");
+    m_System.ExecuteInterpret();
+}
+
+void CRecompiler::InterpretSingleInstruction() {
+    // Execute exactly one instruction via the interpreter.
+    // Routed through CN64System to avoid include conflicts.
+    uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
+    if (m_Stats.interpretedFallbacks < 20) {
+        Log::warningf("CRecompiler: InterpretSingleInstruction fallback at PC=0x%08X (count=%llu)",
+                      pc, m_Stats.interpretedFallbacks + 1);
+    }
+    m_System.ExecuteSingleOp();
+    ++m_Stats.interpretedFallbacks;
 }
 
 // =============================================================================
@@ -501,44 +989,39 @@ void CRecompiler::Execute_Lookup_Validate() {
 // =============================================================================
 
 void CRecompiler::ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reason) {
-    Log::debugf("CRecompiler: Clearing code range 0x%08X - 0x%08X", start, end);
-    
-    // Find and remove all functions in range
+    // Find all functions whose code overlaps [start, end) using block address ranges.
     std::vector<CCompiledFunc*> toRemove;
     
     for (auto* func : m_ActiveFunctions) {
         if (!func) continue;
         
-        // Check if func is in range [start, end]
-        // Since CCompiledFunc is opaque, we iterate through the function map
-        // and check if any address in range maps to this function
-        bool inRange = false;
-        for (uint32_t addr = start; addr < end && !inRange; addr += 4) {
-            if (Lookup(addr) == func) {
-                inRange = true;
-            }
-        }
-        
-        if (inRange) {
+        // A block overlaps the invalidation range if:
+        //   block.MinPC < end  AND  block.MaxPC >= start
+        uint32_t blockMin = func->MinPC();
+        uint32_t blockMax = func->MaxPC();
+        if (blockMin < end && blockMax >= start) {
             toRemove.push_back(func);
         }
     }
     
+    if (!toRemove.empty()) {
+        Log::debugf("CRecompiler: ClearCodeRange [0x%08X-0x%08X) removing %zu funcs",
+                   start, end, toRemove.size());
+    }
+    
     // Remove functions
     for (auto* func : toRemove) {
-        // Remove from function map
-        // Scan and remove all mappings to this function
-        for (uint32_t addr = start; addr < end; addr += 4) {
-            if (Lookup(addr) == func) {
-                Remove(addr);
-            }
-        }
+        // Remove the function's entry from the lookup map
+        Remove(func->EnterPC());
         
         // Remove from active list
         auto it = std::find(m_ActiveFunctions.begin(), m_ActiveFunctions.end(), func);
         if (it != m_ActiveFunctions.end()) {
             m_ActiveFunctions.erase(it);
         }
+        
+        // Erase from profiling map to avoid dangling pointers
+        m_FunctionProfiles.erase(func);
         
         delete func;
     }

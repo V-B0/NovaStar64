@@ -39,10 +39,23 @@
 #include "../../../common/MemoryManagment.hpp"
 #include "../../../common/platform.hpp"
 
+#include <cfenv>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <type_traits>
+#include <unordered_set>
+#include <atomic>
+
+#pragma STDC FENV_ACCESS ON
+
+// ==== BINARY-SEARCH DIAGNOSTIC FLAGS ====
+// Set to 1 to revert group to interpreter callbacks, 0 for inline x64
+#define FORCE_CALLBACK_SPECIAL 1   // All SPECIAL-format ALU/shift/logic
+#define FORCE_CALLBACK_IMM     1   // All immediate-format ALU/logic
+#define FORCE_CALLBACK_BRANCH  1   // All conditional branches (BEQ,BNE,etc.)
+#define FORCE_CALLBACK_JUMP    1   // J, JAL
+// ========================================
 
 namespace Nova64 {
 namespace Recompiler {
@@ -95,6 +108,12 @@ inline uint32_t mips_ft(uint32_t v)    { return (v >> 16) & 0x1F; }  // bits 20:
 inline uint32_t mips_fs(uint32_t v)    { return (v >> 11) & 0x1F; }  // bits 15:11 = rd = fs
 inline uint32_t mips_fd(uint32_t v)    { return (v >>  6) & 0x1F; }  // bits 10:6  = sa = fd
 inline int16_t  mips_offset(uint32_t v){ return static_cast<int16_t>(v & 0xFFFF); } // bits 15:0 = imm = offset
+
+// Sign-extend a 32-bit PC value to 64 bits (MIPS R4300i requires this for
+// addresses in KSEG0/KSEG1 which have bit 31 set).
+inline void SetPC(CRegisters* regs, uint32_t pc32) {
+    regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(pc32));
+}
 
 // ----- ALU Immediate Callbacks -----
 
@@ -596,8 +615,9 @@ void Interp_LW(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(mips_offset(opcVal));
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
+        if (mips_rt(opcVal) != 0) {
             AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(static_cast<int32_t>(val));
+        }
     }
 }
 
@@ -710,6 +730,10 @@ void Interp_LDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     }
 }
 
+// Forward declarations for FR=0 mode 64-bit helpers (defined later with the FPU block)
+static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg);
+static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val);
+
 void Interp_LWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
@@ -726,7 +750,7 @@ void Interp_LDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(op.Itype.imm);
     uint64_t val = 0;
     if (mmu->LD_Memory(addr, val)) {
-        regs->m_FPR_Union[mips_ft(opcVal)].u64 = val;
+        fpr_write_u64(regs, mips_ft(opcVal), val);
     }
 }
 
@@ -750,7 +774,8 @@ void Interp_SW(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(mips_offset(opcVal));
-    mmu->SW_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
+    uint32_t val = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
+    mmu->SW_Memory(addr, val);
 }
 
 void Interp_SD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
@@ -839,18 +864,43 @@ void Interp_SC(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     }
 }
 
+void Interp_LLD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    R4300iOps op; op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
+                    static_cast<int16_t>(mips_offset(opcVal));
+    uint64_t val = 0;
+    if (mmu->LD_Memory(addr, val)) {
+        if (mips_rt(opcVal) != 0)
+            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
+        regs->m_LLBit = 1;
+    }
+}
+
+void Interp_SCD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    R4300iOps op; op.Value = opcVal;
+    if (regs->m_LLBit == 1) {
+        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
+                        static_cast<int16_t>(mips_offset(opcVal));
+        mmu->SD_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
+    }
+    if (mips_rt(opcVal) != 0) {
+        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = regs->m_LLBit;
+    }
+}
+
 void Interp_SWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
-    mmu->SW_Memory(addr, regs->m_FPR_Union[mips_ft(opcVal)].u32);
+    uint32_t val = regs->m_FPR_Union[mips_ft(opcVal)].u32;
+    mmu->SW_Memory(addr, val);
 }
 
 void Interp_SDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
-    mmu->SD_Memory(addr, regs->m_FPR_Union[mips_ft(opcVal)].u64);
+    mmu->SD_Memory(addr, fpr_read_u64(regs, mips_ft(opcVal)));
 }
 
 // ----- COP0 Callbacks -----
@@ -898,16 +948,29 @@ void Interp_COP0_CO_TLBP(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) {
     tlb->Probe();
 }
 
-void Interp_COP0_CO_ERET(CRegisters* regs, uint32_t /*opcVal*/) {
+void Interp_COP0_CO_ERET(CRegisters* regs, CN64System* sys, uint32_t /*opcVal*/) {
+    static int eretCount = 0;
+    uint64_t returnAddr;
+    // Match the interpreter: set PipelineStage = Jump and JumpToLocation,
+    // NOT m_PROGRAM_COUNTER directly.  The dispatcher will apply the jump
+    // after the block exits.
     if (regs->STATUS_REGISTER.ErrorLevel) {
-        regs->m_PROGRAM_COUNTER = regs->ERROREPC_REGISTER;
+        returnAddr = regs->ERROREPC_REGISTER;
+        sys->m_JumpToLocation = regs->ERROREPC_REGISTER;
         regs->STATUS_REGISTER.ErrorLevel = 0;
     } else {
-        regs->m_PROGRAM_COUNTER = regs->EPC_REGISTER;
+        returnAddr = regs->EPC_REGISTER;
+        sys->m_JumpToLocation = regs->EPC_REGISTER;
         regs->STATUS_REGISTER.ExceptionLevel = 0;
+    }
+    sys->m_PipelineStage = N64Types::PipelineStage::Jump;
+    if (eretCount++ < 40) {
+        Log::infof("[ERET] #%d EPC=0x%08X STATUS=0x%08X",
+                   eretCount, (uint32_t)returnAddr, regs->STATUS_REGISTER.Value);
     }
     regs->m_LLBit = 0;
     regs->CheckInterrupts();
+    sys->m_TestTimer = true;
 }
 
 // ----- COP1 Move/Control Callbacks -----
@@ -923,7 +986,7 @@ void Interp_COP1_DMFC1(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
-        static_cast<int64_t>(regs->m_FPR_Union[mips_rd(opcVal)].u64);
+        static_cast<int64_t>(fpr_read_u64(regs, mips_rd(opcVal)));
 }
 
 void Interp_COP1_MTC1(CRegisters* regs, uint32_t opcVal) {
@@ -934,9 +997,11 @@ void Interp_COP1_MTC1(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_COP1_DMTC1(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
-    regs->m_FPR_Union[mips_rd(opcVal)].u64 =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
+    fpr_write_u64(regs, mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
 }
+
+// Forward declaration — defined below with other FPU helpers
+static inline void SyncRoundingMode(CRegisters* regs);
 
 void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
@@ -948,12 +1013,63 @@ void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
 void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     regs->Cop1_CT(mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0]);
+    SyncRoundingMode(regs);
 }
 
 // ----- COP1 FPU Arithmetic (use softfloat via interpreter callbacks) -----
 // For FPU, we call through to the CRegisters-level FPU implementation.
 // These are simplified interpreter callbacks - a full implementation would
 // route through the softfloat library for IEEE 754 compliance.
+
+// FR=0 mode double-precision helpers:
+// In FR=0 mode (N64 default), doubles span even/odd FPR pairs.
+// The even register holds the LOW 32 bits, the odd register holds the HIGH 32 bits.
+static inline double fpr_read_double(CRegisters* regs, uint32_t reg) {
+    uint32_t lo = regs->m_FPR_Union[reg & ~1u].u32;
+    uint32_t hi = regs->m_FPR_Union[reg | 1u].u32;
+    uint64_t bits = (static_cast<uint64_t>(hi) << 32) | lo;
+    double result;
+    std::memcpy(&result, &bits, 8);
+    return result;
+}
+
+static inline void fpr_write_double(CRegisters* regs, uint32_t reg, double val) {
+    uint64_t bits;
+    std::memcpy(&bits, &val, 8);
+    regs->m_FPR_Union[reg & ~1u].u32 = static_cast<uint32_t>(bits);
+    regs->m_FPR_Union[reg | 1u].u32 = static_cast<uint32_t>(bits >> 32);
+}
+
+// FR=0 mode 64-bit integer helpers (for LDC1/SDC1, DMFC1/DMTC1, L-format)
+static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg) {
+    uint32_t lo = regs->m_FPR_Union[reg & ~1u].u32;
+    uint32_t hi = regs->m_FPR_Union[reg | 1u].u32;
+    return (static_cast<uint64_t>(hi) << 32) | lo;
+}
+
+static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val) {
+    regs->m_FPR_Union[reg & ~1u].u32 = static_cast<uint32_t>(val);
+    regs->m_FPR_Union[reg | 1u].u32 = static_cast<uint32_t>(val >> 32);
+}
+
+// Sync the host x86 rounding mode to match MIPS FCR31 bits 1:0.
+// Must be called before any native float operation that depends on rounding.
+static inline void SyncRoundingMode(CRegisters* regs) {
+    static constexpr int mipsToHost[4] = { FE_TONEAREST, FE_TOWARDZERO, FE_UPWARD, FE_DOWNWARD };
+    std::fesetround(mipsToHost[regs->m_FPCR[31] & 3]);
+}
+
+// Update FCR31 exception flags from x86 FP exception status (matching interpreter's SetFPUException)
+static inline void UpdateFCR31FromHostExceptions(CRegisters* regs) {
+    int exc = std::fetestexcept(FE_ALL_EXCEPT);
+    if (exc == 0) return;
+    FPStatusReg& sr = reinterpret_cast<FPStatusReg&>(regs->m_FPCR[31]);
+    if (exc & FE_INEXACT)   { sr.Cause.Inexact = 1;          if (!sr.Enable.Inexact)          sr.Flags.Inexact = 1; }
+    if (exc & FE_UNDERFLOW) { sr.Cause.Underflow = 1;        if (!sr.Enable.Underflow)        sr.Flags.Underflow = 1; }
+    if (exc & FE_OVERFLOW)  { sr.Cause.Overflow = 1;         if (!sr.Enable.Overflow)         sr.Flags.Overflow = 1; }
+    if (exc & FE_DIVBYZERO) { sr.Cause.DivisionByZero = 1;   if (!sr.Enable.DivisionByZero)   sr.Flags.DivisionByZero = 1; }
+    if (exc & FE_INVALID)   { sr.Cause.InvalidOperation = 1; if (!sr.Enable.InvalidOperation) sr.Flags.InvalidOperation = 1; }
+}
 
 // Generic FPU operation callback that operates on the FPR_Union array directly
 // For single-precision operations (S format)
@@ -962,85 +1078,107 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
     float fs = regs->m_FPR_Union[mips_fs(opcVal)].f32;
     float ft = regs->m_FPR_Union[mips_ft(opcVal)].f32;
     float result = 0.0f;
+    bool checkExc = true;
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits (matching interpreter InitFpuOperation)
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     switch (mips_funct(opcVal)) {
         case R4300_FPU_ADD:  result = fs + ft; break;
         case R4300_FPU_SUB:  result = fs - ft; break;
         case R4300_FPU_MUL:  result = fs * ft; break;
-        case R4300_FPU_DIV:  result = (ft != 0.0f) ? fs / ft : 0.0f; break;
+        case R4300_FPU_DIV:  result = fs / ft; break;
         case R4300_FPU_SQRT: result = sqrtf(fs); break;
-        case R4300_FPU_ABS:  result = fabsf(fs); break;
-        case R4300_FPU_NEG:  result = -fs; break;
-        case R4300_FPU_MOV:  result = fs; break;
+        case R4300_FPU_ABS:  result = fabsf(fs); checkExc = false; break;
+        case R4300_FPU_NEG:  result = -fs; checkExc = false; break;
+        case R4300_FPU_MOV:  result = fs; checkExc = false; break;
         default:
             Log::errorf("COP1_S: Unknown funct %d", mips_funct(opcVal));
             return;
     }
+    if (checkExc) UpdateFCR31FromHostExceptions(regs);
     regs->m_FPR_Union[mips_fd(opcVal)].f32 = result;
-    // Clear upper 32 bits of the destination FPR
-    regs->m_FPR_Union[mips_fd(opcVal)].u64 =
-        (regs->m_FPR_Union[mips_fd(opcVal)].u64 & 0xFFFFFFFF) |
-        (static_cast<uint64_t>(regs->m_FPR_Union[mips_fd(opcVal)].u32));
 }
 
 // Double-precision FPU operations
 void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
-    double fs = regs->m_FPR_Union[mips_fs(opcVal)].f64;
-    double ft = regs->m_FPR_Union[mips_ft(opcVal)].f64;
+    double fs = fpr_read_double(regs, mips_fs(opcVal));
+    double ft = fpr_read_double(regs, mips_ft(opcVal));
     double result = 0.0;
+    bool checkExc = true;
+    regs->m_FPCR[31] &= ~0x0003F000;
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     switch (mips_funct(opcVal)) {
         case R4300_FPU_ADD:  result = fs + ft; break;
         case R4300_FPU_SUB:  result = fs - ft; break;
         case R4300_FPU_MUL:  result = fs * ft; break;
-        case R4300_FPU_DIV:  result = (ft != 0.0) ? fs / ft : 0.0; break;
+        case R4300_FPU_DIV:  result = fs / ft; break;
         case R4300_FPU_SQRT: result = sqrt(fs); break;
-        case R4300_FPU_ABS:  result = fabs(fs); break;
-        case R4300_FPU_NEG:  result = -fs; break;
-        case R4300_FPU_MOV:  result = fs; break;
+        case R4300_FPU_ABS:  result = fabs(fs); checkExc = false; break;
+        case R4300_FPU_NEG:  result = -fs; checkExc = false; break;
+        case R4300_FPU_MOV:  result = fs; checkExc = false; break;
         default:
             Log::errorf("COP1_D: Unknown funct %d", mips_funct(opcVal));
             return;
     }
-    regs->m_FPR_Union[mips_fd(opcVal)].f64 = result;
+    if (checkExc) UpdateFCR31FromHostExceptions(regs);
+    fpr_write_double(regs, mips_fd(opcVal), result);
 }
 
 // Single-precision conversions
 void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     float fs = regs->m_FPR_Union[mips_fs(opcVal)].f32;
+    regs->m_FPCR[31] &= ~0x0003F000;
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     switch (mips_funct(opcVal)) {
-        case R4300_FPU_CVT_D:
-            regs->m_FPR_Union[mips_fd(opcVal)].f64 = static_cast<double>(fs);
+        case R4300_FPU_CVT_D: {
+            double dval = static_cast<double>(fs);
+            UpdateFCR31FromHostExceptions(regs);
+            fpr_write_double(regs, mips_fd(opcVal), dval);
             break;
+        }
         case R4300_FPU_CVT_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(fs));
+            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(lrintf(fs));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_CVT_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(fs));
+            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(llrintf(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_ROUND_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(lroundf(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_TRUNC_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(truncf(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_CEIL_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(ceilf(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_FLOOR_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(floorf(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_ROUND_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(llroundf(fs)));
+            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(llroundf(fs))));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_TRUNC_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(truncf(fs)));
+            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(truncf(fs))));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_CEIL_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(ceilf(fs)));
+            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(ceilf(fs))));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_FLOOR_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(floorf(fs)));
+            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(floorf(fs))));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         default:
             Log::errorf("COP1_S_CVT: Unknown funct %d", mips_funct(opcVal));
@@ -1051,41 +1189,82 @@ void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
 // Double-precision conversions
 void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
-    double fs = regs->m_FPR_Union[mips_fs(opcVal)].f64;
+    double fs = fpr_read_double(regs, mips_fs(opcVal));
+    regs->m_FPCR[31] &= ~0x0003F000;
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     switch (mips_funct(opcVal)) {
-        case R4300_FPU_CVT_S:
-            regs->m_FPR_Union[mips_fd(opcVal)].f32 = static_cast<float>(fs);
+        case R4300_FPU_CVT_S: {
+            float fval = static_cast<float>(fs);
+            UpdateFCR31FromHostExceptions(regs);
+            regs->m_FPR_Union[mips_fd(opcVal)].f32 = fval;
             break;
+        }
         case R4300_FPU_CVT_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(fs));
+            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(lrint(fs));
+            UpdateFCR31FromHostExceptions(regs);
             break;
-        case R4300_FPU_CVT_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(fs));
+        case R4300_FPU_CVT_L: {
+            uint64_t bits;
+            int64_t ival = llrint(fs);
+            UpdateFCR31FromHostExceptions(regs);
+            std::memcpy(&bits, &ival, 8);
+            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
+            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
             break;
+        }
         case R4300_FPU_ROUND_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(lround(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_TRUNC_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(trunc(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_CEIL_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(ceil(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
         case R4300_FPU_FLOOR_W:
             regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(floor(fs)));
+            UpdateFCR31FromHostExceptions(regs);
             break;
-        case R4300_FPU_ROUND_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(llround(fs)));
+        case R4300_FPU_ROUND_L: {
+            uint64_t bits;
+            int64_t ival = static_cast<int64_t>(llround(fs));
+            UpdateFCR31FromHostExceptions(regs);
+            std::memcpy(&bits, &ival, 8);
+            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
+            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
             break;
-        case R4300_FPU_TRUNC_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(trunc(fs)));
+        }
+        case R4300_FPU_TRUNC_L: {
+            uint64_t bits;
+            int64_t ival = static_cast<int64_t>(trunc(fs));
+            UpdateFCR31FromHostExceptions(regs);
+            std::memcpy(&bits, &ival, 8);
+            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
+            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
             break;
-        case R4300_FPU_CEIL_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(ceil(fs)));
+        }
+        case R4300_FPU_CEIL_L: {
+            uint64_t bits;
+            int64_t ival = static_cast<int64_t>(ceil(fs));
+            UpdateFCR31FromHostExceptions(regs);
+            std::memcpy(&bits, &ival, 8);
+            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
+            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
             break;
-        case R4300_FPU_FLOOR_L:
-            regs->m_FPR_Union[mips_fd(opcVal)].u64 = static_cast<uint64_t>(static_cast<int64_t>(floor(fs)));
+        }
+        case R4300_FPU_FLOOR_L: {
+            uint64_t bits;
+            int64_t ival = static_cast<int64_t>(floor(fs));
+            UpdateFCR31FromHostExceptions(regs);
+            std::memcpy(&bits, &ival, 8);
+            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
+            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
             break;
+        }
         default:
             Log::errorf("COP1_D_CVT: Unknown funct %d", mips_funct(opcVal));
             break;
@@ -1096,22 +1275,30 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
 void Interp_COP1_W_CVT(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     int32_t w = static_cast<int32_t>(regs->m_FPR_Union[mips_fs(opcVal)].u32);
+    regs->m_FPCR[31] &= ~0x0003F000;
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
         regs->m_FPR_Union[mips_fd(opcVal)].f32 = static_cast<float>(w);
     } else if (mips_funct(opcVal) == R4300_FPU_CVT_D) {
-        regs->m_FPR_Union[mips_fd(opcVal)].f64 = static_cast<double>(w);
+        fpr_write_double(regs, mips_fd(opcVal), static_cast<double>(w));
     }
+    UpdateFCR31FromHostExceptions(regs);
 }
 
 // Long-to-float/double conversion
 void Interp_COP1_L_CVT(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
-    int64_t l = static_cast<int64_t>(regs->m_FPR_Union[mips_fs(opcVal)].u64);
+    int64_t l = static_cast<int64_t>(fpr_read_u64(regs, mips_fs(opcVal)));
+    regs->m_FPCR[31] &= ~0x0003F000;
+    SyncRoundingMode(regs);
+    std::feclearexcept(FE_ALL_EXCEPT);
     if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
         regs->m_FPR_Union[mips_fd(opcVal)].f32 = static_cast<float>(l);
     } else if (mips_funct(opcVal) == R4300_FPU_CVT_D) {
-        regs->m_FPR_Union[mips_fd(opcVal)].f64 = static_cast<double>(l);
+        fpr_write_double(regs, mips_fd(opcVal), static_cast<double>(l));
     }
+    UpdateFCR31FromHostExceptions(regs);
 }
 
 // COP1 Compare (C.cond.S / C.cond.D)
@@ -1137,8 +1324,8 @@ void Interp_COP1_S_CMP(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
-    double fs = regs->m_FPR_Union[mips_fs(opcVal)].f64;
-    double ft = regs->m_FPR_Union[mips_ft(opcVal)].f64;
+    double fs = fpr_read_double(regs, mips_fs(opcVal));
+    double ft = fpr_read_double(regs, mips_ft(opcVal));
     bool less = false, equal = false, unordered = false;
     if (std::isnan(fs) || std::isnan(ft)) {
         unordered = true;
@@ -1155,7 +1342,15 @@ void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
 
 // ----- System / Trap / CACHE Callbacks -----
 
+static std::atomic<int> s_syscallCount{0};
+
 void Interp_SYSCALL(CRegisters* regs, uint32_t /*opcVal*/) {
+    int n = s_syscallCount.fetch_add(1);
+    if (n < 10) {
+        Log::infof("[SYSCALL] #%d PC=0x%08X STATUS=0x%08X",
+                   n+1, (uint32_t)regs->m_PROGRAM_COUNTER,
+                   regs->STATUS_REGISTER.Value);
+    }
     regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Syscall));
 }
 
@@ -1167,8 +1362,31 @@ void Interp_SYNC(CRegisters* /*regs*/, uint32_t /*opcVal*/) {
     // SYNC is a memory barrier - no-op in our single-threaded interpreter context
 }
 
-void Interp_CACHE(CRegisters* /*regs*/, uint32_t /*opcVal*/) {
-    // CACHE operations are architecture-specific hints - can be ignored for correctness
+void Interp_CACHE(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    // CACHE op, offset(base)
+    // op = bits 20:16 (same position as rt)
+    uint32_t cacheOp = mips_rt(opcVal);
+
+    // I-Cache operations that invalidate instruction cache lines:
+    //   0x00 = Index Invalidate
+    //   0x10 = Hit Invalidate
+    // For a recompiler these must discard any compiled blocks covering
+    // the affected cache-line, otherwise stale code executes after
+    // the game DMA's new code to RDRAM and calls osInvalICache().
+    if (cacheOp == 0x00 || cacheOp == 0x10) {
+        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
+                        static_cast<int16_t>(mips_offset(opcVal));
+        // R4300 I-cache line = 32 bytes; align down and invalidate whole line
+        uint32_t physAddr = static_cast<uint32_t>(addr) & 0x1FFFFFFF;
+        uint32_t lineStart = physAddr & ~31u;
+        // Use the DMA invalidation path (goes through N64System callback)
+        if (mmu) {
+            CN64System* sys = mmu->System();
+            if (sys) sys->NotifyDMAToRDRAM(lineStart, 32);
+        }
+    }
+    // D-Cache operations (0x01, 0x05, 0x09, 0x11, 0x15, 0x19) don't
+    // affect instruction execution and are safely ignored.
 }
 
 // Trap instructions
@@ -1259,78 +1477,84 @@ void Interp_BEQ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs == rt) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs == rt) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BNE_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs != rt) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs != rt) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BLEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs <= 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs <= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BGTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs > 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs > 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BLTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs < 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs < 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BGEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    regs->m_PROGRAM_COUNTER = (rs >= 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs >= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BLTZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
-    regs->m_PROGRAM_COUNTER = (rs < 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs < 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
-    regs->m_PROGRAM_COUNTER = (rs >= 0) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (rs >= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
-    regs->m_PROGRAM_COUNTER = (!fpCond) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (!fpCond) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
-    regs->m_PROGRAM_COUNTER = (fpCond) ? (pc + 4 + offset) : (pc + 8);
+    SetPC(regs, (fpCond) ? (pc + 4 + offset) : (pc + 8));
 }
 
 // Jump callbacks
 void Interp_J_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
-    regs->m_PROGRAM_COUNTER = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
+    uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
+    SetPC(regs, target);
 }
 
 void Interp_JAL_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
-    regs->m_PROGRAM_COUNTER = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
+    SetPC(regs, target);
 }
 
-void Interp_JR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t /*pc*/) {
-    regs->m_PROGRAM_COUNTER = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
+void Interp_JR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    uint32_t target = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
+    SetPC(regs, target);
+    // Match interpreter: JR always sets TestTimer so the dispatcher
+    // processes timer events after the jump, regardless of direction.
+    regs->SetTestTimer();
 }
 
 void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
@@ -1338,7 +1562,155 @@ void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     if (rd != 0) {
         AsDWord(regs->m_GPR[rd]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     }
-    regs->m_PROGRAM_COUNTER = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
+    SetPC(regs, static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW));
+    // Match interpreter: JALR always sets TestTimer.
+    regs->SetTestTimer();
+}
+
+// ----- Branch-Likely Callbacks -----
+// These return int: 1 = branch taken (execute delay slot), 0 = not taken (skip delay slot).
+// For branch-likely instructions, when the branch is NOT taken, the delay slot is nullified.
+
+int Interp_BEQL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs == rt) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BNEL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs != rt) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BLEZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs <= 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BGTZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs > 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BLTZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs < 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BGEZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    if (rs >= 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BLTZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    if (rs < 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BGEZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    if (rs >= 0) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BC1FL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
+    if (!fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+int Interp_BC1TL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
+    if (fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
+    else { SetPC(regs, pc + 8); return 0; }
+}
+
+// ---- Binary-search diagnostic: SPECIAL dispatcher callback ----
+// When FORCE_CALLBACK_SPECIAL is 1, all SPECIAL ops route through this
+// single callback instead of inline x64 code.
+void Interp_SpecialDispatch(CRegisters* regs, uint32_t opcVal) {
+    switch (mips_funct(opcVal)) {
+    case 0x00: Interp_SLL(regs, opcVal); break;
+    case 0x02: Interp_SRL(regs, opcVal); break;
+    case 0x03: Interp_SRA(regs, opcVal); break;
+    case 0x04: Interp_SLLV(regs, opcVal); break;
+    case 0x06: Interp_SRLV(regs, opcVal); break;
+    case 0x07: Interp_SRAV(regs, opcVal); break;
+    case 0x10: Interp_MFHI(regs, opcVal); break;
+    case 0x11: Interp_MTHI(regs, opcVal); break;
+    case 0x12: Interp_MFLO(regs, opcVal); break;
+    case 0x13: Interp_MTLO(regs, opcVal); break;
+    case 0x14: Interp_DSLLV(regs, opcVal); break;
+    case 0x16: Interp_DSRLV(regs, opcVal); break;
+    case 0x17: Interp_DSRAV(regs, opcVal); break;
+    case 0x18: Interp_MULT(regs, opcVal); break;
+    case 0x19: Interp_MULTU(regs, opcVal); break;
+    case 0x1A: Interp_DIV(regs, opcVal); break;
+    case 0x1B: Interp_DIVU(regs, opcVal); break;
+    case 0x1C: Interp_DMULT(regs, opcVal); break;
+    case 0x1D: Interp_DMULTU(regs, opcVal); break;
+    case 0x1E: Interp_DDIV(regs, opcVal); break;
+    case 0x1F: Interp_DDIVU(regs, opcVal); break;
+    case 0x20: Interp_ADD(regs, opcVal); break;
+    case 0x21: Interp_ADDU(regs, opcVal); break;
+    case 0x22: Interp_SUB(regs, opcVal); break;
+    case 0x23: Interp_SUBU(regs, opcVal); break;
+    case 0x24: Interp_AND(regs, opcVal); break;
+    case 0x25: Interp_OR(regs, opcVal); break;
+    case 0x26: Interp_XOR(regs, opcVal); break;
+    case 0x27: Interp_NOR(regs, opcVal); break;
+    case 0x2A: Interp_SLT(regs, opcVal); break;
+    case 0x2B: Interp_SLTU(regs, opcVal); break;
+    case 0x2C: Interp_DADD(regs, opcVal); break;
+    case 0x2D: Interp_DADDU(regs, opcVal); break;
+    case 0x2E: Interp_DSUB(regs, opcVal); break;
+    case 0x2F: Interp_DSUBU(regs, opcVal); break;
+    case 0x38: Interp_DSLL(regs, opcVal); break;
+    case 0x3A: Interp_DSRL(regs, opcVal); break;
+    case 0x3B: Interp_DSRA(regs, opcVal); break;
+    case 0x3C: Interp_DSLL32(regs, opcVal); break;
+    case 0x3E: Interp_DSRL32(regs, opcVal); break;
+    case 0x3F: Interp_DSRA32(regs, opcVal); break;
+    default: break; // SYSCALL, BREAK, SYNC, JR, JALR handled separately
+    }
+}
+
+// ---- Binary-search diagnostic: IMM dispatcher callback ----
+void Interp_ImmDispatch(CRegisters* regs, uint32_t opcVal) {
+    uint32_t op = opcVal >> 26;
+    switch (op) {
+    case 0x08: Interp_ADDI(regs, opcVal); break;
+    case 0x09: Interp_ADDIU(regs, opcVal); break;
+    case 0x0A: Interp_SLTI(regs, opcVal); break;
+    case 0x0B: Interp_SLTIU(regs, opcVal); break;
+    case 0x0C: Interp_ANDI(regs, opcVal); break;
+    case 0x0D: Interp_ORI(regs, opcVal); break;
+    case 0x0E: Interp_XORI(regs, opcVal); break;
+    case 0x0F: Interp_LUI(regs, opcVal); break;
+    case 0x18: Interp_DADDI(regs, opcVal); break;
+    case 0x19: Interp_DADDIU(regs, opcVal); break;
+    default: break;
+    }
 }
 
 } // anonymous namespace
@@ -1357,13 +1729,12 @@ void CX64RecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
     m_Assembler->AddComment("  -> interpreter callback");
     m_RegisterSet->FlushRegisters(true);
 
-    // Windows x64 ABI: RCX = 1st arg, RDX = 2nd arg
-    // SysV ABI: RDI = 1st arg, RSI = 2nd arg
+    // RBX = &CRegisters (set up in EnterCodeBlock)
 #ifdef _WIN32
-    a.mov(rcx, reinterpret_cast<uint64_t>(&m_Context.registers));
+    a.mov(rcx, rbx);
     a.mov(edx, opcVal);
 #else
-    a.mov(rdi, reinterpret_cast<uint64_t>(&m_Context.registers));
+    a.mov(rdi, rbx);
     a.mov(esi, opcVal);
 #endif
     m_Assembler->EmitCall(callback);
@@ -1377,13 +1748,20 @@ void CX64RecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
     m_Assembler->AddComment("  -> memory callback");
     m_RegisterSet->FlushRegisters(true);
 
+    // Set m_PROGRAM_COUNTER so exceptions report the correct faulting PC.
+    if (m_CurrentContext && !m_BlockEnded) {
+        a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+              static_cast<int32_t>(m_CurrentContext->virtualAddress));
+    }
+
+    // RBX = &CRegisters, R12 = &MipsMemoryVM (set up in EnterCodeBlock)
 #ifdef _WIN32
-    a.mov(rcx, reinterpret_cast<uint64_t>(&m_Context.registers));
-    a.mov(rdx, reinterpret_cast<uint64_t>(&m_Context.mmu));
+    a.mov(rcx, rbx);
+    a.mov(rdx, r12);
     a.mov(r8d, opcVal);
 #else
-    a.mov(rdi, reinterpret_cast<uint64_t>(&m_Context.registers));
-    a.mov(rsi, reinterpret_cast<uint64_t>(&m_Context.mmu));
+    a.mov(rdi, rbx);
+    a.mov(rsi, r12);
     a.mov(edx, opcVal);
 #endif
     m_Assembler->EmitCall(callback);
@@ -1417,16 +1795,166 @@ void CX64RecompilerOps::EmitBranchCallback(void* callback, uint32_t opcVal, uint
     m_Assembler->AddComment("  -> branch callback");
     m_RegisterSet->FlushRegisters(true);
 
+    // RBX = &CRegisters (set up in EnterCodeBlock)
 #ifdef _WIN32
-    a.mov(rcx, reinterpret_cast<uint64_t>(&m_Context.registers));
+    a.mov(rcx, rbx);
     a.mov(edx, opcVal);
     a.mov(r8d, pc);
 #else
-    a.mov(rdi, reinterpret_cast<uint64_t>(&m_Context.registers));
+    a.mov(rdi, rbx);
     a.mov(esi, opcVal);
     a.mov(edx, pc);
 #endif
     m_Assembler->EmitCall(callback);
+}
+
+void CX64RecompilerOps::EmitBranchLikelyCallback(void* callback, uint32_t opcVal, uint32_t pc) {
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    m_Assembler->AddComment("  -> branch-likely callback");
+    m_RegisterSet->FlushRegisters(true);
+
+    // RBX = &CRegisters (set up in EnterCodeBlock)
+#ifdef _WIN32
+    a.mov(rcx, rbx);
+    a.mov(edx, opcVal);
+    a.mov(r8d, pc);
+#else
+    a.mov(rdi, rbx);
+    a.mov(esi, opcVal);
+    a.mov(edx, pc);
+#endif
+    m_Assembler->EmitCall(callback);
+
+    // Callback returns int in EAX: 1 = taken (execute delay slot), 0 = not taken (skip delay slot)
+    // Emit the timer decrement for the branch instruction BEFORE the
+    // conditional skip.  The branch itself always executes (evaluates its
+    // condition), so its timer must always fire — even when the delay slot
+    // is skipped on a not-taken branch-likely.  Without this, every
+    // not-taken branch-likely undercounts NextTimer by CountPerOp, causing
+    // a cumulative COUNT_REGISTER drift vs the interpreter.
+    a.mov(ecx, eax);     // save callback result (ecx is caller-saved, not used by EmitTimerDecrement)
+    EmitTimerDecrement(); // sub [&NextTimer], CountPerOp  (clobbers rax)
+    m_BranchLikelySkipLabel = a.new_label();
+    m_HasPendingBranchLikelySkip = true;
+    a.test(ecx, ecx);
+    a.jz(m_BranchLikelySkipLabel);
+}
+
+void CX64RecompilerOps::BindPendingBranchLikelyLabel() {
+    if (!m_HasPendingBranchLikelySkip) return;
+    auto& a = m_Assembler->GetAssembler();
+    a.bind(m_BranchLikelySkipLabel);
+    m_HasPendingBranchLikelySkip = false;
+}
+
+void CX64RecompilerOps::EmitPipelineStageCheck() {
+    auto& a = m_Assembler->GetAssembler();
+
+    // cmp byte [r13], PipelineStage::Jump (6)   (r13 = &m_PipelineStage)
+    a.cmp(asmjit::x86::byte_ptr(asmjit::x86::r13),
+           static_cast<uint8_t>(N64Types::PipelineStage::Jump));
+    a.je(m_BlockExitLabel);
+}
+
+void CX64RecompilerOps::EmitDelaySlotSetup(uint32_t delaySlotAddr) {
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    m_Assembler->AddComment("  -> delay slot setup (fix BD/EPC)");
+
+    // The branch callback has already set m_PROGRAM_COUNTER = branch_target.
+    // We need to:
+    //   1. Save branch_target to m_JumpToLocation
+    //   2. Set m_PROGRAM_COUNTER = delay_slot_address
+    //   3. Set m_PipelineStage = Jump
+    // This way, if the delay slot faults, TriggerException sees:
+    //   BranchDelay = (PipelineStage == Jump) = true
+    //   EPC = m_PROGRAM_COUNTER - 4 = delaySlotAddr - 4 = branch_addr
+    //
+    // When no exception occurs, the delay slot's EmitPipelineStageCheck
+    // exits the block with PipelineStage == Jump.  The main loop then
+    // applies the jump: m_ProgramCounter = m_JumpToLocation = branch_target.
+
+    uint64_t pcAbsAddr = reinterpret_cast<uint64_t>(&m_Context.registers.m_PROGRAM_COUNTER);
+    uint64_t jumpAbsAddr = reinterpret_cast<uint64_t>(&m_Context.system.m_JumpToLocation);
+
+    // 1. m_JumpToLocation = m_PROGRAM_COUNTER (save branch target)
+    a.mov(rax, pcAbsAddr);
+    a.mov(rcx, qword_ptr(rax));       // rcx = m_PROGRAM_COUNTER (branch target)
+    a.mov(rax, jumpAbsAddr);
+    a.mov(qword_ptr(rax), rcx);       // m_JumpToLocation = branch target
+
+    // 2. m_PROGRAM_COUNTER = delaySlotAddr (sign-extended via imm32)
+    a.mov(rax, pcAbsAddr);
+    a.mov(qword_ptr(rax), static_cast<int32_t>(delaySlotAddr));
+
+    // 3. m_PipelineStage = Jump  (r13 = &m_PipelineStage)
+    a.mov(byte_ptr(r13), static_cast<uint8_t>(N64Types::PipelineStage::Jump));
+}
+
+// Static helper called from emitted code when COP1 is not usable
+static void TriggerCop1UnusableException(CRegisters* regs) {
+    regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
+}
+
+void CX64RecompilerOps::EmitCop1UsableCheck() {
+    // Check if COP1 (FPU) is usable. If STATUS_REGISTER.CU1 == 0,
+    // trigger a Coprocessor Unusable exception and exit the block.
+    // This matches the interpreter's TestCop1UsableException() which
+    // the N64 OS uses for lazy FP context management.
+    if (!m_CurrentContext || m_BlockEnded) return;
+
+    auto& a = m_Assembler->GetAssembler();
+    // Compute STATUS_REGISTER offset from CRegisters base (RBX)
+    int32_t statusOff = static_cast<int32_t>(
+        reinterpret_cast<uintptr_t>(&m_Context.registers.STATUS_REGISTER) -
+        reinterpret_cast<uintptr_t>(&m_Context.registers));
+
+    // test dword [rbx + statusOff], STATUS_CU1 (0x20000000)
+    a.test(asmjit::x86::dword_ptr(asmjit::x86::rbx, statusOff),
+           static_cast<int32_t>(0x20000000));
+    asmjit::Label cu1Ok = a.new_label();
+    a.jnz(cu1Ok);
+
+    // CU1 not set — store correct PC for EPC computation
+    EmitPCUpdate();
+
+    // Call TriggerCop1UnusableException(&registers)
+    // RBX = &CRegisters
+    a.mov(asmjit::x86::rcx, asmjit::x86::rbx);
+    a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&TriggerCop1UnusableException));
+    a.call(asmjit::x86::rax);
+
+    // Decrement timer for this instruction (interpreter decrements NextTimer
+    // even for exception-triggering instructions)
+    EmitTimerDecrement();
+
+    // Exit block — PipelineStage is now Jump, recompiler will handle it
+    a.jmp(m_BlockExitLabel);
+
+    a.bind(cu1Ok);
+}
+
+void CX64RecompilerOps::EmitTimerDecrement() {
+    auto& a = m_Assembler->GetAssembler();
+    uint32_t countPerOp = m_Context.system.CountPerOp();
+
+    // sub dword ptr [r14], countPerOp   (r14 = &m_NextTimer)
+    a.sub(asmjit::x86::dword_ptr(asmjit::x86::r14),
+          static_cast<int32_t>(countPerOp));
+}
+
+void CX64RecompilerOps::EmitPCUpdate() {
+    if (m_CurrentContext && !m_BlockEnded) {
+        auto& a = m_Assembler->GetAssembler();
+        // mov qword [rbx + offsetof(m_PROGRAM_COUNTER)], sign_extend(instrPC)
+        // RBX = &CRegisters, m_PROGRAM_COUNTER is at offset 0
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
+              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+              static_cast<int32_t>(m_CurrentContext->virtualAddress));
+    }
 }
 
 // =============================================================================
@@ -1512,7 +2040,34 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
     // Dispatch by primary opcode
     switch (op.Rtype.op) {
     case R4300_SPECIAL: {
-        // Decode SPECIAL by funct field
+#if FORCE_CALLBACK_SPECIAL
+        // Binary-search: route ALL SPECIAL ALU/shift/logic to interpreter callback
+        {
+            uint32_t funct = mips_funct(opcVal);
+            // JR, JALR, SYSCALL, BREAK, SYNC, traps still use their own paths
+            if (funct == R4300_S_JR)          { SPECIAL_JR(); }
+            else if (funct == R4300_S_JALR)   { SPECIAL_JALR(); }
+            else if (funct == R4300_S_SYSCALL){ SPECIAL_SYSCALL(); }
+            else if (funct == R4300_S_BREAK)  { SPECIAL_BREAK(); }
+            else if (funct == R4300_S_SYNC)   { SPECIAL_SYNC(); }
+            else if (funct >= 0x30 && funct <= 0x36) {
+                // Trap instructions
+                switch (funct) {
+                case R4300_S_TGE:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal); break;
+                case R4300_S_TGEU: EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal); break;
+                case R4300_S_TLT:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal); break;
+                case R4300_S_TLTU: EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal); break;
+                case R4300_S_TEQ:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal); break;
+                case R4300_S_TNE:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal); break;
+                default: UnknownOpcode(); break;
+                }
+            } else {
+                m_Assembler->AddComment("SPECIAL via callback");
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
+            }
+        }
+#else
+        // Decode SPECIAL by funct field (inline x64)
         switch (mips_funct(opcVal)) {
         case R4300_S_SLL:    SPECIAL_SLL(); break;
         case R4300_S_SRL:    SPECIAL_SRL(); break;
@@ -1554,12 +2109,12 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         case R4300_S_DADDU:  SPECIAL_DADDU(); break;
         case R4300_S_DSUB:   SPECIAL_DSUB(); break;
         case R4300_S_DSUBU:  SPECIAL_DSUBU(); break;
-        case R4300_S_TGE:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal); break;
-        case R4300_S_TGEU:   EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal); break;
-        case R4300_S_TLT:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal); break;
-        case R4300_S_TLTU:   EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal); break;
-        case R4300_S_TEQ:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal); break;
-        case R4300_S_TNE:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal); break;
+        case R4300_S_TGE:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal); break;
+        case R4300_S_TGEU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal); break;
+        case R4300_S_TLT:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal); break;
+        case R4300_S_TLTU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal); break;
+        case R4300_S_TEQ:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal); break;
+        case R4300_S_TNE:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal); break;
         case R4300_S_DSLL:   SPECIAL_DSLL(); break;
         case R4300_S_DSRL:   SPECIAL_DSRL(); break;
         case R4300_S_DSRA:   SPECIAL_DSRA(); break;
@@ -1568,34 +2123,81 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         case R4300_S_DSRA32: SPECIAL_DSRA32(); break;
         default: UnknownOpcode(); break;
         }
+#endif
         break;
     }
     case R4300_REGIMM: {
+#if FORCE_CALLBACK_BRANCH
+        {
+            uint32_t rt_field = op.Itype.rt;
+            // Trap instructions stay as-is; branches route to callbacks
+            switch (rt_field) {
+            case R4300_R_BLTZ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case R4300_R_BGEZ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case R4300_R_BLTZL:   BLTZL_Compare_Likely(); break;
+            case R4300_R_BGEZL:   BGEZL_Compare_Likely(); break;
+            case R4300_R_TGEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal); break;
+            case R4300_R_TGEIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal); break;
+            case R4300_R_TLTI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal); break;
+            case R4300_R_TLTIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal); break;
+            case R4300_R_TEQI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal); break;
+            case R4300_R_TNEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal); break;
+            case R4300_R_BLTZAL:  EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZAL_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case R4300_R_BGEZAL:  EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZAL_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case R4300_R_BLTZALL: BLTZALL_Compare_Likely(); break;
+            case R4300_R_BGEZALL: BGEZALL_Compare_Likely(); break;
+            default: UnknownOpcode(); break;
+            }
+        }
+#else
         switch (op.Itype.rt) {
         case R4300_R_BLTZ:    BLTZ_Compare(); break;
         case R4300_R_BGEZ:    BGEZ_Compare(); break;
-        case R4300_R_BLTZL:   BLTZ_Compare(); break;
-        case R4300_R_BGEZL:   BGEZ_Compare(); break;
-        case R4300_R_TGEI:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal); break;
-        case R4300_R_TGEIU:   EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal); break;
-        case R4300_R_TLTI:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal); break;
-        case R4300_R_TLTIU:   EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal); break;
-        case R4300_R_TEQI:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal); break;
-        case R4300_R_TNEI:    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal); break;
+        case R4300_R_BLTZL:   BLTZL_Compare_Likely(); break;
+        case R4300_R_BGEZL:   BGEZL_Compare_Likely(); break;
+        case R4300_R_TGEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal); break;
+        case R4300_R_TGEIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal); break;
+        case R4300_R_TLTI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal); break;
+        case R4300_R_TLTIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal); break;
+        case R4300_R_TEQI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal); break;
+        case R4300_R_TNEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal); break;
         case R4300_R_BLTZAL:  BLTZAL_Compare(); break;
         case R4300_R_BGEZAL:  BGEZAL_Compare(); break;
-        case R4300_R_BLTZALL: BLTZAL_Compare(); break;
-        case R4300_R_BGEZALL: BGEZAL_Compare(); break;
+        case R4300_R_BLTZALL: BLTZALL_Compare_Likely(); break;
+        case R4300_R_BGEZALL: BGEZALL_Compare_Likely(); break;
         default: UnknownOpcode(); break;
         }
+#endif
         break;
     }
+#if FORCE_CALLBACK_JUMP
+    case R4300_J:      EmitBranchCallback(reinterpret_cast<void*>(&Interp_J_Jump), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_JAL:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JAL_Jump), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+#else
     case R4300_J:      J(); break;
     case R4300_JAL:    JAL(); break;
+#endif
+#if FORCE_CALLBACK_BRANCH
+    case R4300_BEQ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BEQ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_BNE:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BNE_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_BLEZ:   EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLEZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_BGTZ:   EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGTZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+#else
     case R4300_BEQ:    BEQ_Compare(); break;
     case R4300_BNE:    BNE_Compare(); break;
     case R4300_BLEZ:   BLEZ_Compare(); break;
     case R4300_BGTZ:   BGTZ_Compare(); break;
+#endif
+#if FORCE_CALLBACK_IMM
+    case R4300_ADDI:   m_Assembler->AddComment("ADDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_ADDIU:  m_Assembler->AddComment("ADDIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_SLTI:   m_Assembler->AddComment("SLTI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_SLTIU:  m_Assembler->AddComment("SLTIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_ANDI:   m_Assembler->AddComment("ANDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_ORI:    m_Assembler->AddComment("ORI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_XORI:   m_Assembler->AddComment("XORI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_LUI:    m_Assembler->AddComment("LUI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+#else
     case R4300_ADDI:   ADDI(); break;
     case R4300_ADDIU:  ADDIU(); break;
     case R4300_SLTI:   SLTI(); break;
@@ -1604,6 +2206,7 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
     case R4300_ORI:    ORI(); break;
     case R4300_XORI:   XORI(); break;
     case R4300_LUI:    LUI(); break;
+#endif
     case R4300_COP0: {
         switch (mips_rs(opcVal)) {
         case R4300_COP0_MF:  COP0_MF(); break;
@@ -1629,6 +2232,7 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         break;
     }
     case R4300_COP1: {
+        EmitCop1UsableCheck();
         switch (mips_rs(opcVal)) {
         case R4300_COP1_MF:  COP1_MF(); break;
         case R4300_COP1_DMF: COP1_DMF(); break;
@@ -1638,10 +2242,15 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         case R4300_COP1_CT:  COP1_CT(); break;
         case R4300_COP1_BC: {
             switch (op.Itype.rt & 3) {
-            case 0: COP1_BCF_Compare(); break;  // BC1F
-            case 1: COP1_BCF_Compare(); break;  // BC1FL
-            case 2: COP1_BCT_Compare(); break;  // BC1T
-            case 3: COP1_BCT_Compare(); break;  // BC1TL
+#if FORCE_CALLBACK_BRANCH
+            case 0: EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1F_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case 1: EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1T_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+#else
+            case 0: COP1_BCF_Compare(); break;      // BC1F
+            case 1: COP1_BCT_Compare(); break;      // BC1T
+#endif
+            case 2: BC1FL_Compare_Likely(); break;   // BC1FL
+            case 3: BC1TL_Compare_Likely(); break;   // BC1TL
             default: UnknownOpcode(); break;
             }
             break;
@@ -1712,12 +2321,17 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         }
         break;
     }
-    case R4300_BEQL:   BEQ_Compare(); break;
-    case R4300_BNEL:   BNE_Compare(); break;
-    case R4300_BLEZL:  BLEZ_Compare(); break;
-    case R4300_BGTZL:  BGTZ_Compare(); break;
+    case R4300_BEQL:   BEQL_Compare_Likely(); break;
+    case R4300_BNEL:   BNEL_Compare_Likely(); break;
+    case R4300_BLEZL:  BLEZL_Compare_Likely(); break;
+    case R4300_BGTZL:  BGTZL_Compare_Likely(); break;
+#if FORCE_CALLBACK_IMM
+    case R4300_DADDI:  m_Assembler->AddComment("DADDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_DADDIU: m_Assembler->AddComment("DADDIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+#else
     case R4300_DADDI:  DADDI(); break;
     case R4300_DADDIU: DADDIU(); break;
+#endif
     case R4300_LDL:    LDL(); break;
     case R4300_LDR:    LDR(); break;
     case R4300_LB:     LB(); break;
@@ -1737,12 +2351,14 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
     case R4300_SWR:    SWR(); break;
     case R4300_CACHE:  CACHE(); break;
     case R4300_LL:     LL(); break;
-    case R4300_LWC1:   LWC1(); break;
-    case R4300_LDC1:   LDC1(); break;
+    case R4300_LLD:    LLD(); break;
+    case R4300_LWC1:   EmitCop1UsableCheck(); LWC1(); break;
+    case R4300_LDC1:   EmitCop1UsableCheck(); LDC1(); break;
     case R4300_LD:     LD(); break;
     case R4300_SC:     SC(); break;
-    case R4300_SWC1:   SWC1(); break;
-    case R4300_SDC1:   SDC1(); break;
+    case R4300_SCD:    SCD(); break;
+    case R4300_SWC1:   EmitCop1UsableCheck(); SWC1(); break;
+    case R4300_SDC1:   EmitCop1UsableCheck(); SDC1(); break;
     case R4300_SD:     SD(); break;
     default: UnknownOpcode(); break;
     }
@@ -1896,10 +2512,32 @@ void CX64RecompilerOps::SetOptimizationLevel(OptimizationLevel level) noexcept
 void CX64RecompilerOps::EnterCodeBlock()
 {
     auto& a = m_Assembler->GetAssembler();
-    m_Assembler->AddComment("=== Block Entry ===");
+    m_Assembler->AddComment("=== Block Entry (True JIT) ===");
 
-    // Emit function prologue: save callee-saved registers and set up stack frame
-    m_Assembler->EmitPrologue(128, 0);
+    // Custom prologue: save all callee-saved regs we use and set up base pointers
+    using namespace asmjit::x86;
+    a.push(rbp);
+    a.mov(rbp, rsp);
+    a.push(rbx);
+    a.push(r12);
+    a.push(r13);
+    a.push(r14);
+    a.push(r15);
+    // Allocate shadow space (32 bytes) + alignment (8 bytes) = 40
+    // 6 pushes (48) + ret addr (8) + 40 = 96 bytes → 16-aligned
+    a.sub(rsp, 40);
+
+    // RBX = pointer to CRegisters (base for m_GPR, m_HI, m_LO, etc.)
+    a.mov(rbx, reinterpret_cast<uint64_t>(&m_Context.registers));
+    // R12 = pointer to MipsMemoryVM (for memory ops)
+    a.mov(r12, reinterpret_cast<uint64_t>(&m_Context.mmu));
+    // R13 = pointer to pipelineStage (for exception checks)
+    a.mov(r13, reinterpret_cast<uint64_t>(&m_Context.system.m_PipelineStage));
+    // R14 = pointer to m_NextTimer
+    a.mov(r14, reinterpret_cast<uint64_t>(&m_Context.system.m_NextTimer));
+
+    // Create exit label for early exit on exception
+    m_BlockExitLabel = a.new_label();
 
     m_BlockEnded = false;
     m_Stats.codeSizeGenerated = 0;
@@ -1908,13 +2546,25 @@ void CX64RecompilerOps::EnterCodeBlock()
 void CX64RecompilerOps::ExitCodeBlock(ExitReason reason)
 {
     auto& a = m_Assembler->GetAssembler();
-    m_Assembler->AddComment("=== Block Exit ===");
+    using namespace asmjit::x86;
+
+    // Bind the exit label so that pipeline-stage checks can jump here
+    a.bind(m_BlockExitLabel);
+
+    m_Assembler->AddComment("=== Block Exit (True JIT) ===");
 
     // Flush all cached registers back to memory
     m_RegisterSet->FlushRegisters(true);
 
-    // Emit function epilogue: restore callee-saved registers and return
-    m_Assembler->EmitEpilogue(128, 0);
+    // Custom epilogue: restore callee-saved regs
+    a.add(rsp, 40);
+    a.pop(r15);
+    a.pop(r14);
+    a.pop(r13);
+    a.pop(r12);
+    a.pop(rbx);
+    a.pop(rbp);
+    a.ret();
 
     m_BlockEnded = true;
 }
@@ -2084,12 +2734,14 @@ TranslationResult CX64RecompilerOps::HandleJump(const TranslationContext& /*ctx*
 
 TranslationResult CX64RecompilerOps::HandleTrap(const TranslationContext& ctx)
 {
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
 TranslationResult CX64RecompilerOps::HandleSystem(const TranslationContext& ctx)
 {
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), ctx.opcode.Value);
     return TranslationResult::Success;
 }
@@ -2166,11 +2818,13 @@ TranslationResult CX64RecompilerOps::HandleSPECIAL_JALR(const TranslationContext
 }
 
 TranslationResult CX64RecompilerOps::HandleSPECIAL_SYSCALL(const TranslationContext& ctx) {
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), ctx.opcode.Value);
     return TranslationResult::BlockBoundary;
 }
 
 TranslationResult CX64RecompilerOps::HandleSPECIAL_BREAK(const TranslationContext& ctx) {
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), ctx.opcode.Value);
     return TranslationResult::BlockBoundary;
 }
@@ -2445,17 +3099,219 @@ void CX64RecompilerOps::RedundantMoveElimination()
 }
 
 // =============================================================================
-// Private - Branch Comparison Instructions
+// Private - Branch Comparison Instructions (True JIT - Inline x64)
 // =============================================================================
 
-// Each branch compare method emits a callback that evaluates the condition
-// and sets m_PROGRAM_COUNTER at runtime, then marks the block as ended.
+// JIT offset helpers (used here and in SPECIAL/Immediate sections below)
+#ifndef JIT_GPR
+#define JIT_GPR(reg) (static_cast<int32_t>(offsetof(CRegisters, m_GPR)) + static_cast<int32_t>((reg) * sizeof(MipsRegisterType)))
+#define JIT_HI      static_cast<int32_t>(offsetof(CRegisters, m_HI))
+#define JIT_LO      static_cast<int32_t>(offsetof(CRegisters, m_LO))
+#define JIT_PC      static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))
+#define JIT_FPCR(r) (static_cast<int32_t>(offsetof(CRegisters, m_FPCR)) + (r) * 4)
+#endif
 
-#define DEFINE_BRANCH_COMPARE_IMPL(name, callback_fn) \
-    void CX64RecompilerOps::name##_Compare() { \
+void CX64RecompilerOps::BEQ_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BEQ");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.cmp(rcx, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmove(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BNE_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BNE");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.cmp(rcx, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovne(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BGTZ_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BGTZ");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovg(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BLEZ_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BLEZ");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovle(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BLTZ_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BLTZ");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovs(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BGEZ_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BGEZ");
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovns(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BLTZAL_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BLTZAL");
+    // Always write return address to GPR[31]
+    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovs(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::BGEZAL_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BGEZAL");
+    // Always write return address to GPR[31]
+    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.test(rcx, rcx);
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovns(rax, rdx);
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::COP1_BCF_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BC1F");
+    // Branch if FP condition is false (FPCSR_C bit NOT set)
+    a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovz(rax, rdx);  // if FPCSR_C not set → taken
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+void CX64RecompilerOps::COP1_BCT_Compare() {
+    if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
+    int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
+    int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    m_Assembler->AddComment("BC1T");
+    // Branch if FP condition is true (FPCSR_C bit set)
+    a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
+    a.mov(rax, notTakenPC);
+    a.mov(rdx, takenPC);
+    a.cmovnz(rax, rdx);  // if FPCSR_C set → taken
+    a.mov(qword_ptr(rbx, JIT_PC), rax);
+    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+}
+
+// Branch-likely compare methods: use EmitBranchLikelyCallback which returns
+// taken/not-taken and emits a conditional jz to skip the delay slot.
+#define DEFINE_BRANCH_LIKELY_COMPARE_IMPL(name, callback_fn) \
+    void CX64RecompilerOps::name##_Compare_Likely() { \
         if (!m_CurrentContext) return; \
-        m_Assembler->AddComment(#name); \
-        EmitBranchCallback(reinterpret_cast<void*>(&callback_fn), \
+        m_Assembler->AddComment(#name "_Likely"); \
+        EmitBranchLikelyCallback(reinterpret_cast<void*>(&callback_fn), \
                            m_CurrentContext->opcode.Value, \
                            m_CurrentContext->virtualAddress); \
         m_Stats.branchesTranslated++; \
@@ -2463,28 +3319,32 @@ void CX64RecompilerOps::RedundantMoveElimination()
         m_BlockEnded = true; \
     }
 
-DEFINE_BRANCH_COMPARE_IMPL(BNE, Interp_BNE_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BEQ, Interp_BEQ_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BGTZ, Interp_BGTZ_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BLEZ, Interp_BLEZ_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BLTZ, Interp_BLTZ_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BGEZ, Interp_BGEZ_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BLTZAL, Interp_BLTZAL_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(BGEZAL, Interp_BGEZAL_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(COP1_BCF, Interp_BC1F_Branch)
-DEFINE_BRANCH_COMPARE_IMPL(COP1_BCT, Interp_BC1T_Branch)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BEQL, Interp_BEQL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BNEL, Interp_BNEL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BLEZL, Interp_BLEZL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BGTZL, Interp_BGTZL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BLTZL, Interp_BLTZL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BGEZL, Interp_BGEZL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BLTZALL, Interp_BLTZALL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BGEZALL, Interp_BGEZALL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BC1FL, Interp_BC1FL_BranchLikely)
+DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BC1TL, Interp_BC1TL_BranchLikely)
 
 // =============================================================================
-// Private - Jump Instructions
+// Private - Jump Instructions (True JIT - Inline x64)
 // =============================================================================
 
 void CX64RecompilerOps::J()
 {
     if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     m_Assembler->AddComment("J");
-    EmitBranchCallback(reinterpret_cast<void*>(&Interp_J_Jump),
-                       m_CurrentContext->opcode.Value,
-                       m_CurrentContext->virtualAddress);
+    // PC = sign_extend(target)
+    a.mov(qword_ptr(rbx, JIT_PC), static_cast<int32_t>(target));
     m_Stats.branchesTranslated++;
     m_Stats.categories.control++;
     m_BlockEnded = true;
@@ -2493,39 +3353,183 @@ void CX64RecompilerOps::J()
 void CX64RecompilerOps::JAL()
 {
     if (!m_CurrentContext) return;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t pc = m_CurrentContext->virtualAddress;
+    uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     m_Assembler->AddComment("JAL");
-    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JAL_Jump),
-                       m_CurrentContext->opcode.Value,
-                       m_CurrentContext->virtualAddress);
+    // GPR[31] = sign_extend(pc + 8) — return address
+    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    // PC = sign_extend(target)
+    a.mov(qword_ptr(rbx, JIT_PC), static_cast<int32_t>(target));
     m_Stats.branchesTranslated++;
     m_Stats.categories.control++;
     m_BlockEnded = true;
 }
 
 // =============================================================================
-// Private - Immediate Arithmetic Instructions
+// Private - Immediate Arithmetic Instructions (True JIT - Inline x64)
 // =============================================================================
 
-#define DEFINE_ALU_IMM(name, callback, category) \
-    void CX64RecompilerOps::name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment(#name); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.instructionsTranslated++; \
-        m_Stats.categories.category++; \
-    }
+void CX64RecompilerOps::ADDI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("ADDI");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.add(eax, static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
 
-DEFINE_ALU_IMM(ADDI, ADDI, arithmetic)
-DEFINE_ALU_IMM(ADDIU, ADDIU, arithmetic)
-DEFINE_ALU_IMM(SLTI, SLTI, arithmetic)
-DEFINE_ALU_IMM(SLTIU, SLTIU, arithmetic)
-DEFINE_ALU_IMM(ANDI, ANDI, logical)
-DEFINE_ALU_IMM(ORI, ORI, logical)
-DEFINE_ALU_IMM(XORI, XORI, logical)
-DEFINE_ALU_IMM(LUI, LUI, arithmetic)
-DEFINE_ALU_IMM(DADDI, DADDI, arithmetic)
-DEFINE_ALU_IMM(DADDIU, DADDIU, arithmetic)
+void CX64RecompilerOps::ADDIU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("ADDIU");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.add(eax, static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SLTI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SLTI");
+    // rs (signed 64-bit) < sign_extend(imm16) ?
+    int64_t immSext = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.mov(rcx, immSext);
+    a.cmp(rax, rcx);
+    a.setl(al);
+    a.movzx(eax, al);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SLTIU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SLTIU");
+    // rs (unsigned 64-bit) < sign_extend_then_cast_unsigned(imm16) ?
+    uint64_t immSext = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm)));
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.mov(rcx, immSext);
+    a.cmp(rax, rcx);
+    a.setb(al);
+    a.movzx(eax, al);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::ANDI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("ANDI");
+    // ANDI zero-extends the immediate (no sign extension)
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.and_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::ORI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("ORI");
+    // ORI zero-extends the immediate
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.or_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::XORI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("XORI");
+    // XORI zero-extends the immediate
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.xor_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::LUI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("LUI");
+    // LUI: rt = sign_extend(imm << 16)
+    int32_t val = static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)) << 16;
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), static_cast<int32_t>(val));
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::DADDI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("DADDI");
+    int64_t immSext = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.mov(rcx, immSext);
+    a.add(rax, rcx);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::DADDIU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    R4300iOps op; op.Value = opcVal;
+    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("DADDIU");
+    int64_t immSext = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
+    a.mov(rcx, immSext);
+    a.add(rax, rcx);
+    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
 
 // =============================================================================
 // Private - Load Instructions
@@ -2553,6 +3557,7 @@ DEFINE_LOAD(LD, LD)
 DEFINE_LOAD(LDL, LDL)
 DEFINE_LOAD(LDR, LDR)
 DEFINE_LOAD(LL, LL)
+DEFINE_LOAD(LLD, LLD)
 DEFINE_LOAD(LWC1, LWC1)
 DEFINE_LOAD(LDC1, LDC1)
 
@@ -2579,71 +3584,601 @@ DEFINE_STORE(SD, SD)
 DEFINE_STORE(SDL, SDL)
 DEFINE_STORE(SDR, SDR)
 DEFINE_STORE(SC, SC)
+DEFINE_STORE(SCD, SCD)
 DEFINE_STORE(SWC1, SWC1)
 DEFINE_STORE(SDC1, SDC1)
 
 void CX64RecompilerOps::CACHE()
 {
+    if (!m_CurrentContext) return;
     m_Assembler->AddComment("CACHE");
-    // CACHE is an architecture hint - treated as NOP for correctness
+    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_CACHE),
+                       m_CurrentContext->opcode.Value);
     m_Stats.instructionsTranslated++;
 }
 
 // =============================================================================
-// Private - SPECIAL Format Instructions
+// Private - SPECIAL Format Instructions (True JIT - Inline x64)
 // =============================================================================
 
-#define DEFINE_SPECIAL(name, callback, category) \
-    void CX64RecompilerOps::SPECIAL_##name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment("SPECIAL_" #name); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.instructionsTranslated++; \
-        m_Stats.categories.category++; \
-    }
+// --- 32-bit Shift Instructions ---
 
-DEFINE_SPECIAL(SLL, SLL, shift)
-DEFINE_SPECIAL(SRL, SRL, shift)
-DEFINE_SPECIAL(SRA, SRA, shift)
-DEFINE_SPECIAL(SLLV, SLLV, shift)
-DEFINE_SPECIAL(SRLV, SRLV, shift)
-DEFINE_SPECIAL(SRAV, SRAV, shift)
-DEFINE_SPECIAL(MFHI, MFHI, arithmetic)
-DEFINE_SPECIAL(MTHI, MTHI, arithmetic)
-DEFINE_SPECIAL(MFLO, MFLO, arithmetic)
-DEFINE_SPECIAL(MTLO, MTLO, arithmetic)
-DEFINE_SPECIAL(DSLLV, DSLLV, shift)
-DEFINE_SPECIAL(DSRLV, DSRLV, shift)
-DEFINE_SPECIAL(DSRAV, DSRAV, shift)
-DEFINE_SPECIAL(MULT, MULT, arithmetic)
-DEFINE_SPECIAL(MULTU, MULTU, arithmetic)
-DEFINE_SPECIAL(DIV, DIV, arithmetic)
-DEFINE_SPECIAL(DIVU, DIVU, arithmetic)
-DEFINE_SPECIAL(DMULT, DMULT, arithmetic)
-DEFINE_SPECIAL(DMULTU, DMULTU, arithmetic)
-DEFINE_SPECIAL(DDIV, DDIV, arithmetic)
-DEFINE_SPECIAL(DDIVU, DDIVU, arithmetic)
-DEFINE_SPECIAL(ADD, ADD, arithmetic)
-DEFINE_SPECIAL(ADDU, ADDU, arithmetic)
-DEFINE_SPECIAL(SUB, SUB, arithmetic)
-DEFINE_SPECIAL(SUBU, SUBU, arithmetic)
-DEFINE_SPECIAL(AND, AND, logical)
-DEFINE_SPECIAL(OR, OR, logical)
-DEFINE_SPECIAL(XOR, XOR, logical)
-DEFINE_SPECIAL(NOR, NOR, logical)
-DEFINE_SPECIAL(SLT, SLT, arithmetic)
-DEFINE_SPECIAL(SLTU, SLTU, arithmetic)
-DEFINE_SPECIAL(DADD, DADD, arithmetic)
-DEFINE_SPECIAL(DADDU, DADDU, arithmetic)
-DEFINE_SPECIAL(DSUB, DSUB, arithmetic)
-DEFINE_SPECIAL(DSUBU, DSUBU, arithmetic)
-DEFINE_SPECIAL(DSLL, DSLL, shift)
-DEFINE_SPECIAL(DSRL, DSRL, shift)
-DEFINE_SPECIAL(DSRA, DSRA, shift)
-DEFINE_SPECIAL(DSLL32, DSLL32, shift)
-DEFINE_SPECIAL(DSRL32, DSRL32, shift)
-DEFINE_SPECIAL(DSRA32, DSRA32, shift)
+void CX64RecompilerOps::SPECIAL_SLL() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SLL");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.shl(eax, sa);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_SRL() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SRL");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.shr(eax, sa);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_SRA() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SRA");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.sar(eax, sa);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+// --- 32-bit Variable Shift Instructions ---
+
+void CX64RecompilerOps::SPECIAL_SLLV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SLLV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x1F);
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shl(eax, cl);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_SRLV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SRLV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x1F);
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shr(eax, cl);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_SRAV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SRAV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x1F);
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.sar(eax, cl);
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+// --- HI/LO Move Instructions ---
+
+void CX64RecompilerOps::SPECIAL_MFHI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MFHI");
+    a.mov(rax, qword_ptr(rbx, JIT_HI));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_MTHI() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MTHI");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_HI), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_MFLO() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MFLO");
+    a.mov(rax, qword_ptr(rbx, JIT_LO));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_MTLO() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MTLO");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_LO), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// --- 64-bit Variable Shift Instructions ---
+
+void CX64RecompilerOps::SPECIAL_DSLLV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSLLV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x3F);
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shl(rax, cl);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRLV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRLV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x3F);
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shr(rax, cl);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRAV() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRAV");
+    a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(ecx, 0x3F);
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.sar(rax, cl);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+// --- Multiply Instructions (inline 32-bit, callback for 64-bit) ---
+
+void CX64RecompilerOps::SPECIAL_MULT() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MULT");
+    // signed 32x32 -> 64: edx:eax = sign(rs.lo32) * sign(rt.lo32)
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.imul(dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    // LO = sign_extend(eax), HI = sign_extend(edx)
+    a.movsxd(rcx, eax);
+    a.mov(qword_ptr(rbx, JIT_LO), rcx);
+    a.movsxd(rcx, edx);
+    a.mov(qword_ptr(rbx, JIT_HI), rcx);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_MULTU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_MULTU");
+    // unsigned 32x32 -> 64: edx:eax = uns(rs.lo32) * uns(rt.lo32)
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.mul(dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    // LO = sign_extend(eax), HI = sign_extend(edx)
+    a.movsxd(rcx, eax);
+    a.mov(qword_ptr(rbx, JIT_LO), rcx);
+    a.movsxd(rcx, edx);
+    a.mov(qword_ptr(rbx, JIT_HI), rcx);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// DIV/DIVU/DMULT/DMULTU/DDIV/DDIVU: keep as interpreter callbacks (edge cases / 128-bit)
+void CX64RecompilerOps::SPECIAL_DIV() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DIV");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DIV), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+void CX64RecompilerOps::SPECIAL_DIVU() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DIVU");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DIVU), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+void CX64RecompilerOps::SPECIAL_DMULT() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DMULT");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DMULT), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+void CX64RecompilerOps::SPECIAL_DMULTU() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DMULTU");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DMULTU), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+void CX64RecompilerOps::SPECIAL_DDIV() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DDIV");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DDIV), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+void CX64RecompilerOps::SPECIAL_DDIVU() {
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("SPECIAL_DDIVU");
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DDIVU), m_CurrentContext->opcode.Value);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// --- 32-bit ALU Instructions ---
+
+void CX64RecompilerOps::SPECIAL_ADD() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_ADD");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.add(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_ADDU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_ADDU");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.add(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_SUB() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SUB");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.sub(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_SUBU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SUBU");
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.sub(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// --- 64-bit Logic Instructions ---
+
+void CX64RecompilerOps::SPECIAL_AND() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_AND");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.and_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::SPECIAL_OR() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_OR");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.or_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::SPECIAL_XOR() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_XOR");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.xor_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+void CX64RecompilerOps::SPECIAL_NOR() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_NOR");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.or_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.not_(rax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+}
+
+// --- Set-Less-Than Instructions ---
+
+void CX64RecompilerOps::SPECIAL_SLT() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SLT");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.cmp(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.setl(al);
+    a.movzx(eax, al);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_SLTU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_SLTU");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.cmp(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.setb(al);
+    a.movzx(eax, al);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// --- 64-bit ALU Instructions ---
+
+void CX64RecompilerOps::SPECIAL_DADD() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DADD");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.add(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_DADDU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DADDU");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.add(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSUB() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSUB");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.sub(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSUBU() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSUBU");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    a.sub(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+}
+
+// --- 64-bit Shift Instructions ---
+
+void CX64RecompilerOps::SPECIAL_DSLL() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSLL");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.shl(rax, sa);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRL() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRL");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.shr(rax, sa);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRA() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRA");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    uint32_t sa = mips_sa(opcVal);
+    if (sa != 0) a.sar(rax, sa);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSLL32() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSLL32");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shl(rax, mips_sa(opcVal) + 32);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRL32() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRL32");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.shr(rax, mips_sa(opcVal) + 32);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
+
+void CX64RecompilerOps::SPECIAL_DSRA32() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rd = mips_rd(opcVal);
+    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+    m_Assembler->AddComment("SPECIAL_DSRA32");
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.sar(rax, mips_sa(opcVal) + 32);
+    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+}
 
 void CX64RecompilerOps::SPECIAL_JR()
 {
@@ -2673,6 +4208,7 @@ void CX64RecompilerOps::SPECIAL_SYSCALL()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_SYSCALL");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.system++;
@@ -2683,6 +4219,7 @@ void CX64RecompilerOps::SPECIAL_BREAK()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_BREAK");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.system++;
@@ -2722,6 +4259,7 @@ void CX64RecompilerOps::COP0_MT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_MT");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MTC0),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
@@ -2731,6 +4269,7 @@ void CX64RecompilerOps::COP0_DMT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_DMT");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMTC0),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
@@ -2776,8 +4315,23 @@ void CX64RecompilerOps::COP0_CO_ERET()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_ERET");
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_CO_ERET),
-                         m_CurrentContext->opcode.Value);
+    // ERET needs CN64System* to set m_TestTimer, so use system callback pattern
+    {
+        auto& a = m_Assembler->GetAssembler();
+        using namespace asmjit::x86;
+        m_Assembler->AddComment("  -> ERET callback");
+        m_RegisterSet->FlushRegisters(true);
+#ifdef _WIN32
+        a.mov(rcx, reinterpret_cast<uint64_t>(&m_Context.registers));
+        a.mov(rdx, reinterpret_cast<uint64_t>(&m_Context.system));
+        a.mov(r8d, m_CurrentContext->opcode.Value);
+#else
+        a.mov(rdi, reinterpret_cast<uint64_t>(&m_Context.registers));
+        a.mov(rsi, reinterpret_cast<uint64_t>(&m_Context.system));
+        a.mov(edx, m_CurrentContext->opcode.Value);
+#endif
+        m_Assembler->EmitCall(reinterpret_cast<void*>(&Interp_COP0_CO_ERET));
+    }
     m_Stats.categories.coprocessor++;
     m_BlockEnded = true;
 }
@@ -2835,6 +4389,7 @@ void CX64RecompilerOps::COP1_CT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_CT");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CTC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;

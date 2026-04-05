@@ -1,3 +1,7 @@
+/**
+ * @file Span.hpp
+ * @brief Span declarations and types.
+ */
 #pragma once
 #include <cstddef>
 #include <type_traits>

@@ -1,3 +1,7 @@
+/**
+ * @file GLRenderer.cpp
+ * @brief OpenGL 4.6 Backend.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - OpenGL 4.6 Backend Implementation
 // Part 2: GLRenderer main class implementation
@@ -65,6 +69,13 @@ bool GLRenderer::Initialize(void* windowHandle, uint32_t width, uint32_t height)
 
     // Disable backface culling initially (N64 manages its own culling)
     glDisable(GL_CULL_FACE);
+
+    // Enable depth clamping — prevents the GPU from clipping geometry at the
+    // near/far planes.  N64 F3DZEX uses NoN (No Near-plane) mode, and our HLE
+    // vertex pipeline already handles W-plane clipping in software.  Without
+    // depth clamping, the GPU rejects geometry near z=0 and z=w that should
+    // be visible.
+    glEnable(GL_DEPTH_CLAMP);
 
     // Set viewport
     glViewport(0, 0, width, height);
@@ -158,6 +169,8 @@ void GLRenderer::SetBlendState(const BlendState& state) {
             TranslateBlendOp(state.colorOp),
             TranslateBlendOp(state.alphaOp)
         );
+        glBlendColor(state.blendColor[0], state.blendColor[1],
+                      state.blendColor[2], state.blendColor[3]);
         glColorMask(
             (state.colorWriteMask & 0x01) ? GL_TRUE : GL_FALSE,
             (state.colorWriteMask & 0x02) ? GL_TRUE : GL_FALSE,
@@ -340,6 +353,36 @@ void GLRenderer::BindRenderTarget(IRenderTarget* rt) {
     }
 }
 
+// ─── Image (MLE) Binding ───────────────────────────────────────────────────
+
+static GLenum TranslateImageFormat(ImageBindFormat fmt) {
+    switch (fmt) {
+        case ImageBindFormat::R32F:  return GL_R32F;
+        case ImageBindFormat::RGBA8: return GL_RGBA8;
+        case ImageBindFormat::R8UI:  return GL_R8UI;
+        default:                 return GL_RGBA8;
+    }
+}
+
+void GLRenderer::BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat format) {
+    glBindImageTexture(unit, static_cast<GLuint>(handle), 0, GL_FALSE, 0,
+                       GL_READ_WRITE, TranslateImageFormat(format));
+}
+
+void GLRenderer::UnbindAllImages() {
+    for (uint32_t i = 0; i < 4; ++i)
+        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
+}
+
+void GLRenderer::SetColorWriteMask(bool r, bool g, bool b, bool a) {
+    glColorMask(r ? GL_TRUE : GL_FALSE, g ? GL_TRUE : GL_FALSE,
+                b ? GL_TRUE : GL_FALSE, a ? GL_TRUE : GL_FALSE);
+}
+
+void GLRenderer::ImageMemoryBarrier() {
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
+}
+
 // ─── Drawing ───────────────────────────────────────────────────────────────
 
 void GLRenderer::Draw(const DrawCommand& cmd) {
@@ -458,6 +501,38 @@ void GLRenderer::QueryCapabilities() {
 
     // Bindless textures (optional extension)
     m_caps.supportsBindlessTextures = GLAD_GL_ARB_bindless_texture != 0;
+
+    // Fragment shader interlock (needed for MLE blender and N64 depth compare)
+    // Intel Iris Xe advertises the extension but the GLSL compiler rejects
+    // endInvocationInterlockARB inside flow control (if/for/while).
+    // Our generated shaders keep begin/end at the top level of main() so
+    // a simple probe (without flow control) is sufficient.
+    m_caps.supportsFragmentShaderInterlock = false;
+    if (GLAD_GL_ARB_fragment_shader_interlock || GLAD_GL_NV_fragment_shader_interlock) {
+        const char* testSrc =
+            "#version 460\n"
+            "#extension GL_ARB_fragment_shader_interlock : enable\n"
+            "layout(pixel_interlock_ordered) in;\n"
+            "layout(binding = 0, r32f) uniform restrict image2D uImg;\n"
+            "out vec4 fragColor;\n"
+            "void main() {\n"
+            "    beginInvocationInterlockARB();\n"
+            "    float v = imageLoad(uImg, ivec2(0)).r;\n"
+            "    imageStore(uImg, ivec2(0), vec4(v + 0.5, 0.0, 0.0, 0.0));\n"
+            "    endInvocationInterlockARB();\n"
+            "    fragColor = vec4(v);\n"
+            "}\n";
+        GLuint sh = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(sh, 1, &testSrc, nullptr);
+        // Suppress debug output during probe — expected to fail on some drivers
+        glDisable(GL_DEBUG_OUTPUT);
+        glCompileShader(sh);
+        GLint ok = 0;
+        glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+        glDeleteShader(sh);
+        glEnable(GL_DEBUG_OUTPUT);
+        m_caps.supportsFragmentShaderInterlock = (ok == GL_TRUE);
+    }
 }
 
 // ─── Debug Callback ────────────────────────────────────────────────────────

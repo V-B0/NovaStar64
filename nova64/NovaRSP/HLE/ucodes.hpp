@@ -1,3 +1,7 @@
+/**
+ * @file ucodes.hpp
+ * @brief RSP HLE Audio Ucodes.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio Ucodes - Modernized from Project64's ucodes.h
 // C++20 with structured microcode definitions

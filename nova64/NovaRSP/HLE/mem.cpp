@@ -1,3 +1,7 @@
+/**
+ * @file mem.cpp
+ * @brief RSP HLE Memory Access Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Memory Access Implementation
 // Safe DRAM/DMEM read/write with big-endian byte swapping

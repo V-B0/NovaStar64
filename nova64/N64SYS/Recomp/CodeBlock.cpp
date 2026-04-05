@@ -20,7 +20,14 @@
 #include "../MIPSY/Vmem.hpp"
 #include "../MIPSY/Register.hpp"
 #include "ExitInfo.hpp"
+
+#if defined(__amd64__) || defined(_M_X64)
 #include "x64-86/x64RecompilerOps.hpp"
+#elif defined(__i386__) || defined(_M_IX86)
+#include "x86/x86RecompilerOps.hpp"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include "Arm/ArmRecompilerOps.hpp"
+#endif
 
 #include <cstring>
 #include <cstdarg>
@@ -53,7 +60,8 @@ inline uint32_t mips_ft(uint32_t instr)     { return mips_rt(instr); }  // COP1 
 // Construction / Destruction
 // ============================================================================
 
-CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& config)
+CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& config,
+                     asmjit::JitRuntime* shared_runtime)
     : system_(&system)
     , memory_(system.GetMemory())
     , registers_(system.GetRegisters())
@@ -64,10 +72,15 @@ CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& co
     , flags_(BlockFlags::None)
     , config_(config)
 {
-    // Initialize AsmJit runtime and code holder
-    runtime_ = std::make_unique<asmjit::JitRuntime>();
-    code_holder_ = std::make_unique<asmjit::CodeHolder>();
+    // Use shared runtime if provided, otherwise create our own
+    if (shared_runtime) {
+        runtime_ = shared_runtime;
+    } else {
+        owned_runtime_ = std::make_unique<asmjit::JitRuntime>();
+        runtime_ = owned_runtime_.get();
+    }
 
+    code_holder_ = std::make_unique<asmjit::CodeHolder>();
     code_holder_->init(runtime_->environment());
     code_holder_->set_error_handler(this);
 
@@ -77,10 +90,76 @@ CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& co
     }
 }
 
-CodeBlock::~CodeBlock() noexcept = default;
+CodeBlock::~CodeBlock() noexcept {
+    // Release compiled code from the JIT runtime (shared or owned).
+    // For shared runtimes this is essential to free executable memory.
+    if (compiled_function_ && runtime_) {
+        runtime_->release(reinterpret_cast<void*>(compiled_function_));
+        compiled_function_ = nullptr;
+    }
+}
 
-CodeBlock::CodeBlock(CodeBlock&& other) noexcept = default;
-CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept = default;
+CodeBlock::CodeBlock(CodeBlock&& other) noexcept
+    : asmjit::ErrorHandler()
+    , system_(other.system_)
+    , memory_(other.memory_)
+    , registers_(other.registers_)
+    , entry_address_(other.entry_address_)
+    , start_address_(other.start_address_)
+    , end_address_(other.end_address_)
+    , hash_(other.hash_)
+    , flags_(other.flags_)
+    , config_(other.config_)
+    , instructions_(std::move(other.instructions_))
+    , sections_(std::move(other.sections_))
+    , address_to_section_(std::move(other.address_to_section_))
+    , owned_runtime_(std::move(other.owned_runtime_))
+    , runtime_(other.runtime_)
+    , code_holder_(std::move(other.code_holder_))
+    , compiled_function_(other.compiled_function_)
+    , memory_snapshot_(std::move(other.memory_snapshot_))
+    , statistics_(other.statistics_)
+    , code_log_(std::move(other.code_log_))
+    , generated_code_cache_(std::move(other.generated_code_cache_))
+{
+    // Prevent source from double-releasing the compiled code
+    other.runtime_ = nullptr;
+    other.compiled_function_ = nullptr;
+}
+// Move assignment must clear source's compiled_function_ to prevent double-release
+CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept {
+    if (this != &other) {
+        // Release our own code first
+        if (compiled_function_ && runtime_) {
+            runtime_->release(reinterpret_cast<void*>(compiled_function_));
+        }
+        // Move all members
+        system_ = other.system_;
+        memory_ = other.memory_;
+        registers_ = other.registers_;
+        entry_address_ = other.entry_address_;
+        start_address_ = other.start_address_;
+        end_address_ = other.end_address_;
+        hash_ = other.hash_;
+        flags_ = other.flags_;
+        config_ = other.config_;
+        instructions_ = std::move(other.instructions_);
+        sections_ = std::move(other.sections_);
+        address_to_section_ = std::move(other.address_to_section_);
+        owned_runtime_ = std::move(other.owned_runtime_);
+        runtime_ = other.runtime_;
+        code_holder_ = std::move(other.code_holder_);
+        compiled_function_ = other.compiled_function_;
+        memory_snapshot_ = std::move(other.memory_snapshot_);
+        statistics_ = other.statistics_;
+        code_log_ = std::move(other.code_log_);
+        generated_code_cache_ = std::move(other.generated_code_cache_);
+        // Clear source to prevent double-release
+        other.runtime_ = nullptr;
+        other.compiled_function_ = nullptr;
+    }
+    return *this;
+}
 
 // ============================================================================
 // Compilation
@@ -164,7 +243,7 @@ std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block()
     instructions_.clear();
 
     // Analyze starting from entry address, building basic blocks
-    auto bb = analyze_basic_block(entry_address_);
+    auto bb = analyze_basic_block(entry_address_, result);
     if (!bb.has_value()) {
         return std::nullopt;
     }
@@ -178,14 +257,12 @@ std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block()
     return result;
 }
 
-std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr)
+std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr, AnalysisResult& temp_result)
 {
     BasicBlockInfo bb;
     bb.start_address = start_addr;
     bb.end_address = start_addr;
     bb.flags = BlockFlags::None;
-
-    AnalysisResult temp_result;
     const uint32_t page_end = ((start_addr + 0x1000) & 0xFFFFF000);
 
     for (uint32_t pc = start_addr; pc < page_end; pc += 4) {
@@ -209,8 +286,14 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
         if (!temp_result.branches.empty()) {
             auto& last_branch = temp_result.branches.back();
 
-            // Include delay slot instruction if needed
-            if (last_branch.delay_slot && pc + 4 < page_end) {
+            // Include delay slot instruction if needed.
+            // The delay slot MUST be included even when it crosses a page
+            // boundary — the MIPS architecture always fetches and executes
+            // the delay slot regardless of page alignment.  The previous
+            // check (pc + 4 < page_end) incorrectly excluded delay slots
+            // at the exact page boundary, causing blocks to undercount
+            // instructions and skip the delay slot entirely.
+            if (last_branch.delay_slot) {
                 uint32_t delay_instr = 0;
                 if (memory_->MemoryValue32(pc + 4, delay_instr)) {
                     instructions_.push_back(delay_instr);
@@ -352,7 +435,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         default:
             log_error("Unknown SPECIAL funct=0x" + std::to_string(funct) +
                       " at PC=0x" + std::to_string(pc));
-            return false;
+            // Treat as non-control-flow; codegen handles via interpreter callback
+            break;
         }
         break;
 
@@ -424,7 +508,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
             }
             log_error("Unknown REGIMM rt=0x" + std::to_string(rt) +
                       " at PC=0x" + std::to_string(pc));
-            return false;
+            // Treat as non-control-flow; codegen handles via interpreter callback
+            break;
         }
         break;
 
@@ -560,12 +645,11 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 default:
                     log_error("Unknown COP0 CO funct=0x" + std::to_string(funct) +
                               " at PC=0x" + std::to_string(pc));
-                    return false;
+                    break;
                 }
             } else {
                 log_error("Unknown COP0 rs=0x" + std::to_string(rs) +
                           " at PC=0x" + std::to_string(pc));
-                return false;
             }
             break;
         }
@@ -618,14 +702,14 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
             default:
                 log_error("Unknown COP1 BC ft=0x" + std::to_string(ft_field) +
                           " at PC=0x" + std::to_string(pc));
-                return false;
+                break;
             }
             break;
         }
         default:
             log_error("Unknown COP1 fmt=0x" + std::to_string(fmt_field) +
                       " at PC=0x" + std::to_string(pc));
-            return false;
+            break;
         }
         break;
     }
@@ -669,7 +753,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         log_error("Unknown opcode op=0x" + std::to_string(op) +
                   " (raw=0x" + std::to_string(opcode) +
                   ") at PC=0x" + std::to_string(pc));
-        return false;
+        // Treat as non-control-flow; codegen handles via interpreter callback
+        break;
     }
 
     return true;
@@ -720,17 +805,66 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
     ops.EnterCodeBlock();
 
     // Compile every instruction in the block
+    // Determine which instruction is the branch (if any) so we can skip
+    // PipelineStageCheck for it. On MIPS, the delay slot must execute
+    // AFTER the branch sets JumpToLocation but BEFORE the block exits.
+    // If we check PipelineStage after the branch, we'd exit before the
+    // delay slot runs, causing it to be skipped entirely.
+    size_t branchInstrIdx = static_cast<size_t>(-1);
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
+        instructions_.size() >= 2) {
+        // The branch is at second-to-last position, delay slot at last
+        branchInstrIdx = instructions_.size() - 2;
+    }
+
     for (size_t i = 0; i < instructions_.size(); ++i) {
         uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
         R4300iInstruction mipsInstr(addr, instructions_[i]);
         InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
                                    PipelineStage::Execute, nullptr);
 
+        // Before the delay slot instruction, set up correct CPU state so that
+        // TriggerException computes the right BranchDelay bit and EPC if the
+        // delay slot faults.  The branch callback already set m_PROGRAM_COUNTER
+        // to the branch target; EmitDelaySlotSetup saves that target in
+        // m_JumpToLocation, restores m_PROGRAM_COUNTER to the delay slot
+        // address, and sets PipelineStage = Jump.
+        if (branchInstrIdx != static_cast<size_t>(-1) &&
+            i == branchInstrIdx + 1) {
+            ops.EmitDelaySlotSetup(addr);
+        }
+
         if (!ops.CompileInstruction(instrCtx)) {
             log_error("x64 CompileInstruction failed at 0x" + std::to_string(addr));
             // emit a NOP fallback so the block is still valid
         }
+
+        // Decrement m_NextTimer by CountPerOp after each instruction.
+        // This matches the interpreter's per-instruction decrement so that
+        // COUNT reads within blocks are accurate, and early exits (exceptions,
+        // syscalls) don't over-count cycles for unexecuted instructions.
+        // NOTE: For branch-likely instructions, EmitBranchLikelyCallback
+        // already emitted the timer decrement BEFORE the conditional skip,
+        // so we must not emit a second one here.
+        if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
+            ops.EmitTimerDecrement();
+        }
+
+        // After each instruction, check if an exception (TLB miss, syscall,
+        // etc.) set PipelineStage to Jump.  If so, exit the block immediately
+        // so the dispatcher can redirect to the exception vector.
+        // EXCEPT: skip for the branch instruction itself — the branch sets
+        // PipelineStage=Jump for normal control flow, and we must let the
+        // delay slot execute before exiting.
+        if (i != branchInstrIdx) {
+            ops.EmitPipelineStageCheck();
+        }
     }
+
+    // If the last instruction pair was a branch-likely + delay slot,
+    // bind the skip label HERE, AFTER the delay slot code, so that
+    // when the branch is NOT taken the delay slot is jumped over.
+    ops.BindPendingBranchLikelyLabel();
 
     // After running all instructions, update the program counter to
     // point past the last instruction in the block so the dispatcher
@@ -761,20 +895,120 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
 #elif defined(__i386__) || defined(_M_IX86)
     // ----------------------------------------------------------------
     // x86 32-bit path – use X86RecompilerOps (PJ64-style native codegen).
-    // This backend does direct x86 emission, not callbacks.
-    // TODO: Wire X86RecompilerOps properly when we have an x86 target.
     // ----------------------------------------------------------------
-    log_error("generate_code: x86 32-bit backend not yet wired to CodeBlock pipeline");
-    return false;
+    using namespace Nova64::Recompiler::x86;
+
+    auto* mem = system_->GetMemory();
+    auto* tlb = system_->GetTLB();
+    if (!mem || !tlb) {
+        log_error("generate_code: system has no memory or TLB");
+        return false;
+    }
+
+    static std::atomic<bool> s_dummyEnd{false};
+    RecompilerContext ctx(*system_, *mem, *registers_, *tlb, s_dummyEnd);
+    X86RecompilerOps ops(ctx, *this);
+
+    // X86Ops constructor does not attach to CodeHolder; do it explicitly.
+    ops.InitializeAssembler(*code_holder_);
+
+    ops.EnterCodeBlock();
+
+    // Determine branch instruction index (same logic as x64 path)
+    size_t branchInstrIdx = static_cast<size_t>(-1);
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
+        instructions_.size() >= 2) {
+        branchInstrIdx = instructions_.size() - 2;
+    }
+
+    for (size_t i = 0; i < instructions_.size(); ++i) {
+        uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
+        R4300iInstruction mipsInstr(addr, instructions_[i]);
+        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
+                                   PipelineStage::Execute, nullptr);
+
+        if (!ops.CompileInstruction(instrCtx)) {
+            log_error("x86 CompileInstruction failed at 0x" + std::to_string(addr));
+        }
+
+        if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
+            ops.EmitTimerDecrement();
+        }
+
+        if (i != branchInstrIdx) {
+            ops.EmitPipelineStageCheck();
+        }
+    }
+
+    ops.BindPendingBranchLikelyLabel();
+
+    // For non-branch blocks, update PC past the block
+    if (analysis.branches.empty()) {
+        ops.EmitPCUpdate();
+    }
+
+    ops.ExitCodeBlock();
+
+    statistics_.generated_bytes = 0;
+    return true;
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
     // ----------------------------------------------------------------
     // ARM64 path – use ArmRecompilerOps (partial native codegen).
-    // Integer ALU / shifts / mul are native; loads/stores/FPU exit to interpreter.
-    // TODO: Wire ArmRecompilerOps properly when we have an ARM64 target.
+    // Integer ALU / shifts / mul are native; loads/stores/FPU use fallback.
     // ----------------------------------------------------------------
-    log_error("generate_code: ARM64 backend not yet wired to CodeBlock pipeline");
-    return false;
+    using namespace Nova64::Recompiler::Arm;
+
+    auto* mem = system_->GetMemory();
+    auto* tlb = system_->GetTLB();
+    if (!mem || !tlb) {
+        log_error("generate_code: system has no memory or TLB");
+        return false;
+    }
+
+    static std::atomic<bool> s_dummyEnd{false};
+    RecompilerContext ctx(*system_, *mem, *registers_, *tlb, s_dummyEnd);
+    ArmRecompilerOps ops(ctx, *this);
+
+    // ARM assembler auto-attaches to CodeHolder in its constructor.
+
+    ops.EnterCodeBlock();
+
+    size_t branchInstrIdx = static_cast<size_t>(-1);
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
+        instructions_.size() >= 2) {
+        branchInstrIdx = instructions_.size() - 2;
+    }
+
+    for (size_t i = 0; i < instructions_.size(); ++i) {
+        uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
+        R4300iInstruction mipsInstr(addr, instructions_[i]);
+        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
+                                   PipelineStage::Execute, nullptr);
+
+        if (!ops.CompileInstruction(instrCtx)) {
+            log_error("ARM64 CompileInstruction failed at 0x" + std::to_string(addr));
+        }
+
+        if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
+            ops.EmitTimerDecrement();
+        }
+
+        if (i != branchInstrIdx) {
+            ops.EmitPipelineStageCheck();
+        }
+    }
+
+    ops.BindPendingBranchLikelyLabel();
+
+    if (analysis.branches.empty()) {
+        ops.EmitPCUpdate();
+    }
+
+    ops.ExitCodeBlock();
+
+    statistics_.generated_bytes = 0;
+    return true;
 
 #else
     log_error("generate_code: unsupported architecture");
@@ -888,20 +1122,24 @@ std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const
 
 bool CodeBlock::verify_memory_snapshot() const
 {
-    if (!memory_ || memory_snapshot_.empty()) {
+    if (!memory_ || instructions_.empty()) {
         return true; // Nothing to verify
     }
 
-    MemorySnapshot current;
-    for (size_t i = 0; i < memory_snapshot_.count; ++i) {
-        uint32_t addr = memory_snapshot_.entries[i].address;
-        uint64_t val = 0;
-        if (memory_->MemoryValue64(addr, val)) {
-            current.add(addr, val, memory_snapshot_.entries[i].location);
+    // Full-block verification: compare ALL stored instructions against
+    // current RDRAM content. The old approach only checked the first 16
+    // bytes, missing modifications beyond the 4th instruction.
+    uint32_t addr = entry_address_;
+    for (size_t i = 0; i < instructions_.size(); ++i) {
+        uint8_t* ptr = memory_->MemoryPtr(addr, 4, true);
+        if (!ptr) return true; // Can't verify unmapped memory — assume valid
+        uint32_t current = *reinterpret_cast<uint32_t*>(ptr);
+        if (current != instructions_[i]) {
+            return false; // Code has been modified
         }
+        addr += 4;
     }
-
-    return memory_snapshot_.matches(current);
+    return true;
 }
 
 void CodeBlock::update_memory_snapshot()

@@ -1,3 +1,7 @@
+/**
+ * @file DynamicLibrary.cpp
+ * @brief Dynamic Library implementation.
+ */
 #include "DynamicLibrary.hpp"
 
 #ifdef _WIN32

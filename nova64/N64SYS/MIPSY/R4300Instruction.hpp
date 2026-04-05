@@ -1,3 +1,7 @@
+/**
+ * @file R4300Instruction.hpp
+ * @brief R4300Instruction declarations and types.
+ */
 #pragma once
 #include <string>
 #include <bitset>

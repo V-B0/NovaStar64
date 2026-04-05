@@ -1,3 +1,7 @@
+/**
+ * @file RSPCpu.hpp
+ * @brief RSP CPU Interface.
+ */
 // SuperNova64 - N64 Emulator
 // RSP CPU Interface - Modernized from Project64's RSPCpu.h
 // C++20 with proper element broadcast tables

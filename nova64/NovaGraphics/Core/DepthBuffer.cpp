@@ -1,3 +1,7 @@
+/**
+ * @file DepthBuffer.cpp
+ * @brief Depth Buffer System.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Depth Buffer System Implementation
 // N64 RDP 18-bit depth: piecewise-linear encoding, dZ fuzzy compare,
@@ -11,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 namespace Nova64::Video {
 
@@ -585,19 +590,26 @@ bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, floa
 //  Z-Image Textures (for shader-based N64 depth compare)
 // ═══════════════════════════════════════════════════════════════
 
-void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf) {
+void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t resScale) {
     if (buf.glZImageTex != 0) return;  // Already initialized
     if (buf.width == 0 || buf.height == 0) return;
 
+    // Create Z-image textures at scaled resolution so each screen pixel
+    // gets its own depth texel, avoiding cross-pixel contamination.
+    uint32_t imgW = buf.width  * std::max(resScale, 1u);
+    uint32_t imgH = buf.height * std::max(resScale, 1u);
+    buf.zImageWidth  = imgW;
+    buf.zImageHeight = imgH;
+
     // Z-image texture: stores N64 14-bit Z as float in R32F
     glCreateTextures(GL_TEXTURE_2D, 1, &buf.glZImageTex);
-    glTextureStorage2D(buf.glZImageTex, 1, GL_R32F, buf.width, buf.height);
+    glTextureStorage2D(buf.glZImageTex, 1, GL_R32F, imgW, imgH);
     glTextureParameteri(buf.glZImageTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(buf.glZImageTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // Delta-Z image texture: stores dZ as float in R32F
     glCreateTextures(GL_TEXTURE_2D, 1, &buf.glDeltaZImageTex);
-    glTextureStorage2D(buf.glDeltaZImageTex, 1, GL_R32F, buf.width, buf.height);
+    glTextureStorage2D(buf.glDeltaZImageTex, 1, GL_R32F, imgW, imgH);
     glTextureParameteri(buf.glDeltaZImageTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(buf.glDeltaZImageTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -608,24 +620,65 @@ void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf) {
 
     GLenum drawBuffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
     glNamedFramebufferDrawBuffers(buf.glZImageFBO, 2, drawBuffers);
+
+    // Set backend-native image handles (GL: texture name → uint64_t)
+    buf.zImageHandle      = static_cast<uint64_t>(buf.glZImageTex);
+    buf.deltaZImageHandle = static_cast<uint64_t>(buf.glDeltaZImageTex);
 }
 
 void GPUDepthBufferManager::ClearDepthImageTextures(GPUDepthBuffer& buf) {
-    if (!buf.glZImageFBO) return;
+    if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
 
-    // Clear Z-image to max depth (1.0) and delta-Z to 0
-    float clearZ[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
-    float clearDZ[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    glClearNamedFramebufferfv(buf.glZImageFBO, GL_COLOR, 0, clearZ);
-    glClearNamedFramebufferfv(buf.glZImageFBO, GL_COLOR, 1, clearDZ);
+    // Clear Z-image to 1.0 (normalized max depth) and delta-Z to 0.
+    // Uses glClearTexImage instead of FBO clear so the data is reliably
+    // visible to subsequent imageLoad() calls.  Some Intel drivers do not
+    // propagate glClearNamedFramebufferfv writes to the image-load path.
+    float clearZ  = 1.0f;
+    float clearDZ = 0.0f;
+    glClearTexImage(buf.glZImageTex, 0, GL_RED, GL_FLOAT, &clearZ);
+    glClearTexImage(buf.glDeltaZImageTex, 0, GL_RED, GL_FLOAT, &clearDZ);
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+
+void GPUDepthBufferManager::UploadRDRAMToZImage(GPUDepthBuffer& buf,
+                                                 const uint8_t* rdram,
+                                                 uint32_t rdramSize) {
+    if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
+    if (buf.width == 0 || buf.height == 0) return;
+    uint32_t pixelCount = buf.width * buf.height;
+    if (buf.address + pixelCount * 2 > rdramSize) return;
+
+    std::vector<float> zData(pixelCount);
+    std::vector<float> dzData(pixelCount);
+    const uint16_t* src = reinterpret_cast<const uint16_t*>(rdram + buf.address);
+
+    for (uint32_t i = 0; i < pixelCount; ++i) {
+        // N64 is big-endian; RDRAM is stored word-swapped in little-endian host
+        uint16_t raw = (src[i] >> 8) | (src[i] << 8);
+        uint16_t z14;
+        uint8_t dz;
+        DepthConvert::DecodeRDRAM16(raw, z14, dz);
+        zData[i]  = DepthConvert::N64ZToFloat(z14);
+        dzData[i] = static_cast<float>(dz) / 15.0f;
+    }
+
+    glTextureSubImage2D(buf.glZImageTex, 0, 0, 0, buf.width, buf.height,
+                        GL_RED, GL_FLOAT, zData.data());
+    glTextureSubImage2D(buf.glDeltaZImageTex, 0, 0, 0, buf.width, buf.height,
+                        GL_RED, GL_FLOAT, dzData.data());
 }
 
 void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf,
                                                     uint32_t zUnit, uint32_t dzUnit) {
-    if (buf.glZImageTex)
+    if (buf.glZImageTex) {
         glBindTextureUnit(zUnit, buf.glZImageTex);
-    if (buf.glDeltaZImageTex)
+        glBindImageTexture(0, buf.glZImageTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
+    }
+    if (buf.glDeltaZImageTex) {
         glBindTextureUnit(dzUnit, buf.glDeltaZImageTex);
+        glBindImageTexture(1, buf.glDeltaZImageTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -679,23 +732,33 @@ void GPUDepthBufferManager::InitZLUT() {
 
     DepthConvert::Init();
 
-    // Create a 1D-style texture (16384 x 1) mapping N64 Z14 → float depth
+    // Create a 512x512 R32F texture mapping 18-bit Z values → compressed Z14 values.
+    // 512*512 = 262144 = 0x40000 entries (full 18-bit Z range).
+    // Algorithm matches GLideN64: leading-one exponent scan to produce Z14.
     glCreateTextures(GL_TEXTURE_2D, 1, &m_zLutTex);
-    glTextureStorage2D(m_zLutTex, 1, GL_R32F, 0x4000, 1);
+    glTextureStorage2D(m_zLutTex, 1, GL_R32F, 512, 512);
 
-    // Fill the LUT
-    std::array<float, 0x4000> lutData;
-    for (uint32_t i = 0; i < 0x4000; ++i) {
-        lutData[i] = DepthConvert::N64ZToFloat(static_cast<uint16_t>(i));
+    std::vector<float> lutData(0x40000);
+    for (uint32_t i = 0; i < 0x40000; ++i) {
+        uint32_t exponent = 0;
+        uint32_t testbit = 1u << 17;
+        while ((i & testbit) && (exponent < 7)) {
+            exponent++;
+            testbit = 1u << (17 - exponent);
+        }
+        const uint32_t mantissa = (i >> (6 - exponent)) & 0x7FF;
+        uint32_t z14 = ((exponent << 11) | mantissa) << 2;
+        lutData[i] = static_cast<float>(z14);
     }
 
-    glTextureSubImage2D(m_zLutTex, 0, 0, 0, 0x4000, 1, GL_RED, GL_FLOAT, lutData.data());
+    glTextureSubImage2D(m_zLutTex, 0, 0, 0, 512, 512, GL_RED, GL_FLOAT, lutData.data());
     glTextureParameteri(m_zLutTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(m_zLutTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTextureParameteri(m_zLutTex, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(m_zLutTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     m_zLutInitialized = true;
-    LOG_INFO("Z LUT texture initialized (16384 entries)");
+    LOG_INFO("Z LUT texture initialized (512x512, 262144 entries)");
 }
 
 void GPUDepthBufferManager::BindZLUT(uint32_t textureUnit) {

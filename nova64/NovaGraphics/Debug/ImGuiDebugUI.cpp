@@ -1,3 +1,7 @@
+/**
+ * @file ImGuiDebugUI.cpp
+ * @brief ImGui Debug UI — Nemu64-style debugger.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — ImGui Debug UI — Nemu64-style debugger
 // ══════════════════════════════════════════════════════════════════════════════
@@ -62,6 +66,16 @@ bool ImGuiDebugUI::ProcessEvent(const SDL_Event& event) {
     if (!m_initialized) return false;
     ImGui_ImplSDL2_ProcessEvent(&event);
     return ImGui::GetIO().WantCaptureMouse || ImGui::GetIO().WantCaptureKeyboard;
+}
+
+void ImGuiDebugUI::CycleDebugOutput() {
+    if (!m_videoPlugin) return;
+    auto& rdp = m_videoPlugin->GetRDPProcessor();
+    if (!rdp) return;
+    rdp->CycleDebugOutputMode();
+    static const char* names[] = { "Normal","Texel0","Shade","PrimColor","EnvColor","UV Coords","Depth","Alpha" };
+    int mode = rdp->GetDebugOutputMode();
+    fprintf(stderr, "[Debug] Shader output mode: %d (%s)\n", mode, names[mode]);
 }
 
 // ─── Render ──────────────────────────────────────────────────
@@ -579,6 +593,18 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
 
     const auto& rdpState = rdpPtr->GetRDPState();
     const auto& stats    = rdpPtr->GetStats();
+
+    // Debug output mode selector
+    {
+        int mode = rdpPtr->GetDebugOutputMode();
+        ImGui::TextColored(ImVec4(1, 1, 0.5f, 1), "Shader Debug (F8 to cycle):");
+        ImGui::SameLine();
+        if (ImGui::Combo("##debugMode", &mode,
+                "Normal\0Texel0\0Shade\0PrimColor\0EnvColor\0UV Coords\0Depth\0Alpha\0\0")) {
+            rdpPtr->SetDebugOutputMode(mode);
+        }
+        ImGui::Separator();
+    }
 
     if (ImGui::BeginTabBar("RDPTabs")) {
 

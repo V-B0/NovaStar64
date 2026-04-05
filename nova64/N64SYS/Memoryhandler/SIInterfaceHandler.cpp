@@ -1,3 +1,7 @@
+/**
+ * @file SIInterfaceHandler.cpp
+ * @brief SI Interface Handler implementation.
+ */
 #include "SIInterfaceHandler.hpp"
 #include "PifInterface.hpp"
 #include "../MIPSY/Register.hpp" // For CRegisters definition

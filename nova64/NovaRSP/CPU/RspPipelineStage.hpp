@@ -1,3 +1,7 @@
+/**
+ * @file RspPipelineStage.hpp
+ * @brief RSP Pipeline Stages.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Pipeline Stages - Modernized from Project64's RspPipelineStage.h
 // C++20 enum class with descriptive naming

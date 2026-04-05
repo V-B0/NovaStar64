@@ -1,3 +1,7 @@
+/**
+ * @file RspRecompilerOps.cpp
+ * @brief RSP Recompiler Operations Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Recompiler Operations Implementation
 // x64 code generation for all RSP opcodes

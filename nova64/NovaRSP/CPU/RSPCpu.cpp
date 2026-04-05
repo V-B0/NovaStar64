@@ -1,3 +1,7 @@
+/**
+ * @file RSPCpu.cpp
+ * @brief RSP CPU - Build tables, DoRspCycles dispatch.
+ */
 // SuperNova64 - N64 Emulator
 // RSP CPU - Build tables, DoRspCycles dispatch
 // Based on Project64's RSPCpu.cpp, modernized for C++20

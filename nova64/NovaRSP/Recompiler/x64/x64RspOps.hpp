@@ -1,3 +1,7 @@
+/**
+ * @file x64RspOps.hpp
+ * @brief x64 RSP Operations - Platform-specific x64/SSE2 instruction emission.
+ */
 // SuperNova64 - N64 Emulator
 // x64 RSP Operations - Platform-specific x64/SSE2 instruction emission
 // Provides typed wrappers around raw x64 encoding for RSP JIT compilation

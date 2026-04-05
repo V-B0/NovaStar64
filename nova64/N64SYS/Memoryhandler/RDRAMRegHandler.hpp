@@ -1,3 +1,7 @@
+/**
+ * @file RDRAMRegHandler.hpp
+ * @brief RDRAM Reg Handler declarations and types.
+ */
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"

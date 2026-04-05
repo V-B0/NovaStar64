@@ -283,14 +283,27 @@ inline void F3DPDHandler::Cmd_G_ENDDL_PD(DListContext& ctx, uint32_t w0, uint32_
     EndDisplayList(ctx);
 }
 
+/// Translate GBI1 geometry mode bits to GBI2 (internal) format.
+static inline uint32_t TranslateGBI1ToGBI2_PD(uint32_t gbi1) {
+    constexpr uint32_t GBI1_SHADING_SMOOTH = 0x00000200;
+    constexpr uint32_t GBI1_CULL_FRONT     = 0x00001000;
+    constexpr uint32_t GBI1_CULL_BACK      = 0x00002000;
+    constexpr uint32_t GBI1_MASK = GBI1_SHADING_SMOOTH | GBI1_CULL_FRONT | GBI1_CULL_BACK;
+    uint32_t result = gbi1 & ~GBI1_MASK;
+    if (gbi1 & GBI1_SHADING_SMOOTH) result |= 0x00200000;
+    if (gbi1 & GBI1_CULL_FRONT)     result |= 0x00000200;
+    if (gbi1 & GBI1_CULL_BACK)      result |= 0x00000400;
+    return result;
+}
+
 inline void F3DPDHandler::Cmd_G_SETGEOMETRYMODE_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, 0, w0 & 0x00FFFFFF);
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2_PD(w0 & 0x00FFFFFF));
 }
 
 inline void F3DPDHandler::Cmd_G_CLEARGEOMETRYMODE_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, w0 & 0x00FFFFFF, 0);
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2_PD(w0 & 0x00FFFFFF), 0);
 }
 
 inline void F3DPDHandler::Cmd_G_POPMTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {

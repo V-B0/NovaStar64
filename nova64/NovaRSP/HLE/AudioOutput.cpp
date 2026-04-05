@@ -1,3 +1,7 @@
+/**
+ * @file AudioOutput.cpp
+ * @brief RSP HLE Audio Output - WASAPI implementation for Windows.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio Output - WASAPI implementation for Windows
 // Renders processed RSP audio via Windows WASAPI shared mode

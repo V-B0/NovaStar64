@@ -1,3 +1,7 @@
+/**
+ * @file RspClamp.cpp
+ * @brief RSP Clamp Utilities - Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Clamp Utilities - Implementation
 // All core functions are inline constexpr in the header.

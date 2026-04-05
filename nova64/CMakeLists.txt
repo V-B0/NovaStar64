@@ -173,15 +173,9 @@ set(SOURCES
     N64SYS/Recomp/Recompiler.cpp
     N64SYS/Recomp/RecompilerMemory.cpp
     N64SYS/Recomp/RegInfo.cpp
-    N64SYS/Recomp/Arm/ArmOps.cpp
-    N64SYS/Recomp/Arm/ArmRegInfo.cpp
-    N64SYS/Recomp/Arm/ArmRecompilerOps.cpp
     N64SYS/Recomp/x64-86/x64RecompilerOps.cpp
     N64SYS/Recomp/x64-86/x64ops.cpp
     N64SYS/Recomp/x64-86/x64RegInfo.cpp
-    N64SYS/Recomp/x86/x86RecompilerOps.cpp
-    N64SYS/Recomp/x86/x86ops.cpp
-    N64SYS/Recomp/x86/x86RegInfo.cpp
 
     # NovaRSP - RSP plugin (CPU core)
     NovaRSP/CPU/RspClamp.cpp
@@ -345,9 +339,11 @@ set(SOURCES
     NovaGraphics/Texture/TextureFilter.cpp
     NovaGraphics/Texture/TextureFormat.cpp
     NovaGraphics/Texture/TextureUpscale.cpp
-    NovaGraphics/Texture/PaletteTexture.cpp
+    # PaletteTexture.cpp — dead code, never referenced
+    # NovaGraphics/Texture/PaletteTexture.cpp
     NovaGraphics/Texture/ZlutTexture.cpp
-    NovaGraphics/Texture/TexLoad.cpp
+    # TexLoad.cpp — dead code, dispatch table unreferenced (loads handled by RDPProcessor)
+    # NovaGraphics/Texture/TexLoad.cpp
     NovaGraphics/Texture/TexConv.cpp
     NovaGraphics/Texture/TextureDumper.cpp
 
@@ -470,11 +466,24 @@ endif()
 # Compiler flags
 if(MSVC)
     target_compile_options(nova64 PRIVATE /W4)
+    # Release/RelWithDebInfo: max optimizations + whole-program optimization
+    # /Zi generates PDB debug info even in Release for debuggable optimized builds
+    target_compile_options(nova64 PRIVATE 
+        $<$<CONFIG:Release>:/O2 /Oi /Ot /GL /GS- /fp:fast /Zi>
+        $<$<CONFIG:RelWithDebInfo>:/O2 /Oi /Ot /fp:fast>
+    )
+    target_link_options(nova64 PRIVATE 
+        $<$<CONFIG:Release>:/LTCG /OPT:REF /OPT:ICF /DEBUG /OPT:REF>
+    )
     # Increase stack size to 8 MB — the synchronous RSP HLE call chain from
     # inside interpreter SW → SP handler → DoRspCycles → HLE → GFX plugin
     # can exceed the default 1 MB stack in Debug builds.
     target_link_options(nova64 PRIVATE /STACK:8388608)
 else()
     target_compile_options(nova64 PRIVATE -Wall -Wextra)
+    target_compile_options(nova64 PRIVATE 
+        $<$<CONFIG:Release>:-O3 -march=native -ffast-math>
+        $<$<CONFIG:RelWithDebInfo>:-O2 -march=native>
+    )
 endif()
 

@@ -1,3 +1,7 @@
+/**
+ * @file RSPInfo.cpp
+ * @brief RSP Info / Initialization Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Info / Initialization Implementation
 // Module lifecycle: init, plugin load, ROM open/close, free

@@ -153,15 +153,15 @@ namespace GBI2 {
     constexpr uint8_t G_TEXTURE        = 0xD7;
     constexpr uint8_t G_POPMTX         = 0xD8;
     constexpr uint8_t G_SETGEOMETRYMODE = 0xD9;
-    constexpr uint8_t G_CLEARGEOMETRYMODE = 0xDA;
+    // NOTE: GBI2 has no separate CLEARGEOMETRYMODE — 0xD9 handles both
+    constexpr uint8_t G_MTX            = 0xDA;
     constexpr uint8_t G_DL             = 0xDE;
     constexpr uint8_t G_ENDDL          = 0xDF;
-    constexpr uint8_t G_MTX            = 0xDA;
     constexpr uint8_t G_MOVEWORD       = 0xDB;
     constexpr uint8_t G_MOVEMEM        = 0xDC;
     constexpr uint8_t G_LOAD_UCODE     = 0xDD;
-    constexpr uint8_t G_SETOTHERMODE_H = 0xE2;
-    constexpr uint8_t G_SETOTHERMODE_L = 0xE3;
+    constexpr uint8_t G_SETOTHERMODE_H = 0xE3;  // F3DEX2: 0xE3 = H, 0xE2 = L
+    constexpr uint8_t G_SETOTHERMODE_L = 0xE2;
     constexpr uint8_t G_RDPHALF_1      = 0xE1;
     constexpr uint8_t G_RDPHALF_2      = 0xF1;
 

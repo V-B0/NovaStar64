@@ -1,3 +1,7 @@
+/**
+ * @file LockGuard.cpp
+ * @brief Lock Guard implementation.
+ */
 // LockGuard.cpp - RecursiveMutex implementation
 #include "LockGuard.hpp"
 

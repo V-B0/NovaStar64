@@ -1,3 +1,7 @@
+/**
+ * @file RspCodeBlock.hpp
+ * @brief RSP Code Block.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Code Block - Modernized from Project64's RspCodeBlock.h
 // C++20 with proper code analysis and block management

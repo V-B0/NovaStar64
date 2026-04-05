@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP HLE Task Dispatcher
-// Central task routing: detect microcode, dispatch to appropriate HLE handler
+/**
+ * @file TaskDispatcher.hpp
+ * @brief RSP HLE task dispatcher: microcode detection and routing.
+ */
 
 #pragma once
 #include "HleTypes.hpp"

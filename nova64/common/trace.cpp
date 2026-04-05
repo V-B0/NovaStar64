@@ -1,3 +1,7 @@
+/**
+ * @file trace.cpp
+ * @brief trace implementation.
+ */
 #include "trace.hpp"
 #include <algorithm>
 #include <iomanip>

@@ -1,3 +1,7 @@
+/**
+ * @file x64RspOps.cpp
+ * @brief x64 RSP Operations Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // x64 RSP Operations Implementation
 // Raw x64/SSE2 instruction encoding for RSP JIT recompiler

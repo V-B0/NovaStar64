@@ -1,3 +1,7 @@
+/**
+ * @file DateTime.hpp
+ * @brief Date Time declarations and types.
+ */
 #pragma once
 
 #include <ctime>

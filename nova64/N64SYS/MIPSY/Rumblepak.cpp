@@ -1,3 +1,7 @@
+/**
+ * @file Rumblepak.cpp
+ * @brief Rumblepak implementation.
+ */
 #include "Rumblepak.hpp"
 #include "../../common/Log.hpp"
 

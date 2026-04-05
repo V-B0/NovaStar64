@@ -1,3 +1,7 @@
+/**
+ * @file Eeprom.hpp
+ * @brief Eeprom declarations and types.
+ */
 #pragma once
 #include <cstdint>
 #include "../../common/file.hpp"

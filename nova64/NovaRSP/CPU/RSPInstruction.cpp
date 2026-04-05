@@ -1,3 +1,7 @@
+/**
+ * @file RSPInstruction.cpp
+ * @brief RSP Instruction Analysis Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Instruction Analysis Implementation
 // Modernized from Project64's RSPInstruction-x64.cpp

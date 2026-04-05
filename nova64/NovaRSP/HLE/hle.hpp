@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP HLE Core - Modernized from Project64's hle.h
-// C++20 with clean interface for RSP high-level emulation
+/**
+ * @file hle.hpp
+ * @brief RSP high-level emulation interface.
+ */
 
 #pragma once
 #include "ucodes.hpp"

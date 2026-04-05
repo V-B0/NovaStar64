@@ -1,3 +1,7 @@
+/**
+ * @file TransferPak.hpp
+ * @brief Transfer Pak declarations and types.
+ */
 #pragma once
 
 #include <cstdint>

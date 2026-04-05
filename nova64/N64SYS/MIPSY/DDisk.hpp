@@ -1,3 +1,7 @@
+/**
+ * @file DDisk.hpp
+ * @brief D Disk declarations and types.
+ */
 #pragma once
 
 #include <cstdint>
@@ -108,12 +112,24 @@ private:
     // Buffer management
     static constexpr std::size_t BUFFER_SIZE = 0x2000;  // 8KB buffer
     uint8_t sector_buffer[BUFFER_SIZE];
+
+    // Disk image data (not owned)
+    const uint8_t* disk_data = nullptr;
+    uint8_t*       disk_data_writable = nullptr;
+    size_t         disk_data_size = 0;
     
 public:
     // Core disk operations
     void ExecuteCommand(DiskCommand command, uint32_t parameter = 0);
     void Reset();
     void SetZone(DiskZone zone);
+
+    // Attach / detach disk image data for sector I/O
+    void SetDiskData(const uint8_t* data, uint8_t* writable, size_t size) {
+        disk_data = data;
+        disk_data_writable = writable;
+        disk_data_size = size;
+    }
     
     // Buffer management operations
     bool ReadSector(uint32_t track, uint32_t sector);
@@ -211,9 +227,4 @@ namespace DiskGeometry {
     }
 }
 
-} 
-
-
-//using DiskDrive::SECTORS_PER_BLOCK;
-//using DiskDrive::BLOCKS_PER_TRACK;
-//using DiskDrive::g_DiskController;
+}

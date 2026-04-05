@@ -4,6 +4,7 @@
  */
 
 #include "NovaGraphicsGFXPlugin.hpp"
+#include <cstdio>
 #include "../Common/Logger.hpp"
 #include "../Renderer/Renderer.hpp"
 
@@ -152,6 +153,13 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
     if (system && system->GetWindowManager()) {
         m_videoPlugin.SetExternalWindow(system->GetWindowManager());
     }
+
+    // Apply resolution settings from CLI/system (applied after config load in Initialize)
+    m_videoPlugin.SetPendingResolution(
+        CN64System::s_InternalResScale,
+        CN64System::s_WindowWidth,
+        CN64System::s_WindowHeight
+    );
 
     if (!m_videoPlugin.Initialize(si, cb)) {
         LOG_ERROR("NovaGraphicsGFXPlugin: VideoPlugin init failed");

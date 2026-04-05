@@ -1,3 +1,7 @@
+/**
+ * @file WindowManager.hpp
+ * @brief Window Manager.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Window Manager
 // SDL2 window creation, OpenGL context, input, display management

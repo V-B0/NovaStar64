@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP HLE Task Dispatcher Implementation
-// Microcode identification via CRC32, task routing, caching
+/**
+ * @file TaskDispatcher.cpp
+ * @brief RSP HLE microcode identification via CRC32 and task routing.
+ */
 
 #include "TaskDispatcher.hpp"
 #include "hle.hpp"
@@ -79,7 +80,7 @@ const MicrocodeEntry* CTaskDispatcher::IdentifyMicrocode(CHle* hle, const TaskIn
         }
     }
 
-    // Phase 4: Dual-CRC — compute both CRCs upfront
+    // Compute both CRCs upfront
     uint32_t data_crc = ComputeUcodeDataCrc(hle, task.UcodeData, task.UcodeDataSize);
     uint32_t text_crc = ComputeUcodeCrc(hle, task.Ucode, task.UcodeSize);
 
@@ -136,7 +137,6 @@ bool CTaskDispatcher::DispatchTask(CHle* hle)
     const TaskInfo task = ParseTask(hle->dmem());
     m_TasksDispatched++;
 
-    // Phase 6: Log dispatch entry with task details
     hle->VerboseMessage("RSP HLE: DispatchTask #%u type=%u ucode=0x%08X data=0x%08X dataptr=0x%08X",
         m_TasksDispatched, type, task.Ucode, task.UcodeData, task.DataPtr);
 

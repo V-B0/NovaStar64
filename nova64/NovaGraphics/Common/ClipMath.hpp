@@ -1,3 +1,7 @@
+/**
+ * @file ClipMath.hpp
+ * @brief Clipping Mathematics.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Clipping Mathematics
 // N64-specific clipping routines for the RDP pipeline
@@ -39,7 +43,8 @@ enum ClipPlane : int {
     PLANE_RIGHT  = 3,  // x <= w
     PLANE_BOTTOM = 4,  // y >= -w
     PLANE_TOP    = 5,  // y <= w
-    PLANE_COUNT  = 6
+    PLANE_W_NEAR = 6,  // w >= epsilon (behind-camera guard plane)
+    PLANE_COUNT  = 7
 };
 
 // ─── Clipped Vertex (full interpolation data) ────────────────────────────────
@@ -122,14 +127,17 @@ bool CullVertexRange(const uint32_t* clipFlags, int startIdx, int endIdx);
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Clip a triangle against all 6 frustum planes
+// clipRatio widens X/Y planes to match the N64 guard band (default 1.0 = exact frustum)
 // Returns number of output triangles (0 if fully clipped, 1+ if clipped polygon needs triangulation)
 int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                 ClippedPolygon& result);
+                 ClippedPolygon& result, float clipRatio = 1.0f);
 
 // Clip a polygon against a single plane
+// clipRatio scales the W comparand for X/Y planes (guard band)
 // Returns vertex count of clipped polygon
 int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
-                            ClipVertex* vertsOut, ClipPlane plane);
+                            ClipVertex* vertsOut, ClipPlane plane,
+                            float clipRatio = 1.0f);
 
 // Clip against near plane only (most common clip operation)
 int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,

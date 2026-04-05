@@ -1,3 +1,7 @@
+/**
+ * @file RspLog.hpp
+ * @brief RSP Logging.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Logging - Modernized from Project64's RspLog.h
 // C++20 with format strings and structured RDP logging

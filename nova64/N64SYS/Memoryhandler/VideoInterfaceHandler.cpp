@@ -1,3 +1,7 @@
+/**
+ * @file VideoInterfaceHandler.cpp
+ * @brief Video Interface Handler implementation.
+ */
 #include "VideoInterfaceHandler.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
@@ -9,6 +13,9 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+
+// Global frame counter for interrupt diagnostics
+uint64_t g_vi_frame_count = 0;
 
 // ===================================
 // Helper Macros / Constants
@@ -228,7 +235,7 @@ void VideoInterfaceHandler::generate_vi_interrupt() {
         m_interrupt_callback();
     }
 }
-
+                //    Format: 15 entries × 8 bytes (msg queue ptr + msg)
 void VideoInterfaceHandler::on_frame_timer() {
     // Called once per frame by the system timer.
     // Toggle field serration each frame (P64: m_FieldSerration ^= 1)
@@ -236,7 +243,6 @@ void VideoInterfaceHandler::on_frame_timer() {
     m_video_state.field_serration ^= 1;
     uint32_t interlace_bit = (m_vi_regs.status() >> 6) & 1;
     m_video_state.current_field = m_video_state.field_serration & interlace_bit;
-
 
     generate_vi_interrupt();
 
@@ -248,6 +254,7 @@ void VideoInterfaceHandler::on_frame_timer() {
 
     // Advance frame counters
     m_stats.total_frames++;
+    g_vi_frame_count = m_stats.total_frames;
 }
 
 void VideoInterfaceHandler::clear_vi_interrupt() {

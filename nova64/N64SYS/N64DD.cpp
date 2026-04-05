@@ -314,9 +314,10 @@ void N64Disk::LoadDisk(const fs::path& filePath) {
 }
 
 void N64Disk::SwapDisk(const fs::path& filePath) {
-    // TODO: Notify system of disk removal if needed
-    // g_Reg->ASIC_STATUS &= ~DD_STATUS_DISK_PRES;
-    
+    // Unload current disk before loading the new one.
+    // ASIC_STATUS disk-presence bits are managed by CachedRom::SetDiskData
+    // at the system level when the new disk data is linked.
+    UnloadDisk();
     LoadDisk(filePath);
 }
 

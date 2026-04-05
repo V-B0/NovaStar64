@@ -1,3 +1,7 @@
+/**
+ * @file RspRegState.hpp
+ * @brief RSP Register State Tracking.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Register State Tracking - Modernized from Project64's RspRegState.h
 // x64 recompiler register allocation and constant propagation

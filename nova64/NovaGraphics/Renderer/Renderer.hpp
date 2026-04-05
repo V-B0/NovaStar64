@@ -1,3 +1,7 @@
+/**
+ * @file Renderer.hpp
+ * @brief Renderer Abstraction Layer.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Renderer Abstraction Layer
 // Backend-agnostic rendering interface that all backends implement
@@ -42,6 +46,13 @@ enum class BackendType : uint8_t {
     Count
 };
 
+/// Internal format for image load/store binding (BindImageForRW).
+enum class ImageBindFormat : uint8_t {
+    R32F = 0,       // Z-image, deltaZ-image
+    RGBA8,          // Color image
+    R8UI            // Coverage image
+};
+
 enum class PrimitiveType : uint8_t {
     Triangles = 0,
     TriangleStrip,
@@ -66,7 +77,11 @@ enum class BlendFactor : uint8_t {
     OneMinusConstantColor,
     ConstantAlpha,
     OneMinusConstantAlpha,
-    SrcAlphaSaturate
+    SrcAlphaSaturate,
+    Src1Color,
+    OneMinusSrc1Color,
+    Src1Alpha,
+    OneMinusSrc1Alpha
 };
 
 enum class BlendOp : uint8_t {
@@ -205,8 +220,9 @@ struct VertexLayout {
         //   float s1, t1;         // offset 40  ( 8 bytes) - texcoord1
         //   float fog;            // offset 48  ( 4 bytes) - fog
         //   float perspW;         // offset 52  ( 4 bytes) - 1/clip_W
-        //                         // total = 56 bytes
-        layout.stride = 56;
+        //   float baryS, baryT;   // offset 56  ( 8 bytes) - barycentric for coverage AA
+        //                         // total = 64 bytes
+        layout.stride = 64;
         // position: location 0, float4
         layout.attribs.push_back({0, VertexAttribType::Float4, 0, false});
         // color: location 1, float4
@@ -219,6 +235,8 @@ struct VertexLayout {
         layout.attribs.push_back({4, VertexAttribType::Float1, 48, false});
         // perspW (1/clip_W): location 5, float1 — for perspective-correct texture interpolation
         layout.attribs.push_back({5, VertexAttribType::Float1, 52, false});
+        // baryCoord: location 6, float2 — barycentric coords for sub-pixel coverage AA
+        layout.attribs.push_back({6, VertexAttribType::Float2, 56, false});
         return layout;
     }
 
@@ -555,6 +573,7 @@ struct RendererCaps {
     bool supportsBindlessTextures = false;
     bool supportsDSA = false;
     bool supportsClipControl = false;
+    bool supportsFragmentShaderInterlock = false;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -596,6 +615,20 @@ public:
     virtual void BindShader(IShaderProgram* shader) = 0;
     virtual void BindPipeline(IPipeline* pipeline) = 0;
     virtual void BindRenderTarget(IRenderTarget* rt) = 0; // nullptr = default backbuffer
+
+    // ─── Image Load/Store (MLE blender, N64 Z-image) ──────────
+    /// Bind a native texture for pixel-shader read-write (imageLoad/imageStore on GL,
+    /// RasterizerOrderedTexture on D3D11.3).
+    /// @param unit   Image unit (0=Z, 1=deltaZ, 2=colorImage, 3=coverage)
+    /// @param handle Backend-native handle (GL: GLuint texture name, D3D: ID3D11UnorderedAccessView*)
+    /// @param format Internal pixel format of the image
+    virtual void BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat format) = 0;
+    /// Unbind all image units.
+    virtual void UnbindAllImages() = 0;
+    /// Control per-channel color write mask (equivalent to glColorMask / D3D blend write mask).
+    virtual void SetColorWriteMask(bool r, bool g, bool b, bool a) = 0;
+    /// Issue an image-access memory barrier (GL: glMemoryBarrier, D3D: no-op with ROV).
+    virtual void ImageMemoryBarrier() = 0;
 
     // ─── Drawing ───────────────────────────────────────────────
     virtual void Draw(const DrawCommand& cmd) = 0;

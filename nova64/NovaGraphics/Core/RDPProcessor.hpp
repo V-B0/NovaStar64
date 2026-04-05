@@ -17,6 +17,7 @@
 #include "../Texture/TextureCache.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <vector>
 #include <array>
@@ -39,6 +40,20 @@ struct DrawCall {
         TextureRect,
         FillRect,
     };
+
+    // Default constructor: zero-init everything, then set non-zero defaults.
+    // All initialization is in the body (no default member initializers) to
+    // prevent MSVC from emitting post-body initialization code that can
+    // overwrite a preceding memcpy in user-defined copy/move constructors.
+    DrawCall() {
+        std::memset(this, 0, sizeof(DrawCall));
+        texCoordBounds0[2] = 1.0f; texCoordBounds0[3] = 1.0f;
+        texCoordBounds1[2] = 1.0f; texCoordBounds1[3] = 1.0f;
+    }
+    DrawCall(const DrawCall& o)            { std::memcpy(this, &o, sizeof(DrawCall)); }
+    DrawCall& operator=(const DrawCall& o) { if (this != &o) std::memcpy(this, &o, sizeof(DrawCall)); return *this; }
+    DrawCall(DrawCall&& o)                 noexcept { std::memcpy(this, &o, sizeof(DrawCall)); }
+    DrawCall& operator=(DrawCall&& o)      noexcept { if (this != &o) std::memcpy(this, &o, sizeof(DrawCall)); return *this; }
     
     Type type;
     int  vertexStart;       // Index into batch vertex buffer
@@ -66,6 +81,32 @@ struct DrawCall {
     RDPColor fogColor;
     RDPColor blendColor;
     float    primLODFrac;
+    float    primLODMin;
+    int      fogUsage;         // 0=none, 1=standard, 2=F3DAM RGB
+    
+    // Primitive depth (snapshot — SetPrimDepth can change between draws)
+    uint16_t primDepth;
+    uint16_t primDeltaZ;
+    
+    // Texture scrolling
+    float scrollS0;
+    float scrollT0;
+    float scrollS1;
+    float scrollT1;
+
+    // Mipmap tile chain (for LOD textures — tiles baseTile+1 through baseTile+level)
+    TileDescriptor mipTiles[7];   // Up to 7 additional mip levels
+    int mipLevelCount;            // Number of mip levels beyond base (0 = no mipmapping)
+
+    // Texture coordinate bounds (for TextureRect bilinear bleed prevention)
+    float texCoordBounds0[4]; // minS, minT, maxS, maxT — defaults: 0,0,1,1
+    float texCoordBounds1[4];
+    bool  useTexCoordBounds;
+
+    // Shadow map flag: texture read from the depth buffer for shadow overlay
+    bool  isShadowMap;
+    // Shadow TLUT snapshot (256 alpha values extracted from TMEM palette region)
+    uint8_t shadowTLUT[256];
 };
 
 struct RenderBatch {
@@ -85,6 +126,16 @@ struct RenderBatch {
     std::vector<Vertex>   vertices;
     std::vector<DrawCall> drawCalls;
     
+    // Append a draw call using resize+memcpy instead of push_back.
+    // Works around MSVC codegen issue where push_back zeroes the
+    // newly constructed element despite the copy constructor body
+    // executing correctly.
+    void AppendDrawCall(const DrawCall& call) {
+        size_t idx = drawCalls.size();
+        drawCalls.resize(idx + 1);
+        std::memcpy(&drawCalls[idx], &call, sizeof(DrawCall));
+    }
+
     void Reset() {
         vertices.clear();
         drawCalls.clear();
@@ -271,6 +322,7 @@ private:
     void HandleLoadBlock(const uint32_t* words);
     void HandleLoadTile(const uint32_t* words);
     void HandleLoadTLUT(const uint32_t* words);
+    void HandleScrollTex(const uint32_t* words);
     void HandleSyncFull();
     void HandleSyncPipe();
     void HandleSyncTile();
@@ -291,7 +343,7 @@ private:
     // Persistent ring VBO for batched rendering (Task 2)
     std::unique_ptr<IVertexBuffer> m_ringVBO;
     size_t m_ringOffset = 0;
-    static constexpr size_t RING_VBO_SIZE = RenderBatch::MAX_VERTICES * 56; // 56 = sizeof(FlushBatch local GPUVertex)
+    static constexpr size_t RING_VBO_SIZE = RenderBatch::MAX_VERTICES * 64; // 64 = sizeof(FlushBatch local GPUVertex)
 
     // Scratch buffer for GPU vertex conversion (avoids per-flush heap allocation)
     std::vector<uint8_t> m_gpuVertScratch;
@@ -310,10 +362,14 @@ private:
     uint32_t m_noiseTexture = 0;
     uint32_t m_ditherTexture = 0;      // N64 Magic Square (default)
     uint32_t m_ditherBayerTexture = 0; // N64 Bayer (mode 1)
+    uint32_t m_debugWhiteTexture = 0;  // 1x1 white texture for diagnostics
+    uint32_t m_shadowTLUTTexture = 0;  // 256×1 R8 — shadow map palette from TMEM
     
     // Debug
     bool        m_logCommands = false;
     std::string m_lastCommandDesc;
+    int         m_debugOutputMode = 0; // 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
+    static constexpr int kDebugModeCount = 8;
     
     bool m_initialized = false;
 
@@ -322,6 +378,11 @@ private:
     SyncFullCallback m_syncFullCallback;
 
 public:
+    // ─── Debug output mode ───
+    int  GetDebugOutputMode() const { return m_debugOutputMode; }
+    void SetDebugOutputMode(int mode) { m_debugOutputMode = (mode >= 0 && mode < kDebugModeCount) ? mode : 0; }
+    void CycleDebugOutputMode() { m_debugOutputMode = (m_debugOutputMode + 1) % kDebugModeCount; }
+
     // ─── Game Hack Flags ───
     // Set by VideoPlugin based on GameProfile. Checked in hot paths.
     struct GameHacks {
@@ -350,7 +411,10 @@ private:
     void PopulateTextureInfo(DrawCall& call, int tileIndex);
     
     /// Build a Tex::TextureKey from a snapshotted TileDescriptor.
-    Tex::TextureKey BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr) const;
+    Tex::TextureKey BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr,
+                                    uint8_t tlutType = 0,
+                                    const TileDescriptor* mipTiles = nullptr,
+                                    int mipCount = 0) const;
 };
 
 } // namespace Nova64::Video

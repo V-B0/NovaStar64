@@ -1,3 +1,7 @@
+/**
+ * @file RSPRegisters.hpp
+ * @brief RSP Registers.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Registers - Modernized from Project64's RSPRegisters.h
 // C++20 with proper encapsulation, constexpr status bits

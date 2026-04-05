@@ -1,3 +1,7 @@
+/**
+ * @file GraphicsUcodes.hpp
+ * @brief Graphics Microcode Definitions.
+ */
 // SuperNova64 - N64 Emulator
 // Graphics Microcode Definitions
 // F3DEX/F3DEX2 command opcodes, geometry modes, and microcode CRC database

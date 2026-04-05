@@ -23,6 +23,8 @@ static void PrintUsage(const char* programName)
     std::printf("  --log <file>     Write log to file\n");
     std::printf("  --config <file>  Use specified config file\n");
     std::printf("  --frames <N>     Run for N frames (0 = unlimited, default)\n");
+    std::printf("  --fps <N>        Target FPS (0=unlimited, 30, 60; default: 60)\n");
+    std::printf("  --resolution <R> Window resolution: 480p, 720p, 960p, 1080p, 1440p, 4k (default: 960p)\n");
 }
 
 int main(int argc, char* argv[])
@@ -36,6 +38,10 @@ int main(int argc, char* argv[])
     std::string romPath;
     std::string configPath;
     uint64_t frameLimit = 0; // 0 = unlimited
+    int targetFPS = 60;      // Default: 60 FPS (NTSC)
+    int windowWidth = 1280;   // Default: 4x N64 native (1280x960)
+    int windowHeight = 960;
+    int internalResScale = 4; // Default: 4x (1280x960 internal)
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++)
@@ -62,6 +68,26 @@ int main(int argc, char* argv[])
             frameLimit = std::strtoull(argv[++i], nullptr, 10);
             Log::infof("Frame limit set to: %llu", (unsigned long long)frameLimit);
         }
+        else if (std::strcmp(argv[i], "--fps") == 0 && i + 1 < argc)
+        {
+            targetFPS = std::atoi(argv[++i]);
+            Log::infof("Target FPS set to: %d", targetFPS);
+        }
+        else if (std::strcmp(argv[i], "--resolution") == 0 && i + 1 < argc)
+        {
+            const char* res = argv[++i];
+            if (std::strcmp(res, "480p") == 0)       { windowWidth = 640;  windowHeight = 480;  internalResScale = 2; }
+            else if (std::strcmp(res, "720p") == 0)  { windowWidth = 960;  windowHeight = 720;  internalResScale = 3; }
+            else if (std::strcmp(res, "960p") == 0)  { windowWidth = 1280; windowHeight = 960;  internalResScale = 4; }
+            else if (std::strcmp(res, "1080p") == 0) { windowWidth = 1440; windowHeight = 1080; internalResScale = 4; }
+            else if (std::strcmp(res, "1440p") == 0) { windowWidth = 1920; windowHeight = 1440; internalResScale = 6; }
+            else if (std::strcmp(res, "4k") == 0)    { windowWidth = 2560; windowHeight = 1920; internalResScale = 8; }
+            else {
+                std::fprintf(stderr, "Unknown resolution: %s (use 480p, 720p, 960p, 1080p, 1440p, 4k)\n", res);
+                return 1;
+            }
+            Log::infof("Resolution set to: %dx%d", windowWidth, windowHeight);
+        }
         else if (argv[i][0] != '-')
         {
             romPath = argv[i];
@@ -79,6 +105,10 @@ int main(int argc, char* argv[])
     if (!romPath.empty())
     {
         Log::infof("Loading ROM: %s", romPath.c_str());
+        CN64System::s_TargetFPS = targetFPS;
+        CN64System::s_WindowWidth = windowWidth;
+        CN64System::s_WindowHeight = windowHeight;
+        CN64System::s_InternalResScale = internalResScale;
         if (!CN64System::RunFileImage(romPath.c_str(), frameLimit))
         {
             Log::error("Failed to load ROM. Exiting.");

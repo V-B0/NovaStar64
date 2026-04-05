@@ -1,3 +1,7 @@
+/**
+ * @file RSPInfo.hpp
+ * @brief RSP Info / Initialization.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Info / Initialization - Modernized from Project64's RSPInfo.h
 // C++20 with proper lifecycle management

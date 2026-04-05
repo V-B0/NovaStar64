@@ -1,3 +1,7 @@
+/**
+ * @file VideoPlugin.cpp
+ * @brief Video Plugin.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Video Plugin Implementation
 // ══════════════════════════════════════════════════════════════════════════════
@@ -64,6 +68,16 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         return false;
     }
 
+    // Initialize NovaGraphics logger so LOG_INFO/WARN/ERROR actually produce output
+    if (!g_logger.IsEnabled(LogLevel::Info, LogSubsystem::Core)) {
+        LoggerConfig logCfg;
+        logCfg.consoleOutput = true;
+        logCfg.fileOutput    = false;
+        logCfg.colorConsole  = true;
+        logCfg.globalLevel   = LogLevel::Info;
+        g_logger.Init(logCfg);
+    }
+
     Log::info("NovaGraphics initializing...");
     LOG_INFO("NovaGraphics {} initializing...", m_version);
     m_sysInfo   = sysInfo;
@@ -72,6 +86,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // Load configuration
     m_config.LoadDefaults();
     m_config.LoadFromFile("NovaGraphics.ini");
+
+    // Apply CLI overrides (set by NovaGraphicsGFXPlugin before Initialize)
+    if (m_pendingResScale > 0) {
+        m_config.internalResScale = m_pendingResScale;
+        m_config.windowWidth      = m_pendingWindowW;
+        m_config.windowHeight     = m_pendingWindowH;
+        m_pendingResScale = 0;
+    }
 
     // Initialize game compatibility database
     GameDatabase::Instance().Init();
@@ -151,7 +173,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
                             m_rdpProcessor.get());
 
     // Initialize framebuffer manager (creates blit/filter GL resources)
-    g_fbManager.Init(1);
+    g_fbManager.Init(static_cast<uint32_t>(m_config.internalResScale));
 
     // Initialize depth buffer manager (N64-accurate depth compare)
     g_depthManager.Init();
@@ -410,8 +432,6 @@ void VideoPlugin::ProcessDList() {
             m_rdpProcessor->Reset(false);  // warm reset: fresh RDP state, keep frame stats
         }
 
-        LOG_DEBUG("HLE dispatch: dl=0x{:08X} ucode=0x{:08X}", dlAddr, ucodeAddr);
-
         m_dispatcher->ProcessGraphicsTask(
             taskDataPtr, ucodeAddr, ucodeSize,
             ucodeDataAddr, ucodeDataSize, dlAddr);
@@ -444,20 +464,15 @@ void VideoPlugin::ProcessRDPList() {
     std::lock_guard<std::mutex> lock(m_glMutex);
     if (auto* win = GetActiveWindow()) win->MakeContextCurrent();
 
-    // Read the entire big-endian RDRAM buffer into a native-endian word array,
-    // then hand it to ProcessCommandBuffer in one shot. Previously this sent one
-    // 8-byte command at a time, which meant triangle commands (32-176 bytes) never
-    // had enough data and were silently skipped — causing the black screen.
+    // Read the RDRAM buffer as native 32-bit words (PJ64-style: RDRAM stores
+    // words in host LE order, so a native uint32_t read gives the correct N64 value).
     uint32_t byteCount = endAddr - startAddr;
     int wordCount = static_cast<int>(byteCount / 4);
 
     m_rdpCmdScratch.resize(wordCount);
-    const uint8_t* ptr = m_sysInfo.rdram + startAddr;
-    for (int i = 0; i < wordCount; ++i, ptr += 4)
-        m_rdpCmdScratch[i] = (static_cast<uint32_t>(ptr[0]) << 24) |
-                             (static_cast<uint32_t>(ptr[1]) << 16) |
-                             (static_cast<uint32_t>(ptr[2]) <<  8) |
-                              static_cast<uint32_t>(ptr[3]);
+    const uint32_t* srcWords = reinterpret_cast<const uint32_t*>(m_sysInfo.rdram + startAddr);
+    for (int i = 0; i < wordCount; ++i)
+        m_rdpCmdScratch[i] = srcWords[i];
 
     m_rdpProcessor->ProcessCommandBuffer(m_rdpCmdScratch.data(), wordCount);
     m_frameStats.rdpCommandCount += static_cast<uint32_t>(wordCount / 2);
@@ -523,7 +538,10 @@ void VideoPlugin::UpdateScreen() {
         // Bits 8-9 = AA mode: 0/1 = AA enabled, 2 = resample only, 3 = replicate
         uint32_t aaMode = (m_viStatus >> 8) & 0x3;
         viCfg.antiAlias = (aaMode <= 1);
+        viCfg.dedither  = (aaMode == 0);  // Only AA mode 0 enables dither removal
         viCfg.divot     = (m_viStatus & (1u << 4)) != 0;
+        viCfg.gammaCorrect = (m_viStatus & (1u << 3)) != 0; // VI_STATUS gamma enable
+        viCfg.gammaDither  = (m_viStatus & (1u << 2)) != 0; // VI_STATUS gamma dither
         viCfg.interlaced = (m_viStatus & (1u << 6)) != 0; // Serrate bit
         viCfg.field      = static_cast<uint32_t>(m_frameCount & 1);
         uint32_t yscale = m_viYScale & 0xFFF;
@@ -543,13 +561,9 @@ void VideoPlugin::UpdateScreen() {
     // FlushBatch), the content is already on the default framebuffer.
     // In that case we skip the VI framebuffer blit so the HLE output is
     // presented directly.  When no HLE content was produced (e.g. the game
-    // renders entirely via the CPU), fall back to the VI RDRAM blit.
+    // renders entirely via the CPU, or the N64 boot screen), fall back to
+    // the VI RDRAM blit.
     //
-    // For games that mix CPU + HLE rendering: draw VI framebuffer first
-    // as a background layer, then blend HLE content on top with alpha.
-    //
-    // If the HLE path rendered triangles this frame, those pixels are already
-    // in the default framebuffer — just swap.  Otherwise fall back to VI RDRAM blit.
     // Once the HLE path has produced content, latch m_hleEverRendered so we
     // never fall back to VI RDRAM blit on intermediate (non-DL) VI frames.
     // Without this, double-buffered SwapBuffers alternates HLE ↔ VI each
@@ -561,33 +575,21 @@ void VideoPlugin::UpdateScreen() {
     bool useVIBlit = !m_hleRenderedThisFrame && !m_hleEverRendered && hasVIContent;
     bool didRender = false;
 
+    // During the initialization grace period, show the VI RDRAM blit
+    // (this is the N64 boot logo / IPL sequence).  Don't black out.
     if (m_isInitializationPhase) {
         m_framesAfterRomOpen++;
-        if (m_framesAfterRomOpen < ROM_INIT_GRACE_PERIOD) {
-            useVIBlit = false;
-            
-            if (!m_hleRenderedThisFrame && !m_hleEverRendered) {
-                // Render a black frame during the grace period to hide initialization garbage
-                m_renderer->BeginFrame();
-                int32_t winW = 640, winH = 480;
-                if (auto* activeWin = GetActiveWindow()) activeWin->GetDrawableSize(winW, winH);
-                glViewport(0, 0, winW, winH);
-                glScissor(0, 0, winW, winH);
-                glDisable(GL_SCISSOR_TEST);
-                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT);
-                didRender = true;
-            }
-        } else {
+        if (m_framesAfterRomOpen >= ROM_INIT_GRACE_PERIOD) {
             m_isInitializationPhase = false;
         }
+        // During init, never override — let useVIBlit decide
     }
 
     if (m_hleRenderedThisFrame || m_hleEverRendered) {
         // HLE content is available — present it directly (no VI RDRAM compositing).
         int32_t winW = 640, winH = 480;
         if (win) win->GetDrawableSize(winW, winH);
-        g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
+        g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
         didRender = true;
     } else if (useVIBlit && m_viWidth != 0) {
         // Compute output resolution from xscale/yscale
@@ -734,12 +736,6 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
     if (fbAddr + fbSize > m_sysInfo.rdramSize) return;
 
     const uint8_t* src = m_sysInfo.rdram + fbAddr;
-    
-    // Check if framebuffer actually has valid non-garbage data
-    // If it's early in initialization, also prevent fully empty display
-    if (m_isInitializationPhase && !IsFramebufferValid(src, fbWidth, fbHeight, bpp)) {
-        return;
-    }
 
     // Decode N64 framebuffer to RGBA8888
     std::vector<uint32_t> pixels(fbWidth * fbHeight);

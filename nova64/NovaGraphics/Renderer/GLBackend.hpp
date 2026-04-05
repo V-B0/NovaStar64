@@ -1,3 +1,7 @@
+/**
+ * @file GLBackend.hpp
+ * @brief OpenGL 4.6 Backend.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - OpenGL 4.6 Backend
 // Complete GL4.6 Core Profile + DSA rendering backend implementation
@@ -79,6 +83,10 @@ inline GLenum TranslateBlendFactor(BlendFactor factor) {
         case BlendFactor::ConstantAlpha:        return GL_CONSTANT_ALPHA;
         case BlendFactor::OneMinusConstantAlpha:return GL_ONE_MINUS_CONSTANT_ALPHA;
         case BlendFactor::SrcAlphaSaturate:     return GL_SRC_ALPHA_SATURATE;
+        case BlendFactor::Src1Color:             return GL_SRC1_COLOR;
+        case BlendFactor::OneMinusSrc1Color:     return GL_ONE_MINUS_SRC1_COLOR;
+        case BlendFactor::Src1Alpha:             return GL_SRC1_ALPHA;
+        case BlendFactor::OneMinusSrc1Alpha:     return GL_ONE_MINUS_SRC1_ALPHA;
         default:                                return GL_ONE;
     }
 }
@@ -383,6 +391,10 @@ public:
     void BindShader(IShaderProgram* shader) override;
     void BindPipeline(IPipeline* pipeline) override;
     void BindRenderTarget(IRenderTarget* rt) override;
+    void BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat format) override;
+    void UnbindAllImages() override;
+    void SetColorWriteMask(bool r, bool g, bool b, bool a) override;
+    void ImageMemoryBarrier() override;
 
     // ─── Drawing ───────────────────────────────────────────────
     void Draw(const DrawCommand& cmd) override;

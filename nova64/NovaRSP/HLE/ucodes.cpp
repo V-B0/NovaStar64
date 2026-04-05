@@ -1,3 +1,7 @@
+/**
+ * @file ucodes.cpp
+ * @brief RSP HLE Microcode Dispatchers.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Microcode Dispatchers
 // CIC x105 boot ucode, audio list processors, MP3, Musyx, JPEG

@@ -120,8 +120,8 @@ inline void F3DHandler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w
 }
 
 inline void F3DHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // F3D vertex format: count=(w0>>10)&0x3F, startIdx=(w0>>16)&0xF
-    int count = (w0 >> 10) & 0x3F;
+    // F3D vertex format: count-1 in bits [23:20], v0 in bits [19:16]
+    int count = ((w0 >> 20) & 0xF) + 1;
     int startIndex = ((w0 >> 16) & 0xF);
     
     LoadVertices(ctx, w1, count, startIndex);
@@ -143,8 +143,8 @@ inline void F3DHandler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) 
 }
 
 inline void F3DHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint32_t start = ((w0 & 0xFFF) / 40);  // F3D vertex size = 40 bytes in pipeline
-    uint32_t end = (w1 / 40);
+    uint32_t start = ((w0 & 0x00FFFFFF) / 40);
+    uint32_t end = (w1 / 40) - 1;  // F3D encodes exclusive end
     CullDisplayList(ctx, start, end);
 }
 
@@ -154,8 +154,40 @@ inline void F3DHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1
 }
 
 inline void F3DHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint8_t index = (w0 >> 16) & 0xFF;
-    uint16_t offset = w0 & 0xFFFF;
+    // GBI1 encoding: index at bits [7:0], offset at bits [23:8]
+    uint8_t index = w0 & 0xFF;
+    uint16_t offset = static_cast<uint16_t>((w0 >> 8) & 0xFFFF);
+    
+    // GBI1 numLights formula: w1 = 0x80000000 + (numLights+1)*32
+    if (index == MoveWord::MW_NUMLIGHT) {
+        if (!ctx.state) return;
+        int numLights = static_cast<int>(((w1 - 0x80000000u) >> 5) - 1);
+        if (numLights < 0) numLights = 0;
+        if (numLights > MAX_LIGHTS) numLights = MAX_LIGHTS;
+        ctx.state->geometry.numLights = numLights;
+        ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+        return;
+    }
+    
+    // GBI1 light colors: 32-byte stride (offsets 0x00,0x20,0x40,...)
+    // Base handler uses 24-byte stride (GBI2), so intercept here
+    if (index == MoveWord::MW_LIGHTCOL) {
+        if (!ctx.state) return;
+        // Only handle "a" offsets (primary color at offset % 0x20 == 0)
+        // "b" offsets (0x04,0x24,...) are secondary copies, ignored by GLideN64
+        if ((offset & 0x1F) == 0) {
+            int lightIdx = offset / 0x20;
+            if (lightIdx >= 0 && lightIdx < MAX_LIGHTS) {
+                auto& light = ctx.state->geometry.lights[lightIdx];
+                light.color[0] = static_cast<float>((w1 >> 24) & 0xFF) / 255.0f;
+                light.color[1] = static_cast<float>((w1 >> 16) & 0xFF) / 255.0f;
+                light.color[2] = static_cast<float>((w1 >> 8)  & 0xFF) / 255.0f;
+                ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+            }
+        }
+        return;
+    }
+    
     MoveWord(ctx, index, offset, w1);
 }
 
@@ -165,13 +197,13 @@ inline void F3DHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w
 
 inline void F3DHandler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF) + 1;
+    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeH(ctx, shift, length, w1);
 }
 
 inline void F3DHandler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF) + 1;
+    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeL(ctx, shift, length, w1);
 }
 
@@ -180,14 +212,31 @@ inline void F3DHandler::Cmd_G_ENDDL(DListContext& ctx, uint32_t w0, uint32_t w1)
     EndDisplayList(ctx);
 }
 
+/// Translate GBI1 geometry mode bits to GBI2 (internal) format.
+/// GBI1 and GBI2 share most bit positions, but SHADING_SMOOTH, CULL_FRONT,
+/// and CULL_BACK differ:
+///   GBI1: SHADING_SMOOTH=0x200, CULL_FRONT=0x1000, CULL_BACK=0x2000
+///   GBI2: SHADING_SMOOTH=0x200000, CULL_FRONT=0x200, CULL_BACK=0x400
+static inline uint32_t TranslateGBI1ToGBI2(uint32_t gbi1) {
+    constexpr uint32_t GBI1_SHADING_SMOOTH = 0x00000200;
+    constexpr uint32_t GBI1_CULL_FRONT     = 0x00001000;
+    constexpr uint32_t GBI1_CULL_BACK      = 0x00002000;
+    constexpr uint32_t GBI1_MASK = GBI1_SHADING_SMOOTH | GBI1_CULL_FRONT | GBI1_CULL_BACK;
+    uint32_t result = gbi1 & ~GBI1_MASK;
+    if (gbi1 & GBI1_SHADING_SMOOTH) result |= 0x00200000; // G_SHADING_SMOOTH
+    if (gbi1 & GBI1_CULL_FRONT)     result |= 0x00000200; // G_CULL_FRONT
+    if (gbi1 & GBI1_CULL_BACK)      result |= 0x00000400; // G_CULL_BACK
+    return result;
+}
+
 inline void F3DHandler::Cmd_G_SETGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, 0, w0 & 0x00FFFFFF);
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF));
 }
 
 inline void F3DHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w1;
-    SetGeometryMode(ctx, w0 & 0x00FFFFFF, 0);
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF), 0);
 }
 
 inline void F3DHandler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -272,7 +321,7 @@ inline void F3DHandler::Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint
     geo.texture.enabled = true;
 
     // Enable perspective texture
-    ctx.state->otherModeH |= (1u << 20); // texturePersp
+    ctx.state->otherModeH |= OTHERMODE_TEXTPERSP; // texturePersp (bit 19)
 
     float z = 0.0f;
     float ww = 1.0f;

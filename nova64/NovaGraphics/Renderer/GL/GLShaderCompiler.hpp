@@ -1,3 +1,7 @@
+/**
+ * @file GLShaderCompiler.hpp
+ * @brief OpenGL implementation of IShaderCompiler.
+ */
 // NovaGraphics — OpenGL implementation of IShaderCompiler
 // Delegates to GLShader / GLProgram for actual GL compilation.
 

@@ -12,6 +12,8 @@
 #include "../../common/File.hpp"
 #include "../../common/IniFile.hpp"
 #include <algorithm>
+#include <cstring>
+#include <filesystem>
 
 // Factory function declarations from plugin .cpp files
 namespace Plugins {
@@ -509,10 +511,27 @@ std::vector<std::string> PluginManager::DiscoverPlugins(const std::string& direc
     Log::infof("PluginManager: Discovering plugins in %s", directory.c_str());
     
     std::vector<std::string> plugins;
-    
-    // TODO: Scan directory for .dll/.so files
-    // For now, return empty list
-    
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(directory, ec)) {
+        Log::warningf("PluginManager: Directory does not exist: %s", directory.c_str());
+        return plugins;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        const auto ext = entry.path().extension().string();
+#ifdef _WIN32
+        if (ext == ".dll")
+#else
+        if (ext == ".so")
+#endif
+        {
+            plugins.push_back(entry.path().string());
+        }
+    }
+
+    Log::infof("PluginManager: Found %zu plugin(s)", plugins.size());
     return plugins;
 }
 
@@ -520,13 +539,21 @@ PluginInfo PluginManager::GetPluginInfo(const std::string& path) const
 {
     Log::debugf("PluginManager: Getting plugin info from %s", path.c_str());
     
-    // TODO: Load plugin and query info without initializing
-    
-    PluginInfo info;
-    info.Type = PluginType::Graphics; // Default fallback
+    PluginInfo info{};
+    info.Type = PluginType::Graphics;
     info.Version = 0;
-    info.Name = "Unknown";
-    
+    info.Name = std::filesystem::path(path).stem().string();
+
+    // Infer plugin type from filename convention
+    const auto stem = info.Name;
+    if (stem.find("RSP") != std::string::npos || stem.find("rsp") != std::string::npos) {
+        info.Type = PluginType::RSP;
+    } else if (stem.find("Audio") != std::string::npos || stem.find("audio") != std::string::npos) {
+        info.Type = PluginType::Audio;
+    } else if (stem.find("Input") != std::string::npos || stem.find("input") != std::string::npos) {
+        info.Type = PluginType::Input;
+    }
+
     return info;
 }
 
@@ -563,13 +590,21 @@ bool PluginManager::SaveState(std::vector<uint8_t>& data)
     
     bool success = true;
     
-    // Save each plugin's state using the PluginBase SaveState(uint8_t*, size_t) API
+    // Save each plugin's state as [4-byte LE length][payload].
     auto savePlugin = [&](PluginBase* plugin) {
-        if (!plugin) return;
-        // First pass: query how much space is needed
-        constexpr size_t kMaxStateSize = 64 * 1024; // 64KB max per plugin
+        if (!plugin) {
+            // Write a zero-length entry to keep the slot order
+            uint32_t zero = 0;
+            const auto* p = reinterpret_cast<const uint8_t*>(&zero);
+            data.insert(data.end(), p, p + 4);
+            return;
+        }
+        constexpr size_t kMaxStateSize = 64 * 1024;
         std::vector<uint8_t> buf(kMaxStateSize, 0);
         size_t written = plugin->SaveState(buf.data(), buf.size());
+        uint32_t len = static_cast<uint32_t>(written);
+        const auto* p = reinterpret_cast<const uint8_t*>(&len);
+        data.insert(data.end(), p, p + 4);
         if (written > 0) {
             data.insert(data.end(), buf.begin(), buf.begin() + written);
         }
@@ -587,9 +622,32 @@ bool PluginManager::LoadState(const std::vector<uint8_t>& data)
 {
     Log::info("PluginManager: Loading plugin states");
     
-    // TODO: Split data between plugins and load each
-    // For now, just return success
-    
+    PluginBase* plugins[] = {
+        m_GraphicsPlugin.get(),
+        m_AudioPlugin.get(),
+        m_InputPlugin.get(),
+        m_RSPPlugin.get()
+    };
+
+    size_t offset = 0;
+    for (auto* plugin : plugins) {
+        if (offset + 4 > data.size()) {
+            Log::error("PluginManager: Truncated state data");
+            return false;
+        }
+        uint32_t len = 0;
+        std::memcpy(&len, data.data() + offset, 4);
+        offset += 4;
+        if (offset + len > data.size()) {
+            Log::error("PluginManager: State data overflow");
+            return false;
+        }
+        if (plugin && len > 0) {
+            plugin->LoadState(data.data() + offset, len);
+        }
+        offset += len;
+    }
+
     return true;
 }
 
@@ -683,7 +741,6 @@ std::unique_ptr<PluginBase> PluginManager::LoadPluginFromFile(const std::string&
 
 std::string PluginManager::GetDefaultPluginPath(PluginType type) const
 {
-    // Return empty string - will use default plugins
     return "";
 }
 

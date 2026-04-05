@@ -4,6 +4,7 @@
  */
 
 #include "MicrocodeDispatcher.hpp"
+#include <cstdio>
 #include "F3D.hpp"
 #include "F3DEX.hpp"
 #include "F3DEX2.hpp"

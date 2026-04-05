@@ -1,3 +1,7 @@
+/**
+ * @file DDisk.cpp
+ * @brief D Disk implementation.
+ */
 #include "DDisk.hpp"
 #include <cstring>
 #include <algorithm>
@@ -149,17 +153,13 @@ bool DiskController::ReadSector(uint32_t track, uint32_t sector) {
     }
 
     uint32_t offset = CalculatePhysicalOffset(current_zone, track, sector);
-    
-    // TODO: Implement actual disk image file reading here.
-    // For now, we simulate data by filling the buffer with zeros or a pattern.
-    // std::printf("ReadSector: Zone %d, Track %d, Sector %d -> Offset %08X\n", (int)current_zone, track, sector, offset);
-    
-    // Mock simulation:
-    std::memset(sector_buffer, 0, BYTES_PER_SECTOR);
-    // Optionally put some debug signature
-    sector_buffer[0] = static_cast<uint8_t>(track >> 8);
-    sector_buffer[1] = static_cast<uint8_t>(track & 0xFF);
-    sector_buffer[2] = static_cast<uint8_t>(sector);
+
+    if (disk_data && offset + BYTES_PER_SECTOR <= disk_data_size) {
+        std::memcpy(sector_buffer, disk_data + offset, BYTES_PER_SECTOR);
+    } else {
+        // No disk image attached or offset out of range — zero-fill
+        std::memset(sector_buffer, 0, BYTES_PER_SECTOR);
+    }
     
     status.data_ready = true;
     return true;
@@ -172,24 +172,30 @@ bool DiskController::WriteSector(uint32_t track, uint32_t sector) {
     }
     
     uint32_t offset = CalculatePhysicalOffset(current_zone, track, sector);
-    
-    // TODO: Implement actual disk image file writing here.
-    // For simulation:
-    // std::printf("WriteSector: Zone %d, Track %d, Sector %d -> Offset %08X\n", (int)current_zone, track, sector, offset);
+
+    if (disk_data_writable && offset + BYTES_PER_SECTOR <= disk_data_size) {
+        std::memcpy(disk_data_writable + offset, sector_buffer, BYTES_PER_SECTOR);
+    } else {
+        HandleError();
+        return false;
+    }
     
     return true;
 }
 
 bool DiskController::ReadBlock(uint32_t block) {
-    // Stub: Simulate reading a block of sectors
     current_block = block;
-    // In reality, this would read SECTORS_PER_BLOCK sectors
+    for (uint32_t s = 0; s < SECTORS_PER_BLOCK; ++s) {
+        if (!ReadSector(current_track, s)) return false;
+    }
     return true;
 }
 
 bool DiskController::WriteBlock(uint32_t block) {
-    // Stub
     current_block = block;
+    for (uint32_t s = 0; s < SECTORS_PER_BLOCK; ++s) {
+        if (!WriteSector(current_track, s)) return false;
+    }
     return true;
 }
 

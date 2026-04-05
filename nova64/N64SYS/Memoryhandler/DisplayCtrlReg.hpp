@@ -1,3 +1,7 @@
+/**
+ * @file DisplayCtrlReg.hpp
+ * @brief Display Ctrl Reg declarations and types.
+ */
 #pragma once
 #include "Memoryhandler.hpp"
 #include <cstdint>

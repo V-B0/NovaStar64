@@ -1,3 +1,7 @@
+/**
+ * @file RspSettings.cpp
+ * @brief RSP Settings Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Settings Implementation
 // Thread-safe settings singleton with static members

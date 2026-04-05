@@ -1,3 +1,7 @@
+/**
+ * @file SpecializedMicrocodes.hpp
+ * @brief Specialized Microcode Handlers.
+ */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Specialized Microcode Handlers
 // Proper implementations for microcode variants that previously fell back
@@ -611,7 +615,7 @@ private:
     void Cmd_SETOTHERMODE_L_EX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
         uint32_t shift = (w0 >> 8) & 0xFF;
-        uint32_t len   = w0 & 0xFF;
+        uint32_t len   = (w0 & 0xFF) + 1;
         uint32_t mask  = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
         ctx.state->otherModeL = (ctx.state->otherModeL & ~mask) | (w1 & mask);
     }
@@ -619,7 +623,7 @@ private:
     void Cmd_SETOTHERMODE_H_EX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
         uint32_t shift = (w0 >> 8) & 0xFF;
-        uint32_t len   = w0 & 0xFF;
+        uint32_t len   = (w0 & 0xFF) + 1;
         uint32_t mask  = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
         ctx.state->otherModeH = (ctx.state->otherModeH & ~mask) | (w1 & mask);
     }

@@ -1,3 +1,7 @@
+/**
+ * @file MIPSYInterfaceHandler.hpp
+ * @brief MIPSY Interface Handler declarations and types.
+ */
 #pragma once
 #include <cstdint>
 #include <memory>

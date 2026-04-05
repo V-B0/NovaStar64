@@ -1,3 +1,7 @@
+/**
+ * @file RspSystem.cpp
+ * @brief RSP System Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP System Implementation
 // Central RSP subsystem: lifecycle, execution loop, sync CPU

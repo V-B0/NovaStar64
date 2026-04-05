@@ -1,6 +1,7 @@
-// SuperNova64 - N64 Emulator
-// RSP Register Handler Implementation
-// SP DMA transfers and hardware register access
+/**
+ * @file RSPRegisterHandler.cpp
+ * @brief RSP register handler: SP DMA transfers and hardware register access.
+ */
 
 #include "RSPRegisterHandler.hpp"
 #include "RspMemory.hpp"

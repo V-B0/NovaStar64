@@ -1,3 +1,7 @@
+/**
+ * @file Register.hpp
+ * @brief Register declarations and types.
+ */
 #pragma once
 
 #include "../../common/log.hpp"
@@ -511,6 +515,10 @@ public:
     // Timer access for deferred SP interrupt scheduling
     N64System::SystemTimer& GetSystemTimer() { return m_SystemTimer; }
 
+    // Allow recompiler branch callbacks to set TestTimer (matching interpreter
+    // JR/JALR behavior where every indirect jump triggers a timer check).
+    void SetTestTimer();
+
     // Deferred RSP interrupt delivery: when true, RSP HLE code should NOT set
     // MI_INTR bits or call CheckInterrupts. Instead, accumulate bits in
     // m_deferred_mi_intr for the RspTimer to apply later.
@@ -563,6 +571,7 @@ public:
     uint32_t m_AudioIntrReg;
     uint32_t m_GfxIntrReg;
     uint32_t m_RspIntrReg;
+    bool m_DpFreshFromHLE = false;  // Protect DP bit from first CLR_DP_INTR after HLE task
     
 private:
     // Private constructor to prevent copying

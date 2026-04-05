@@ -1,3 +1,7 @@
+/**
+ * @file RDRAMInterFaceHandler.cpp
+ * @brief RDRAM Inter Face Handler implementation.
+ */
 #include "RDRAMInterFaceHandler.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
@@ -144,10 +148,6 @@ uint32_t RDRAMInterfaceHandler::calculate_cas_cycles() const {
 
 void RDRAMInterfaceHandler::log_register_access(uint32_t address, uint32_t value, bool is_write) const
 {
-    /*
-    const char* op = is_write ? "Write" : "Read";
-    Log::debugf("RI %s 0x%08X: 0x%08X (PC: 0x%016llX)", op, address, value, m_pc);
-    */
 }
 
 std::string RDRAMInterfaceHandler::get_register_dump() const

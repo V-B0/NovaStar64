@@ -1,3 +1,7 @@
+/**
+ * @file ShaderManager.cpp
+ * @brief Shader Manager.
+ */
 // SPDX-License-Identifier: MIT
 // NovaGraphics - Shader Manager Implementation
 
@@ -115,7 +119,7 @@ void ShaderCache::EvictLRU(int count) {
 
 // Binary format: [MAGIC][VERSION][COUNT][ [KEY][VERT_LEN][VERT_SRC][FRAG_LEN][FRAG_SRC] ... ]
 static const uint32_t CACHE_MAGIC   = 0x4E565343; // 'NVSC'
-static const uint32_t CACHE_VERSION = 1;
+static const uint32_t CACHE_VERSION = 18;
 
 bool ShaderCache::SaveToDisk(const std::string& path) const {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -403,7 +407,9 @@ void ShaderManager::SetMatrixUniforms(const float* mvp, const float* modelView) 
 
 void ShaderManager::SetColorUniforms(const float* primColor, const float* envColor,
                                       const float* fogColor, const float* blendColor,
-                                      float primLOD) {
+                                      float primLODFrac, float primLODMin,
+                                      float centerR, float centerG, float centerB,
+                                      float scaleR, float scaleG, float scaleB) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
     if (primColor && u.primColor >= 0)
@@ -415,14 +421,14 @@ void ShaderManager::SetColorUniforms(const float* primColor, const float* envCol
     if (blendColor && u.blendColor >= 0)
         m_compiler->SetUniform4f(u.blendColor, blendColor[0], blendColor[1], blendColor[2], blendColor[3]);
     if (u.primLOD >= 0)
-        m_compiler->SetUniform1f(u.primLOD, primLOD);
+        m_compiler->SetUniform1f(u.primLOD, primLODMin);
     if (u.primLODFrac >= 0)
-        m_compiler->SetUniform1f(u.primLODFrac, primLOD);
-    // Chroma key center/scale — default to 0 until RDP sets them
+        m_compiler->SetUniform1f(u.primLODFrac, primLODFrac);
+    // Chroma key center/scale — wired from RDP state
     if (u.centerColor >= 0)
-        m_compiler->SetUniform3f(u.centerColor, 0.0f, 0.0f, 0.0f);
+        m_compiler->SetUniform3f(u.centerColor, centerR, centerG, centerB);
     if (u.scaleColor >= 0)
-        m_compiler->SetUniform3f(u.scaleColor, 0.0f, 0.0f, 0.0f);
+        m_compiler->SetUniform3f(u.scaleColor, scaleR, scaleG, scaleB);
 }
 
 void ShaderManager::SetFillColor(float r, float g, float b, float a) {
@@ -481,6 +487,17 @@ void ShaderManager::SetFogParams(float multiplier, float offset) {
     if (u.fogOffset >= 0)     m_compiler->SetUniform1f(u.fogOffset, offset);
 }
 
+void ShaderManager::SetTexCoordBounds(bool enabled, const float* bounds0, const float* bounds1) {
+    if (!m_currentShader || !m_compiler) return;
+    const auto& u = m_currentShader->uniforms;
+    if (u.useTexCoordBounds >= 0)
+        m_compiler->SetUniform1i(u.useTexCoordBounds, enabled ? 1 : 0);
+    if (enabled && bounds0 && u.texCoordBounds0 >= 0)
+        m_compiler->SetUniform4f(u.texCoordBounds0, bounds0[0], bounds0[1], bounds0[2], bounds0[3]);
+    if (enabled && bounds1 && u.texCoordBounds1 >= 0)
+        m_compiler->SetUniform4f(u.texCoordBounds1, bounds1[0], bounds1[1], bounds1[2], bounds1[3]);
+}
+
 void ShaderManager::SetDepthParams(float scale, float offset, float primDepth) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
@@ -494,6 +511,20 @@ void ShaderManager::SetN64DepthMode(int zMode, float primDeltaZ) {
     const auto& u = m_currentShader->uniforms;
     if (u.zMode      >= 0) m_compiler->SetUniform1i(u.zMode, zMode);
     if (u.primDeltaZ >= 0) m_compiler->SetUniform1f(u.primDeltaZ, primDeltaZ);
+}
+
+void ShaderManager::SetConvertK(const int16_t convertK[6]) {
+    if (!m_currentShader || !m_compiler) return;
+    const auto& u = m_currentShader->uniforms;
+    // K0-K3 packed into vec4 for YUV→RGB conversion (9-bit signed → float)
+    if (u.convertK >= 0)
+        m_compiler->SetUniform4f(u.convertK,
+            convertK[0] / 256.0f, convertK[1] / 256.0f,
+            convertK[2] / 256.0f, convertK[3] / 256.0f);
+    if (u.k4 >= 0)
+        m_compiler->SetUniform1f(u.k4, convertK[4] / 255.0f);
+    if (u.k5 >= 0)
+        m_compiler->SetUniform1f(u.k5, convertK[5] / 255.0f);
 }
 
 void ShaderManager::SetScreenSize(float width, float height) {
@@ -513,6 +544,62 @@ void ShaderManager::SetResolutionScale(float scaleX, float scaleY) {
     if (!m_currentShader || !m_compiler) return;
     if (m_currentShader->uniforms.resolutionScale >= 0)
         m_compiler->SetUniform2f(m_currentShader->uniforms.resolutionScale, scaleX, scaleY);
+}
+
+void ShaderManager::SetTexturePersp(int persp) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.texturePersp >= 0)
+        m_compiler->SetUniform1i(m_currentShader->uniforms.texturePersp, persp);
+}
+
+void ShaderManager::SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1) {
+    if (!m_currentShader || !m_compiler) return;
+    const auto& u = m_currentShader->uniforms;
+    if (u.fbMonochrome0 >= 0) m_compiler->SetUniform1i(u.fbMonochrome0, mono0);
+    if (u.fbMonochrome1 >= 0) m_compiler->SetUniform1i(u.fbMonochrome1, mono1);
+    if (u.fbFixedAlpha0 >= 0) m_compiler->SetUniform1i(u.fbFixedAlpha0, fixedAlpha0);
+    if (u.fbFixedAlpha1 >= 0) m_compiler->SetUniform1i(u.fbFixedAlpha1, fixedAlpha1);
+}
+
+void ShaderManager::SetScreenScale(float scaleX, float scaleY) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.screenScale >= 0)
+        m_compiler->SetUniform2f(m_currentShader->uniforms.screenScale, scaleX, scaleY);
+}
+
+void ShaderManager::SetKeyWidth(float r, float g, float b) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.keyWidth >= 0)
+        m_compiler->SetUniform3f(m_currentShader->uniforms.keyWidth, r, g, b);
+}
+
+void ShaderManager::SetLODParams(float minLod, int maxTile, int textureDetail) {
+    if (!m_currentShader || !m_compiler) return;
+    const auto& u = m_currentShader->uniforms;
+    if (u.minLod >= 0)
+        m_compiler->SetUniform1f(u.minLod, minLod);
+    if (u.maxTile >= 0)
+        m_compiler->SetUniform1i(u.maxTile, maxTile);
+    if (u.textureDetail >= 0)
+        m_compiler->SetUniform1i(u.textureDetail, textureDetail);
+}
+
+void ShaderManager::SetFogUsage(int fogUsage) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.fogUsage >= 0)
+        m_compiler->SetUniform1i(m_currentShader->uniforms.fogUsage, fogUsage);
+}
+
+void ShaderManager::SetScreenSpaceTriangle(int screenSpace) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.screenSpaceTriangle >= 0)
+        m_compiler->SetUniform1i(m_currentShader->uniforms.screenSpaceTriangle, screenSpace);
+}
+
+void ShaderManager::SetDebugOutput(int mode) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.debugOutput >= 0)
+        m_compiler->SetUniform1i(m_currentShader->uniforms.debugOutput, mode);
 }
 
 const CompiledShader* ShaderManager::GetDepthOnlyShader() {
@@ -677,7 +764,6 @@ const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {
         compiled.vertexSource = std::move(vertSrc);
         compiled.fragmentSource = std::move(fragSrc);
 
-
         // Query uniform locations
         QueryUniformLocations(compiled);
 
@@ -700,8 +786,6 @@ void ShaderManager::QueryUniformLocations(CompiledShader& shader) {
     u.mvpMatrix       = Q("uMVPMatrix");
     u.modelView       = Q("uModelView");
     u.projection      = Q("uProjection");
-    u.texMatrix0      = Q("uTexMatrix0");
-    u.texMatrix1      = Q("uTexMatrix1");
 
     // Textures
     u.texture0        = Q("uTexture0");
@@ -753,10 +837,26 @@ void ShaderManager::QueryUniformLocations(CompiledShader& shader) {
     u.zLutTex         = Q("uZLUT");
     u.zMode           = Q("uZMode");
     u.primDeltaZ      = Q("uPrimDeltaZ");
+    u.texCoordBounds0 = Q("uTexCoordBounds0");
+    u.texCoordBounds1 = Q("uTexCoordBounds1");
+    u.useTexCoordBounds = Q("uUseTexCoordBounds");
+    u.texturePersp    = Q("uTexturePersp");
+    u.fbMonochrome0   = Q("uFbMonochrome0");
+    u.fbMonochrome1   = Q("uFbMonochrome1");
+    u.fbFixedAlpha0   = Q("uFbFixedAlpha0");
+    u.fbFixedAlpha1   = Q("uFbFixedAlpha1");
+    u.screenScale     = Q("uScreenScale");
+    u.keyWidth        = Q("uKeyWidth");
+    u.minLod          = Q("uMinLod");
+    u.maxTile         = Q("uMaxTile");
+    u.textureDetail   = Q("uTextureDetail");
+    u.fogUsage        = Q("uFogUsage");
+    u.screenSpaceTriangle = Q("uScreenSpaceTriangle");
     u.screenSize      = Q("uScreenSize");
     u.invScreenSize   = Q("uInvScreenSize");
     u.frameCount      = Q("uFrameCount");
     u.resolutionScale = Q("uResolutionScale");
+    u.debugOutput     = Q("uDebugOutput");
 }
 
 }}} // namespace Nova64::Video::Shader

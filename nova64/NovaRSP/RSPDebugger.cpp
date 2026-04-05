@@ -1,3 +1,7 @@
+/**
+ * @file RSPDebugger.cpp
+ * @brief RSP Debugger Interface Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Debugger Interface Implementation
 // Global debugger instance and null debugger

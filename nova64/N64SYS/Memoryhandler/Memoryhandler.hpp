@@ -1,3 +1,7 @@
+/**
+ * @file Memoryhandler.hpp
+ * @brief Memoryhandler declarations and types.
+ */
 #pragma once
 #include <cstdint>
 

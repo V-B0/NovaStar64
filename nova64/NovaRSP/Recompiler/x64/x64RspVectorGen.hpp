@@ -1,3 +1,7 @@
+/**
+ * @file x64RspVectorGen.hpp
+ * @brief x64 RSP Vector Generator - SSE2/SSSE3 code generation for RSP vector operations.
+ */
 // SuperNova64 - N64 Emulator
 // x64 RSP Vector Generator - SSE2/SSSE3 code generation for RSP vector operations
 // Emits optimized SIMD instruction sequences for each RSP vector opcode

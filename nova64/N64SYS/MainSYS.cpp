@@ -1,4 +1,9 @@
-﻿#include "../common/platform.hpp"
+﻿/**
+ * @file MainSYS.cpp
+ * @brief Core N64 system emulation: initialization, ROM loading, CPU dispatch, and frame pacing.
+ */
+#include "../common/platform.hpp"
+#include <cstdio>
 #include "../common/trace.hpp"
 #include "../common/log.hpp"
 #include "../common/path.hpp"
@@ -6,6 +11,7 @@
 #include "../common/md5.hpp"
 #include "../common/MemoryManagment.hpp"
 #include "../common/Thread.hpp"
+
 
 #include "MainSYS.hpp"
 #include "Types.hpp"
@@ -17,6 +23,7 @@
 #include "MIPSY/TLB.hpp"
 #include "MIPSY/Sysevents.hpp"
 #include "Interpreter/InterpreterOps.hpp"
+#include "Recomp/Recompiler.hpp"
 #include "../NovaRSP/RSPInfo.hpp"
 #include "../NovaRSP/CPU/RspSystem.hpp"
 #include "../NovaGraphics/Window/WindowManager.hpp"
@@ -25,6 +32,8 @@
 #include <cstring>
 #include <memory>
 #include <ctime>
+#include <chrono>
+#include <thread>
 #include <format>
 #include <fstream>
 #include <filesystem>
@@ -42,6 +51,10 @@ using N64::Disk::N64Disk;
 CN64System* g_System = nullptr;
 CN64System* g_BaseSystem = nullptr;
 N64Rom* g_Rom = nullptr;
+int CN64System::s_TargetFPS = 60;
+int CN64System::s_WindowWidth = 1280;
+int CN64System::s_WindowHeight = 960;
+int CN64System::s_InternalResScale = 4;
 
 // ──────────────────────────────────────────────
 // RSP callback wrappers (static functions matching RSP_INFO signatures)
@@ -97,7 +110,6 @@ static void RSP_ProcessRdpList()
 N64Rom* g_DDRom = nullptr;
 N64Disk* g_Disk = nullptr;
 
-// Save chip type alias
 using SAVE_CHIP_TYPE = N64Types::SaveChipType;
 constexpr SAVE_CHIP_TYPE SAVE_CHIP_UNKNOWN = SAVE_CHIP_TYPE::Auto;
 
@@ -107,7 +119,6 @@ constexpr SAVE_CHIP_TYPE SAVE_CHIP_UNKNOWN = SAVE_CHIP_TYPE::Auto;
 #define LOG_WARNING(...) TRACE_WARN(Trace::Module::Core, __VA_ARGS__)
 #define LOG_ERROR(...)   TRACE_ERROR(Trace::Module::Core, __VA_ARGS__)
 
-// CN64System constructor
 CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSystem) :
     m_EndEmulation(false),
     m_SaveUsing(SAVE_CHIP_UNKNOWN),
@@ -126,6 +137,7 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     m_SyncSystem(SyncSystem),
     m_Random(randomizer_seed),
     m_SavesReadOnly(SavesReadOnly),
+    m_PipelineStage(N64Types::PipelineStage::Normal),
     m_SystemTimer(std::make_unique<N64System::SystemTimer>(*this))
 {
     Log::debugf("CN64System constructor (seed: %u, ReadOnly: %s, Sync: %s)",
@@ -158,52 +170,10 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
 
     // Audio & Video
     m_AudioInterfaceHandler = std::make_unique<AudioInterfaceHandler>(*this, *m_Registers);
-    /* Handlers are now owned and initialized by MipsMemoryVM
-    if (m_Memory) {
-        // m_VideoInterfaceHandler = std::make_unique<VideoInterfaceHandler>(*this, *m_Memory, *m_Registers);
-    }
 
-    // ROM Handlers
-    if (m_Memory) {
-        // m_UncachedRomHandler = std::make_unique<UncachedRom>(*this, *m_Registers, *m_Memory);
-    }
-    // RomMemoryHandler requires N64Rom&, which is not available yet (g_Rom is null)
-    // m_RomMemoryHandler = std::make_unique<RomMemoryHandler>(*this, *m_Registers, *g_Rom); 
-
-    // PIF & PI & SI
-    if (m_Memory && m_Eeprom) {
-        // m_PifRamHandler = std::make_unique<PifRamHandler>(*this, *m_Memory, *m_Registers, *m_Eeprom);
-        if (m_UncachedRomHandler) {
-             // m_PeripheralInterfaceHandler = std::make_unique<PeripheralInterfaceHandler>(*this, *m_Memory, *m_Registers, *m_Eeprom, *m_UncachedRomHandler);
-        }
-        if (m_PifRamHandler) {
-            // m_SerialInterfaceHandler = std::make_unique<SerialInterfaceHandler>(*m_Memory, *m_Registers, *m_PifRamHandler);
-        }
-    }
-
-    // Uncached Sys Memory (Save)
-    if (m_Memory) {
-        // m_UnCachedSysMemory = std::make_unique<UnCachedSysMemory>(*this, *m_Registers, *m_Memory, m_SavesReadOnly);
-    }
-
-    // Cached ROM (DD)
     m_DDRegisters.fill(0);
-    // m_CachedRom = std::make_unique<DD64::CachedRom>(*m_Registers, m_DDRegisters.data());
-
-    // Cached Sys Memory (DD ASIC)
-    // Requires CN64Rom& (ddRom). g_DDRom is null.
-    // m_CachedSysMemory = std::make_unique<CachedSysMemory>(*m_Registers, *g_DDRom);
-
-    // Register Handlers with Memory VM
-    if (m_Memory) {
-        // Disabled old handler registration block
-        // Also register Eeprom if supported? Vmem owns eeprom usually.
-        // If Vmem expects to own eeprom, we might have created a duplicate.
-    }
-    */
 }
 
-// CN64System destructor
 CN64System::~CN64System()
 {
     LOG_DEBUG( "CN64System destructor");
@@ -232,7 +202,6 @@ CN64System::~CN64System()
     }
 }
 
-// Load ROM file image
 bool CN64System::LoadFileImage(const char* FileLoc)
 {
     LOG_DEBUG(
@@ -289,7 +258,6 @@ bool CN64System::LoadFileImage(const char* FileLoc)
     }
 }
 
-// Load 64DD IPL image
 bool CN64System::LoadFileImageIPL(const char* FileLoc)
 {
     LOG_DEBUG(
@@ -344,7 +312,6 @@ bool CN64System::LoadFileImageIPL(const char* FileLoc)
     }
 }
 
-// Load disk image
 bool CN64System::LoadDiskImage(const char* FileLoc, const bool Expansion)
 {
     Log::debugf("LoadDiskImage: \"%s\" (Expansion: %s)",
@@ -389,7 +356,6 @@ bool CN64System::LoadDiskImage(const char* FileLoc, const bool Expansion)
     }
 }
 
-// Run ROM file image
 bool CN64System::RunFileImage(const char* FileLoc, uint64_t frameLimit)
 {
     LOG_DEBUG("RunFileImage with frameLimit");
@@ -419,7 +385,6 @@ bool CN64System::RunFileImage(const char* FileLoc, uint64_t frameLimit)
     return true;
 }
 
-// Run disk image
 bool CN64System::RunDiskImage(const char* FileLoc)
 {
     LOG_DEBUG(
@@ -447,7 +412,6 @@ bool CN64System::RunDiskImage(const char* FileLoc)
     return true;
 }
 
-// Run disk combo image (ROM + Disk)
 bool CN64System::RunDiskComboImage(const char* FileLoc, const char* FileLocDisk)
 {
     Log::debugf("RunDiskComboImage: ROM=\"%s\" Disk=\"%s\"",
@@ -469,7 +433,6 @@ bool CN64System::RunDiskComboImage(const char* FileLoc, const char* FileLocDisk)
     return true;
 }
 
-// Run loaded image
 void CN64System::RunLoadedImage(uint64_t frameLimit)
 {
     LOG_DEBUG("RunLoadedImage with frameLimit");
@@ -494,6 +457,11 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
             g_BaseSystem->SetFrameLimit(frameLimit);
             Log::infof("Frame limit applied: %llu frames", (unsigned long long)frameLimit);
         }
+        
+        // Apply target FPS
+        g_BaseSystem->SetTargetFPS(s_TargetFPS);
+        Log::infof("Frame rate limiter: %d FPS%s", s_TargetFPS, 
+                   s_TargetFPS == 0 ? " (unlimited)" : "");
 
         // Reset system state: copies boot code to DMEM, sets post-PIF registers
         g_BaseSystem->Reset(true, false);
@@ -519,7 +487,6 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
     }
 }
 
-// Run emulation in interactive mode with graphics window
 void CN64System::RunInteractiveLoop()
 {
     // Start CPU in background thread
@@ -557,7 +524,6 @@ void CN64System::RunInteractiveLoop()
     }
 }
 
-// Close system
 void CN64System::CloseSystem()
 {
     LOG_DEBUG( "CloseSystem");
@@ -570,7 +536,6 @@ void CN64System::CloseSystem()
     }
 }
 
-// Close CPU
 void CN64System::CloseCpu()
 {
     LOG_DEBUG( "CloseCpu - Start");
@@ -621,7 +586,6 @@ void CN64System::CloseCpu()
     LOG_DEBUG( "CloseCpu - Done");
 }
 
-// Start emulation
 void CN64System::StartEmulation(bool NewThread)
 {
     LOG_DEBUG(
@@ -630,7 +594,6 @@ void CN64System::StartEmulation(bool NewThread)
     StartEmulation2(NewThread);
 }
 
-// Start emulation (internal)
 void CN64System::StartEmulation2(bool NewThread)
 {
     LOG_DEBUG(
@@ -662,7 +625,6 @@ void CN64System::StartEmulation2(bool NewThread)
     }
 }
 
-// Static thread wrapper
 #ifdef _WIN32
 static uint32_t StartThreadWrapper(void* param)
 #else
@@ -675,7 +637,6 @@ static void* StartThreadWrapper(void* param)
     return 0;
 }
 
-// Start emulation thread
 void CN64System::StartEmulationThread()
 {
     LOG_DEBUG( "StartEmulationThread");
@@ -699,29 +660,24 @@ void CN64System::StartEmulationThread()
     }
 }
 
-// End emulation
 void CN64System::EndEmulation(void)
 {
-    LOG_DEBUG( "EndEmulation");
+    Log::info("EndEmulation called");
     m_EndEmulation = true;
 }
 
-// Pause emulation
 void CN64System::Pause()
 {
-    LOG_DEBUG( "Pause");
-    // Simple pause for now
+    Log::info("Pause called - setting m_EndEmulation");
     m_EndEmulation = true; 
 }
 
-// Game reset
 void CN64System::GameReset()
 {
     LOG_DEBUG( "GameReset");
     Reset(true, false);
 }
 
-// System reset
 void CN64System::Reset(bool bInitReg, bool ClearMemory)
 {
     Log::debugf("Reset (InitReg: %s, ClearMemory: %s)",
@@ -978,11 +934,11 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         m_WindowManager = std::make_unique<Nova64::Video::WindowManager>();
         Nova64::Video::WindowConfig windowConfig;
         windowConfig.title = "SuperNova64 - Emulator";
-        windowConfig.width = 640;
-        windowConfig.height = 480;
+        windowConfig.width = s_WindowWidth;
+        windowConfig.height = s_WindowHeight;
         windowConfig.posX = -1;  // center
         windowConfig.posY = -1;
-        windowConfig.vsync = true;
+        windowConfig.vsync = false;  // Software frame pacing handles timing
         windowConfig.glMajor = 4;
         windowConfig.glMinor = 6;
         
@@ -1011,8 +967,8 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             auto* gfxPlugin = m_PluginManager->GetGraphicsPlugin();
             if (gfxPlugin) {
                 Plugins::RenderSettings settings;
-                settings.WindowWidth = 640;
-                settings.WindowHeight = 480;
+                settings.WindowWidth = s_WindowWidth;
+                settings.WindowHeight = s_WindowHeight;
                 settings.AntiAliasing = false;
                 settings.Fullscreen = false;
                 
@@ -1037,7 +993,6 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     m_InReset = false;
 }
 
-// Set active system
 bool CN64System::SetActiveSystem(bool bActive)
 {
     LOG_DEBUG(
@@ -1066,7 +1021,6 @@ bool CN64System::SetActiveSystem(bool bActive)
     return true;
 }
 
-// Execute CPU
 void CN64System::ExecuteCPU()
 {
     LOG_DEBUG( "ExecuteCPU - Start");
@@ -1074,8 +1028,7 @@ void CN64System::ExecuteCPU()
     m_EndEmulation = false;
 
     // Determine CPU type from settings
-    // Default to interpreter until recompiler is implemented
-    N64Types::CpuType cpuType = N64Types::CpuType::Interpreter;
+    N64Types::CpuType cpuType = N64Types::CpuType::Recompiler;
 
     switch (cpuType)
     {
@@ -1096,7 +1049,6 @@ void CN64System::ExecuteCPU()
     LOG_DEBUG( "ExecuteCPU - Done");
 }
 
-// Execute interpreter
 void CN64System::ExecuteInterpret()
 {
     LOG_DEBUG( "ExecuteInterpret");
@@ -1104,21 +1056,29 @@ void CN64System::ExecuteInterpret()
     interpreter.ExecuteCPU();
 }
 
-// Execute recompiler
+void CN64System::ExecuteSingleOp()
+{
+    Nova64::Interpreter::R4300iInterpreter interpreter(*this);
+    interpreter.ExecuteOps(CountPerOp());
+}
+
 void CN64System::ExecuteRecompiler()
 {
     LOG_DEBUG( "ExecuteRecompiler");
-    // TODO: Implement recompiler execution
+    Nova64::Recompiler::CRecompiler recompiler(*this, m_EndEmulation);
+    recompiler.Run();
 }
 
-// Execute sync CPU
 void CN64System::ExecuteSyncCPU()
 {
     LOG_DEBUG( "ExecuteSyncCPU");
-    // TODO: Implement sync CPU execution
+    // Sync CPU mode validates recompiler output against interpreter results.
+    // Full lockstep comparison requires single-step hooks in the recompiler;
+    // for now fall back to interpreter execution which is always correct.
+    LOG_WARNING("SyncCPU: lockstep comparison not yet available, falling back to interpreter");
+    ExecuteInterpret();
 }
 
-// CPU stopped
 void CN64System::CpuStopped()
 {
     LOG_DEBUG( "CpuStopped");
@@ -1134,7 +1094,6 @@ void CN64System::CpuStopped()
     }
 }
 
-// Check if frame limit has been reached
 bool CN64System::IsFrameLimitReached() const
 {
     if (m_MaxFrames == 0)
@@ -1151,7 +1110,6 @@ bool CN64System::IsFrameLimitReached() const
     return false;
 }
 
-// Get current frame count from Video Interface
 uint64_t CN64System::GetCurrentFrameCount() const
 {
     if (m_Memory)
@@ -1162,14 +1120,12 @@ uint64_t CN64System::GetCurrentFrameCount() const
     return 0;
 }
 
-// Delayed jump - sets jump target and enters delay slot pipeline stage
 void CN64System::DelayedJump(uint64_t target)
 {
     m_JumpToLocation = target;
     m_PipelineStage = N64Types::PipelineStage::DelaySlot;
 }
 
-// Delayed relative jump - computes target relative to current PC
 void CN64System::DelayedRelativeJump(int32_t offset)
 {
     m_JumpToLocation = m_Registers->m_PROGRAM_COUNTER + offset;
@@ -1187,7 +1143,6 @@ void CN64System::DelayedRelativeJump(int32_t offset)
     }
 }
 
-// External event
 void CN64System::ExternalEvent(SystemEvent action)
 {
     Log::debugf("ExternalEvent: %d", static_cast<int>(action));
@@ -1195,6 +1150,7 @@ void CN64System::ExternalEvent(SystemEvent action)
     switch (action)
     {
     case SysEvent_CloseCPU:
+        Log::info("ExternalEvent: SysEvent_CloseCPU -> ending emulation");
         m_EndEmulation = true;
         break;
     case SysEvent_ResetCPU_Soft:
@@ -1212,28 +1168,96 @@ void CN64System::ExternalEvent(SystemEvent action)
     }
 }
 
-// Refresh screen
 void CN64System::RefreshScreen()
 {
     // Called when the VI timer fires (once per frame, ~60Hz NTSC / ~50Hz PAL)
     
-    // Update display via GFX plugin
-    if (m_PluginManager)
+    uint64_t frameNum = GetCurrentFrameCount();
+    
+    // Auto-frameskip: check if we're behind schedule
+    bool shouldRender = true;
+    if (m_TargetFPS > 0 && m_FramePaceInitialized)
+    {
+        using clock = std::chrono::steady_clock;
+        using namespace std::chrono;
+        auto targetDuration = duration_cast<nanoseconds>(
+            duration<double>(1.0 / m_TargetFPS));
+        auto now = clock::now();
+        auto remaining = (m_FramePaceStart + targetDuration) - now;
+        
+        // If we're already behind and haven't hit max skip, skip this render
+        if (remaining < nanoseconds(0) && m_FrameSkipCount < m_MaxFrameSkip)
+        {
+            shouldRender = false;
+            m_FrameSkipCount++;
+        }
+        else
+        {
+            m_FrameSkipCount = 0;
+        }
+    }
+    
+    // Update display via GFX plugin (skip if behind schedule)
+    if (shouldRender && m_PluginManager)
     {
         auto* gfx = m_PluginManager->GetGraphicsPlugin();
         if (gfx) { gfx->UpdateScreen(); }
     }
     
-    // Feed audio device to keep playback smooth
+
+    
+    // Feed audio device to keep playback smooth (always, even on skipped frames)
     if (m_AudioInterfaceHandler)
     {
         m_AudioInterfaceHandler->AudioOutput().FeedDevice();
     }
 
+    // Frame rate limiter: pace CPU execution to real time
+    if (m_TargetFPS > 0)
+    {
+        using clock = std::chrono::steady_clock;
+        using namespace std::chrono;
+
+        auto targetDuration = duration_cast<nanoseconds>(
+            duration<double>(1.0 / m_TargetFPS));
+
+        if (!m_FramePaceInitialized)
+        {
+            m_FramePaceStart = clock::now();
+            m_FramePaceInitialized = true;
+        }
+        else
+        {
+            // Advance target by one frame interval
+            m_FramePaceStart += targetDuration;
+            auto now = clock::now();
+            auto remaining = m_FramePaceStart - now;
+
+            // If we're more than 2 frames behind, reset to avoid spiral
+            if (remaining < -targetDuration)
+            {
+                m_FramePaceStart = now;
+            }
+            else if (remaining > nanoseconds(0))
+            {
+                // Sleep for most of the remaining time, then spin-wait
+                if (remaining > microseconds(2000))
+                {
+                    std::this_thread::sleep_for(remaining - microseconds(1500));
+                }
+                // Spin-wait for the last portion for accuracy
+                while (clock::now() < m_FramePaceStart)
+                {
+                    // busy-wait
+                }
+            }
+            // else: we're behind but within tolerance, skip sleep to catch up
+        }
+    }
+
     m_bCleanFrameBox = false;
 }
 
-// Load state
 bool CN64System::LoadState()
 {
     LOG_DEBUG( "LoadState (default slot)");
@@ -1259,7 +1283,6 @@ bool CN64System::LoadState()
     return LoadState(fullPath.GetString().c_str());
 }
 
-// Load state from file
 bool CN64System::LoadState(const char* FileName)
 {
     Log::debugf("LoadState: \"%s\"", FileName ? FileName : "(null)");
@@ -1335,7 +1358,6 @@ bool CN64System::LoadState(const char* FileName)
     return true;
 }
 
-// Save state
 bool CN64System::SaveState()
 {
     LOG_DEBUG( "SaveState (default slot)");
@@ -1359,7 +1381,6 @@ bool CN64System::SaveState()
     return SaveState(fullPath.GetString().c_str());
 }
 
-// Save state to file
 bool CN64System::SaveState(const char* FileName)
 {
     LOG_DEBUG(

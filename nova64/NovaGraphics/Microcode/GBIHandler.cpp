@@ -15,6 +15,7 @@
 #include "../Common/ClipMath.hpp"
 #include <cstring>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 
 namespace Nova64::Video {
@@ -103,6 +104,12 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
         uint32_t words[4] = { w0, w1, st_word, dsdx_word };
         ctx.rdpProcessor->ProcessCommandBuffer(words, 4);
     } else {
+        // SetTextureImage (0x3D), SetDepthImage (0x3E), SetColorImage (0x3F)
+        // carry RDRAM addresses in w1 that need segment resolution.
+        // The real RSP microcode resolves segments before emitting to the RDP.
+        if (opcode == 0x3D || opcode == 0x3E || opcode == 0x3F) {
+            w1 = ctx.ResolveAddress(w1);
+        }
         uint64_t command = (static_cast<uint64_t>(w0) << 32) | static_cast<uint64_t>(w1);
         ctx.rdpProcessor->ProcessRDPCommand(command);
     }
@@ -138,14 +145,36 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
         tv.position[3] = out[3];
 
         // --- Clip flags ---
+        // Only X/Y and W, matching GLideN64/Angrylion behavior.
+        // Z clipping is handled by the GPU (GL_DEPTH_CLAMP for NoN microcodes).
+        // Including Z clip flags here incorrectly forces many visible triangles
+        // through the software Sutherland-Hodgman clipper, losing geometry.
         tv.clipFlags = 0;
         float w = tv.position[3];
-        if (tv.position[0] > +w) tv.clipFlags |= CLIP_POSX;
-        if (tv.position[0] < -w) tv.clipFlags |= CLIP_NEGX;
-        if (tv.position[1] > +w) tv.clipFlags |= CLIP_POSY;
-        if (tv.position[1] < -w) tv.clipFlags |= CLIP_NEGY;
-        if (tv.position[2] > +w) tv.clipFlags |= CLIP_POSZ;
-        if (tv.position[2] < -w) tv.clipFlags |= CLIP_NEGZ;
+        if (w < 0.01f) {
+            tv.clipFlags |= CLIP_W;
+        }
+        // Always compute X/Y clip flags even when w < 0.01.
+        // The Sutherland-Hodgman clipper skips planes where no vertex
+        // has the corresponding flag.  If we only set CLIP_W without
+        // the directional flags, the W-near clip can create vertices
+        // that inherit huge X/Y from the original vertex but sit at
+        // w ≈ 0.01, and the LEFT/RIGHT/TOP/BOTTOM clips are skipped
+        // because their flags were never in orFlags — producing
+        // screen-space positions in the millions and texture noise.
+        // Guard-band: compare against w*clipRatio so triangles near
+        // screen edges aren't unnecessarily software-clipped.
+        // The GPU's scissor/viewport clips them precisely later.
+        if (w > 0.0f) {
+            float wg = w * geo.clipRatio;
+            if (tv.position[0] > +wg) tv.clipFlags |= CLIP_POSX;
+            if (tv.position[0] < -wg) tv.clipFlags |= CLIP_NEGX;
+            if (tv.position[1] > +wg) tv.clipFlags |= CLIP_POSY;
+            if (tv.position[1] < -wg) tv.clipFlags |= CLIP_NEGY;
+        } else {
+            // w <= 0: behind camera, conservatively mark outside all planes
+            tv.clipFlags |= CLIP_POSX | CLIP_NEGX | CLIP_POSY | CLIP_NEGY;
+        }
 
         // --- Eye-space normal (shared by lighting and texGen) ---
         // The N64 RSP transforms the normal by the modelview matrix and
@@ -167,34 +196,106 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
 
         // --- Lighting ---
         if (lighting) {
-            float r = geo.lights[geo.numLights].color[0];
-            float g = geo.lights[geo.numLights].color[1];
-            float b = geo.lights[geo.numLights].color[2];
+            float lr = geo.lights[geo.numLights].color[0];
+            float lg = geo.lights[geo.numLights].color[1];
+            float lb = geo.lights[geo.numLights].color[2];
 
-            for (int l = 0; l < geo.numLights; ++l) {
-                float dot = tnx * geo.lights[l].direction[0] +
-                           tny * geo.lights[l].direction[1] +
-                           tnz * geo.lights[l].direction[2];
-                if (dot > 0.0f) {
-                    r += geo.lights[l].color[0] * dot;
-                    g += geo.lights[l].color[1] * dot;
-                    b += geo.lights[l].color[2] * dot;
+            bool pointLighting = (geo.geometryMode & G_POINT_LIGHTING) != 0;
+
+            if (pointLighting) {
+                // Compute eye-space vertex position (MV * objPos)
+                float eyeX = in[0]*mvMtx.m[0][0] + in[1]*mvMtx.m[1][0] + in[2]*mvMtx.m[2][0] + mvMtx.m[3][0];
+                float eyeY = in[0]*mvMtx.m[0][1] + in[1]*mvMtx.m[1][1] + in[2]*mvMtx.m[2][1] + mvMtx.m[3][1];
+                float eyeZ = in[0]*mvMtx.m[0][2] + in[1]*mvMtx.m[1][2] + in[2]*mvMtx.m[2][2] + mvMtx.m[3][2];
+
+                for (int l = 0; l < geo.numLights; ++l) {
+                    float intensity;
+                    if (geo.lights[l].ca != 0.0f) {
+                        // Point light (matching GLideN64 processPointLight)
+                        constexpr float FIXED2FLOATRECIP16 = 1.0f / 65536.0f;
+                        float lvx = geo.lights[l].position[0] - eyeX;
+                        float lvy = geo.lights[l].position[1] - eyeY;
+                        float lvz = geo.lights[l].position[2] - eyeZ;
+
+                        // N64 RSP microcode weights Z² by 2x in point light distance
+                        float K = lvx*lvx + lvy*lvy + lvz*lvz * 2.0f;
+                        float KS = std::sqrt(K);
+
+                        // Inverse transform lvec to model space (transpose of upper 3x3 MV)
+                        float ix = lvx*mvMtx.m[0][0] + lvy*mvMtx.m[0][1] + lvz*mvMtx.m[0][2];
+                        float iy = lvx*mvMtx.m[1][0] + lvy*mvMtx.m[1][1] + lvz*mvMtx.m[1][2];
+                        float iz = lvx*mvMtx.m[2][0] + lvy*mvMtx.m[2][1] + lvz*mvMtx.m[2][2];
+
+                        // Normalize with 4/KS factor, clamp to [-1,1]
+                        if (KS > 0.0f) {
+                            float s = 4.0f / KS;
+                            ix = std::clamp(ix * s, -1.0f, 1.0f);
+                            iy = std::clamp(iy * s, -1.0f, 1.0f);
+                            iz = std::clamp(iz * s, -1.0f, 1.0f);
+                        }
+
+                        // Dot with object-space normal
+                        float V = std::clamp(ix*tv.normal[0] + iy*tv.normal[1] + iz*tv.normal[2], -1.0f, 1.0f);
+
+                        // Attenuation
+                        float KSF = std::floor(KS);
+                        float D = (KSF * geo.lights[l].la * 2.0f + KSF * KSF * geo.lights[l].qa / 8.0f) * FIXED2FLOATRECIP16 + 1.0f;
+                        intensity = V / D;
+                    } else {
+                        // Directional light
+                        intensity = tnx * geo.lights[l].direction[0] +
+                                    tny * geo.lights[l].direction[1] +
+                                    tnz * geo.lights[l].direction[2];
+                    }
+                    if (intensity > 0.0f) {
+                        lr += geo.lights[l].color[0] * intensity;
+                        lg += geo.lights[l].color[1] * intensity;
+                        lb += geo.lights[l].color[2] * intensity;
+                    }
+                }
+            } else {
+                // Standard directional-only lighting
+                for (int l = 0; l < geo.numLights; ++l) {
+                    float dot = tnx * geo.lights[l].direction[0] +
+                               tny * geo.lights[l].direction[1] +
+                               tnz * geo.lights[l].direction[2];
+                    if (dot > 0.0f) {
+                        lr += geo.lights[l].color[0] * dot;
+                        lg += geo.lights[l].color[1] * dot;
+                        lb += geo.lights[l].color[2] * dot;
+                    }
                 }
             }
 
-            tv.color[0] = std::min(r, 1.0f);
-            tv.color[1] = std::min(g, 1.0f);
-            tv.color[2] = std::min(b, 1.0f);
+            tv.color[0] = std::min(lr, 1.0f);
+            tv.color[1] = std::min(lg, 1.0f);
+            tv.color[2] = std::min(lb, 1.0f);
         }
 
         // --- Fog ---
+        // When G_FOG is set the RSP computes fog_alpha from the NDC depth
+        // (z/w) and writes it into shade.a, REPLACING the vertex alpha.
+        // The blender reads shade.a for the fog cycle (G_RM_FOG_SHADE_A):
+        //   out = fogColor * shade.a + combined * (1 - shade.a)
+        // Formula (matching GLideN64 / real RSP):
+        //   fog = clamp(z/w * fogMul/256 + fogOff/256, 0, 1)
+        // Note: z/w is sign-invariant (both z and w flip together when
+        // the projection matrix convention changes), so this works even
+        // when our clip W is negative.
         if (fogEnabled && tv.position[3] != 0.0f) {
-            float z = tv.position[2] / tv.position[3];
-            // N64 RSP: fog_alpha = (z/w * mul + off) >> 8, clamped [0,255]
-            // Compute in float, divide by 256 to convert from fixed-point to [0,1]
-            float fogFactor = (z * geo.fogMultiplier + geo.fogOffset) / 256.0f;
-            tv.fogFactor = std::clamp(fogFactor, 0.0f, 1.0f);
+            float zOverW = tv.position[2] / tv.position[3];
+            // N64 RSP clamps z/w to -1.0 for vertices behind the near plane.
+            // Without this, near-clipped geometry gets wildly wrong fog values
+            // that propagate through the clipper. (GLideN64 ref: vertex shader)
+            if (tv.position[2] < -tv.position[3])
+                zOverW = -1.0f;
+            float fogVal = zOverW * (static_cast<float>(geo.fogMultiplier) / 256.0f)
+                         + (static_cast<float>(geo.fogOffset) / 256.0f);
+            tv.fogFactor = std::clamp(fogVal, 0.0f, 1.0f);
+            // Overwrite shade alpha with fog factor — the real RSP does this
+            tv.color[3] = tv.fogFactor;
         }
+        // fogFactor stays at its LoadVertices default (0.0) when G_FOG is off
 
         // --- Texture generation (environment mapping) ---
         // Uses the normalized eye-space normal computed above.
@@ -278,9 +379,12 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         tv.texCoord1[1] = tv.texCoord[1];
         
         bool lighting = (geo.geometryMode & G_LIGHTING) != 0;
+        bool texGen = (geo.geometryMode & G_TEXTURE_GEN) != 0;
+        bool texGenLinear = (geo.geometryMode & G_TEXTURE_GEN_LINEAR) != 0;
+        bool needEyeNormal = lighting || texGen || texGenLinear;
         
-        if (lighting) {
-            // Store normal for lighting calculation
+        if (needEyeNormal) {
+            // Store normal for lighting calculation or texture generation
             tv.normal[0] = static_cast<float>(static_cast<int8_t>(cn0)) / 127.0f;
             tv.normal[1] = static_cast<float>(static_cast<int8_t>(cn1)) / 127.0f;
             tv.normal[2] = static_cast<float>(static_cast<int8_t>(cn2)) / 127.0f;
@@ -294,6 +398,8 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         
         tv.clipFlags = 0;
         tv.fogFactor = 0.0f;
+        tv.modifiedXY = false;
+        tv.modifiedZ = false;
     }
     
     // Transform vertices through model-view-projection
@@ -368,13 +474,17 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
         if (load) {
             geo.modelViewStack[geo.modelViewStackDepth] = mtx;
         } else {
-            // Multiply: current = current * new (right-multiply)
+            // Multiply: current = new * current (left-multiply)
+            // N64 SDK documents gSPMatrix(MUL) as "M × G" (new × current).
+            // In row-vector convention (v * MV), left-multiplying means the
+            // new matrix is applied first (closest to the vertex), which is
+            // correct for hierarchical transforms: v * (M_child * M_parent * View).
             Matrix4x4 temp;
             for (int i = 0; i < 4; ++i) {
                 for (int j = 0; j < 4; ++j) {
                     temp.m[i][j] = 0;
                     for (int k = 0; k < 4; ++k) {
-                        temp.m[i][j] += geo.modelViewStack[geo.modelViewStackDepth].m[i][k] * mtx.m[k][j];
+                        temp.m[i][j] += mtx.m[i][k] * geo.modelViewStack[geo.modelViewStackDepth].m[k][j];
                     }
                 }
             }
@@ -441,7 +551,7 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         // value = (numLights-1) * 24 for GBI1, or (numLights) * 24 for GBI2
         // We store the actual light count
         int numLights = static_cast<int>(value / 24);
-        if (numLights > 8) numLights = 8;
+        if (numLights > 12) numLights = 12;
         geo.numLights = numLights;
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         break;
@@ -461,7 +571,7 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         // Light color: offset indicates which light and which field
         int lightIdx = offset / 0x18;
         int field = (offset % 0x18) / 4;
-        if (lightIdx < 8) {
+        if (lightIdx < 9) {
             if (field == 0) {
                 // RGBA packed in value
                 geo.lights[lightIdx].color[0] = static_cast<float>((value >> 24) & 0xFF) / 255.0f;
@@ -475,11 +585,16 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
     
     case MoveWord::MW_CLIP:
     {
-        // Clipping parameters — sets guard-band clip ratio.
-        // In HLE this mainly affects frustum-rejection thresholds.
-        // Store for potential future use; current clipping is adequate.
+        // Guard-band clip ratio — N64 RSP clips at w*ratio instead of w.
+        // gSPClipRatio sends 4 moveword commands (RNX/RNY/RPX/RPY) with
+        // the same ratio value.  Store the ratio from any of them.
+        uint32_t ratio = value & 0xFFFF;
+        if (ratio >= 1 && ratio <= 6) {
+            geo.clipRatio = static_cast<float>(ratio);
+        }
         NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "MW_CLIP: offset=0x{:02X} value=0x{:08X}", offset, value);
+                "MW_CLIP: offset=0x{:02X} value=0x{:08X} ratio={}",
+                offset, value, geo.clipRatio);
         break;
     }
     
@@ -495,20 +610,62 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
     
     case MoveWord::MW_MATRIX:
     {
-        // Direct matrix element write — force MVP recomputation so the
-        // next vertex batch picks up the change.
+        // gSPInsertMatrix — modifies individual elements of the combined matrix.
+        // The 'offset' selects which matrix and element; 'value' contains two
+        // 16-bit halves (integer or fractional parts of two consecutive elements).
+        // GLideN64 ref: gSP.cpp gSPInsertMatrix.
+        auto& geo = ctx.state->geometry;
+        if ((offset & 0x3) != 0) break; // alignment check
+        uint16_t addr = (offset + 0x80) & 0xFFFF;
+        float* pMtx = nullptr;
+        if (addr < 0x40) {
+            pMtx = &geo.modelViewStack[geo.modelViewStackDepth].m[0][0];
+        } else if (addr < 0x80) {
+            pMtx = &geo.projection.m[0][0];
+            addr -= 0x40;
+        } else if (addr < 0xC0) {
+            pMtx = &geo.combinedMatrix.m[0][0];
+            addr -= 0x80;
+        } else {
+            break;
+        }
+        // Decode two halfwords from 'value'
+        uint16_t half0 = static_cast<uint16_t>((value >> 16) & 0xFFFF);
+        uint16_t half1 = static_cast<uint16_t>(value & 0xFFFF);
+        uint32_t idx = (addr < 0x20) ? (addr >> 1) : ((addr - 0x20) >> 1);
+        if (idx + 1 >= 16) break; // bounds check
+        for (uint32_t ii = 0; ii < 2; ii++) {
+            uint16_t h = (ii == 0) ? half0 : half1;
+            // Reconstruct s15.16 fixed-point from current float
+            int32_t curFixed = static_cast<int32_t>(pMtx[idx + ii] * 65536.0f);
+            if (addr < 0x20) {
+                // Replace integer part, keep fractional
+                int16_t newInt = static_cast<int16_t>(h);
+                uint16_t curFrac = static_cast<uint16_t>(curFixed & 0xFFFF);
+                int32_t newFixed = (static_cast<int32_t>(newInt) << 16) | curFrac;
+                pMtx[idx + ii] = static_cast<float>(newFixed) / 65536.0f;
+            } else {
+                // Replace fractional part, keep integer
+                int16_t curInt = static_cast<int16_t>((curFixed >> 16) & 0xFFFF);
+                int32_t newFixed = (static_cast<int32_t>(curInt) << 16) | h;
+                pMtx[idx + ii] = static_cast<float>(newFixed) / 65536.0f;
+            }
+        }
         geo.combinedDirty = true;
         ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "MW_MATRIX: offset=0x{:02X} value=0x{:08X}", offset, value);
         break;
     }
     
     case MoveWord::MW_FORCEMTX:
     {
-        // Force matrix reload
-        geo.combinedDirty = true;
-        ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
+        // GLideN64: w1==0 → mark matrix changed (recompute from MV*P)
+        //           w1!=0 → mark matrix NOT changed (keep forced matrix)
+        if (value == 0) {
+            geo.combinedDirty = true;
+            ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
+        } else {
+            geo.combinedDirty = false;
+        }
         break;
     }
     
@@ -567,8 +724,20 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         geo.lookat[n][0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
         geo.lookat[n][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
         geo.lookat[n][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
-        // Enable lookat when the second vector (Y) has non-zero X or Y
-        if (n == 1) {
+        // Normalize lookat vector
+        float llen = std::sqrt(geo.lookat[n][0]*geo.lookat[n][0] +
+                               geo.lookat[n][1]*geo.lookat[n][1] +
+                               geo.lookat[n][2]*geo.lookat[n][2]);
+        if (llen > 0.0001f) {
+            float linv = 1.0f / llen;
+            geo.lookat[n][0] *= linv;
+            geo.lookat[n][1] *= linv;
+            geo.lookat[n][2] *= linv;
+        }
+        // Match GLideN64: loading lookat[0] always enables; lookat[1] enables if x or y non-zero
+        if (n == 0) {
+            geo.lookatEnabled = true;
+        } else {
             geo.lookatEnabled = (geo.lookat[1][0] != 0.0f || geo.lookat[1][1] != 0.0f);
         }
         break;
@@ -580,15 +749,36 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         if (index >= MoveMem::G_MV_L0 && index <= MoveMem::G_MV_L7) {
             int lightIdx = (index - MoveMem::G_MV_L0) / 2;
             if (lightIdx >= 0 && lightIdx < 8 && address + 16 <= ctx.rdramSize) {
-                // Light struct: color (4 bytes), pad (4 bytes), color_copy (4 bytes), direction (3 bytes + pad)
-                // Use ReadByte for word-swapped RDRAM byte access
-                geo.lights[lightIdx].color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
-                geo.lights[lightIdx].color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
-                geo.lights[lightIdx].color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
+                auto& light = geo.lights[lightIdx];
+                // Color (N64 bytes 0-2)
+                light.color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
+                light.color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
+                light.color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
                 
-                geo.lights[lightIdx].direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
-                geo.lights[lightIdx].direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
-                geo.lights[lightIdx].direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
+                // Direction (N64 bytes 8-10, signed int8, normalized)
+                light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
+                light.direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
+                light.direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
+                // Normalize direction
+                float len = std::sqrt(light.direction[0]*light.direction[0] +
+                                      light.direction[1]*light.direction[1] +
+                                      light.direction[2]*light.direction[2]);
+                if (len > 0.0001f) {
+                    float inv = 1.0f / len;
+                    light.direction[0] *= inv;
+                    light.direction[1] *= inv;
+                    light.direction[2] *= inv;
+                }
+                
+                // Point light data (F3DEX2 extended format)
+                // Position: N64 halfwords at bytes 8-9, 10-11, 12-13
+                light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 8)));
+                light.position[1] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 10)));
+                light.position[2] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 12)));
+                // Attenuation: N64 bytes 3 (ca), 7 (la), 14 (qa)
+                light.ca = static_cast<float>(ctx.ReadByte(address + 3));
+                light.la = static_cast<float>(ctx.ReadByte(address + 7));
+                light.qa = static_cast<float>(ctx.ReadByte(address + 14));
                 
                 ctx.state->MarkDirty(RDPDirtyFlag::Lights);
             }
@@ -613,28 +803,59 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
     case MoveMem::G_MV2_LIGHT:
     {
         // GBI2 light addressing: gSPLight offset = (n + 1) * 24, 0-based index = offset/24 - 2
+        // LookAt X is at offset 0 (index = -2)
+        // LookAt Y is at offset 24 (index = -1)
         int lightIdx = (offset / 24) - 2;
-        if (lightIdx >= 0 && lightIdx < 10 && address + 16 <= ctx.rdramSize) {
-            if (lightIdx < 8) {
-                // Use ReadByte for word-swapped RDRAM byte access
-                geo.lights[lightIdx].color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
-                geo.lights[lightIdx].color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
-                geo.lights[lightIdx].color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
+        if (lightIdx >= -2 && lightIdx < 8 && address + 16 <= ctx.rdramSize) {
+            if (lightIdx >= 0) {
+                auto& light = geo.lights[lightIdx];
+                // Color (N64 bytes 0-2)
+                light.color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
+                light.color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
+                light.color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
                 
-                geo.lights[lightIdx].direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
-                geo.lights[lightIdx].direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
-                geo.lights[lightIdx].direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
-            } else if (lightIdx == 8) {
+                // Direction (N64 bytes 8-10, signed int8)
+                light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
+                light.direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
+                light.direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
+                // Normalize direction
+                float len = std::sqrt(light.direction[0]*light.direction[0] +
+                                      light.direction[1]*light.direction[1] +
+                                      light.direction[2]*light.direction[2]);
+                if (len > 0.0001f) {
+                    float inv = 1.0f / len;
+                    light.direction[0] *= inv;
+                    light.direction[1] *= inv;
+                    light.direction[2] *= inv;
+                }
+                
+                // Point light data (F3DEX2 extended format)
+                light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 8)));
+                light.position[1] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 10)));
+                light.position[2] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 12)));
+                light.ca = static_cast<float>(ctx.ReadByte(address + 3));
+                light.la = static_cast<float>(ctx.ReadByte(address + 7));
+                light.qa = static_cast<float>(ctx.ReadByte(address + 14));
+            } else if (lightIdx == -1) {
                 // LookAt Y (same format as light direction at offset 8)
                 geo.lookat[1][0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
                 geo.lookat[1][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 geo.lookat[1][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
+                // Normalize
+                float llen = std::sqrt(geo.lookat[1][0]*geo.lookat[1][0] + geo.lookat[1][1]*geo.lookat[1][1] + geo.lookat[1][2]*geo.lookat[1][2]);
+                if (llen > 0.0001f) { float li = 1.0f/llen; geo.lookat[1][0]*=li; geo.lookat[1][1]*=li; geo.lookat[1][2]*=li; }
+                // Match GLideN64: loading lookat[1] enables if x or y non-zero
                 geo.lookatEnabled = (geo.lookat[1][0] != 0.0f || geo.lookat[1][1] != 0.0f);
-            } else if (lightIdx == 9) {
+            } else if (lightIdx == -2) {
                 // LookAt X (same format as light direction at offset 8)
                 geo.lookat[0][0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
                 geo.lookat[0][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 geo.lookat[0][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
+                // Normalize
+                float llen = std::sqrt(geo.lookat[0][0]*geo.lookat[0][0] + geo.lookat[0][1]*geo.lookat[0][1] + geo.lookat[0][2]*geo.lookat[0][2]);
+                if (llen > 0.0001f) { float li = 1.0f/llen; geo.lookat[0][0]*=li; geo.lookat[0][1]*=li; geo.lookat[0][2]*=li; }
+                // Match GLideN64: loading lookat[0] always enables
+                geo.lookatEnabled = true;
             }
             
             ctx.state->MarkDirty(RDPDirtyFlag::Lights);
@@ -644,11 +865,29 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
     
     case MoveMem::G_MV2_MATRIX:
     {
-        // Force matrix — used by some microcodes to insert a combined matrix
+        // gSPForceMatrix — directly sets the combined matrix (MVP), bypassing
+        // the separate ModelView/Projection stacks.
         if (address + 64 <= ctx.rdramSize) {
-            // Read directly as combined matrix
-            LoadMatrix(ctx, address, false, true, false);
+            auto& geo = ctx.state->geometry;
+            uint32_t resolved = ctx.ResolveAddress(address);
+            if (resolved + 64 <= ctx.rdramSize) {
+                for (int i = 0; i < 4; ++i) {
+                    for (int j = 0; j < 4; ++j) {
+                        int idx = i * 4 + j;
+                        int16_t intPart = static_cast<int16_t>(ctx.ReadHalf(resolved + idx * 2));
+                        uint16_t fracPart = ctx.ReadHalf(resolved + 32 + idx * 2);
+                        int32_t fixed = (static_cast<int32_t>(intPart) << 16) | fracPart;
+                        geo.combinedMatrix.m[i][j] = static_cast<float>(fixed) / 65536.0f;
+                    }
+                }
+                // Mark NOT dirty so UpdateCombinedMatrix() won't overwrite
+                geo.combinedDirty = false;
+            }
         }
+        // ForceMatrix uses two consecutive display list commands (16 bytes).
+        // The second is G_MOVEWORD(MW_FORCEMTX, 0) which would re-dirty the
+        // combined matrix, undoing the force. Skip it (matches GLideN64).
+        ctx.AdvancePC(2);
         break;
     }
     
@@ -666,7 +905,7 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
 void GBIHandler::SetOtherModeH(DListContext& ctx, uint32_t shift, uint32_t length, uint32_t value) {
     if (!ctx.state) return;
     
-    uint32_t mask = (((uint32_t)1 << length) - 1) << shift;
+    uint32_t mask = (length >= 32) ? 0xFFFFFFFFu : (((uint32_t)1 << length) - 1) << shift;
     ctx.state->otherModeH = (ctx.state->otherModeH & ~mask) | (value & mask);
     ctx.state->UpdateDerivedOtherModes();
     ctx.state->MarkDirty(RDPDirtyFlag::OtherModes);
@@ -675,7 +914,7 @@ void GBIHandler::SetOtherModeH(DListContext& ctx, uint32_t shift, uint32_t lengt
 void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t length, uint32_t value) {
     if (!ctx.state) return;
     
-    uint32_t mask = (((uint32_t)1 << length) - 1) << shift;
+    uint32_t mask = (length >= 32) ? 0xFFFFFFFFu : (((uint32_t)1 << length) - 1) << shift;
     ctx.state->otherModeL = (ctx.state->otherModeL & ~mask) | (value & mask);
     ctx.state->UpdateDerivedOtherModes();
     ctx.state->MarkDirty(RDPDirtyFlag::OtherModes);
@@ -686,8 +925,9 @@ void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t lengt
 // ═══════════════════════════════════════════════════════════════════════════
 
 void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
-    if (!ctx.state || !ctx.rdpProcessor) return;
+    if (!ctx.state || !ctx.rdpProcessor) { return; }
     
+    {
     auto& geo = ctx.state->geometry;
     int maxVtx = VERTEX_BUFFER_SIZE;
     
@@ -696,7 +936,8 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         return;
     }
     
-    // Backface culling (only if all vertices have valid w for perspective divide)
+    // Backface culling in screen space (like GLideN64) for numerical stability.
+    // NDC-space cross products lose precision for nearly edge-on polygons.
     if (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) {
         const auto& tv0 = geo.vertexBuffer[v0];
         const auto& tv1 = geo.vertexBuffer[v1];
@@ -713,16 +954,28 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             float w1inv = 1.0f / tv1.position[3];
             float w2inv = 1.0f / tv2.position[3];
             
-            float x0 = tv0.position[0] * w0inv, y0 = tv0.position[1] * w0inv;
-            float x1 = tv1.position[0] * w1inv, y1 = tv1.position[1] * w1inv;
-            float x2 = tv2.position[0] * w2inv, y2 = tv2.position[1] * w2inv;
+            // Transform to screen space (viewport transform) for stable cross product
+            float sx = geo.viewport.scaleX;
+            float sy = geo.viewport.scaleY;
+            float tx = geo.viewport.transX;
+            float ty = geo.viewport.transY;
+            
+            float x0 = tv0.position[0] * w0inv * sx + tx;
+            float y0 = tv0.position[1] * w0inv * sy + ty;
+            float x1 = tv1.position[0] * w1inv * sx + tx;
+            float y1 = tv1.position[1] * w1inv * sy + ty;
+            float x2 = tv2.position[0] * w2inv * sx + tx;
+            float y2 = tv2.position[1] * w2inv * sy + ty;
             
             float cross = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
             
-            if ((geo.geometryMode & G_CULL_BACK) && cross < 0.0f) {
+            // scaleY is negative (Y-flip), so the cross product sign is
+            // flipped compared to NDC.  CULL_BACK rejects CCW screen-space
+            // triangles (cross > 0), CULL_FRONT rejects CW (cross < 0).
+            if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
                 return;
             }
-            if ((geo.geometryMode & G_CULL_FRONT) && cross > 0.0f) {
+            if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
                 return;
             }
         }
@@ -759,20 +1012,26 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         };
         
         ClippedPolygon poly;
-        int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly);
+        int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly, geo.clipRatio);
         
         if (triCount > 0 && poly.vertexCount >= 3) {
             // Fan-triangulate clipped polygon (vertex 0 is the hub)
-            auto toRenderVert = [&geo](const ClipVertex& cv) -> RenderBatch::Vertex {
+            bool clipTextPersp = (ctx.state->otherModeH & 0x00080000u) != 0; // OTHERMODE_TEXTPERSP
+            auto toRenderVert = [&geo, clipTextPersp](const ClipVertex& cv) -> RenderBatch::Vertex {
                 RenderBatch::Vertex rv{};
                 // Perspective divide before viewport transform (same as makeVert in RDPProcessor)
                 float invW = (cv.position[3] != 0.0f) ? 1.0f / cv.position[3] : 1.0f;
                 rv.x = cv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
                 rv.y = cv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
+                // Sub-pixel snap to 1/4 pixel (N64 RSP uses 10.2 fixed-point screen coords)
+                rv.x = std::floor(rv.x * 4.0f) * 0.25f;
+                rv.y = std::floor(rv.y * 4.0f) * 0.25f;
                 {
                     float z_screen = cv.position[2] * invW * geo.viewport.scaleZ + geo.viewport.transZ;
-                    float z_range  = geo.viewport.transZ + std::abs(geo.viewport.scaleZ);
-                    rv.z = (z_range > 0.0f) ? z_screen / z_range : 0.0f;
+                    float absScaleZ = std::abs(geo.viewport.scaleZ);
+                    rv.z = (absScaleZ > 0.0001f)
+                        ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ)
+                        : 0.0f;
                     rv.z = std::max(0.0f, std::min(1.0f, rv.z));
                 }
                 rv.w = 1.0f;
@@ -782,9 +1041,12 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                 // Apply gSPTexture scale at draw time (same convention as HLE makeVert).
                 float scaleS = geo.texture.enabled ? geo.texture.GetScaleSFloat() : 1.0f;
                 float scaleT = geo.texture.enabled ? geo.texture.GetScaleTFloat() : 1.0f;
-                rv.s  = cv.texCoord.x  * scaleS * invW; rv.t  = cv.texCoord.y  * scaleT * invW;
-                rv.s1 = cv.texCoord1.x * scaleS * invW; rv.t1 = cv.texCoord1.y * scaleT * invW;
-                rv.perspW = invW;
+                bool textPersp = clipTextPersp;
+                float tcW = textPersp ? invW : 1.0f;
+                float affineHalf = textPersp ? 1.0f : 0.5f;
+                rv.s  = cv.texCoord.x  * scaleS * tcW * affineHalf; rv.t  = cv.texCoord.y  * scaleT * tcW * affineHalf;
+                rv.s1 = cv.texCoord1.x * scaleS * tcW * affineHalf; rv.t1 = cv.texCoord1.y * scaleT * tcW * affineHalf;
+                rv.perspW = tcW;
                 rv.fogFactor = cv.fog;
                 rv.clipFlags = 0; // Already clipped
                 return rv;
@@ -801,6 +1063,7 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         }
     }
     } // end clip rejection block
+    } // end geo scope
 }
 
 void GBIHandler::DrawTriangle2(DListContext& ctx, int v0, int v1, int v2, int v3, int v4, int v5) {
@@ -816,7 +1079,12 @@ void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
     address = ctx.ResolveAddress(address);
     
     if (branch) {
-        // Branch: replace current DL (no push)
+        // Branch: replace current DL (no push).
+        // Detect self-branch (infinite loop) — halt instead.
+        if (address == ctx.pc - 8) {
+            ctx.halted = true;
+            return;
+        }
         ctx.pc = address;
     } else {
         // Call: push return address first
@@ -880,30 +1148,38 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
     {
         int16_t s = static_cast<int16_t>((value >> 16) & 0xFFFF);
         int16_t t = static_cast<int16_t>(value & 0xFFFF);
-        v.texCoord[0] = static_cast<float>(s) / 32.0f;
-        v.texCoord[1] = static_cast<float>(t) / 32.0f;
+        // Convert s10.5 fixed-point to float, then divide by texture scale
+        // because the draw path (makeVert) multiplies by gSPTexture scale.
+        // Without this division, the coordinates would be double-scaled.
+        float scaleS = geo.texture.GetScaleSFloat();
+        float scaleT = geo.texture.GetScaleTFloat();
+        v.texCoord[0] = (static_cast<float>(s) / 32.0f) / scaleS;
+        v.texCoord[1] = (static_cast<float>(t) / 32.0f) / scaleT;
         break;
     }
     
     case 0x18: // G_MWO_POINT_XYSCREEN — sets screen-space X/Y directly
     {
-        // These are already in screen-space (10.2 fixed-point), matching the
-        // post-viewport-transform coordinate system used by the vertex buffer.
+        // These are already in screen-space (10.2 fixed-point).
+        // Store them in screenX/Y and flag the vertex so makeVert
+        // skips the viewport transform for X/Y while keeping the
+        // original clip-space Z/W for depth and perspective texturing.
         int16_t x = static_cast<int16_t>((value >> 16) & 0xFFFF);
         int16_t y = static_cast<int16_t>(value & 0xFFFF);
-        v.position[0] = static_cast<float>(x) / 4.0f;
-        v.position[1] = static_cast<float>(y) / 4.0f;
-        // Mark W=1 so ortho projection works correctly for the overridden position
-        v.position[3] = 1.0f;
+        v.screenX = static_cast<float>(x) / 4.0f;
+        v.screenY = static_cast<float>(y) / 4.0f;
+        v.modifiedXY = true;
         v.clipFlags = 0;
         break;
     }
     
     case 0x1C: // G_MWO_POINT_ZSCREEN — sets screen-space Z directly
     {
-        // Z is in the same viewport-transformed range as standard vertices.
-        int16_t z = static_cast<int16_t>((value >> 16) & 0xFFFF);
-        v.position[2] = static_cast<float>(z);
+        // GLideN64: scrZ = float(_val) / 65535.0f / 2048.0f
+        // The full 32-bit value is used as a normalized depth.
+        float scrZ = static_cast<float>(value) / 65535.0f / 2048.0f;
+        v.screenZ = scrZ;
+        v.modifiedZ = true;
         v.clipFlags = 0;
         break;
     }
@@ -920,6 +1196,10 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
 void GBIHandler::CullDisplayList(DListContext& ctx, uint32_t startVtx, uint32_t endVtx) {
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
+    
+    // Some games (Aidyn Chronicles) pass parameters in reverse order.
+    if (endVtx < startVtx)
+        std::swap(startVtx, endVtx);
     
     // If all vertices in range are clipped by the same plane, end this DL
     uint32_t andFlags = 0xFFFFFFFF;
@@ -945,29 +1225,40 @@ void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, 
     // G_BRANCH_Z compares the vertex's projected W-derived depth against a
     // fixed-point threshold. The zValue from the command is in the same space
     // as the z-buffer (0x0000..0xFFFF range, normalized from near to far).
-    // We convert the vertex's W to the equivalent z-buffer value for comparison.
+    // GLideN64 uses signed int for zTest. Using unsigned is UB when z/w is
+    // negative and produces wrong branch decisions for terrain LOD.
     float w = geo.vertexBuffer[vtxIndex].position[3]; // clip W
-    
-    // N64 depth = (zValue / 0xFFFF) mapped to near..far
-    // Vertex depth = 1.0/W normalized. For the comparison we convert both
-    // to the same normalized [0,1] range based on the viewport z scale.
-    float vtxDepth = 0.0f;
-    if (w > 0.0001f) {
-        // Viewport Z is now in the correct 2.10 fixed-point scale (divided by
-        // 1024 on load), so z_screen is in the same [0,1] range as the BranchZ
-        // threshold.  Compare directly — no z_range normalization needed.
-        float zScale = geo.viewport.scaleZ;
-        float zTrans = geo.viewport.transZ;
-        float z = geo.vertexBuffer[vtxIndex].position[2];
-        vtxDepth = z * zScale / w + zTrans;
+    float z = geo.vertexBuffer[vtxIndex].position[2]; // clip Z
+
+    if (w <= 0.0001f) {
+        // Behind camera / degenerate — always branch (like GLideN64's zTest > 0x03FF)
+        ctx.pc = ctx.ResolveAddress(address);
+        return;
     }
-    
-    // The N64 BranchZ threshold is a 32-bit fixed-point value (16.16).
-    // With viewport Z divided by 1024, vtxDepth \u2248 [0,1].  Threshold is
-    // zValue / 65536 which is also in viewport-Z space after the /1024 convention.
-    float threshold = static_cast<float>(zValue) / 65536.0f;
-    
-    if (vtxDepth <= threshold) {
+
+    int32_t zTest = static_cast<int32_t>((z / w) * 1023.0f);
+    int32_t zVal  = static_cast<int32_t>(zValue);
+    if (zTest > 0x03FF || zTest <= zVal) {
+        ctx.pc = ctx.ResolveAddress(address);
+    }
+}
+
+void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, uint32_t address) {
+    if (!ctx.state) return;
+    auto& geo = ctx.state->geometry;
+
+    if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
+
+    // F3DZEX2 Branch_W: compare vertex clip-space W against a threshold.
+    // The threshold is stored as raw IEEE 754 float bits in the command word.
+    // Branch is taken when the vertex W is less than the threshold
+    // (smaller W = closer to camera), used for LOD switching.
+    float w = geo.vertexBuffer[vtxIndex].position[3];
+
+    float wThreshold;
+    memcpy(&wThreshold, &wValue, sizeof(float));
+
+    if (w < wThreshold) {
         ctx.pc = ctx.ResolveAddress(address);
     }
 }

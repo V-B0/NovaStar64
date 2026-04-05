@@ -1,3 +1,7 @@
+/**
+ * @file RspAssembler.hpp
+ * @brief RSP Assembler.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Assembler - Modernized from Project64's RspAssembler.h
 // x64 code emitter wrapper with logging and symbol management

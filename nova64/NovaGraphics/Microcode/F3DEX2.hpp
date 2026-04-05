@@ -102,22 +102,20 @@ public:
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
     
 private:
-    // Conker-specific vertex format and rendering
+    // CBFD-specific commands
     void Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
-    void Cmd_G_TRI1_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
-    void Cmd_G_TRI2_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_TRI4_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_LOAD_UCODE_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
     
-    // Conker-specific state
-    void Cmd_CBFD_SHADOW(DListContext& ctx, uint32_t w0, uint32_t w1);
-    void Cmd_CBFD_FUR(DListContext& ctx, uint32_t w0, uint32_t w1);
-    void Cmd_CBFD_VTXCOLOR(DListContext& ctx, uint32_t w0, uint32_t w1);
+    // CBFD CoordMod: 16-element vertex position modifier for CBFD lighting
+    void ProcessCoordMod(uint32_t w0, uint32_t w1);
     
-    bool  m_furMode    = false;
-    float m_furLength  = 0.0f;
-    float m_furDensity = 0.0f;
-    int   m_furLayers  = 0;
-    bool  m_shadowMode = false;
-    uint32_t m_shadowAddr = 0;
+    // CBFD state
+    uint32_t m_vertexNormalBase = 0;  // RDRAM address of vertex normals table
+    bool     m_advancedLighting = false;
+    float    m_coordMod[16] = {};
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -137,7 +135,7 @@ inline void F3DEX2Handler::OnFrameBegin(DListContext& ctx) {
 
 inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     // RDP pass-through commands (0xC0-0xFF except GBI2 commands)
     if (opcode >= 0xC0 && opcode <= 0xCF) {
         HandleRDPCommand(ctx, w0, w1);
@@ -172,8 +170,9 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0xDF: Cmd_G_ENDDL(ctx, w0, w1); break;
     
     case 0xE1: Cmd_G_RDPHALF_1(ctx, w0, w1); break;
-    case 0xE2: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
-    case 0xE3: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
+    // F3DEX2 swaps the opcodes vs F3D: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
+    case 0xE2: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
+    case 0xE3: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
     
     case 0xF1: Cmd_G_RDPHALF_2(ctx, w0, w1); break;
     
@@ -221,6 +220,7 @@ inline void F3DEX2Handler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t vtxIndex = ((w0 & 0xFFF) / 2);
+    // N64 BranchZ zval is the full 32-bit w1 word (matching GLideN64)
     BranchZ(ctx, vtxIndex, w1, m_rdpHalf1);
 }
 
@@ -336,14 +336,16 @@ inline void F3DEX2Handler::Cmd_G_ENDDL(DListContext& ctx, uint32_t w0, uint32_t 
 inline void F3DEX2Handler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // GBI2 encoding: shift = 32 - (w0>>8)&0xFF - ((w0&0xFF)+1), length = (w0&0xFF)+1
     uint32_t len = (w0 & 0xFF) + 1;
-    uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;
-    SetOtherModeH(ctx, sft, len, w1);
+    int32_t sft = 32 - static_cast<int32_t>((w0 >> 8) & 0xFF) - static_cast<int32_t>(len);
+    if (sft < 0) sft = 0;
+    SetOtherModeH(ctx, static_cast<uint32_t>(sft), len, w1);
 }
 
 inline void F3DEX2Handler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t len = (w0 & 0xFF) + 1;
-    uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;
-    SetOtherModeL(ctx, sft, len, w1);
+    int32_t sft = 32 - static_cast<int32_t>((w0 >> 8) & 0xFF) - static_cast<int32_t>(len);
+    if (sft < 0) sft = 0;
+    SetOtherModeL(ctx, static_cast<uint32_t>(sft), len, w1);
 }
 
 inline void F3DEX2Handler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -378,6 +380,12 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     
     // F3DZEX-specific commands (Zelda OoT/MM)
     switch (opcode) {
+    case 0x04: // G_BRANCH_W — F3DZEX2 uses W-based LOD culling (not Z like F3DEX2)
+    {
+        uint32_t vtxIndex = (w0 >> 1) & 0x7F;
+        BranchW(ctx, vtxIndex, w1, m_rdpHalf1);
+        return !ctx.halted;
+    }
     case 0xD3: // G_SPECIAL_ZelDA — point lighting for torch/fire effects
         Cmd_G_SPECIAL_ZelDA(ctx, w0, w1);
         return !ctx.halted;
@@ -401,107 +409,315 @@ inline void F3DZEXHandler::Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, u
 inline bool F3DCBFDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
     
-    // CBFD has custom vertex loading, triangle commands, and special effects
+    // CBFD overrides: VTX, MoveWord, MoveMem, LoadUcode, and opcodes 0x10-0x1F are Tri4
     switch (opcode) {
     case 0x01: Cmd_G_VTX_CBFD(ctx, w0, w1); return !ctx.halted;
-    case 0x05: Cmd_G_TRI1_CBFD(ctx, w0, w1); return !ctx.halted;
-    case 0x06: Cmd_G_TRI2_CBFD(ctx, w0, w1); return !ctx.halted;
-    case 0x10: Cmd_CBFD_SHADOW(ctx, w0, w1); return !ctx.halted;
-    case 0x11: Cmd_CBFD_FUR(ctx, w0, w1); return !ctx.halted;
-    case 0x12: Cmd_CBFD_VTXCOLOR(ctx, w0, w1); return !ctx.halted;
+    case 0xDB: Cmd_G_MOVEWORD_CBFD(ctx, w0, w1); return !ctx.halted;
+    case 0xDC: Cmd_G_MOVEMEM_CBFD(ctx, w0, w1); return !ctx.halted;
+    case 0xAF: Cmd_G_LOAD_UCODE_CBFD(ctx, w0, w1); return !ctx.halted;
     default:
+        // Opcodes 0x10-0x1F are all Tri4 in CBFD
+        if (opcode >= 0x10 && opcode <= 0x1F) {
+            Cmd_G_TRI4_CBFD(ctx, w0, w1);
+            return !ctx.halted;
+        }
         return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
     }
 }
 
 inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Conker uses a slightly different vertex format with extra color data
-    // But the GBI encoding is the same as F3DEX2
+    // Same GBI encoding as F3DEX2 for count/vbidx
     int count = (w0 >> 12) & 0xFF;
     int vbidx = ((w0 >> 1) & 0x7F) - count;
     if (vbidx < 0) vbidx = 0;
     
+    // Load standard vertex data (position, texcoords, color/normal bytes)
     LoadVertices(ctx, w1, count, vbidx);
     
-    // Conker-specific vertex color processing for fur layering:
-    // When fur mode is active, offset vertices along their normals
-    // and scale vertex alpha for shell-based fur rendering.
-    if (m_furMode && ctx.state) {
+    // CBFD-specific fixups:
+    // 1) Bytes 12-15 are ALWAYS colors in CBFD (LoadVertices treats them as normals
+    //    when lighting is on — we must fix that)
+    // 2) When lighting is enabled, normals come from a separate RDRAM table at
+    //    vertexNormalBase, NZ is in the vertex flag field (offset 6, low byte)
+    if (ctx.state && ctx.rdram) {
         auto& geo = ctx.state->geometry;
-        float layerFraction = (m_furLayers > 0) ? (1.0f / static_cast<float>(m_furLayers)) : 1.0f;
+        uint32_t resolvedAddr = ctx.ResolveAddress(w1);
+        bool lighting = (geo.geometryMode & G_LIGHTING) != 0;
         
         for (int i = 0; i < count; ++i) {
-            TransformedVertex& tv = geo.vertexBuffer[vbidx + i];
+            int vi = vbidx + i;
+            if (vi >= VERTEX_BUFFER_SIZE) break;
+            uint32_t vtxAddr = resolvedAddr + i * 16;
+            if (vtxAddr + 16 > ctx.rdramSize) break;
             
-            // Fur shell technique: use vertex alpha as a per-vertex fur density mask.
-            // The alpha value from the vertex data determines where fur appears:
-            //   alpha = 0 → no fur (skin/bald areas)
-            //   alpha = 1 → full fur density
-            // We modulate the alpha by fur density parameter to control overall coverage.
-            float furAlpha = tv.color[3];
-            tv.color[3] = furAlpha * m_furDensity * layerFraction;
+            if (lighting) {
+                // Colors: always read from vertex bytes 12-15 (LoadVertices
+                // stored them as normals, overwrite with correct color values)
+                uint8_t r = ctx.ReadByte(vtxAddr + 12);
+                uint8_t g = ctx.ReadByte(vtxAddr + 13);
+                uint8_t b = ctx.ReadByte(vtxAddr + 14);
+                uint8_t a = ctx.ReadByte(vtxAddr + 15);
+                geo.vertexBuffer[vi].color[0] = static_cast<float>(r) / 255.0f;
+                geo.vertexBuffer[vi].color[1] = static_cast<float>(g) / 255.0f;
+                geo.vertexBuffer[vi].color[2] = static_cast<float>(b) / 255.0f;
+                geo.vertexBuffer[vi].color[3] = static_cast<float>(a) / 255.0f;
+                
+                // Normals: from separate RDRAM table
+                if (m_vertexNormalBase != 0) {
+                    uint32_t normAddr = m_vertexNormalBase + static_cast<uint32_t>(vi << 1);
+                    if (normAddr + 2 <= ctx.rdramSize) {
+                        int8_t nx = static_cast<int8_t>(ctx.rdram[normAddr ^ 3]);
+                        int8_t ny = static_cast<int8_t>(ctx.rdram[(normAddr + 1) ^ 3]);
+                        // NZ from vertex flag field (offset 6, low byte)
+                        int8_t nz = static_cast<int8_t>(ctx.ReadHalf(vtxAddr + 6) & 0xFF);
+                        
+                        geo.vertexBuffer[vi].normal[0] = static_cast<float>(nx) / 127.0f;
+                        geo.vertexBuffer[vi].normal[1] = static_cast<float>(ny) / 127.0f;
+                        geo.vertexBuffer[vi].normal[2] = static_cast<float>(nz) / 127.0f;
+                    }
+                }
+            }
+        }
+        
+        // ---- CBFD Lighting ----
+        // Standard lighting was already applied by TransformVertexBatch but used
+        // wrong normals (bytes 12-15 are colors in CBFD, not normals).  The fixup
+        // above overwrote the lit colors with the raw vertex RGBA and loaded the
+        // correct normals from the external table.  Now apply CBFD-specific
+        // position-based lighting, multiplying onto the raw vertex colors.
+        if (lighting) {
+            constexpr float FIXED2FLOATRECIP16 = 1.0f / 65536.0f;
+            const int numLights = geo.numLights;
             
-            // In actual N64 rendering, each fur shell layer is drawn as a separate
-            // pass with positions offset along normals. We encode the fur length
-            // info so the shader can use it for alpha falloff.
-            // The fur length is stored pre-multiplied with the layer fraction
-            // to give a smooth alpha gradient from base to tip.
+            for (int i = 0; i < count; ++i) {
+                int vi = vbidx + i;
+                if (vi >= VERTEX_BUFFER_SIZE) break;
+                auto& tv = geo.vertexBuffer[vi];
+                uint32_t vtxAddr = resolvedAddr + i * 16;
+                if (vtxAddr + 16 > ctx.rdramSize) break;
+                
+                // Skip vertices with negative flag (matches GLideN64)
+                int16_t flag = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 6));
+                if (flag < 0) continue;
+                
+                // Re-read raw object-space position from RDRAM
+                // (TransformVertexBatch overwrote position[] with clip coords)
+                float objX = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 0)));
+                float objY = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 2)));
+                float objZ = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 4)));
+                
+                // CBFD coordinate-modified position
+                float vPosX = (objX + m_coordMod[8])  * m_coordMod[12];
+                float vPosY = (objY + m_coordMod[9])  * m_coordMod[13];
+                float vPosZ = (objZ + m_coordMod[10]) * m_coordMod[14];
+                
+                // Start with ambient light
+                float r = geo.lights[numLights].color[0];
+                float g = geo.lights[numLights].color[1];
+                float b = geo.lights[numLights].color[2];
+                
+                if (m_advancedLighting) {
+                    // Top light (numLights-1) is directional: dot(normal, lightDir)
+                    int topLight = numLights - 1;
+                    if (topLight >= 0) {
+                        float intensity = std::min(1.0f,
+                            tv.normal[0] * geo.lights[topLight].direction[0] +
+                            tv.normal[1] * geo.lights[topLight].direction[1] +
+                            tv.normal[2] * geo.lights[topLight].direction[2]);
+                        if (intensity > 0.0f) {
+                            r += geo.lights[topLight].color[0] * intensity;
+                            g += geo.lights[topLight].color[1] * intensity;
+                            b += geo.lights[topLight].color[2] * intensity;
+                        }
+                    }
+                    // Remaining lights (0..numLights-2) are distance-attenuated
+                    for (int l = numLights - 2; l >= 0; --l) {
+                        float vx = vPosX - geo.lights[l].position[0];
+                        float vy = vPosY - geo.lights[l].position[1];
+                        float vz = vPosZ - geo.lights[l].position[2];
+                        float len = 2.0f * (vx*vx + vy*vy + vz*vz) * FIXED2FLOATRECIP16;
+                        float intensity = std::min(1.0f, geo.lights[l].ca / len);
+                        if ((geo.geometryMode & G_POINT_LIGHTING) != 0) {
+                            intensity *= std::min(1.0f,
+                                tv.normal[0] * geo.lights[l].direction[0] +
+                                tv.normal[1] * geo.lights[l].direction[1] +
+                                tv.normal[2] * geo.lights[l].direction[2]);
+                        }
+                        if (intensity > 0.0f) {
+                            r += geo.lights[l].color[0] * intensity;
+                            g += geo.lights[l].color[1] * intensity;
+                            b += geo.lights[l].color[2] * intensity;
+                        }
+                    }
+                } else {
+                    // Basic: all non-ambient lights (0..numLights-2) distance-attenuated
+                    for (int l = numLights - 2; l >= 0; --l) {
+                        float vx = vPosX - geo.lights[l].position[0];
+                        float vy = vPosY - geo.lights[l].position[1];
+                        float vz = vPosZ - geo.lights[l].position[2];
+                        float len = 2.0f * (vx*vx + vy*vy + vz*vz) * FIXED2FLOATRECIP16;
+                        float intensity = std::min(1.0f, geo.lights[l].ca / len);
+                        if (intensity > 0.0f) {
+                            r += geo.lights[l].color[0] * intensity;
+                            g += geo.lights[l].color[1] * intensity;
+                            b += geo.lights[l].color[2] * intensity;
+                        }
+                    }
+                }
+                
+                r = std::min(1.0f, r);
+                g = std::min(1.0f, g);
+                b = std::min(1.0f, b);
+                
+                tv.color[0] *= r;
+                tv.color[1] *= g;
+                tv.color[2] *= b;
+            }
         }
     }
 }
 
-inline void F3DCBFDHandler::Cmd_G_TRI1_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Same encoding as F3DEX2 but may need special handling for
-    // Conker's multi-pass fur rendering
-    Cmd_G_TRI1(ctx, w0, w1);
-}
-
-inline void F3DCBFDHandler::Cmd_G_TRI2_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    Cmd_G_TRI2(ctx, w0, w1);
-}
-
-inline void F3DCBFDHandler::Cmd_CBFD_SHADOW(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx;
-    m_shadowMode = (w0 & 0x01) != 0;
-    m_shadowAddr = w1;
-    // Shadow rendering: the game writes a projected shadow map to RDRAM at shadowAddr.
-    // When shadow mode is enabled, subsequent triangles are rendered as shadows
-    // (alpha-blended dark overlay) using the shadow buffer as a stencil/mask.
-}
-
-inline void F3DCBFDHandler::Cmd_CBFD_FUR(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx;
-    m_furMode    = (w0 & 0x01) != 0;
-    m_furLength  = static_cast<float>((w0 >> 8) & 0xFF) / 255.0f;
-    m_furDensity = static_cast<float>((w0 >> 16) & 0xFF) / 255.0f;
-    m_furLayers  = (w1 >> 24) & 0xFF;
-    // Fur rendering: multiple alpha-blended shell layers offset along normals.
-    // Each layer's alpha decreases from base to tip for fade-out.
-}
-
-inline void F3DCBFDHandler::Cmd_CBFD_VTXCOLOR(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Direct vertex color override from RDRAM (dynamic lighting effects in Conker)
-    int startVtx = (w0 >> 8) & 0xFF;
-    int count    = w0 & 0xFF;
-    uint32_t addr = ctx.ResolveAddress(w1);
+inline void F3DCBFDHandler::Cmd_G_TRI4_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // Tri4: draws 4 triangles packed into two 32-bit words
+    // Vertex indices are 5-bit, packed across w0 and w1
+    int v0  = (w0 >> 23) & 0x1F;
+    int v1  = (w0 >> 18) & 0x1F;
+    int v2a = (w0 >> 15) & 0x07;  // upper 3 bits of v2
+    int v2b = (w1 >> 30) & 0x03;  // lower 2 bits of v2
+    int v2  = (v2a << 2) | v2b;
     
-    if (!ctx.state) return;
-    auto& geo = ctx.state->geometry;
+    int v3  = (w0 >> 10) & 0x1F;
+    int v4  = (w0 >>  5) & 0x1F;
+    int v5  = (w0 >>  0) & 0x1F;
     
-    // Each vertex color override is 4 bytes (RGBA) in RDRAM
-    for (int i = 0; i < count; ++i) {
-        int vtxIdx = startVtx + i;
-        if (vtxIdx >= VERTEX_BUFFER_SIZE) break;
-        
-        uint32_t colorAddr = addr + i * 4;
-        if (colorAddr + 4 > ctx.rdramSize) break;
-        
-        const uint8_t* src = ctx.rdram + colorAddr;
-        TransformedVertex& tv = geo.vertexBuffer[vtxIdx];
-        tv.color[0] = static_cast<float>(src[0]) / 255.0f;
-        tv.color[1] = static_cast<float>(src[1]) / 255.0f;
-        tv.color[2] = static_cast<float>(src[2]) / 255.0f;
-        tv.color[3] = static_cast<float>(src[3]) / 255.0f;
+    int v6  = (w1 >> 25) & 0x1F;
+    int v7  = (w1 >> 20) & 0x1F;
+    int v8  = (w1 >> 15) & 0x1F;
+    
+    int v9  = (w1 >> 10) & 0x1F;
+    int v10 = (w1 >>  5) & 0x1F;
+    int v11 = (w1 >>  0) & 0x1F;
+    
+    DrawTriangle(ctx, v0, v1, v2);
+    DrawTriangle(ctx, v3, v4, v5);
+    DrawTriangle(ctx, v6, v7, v8);
+    DrawTriangle(ctx, v9, v10, v11);
+}
+
+inline void F3DCBFDHandler::Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    uint8_t index = (w0 >> 16) & 0xFF;
+    
+    // CBFD-specific MoveWord indices
+    constexpr uint8_t G_MW_COORD_MOD = 0x10;  // CBFD coordinate modifier
+    
+    if (index == MoveWord::MW_NUMLIGHT) {
+        // CBFD uses 48 bytes per light instead of 32
+        if (!ctx.state) return;
+        int numLights = static_cast<int>(w1 / 48);
+        ctx.state->geometry.numLights = numLights;
+        ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+    } else if (index == G_MW_COORD_MOD) {
+        ProcessCoordMod(w0, w1);
+    } else {
+        // Fall through to standard F3DEX2 MoveWord handling
+        uint16_t offset = w0 & 0xFFFF;
+        MoveWord(ctx, index, offset, w1);
+    }
+}
+
+inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    uint8_t index = w0 & 0xFF;
+    
+    constexpr uint8_t G_MV_NORMALES = 0x0E;  // CBFD normals table (14)
+    constexpr uint8_t G_MV_LIGHT = 0x0A;    // Light (10)
+    
+    if (index == G_MV_NORMALES) {
+        // Set the RDRAM address of the vertex normals table
+        m_vertexNormalBase = ctx.ResolveAddress(w1);
+    } else if (index == G_MV_LIGHT) {
+        uint32_t offset = (w0 >> 5) & 0x3FFF;
+        uint32_t n = offset / 48;  // CBFD: 48 bytes per light
+        if (n < 2) {
+            // LookAt vectors (same as F3DEX2)
+            MoveMemGBI2(ctx, index, 0, static_cast<uint8_t>(offset), w1);
+        } else {
+            // CBFD light: 48 bytes (color, direction, position, attenuation)
+            uint32_t lightIndex = n - 2;
+            if (!ctx.state || !ctx.rdram) return;
+            auto& geo = ctx.state->geometry;
+            uint32_t addr = ctx.ResolveAddress(w1);
+            if (addr + 48 > ctx.rdramSize) return;
+            
+            if (lightIndex < MAX_LIGHTS) {
+                const uint8_t* src = ctx.rdram + addr;
+                auto& light = geo.lights[lightIndex];
+                
+                // Color (bytes 0-2)
+                light.r = src[0 ^ 3];
+                light.g = src[1 ^ 3];
+                light.b = src[2 ^ 3];
+                light.color[0] = static_cast<float>(light.r) / 255.0f;
+                light.color[1] = static_cast<float>(light.g) / 255.0f;
+                light.color[2] = static_cast<float>(light.b) / 255.0f;
+                
+                // Direction (bytes 8-10), then normalize
+                float dx = static_cast<float>(static_cast<int8_t>(src[8 ^ 3]));
+                float dy = static_cast<float>(static_cast<int8_t>(src[9 ^ 3]));
+                float dz = static_cast<float>(static_cast<int8_t>(src[10 ^ 3]));
+                float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+                if (len > 0.0001f) {
+                    float inv = 1.0f / len;
+                    dx *= inv; dy *= inv; dz *= inv;
+                }
+                light.direction[0] = dx;
+                light.direction[1] = dy;
+                light.direction[2] = dz;
+                
+                // Ca attenuation (byte 12)
+                light.ca = static_cast<float>(src[12 ^ 3]) / 16.0f;
+                
+                // Position (bytes 32-37 as int16_t, using halfword swap)
+                light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 32)));
+                light.position[1] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 34)));
+                light.position[2] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 36)));
+                
+                ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+            }
+        }
+    } else {
+        // Fall through to standard F3DEX2 MoveMem
+        uint8_t size = (((w0 >> 19) & 0x1F) + 1) * 8;
+        uint8_t offset_val = (w0 >> 8) & 0xFF;
+        MoveMemGBI2(ctx, index, size, offset_val, w1);
+    }
+}
+
+inline void F3DCBFDHandler::Cmd_G_LOAD_UCODE_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    (void)ctx; (void)w0; (void)w1;
+    // In CBFD, G_LOAD_UCODE is repurposed to switch to advanced lighting mode
+    m_advancedLighting = true;
+}
+
+inline void F3DCBFDHandler::ProcessCoordMod(uint32_t w0, uint32_t w1) {
+    // CBFD coordinate modifier: 16-element position modifier array for CBFD lighting
+    if ((w0 & 8) != 0) return;  // Bit 3 set = skip
+    
+    uint32_t idx = (w0 >> 1) & 0x03;
+    uint32_t pos = w0 & 0x30;
+    
+    if (pos == 0x00) {
+        m_coordMod[0 + idx] = static_cast<float>(static_cast<int16_t>((w1 >> 16) & 0xFFFF));
+        m_coordMod[1 + idx] = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF));
+    } else if (pos == 0x10) {
+        float fracHi = static_cast<float>(static_cast<int16_t>((w1 >> 16) & 0xFFFF)) / 65536.0f;
+        float fracLo = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF)) / 65536.0f;
+        m_coordMod[4 + idx] = fracHi;
+        m_coordMod[5 + idx] = fracLo;
+        m_coordMod[12 + idx] = m_coordMod[0 + idx] + m_coordMod[4 + idx];
+        m_coordMod[13 + idx] = m_coordMod[1 + idx] + m_coordMod[5 + idx];
+    } else if (pos == 0x20) {
+        m_coordMod[8 + idx] = static_cast<float>(static_cast<int16_t>((w1 >> 16) & 0xFFFF));
+        m_coordMod[9 + idx] = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF));
     }
 }
 

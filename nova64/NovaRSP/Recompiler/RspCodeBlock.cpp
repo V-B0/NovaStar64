@@ -1,3 +1,7 @@
+/**
+ * @file RspCodeBlock.cpp
+ * @brief RSP Code Block Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Code Block Implementation
 // Code analysis, branch target detection, and block construction

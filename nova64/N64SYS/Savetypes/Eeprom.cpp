@@ -47,7 +47,6 @@ CEeprom::CEeprom(void)
     std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM));
 }
 
-// CEeprom constructor
 CEeprom::CEeprom(bool ReadOnly)
     : m_ReadOnly(ReadOnly)
 {
@@ -57,7 +56,6 @@ CEeprom::CEeprom(bool ReadOnly)
     Log::debugf("CEeprom initialized (ReadOnly: %s)", ReadOnly ? "true" : "false");
 }
 
-// CEeprom destructor
 CEeprom::~CEeprom()
 {
     if (m_File.is_open())
@@ -76,13 +74,12 @@ void CEeprom::EepromCommand(uint8_t* Command)
         return;
     }
 
-    // Auto-detect save type on first EEPROM access
+    // NOTE: Do NOT set m_SaveUsing here.  EEPROM is accessed through PIF/SI
+    // (channel 4) and is independent of the SRAM/FlashRAM save type at
+    // 0x08000000.  Setting m_SaveUsing = Eeprom4K here would prevent
+    // UnCachedSysMemory from auto-detecting FlashRAM when OOT V1.2 (or any
+    // FlashRAM game) later accesses the cart domain-2 region.
     extern CN64System* g_System;
-    if (g_System && g_System->m_SaveUsing == N64Types::SaveChipType::Auto)
-    {
-        g_System->m_SaveUsing = N64Types::SaveChipType::Eeprom4K;
-        Log::info("Auto-detected save type: EEPROM 4K");
-    }
 
     const EepromCmd cmd = static_cast<EepromCmd>(Command[2]);
 
@@ -122,15 +119,11 @@ void CEeprom::EepromCommand(uint8_t* Command)
 // Handle EEPROM status check command
 void CEeprom::HandleStatusCommand(uint8_t* Command)
 {
-    extern CN64System* g_System;
-    // Verify we're using EEPROM save type
-    if (g_System && 
-        g_System->m_SaveUsing != N64Types::SaveChipType::Eeprom4K && 
-        g_System->m_SaveUsing != N64Types::SaveChipType::Eeprom16K)
-    {
-        Command[1] |= 0x80;  // Set error bit
-        return;
-    }
+    // EEPROM always responds to status queries through PIF channel 4,
+    // regardless of the SRAM/FlashRAM save type.  On real N64 hardware,
+    // the PIF routes channel-4 queries to the cartridge EEPROM chip (if
+    // present).  We always respond as 4K EEPROM; games that don't use
+    // EEPROM will simply ignore the response.
 
     if (Command[1] != 3)
     {
@@ -141,8 +134,8 @@ void CEeprom::HandleStatusCommand(uint8_t* Command)
         }
         if ((Command[1] & 3) > 1)
         {
-            // Return EEPROM size indicator
-            Command[4] = (g_System->m_SaveUsing == N64Types::SaveChipType::Eeprom4K) ? 0x80 : 0xC0;
+            // Return EEPROM size indicator (always 4K)
+            Command[4] = 0x80;
         }
         if ((Command[1] & 3) > 2)
         {
@@ -152,7 +145,7 @@ void CEeprom::HandleStatusCommand(uint8_t* Command)
     else
     {
         Command[3] = 0x00;
-        Command[4] = (g_System->m_SaveUsing == N64Types::SaveChipType::Eeprom4K) ? 0x80 : 0xC0;
+        Command[4] = 0x80;  // 4K EEPROM
         Command[5] = 0x00;
     }
 }

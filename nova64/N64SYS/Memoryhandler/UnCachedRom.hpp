@@ -1,3 +1,7 @@
+/**
+ * @file UnCachedRom.hpp
+ * @brief Un Cached Rom declarations and types.
+ */
 #pragma once
 #include "Memoryhandler.hpp"
 #include "../Savetypes/SRam.hpp"

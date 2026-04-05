@@ -1,3 +1,7 @@
+/**
+ * @file arithmetics.hpp
+ * @brief RSP HLE Audio Arithmetics.
+ */
 // SuperNova64 - N64 Emulator
 // RSP HLE Audio Arithmetics - Modernized from Project64's arithmetics.h
 // C++20 constexpr helper functions

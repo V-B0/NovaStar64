@@ -1,3 +1,7 @@
+/**
+ * @file GBcart.cpp
+ * @brief G Bcart implementation.
+ */
 #include "GBcart.hpp"
 #include <fstream>
 #include <iostream>

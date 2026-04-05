@@ -1,3 +1,7 @@
+/**
+ * @file x64RspRegInfo.hpp
+ * @brief x64 RSP Register Info.
+ */
 // SuperNova64 - N64 Emulator
 // x64 RSP Register Info
 // Defines the x86-64 register mapping for RSP recompiler:

@@ -1,3 +1,7 @@
+/**
+ * @file GLShaderProgram.cpp
+ * @brief OpenGL Shader Program.
+ */
 // NovaGraphics — OpenGL Shader Program Implementation
 // Compilation, linking, reflection, uniform management, hot-reload.
 
@@ -78,7 +82,7 @@ bool GLShader::CompileFromSource(ShaderStage stage, const std::string& source) {
     }
 
     const char* src = source.c_str();
-    GLint length = static_cast<GLint>(source.size());
+    const GLint length = static_cast<GLint>(source.size());
     glShaderSource(m_handle, 1, &src, &length);
     glCompileShader(m_handle);
 

@@ -316,6 +316,10 @@ void PifRamHandler::pif_control_write()
     // Handle control byte (byte 0x3F) — system commands
     if (m_pif_ram[0x3F] > 0x01)
     {
+        static int pifCtrlCount = 0;
+        if (pifCtrlCount++ < 20) {
+            Log::infof("[PIF_CTRL] control=0x%02X (call #%d)", m_pif_ram[0x3F], pifCtrlCount);
+        }
         switch (m_pif_ram[0x3F])
         {
         case 0x02: // CIC Challenge  (P64: case 0x02 in ControlWrite)
@@ -593,8 +597,7 @@ namespace {
 
 PifRamHandler::ControllerPak::ControllerPak() {
     m_data.fill(0);
-    // Initialize with formatted data or zeroes
-    m_present = true; // Default to present for now
+    m_present = false; // No controller pak by default
 }
 
 bool PifRamHandler::ControllerPak::read(uint32_t address, uint8_t& value) {
@@ -646,27 +649,30 @@ void PifRamHandler::ReadControllerCommand(int channel, uint8_t* Command)
     case 0x02: // Read from controller pak
         if (m_controllers[channel].plugged_in)
         {
-            uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
-            uint8_t* data = &Command[5];
             if (m_controller_paks[channel].is_present()) {
+                uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
+                uint8_t* data = &Command[5];
                 for (int i = 0; i < 32; i++)
                     m_controller_paks[channel].read(address + i, data[i]);
+                Command[0x25] = calculate_mempak_crc(data);
             } else {
-                std::memset(data, 0, 0x20);
+                // No accessory present — set "no response" error flag
+                Command[1] |= 0x80;
             }
-            Command[0x25] = calculate_mempak_crc(data);
         }
         break;
     case 0x03: // Write controller pak
         if (m_controllers[channel].plugged_in)
         {
-            uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
-            uint8_t* data = &Command[5];
             if (m_controller_paks[channel].is_present()) {
+                uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
+                uint8_t* data = &Command[5];
                 for (int i = 0; i < 32; i++)
                     m_controller_paks[channel].write(address + i, data[i]);
+                Command[0x25] = calculate_mempak_crc(data);
+            } else {
+                Command[1] |= 0x80;
             }
-            Command[0x25] = calculate_mempak_crc(data);
         }
         break;
     }
@@ -709,15 +715,16 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
     case 0x02: // Read from controller pak
         if (m_controllers[channel].plugged_in)
         {
-            uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
-            uint8_t* data = &Command[5];
             if (m_controller_paks[channel].is_present()) {
+                uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
+                uint8_t* data = &Command[5];
                 for (int i = 0; i < 32; i++)
                     m_controller_paks[channel].read(address + i, data[i]);
+                Command[0x25] = calculate_mempak_crc(data);
             } else {
-                std::memset(data, 0, 0x20);
+                // No accessory present — set "no response" error flag
+                Command[1] |= 0x80;
             }
-            Command[0x25] = calculate_mempak_crc(data);
         }
         else
         {
@@ -728,13 +735,15 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
     case 0x03: // Write controller pak
         if (m_controllers[channel].plugged_in)
         {
-            uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
-            uint8_t* data = &Command[5];
             if (m_controller_paks[channel].is_present()) {
+                uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
+                uint8_t* data = &Command[5];
                 for (int i = 0; i < 32; i++)
                     m_controller_paks[channel].write(address + i, data[i]);
+                Command[0x25] = calculate_mempak_crc(data);
+            } else {
+                Command[1] |= 0x80;
             }
-            Command[0x25] = calculate_mempak_crc(data);
         }
         else
         {

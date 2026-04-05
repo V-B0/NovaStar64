@@ -13,6 +13,7 @@
 #include "Vmem.hpp"
 #include "TLB.hpp"
 #include "../SysGlobals.hpp"
+#include <atomic>
 #include "../MainSYS.hpp"
 #include "../N64Rom.hpp"
 #include "../N64DD.hpp"
@@ -166,7 +167,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
     COUNT_REGISTER = 0x5000;
     m_Mips_Interface[1] = 0x02020102;  // MI_VERSION_REG (index 1, not 2)
     m_SigProcessor_Interface[4] = 0x00000001;  // SP_STATUS_REG
-    CAUSE_REGISTER.Value = 0x0000005C;
+    CAUSE_REGISTER.Value = 0x00000000;
     CONTEXT_REGISTER.Value = 0x007FFFF0;
     EPC_REGISTER = 0xFFFFFFFFFFFFFFFF;
     BAD_VADDR_REGISTER = 0xFFFFFFFFFFFFFFFF;
@@ -210,13 +211,16 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
         m_GPR[31] = 0xFFFFFFFFA4001550;
 
         // CIC-specific register initialization
-        // Detect CIC type from PIF config (default NUS_6105 for OoT)
-        // TODO: auto-detect CIC from ROM header CRC
-        int cicType = 6105; // hardcoded for now — matches PIF::Config default
+        // Auto-detect CIC type from ROM header
+        using N64::Rom::CICChip;
+        CICChip cicChip = CICChip::CIC_NUS_6102; // default fallback
+        if (N64Rom* rom = m_System.GetRom()) {
+            cicChip = rom->GetImage().GetCICChip();
+        }
 
-        switch (cicType)
+        switch (cicChip)
         {
-        case 6101:
+        case CICChip::CIC_NUS_6101:
             m_GPR[1]  = 0x0000000000000000;
             m_GPR[2]  = 0xFFFFFFFFF58B0FBF;
             m_GPR[3]  = 0xFFFFFFFFF58B0FBF;
@@ -229,7 +233,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
             m_GPR[22] = 0x000000000000003F;
             m_GPR[25] = 0xFFFFFFFF9DEBB54F;
             break;
-        case 6102:
+        case CICChip::CIC_NUS_6102:
             m_GPR[1]  = 0x0000000000000001;
             m_GPR[2]  = 0x000000000EBDA536;
             m_GPR[3]  = 0x000000000EBDA536;
@@ -242,7 +246,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
             m_GPR[22] = 0x000000000000003F;
             m_GPR[25] = 0xFFFFFFFF9DEBB54F;
             break;
-        case 6103:
+        case CICChip::CIC_NUS_6103:
             m_GPR[1]  = 0x0000000000000001;
             m_GPR[2]  = 0x0000000049A5EE96;
             m_GPR[3]  = 0x0000000049A5EE96;
@@ -255,7 +259,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
             m_GPR[22] = 0x0000000000000078;
             m_GPR[25] = 0xFFFFFFFF825B21C9;
             break;
-        case 6105:
+        case CICChip::CIC_NUS_6105:
             m_GPR[1]  = 0x0000000000000000;
             m_GPR[2]  = 0xFFFFFFFFF58B0FBF;
             m_GPR[3]  = 0xFFFFFFFFF58B0FBF;
@@ -268,7 +272,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU)
             m_GPR[22] = 0x0000000000000091;
             m_GPR[25] = 0xFFFFFFFFCDCE565F;
             break;
-        case 6106:
+        case CICChip::CIC_NUS_6106:
             m_GPR[1]  = 0x0000000000000000;
             m_GPR[2]  = 0xFFFFFFFFA95930A4;
             m_GPR[3]  = 0xFFFFFFFFA95930A4;
@@ -414,7 +418,8 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
     }
     
     case COP0Reg::Cause:
-        m_CP0[regIndex] &= 0xFFFFCFF;
+        // Only bits 9:8 (software interrupt pending IP0, IP1) are writable
+        m_CP0[regIndex] = (m_CP0[regIndex] & ~0x300) | (Value & 0x300);
         break;
         
     case COP0Reg::PRId:
@@ -525,7 +530,7 @@ bool CRegisters::DoIntrException()
     {
         return false;
     }
-    
+
     TriggerException(static_cast<uint32_t>(ExceptionCode::EXC_INT), 0);
     return true;
 }
@@ -582,6 +587,11 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
     }
 }
 
+void CRegisters::SetTestTimer()
+{
+    m_System.m_TestTimer = true;
+}
+
 void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
 {
     CAUSE_REGISTER.ExceptionCode = ExceptionCode;
@@ -594,7 +604,13 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
     
     STATUS_REGISTER.ExceptionLevel = 1;
     m_System.m_PipelineStage = N64Types::PipelineStage::Jump;
-    m_System.m_JumpToLocation = 0xFFFFFFFF80000180;
+
+    // Exception vector depends on BEV (Bootstrap Exception Vector) bit in STATUS
+    if (STATUS_REGISTER.BEV) {
+        m_System.m_JumpToLocation = 0xFFFFFFFFBFC00380;
+    } else {
+        m_System.m_JumpToLocation = 0xFFFFFFFF80000180;
+    }
 }
 
 // ============================================================================

@@ -1,4 +1,9 @@
+/**
+ * @file TLB.cpp
+ * @brief TLB implementation.
+ */
 #include "TLB.hpp"
+#include "Vmem.hpp"
 #include "../../common/Log.hpp"
 #include "../MainSYS.hpp"
 #include "Register.hpp"
@@ -380,19 +385,7 @@ void CTLB::ReadEntry() {
 void CTLB::WriteEntry(uint32_t Index, bool Random) {
     if (!m_Reg) return;
     
-    // If Random, get index from Random register?
-    // The previous implementation passed 'Random' boolean but implementation 
-    // of TLBWR usually reads Random register. The 'Index' arg might be ignored if Random is true.
-    // However, function signature takes Index. Let's assume caller handled it or we handle it.
-    // Usually: TLBWI -> uses Index register. TLBWR -> uses Random register.
-    
     uint32_t write_index = Index;
-    if (Random) {
-         // This seems to be a helper function called by opcode handlers which already calculated index
-         // But let's be safe. If 'Random' is true, and Index is passed, maybe use Index.
-         // Or maybe we should allow the caller to specify.
-         // Standard: index is passed in.
-    }
     
     if (write_index >= 32) return;
     
@@ -403,11 +396,24 @@ void CTLB::WriteEntry(uint32_t Index, bool Random) {
     
     auto& entry = m_tlb[write_index];
     
+    // Remove old mapping from MMU page tables before overwriting
+    if (entry.EntryDefined && m_MMU) {
+        m_MMU->RemoveTLBMapping(entry.EntryHi.Value, entry.PageMask.Value);
+    }
+    
     entry.EntryDefined = true;
     entry.PageMask.Value = pagemask_val;
     entry.EntryHi.Value = entryhi_val;
     entry.EntryLo0.Value = entrylo0_val;
     entry.EntryLo1.Value = entrylo1_val;
+    
+    // Propagate new mapping into MMU fast-path page tables so that
+    // LW_Memory / SW_Memory can resolve USEG (TLB-mapped) addresses
+    // without falling through to the slow TLB-miss exception path.
+    if (m_MMU) {
+        m_MMU->ApplyTLBMapping(entryhi_val, pagemask_val,
+                               entrylo0_val, entrylo1_val);
+    }
     
     // Invalidate fast lookup
     for(auto& fast : m_FastTlb) {

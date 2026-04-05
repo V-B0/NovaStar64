@@ -1,3 +1,7 @@
+/**
+ * @file RspRecompilerCPU.cpp
+ * @brief RSP Recompiler CPU Implementation.
+ */
 // SuperNova64 - N64 Emulator
 // RSP Recompiler CPU Implementation
 // x64 JIT compiler managing code generation and dispatch

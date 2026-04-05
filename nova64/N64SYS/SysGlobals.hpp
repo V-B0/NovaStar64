@@ -404,6 +404,9 @@ template<typename T, size_t N>
 constexpr size_t ArraySize(T (&)[N]) noexcept { return N; }
 
 // Bit manipulation helpers
+#ifdef BIT
+#undef BIT
+#endif
 constexpr uint32_t BIT(uint32_t n) { return 1u << n; }
 constexpr uint64_t BIT64(uint32_t n) { return 1ull << n; }
 
