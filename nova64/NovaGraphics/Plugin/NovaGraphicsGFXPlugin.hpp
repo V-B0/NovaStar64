@@ -56,6 +56,7 @@ public:
     bool IsFrameReady() const override;
     void GetStatistics(float& fps, float& vis) const override;
     bool CaptureScreenshot(const std::string& filename) override;
+    double GetLastSwapTimeMs() const override;
 
 private:
     VideoPlugin                            m_videoPlugin;

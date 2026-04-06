@@ -1126,20 +1126,12 @@ bool CodeBlock::verify_memory_snapshot() const
         return true; // Nothing to verify
     }
 
-    // Full-block verification: compare ALL stored instructions against
-    // current RDRAM content. The old approach only checked the first 16
-    // bytes, missing modifications beyond the 4th instruction.
-    uint32_t addr = entry_address_;
-    for (size_t i = 0; i < instructions_.size(); ++i) {
-        uint8_t* ptr = memory_->MemoryPtr(addr, 4, true);
-        if (!ptr) return true; // Can't verify unmapped memory — assume valid
-        uint32_t current = *reinterpret_cast<uint32_t*>(ptr);
-        if (current != instructions_[i]) {
-            return false; // Code has been modified
-        }
-        addr += 4;
-    }
-    return true;
+    // Fast path: get a contiguous pointer to the full block and memcmp
+    // in one shot instead of per-instruction MemoryPtr calls.
+    uint32_t totalBytes = static_cast<uint32_t>(instructions_.size() * 4);
+    uint8_t* ptr = memory_->MemoryPtr(entry_address_, totalBytes, true);
+    if (!ptr) return true; // Can't verify unmapped memory — assume valid
+    return std::memcmp(ptr, instructions_.data(), totalBytes) == 0;
 }
 
 void CodeBlock::update_memory_snapshot()

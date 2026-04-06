@@ -131,9 +131,9 @@ public:
     
 protected:
     /// Memory size constants
-    static constexpr uint32_t DEFAULT_INITIAL_SIZE = 5 * 1024 * 1024;  // 5 MB
+    static constexpr uint32_t DEFAULT_INITIAL_SIZE = 32 * 1024 * 1024; // 32 MB
     static constexpr uint32_t MAX_BUFFER_SIZE = 60 * 1024 * 1024;      // 60 MB
-    static constexpr uint32_t GROWTH_INCREMENT = 1 * 1024 * 1024;      // 1 MB
+    static constexpr uint32_t GROWTH_INCREMENT = 8 * 1024 * 1024;      // 8 MB
     static constexpr uint32_t GROWTH_FACTOR = 2;                       // Double when growing
 
 private:

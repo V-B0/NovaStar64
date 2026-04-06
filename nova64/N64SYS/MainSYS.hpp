@@ -113,6 +113,7 @@ public:
     static int s_WindowWidth;
     static int s_WindowHeight;
     static int s_InternalResScale;
+    static int s_FullscreenMode; // 0=windowed, 1=borderless fullscreen, 2=exclusive fullscreen
 
     // Components
     CRegisters* GetRegisters() const { return m_Registers.get(); }

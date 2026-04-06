@@ -25,6 +25,8 @@ static void PrintUsage(const char* programName)
     std::printf("  --frames <N>     Run for N frames (0 = unlimited, default)\n");
     std::printf("  --fps <N>        Target FPS (0=unlimited, 30, 60; default: 60)\n");
     std::printf("  --resolution <R> Window resolution: 480p, 720p, 960p, 1080p, 1440p, 4k (default: 960p)\n");
+    std::printf("  --fullscreen     Run in exclusive fullscreen mode\n");
+    std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
 }
 
 int main(int argc, char* argv[])
@@ -42,6 +44,7 @@ int main(int argc, char* argv[])
     int windowWidth = 1280;   // Default: 4x N64 native (1280x960)
     int windowHeight = 960;
     int internalResScale = 4; // Default: 4x (1280x960 internal)
+    int fullscreenMode = 1;  // 0 = windowed, 1 = borderless fullscreen (default), 2 = exclusive fullscreen
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++)
@@ -88,6 +91,16 @@ int main(int argc, char* argv[])
             }
             Log::infof("Resolution set to: %dx%d", windowWidth, windowHeight);
         }
+        else if (std::strcmp(argv[i], "--fullscreen") == 0)
+        {
+            fullscreenMode = 2;
+            Log::info("Exclusive fullscreen mode enabled");
+        }
+        else if (std::strcmp(argv[i], "--windowed") == 0)
+        {
+            fullscreenMode = 0;
+            Log::info("Windowed mode enabled");
+        }
         else if (argv[i][0] != '-')
         {
             romPath = argv[i];
@@ -109,6 +122,7 @@ int main(int argc, char* argv[])
         CN64System::s_WindowWidth = windowWidth;
         CN64System::s_WindowHeight = windowHeight;
         CN64System::s_InternalResScale = internalResScale;
+        CN64System::s_FullscreenMode = fullscreenMode;
         if (!CN64System::RunFileImage(romPath.c_str(), frameLimit))
         {
             Log::error("Failed to load ROM. Exiting.");

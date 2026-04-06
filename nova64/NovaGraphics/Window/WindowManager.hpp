@@ -13,6 +13,10 @@
 #include <functional>
 #include <vector>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 
 // Forward declare SDL types to avoid including SDL in the header
 struct SDL_Window;
@@ -145,8 +149,14 @@ public:
     /// Release the GL context from current thread
     void ReleaseContext();
 
-    /// Swap front/back buffers
+    /// Swap front/back buffers (async — signals swap thread)
     void SwapBuffers();
+
+    /// Wait for previous async swap to complete (call before rendering next frame)
+    void WaitForSwap();
+
+    /// Get the last swap time in milliseconds (time the swap thread blocked in SwapBuffers)
+    double GetLastSwapTimeMs() const { return m_lastSwapMs.load(std::memory_order_relaxed); }
 
     /// Set VSync mode: 0 = off, 1 = on, -1 = adaptive
     void SetVSync(int32_t interval);
@@ -203,6 +213,7 @@ private:
     SDL_Window* m_window = nullptr;
     SDL_GLContext m_glContext = nullptr;
     WindowConfig m_config;
+    std::thread::id m_glContextThread; // Track which thread owns GL context
 
     bool m_fullscreen = false;
     bool m_hasFocus = true;

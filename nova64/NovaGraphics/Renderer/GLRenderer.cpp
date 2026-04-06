@@ -106,8 +106,8 @@ void GLRenderer::BeginFrame() {
 }
 
 void GLRenderer::EndFrame() {
-    // Flush any pending GL commands
-    glFlush();
+    // No explicit glFlush needed — SDL_GL_SwapWindow performs an implicit flush.
+    // Removing this avoids a redundant CPU-GPU sync point that stalls Intel drivers.
 }
 
 void GLRenderer::Present() {

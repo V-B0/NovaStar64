@@ -685,6 +685,12 @@ void VideoPlugin::UpdateScreen() {
     double totalMs = std::chrono::duration<double, std::milli>(end - start).count();
     m_frameStats.frameTimeMs = totalMs;
     m_frameStats.fps = (totalMs > 0.0) ? 1000.0 / totalMs : 0.0;
+
+    // Diagnostic: log when UpdateScreen is exceptionally slow
+    if (totalMs > 100.0) {
+        LOG_WARN("UpdateScreen slow: total={:.1f}ms swap={:.1f}ms frame={}",
+                 totalMs, m_frameStats.swapTimeMs, m_frameCount);
+    }
 }
 
 void VideoPlugin::ShowCFB() {

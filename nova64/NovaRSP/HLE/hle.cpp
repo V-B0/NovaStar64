@@ -74,11 +74,15 @@ CHle::~CHle() = default;
 
 void CHle::VerboseMessage(const char* message, ...)
 {
+#ifndef NDEBUG
     va_list args;
     va_start(args, message);
     std::vfprintf(stdout, message, args);
     va_end(args);
     std::fputc('\n', stdout);
+#else
+    (void)message;
+#endif
 }
 
 void CHle::WarnMessage(const char* message, ...)

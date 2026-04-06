@@ -1343,13 +1343,8 @@ bool PostProcessingPipeline::HasEnabledEffects() const {
 
 void PostProcessingPipeline::SetupDefaultChain() {
     ClearEffects();
-    // NOTE: The N64 VI hardware gamma correction (pow(x,0.5)) is applied in
-    // BlitToScreen when the game sets VI_STATUS gamma enable.  Adding a
-    // second gamma effect here would double-brighten.  Only FXAA is needed.
-
-    auto fxaa = std::make_unique<FXAAEffect>();
-    fxaa->Init(m_width, m_height);
-    AddEffect(std::move(fxaa));
+    // No effects by default — FXAA adds significant per-frame GPU overhead
+    // on integrated GPUs (Intel Iris Xe). Enable via config if desired.
 }
 
 void PostProcessingPipeline::SetupRetroChain() {

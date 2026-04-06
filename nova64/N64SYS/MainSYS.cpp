@@ -12,6 +12,12 @@
 #include "../common/MemoryManagment.hpp"
 #include "../common/Thread.hpp"
 
+#ifdef _WIN32
+#pragma comment(lib, "winmm.lib")
+#include <timeapi.h>
+#include <immintrin.h>
+#endif
+
 
 #include "MainSYS.hpp"
 #include "Types.hpp"
@@ -55,6 +61,7 @@ int CN64System::s_TargetFPS = 60;
 int CN64System::s_WindowWidth = 1280;
 int CN64System::s_WindowHeight = 960;
 int CN64System::s_InternalResScale = 4;
+int CN64System::s_FullscreenMode = 0; // Default: windowed
 
 // ──────────────────────────────────────────────
 // RSP callback wrappers (static functions matching RSP_INFO signatures)
@@ -177,6 +184,13 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
 CN64System::~CN64System()
 {
     LOG_DEBUG( "CN64System destructor");
+
+#ifdef _WIN32
+    if (m_FramePaceInitialized)
+    {
+        timeEndPeriod(1);
+    }
+#endif
 
     // Shutdown and release plugins before anything else
     if (m_PluginManager)
@@ -942,6 +956,16 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         windowConfig.glMajor = 4;
         windowConfig.glMinor = 6;
         
+        // Fullscreen mode: borderless fullscreen by default to bypass DWM compositor stalls
+        if (s_FullscreenMode == 2) {
+            windowConfig.fullscreen = true;
+            windowConfig.borderless = false;  // Exclusive fullscreen
+        } else if (s_FullscreenMode == 1) {
+            windowConfig.fullscreen = true;
+            windowConfig.borderless = true;   // Borderless fullscreen (DWM flip model)
+        }
+        // else s_FullscreenMode == 0: windowed (default config values)
+        
         if (m_WindowManager->Initialize(windowConfig)) {
             Log::info("Graphics window initialized successfully");
         } else {
@@ -1172,6 +1196,16 @@ void CN64System::RefreshScreen()
 {
     // Called when the VI timer fires (once per frame, ~60Hz NTSC / ~50Hz PAL)
     
+    // --- PROFILING ---
+    static auto profileFrameStart = std::chrono::steady_clock::now();
+    auto frameEntryTime = std::chrono::steady_clock::now();
+    static double accCpuMs = 0, accRenderMs = 0, accAudioMs = 0, accPaceMs = 0, accSwapMs = 0;
+    static int profileFrameCount = 0;
+    
+    double cpuMs = std::chrono::duration<double, std::milli>(frameEntryTime - profileFrameStart).count();
+    accCpuMs += cpuMs;
+    // --- END PROFILING SETUP ---
+    
     uint64_t frameNum = GetCurrentFrameCount();
     
     // Auto-frameskip: check if we're behind schedule
@@ -1204,6 +1238,12 @@ void CN64System::RefreshScreen()
         if (gfx) { gfx->UpdateScreen(); }
     }
     
+    auto afterRender = std::chrono::steady_clock::now();
+    accRenderMs += std::chrono::duration<double, std::milli>(afterRender - frameEntryTime).count();
+    if (shouldRender && m_PluginManager) {
+        if (auto* gfx = m_PluginManager->GetGraphicsPlugin())
+            accSwapMs += gfx->GetLastSwapTimeMs();
+    }
 
     
     // Feed audio device to keep playback smooth (always, even on skipped frames)
@@ -1211,6 +1251,9 @@ void CN64System::RefreshScreen()
     {
         m_AudioInterfaceHandler->AudioOutput().FeedDevice();
     }
+    
+    auto afterAudio = std::chrono::steady_clock::now();
+    accAudioMs += std::chrono::duration<double, std::milli>(afterAudio - afterRender).count();
 
     // Frame rate limiter: pace CPU execution to real time
     if (m_TargetFPS > 0)
@@ -1225,35 +1268,70 @@ void CN64System::RefreshScreen()
         {
             m_FramePaceStart = clock::now();
             m_FramePaceInitialized = true;
+#ifdef _WIN32
+            timeBeginPeriod(1); // Set Windows timer to 1ms resolution
+#endif
         }
         else
         {
-            // Advance target by one frame interval
             m_FramePaceStart += targetDuration;
             auto now = clock::now();
             auto remaining = m_FramePaceStart - now;
 
-            // If we're more than 2 frames behind, reset to avoid spiral
+            // If we're more than 2 frames behind, snap to current time
+            // (don't try to catch up — just accept the dropped frames)
             if (remaining < -targetDuration)
             {
                 m_FramePaceStart = now;
             }
             else if (remaining > nanoseconds(0))
             {
-                // Sleep for most of the remaining time, then spin-wait
-                if (remaining > microseconds(2000))
+                // Sleep for the bulk of the wait (leave 2ms for spin-wait).
+                // With timeBeginPeriod(1), sleep granularity is ~1-2ms.
+                auto sleepThreshold = microseconds(2000);
+                if (remaining > sleepThreshold)
                 {
-                    std::this_thread::sleep_for(remaining - microseconds(1500));
+                    std::this_thread::sleep_for(remaining - sleepThreshold);
                 }
-                // Spin-wait for the last portion for accuracy
+                // Spin-wait the final portion for precise timing
                 while (clock::now() < m_FramePaceStart)
                 {
-                    // busy-wait
+#ifdef _WIN32
+                    _mm_pause(); // Reduce power and give SMT sibling time
+#endif
                 }
             }
-            // else: we're behind but within tolerance, skip sleep to catch up
         }
     }
+
+    auto afterPace = std::chrono::steady_clock::now();
+    accPaceMs += std::chrono::duration<double, std::milli>(afterPace - afterAudio).count();
+    profileFrameCount++;
+    
+    // Per-frame spike detection (only log extreme spikes to avoid I/O overhead)
+    double frameTotalMs = cpuMs + std::chrono::duration<double, std::milli>(afterPace - frameEntryTime).count();
+    if (frameTotalMs > 100.0) {
+        double renderMs = std::chrono::duration<double, std::milli>(afterRender - frameEntryTime).count();
+        double audioMs = std::chrono::duration<double, std::milli>(afterAudio - afterRender).count();
+        double paceMs = std::chrono::duration<double, std::milli>(afterPace - afterAudio).count();
+        Log::infof("SPIKE frame %llu: CPU=%.1fms Render=%.1fms Audio=%.1fms Pace=%.1fms TOTAL=%.1fms",
+                   frameNum, cpuMs, renderMs, audioMs, paceMs, frameTotalMs);
+    }
+    
+    if (profileFrameCount >= 60) {
+        double avgCpu = accCpuMs / profileFrameCount;
+        double avgRender = accRenderMs / profileFrameCount;
+        double avgAudio = accAudioMs / profileFrameCount;
+        double avgPace = accPaceMs / profileFrameCount;
+        double avgSwap = accSwapMs / profileFrameCount;
+        double avgTotal = (accCpuMs + accRenderMs + accAudioMs + accPaceMs) / profileFrameCount;
+        double fps = (avgTotal > 0) ? (1000.0 / avgTotal) : 0;
+        Log::infof("PERF[%d frames] CPU=%.1fms Render=%.1fms(swap=%.1fms) Audio=%.1fms Pace=%.1fms Total=%.1fms FPS=%.1f",
+                   profileFrameCount, avgCpu, avgRender, avgSwap, avgAudio, avgPace, avgTotal, fps);
+        accCpuMs = accRenderMs = accAudioMs = accPaceMs = accSwapMs = 0;
+        profileFrameCount = 0;
+    }
+    profileFrameStart = std::chrono::steady_clock::now();
 
     m_bCleanFrameBox = false;
 }

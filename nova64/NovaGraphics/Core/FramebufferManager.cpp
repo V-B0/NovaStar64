@@ -211,9 +211,15 @@ void FramebufferManager::Shutdown() {
 
     if (m_pboFence) { glDeleteSync(static_cast<GLsync>(m_pboFence)); m_pboFence = nullptr; }
     if (m_pbo) { glDeleteBuffers(1, &m_pbo); m_pbo = 0; }
+    if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
+    if (m_readbackTex) { glDeleteTextures(1, &m_readbackTex); m_readbackTex = 0; }
+    m_readbackW = 0; m_readbackH = 0;
     if (m_blitProgram) { glDeleteProgram(m_blitProgram); m_blitProgram = 0; }
     if (m_viFilterProgram) { glDeleteProgram(m_viFilterProgram); m_viFilterProgram = 0; }
     if (m_gammaProgram) { glDeleteProgram(m_gammaProgram); m_gammaProgram = 0; }
+    if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
+    if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
+    m_tmpWidth = 0; m_tmpHeight = 0;
     if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
     if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
 
@@ -244,17 +250,16 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     fb.scaledHeight = fb.height * m_resScale;
     fb.msaaSamples  = m_msaaSamples;
 
-    // Intel Iris Xe workaround: flush all pending GL operations before creating
-    // new FBO objects.  Lazy FBO creation (after game textures are loaded) can
-    // leave driver-internal state that causes texture sampling to silently
-    // return zeros when rendering into the new FBO.
+    // Intel Iris Xe workaround: flush pending GL operations before creating
+    // new FBO objects to avoid lazy driver state issues.
+    // Use glFlush instead of glFinish to avoid a full CPU-GPU sync stall.
     {
         static int gpuIsIntel = -1;
         if (gpuIsIntel < 0) {
             const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
             gpuIsIntel = (renderer && strstr(renderer, "Intel")) ? 1 : 0;
         }
-        if (gpuIsIntel) glFinish();
+        if (gpuIsIntel) glFlush();
     }
 
     // Unbind all texture units to avoid Intel driver internal aliasing
@@ -826,25 +831,29 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
     // Bind PBO as pack target and read from framebuffer
     glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbo);
 
-    if (m_resScale == 1) {
+    if (m_resScale == 1 && fb->msaaSamples <= 1) {
         glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(byteSize), nullptr);
     } else {
-        // Downsample to native res first
-        GLuint tmpTex;
-        glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-        glTextureStorage2D(tmpTex, 1, GL_RGBA8, w, h);
-        GLuint tmpFBO;
-        glCreateFramebuffers(1, &tmpFBO);
-        glNamedFramebufferTexture(tmpFBO, GL_COLOR_ATTACHMENT0, tmpTex, 0);
-        glBlitNamedFramebuffer(fb->fbo, tmpFBO,
+        // Downsample to native res — reuse cached readback FBO
+        if (m_readbackW != w || m_readbackH != h) {
+            if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
+            if (m_readbackTex) { glDeleteTextures(1, &m_readbackTex); m_readbackTex = 0; }
+        }
+        if (!m_readbackFBO) {
+            glCreateTextures(GL_TEXTURE_2D, 1, &m_readbackTex);
+            glTextureStorage2D(m_readbackTex, 1, GL_RGBA8, w, h);
+            glCreateFramebuffers(1, &m_readbackFBO);
+            glNamedFramebufferTexture(m_readbackFBO, GL_COLOR_ATTACHMENT0, m_readbackTex, 0);
+            m_readbackW = w;
+            m_readbackH = h;
+        }
+        glBlitNamedFramebuffer(fb->fbo, m_readbackFBO,
                                0, 0, fb->scaledWidth, fb->scaledHeight,
                                0, 0, w, h,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        glGetTextureImage(tmpTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+        glGetTextureImage(m_readbackTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(byteSize), nullptr);
-        glDeleteFramebuffers(1, &tmpFBO);
-        glDeleteTextures(1, &tmpTex);
     }
 
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
@@ -1094,16 +1103,21 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
 void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
     if (!fb || !m_viFilterProgram) return;
 
-    // Apply in-place via temporary FBO
-    GLuint tmpTex;
-    glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-    glTextureStorage2D(tmpTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
+    // Reuse cached temp FBO/texture (avoid per-frame GPU alloc on Intel)
+    if (m_tmpWidth != fb->scaledWidth || m_tmpHeight != fb->scaledHeight) {
+        if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
+        if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
+    }
+    if (!m_tmpFBO) {
+        glCreateTextures(GL_TEXTURE_2D, 1, &m_tmpTex);
+        glTextureStorage2D(m_tmpTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
+        glCreateFramebuffers(1, &m_tmpFBO);
+        glNamedFramebufferTexture(m_tmpFBO, GL_COLOR_ATTACHMENT0, m_tmpTex, 0);
+        m_tmpWidth = fb->scaledWidth;
+        m_tmpHeight = fb->scaledHeight;
+    }
 
-    GLuint tmpFBO;
-    glCreateFramebuffers(1, &tmpFBO);
-    glNamedFramebufferTexture(tmpFBO, GL_COLOR_ATTACHMENT0, tmpTex, 0);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, tmpFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_tmpFBO);
     glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
 
     glUseProgram(m_viFilterProgram);
@@ -1128,12 +1142,9 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // Copy result back
-    glCopyImageSubData(tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        fb->scaledWidth, fb->scaledHeight, 1);
-
-    glDeleteFramebuffers(1, &tmpFBO);
-    glDeleteTextures(1, &tmpTex);
 
     // Restore the current N64 FBO so subsequent rendering goes to the right target.
     GPUFramebuffer* curFB = GetCurrentColor();
@@ -1154,15 +1165,21 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
     // be applied there — not to colorTex (which is the render target).
     GLuint targetTex = (fb->presentationTex != 0) ? fb->presentationTex : fb->colorTex;
 
-    GLuint tmpTex;
-    glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-    glTextureStorage2D(tmpTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
+    // Reuse cached temp FBO/texture (avoid per-frame GPU alloc on Intel)
+    if (m_tmpWidth != fb->scaledWidth || m_tmpHeight != fb->scaledHeight) {
+        if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
+        if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
+    }
+    if (!m_tmpFBO) {
+        glCreateTextures(GL_TEXTURE_2D, 1, &m_tmpTex);
+        glTextureStorage2D(m_tmpTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
+        glCreateFramebuffers(1, &m_tmpFBO);
+        glNamedFramebufferTexture(m_tmpFBO, GL_COLOR_ATTACHMENT0, m_tmpTex, 0);
+        m_tmpWidth = fb->scaledWidth;
+        m_tmpHeight = fb->scaledHeight;
+    }
 
-    GLuint tmpFBO;
-    glCreateFramebuffers(1, &tmpFBO);
-    glNamedFramebufferTexture(tmpFBO, GL_COLOR_ATTACHMENT0, tmpTex, 0);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, tmpFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_tmpFBO);
     glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
 
     glUseProgram(m_gammaProgram);
@@ -1173,12 +1190,9 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
     glBindVertexArray(m_blitVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    glCopyImageSubData(tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                        fb->scaledWidth, fb->scaledHeight, 1);
-
-    glDeleteFramebuffers(1, &tmpFBO);
-    glDeleteTextures(1, &tmpTex);
 
     // Restore the current N64 FBO so subsequent rendering goes to the right target.
     GPUFramebuffer* curFB2 = GetCurrentColor();

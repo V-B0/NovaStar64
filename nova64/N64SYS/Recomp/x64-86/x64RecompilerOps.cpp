@@ -51,10 +51,10 @@
 
 // ==== BINARY-SEARCH DIAGNOSTIC FLAGS ====
 // Set to 1 to revert group to interpreter callbacks, 0 for inline x64
-#define FORCE_CALLBACK_SPECIAL 1   // All SPECIAL-format ALU/shift/logic
-#define FORCE_CALLBACK_IMM     1   // All immediate-format ALU/logic
-#define FORCE_CALLBACK_BRANCH  1   // All conditional branches (BEQ,BNE,etc.)
-#define FORCE_CALLBACK_JUMP    1   // J, JAL
+#define FORCE_CALLBACK_SPECIAL 0   // All SPECIAL-format ALU/shift/logic
+#define FORCE_CALLBACK_IMM     0   // All immediate-format ALU/logic
+#define FORCE_CALLBACK_BRANCH  0   // All conditional branches (BEQ,BNE,etc.)
+#define FORCE_CALLBACK_JUMP    0   // J, JAL
 // ========================================
 
 namespace Nova64 {
@@ -2535,6 +2535,8 @@ void CX64RecompilerOps::EnterCodeBlock()
     a.mov(r13, reinterpret_cast<uint64_t>(&m_Context.system.m_PipelineStage));
     // R14 = pointer to m_NextTimer
     a.mov(r14, reinterpret_cast<uint64_t>(&m_Context.system.m_NextTimer));
+    // R15 = pointer to m_MemoryReadMap array (for inline LW/SW fast path)
+    a.mov(r15, reinterpret_cast<uint64_t>(m_Context.mmu.GetMemoryReadMap()));
 
     // Create exit label for early exit on exception
     m_BlockExitLabel = a.new_label();
@@ -3548,7 +3550,6 @@ void CX64RecompilerOps::DADDIU() {
 DEFINE_LOAD(LB, LB)
 DEFINE_LOAD(LH, LH)
 DEFINE_LOAD(LWL, LWL)
-DEFINE_LOAD(LW, LW)
 DEFINE_LOAD(LBU, LBU)
 DEFINE_LOAD(LHU, LHU)
 DEFINE_LOAD(LWR, LWR)
@@ -3560,6 +3561,66 @@ DEFINE_LOAD(LL, LL)
 DEFINE_LOAD(LLD, LLD)
 DEFINE_LOAD(LWC1, LWC1)
 DEFINE_LOAD(LDC1, LDC1)
+
+// Inline LW: fast path for mapped memory via ReadMap, fallback to Interp_LW
+void CX64RecompilerOps::LW() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rt   = mips_rt(opcVal);
+    uint32_t base = mips_base(opcVal);
+    int32_t  off  = static_cast<int32_t>(mips_offset(opcVal)); // sign-extended
+
+    // Write to $zero is a no-op (LW has no memory side-effects for mapped regions)
+    if (rt == 0) {
+        m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+        return;
+    }
+
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    m_Assembler->AddComment("LW (inline)");
+
+    asmjit::Label slowPath = a.new_label();
+    asmjit::Label done     = a.new_label();
+
+    // Compute vAddr32 = low32(GPR[base]) + sign_extend(offset)
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(base)));
+    if (off != 0)
+        a.add(eax, off);
+
+    // Alignment check: vAddr32 & 3
+    a.test(eax, 3);
+    a.jnz(slowPath);
+
+    // Page lookup: rcx = ReadMap[vAddr32 >> 12]
+    // R15 = m_MemoryReadMap base pointer (set in EnterCodeBlock)
+    a.mov(ecx, eax);                        // ecx = vAddr32 (zero-extends rcx)
+    a.shr(ecx, 12);                         // ecx = page index
+    a.mov(rcx, qword_ptr(r15, rcx, 3));     // rcx = ReadMap[page] (scale 8)
+
+    // Check unmapped (-1 sentinel)
+    a.cmp(rcx, -1);
+    a.je(slowPath);
+
+    // Direct memory read: value = *(uint32_t*)(ReadMap[page] + vAddr32)
+    // rax = zero-extended vAddr32 from earlier mov eax / add eax
+    a.mov(eax, dword_ptr(rcx, rax));
+
+    // Sign-extend 32→64 and store to GPR[rt]
+    a.movsxd(rax, eax);
+    a.mov(qword_ptr(rbx, JIT_GPR(rt)), rax);
+
+    a.jmp(done);
+
+    // Slow path: fall back to interpreter callback
+    a.bind(slowPath);
+    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LW), opcVal);
+
+    a.bind(done);
+
+    m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+}
 
 // =============================================================================
 // Private - Store Instructions
@@ -3578,7 +3639,6 @@ DEFINE_LOAD(LDC1, LDC1)
 DEFINE_STORE(SB, SB)
 DEFINE_STORE(SH, SH)
 DEFINE_STORE(SWL, SWL)
-DEFINE_STORE(SW, SW)
 DEFINE_STORE(SWR, SWR)
 DEFINE_STORE(SD, SD)
 DEFINE_STORE(SDL, SDL)
@@ -3587,6 +3647,61 @@ DEFINE_STORE(SC, SC)
 DEFINE_STORE(SCD, SCD)
 DEFINE_STORE(SWC1, SWC1)
 DEFINE_STORE(SDC1, SDC1)
+
+// Inline SW: fast path for mapped memory via WriteMap, fallback to Interp_SW
+void CX64RecompilerOps::SW() {
+    if (!m_CurrentContext) return;
+    uint32_t opcVal = m_CurrentContext->opcode.Value;
+    uint32_t rt   = mips_rt(opcVal);
+    uint32_t base = mips_base(opcVal);
+    int32_t  off  = static_cast<int32_t>(mips_offset(opcVal));
+
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    m_Assembler->AddComment("SW (inline)");
+
+    asmjit::Label slowPath = a.new_label();
+    asmjit::Label done     = a.new_label();
+
+    // Compute vAddr32 = low32(GPR[base]) + sign_extend(offset)
+    a.mov(eax, dword_ptr(rbx, JIT_GPR(base)));
+    if (off != 0)
+        a.add(eax, off);
+
+    // Alignment check: vAddr32 & 3
+    a.test(eax, 3);
+    a.jnz(slowPath);
+
+    // Page lookup: rcx = WriteMap[vAddr32 >> 12]
+    // Load WriteMap base pointer as immediate (friend access, stable allocation)
+    a.mov(ecx, eax);                        // ecx = vAddr32 (zero-extends rcx)
+    a.shr(ecx, 12);                         // ecx = page index
+    // Use rdx to hold WriteMap base (can't use r15, it's ReadMap)
+    a.mov(rdx, reinterpret_cast<uint64_t>(m_Context.mmu.GetMemoryWriteMap()));
+    a.mov(rcx, qword_ptr(rdx, rcx, 3));     // rcx = WriteMap[page] (scale 8)
+
+    // Check unmapped (-1 sentinel)
+    a.cmp(rcx, -1);
+    a.je(slowPath);
+
+    // Load value from GPR[rt] (low 32 bits)
+    a.mov(edx, dword_ptr(rbx, JIT_GPR(rt)));
+
+    // Direct memory write: *(uint32_t*)(WriteMap[page] + vAddr32) = value
+    // rax = zero-extended vAddr32
+    a.mov(dword_ptr(rcx, rax), edx);
+
+    a.jmp(done);
+
+    // Slow path: fall back to interpreter callback
+    a.bind(slowPath);
+    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_SW), opcVal);
+
+    a.bind(done);
+
+    m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+}
 
 void CX64RecompilerOps::CACHE()
 {

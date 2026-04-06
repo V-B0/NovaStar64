@@ -481,7 +481,7 @@ void CRecompiler::Execute_VirtualTable() {
     auto* systemTimer = m_System.m_SystemTimer.get();
     auto* systemEvents = m_System.m_SystemEvents.get();
     
-    while (!m_EndEmulation.load(std::memory_order_acquire)) {
+    while (!m_EndEmulation.load(std::memory_order_relaxed)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
 
         // Lookup compiled function
@@ -517,97 +517,64 @@ void CRecompiler::Execute_VirtualTable() {
                 continue;
             }
         }
-        
-        // Self-modifying code detection with thrash guard
-        // Check if compiled code still matches RDRAM. When a PC thrashes
-        // (continuously recompiled because a store keeps modifying it),
-        // stop checking until the next DMA/CACHE invalidation resets it.
-        if (func) {
-            auto thrashIt = m_SmcThrashMap.find(pc);
-            int thrashCount = (thrashIt != m_SmcThrashMap.end()) ? thrashIt->second : 0;
-            
-            if (thrashCount < 3 && !func->MemoryValid()) {
-                m_SmcThrashMap[pc] = thrashCount + 1;
-                ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
-                                     RemoveReason::StoreInstruc);
-                func = nullptr;
-                continue;
-            }
-        }
 
-        // Execute compiled function
+        // Execute compiled function directly (no per-block SMC check;
+        // DMA and CACHE callbacks handle code invalidation).
         ++m_Stats.blocksExecuted;
-        if (!SafeExecuteBlock(func, pc)) {
-            // JIT code crashed — invalidate this block and interpret instead
-            ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
-                                 RemoveReason::Cache);
-            InterpretSingleInstruction();
-            continue;
-        }
+        func->Execute();
         
-        // Apply any pending jump (branch target or synchronous exception vector).
-        // Unlike the old code this does NOT skip timer/event processing ? normal
-        // branches must still go through the timer gate so VI / RSP / compare
-        // interrupts fire on backward-branch boundaries.
+        // Apply any pending jump (branch target or synchronous exception).
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
-            uint64_t jumpTo = m_System.m_JumpToLocation;
-
-            m_ProgramCounter = jumpTo;
+            m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
         }
-        
-        // Timer handling: NextTimer is now decremented per-instruction inside
-        // compiled blocks (EmitTimerDecrement), so no bulk decrement here.
-        // We still need instrCount for blockEndPC computation and idle detection.
-        uint32_t instrCount = 1;
-        if (auto* block = func->GetCodeBlock()) {
-            instrCount = static_cast<uint32_t>(block->instruction_count());
-            if (instrCount == 0) instrCount = 1;
+
+        // ================================================================
+        // FAST PATH: For forward branches and fallthrough, skip timer/event
+        // processing entirely and immediately execute the next block.
+        // Timer/events are only checked on backward branches or TestTimer,
+        // matching the interpreter's gating where CheckTimer is true only
+        // for backward branches (target < branch_addr + 4) or TestTimer.
+        // This eliminates ~150-300ns of per-block overhead for the common
+        // case (forward flow), which dominates with ~300K blocks/frame.
+        // ================================================================
+        {
+            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
+            if (newPC > pc && !m_System.m_TestTimer)
+                continue;
         }
-        
+
+        // ================================================================
+        // SLOW PATH: Backward branch, self-loop, or TestTimer.
+        // Process idle detection, timers, events, and frame limit.
+        // ================================================================
+
         // Idle loop detection: if the block is a tiny self-loop (e.g. `b .` + NOP),
         // advance the timer directly to the next event instead of spinning.
-        // Match the interpreter's InPermLoop() exactly:
-        //  1. UpdateTimers() — sync timer array with current m_NextTimer
-        //  2. m_NextTimer = -CountPerOp — force timer expiry
-        //  3. UpdateTimers() — flush remaining elapsed into timers + COUNT
-        // This two-step sync is critical because periodic timers (e.g. audio)
-        // must see intermediate decrements to fire the correct number of times.
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
-                systemTimer->UpdateTimers();
-                nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
-                systemTimer->UpdateTimers();
+            if (newPC == pc && nextTimer > 0) {
+                // Check instruction count for idle detection
+                uint32_t instrCount = 1;
+                if (auto* block = func->GetCodeBlock()) {
+                    instrCount = static_cast<uint32_t>(block->instruction_count());
+                    if (instrCount == 0) instrCount = 1;
+                }
+                if (instrCount <= 2) {
+                    systemTimer->UpdateTimers();
+                    nextTimer = 0 - static_cast<int32_t>(countPerOp);
+                    systemTimer->UpdateTimers();
+                }
             }
         }
         
-        // Timer and event processing: match the interpreter's gating.
-        // The interpreter checks timers/events at PIPELINE_STAGE_JUMP when
-        // CheckTimer = (JumpToLocation < m_PROGRAM_COUNTER - 4 || TestTimer).
-        // At that point m_PROGRAM_COUNTER = delay_slot_addr + 4 = branch_addr + 8,
-        // so: CheckTimer = (target < branch_addr + 4 || TestTimer).
-        // blockEndPC = branch_addr + 8, so we must subtract 4 to match.
-        // TestTimer is set by JR/JALR/ERET callbacks for unconditional timer checks.
-        {
-            uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            uint32_t blockEndPC = pc + instrCount * 4;
-            // Match interpreter: target < (blockEndPC - 4), i.e., true for
-            // backward branches past the branch instruction itself.
-            bool checkTimer = (newPC < blockEndPC - 4 || m_System.m_TestTimer);
-            if (checkTimer) {
-                m_System.m_TestTimer = false;
-                if (nextTimer < 0) {
-                    systemTimer->TimerDone();
-                }
-                // Match interpreter: events are ONLY checked when CheckTimer
-                // is true (backward branch or TestTimer).  Moving this outside
-                // checkTimer causes excess interrupt processing and kern64k
-                // RDRAM divergence from the interpreter.
-                if (systemEvents && systemEvents->DoSomething()) {
-                    systemEvents->ExecuteEvents();
-                }
-            }
+        // Timer and event processing
+        m_System.m_TestTimer = false;
+        if (nextTimer < 0) {
+            systemTimer->TimerDone();
+        }
+        if (systemEvents && systemEvents->DoSomething()) {
+            systemEvents->ExecuteEvents();
         }
         
         // After processing events, check if an async interrupt redirected
@@ -622,7 +589,6 @@ void CRecompiler::Execute_VirtualTable() {
             m_EndEmulation.store(true, std::memory_order_release);
             break;
         }
-        
     }
 }
 

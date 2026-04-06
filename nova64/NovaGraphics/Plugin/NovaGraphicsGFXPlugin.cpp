@@ -373,6 +373,11 @@ bool NovaGraphicsGFXPlugin::CaptureScreenshot(const std::string& filename)
     return true;
 }
 
+double NovaGraphicsGFXPlugin::GetLastSwapTimeMs() const
+{
+    return m_videoPlugin.GetLastSwapTimeMs();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Factory
 // ═══════════════════════════════════════════════════════════════════════

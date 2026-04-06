@@ -370,6 +370,7 @@ public:
 
     // Accessors for diagnostics
     const size_t* GetMemoryReadMap() const { return m_MemoryReadMap; }
+    const size_t* GetMemoryWriteMap() const { return m_MemoryWriteMap; }
     const uint32_t* GetTLBReadMap() const { return m_TLB_ReadMap; }
 
 private:

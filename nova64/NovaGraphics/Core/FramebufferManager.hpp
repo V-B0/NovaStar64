@@ -333,6 +333,12 @@ private:
     uint32_t m_viFilterProgram = 0;
     uint32_t m_gammaProgram = 0;
 
+    // Cached temp FBO/texture for gamma and VI filter (avoid per-frame alloc)
+    uint32_t m_tmpFBO = 0;
+    uint32_t m_tmpTex = 0;
+    uint32_t m_tmpWidth = 0;
+    uint32_t m_tmpHeight = 0;
+
     // Async PBO readback state
     uint32_t m_pbo = 0;                     // GL pixel buffer object for async readback
     void*    m_pboFence = nullptr;          // GL sync fence (GLsync, stored as void* to avoid GL header in .hpp)
@@ -340,6 +346,12 @@ private:
     uint32_t m_pboWidth = 0;                // Width of pending readback
     uint32_t m_pboHeight = 0;              // Height of pending readback
     FBFormat m_pboFormat = FBFormat::RGBA16; // Format for conversion on completion
+
+    // Cached downscale FBO for PBO readback (avoid per-frame alloc)
+    uint32_t m_readbackFBO = 0;
+    uint32_t m_readbackTex = 0;
+    uint32_t m_readbackW = 0;
+    uint32_t m_readbackH = 0;
 
 };
 

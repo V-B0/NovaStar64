@@ -986,16 +986,23 @@ void RDPProcessor::HandleSyncFull() {
     // After the frame is complete, copy rendered pixels back to RDRAM so the
     // CPU sees up-to-date data if it reads the framebuffer memory directly.
     if (sceneDraws >= 1 && m_rdram) {
+        // Complete any previous async readback first
+        if (g_fbManager.IsReadbackPending())
+            g_fbManager.FinishAsyncReadback(m_rdram);
+
         GPUFramebuffer* colorFB = g_fbManager.GetCurrentColor();
         if (colorFB && colorFB->desc.address != 0)
-            g_fbManager.CopyFromGPU(colorFB, m_rdram);
+            g_fbManager.BeginAsyncReadback(colorFB);
 
-        // Also copy depth buffer back � games like Perfect Dark read depth RDRAM
-        if (m_state.rdp.zbufferImage.address != 0) {
-            GPUFramebuffer* depthFB = g_fbManager.FindByAddress(
-                m_state.rdp.zbufferImage.address);
-            if (depthFB && depthFB->depthTex)
-                g_fbManager.CopyDepthFromGPU(depthFB, m_rdram);
+        // Depth readback is synchronous and expensive; only do it for
+        // games that actually read depth from RDRAM (e.g., Perfect Dark).
+        if (g_fbManager.m_fbHacks.pdDepthOncePerFrame) {
+            if (m_state.rdp.zbufferImage.address != 0) {
+                GPUFramebuffer* depthFB = g_fbManager.FindByAddress(
+                    m_state.rdp.zbufferImage.address);
+                if (depthFB && depthFB->depthTex)
+                    g_fbManager.CopyDepthFromGPU(depthFB, m_rdram);
+            }
         }
     }
 

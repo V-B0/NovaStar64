@@ -155,6 +155,12 @@ public:
      * @return true on success
      */
     virtual bool CaptureScreenshot(const std::string& filename) = 0;
+    
+    /**
+     * @brief Get last frame's swap time (SwapBuffers duration)
+     * @return Swap time in milliseconds
+     */
+    virtual double GetLastSwapTimeMs() const { return 0.0; }
 };
 
 } // namespace Plugins

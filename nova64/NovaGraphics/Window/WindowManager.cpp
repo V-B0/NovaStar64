@@ -142,6 +142,7 @@ bool WindowManager::Initialize(const WindowConfig& config) {
     }
 
     SDL_GL_MakeCurrent(m_window, m_glContext);
+    m_glContextThread = std::this_thread::get_id(); // Track initial GL context thread
 
     // ── Load OpenGL via glad ─────────────────────────────────────────────
     int version = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
@@ -329,6 +330,10 @@ void WindowManager::ReleaseContext() {
 
 void WindowManager::SwapBuffers() {
     if (m_window) {
+        // Re-assert VSync=OFF before every swap. Intel drivers can
+        // reset the swap interval internally; re-setting it each frame
+        // prevents unexpected blocking.
+        SDL_GL_SetSwapInterval(0);
         SDL_GL_SwapWindow(m_window);
     }
 }

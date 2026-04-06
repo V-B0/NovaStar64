@@ -169,6 +169,7 @@ public:
     const std::string&  GetName() const     { return m_name; }
     const std::string&  GetVersion() const  { return m_version; }
     PluginFrameStats    GetFrameStats() const;
+    double              GetLastSwapTimeMs() const { return m_frameStats.swapTimeMs; }
     const GameProfile*  GetActiveGameProfile() const { return m_activeProfile; }
 
     // ── Debug ────────────────────────────────────────────────────
