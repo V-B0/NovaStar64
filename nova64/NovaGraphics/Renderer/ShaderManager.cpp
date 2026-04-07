@@ -38,12 +38,20 @@ void ShaderCache::Initialize(uint32_t maxShaders) {
 
 void ShaderCache::Shutdown() {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
+    if (m_deleteCallback) {
+        for (auto& [k, entry] : m_cache)
+            m_deleteCallback(entry.shader);
+    }
     m_cache.clear();
     m_stats = ShaderCacheStats();
 }
 
 void ShaderCache::Clear() {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
+    if (m_deleteCallback) {
+        for (auto& [k, entry] : m_cache)
+            m_deleteCallback(entry.shader);
+    }
     m_cache.clear();
     m_stats.currentCacheSize = 0;
 }
@@ -75,6 +83,8 @@ void ShaderCache::Insert(const CombinerKey& key, CompiledShader&& shader) {
                 oldest = it;
             }
         }
+        if (m_deleteCallback)
+            m_deleteCallback(oldest->second.shader);
         m_cache.erase(oldest);
         m_stats.evictions++;
     }
@@ -93,6 +103,8 @@ bool ShaderCache::Remove(const CombinerKey& key) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
+        if (m_deleteCallback)
+            m_deleteCallback(it->second.shader);
         m_cache.erase(it);
         m_stats.currentCacheSize = static_cast<uint32_t>(m_cache.size());
         return true;
@@ -111,6 +123,8 @@ void ShaderCache::EvictLRU(int count) {
                 oldest = it;
             }
         }
+        if (m_deleteCallback)
+            m_deleteCallback(oldest->second.shader);
         m_cache.erase(oldest);
         m_stats.evictions++;
     }

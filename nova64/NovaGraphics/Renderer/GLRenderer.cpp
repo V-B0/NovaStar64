@@ -90,6 +90,8 @@ bool GLRenderer::Initialize(void* windowHandle, uint32_t width, uint32_t height)
 void GLRenderer::Shutdown() {
     if (!m_initialized) return;
 
+    GLTexturePool::Instance().Shutdown();
+
     m_boundVAO = 0;
     m_boundProgram = 0;
     m_boundFBO = 0;

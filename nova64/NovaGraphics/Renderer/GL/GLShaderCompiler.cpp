@@ -109,7 +109,12 @@ Shader::CompiledShader GLShaderCompiler::CompileWithGeometry(
 void GLShaderCompiler::DeleteShader(Shader::CompiledShader& shader) {
     if (shader.handle == Shader::INVALID_SHADER) return;
     uint32_t glHandle = static_cast<uint32_t>(shader.handle);
-    m_programs.erase(glHandle);
+    auto it = m_programs.find(glHandle);
+    if (it != m_programs.end()) {
+        m_programs.erase(it);          // GLProgram destructor calls glDeleteProgram
+    } else {
+        glDeleteProgram(glHandle);     // binary-cache-loaded programs aren't in m_programs
+    }
     shader.handle = Shader::INVALID_SHADER;
     shader.valid = false;
 }

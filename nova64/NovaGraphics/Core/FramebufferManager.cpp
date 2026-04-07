@@ -220,6 +220,13 @@ void FramebufferManager::Shutdown() {
     if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
     if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
     m_tmpWidth = 0; m_tmpHeight = 0;
+    if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
+    if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
+    m_copyColorW = 0; m_copyColorH = 0;
+    if (m_copyDepthFBO) { glDeleteFramebuffers(1, &m_copyDepthFBO); m_copyDepthFBO = 0; }
+    if (m_copyDepthTex) { glDeleteTextures(1, &m_copyDepthTex); m_copyDepthTex = 0; }
+    m_copyDepthW = 0; m_copyDepthH = 0;
+    m_pboSize = 0;
     if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
     if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
 
@@ -496,6 +503,16 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
             glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
             m_depthClearPending = false;
         }
+
+        // Clear stale coverage data when switching color framebuffers.
+        // Without this, double-buffered games (e.g. OoT alternating FB-A/FB-B)
+        // retain coverage from 2 frames ago — the MLE blender reads stale
+        // coverage at triangle edges, producing visible wireframe outlines.
+        if (fb->coverageTex) {
+            const GLuint zero = 0;
+            glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER,
+                            GL_UNSIGNED_BYTE, &zero);
+        }
     }
 }
 
@@ -657,22 +674,25 @@ void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
     if (m_resScale == 1) {
         glTextureSubImage2D(fb->colorTex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
     } else {
-        // Create temp texture at native res, then blit upscale
-        GLuint tmpTex;
-        glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-        glTextureStorage2D(tmpTex, 1, GL_RGBA8, w, h);
-        glTextureSubImage2D(tmpTex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
+        // Reuse cached temp texture/FBO at native res (avoid per-frame GPU alloc on Intel)
+        if (m_copyColorW != w || m_copyColorH != h) {
+            if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
+            if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
+        }
+        if (!m_copyColorFBO) {
+            glCreateTextures(GL_TEXTURE_2D, 1, &m_copyColorTex);
+            glTextureStorage2D(m_copyColorTex, 1, GL_RGBA8, w, h);
+            glCreateFramebuffers(1, &m_copyColorFBO);
+            glNamedFramebufferTexture(m_copyColorFBO, GL_COLOR_ATTACHMENT0, m_copyColorTex, 0);
+            m_copyColorW = w;
+            m_copyColorH = h;
+        }
 
-        // Blit from tmp to scaled FB
-        GLuint tmpFBO;
-        glCreateFramebuffers(1, &tmpFBO);
-        glNamedFramebufferTexture(tmpFBO, GL_COLOR_ATTACHMENT0, tmpTex, 0);
-        glBlitNamedFramebuffer(tmpFBO, fb->fbo,
+        glTextureSubImage2D(m_copyColorTex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
+        glBlitNamedFramebuffer(m_copyColorFBO, fb->fbo,
                                0, 0, w, h,
                                0, 0, fb->scaledWidth, fb->scaledHeight,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        glDeleteFramebuffers(1, &tmpFBO);
-        glDeleteTextures(1, &tmpTex);
     }
 
     ClearRDRAMDirty(addr, fb->desc.ByteSize());
@@ -695,23 +715,27 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
         glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(rgba8.size()), rgba8.data());
     } else {
-        // MSAA resolve + optional downscale via blit
-        // glBlitNamedFramebuffer from MSAA→non-MSAA is the GL MSAA resolve.
-        GLuint tmpTex;
-        glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-        glTextureStorage2D(tmpTex, 1, GL_RGBA8, w, h);
-        GLuint tmpFBO;
-        glCreateFramebuffers(1, &tmpFBO);
-        glNamedFramebufferTexture(tmpFBO, GL_COLOR_ATTACHMENT0, tmpTex, 0);
-        glBlitNamedFramebuffer(fb->fbo, tmpFBO,
+        // MSAA resolve + optional downscale via blit — reuse cached temp FBO/tex
+        if (m_copyColorW != w || m_copyColorH != h) {
+            if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
+            if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
+        }
+        if (!m_copyColorFBO) {
+            glCreateTextures(GL_TEXTURE_2D, 1, &m_copyColorTex);
+            glTextureStorage2D(m_copyColorTex, 1, GL_RGBA8, w, h);
+            glCreateFramebuffers(1, &m_copyColorFBO);
+            glNamedFramebufferTexture(m_copyColorFBO, GL_COLOR_ATTACHMENT0, m_copyColorTex, 0);
+            m_copyColorW = w;
+            m_copyColorH = h;
+        }
+
+        glBlitNamedFramebuffer(fb->fbo, m_copyColorFBO,
                                0, 0, fb->scaledWidth, fb->scaledHeight,
                                0, 0, w, h,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
         // Read resolved pixels directly — no VI filter (display-only effect).
-        glGetTextureImage(tmpTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+        glGetTextureImage(m_copyColorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                           static_cast<GLsizei>(rgba8.size()), rgba8.data());
-        glDeleteFramebuffers(1, &tmpFBO);
-        glDeleteTextures(1, &tmpTex);
     }
 
     // Convert back to N64 format
@@ -761,22 +785,27 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
                           static_cast<GLsizei>(pixelCount * sizeof(float)),
                           depthFloat.data());
     } else {
-        // Downsample depth to native resolution first
-        GLuint tmpTex;
-        glCreateTextures(GL_TEXTURE_2D, 1, &tmpTex);
-        glTextureStorage2D(tmpTex, 1, GL_DEPTH32F_STENCIL8, w, h);
-        GLuint tmpFBO;
-        glCreateFramebuffers(1, &tmpFBO);
-        glNamedFramebufferTexture(tmpFBO, GL_DEPTH_STENCIL_ATTACHMENT, tmpTex, 0);
-        glBlitNamedFramebuffer(fb->fbo, tmpFBO,
+        // Downsample depth to native resolution — reuse cached temp FBO/tex
+        if (m_copyDepthW != w || m_copyDepthH != h) {
+            if (m_copyDepthFBO) { glDeleteFramebuffers(1, &m_copyDepthFBO); m_copyDepthFBO = 0; }
+            if (m_copyDepthTex) { glDeleteTextures(1, &m_copyDepthTex); m_copyDepthTex = 0; }
+        }
+        if (!m_copyDepthFBO) {
+            glCreateTextures(GL_TEXTURE_2D, 1, &m_copyDepthTex);
+            glTextureStorage2D(m_copyDepthTex, 1, GL_DEPTH32F_STENCIL8, w, h);
+            glCreateFramebuffers(1, &m_copyDepthFBO);
+            glNamedFramebufferTexture(m_copyDepthFBO, GL_DEPTH_STENCIL_ATTACHMENT, m_copyDepthTex, 0);
+            m_copyDepthW = w;
+            m_copyDepthH = h;
+        }
+
+        glBlitNamedFramebuffer(fb->fbo, m_copyDepthFBO,
                                0, 0, fb->scaledWidth, fb->scaledHeight,
                                0, 0, w, h,
                                GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-        glGetTextureImage(tmpTex, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
+        glGetTextureImage(m_copyDepthTex, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
                           static_cast<GLsizei>(pixelCount * sizeof(float)),
                           depthFloat.data());
-        glDeleteFramebuffers(1, &tmpFBO);
-        glDeleteTextures(1, &tmpTex);
     }
 
     // Convert float depth to N64 compressed Z format and write to RDRAM
@@ -825,8 +854,11 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
     if (!m_pbo) {
         glCreateBuffers(1, &m_pbo);
     }
-    // Orphan and reallocate if size changed
-    glNamedBufferData(m_pbo, byteSize, nullptr, GL_STREAM_READ);
+    // Only reallocate if size changed (avoid per-frame buffer orphaning on Intel)
+    if (m_pboSize != byteSize) {
+        glNamedBufferData(m_pbo, byteSize, nullptr, GL_STREAM_READ);
+        m_pboSize = byteSize;
+    }
 
     // Bind PBO as pack target and read from framebuffer
     glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbo);
@@ -1098,6 +1130,40 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
 
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
+    // ── Display diagnostic ──────────────────────────────────────
+    {
+        GLenum glErr = glGetError();
+        GLubyte centerPx[4] = {0};
+        int cx = vpX + static_cast<int>(vpW / 2);
+        int cy = vpY + static_cast<int>(vpH / 2);
+        glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, centerPx);
+
+        GLubyte blPx[4] = {0};
+        glReadPixels(vpX + 2, vpY + 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, blPx);
+
+        static FILE* diagF = nullptr;
+        static uint32_t diagFrame = 0;
+        if (!diagF) diagF = fopen("display_diag.txt", "w");
+        if (diagF) {
+            bool usedPresentation = (displayFB->presentationTex != 0);
+            fprintf(diagF,
+                "B#%u addr=0x%06X fbo=%u colTex=%u presTex=%u usedPres=%d "
+                "fbW=%u fbH=%u scW=%u scH=%u vp=(%d,%d,%u,%u) "
+                "blitTex=%u prog=%u vao=%u err=%u "
+                "center=(%u,%u,%u,%u) bl=(%u,%u,%u,%u)\n",
+                diagFrame, displayFB->desc.address, displayFB->fbo,
+                displayFB->colorTex, displayFB->presentationTex,
+                usedPresentation ? 1 : 0,
+                displayFB->width, displayFB->height,
+                screenWidth, screenHeight,
+                vpX, vpY, vpW, vpH,
+                blitTex, m_blitProgram, m_blitVAO, static_cast<uint32_t>(glErr),
+                centerPx[0], centerPx[1], centerPx[2], centerPx[3],
+                blPx[0], blPx[1], blPx[2], blPx[3]);
+            fflush(diagF);
+        }
+        diagFrame++;
+    }
 }
 
 void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {

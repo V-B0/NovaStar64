@@ -215,7 +215,7 @@ public:
     ExecutionFunction compiled_function() const noexcept { return compiled_function_; }
     
     // Instruction access
-    size_t instruction_count() const noexcept { return instructions_.size(); }
+    size_t instruction_count() const noexcept { return statistics_.instruction_count; }
     const std::vector<uint32_t>& instructions() const noexcept { return instructions_; }
     std::optional<uint32_t> get_instruction(uint32_t address) const;
     

@@ -118,15 +118,15 @@ void CHle::rsp_break(uint32_t setbits)
     *m_sp_status |= setbits;
     *m_sp_status |= SPStatus::Halt | SPStatus::Broke;
 
-    // ── Critical: Set Signal1 to indicate task completion ──
-    // Real N64 RSP microcode (F3DEX2, etc.) sets SIG1 before executing BREAK.
-    // The N64 OS exception handler checks SP_STATUS & (SIG1|SIG2) = 0x0300:
+    // ── Critical: Set Signal1 + Signal2 to indicate task completion ──
+    // Real N64 RSP microcode (F3DEX2, etc.) sets BOTH SIG1 and SIG2 before
+    // executing BREAK.  The N64 OS exception handler checks
+    // SP_STATUS & (SIG1|SIG2) = 0x0300:
     //   - If set: dispatches via E4 (OS_EVENT_SP, has valid queue in OoT)
     //   - If clear: dispatches via E11 (never set up in OoT → message lost)
-    // Without this, the SP_DONE message never reaches the scheduler, and the
-    // graph thread stalls after the first GFX task because curRSPTask is never
-    // cleared and no new tasks are dequeued.
-    *m_sp_status |= SPStatus::Signal1;
+    // Without BOTH signals, the SP_DONE message never reaches the scheduler,
+    // and the graph thread stalls because curRSPTask is never cleared.
+    *m_sp_status |= SPStatus::Signal1 | SPStatus::Signal2;
 
     if ((*m_sp_status & SPStatus::IntrBreak) != 0)
     {

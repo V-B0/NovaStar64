@@ -329,12 +329,18 @@ struct ShaderCacheStats {
 
 class ShaderCache {
 public:
+    using DeleteCallback = std::function<void(CompiledShader&)>;
+
     ShaderCache();
     ~ShaderCache();
 
     void Initialize(uint32_t maxShaders = 4096);
     void Shutdown();
     void Clear();
+
+    /// Set a callback invoked before each shader is removed from the cache.
+    /// The callback must delete the backend GPU program (e.g. glDeleteProgram).
+    void SetDeleteCallback(DeleteCallback cb) { m_deleteCallback = std::move(cb); }
 
     // Look up a compiled shader by key. Returns nullptr if not found.
     const CompiledShader* Find(const CombinerKey& key) const;
@@ -371,6 +377,7 @@ private:
     uint32_t m_maxShaders;
     uint64_t m_currentFrame;
     ShaderCacheStats m_stats;
+    DeleteCallback m_deleteCallback;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -566,7 +573,12 @@ public:
     void OnFrameEnd();
 
     // Set the backend shader compiler (must be called after Initialize)
-    void SetCompiler(std::unique_ptr<IShaderCompiler> compiler) { m_compiler = std::move(compiler); }
+    void SetCompiler(std::unique_ptr<IShaderCompiler> compiler) {
+        m_compiler = std::move(compiler);
+        m_cache.SetDeleteCallback([this](CompiledShader& shader) {
+            if (m_compiler) m_compiler->DeleteShader(shader);
+        });
+    }
 
 private:
     std::unique_ptr<IShaderCompiler> m_compiler;

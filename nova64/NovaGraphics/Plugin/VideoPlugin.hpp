@@ -262,6 +262,8 @@ private:
     bool                    m_romLoaded       = false;
     bool                    m_hleRenderedThisFrame = false; // Set by ProcessDList
     bool                    m_hleEverRendered = false;      // Latched once HLE renders
+    uint32_t                m_framesWithoutHLE = 0;          // Consecutive VI frames without DL
+    bool                    m_swapPending = false;           // Deferred swap: glFlush done, swap deferred to next frame
 
     // Scratch buffer for ProcessRDPList big-endian → native conversion
     std::vector<uint32_t>   m_rdpCmdScratch;

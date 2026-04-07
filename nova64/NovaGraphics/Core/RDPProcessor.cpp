@@ -20,7 +20,6 @@
 #include <cstdlib>
 #include <algorithm>
 #include <random>
-#include <fstream>
 #include <vector>
 #include <unordered_set>
 
@@ -1334,6 +1333,11 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
                 : 0.0f;
         }
         v.z = std::max(0.0f, std::min(1.0f, v.z));  // clamp: extrapolated/clipped verts may stray outside
+        // Bias away from exactly 1.0 so far-plane geometry passes GL_LESS.
+        // Without this, vertices at the maximum viewport Z normalize to
+        // exactly 1.0, which equals the depth-clear value and fails the
+        // strict less-than test, making far-plane surfaces invisible.
+        if (v.z >= 1.0f) v.z = 0.99999f;
         v.w = 1.0f;  // ortho maps screen coords -> NDC; clip W already divided out
         v.r = tv.color[0]; v.g = tv.color[1];
         v.b = tv.color[2]; v.a = tv.color[3];
@@ -2108,20 +2112,6 @@ void RDPProcessor::FlushBatch() {
 
     bool batchUsedN64Depth = false;
 
-    // ═══ DIAGNOSTIC: Dump first 3 frames' draw calls to shader_dump.txt ══════
-    static int s_diagFrameCount = 0;
-    static std::unordered_set<uint64_t> s_dumpedShaders;
-    bool diagEnabled = (s_diagFrameCount < 3);
-    std::ofstream diagFile;
-    if (diagEnabled) {
-        diagFile.open("shader_dump.txt", std::ios::app);
-        if (diagFile.is_open()) {
-            diagFile << "\n=== FRAME " << s_diagFrameCount
-                     << " FLUSH: " << m_batch.drawCalls.size() << " draw calls ===\n";
-        }
-    }
-    int diagDrawIdx = 0;
-    // ═══ END DIAGNOSTIC SETUP ════════════════════════════════════════════════
 
     for (const auto& call : m_batch.drawCalls) {
 
@@ -2347,44 +2337,6 @@ void RDPProcessor::FlushBatch() {
             shader = m_shaderManager->GetShader(shaderKey);
         }
 
-        // ═══ DIAGNOSTIC: Log draw call info and shader source ════════════
-        if (diagEnabled && diagFile.is_open()) {
-            const char* typeStr[] = {"Tri", "TexRect", "FillRect"};
-            int ti = (call.type == DrawCall::Type::Triangle) ? 0
-                   : (call.type == DrawCall::Type::TextureRect) ? 1 : 2;
-            diagFile << "\n--- Draw #" << diagDrawIdx << " type=" << typeStr[ti]
-                     << " verts=" << call.vertexCount
-                     << " mux=0x" << std::hex << shaderKey.mux
-                     << " otherH=0x" << call.otherModeH
-                     << " otherL=0x" << call.otherModeL
-                     << " features=0x" << shaderKey.features << std::dec
-                     << " cycleType=" << ((call.otherModeH >> 20) & 3)
-                     << " prim=(" << (int)call.primColor.r << "," << (int)call.primColor.g
-                     << "," << (int)call.primColor.b << "," << (int)call.primColor.a << ")"
-                     << " env=(" << (int)call.envColor.r << "," << (int)call.envColor.g
-                     << "," << (int)call.envColor.b << "," << (int)call.envColor.a << ")"
-                     << " fog=(" << (int)call.fogColor.r << "," << (int)call.fogColor.g
-                     << "," << (int)call.fogColor.b << "," << (int)call.fogColor.a << ")"
-                     << " tex0hash=0x" << std::hex << call.textureHash0
-                     << " tex1hash=0x" << call.textureHash1 << std::dec;
-            if (call.textureHash0) {
-                diagFile << " tile0(fmt=" << (int)call.tileDesc0.format
-                         << " sz=" << (int)call.tileDesc0.size
-                         << " w=" << call.tileDesc0.GetWidth() << " h=" << call.tileDesc0.GetHeight()
-                         << " line=" << call.tileDesc0.line << ")";
-            }
-            diagFile << "\n";
-
-            // Dump unique shader fragment source (first occurrence only)
-            if (shader && s_dumpedShaders.find(shaderKey.features ^ shaderKey.mux) == s_dumpedShaders.end()) {
-                s_dumpedShaders.insert(shaderKey.features ^ shaderKey.mux);
-                diagFile << "  FRAGMENT SHADER SOURCE:\n"
-                         << shader->fragmentSource << "\n"
-                         << "  END FRAGMENT SHADER\n";
-            }
-        }
-        diagDrawIdx++;
-        // ═══ END DIAGNOSTIC ═════════════════════════════════════════════
 
         if (!shader) {
             static int nullShaderWarnCount = 0;
@@ -3282,13 +3234,6 @@ void RDPProcessor::FlushBatch() {
             g_fbManager.SnapshotForPresentation();
     }
 
-    // ═══ DIAGNOSTIC: Advance frame counter ═══════════════════════════════
-    if (diagEnabled && diagFile.is_open()) {
-        diagFile << "\n=== END FRAME " << s_diagFrameCount << " ===\n";
-        diagFile.close();
-    }
-    s_diagFrameCount++;
-    // ═══ END DIAGNOSTIC ═════════════════════════════════════════════════
 
     m_batch.Reset();
 }

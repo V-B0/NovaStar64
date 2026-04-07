@@ -24,6 +24,45 @@ uint32_t GetVertexAttribComponentCount(VertexAttribType type);
 namespace Nova64 { namespace Video { namespace GL {
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  GL TEXTURE POOL IMPLEMENTATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+GLTexturePool& GLTexturePool::Instance() {
+    static GLTexturePool s_instance;
+    return s_instance;
+}
+
+GLuint GLTexturePool::Acquire(uint32_t w, uint32_t h, TextureFormat fmt, uint32_t mips) {
+    Key key{w, h, fmt, mips};
+    auto it = m_pool.find(key);
+    if (it == m_pool.end() || it->second.empty()) return 0;
+    GLuint handle = it->second.back();
+    it->second.pop_back();
+    m_totalPooled--;
+    if (it->second.empty()) m_pool.erase(it);
+    return handle;
+}
+
+void GLTexturePool::Recycle(GLuint handle, uint32_t w, uint32_t h, TextureFormat fmt, uint32_t mips) {
+    if (m_totalPooled >= kMaxPooled) {
+        glDeleteTextures(1, &handle);
+        return;
+    }
+    Key key{w, h, fmt, mips};
+    m_pool[key].push_back(handle);
+    m_totalPooled++;
+}
+
+void GLTexturePool::Shutdown() {
+    for (auto& [key, handles] : m_pool) {
+        for (GLuint h : handles)
+            glDeleteTextures(1, &h);
+    }
+    m_pool.clear();
+    m_totalPooled = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  GL USAGE TRANSLATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -165,27 +204,37 @@ void GLUniformBuffer::BindSlot(uint32_t slot) {
 GLTexture::GLTexture(const TextureDesc& desc)
     : m_desc(desc)
 {
-    // Use mutable storage — Intel Iris Xe has issues with immutable textures
-    // becoming unreadable after FBO switches. Legacy glTexImage2D avoids this.
-    glGenTextures(1, &m_handle);
-    glBindTexture(GL_TEXTURE_2D, m_handle);
+    // Try to acquire a recycled GL handle from the pool
+    m_handle = GLTexturePool::Instance().Acquire(desc.width, desc.height, desc.format, desc.mipLevels);
+    if (m_handle) {
+        // Pooled handle already has correct storage allocated, just reset sampler params
+        glBindTexture(GL_TEXTURE_2D, m_handle);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1));
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        // No pooled handle — create new mutable storage
+        glGenTextures(1, &m_handle);
+        glBindTexture(GL_TEXTURE_2D, m_handle);
 
-    GLFormatInfo fmt = TranslateFormat(desc.format);
-    for (uint32_t mip = 0; mip < desc.mipLevels; ++mip) {
-        uint32_t w = std::max(1u, desc.width >> mip);
-        uint32_t h = std::max(1u, desc.height >> mip);
-        glTexImage2D(GL_TEXTURE_2D, mip, fmt.internalFormat, w, h, 0,
-                     fmt.baseFormat, fmt.type, nullptr);
+        GLFormatInfo fmt = TranslateFormat(desc.format);
+        for (uint32_t mip = 0; mip < desc.mipLevels; ++mip) {
+            uint32_t w = std::max(1u, desc.width >> mip);
+            uint32_t h = std::max(1u, desc.height >> mip);
+            glTexImage2D(GL_TEXTURE_2D, mip, fmt.internalFormat, w, h, 0,
+                         fmt.baseFormat, fmt.type, nullptr);
+        }
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1));
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
-
-    // Default texture sampler parameters
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1));
-
-    glBindTexture(GL_TEXTURE_2D, 0);
 
     // Set debug label if available
     if (desc.debugName && desc.debugName[0]) {
@@ -194,7 +243,10 @@ GLTexture::GLTexture(const TextureDesc& desc)
 }
 
 GLTexture::~GLTexture() {
-    if (m_handle) glDeleteTextures(1, &m_handle);
+    if (m_handle) {
+        GLTexturePool::Instance().Recycle(m_handle, m_desc.width, m_desc.height, m_desc.format, m_desc.mipLevels);
+        m_handle = 0;
+    }
 }
 
 void GLTexture::Upload(const void* data, size_t sizeBytes, uint32_t mipLevel) {

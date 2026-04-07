@@ -61,6 +61,9 @@ void CFunctionMap::Reset(bool preserveStructure) {
     
     // Clear the jump table
     std::memset(m_JumpTable.get(), 0, JUMP_TABLE_SIZE * sizeof(CompiledFuncPtr));
+
+    // Clear exact-match map
+    m_ExactLookup.clear();
     
     if (preserveStructure) {
         // Keep allocated page tables but clear their entries
@@ -103,51 +106,28 @@ CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
     if (!m_JumpTable) {
         return nullptr;
     }
+
+    // Remove from exact-match map (authoritative)
+    CompiledFuncPtr removed = nullptr;
+    auto it = m_ExactLookup.find(vaddr);
+    if (it != m_ExactLookup.end()) {
+        removed = it->second;
+        m_ExactLookup.erase(it);
+    }
     
     // Remove from jump table (only if it belongs to this address)
     uint32_t jumpIdx = GetJumpTableIndex(vaddr);
-    auto oldFunc = m_JumpTable[jumpIdx];
-    if (oldFunc && oldFunc->EnterPC() == vaddr) {
-        m_JumpTable[jumpIdx] = nullptr;
-    } else {
-        oldFunc = nullptr;  // not ours — don't return it
+    if (auto func = m_JumpTable[jumpIdx]) {
+        if (func->EnterPC() == vaddr) {
+            m_JumpTable[jumpIdx] = nullptr;
+        }
     }
     
-    // Remove from page table if it exists
-    uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
-    auto& pageTable = m_PageDirectory[dirIndex];
-    
-    if (pageTable) {
-        uint32_t tblIndex = GetPageTableIndex(vaddr);
-        auto oldPageFunc = pageTable[tblIndex];
-        pageTable[tblIndex] = nullptr;
-        
-        // Return the function from page table if it was there, otherwise from jump table
-        return oldPageFunc ? oldPageFunc : oldFunc;
-    }
-    
-    return oldFunc;
+    return removed;
 }
 
 bool CFunctionMap::Contains(uint32_t vaddr) const noexcept {
-    if (!m_JumpTable) {
-        return false;
-    }
-    
-    // Check if jump table has an entry (verify address to avoid collision)
-    if (auto func = m_JumpTable[GetJumpTableIndex(vaddr)]) {
-        if (func->EnterPC() == vaddr) return true;
-    }
-    
-    // Check if page table has an entry
-    uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
-    const auto& pageTable = m_PageDirectory[dirIndex];
-    
-    if (!pageTable) {
-        return false;
-    }
-    
-    return pageTable[GetPageTableIndex(vaddr)] != nullptr;
+    return m_ExactLookup.count(vaddr) != 0;
 }
 
 size_t CFunctionMap::GetAllocatedPageTables() const noexcept {

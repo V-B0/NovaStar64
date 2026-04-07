@@ -218,6 +218,24 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
 
     statistics_.generated_bytes = code_size;
 
+    // Release the CodeHolder now — the compiled function pointer is independent
+    // of it. The CodeHolder's Zone allocator holds tens of KB of metadata
+    // (labels, relocations, node lists) that is no longer needed.
+    code_holder_.reset();
+
+    // Also release compilation-only data structures to reduce per-block
+    // memory from ~50 KB to a few hundred bytes. instruction_count() now
+    // reads from statistics_.instruction_count (already set in compile()).
+    instructions_.clear();
+    instructions_.shrink_to_fit();
+    sections_.clear();
+    sections_.shrink_to_fit();
+    address_to_section_.clear();
+    code_log_.clear();
+    code_log_.shrink_to_fit();
+    generated_code_cache_.clear();
+    generated_code_cache_.shrink_to_fit();
+
     if (config_.enable_logging) {
         log_compilation("Block finalized: entry=0x" +
                        std::to_string(entry_address_) +

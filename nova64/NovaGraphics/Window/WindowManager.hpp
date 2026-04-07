@@ -149,14 +149,8 @@ public:
     /// Release the GL context from current thread
     void ReleaseContext();
 
-    /// Swap front/back buffers (async — signals swap thread)
+    /// Swap front/back buffers
     void SwapBuffers();
-
-    /// Wait for previous async swap to complete (call before rendering next frame)
-    void WaitForSwap();
-
-    /// Get the last swap time in milliseconds (time the swap thread blocked in SwapBuffers)
-    double GetLastSwapTimeMs() const { return m_lastSwapMs.load(std::memory_order_relaxed); }
 
     /// Set VSync mode: 0 = off, 1 = on, -1 = adaptive
     void SetVSync(int32_t interval);

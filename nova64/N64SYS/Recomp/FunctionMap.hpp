@@ -24,6 +24,7 @@
 #include <memory>
 #include <array>
 #include <optional>
+#include <unordered_map>
 
 namespace Nova64 {
 namespace Recompiler {
@@ -153,6 +154,12 @@ private:
     // Two-level page table for full 32-bit address space
     PageDirectory m_PageDirectory;
 
+    // Exact-match hash map: authoritative lookup by PC.
+    // The jump table and page table are fast-path caches that can lose entries
+    // due to collisions; this map guarantees O(1) exact lookup for all stored
+    // functions, preventing runaway recompilation of already-compiled code.
+    std::unordered_map<uint32_t, CompiledFuncPtr> m_ExactLookup;
+
     // Statistics
     size_t m_AllocatedPageTables = 0;
 };
@@ -167,54 +174,39 @@ inline CFunctionMap::CompiledFuncPtr CFunctionMap::Lookup(uint32_t vaddr) const 
         }
     }
 
-    // Fall back to full page table lookup (1KB granularity)
-    uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
-    const auto& pageTable = m_PageDirectory[dirIndex];
-    if (!pageTable) {
-        return nullptr;
+    // Exact-match hash map — authoritative, no collisions
+    auto it = m_ExactLookup.find(vaddr);
+    if (it != m_ExactLookup.end()) {
+        return it->second;
     }
 
-    auto func = pageTable[GetPageTableIndex(vaddr)];
-    // Page table has coarse granularity (1KB per entry) so verify exact match
-    if (func && func->EnterPC() != vaddr) {
-        return nullptr;
-    }
-    return func;
+    return nullptr;
 }
 
 inline CFunctionMap::CompiledFuncPtr CFunctionMap::Store(
     uint32_t vaddr, CompiledFuncPtr func) noexcept {
-    // Store in jump table
-    uint32_t jumpIdx = GetJumpTableIndex(vaddr);
-    auto oldFunc = m_JumpTable[jumpIdx];
-    m_JumpTable[jumpIdx] = func;
-
-    // Store in page table
-    uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
-    uint32_t tblIndex = GetPageTableIndex(vaddr);
-    
-    auto& pageTable = m_PageDirectory[dirIndex];
-    if (!pageTable) {
-        // Only allocate if we're actually storing a non-null function
-        if (func) {
-            try {
-                pageTable = std::make_unique<CompiledFuncPtr[]>(PAGE_TABLE_SIZE);
-                m_AllocatedPageTables++;
-            } catch (...) {
-                // Allocation failed, but jump table still has the function
-                return oldFunc;
-            }
-        } else {
-            return oldFunc;
+    // Store in exact-match map (authoritative)
+    CompiledFuncPtr oldExact = nullptr;
+    if (func) {
+        auto [it, inserted] = m_ExactLookup.emplace(vaddr, func);
+        if (!inserted) {
+            oldExact = it->second;
+            it->second = func;
+        }
+    } else {
+        auto it = m_ExactLookup.find(vaddr);
+        if (it != m_ExactLookup.end()) {
+            oldExact = it->second;
+            m_ExactLookup.erase(it);
         }
     }
 
-    // Update both tables
-    auto oldPageFunc = pageTable[tblIndex];
-    pageTable[tblIndex] = func;
+    // Store in jump table (fast-path cache, may collide)
+    uint32_t jumpIdx = GetJumpTableIndex(vaddr);
+    m_JumpTable[jumpIdx] = func;
 
-    // Return the oldest function pointer (from page table)
-    return oldPageFunc ? oldPageFunc : oldFunc;
+    // Return the old function that was at this exact address
+    return oldExact;
 }
 
 } // namespace Recompiler

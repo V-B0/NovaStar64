@@ -18,8 +18,39 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <map>
+#include <tuple>
 
 namespace Nova64 { namespace Video { namespace GL {
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  GL TEXTURE POOL — recycles GL texture handles to avoid driver heap growth
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class GLTexturePool {
+public:
+    using Key = std::tuple<uint32_t, uint32_t, TextureFormat, uint32_t>; // w,h,fmt,mips
+
+    // Try to acquire a recycled GL handle matching the given desc.
+    // Returns 0 if none available.
+    GLuint Acquire(uint32_t w, uint32_t h, TextureFormat fmt, uint32_t mips);
+
+    // Return a GL handle to the pool for recycling.
+    // If the pool is full, the handle is deleted immediately.
+    void Recycle(GLuint handle, uint32_t w, uint32_t h, TextureFormat fmt, uint32_t mips);
+
+    // Delete all pooled handles (call on shutdown).
+    void Shutdown();
+
+    size_t PooledCount() const { return m_totalPooled; }
+
+    static GLTexturePool& Instance();
+
+private:
+    static constexpr size_t kMaxPooled = 4096;
+    std::map<Key, std::vector<GLuint>> m_pool;
+    size_t m_totalPooled = 0;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL FORMAT TRANSLATION UTILITIES

@@ -274,6 +274,15 @@ void main() {
 void VideoPlugin::Shutdown() {
     if (m_status == PluginStatus::Uninitialized) return;
 
+    // Complete any pending deferred swap before shutting down
+    if (m_swapPending) {
+        if (auto* win = GetActiveWindow()) {
+            win->MakeContextCurrent();
+            win->SwapBuffers();
+        }
+        m_swapPending = false;
+    }
+
     LOG_INFO("NovaGraphics shutting down...");
     m_status = PluginStatus::ShuttingDown;
 
@@ -349,6 +358,7 @@ void VideoPlugin::Reset() {
     m_dlistIndex = 0;
     m_hleRenderedThisFrame = false;
     m_hleEverRendered = false;
+    m_framesWithoutHLE = 0;
     m_viStatus   = 0;
     m_viOrigin   = 0;
     m_viWidth    = 0;
@@ -520,6 +530,19 @@ void VideoPlugin::UpdateScreen() {
     auto* win = GetActiveWindow();
     if (win) win->MakeContextCurrent();
 
+    // Deferred swap: complete the previous frame's swap now.
+    // The GPU work was already submitted via glFlush() at the end of the
+    // previous UpdateScreen, so SwapBuffers should return near-instantly
+    // because the GPU has had the entire CPU frame time to finish.
+    if (m_swapPending && win) {
+        auto swapStart = std::chrono::high_resolution_clock::now();
+        win->SwapBuffers();
+        auto swapEnd = std::chrono::high_resolution_clock::now();
+        m_frameStats.swapTimeMs = std::chrono::duration<double, std::milli>(
+            swapEnd - swapStart).count();
+        m_swapPending = false;
+    }
+
     m_frameCount++;
     m_frameStats.viInterrupts++;
 
@@ -568,12 +591,38 @@ void VideoPlugin::UpdateScreen() {
     // never fall back to VI RDRAM blit on intermediate (non-DL) VI frames.
     // Without this, double-buffered SwapBuffers alternates HLE ↔ VI each
     // frame, causing rapid black/white flickering.
-    if (m_hleRenderedThisFrame)
+    if (m_hleRenderedThisFrame) {
         m_hleEverRendered = true;
+        m_framesWithoutHLE = 0;
+    } else if (m_hleEverRendered) {
+        // No display list this frame while latched — count consecutive misses.
+        // After several frames without DLs, the game has likely transitioned
+        // to a SW-rendered screen or scene reset.  Un-latch so the VI RDRAM
+        // blit can take over (e.g. OoT attract-mode loop, file select).
+        m_framesWithoutHLE++;
+        if (m_framesWithoutHLE >= 3) {
+            m_hleEverRendered = false;
+        }
+    }
 
     bool hasVIContent = viActive && m_viOrigin != 0 && m_viWidth != 0;
     bool useVIBlit = !m_hleRenderedThisFrame && !m_hleEverRendered && hasVIContent;
     bool didRender = false;
+
+    // ── UpdateScreen path diagnostic ──────────────────────────
+    {
+        static FILE* usF = nullptr;
+        static uint32_t usFrame = 0;
+        if (!usF) usF = fopen("us_path_diag.txt", "w");
+        if (usF) {
+            fprintf(usF, "US#%u hleThis=%d hleEver=%d noHLE=%d viOrig=0x%06X viW=%u viType=%u viActive=%d path=",
+                usFrame, m_hleRenderedThisFrame ? 1 : 0,
+                m_hleEverRendered ? 1 : 0,
+                m_framesWithoutHLE,
+                m_viOrigin, m_viWidth, viType, viActive ? 1 : 0);
+            usFrame++;
+        }
+    }
 
     // During the initialization grace period, show the VI RDRAM blit
     // (this is the N64 boot logo / IPL sequence).  Don't black out.
@@ -589,6 +638,10 @@ void VideoPlugin::UpdateScreen() {
         // HLE content is available — present it directly (no VI RDRAM compositing).
         int32_t winW = 640, winH = 480;
         if (win) win->GetDrawableSize(winW, winH);
+        {
+            static FILE* usF = fopen("us_path_diag.txt", "a");
+            if (usF) { fprintf(usF, "HLE winW=%d winH=%d\n", winW, winH); fflush(usF); }
+        }
         g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
         didRender = true;
     } else if (useVIBlit && m_viWidth != 0) {
@@ -600,6 +653,10 @@ void VideoPlugin::UpdateScreen() {
 
 
         if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0) {
+            {
+                static FILE* usF = fopen("us_path_diag.txt", "a");
+                if (usF) { fprintf(usF, "VIBLIT yscale=%u outH=%u\n", yscale, outHeight); fflush(usF); }
+            }
             m_renderer->BeginFrame();
 
             // Set viewport/scissor AFTER BeginFrame (which may reset them)
@@ -616,6 +673,10 @@ void VideoPlugin::UpdateScreen() {
     }
 
     if (!didRender) {
+        {
+            static FILE* usF = fopen("us_path_diag.txt", "a");
+            if (usF) { fprintf(usF, "BLACK\n"); fflush(usF); }
+        }
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
@@ -645,7 +706,7 @@ void VideoPlugin::UpdateScreen() {
             glNamedFramebufferTexture(m_ppFBO, GL_COLOR_ATTACHMENT0, m_ppTex, 0);
 
             m_ppWidth = ppW;
-            m_ppHeight = ppH; m_postProcess->Resize(ppW, ppH); m_postProcess->Resize(ppW, ppH);
+            m_ppHeight = ppH; m_postProcess->Resize(ppW, ppH);
         }
 
         // Capture default FB → intermediate
@@ -669,15 +730,11 @@ void VideoPlugin::UpdateScreen() {
     glClear(GL_COLOR_BUFFER_BIT);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-    // Swap buffers (single swap — not both Present and SwapBuffers)
-    auto* activeWin = GetActiveWindow();
-    if (activeWin) {
-        auto swapStart = std::chrono::high_resolution_clock::now();
-        activeWin->SwapBuffers();
-        auto swapEnd = std::chrono::high_resolution_clock::now();
-        m_frameStats.swapTimeMs = std::chrono::duration<double, std::milli>(
-            swapEnd - swapStart).count();
-    }
+    // Deferred swap: submit all GPU work now so the GPU can finish while
+    // the CPU continues emulating.  The actual SwapBuffers is deferred to
+    // the start of the next UpdateScreen call.
+    glFlush();
+    m_swapPending = true;
 
 
 

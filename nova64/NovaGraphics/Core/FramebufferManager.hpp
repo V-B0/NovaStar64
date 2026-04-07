@@ -353,6 +353,21 @@ private:
     uint32_t m_readbackW = 0;
     uint32_t m_readbackH = 0;
 
+    // Cached temp FBO/texture for CopyToGPU/CopyFromGPU (avoid per-frame alloc on Intel)
+    uint32_t m_copyColorFBO = 0;
+    uint32_t m_copyColorTex = 0;
+    uint32_t m_copyColorW = 0;
+    uint32_t m_copyColorH = 0;
+
+    // Cached temp FBO/texture for CopyDepthFromGPU (avoid per-frame alloc on Intel)
+    uint32_t m_copyDepthFBO = 0;
+    uint32_t m_copyDepthTex = 0;
+    uint32_t m_copyDepthW = 0;
+    uint32_t m_copyDepthH = 0;
+
+    // Cached PBO size to avoid orphaning every frame
+    uint32_t m_pboSize = 0;
+
 };
 
 extern FramebufferManager g_fbManager;
