@@ -175,9 +175,6 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     // SP Registers
     m_SPRegistersHandler = std::make_unique<SRegistersHandler>(*m_Registers);
 
-    // Audio & Video
-    m_AudioInterfaceHandler = std::make_unique<AudioInterfaceHandler>(*this, *m_Registers);
-
     m_DDRegisters.fill(0);
 }
 
@@ -1246,10 +1243,12 @@ void CN64System::RefreshScreen()
     }
 
     
-    // Feed audio device to keep playback smooth (always, even on skipped frames)
-    if (m_AudioInterfaceHandler)
+    // Feed audio device to keep playback smooth (always, even on skipped frames).
+    // Use the Vmem-owned AudioInterfaceHandler — that's the one receiving AI
+    // register writes from the game, so it has the active WASAPI output.
+    if (m_Memory && m_Memory->AudioInterface())
     {
-        m_AudioInterfaceHandler->AudioOutput().FeedDevice();
+        m_Memory->AudioInterface()->AudioOutput().FeedDevice();
     }
     
     auto afterAudio = std::chrono::steady_clock::now();

@@ -609,21 +609,6 @@ void VideoPlugin::UpdateScreen() {
     bool useVIBlit = !m_hleRenderedThisFrame && !m_hleEverRendered && hasVIContent;
     bool didRender = false;
 
-    // ── UpdateScreen path diagnostic ──────────────────────────
-    {
-        static FILE* usF = nullptr;
-        static uint32_t usFrame = 0;
-        if (!usF) usF = fopen("us_path_diag.txt", "w");
-        if (usF) {
-            fprintf(usF, "US#%u hleThis=%d hleEver=%d noHLE=%d viOrig=0x%06X viW=%u viType=%u viActive=%d path=",
-                usFrame, m_hleRenderedThisFrame ? 1 : 0,
-                m_hleEverRendered ? 1 : 0,
-                m_framesWithoutHLE,
-                m_viOrigin, m_viWidth, viType, viActive ? 1 : 0);
-            usFrame++;
-        }
-    }
-
     // During the initialization grace period, show the VI RDRAM blit
     // (this is the N64 boot logo / IPL sequence).  Don't black out.
     if (m_isInitializationPhase) {
@@ -638,10 +623,6 @@ void VideoPlugin::UpdateScreen() {
         // HLE content is available — present it directly (no VI RDRAM compositing).
         int32_t winW = 640, winH = 480;
         if (win) win->GetDrawableSize(winW, winH);
-        {
-            static FILE* usF = fopen("us_path_diag.txt", "a");
-            if (usF) { fprintf(usF, "HLE winW=%d winH=%d\n", winW, winH); fflush(usF); }
-        }
         g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
         didRender = true;
     } else if (useVIBlit && m_viWidth != 0) {
@@ -653,10 +634,6 @@ void VideoPlugin::UpdateScreen() {
 
 
         if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0) {
-            {
-                static FILE* usF = fopen("us_path_diag.txt", "a");
-                if (usF) { fprintf(usF, "VIBLIT yscale=%u outH=%u\n", yscale, outHeight); fflush(usF); }
-            }
             m_renderer->BeginFrame();
 
             // Set viewport/scissor AFTER BeginFrame (which may reset them)
@@ -673,10 +650,6 @@ void VideoPlugin::UpdateScreen() {
     }
 
     if (!didRender) {
-        {
-            static FILE* usF = fopen("us_path_diag.txt", "a");
-            if (usF) { fprintf(usF, "BLACK\n"); fflush(usF); }
-        }
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }

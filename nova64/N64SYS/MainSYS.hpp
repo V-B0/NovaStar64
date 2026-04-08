@@ -213,7 +213,6 @@ public:
     // Memory Handlers
     std::unique_ptr<Plugins::PluginManager> m_PluginManager;
     std::unique_ptr<CEeprom> m_Eeprom;
-    std::unique_ptr<AudioInterfaceHandler> m_AudioInterfaceHandler;
     std::unique_ptr<RDRAMInterfaceHandler> m_RDRAMInterfaceHandler;
     std::unique_ptr<RDRAMRegistersHandler> m_RDRAMRegistersHandler;
     std::unique_ptr<MIPSYInterfaceHandler> m_MIPSInterfaceHandler;

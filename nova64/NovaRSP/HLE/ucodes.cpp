@@ -13,6 +13,7 @@
 #include "mem.hpp"
 #include "arithmetics.hpp"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace Nova64::RSP::HLE {
@@ -479,13 +480,15 @@ static void NEAD_DMEMMOVE(CHle* hle, uint32_t w1, uint32_t w2)
     uint16_t dmemi = static_cast<uint16_t>(w1);
     uint16_t dmemo = static_cast<uint16_t>(w2 >> 16);
     uint16_t count = static_cast<uint16_t>(w2);
-    alist_move(hle, dmemo, dmemi, count);
+    if (count == 0) return;
+    alist_move(hle, dmemo, dmemi, (count + 3) & ~3);
 }
 
 static void NEAD_CLEARBUFF(CHle* hle, uint32_t w1, uint32_t w2)
 {
     uint16_t dmem  = static_cast<uint16_t>(w1);
-    uint16_t count = static_cast<uint16_t>(w2);
+    uint16_t count = static_cast<uint16_t>(w2 & 0xFFF);
+    if (count == 0) return;
     alist_clear(hle, dmem, count);
 }
 
@@ -544,9 +547,13 @@ static void NEAD_INTERLEAVE(CHle* hle, uint32_t w1, uint32_t w2)
 static void NEAD_ADPCM(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_nead();
-    bool init = (w1 >> 16) & 0x01;
-    bool loop = (w1 >> 16) & 0x02;
-    alist_adpcm(hle, init, loop, false, s.out, s.in, s.count,
+    uint8_t flags = static_cast<uint8_t>(w1 >> 16);
+    bool init = flags & 0x01;
+    bool loop = flags & 0x02;
+    bool two_bit = flags & 0x04;
+    // s.count is byte count; each ADPCM frame decodes 16 samples = 32 bytes
+    uint16_t frames = (s.count + 31) >> 5;
+    alist_adpcm(hle, init, loop, two_bit, s.out, s.in, frames,
                 s.table, s.loop, w2 & 0x00FFFFFF);
 }
 
@@ -556,7 +563,9 @@ static void NEAD_RESAMPLE(CHle* hle, uint32_t w1, uint32_t w2)
     bool init  = (w1 >> 16) & 0x01;
     bool flag2 = (w1 >> 16) & 0x02;
     uint32_t pitch = w1 & 0xFFFF;
-    alist_resample(hle, init, flag2, s.out, s.in, s.count, pitch << 1, w2 & 0x00FFFFFF);
+    // Round count up to next multiple of 16 (matching mupen64plus)
+    alist_resample(hle, init, flag2, s.out, s.in,
+                   static_cast<uint16_t>((s.count + 0xf) & ~0xf), pitch << 1, w2 & 0x00FFFFFF);
 }
 
 static void NEAD_SETLOOP(CHle* hle, uint32_t /*w1*/, uint32_t w2)
@@ -589,22 +598,188 @@ static void NEAD_HILOGAIN(CHle* hle, uint32_t w1, uint32_t w2)
     (void)w2;
 }
 
+// ── OoT NEAD-specific command handlers ──
+// These handlers extract parameters from the command words (w1/w2) rather
+// than from the SETBUFF state struct, matching the actual N64 RSP microcode.
+
+static void NEAD_OOT_ENVSETUP1(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+    s.env_values[2] = (w1 >> 8) & 0xFF00;
+    s.env_steps[2]  = static_cast<uint16_t>(w1);
+    s.env_steps[0]  = static_cast<uint16_t>(w2 >> 16);
+    s.env_steps[1]  = static_cast<uint16_t>(w2);
+}
+
+static void NEAD_OOT_ENVSETUP2(CHle* hle, uint32_t /*w1*/, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+    s.env_values[0] = static_cast<uint16_t>(w2 >> 16);
+    s.env_values[1] = static_cast<uint16_t>(w2);
+}
+
+static void NEAD_OOT_LOADADPCM(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+    uint16_t count   = static_cast<uint16_t>(w1);
+    uint32_t address = w2 & 0x00FFFFFF;
+    dram_load_u16(hle, reinterpret_cast<uint16_t*>(s.table), address, count >> 1);
+}
+
+static void NEAD_OOT_LOADBUFF(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count   = (w1 >> 12) & 0xFFF;
+    uint16_t dmem    = w1 & 0xFFF;
+    uint32_t address = w2 & 0x00FFFFFF;
+    alist_load(hle, dmem, address, count);
+}
+
+static void NEAD_OOT_SAVEBUFF(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count   = (w1 >> 12) & 0xFFF;
+    uint16_t dmem    = w1 & 0xFFF;
+    uint32_t address = w2 & 0x00FFFFFF;
+    alist_save(hle, dmem, address, count);
+}
+
+static void NEAD_OOT_ENVMIXER(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+
+    uint16_t dmemi    = (w1 >> 12) & 0xFF0;
+    uint8_t  count    = (w1 >>  8) & 0xFF;
+    bool     swap_wet = (w1 >>  4) & 0x1;
+    uint16_t dmem_dl  = (w2 >> 20) & 0xFF0;
+    uint16_t dmem_dr  = (w2 >> 12) & 0xFF0;
+    uint16_t dmem_wl  = (w2 >>  4) & 0xFF0;
+    uint16_t dmem_wr  = (w2 <<  4) & 0xFF0;
+
+    int16_t xors[4]{};
+    xors[2] = 0 - static_cast<int16_t>((w1 & 0x8) >> 1);
+    xors[3] = 0 - static_cast<int16_t>((w1 & 0x4) >> 1);
+    xors[0] = 0 - static_cast<int16_t>((w1 & 0x2) >> 1);
+    xors[1] = 0 - static_cast<int16_t>((w1 & 0x1));
+
+    // Pass raw count (number of samples to process, aligned to 8 internally)
+    alist_envmix_nead(hle, swap_wet, dmem_dl, dmem_dr, dmem_wl, dmem_wr,
+                      dmemi, static_cast<unsigned>(count),
+                      s.env_values, s.env_steps, xors);
+}
+
+static void NEAD_OOT_ADDMIXER(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count = (w1 >> 12) & 0xFF0;
+    uint16_t dmemi = static_cast<uint16_t>(w2 >> 16);
+    uint16_t dmemo = static_cast<uint16_t>(w2);
+    alist_add(hle, dmemo, dmemi, count);
+}
+
+static void NEAD_OOT_DUPLICATE(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint8_t  count = static_cast<uint8_t>(w1 >> 16);
+    uint16_t dmemi = static_cast<uint16_t>(w1);
+    uint16_t dmemo = static_cast<uint16_t>(w2 >> 16);
+    alist_repeat64(hle, dmemo, dmemi, count);
+}
+
+static void NEAD_OOT_INTERL(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count = static_cast<uint16_t>(w1);
+    uint16_t dmemi = static_cast<uint16_t>(w2 >> 16);
+    uint16_t dmemo = static_cast<uint16_t>(w2);
+    alist_copy_every_other_sample(hle, dmemo, dmemi, count);
+}
+
+static void NEAD_OOT_NEAD16(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint8_t  count      = static_cast<uint8_t>(w1 >> 16);
+    uint16_t dmemi      = static_cast<uint16_t>(w1);
+    uint16_t dmemo      = static_cast<uint16_t>(w2 >> 16);
+    uint16_t block_size = static_cast<uint16_t>(w2);
+    alist_copy_blocks(hle, dmemo, dmemi, block_size, count);
+}
+
+static void NEAD_OOT_MIXER(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count = (w1 >> 12) & 0xFF0;
+    int16_t  gain  = static_cast<int16_t>(w1);
+    uint16_t dmemi = static_cast<uint16_t>(w2 >> 16);
+    uint16_t dmemo = static_cast<uint16_t>(w2);
+    alist_mix(hle, dmemo, dmemi, count, gain);
+}
+
+static void NEAD_OOT_INTERLEAVE(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    uint16_t count = (w1 >> 12) & 0xFF0;
+    uint16_t dmemo = static_cast<uint16_t>(w1);
+    uint16_t left  = static_cast<uint16_t>(w2 >> 16);
+    uint16_t right = static_cast<uint16_t>(w2);
+    alist_interleave(hle, dmemo, left, right, count);
+}
+
+static void NEAD_OOT_HILOGAIN(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    int8_t   gain  = static_cast<int8_t>(w1 >> 16);
+    uint16_t count = w1 & 0xFFF;
+    uint16_t dmem  = static_cast<uint16_t>(w2 >> 16);
+    alist_multQ44(hle, dmem, count, gain);
+}
+
+static void NEAD_OOT_RESAMPLE_ZOH(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+    uint16_t pitch      = static_cast<uint16_t>(w1);
+    uint16_t pitch_accu = static_cast<uint16_t>(w2);
+    alist_resample_zoh(hle, s.out, s.in, s.count, pitch << 1, pitch_accu);
+}
+
+static void NEAD_OOT_FILTER(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_nead();
+    uint8_t  flags   = static_cast<uint8_t>(w1 >> 16);
+    uint32_t address = w2 & 0x00FFFFFF;
+
+    if (flags > 1) {
+        s.filter_count          = static_cast<uint16_t>(w1);
+        s.filter_lut_address[0] = address;
+    } else {
+        uint16_t dmem = static_cast<uint16_t>(w1);
+        s.filter_lut_address[1] = address + 0x10;
+        alist_filter(hle, dmem, s.filter_count, address, s.filter_lut_address);
+    }
+}
+
 // ── Per-game NEAD ABI tables ──
 // Different games' RSP audio ucodes use different command-index-to-handler mappings.
-// The index (0-31) is extracted from the high byte of the audio command word,
+// The index (0-23) is extracted from the high byte of the audio command word,
 // and the corresponding callback is invoked.
 
-// Standard / Full NEAD (Zelda OoT, Zelda MM, Animal Crossing, etc.)
-// Includes both POLEF and FILTER.
-static const AcmdCallback NEAD_ABI_FULL[32] = {
-    SPNOOP,           NEAD_ADPCM,       NEAD_CLEARBUFF,   NEAD_ENVMIXER,
-    NEAD_LOADBUFF,    NEAD_RESAMPLE,     NEAD_SAVEBUFF,    SPNOOP,
-    NEAD_SETBUFF,     SPNOOP,            NEAD_DMEMMOVE,    NEAD_LOADBUFF,
-    NEAD_MIX,         NEAD_INTERLEAVE,   NEAD_POLEF,       NEAD_SETLOOP,
-    NEAD_FILTER,      SPNOOP,            SPNOOP,           SPNOOP,
-    SPNOOP,           SPNOOP,            SPNOOP,           SPNOOP,
-    SPNOOP,           SPNOOP,            SPNOOP,           SPNOOP,
-    SPNOOP,           SPNOOP,            SPNOOP,           SPNOOP,
+// OoT / MM / AC NEAD ABI table (matching mupen64plus alist_nead.c)
+static const AcmdCallback NEAD_ABI_OOT[24] = {
+    SPNOOP,                 // 0:  UNKNOWN
+    NEAD_ADPCM,             // 1:  ADPCM
+    NEAD_CLEARBUFF,         // 2:  CLEARBUFF
+    SPNOOP,                 // 3:  UNKNOWN
+    NEAD_OOT_ADDMIXER,      // 4:  ADDMIXER
+    NEAD_RESAMPLE,          // 5:  RESAMPLE
+    NEAD_OOT_RESAMPLE_ZOH,  // 6:  RESAMPLE_ZOH
+    NEAD_OOT_FILTER,        // 7:  FILTER
+    NEAD_SETBUFF,           // 8:  SETBUFF
+    NEAD_OOT_DUPLICATE,     // 9:  DUPLICATE
+    NEAD_DMEMMOVE,          // 10: DMEMMOVE
+    NEAD_OOT_LOADADPCM,     // 11: LOADADPCM
+    NEAD_OOT_MIXER,         // 12: MIXER
+    NEAD_OOT_INTERLEAVE,    // 13: INTERLEAVE
+    NEAD_OOT_HILOGAIN,      // 14: HILOGAIN
+    NEAD_SETLOOP,           // 15: SETLOOP
+    NEAD_OOT_NEAD16,        // 16: NEAD_16
+    NEAD_OOT_INTERL,        // 17: INTERL
+    NEAD_OOT_ENVSETUP1,     // 18: ENVSETUP1
+    NEAD_OOT_ENVMIXER,      // 19: ENVMIXER
+    NEAD_OOT_LOADBUFF,      // 20: LOADBUFF
+    NEAD_OOT_SAVEBUFF,      // 21: SAVEBUFF
+    NEAD_OOT_ENVSETUP2,      // 22: ENVSETUP2
+    SPNOOP,                 // 23: UNKNOWN
 };
 
 // Mario Kart 64: index 3 = MIX (not ENVMIXER), index 14 = HILOGAIN (not POLEF)
@@ -680,22 +855,22 @@ void alist_process_nead_1080(CHle* hle)
 
 void alist_process_nead_oot(CHle* hle)
 {
-    alist_process(hle, NEAD_ABI_FULL, 32);
+    alist_process(hle, NEAD_ABI_OOT, 24);
 }
 
 void alist_process_nead_mm(CHle* hle)
 {
-    alist_process(hle, NEAD_ABI_FULL, 32);
+    alist_process(hle, NEAD_ABI_OOT, 24);
 }
 
 void alist_process_nead_mmb(CHle* hle)
 {
-    alist_process(hle, NEAD_ABI_FULL, 32);
+    alist_process(hle, NEAD_ABI_OOT, 24);
 }
 
 void alist_process_nead_ac(CHle* hle)
 {
-    alist_process(hle, NEAD_ABI_FULL, 32);
+    alist_process(hle, NEAD_ABI_OOT, 24);
 }
 
 // ══════════════════════════════════════════════

@@ -23,6 +23,7 @@
 #include <cstring>
 #include <cstdio>
 
+
 namespace Nova64::RSP::HLE {
 
 // ──────────────────────────────────────────────
@@ -164,8 +165,10 @@ bool CAudioOutput::Initialize(uint32_t sampleRate, uint32_t channels)
     m_bufferedSamples = 0;
 
     m_initialized.store(true);
-    std::fprintf(stdout, "[AudioOutput] WASAPI initialized: %uHz %uch, device buffer=%u frames\n",
-                 m_sampleRate, m_channels, m_deviceBufferFrames);
+    std::fprintf(stderr, "[AudioOutput] WASAPI initialized: deviceRate=%uHz channels=%u float=%d buffer=%u frames, ringBuf=%u\n",
+                 m_sampleRate, m_channels, m_deviceIsFloat ? 1 : 0, m_deviceBufferFrames, m_ringBufferSize);
+    std::fprintf(stderr, "[AudioOutput] sourceRate=%u, internalChannels=%u\n",
+                 m_sourceRate, m_internalChannels);
     return true;
 #else
     (void)sampleRate;
@@ -236,27 +239,50 @@ void CAudioOutput::QueueSamples(const int16_t* samples, uint32_t sampleCount, ui
         // Linear interpolation resampling (per-channel, interleaved)
         for (uint32_t i = 0; i < outputFrames; i++) {
             const double srcPos = m_resamplePos + i * ratio;
-            const uint32_t idx = static_cast<uint32_t>(srcPos);
-            const double frac = srcPos - idx;
 
-            // Clamp to valid range
-            const uint32_t idx0 = idx;
-            const uint32_t idx1 = (idx + 1 < inputFrames) ? idx + 1 : idx;
+            if (srcPos < 0.0) {
+                // Cross-boundary interpolation: use saved last sample from previous input
+                const double frac = srcPos + 1.0;  // frac in [0,1) from lastSample to input[0]
+                for (uint32_t ch = 0; ch < m_internalChannels; ch++) {
+                    const int32_t s0 = m_lastInputSample[ch];
+                    const int32_t s1 = samples[ch];
+                    m_resampleBuffer[i * m_internalChannels + ch] = static_cast<int16_t>(
+                        s0 + static_cast<int32_t>((s1 - s0) * frac));
+                }
+            } else {
+                const uint32_t idx = static_cast<uint32_t>(srcPos);
+                const double frac = srcPos - idx;
+                const uint32_t idx0 = idx;
+                const uint32_t idx1 = (idx + 1 < inputFrames) ? idx + 1 : idx;
 
-            for (uint32_t ch = 0; ch < m_internalChannels; ch++) {
-                const int32_t s0 = samples[idx0 * m_internalChannels + ch];
-                const int32_t s1 = samples[idx1 * m_internalChannels + ch];
-                m_resampleBuffer[i * m_internalChannels + ch] = static_cast<int16_t>(
-                    s0 + static_cast<int32_t>((s1 - s0) * frac));
+                for (uint32_t ch = 0; ch < m_internalChannels; ch++) {
+                    const int32_t s0 = samples[idx0 * m_internalChannels + ch];
+                    const int32_t s1 = samples[idx1 * m_internalChannels + ch];
+                    m_resampleBuffer[i * m_internalChannels + ch] = static_cast<int16_t>(
+                        s0 + static_cast<int32_t>((s1 - s0) * frac));
+                }
             }
         }
 
-        // Carry fractional position into next call
+        // Save last input sample for next call's cross-boundary interpolation
+        for (uint32_t ch = 0; ch < m_internalChannels; ch++) {
+            m_lastInputSample[ch] = samples[(inputFrames - 1) * m_internalChannels + ch];
+        }
+
+        // Carry fractional position into next call (allow negative for cross-boundary)
         m_resamplePos = (m_resamplePos + outputFrames * ratio) - inputFrames;
-        if (m_resamplePos < 0.0) m_resamplePos = 0.0;
 
         finalSamples = m_resampleBuffer.data();
         finalCount = outputFrames * m_internalChannels;
+
+        // ── Diagnostic: log resampler stats ──
+        static uint32_t s_resampleCount = 0;
+        ++s_resampleCount;
+        if (s_resampleCount <= 3 || (s_resampleCount % 500 == 0)) {
+            std::fprintf(stderr, "[Resample] #%u: src=%u dst=%u ratio=%.4f inFrames=%u outFrames=%u resamplePos=%.4f\n",
+                s_resampleCount, m_sourceRate, m_sampleRate, ratio,
+                inputFrames, outputFrames, m_resamplePos);
+        }
     }
 
     // ── Write (possibly resampled) data into ring buffer ──
@@ -270,6 +296,12 @@ void CAudioOutput::QueueSamples(const int16_t* samples, uint32_t sampleCount, ui
         uint32_t overflow = (m_bufferedSamples + toWrite) - m_ringBufferSize;
         m_readPos = (m_readPos + overflow) & mask;
         m_bufferedSamples -= overflow;
+        static uint32_t s_overflowCount = 0;
+        ++s_overflowCount;
+        if (s_overflowCount <= 5 || (s_overflowCount % 200 == 0)) {
+            std::fprintf(stderr, "[AudioBuf] OVERFLOW #%u: dropped %u samples, buffered=%u ringSize=%u\n",
+                s_overflowCount, overflow, m_bufferedSamples, m_ringBufferSize);
+        }
     }
 
     // Write to ring buffer
@@ -291,6 +323,8 @@ void CAudioOutput::Start()
     HRESULT hr = m_audioClient->Start();
     if (SUCCEEDED(hr)) {
         m_playing.store(true);
+    } else {
+        std::fprintf(stderr, "[AudioOutput] Start() FAILED hr=0x%08lX — audio will be silent!\n", hr);
     }
 #endif
 }
@@ -313,7 +347,9 @@ void CAudioOutput::Stop()
 void CAudioOutput::FeedDevice()
 {
 #ifdef _WIN32
-    if (!m_initialized.load() || !m_playing.load()) return;
+    if (!m_initialized.load() || !m_playing.load()) {
+        return;
+    }
 
     // How many frames can we write?
     uint32_t padding = 0;
@@ -331,7 +367,15 @@ void CAudioOutput::FeedDevice()
     }
 
     uint32_t framesToWrite = (std::min)(available, framesInBuffer);
-    if (framesToWrite == 0) return;
+    if (framesToWrite == 0) {
+        static uint32_t s_underrunCount = 0;
+        ++s_underrunCount;
+        if (s_underrunCount <= 5 || (s_underrunCount % 500 == 0)) {
+            std::fprintf(stderr, "[AudioBuf] UNDERRUN #%u: available=%u framesInBuf=%u\n",
+                s_underrunCount, available, framesInBuffer);
+        }
+        return;
+    }
 
     // Get WASAPI buffer
     BYTE* deviceBuffer = nullptr;

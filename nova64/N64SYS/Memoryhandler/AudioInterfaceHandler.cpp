@@ -10,11 +10,19 @@
 #include "../../common/log.hpp"
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 #include <string>
+#include <vector>
 
 // MI Register Definitions
 #define MI_INTR_REG_INDEX 2
 #define MI_INTR_AI_BIT    0x04
+
+// ── Audio flow diagnostics ──
+static uint32_t s_aiLenWriteCount = 0;
+static uint32_t s_aiDmaCompleteCount = 0;
+static uint32_t s_aiDacRateWriteCount = 0;
+static uint32_t s_aiWasapiInitCount = 0;
 
 AudioInterfaceHandler::AudioInterfaceHandler(CN64System& system, CRegisters& registers)
     : m_system(system),
@@ -126,7 +134,12 @@ bool AudioInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
             // Frequency = VideoClock / (dacrate + 1)
             // Reinitialize audio output if frequency changed
             {
+                ++s_aiDacRateWriteCount;
                 uint32_t freq = GetFrequency();
+                if (s_aiDacRateWriteCount <= 5 || freq != m_lastDacFreq) {
+                    std::fprintf(stderr, "[AI] DACRATE write #%u: raw=%u freq=%u Hz (prev=%u)\n",
+                        s_aiDacRateWriteCount, value & 0x3FFF, freq, m_lastDacFreq);
+                }
                 if (freq != m_lastDacFreq) {
                     m_lastDacFreq = freq;
                     // Reset failure flag — a new DACRATE deserves a fresh attempt.
@@ -167,6 +180,13 @@ uint32_t AudioInterfaceHandler::GetFrequency() const {
 }
 
 void AudioInterfaceHandler::DMAComplete() {
+    ++s_aiDmaCompleteCount;
+    // Log first 10 and then every 200th DMAComplete
+    if (s_aiDmaCompleteCount <= 10 || (s_aiDmaCompleteCount % 200 == 0)) {
+        std::fprintf(stderr, "[AI] DMAComplete #%u: pending=%d wasapi=%d\n",
+            s_aiDmaCompleteCount, m_pending_valid ? 1 : 0, m_audioInitialized ? 1 : 0);
+    }
+
     // Feed any pending audio to the device
     if (m_audioInitialized)
     {
@@ -215,14 +235,19 @@ void AudioInterfaceHandler::InitAudioOutput()
     if (freq > 48000) freq = 48000;
 
     Logging::log(Logging::Level::Info, "AI: Initializing WASAPI audio output at " + std::to_string(freq) + " Hz");
+    ++s_aiWasapiInitCount;
+    std::fprintf(stderr, "[AI] InitAudioOutput #%u: freq=%u Hz\n", s_aiWasapiInitCount, freq);
 
     if (m_audioOutput.Initialize(freq, 2))
     {
+        m_audioOutput.SetSourceRate(freq);
         m_audioOutput.Start();
         m_audioInitialized = true;
+        std::fprintf(stderr, "[AI] WASAPI initialized successfully (source=%u Hz)\n", freq);
     }
     else
     {
+        std::fprintf(stderr, "[AI] WASAPI initialization FAILED\n");
         Logging::log(Logging::Level::Error, "AI: Failed to initialize WASAPI audio output (will not retry)");
         m_audioInitialized = false;
         m_audioInitFailed = true;
@@ -247,19 +272,88 @@ void AudioInterfaceHandler::QueueDmaSamples(uint32_t dramAddr, uint32_t len)
     dramAddr &= 0x00FFFFFF;
     if (dramAddr + len > rdramSize) return;
 
-    // Audio data in RDRAM is big-endian interleaved 16-bit PCM (L,R,L,R,...)
-    // WASAPI expects little-endian, so we need to byte-swap
-    const uint8_t* src = rdram + dramAddr;
+    // Audio data in RDRAM was written by RSP HLE alist_save via
+    // dram_store_u16, which uses XOR_S16=2 byte addressing.
+    // Read each int16_t sample using the same XOR to get correct values.
     uint32_t sampleCount = len / 2; // 16-bit samples
-
-    // Temporary buffer for byte-swapped samples
     std::vector<int16_t> samples(sampleCount);
     for (uint32_t i = 0; i < sampleCount; i++)
     {
-        // Big-endian to little-endian
-        samples[i] = static_cast<int16_t>((src[i * 2] << 8) | src[i * 2 + 1]);
+        // XOR_S16: toggle bit 1 of the byte address to access
+        // the correct halfword within each 32-bit RDRAM word
+        uint32_t addr = (dramAddr + i * 2) ^ 2;
+        samples[i] = *reinterpret_cast<const int16_t*>(rdram + addr);
     }
 
     m_audioOutput.QueueSamples(samples.data(), sampleCount);
     m_audioOutput.FeedDevice();
+
+    // ── Diagnostic: dump audio to WAV file for analysis ──
+    static uint32_t s_queueCount = 0;
+    static uint32_t s_nonSilentCount = 0;
+    static FILE* s_wavDump = nullptr;
+    static uint32_t s_wavDataBytes = 0;
+    ++s_queueCount;
+    
+    // Check if samples are non-silent
+    bool hasAudio = false;
+    for (uint32_t i = 0; i < sampleCount; i++) {
+        if (samples[i] != 0) { hasAudio = true; break; }
+    }
+    
+    // Dump first 600 non-silent transfers as a proper WAV file
+    if (hasAudio) {
+        ++s_nonSilentCount;
+        if (s_nonSilentCount <= 600) {
+            if (!s_wavDump) {
+                s_wavDump = std::fopen("audio_dump.wav", "wb");
+                if (s_wavDump) {
+                    // Write placeholder WAV header (will update sizes at close)
+                    uint32_t freq = GetFrequency();
+                    uint16_t channels = 2;
+                    uint16_t bitsPerSample = 16;
+                    uint32_t byteRate = freq * channels * (bitsPerSample / 8);
+                    uint16_t blockAlign = channels * (bitsPerSample / 8);
+                    // RIFF header
+                    std::fwrite("RIFF", 1, 4, s_wavDump);
+                    uint32_t placeholder = 0;
+                    std::fwrite(&placeholder, 4, 1, s_wavDump); // file size - 8 (placeholder)
+                    std::fwrite("WAVE", 1, 4, s_wavDump);
+                    // fmt chunk
+                    std::fwrite("fmt ", 1, 4, s_wavDump);
+                    uint32_t fmtSize = 16;
+                    std::fwrite(&fmtSize, 4, 1, s_wavDump);
+                    uint16_t audioFormat = 1; // PCM
+                    std::fwrite(&audioFormat, 2, 1, s_wavDump);
+                    std::fwrite(&channels, 2, 1, s_wavDump);
+                    std::fwrite(&freq, 4, 1, s_wavDump);
+                    std::fwrite(&byteRate, 4, 1, s_wavDump);
+                    std::fwrite(&blockAlign, 2, 1, s_wavDump);
+                    std::fwrite(&bitsPerSample, 2, 1, s_wavDump);
+                    // data chunk
+                    std::fwrite("data", 1, 4, s_wavDump);
+                    std::fwrite(&placeholder, 4, 1, s_wavDump); // data size (placeholder)
+                    s_wavDataBytes = 0;
+                    std::fprintf(stderr, "[AI-DIAG] Dumping WAV to audio_dump.wav (%uHz stereo s16le)\n", freq);
+                }
+            }
+            if (s_wavDump) {
+                uint32_t bytes = sampleCount * sizeof(int16_t);
+                std::fwrite(samples.data(), 1, bytes, s_wavDump);
+                s_wavDataBytes += bytes;
+                if (s_nonSilentCount == 600) {
+                    // Update WAV header sizes
+                    uint32_t riffSize = 36 + s_wavDataBytes;
+                    std::fseek(s_wavDump, 4, SEEK_SET);
+                    std::fwrite(&riffSize, 4, 1, s_wavDump);
+                    std::fseek(s_wavDump, 40, SEEK_SET);
+                    std::fwrite(&s_wavDataBytes, 4, 1, s_wavDump);
+                    std::fflush(s_wavDump);
+                    std::fclose(s_wavDump);
+                    s_wavDump = nullptr;
+                    std::fprintf(stderr, "[AI-DIAG] WAV dump complete: %u bytes audio data\n", s_wavDataBytes);
+                }
+            }
+        }
+    }
 }

@@ -78,6 +78,7 @@ private:
 
     // Resampler state (persistent across QueueSamples calls)
     double   m_resamplePos{0.0};
+    int16_t  m_lastInputSample[2]{0, 0};  // last stereo sample for cross-boundary interpolation
     std::vector<int16_t> m_resampleBuffer;
 
     // State

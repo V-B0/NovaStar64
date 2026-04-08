@@ -8,6 +8,10 @@
 #include "ucodes.hpp"
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
+
+// Audio task dispatch counter
+static uint32_t s_audioTaskCount = 0;
 
 namespace Nova64::RSP::HLE {
 
@@ -196,24 +200,22 @@ bool CTaskDispatcher::DispatchVideoTask(CHle* hle, const TaskInfo& task)
 
 bool CTaskDispatcher::DispatchAudioTask(CHle* hle, const TaskInfo& task, const MicrocodeEntry* ucode)
 {
-    if (!hle->AudioHle())
+    if (!hle->AudioHle()) {
         return false;
+    }
+
+    ++s_audioTaskCount;
 
     if (ucode != nullptr && ucode->handler != nullptr)
     {
-        // Identified microcode — use specific handler
-        hle->VerboseMessage("RSP HLE: Dispatching audio task to '%.*s'",
-            static_cast<int>(ucode->name.size()), ucode->name.data());
         ucode->handler(hle);
         hle->rsp_break(0);
         return true;
     }
 
     // Unknown audio microcode — try generic audio dispatch
-    // Check if the ucode data looks like an alist command table
     if (task.DataPtr != 0 && task.DataSize > 0)
     {
-        hle->WarnMessage("RSP HLE: Unidentified audio microcode, attempting generic dispatch");
         alist_process_audio(hle);
         hle->rsp_break(0);
         return true;

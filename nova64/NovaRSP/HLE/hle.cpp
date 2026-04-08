@@ -118,15 +118,23 @@ void CHle::rsp_break(uint32_t setbits)
     *m_sp_status |= setbits;
     *m_sp_status |= SPStatus::Halt | SPStatus::Broke;
 
-    // ── Critical: Set Signal1 + Signal2 to indicate task completion ──
-    // Real N64 RSP microcode (F3DEX2, etc.) sets BOTH SIG1 and SIG2 before
-    // executing BREAK.  The N64 OS exception handler checks
-    // SP_STATUS & (SIG1|SIG2) = 0x0300:
-    //   - If set: dispatches via E4 (OS_EVENT_SP, has valid queue in OoT)
-    //   - If clear: dispatches via E11 (never set up in OoT → message lost)
-    // Without BOTH signals, the SP_DONE message never reaches the scheduler,
-    // and the graph thread stalls because curRSPTask is never cleared.
-    *m_sp_status |= SPStatus::Signal1 | SPStatus::Signal2;
+    // ── Signal management matching real N64 RSP microcode behavior ──
+    // All RSP microcode sets SIG1 before BREAK (task-done indicator).
+    *m_sp_status |= SPStatus::Signal1;
+
+    // SIG2 distinguishes task type for the N64 OS interrupt dispatcher:
+    //   SIG2 SET   → GFX task completion   (dispatched to video event queue)
+    //   SIG2 CLEAR → Audio task completion  (dispatched to audio event queue)
+    // GFX microcode (F3DEX2, etc.) sets SIG2 before BREAK; Audio microcode
+    // does NOT.  If we force SIG2 for audio tasks, audio completions are
+    // misrouted to the video queue, causing the audio thread to deadlock
+    // during scene transitions (e.g., OoT cutscene loop).
+    if (m_dmem) {
+        const uint32_t taskType = *u32(m_dmem, TaskOffset::Type);
+        if (taskType == 1) {  // Video/GFX task
+            *m_sp_status |= SPStatus::Signal2;
+        }
+    }
 
     if ((*m_sp_status & SPStatus::IntrBreak) != 0)
     {

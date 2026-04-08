@@ -1129,41 +1129,6 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     glDisable(GL_SCISSOR_TEST);
 
     glDrawArrays(GL_TRIANGLES, 0, 3);
-
-    // ── Display diagnostic ──────────────────────────────────────
-    {
-        GLenum glErr = glGetError();
-        GLubyte centerPx[4] = {0};
-        int cx = vpX + static_cast<int>(vpW / 2);
-        int cy = vpY + static_cast<int>(vpH / 2);
-        glReadPixels(cx, cy, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, centerPx);
-
-        GLubyte blPx[4] = {0};
-        glReadPixels(vpX + 2, vpY + 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, blPx);
-
-        static FILE* diagF = nullptr;
-        static uint32_t diagFrame = 0;
-        if (!diagF) diagF = fopen("display_diag.txt", "w");
-        if (diagF) {
-            bool usedPresentation = (displayFB->presentationTex != 0);
-            fprintf(diagF,
-                "B#%u addr=0x%06X fbo=%u colTex=%u presTex=%u usedPres=%d "
-                "fbW=%u fbH=%u scW=%u scH=%u vp=(%d,%d,%u,%u) "
-                "blitTex=%u prog=%u vao=%u err=%u "
-                "center=(%u,%u,%u,%u) bl=(%u,%u,%u,%u)\n",
-                diagFrame, displayFB->desc.address, displayFB->fbo,
-                displayFB->colorTex, displayFB->presentationTex,
-                usedPresentation ? 1 : 0,
-                displayFB->width, displayFB->height,
-                screenWidth, screenHeight,
-                vpX, vpY, vpW, vpH,
-                blitTex, m_blitProgram, m_blitVAO, static_cast<uint32_t>(glErr),
-                centerPx[0], centerPx[1], centerPx[2], centerPx[3],
-                blPx[0], blPx[1], blPx[2], blPx[3]);
-            fflush(diagF);
-        }
-        diagFrame++;
-    }
 }
 
 void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
