@@ -518,6 +518,10 @@ public:
     // JR/JALR behavior where every indirect jump triggers a timer check).
     void SetTestTimer();
 
+    // Flush compiled code for a physical RDRAM range.
+    // Called by SP DMA Write (DMEM/IMEM→RDRAM) and SMC detection paths.
+    void InvalidateRecompCode(uint32_t physAddr, uint32_t length);
+
     // Deferred RSP interrupt delivery: when true, RSP HLE code should NOT set
     // MI_INTR bits or call CheckInterrupts. Instead, accumulate bits in
     // m_deferred_mi_intr for the RspTimer to apply later.

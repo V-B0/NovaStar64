@@ -259,6 +259,16 @@ void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, 
     Log::debugf("CRecompiler: ClearRecompCode_Phys(0x%08X, len=%zu, reason=%d) activeFuncs=%zu",
                physicalAddress, length, static_cast<int>(reason), m_ActiveFunctions.size());
     
+    // Clear SMC bitmap for the affected physical pages
+    if (physicalAddress < 0x800000) {
+        auto* bitmap = m_MMU.GetSmcPageBitmap();
+        uint32_t pageStart = physicalAddress >> 12;
+        uint32_t pageEnd = std::min((physicalAddress + static_cast<uint32_t>(length) + 0xFFF) >> 12,
+                                     MipsMemoryVM::kRdramPages);
+        for (uint32_t p = pageStart; p < pageEnd; ++p)
+            bitmap[p] = 0;
+    }
+
     // Convert physical to virtual address
     // This is simplified - full implementation would handle TLB mapping
     uint32_t virtualAddress = physicalAddress | 0x80000000;  // KSEG0 mapping
@@ -445,6 +455,20 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
         // Store in function map (O(1) lookup by virtual address)
         Store(address, funcMem);
 
+        // Mark physical RDRAM pages covered by this function in the SMC bitmap
+        // so that SW/SD fast paths can detect writes to code regions.
+        {
+            uint32_t physStart = startAddr & 0x1FFFFFFF;
+            uint32_t physEnd   = endAddr   & 0x1FFFFFFF;
+            if (physEnd < 0x800000) { // within RDRAM
+                uint32_t pageStart = physStart >> 12;
+                uint32_t pageEnd   = physEnd   >> 12;
+                auto* bitmap = m_MMU.GetSmcPageBitmap();
+                for (uint32_t p = pageStart; p <= pageEnd; ++p)
+                    bitmap[p] = 1;
+            }
+        }
+
         // Track for cleanup
         m_ActiveFunctions.push_back(funcMem);
 
@@ -540,8 +564,20 @@ void CRecompiler::Execute_VirtualTable() {
         // ================================================================
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC > pc && !m_System.m_TestTimer)
+            if (newPC > pc && !m_System.m_TestTimer) {
+                // Even on the fast path, process pending system events
+                // (interrupts, resets) so they aren't delayed across many
+                // forward-only blocks.  Timer processing is still deferred
+                // to the slow path for performance.
+                if (systemEvents && systemEvents->DoSomething()) {
+                    systemEvents->ExecuteEvents();
+                    if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+                        m_ProgramCounter = m_System.m_JumpToLocation;
+                        m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+                    }
+                }
                 continue;
+            }
         }
 
         // ================================================================

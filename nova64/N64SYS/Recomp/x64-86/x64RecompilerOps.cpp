@@ -3685,6 +3685,16 @@ void CX64RecompilerOps::SW() {
     a.cmp(rcx, -1);
     a.je(slowPath);
 
+    // SMC check: if this page has compiled recompiler code, use slow path
+    // which will do the write + invalidate stale compiled code.
+    // physPage = (vAddr & 0x1FFFFFFF) >> 12
+    a.mov(r8d, eax);
+    a.and_(r8d, 0x1FFFFFFF);
+    a.shr(r8d, 12);
+    a.mov(rdx, reinterpret_cast<uint64_t>(m_Context.mmu.GetSmcPageBitmap()));
+    a.cmp(byte_ptr(rdx, r8), 0);
+    a.jne(slowPath);
+
     // Load value from GPR[rt] (low 32 bits)
     a.mov(edx, dword_ptr(rbx, JIT_GPR(rt)));
 

@@ -12,10 +12,43 @@
 #include "hle.hpp"
 #include "mem.hpp"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 
 namespace Nova64::RSP::HLE {
+
+// ──────────────────────────────────────────────
+// Endian-aware buffer access helpers (mupen64plus compatible)
+// alist_buffer now stores raw DRAM byte order (memcpy'd).
+// S=1 on LE: pair-swap 16-bit indices within 32-bit words.
+// S8=3 on LE: byte-swap within 32-bit words.
+// S16=2 on LE: pair-swap byte addresses within 32-bit words.
+// ──────────────────────────────────────────────
+#ifdef __BIG_ENDIAN__
+static constexpr unsigned S   = 0;
+static constexpr unsigned S8  = 0;
+static constexpr unsigned S16 = 0;
+#else
+static constexpr unsigned S   = 1;   // 16-bit element swap within 32-bit word
+static constexpr unsigned S8  = 3;   // byte swap within 32-bit word
+static constexpr unsigned S16 = 2;   // byte-addr swap for 16-bit within 32-bit
+#endif
+
+// Access a byte in alist_buffer by DMEM byte address (matching mupen64plus alist_u8)
+static inline uint8_t* alist_u8(CHle* hle, uint16_t dmem) {
+    return reinterpret_cast<uint8_t*>(hle->alist_buffer() + ((dmem ^ S8) & 0xFFF));
+}
+
+// Access a 16-bit sample in alist_buffer by DMEM byte address (matching mupen64plus alist_s16)
+static inline int16_t* alist_s16(CHle* hle, uint16_t dmem) {
+    return reinterpret_cast<int16_t*>(hle->alist_buffer() + ((dmem ^ S16) & 0xFFF));
+}
+
+// Access a 16-bit sample in alist_buffer by element index (matching mupen64plus sample())
+static inline int16_t* sample(CHle* hle, unsigned pos) {
+    return reinterpret_cast<int16_t*>(hle->alist_buffer()) + ((pos ^ S) & 0xFFF);
+}
 
 // ──────────────────────────────────────────────
 // Audio command list dispatcher
@@ -80,10 +113,9 @@ void alist_clear(CHle* hle, uint16_t dmem, uint16_t count)
 {
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
-    // Clear with wrapping around 4KB DMEM boundary (matching mupen64plus)
+    // Clear with byte-swap access matching mupen64plus
     while (count != 0) {
-        buf[dmem & 0xFFF] = 0;
-        ++dmem;
+        *alist_u8(hle, dmem++) = 0;
         --count;
     }
 }
@@ -94,12 +126,9 @@ void alist_load(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count)
     dmem    &= ~3;
     address &= ~7u;
     count    = static_cast<uint16_t>(align(count, 8));
-    uint16_t off = dmem & 0xFFF;
-    uint16_t safe = std::min<uint16_t>(count, 0x1000 - off);
-    // Load as uint16_t so DMEM contains host-native int16_t values.
-    // All audio processing reads int16_t via reinterpret_cast, so this
-    // must produce correct host-native values.
-    dram_load_u16(hle, reinterpret_cast<uint16_t*>(hle->alist_buffer() + off), address, safe / 2);
+    // Raw memcpy from DRAM to alist_buffer (mupen64plus style).
+    // Buffer now holds DRAM byte order; DSP functions use ^S/^S8/^S16 for access.
+    std::memcpy(hle->alist_buffer() + dmem, hle->dram() + (address & 0x7FFFFF), count);
 }
 
 void alist_save(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count)
@@ -110,35 +139,29 @@ void alist_save(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count)
     dmem    &= ~3;
     address &= ~7u;
     count    = static_cast<uint16_t>(align(count, 8));
-    uint16_t off = dmem & 0xFFF;
-    uint16_t safe = std::min<uint16_t>(count, 0x1000 - off);
-
-    // Store as uint16_t to write host-native int16_t back to RDRAM's
-    // XOR byte layout, ensuring correct round-trip with alist_load.
-    dram_store_u16(hle, reinterpret_cast<const uint16_t*>(buf + off), address, safe / 2);
+    // Raw memcpy from alist_buffer to DRAM (mupen64plus style).
+    std::memcpy(hle->dram() + (address & 0x7FFFFF), buf + dmem, count);
 }
 
 void alist_move(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count)
 {
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
-    uint16_t ooff = dmemo & 0xFFF;
-    uint16_t ioff = dmemi & 0xFFF;
-    uint16_t safe = std::min<uint16_t>(count, std::min<uint16_t>(0x1000 - ooff, 0x1000 - ioff));
-    std::memmove(buf + ooff, buf + ioff, safe);
+    // Forward byte-by-byte copy with ^S8, matching mupen64plus alist_move
+    while (count != 0) {
+        *alist_u8(hle, dmemo++) = *alist_u8(hle, dmemi++);
+        --count;
+    }
 }
 
 void alist_copy_every_other_sample(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count)
 {
-    uint8_t* buf = hle->alist_buffer();
-    if (buf == nullptr) return;
-
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
-
-    for (uint16_t i = 0; i < count; i++)
-    {
-        dst[i] = src[i * 2];
+    // Matching mupen64plus: copy every other 16-bit sample using alist_s16
+    while (count != 0) {
+        *alist_s16(hle, dmemo) = *alist_s16(hle, dmemi);
+        dmemo += 2;
+        dmemi += 4;
+        --count;
     }
 }
 
@@ -177,22 +200,30 @@ void alist_interleave(CHle* hle, uint16_t dmemo, uint16_t left, uint16_t right, 
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    uint16_t ooff = dmemo & 0xFFF;
-    uint16_t loff = left & 0xFFF;
-    uint16_t roff = right & 0xFFF;
-    // Clamp sample count so reads and interleaved writes stay within DMEM
-    uint16_t maxSamples = std::min<uint16_t>((0x1000 - ooff) / 4,
-                          std::min<uint16_t>((0x1000 - loff) / 2, (0x1000 - roff) / 2));
-    uint16_t samples = std::min<uint16_t>(count / 2, maxSamples);
+    uint16_t* dst  = reinterpret_cast<uint16_t*>(buf + dmemo);
+    const uint16_t* srcL = reinterpret_cast<const uint16_t*>(buf + left);
+    const uint16_t* srcR = reinterpret_cast<const uint16_t*>(buf + right);
 
-    const int16_t* srcL = reinterpret_cast<const int16_t*>(buf + loff);
-    const int16_t* srcR = reinterpret_cast<const int16_t*>(buf + roff);
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + ooff);
+    count >>= 2;
 
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        dst[i * 2 + 0] = srcL[i];
-        dst[i * 2 + 1] = srcR[i];
+    while (count != 0) {
+        uint16_t l1 = *(srcL++);
+        uint16_t l2 = *(srcL++);
+        uint16_t r1 = *(srcR++);
+        uint16_t r2 = *(srcR++);
+
+#ifdef __BIG_ENDIAN__
+        *(dst++) = l1;
+        *(dst++) = r1;
+        *(dst++) = l2;
+        *(dst++) = r2;
+#else
+        *(dst++) = r2;
+        *(dst++) = l2;
+        *(dst++) = r1;
+        *(dst++) = l1;
+#endif
+        --count;
     }
 }
 
@@ -430,22 +461,20 @@ void alist_envmix_nead(CHle* hle, bool swap_wet_LR,
     {
         for (size_t i = 0; i < 8; ++i)
         {
-            // Dry: sample * unsigned env, then XOR result for polarity
             int16_t l  = static_cast<int16_t>(
-                (static_cast<int32_t>(in[i]) * static_cast<uint32_t>(env_values[0])) >> 16) ^ xors[0];
+                (static_cast<int32_t>(in[i^S]) * static_cast<uint32_t>(env_values[0])) >> 16) ^ xors[0];
             int16_t r  = static_cast<int16_t>(
-                (static_cast<int32_t>(in[i]) * static_cast<uint32_t>(env_values[1])) >> 16) ^ xors[1];
+                (static_cast<int32_t>(in[i^S]) * static_cast<uint32_t>(env_values[1])) >> 16) ^ xors[1];
 
-            // Wet: uses dry L/R results as input, not raw sample
             int16_t l2 = static_cast<int16_t>(
                 (static_cast<int32_t>(l) * static_cast<uint32_t>(env_values[2])) >> 16) ^ xors[2];
             int16_t r2 = static_cast<int16_t>(
                 (static_cast<int32_t>(r) * static_cast<uint32_t>(env_values[2])) >> 16) ^ xors[3];
 
-            dl[i] = clamp_s16(dl[i] + l);
-            dr[i] = clamp_s16(dr[i] + r);
-            wl[i] = clamp_s16(wl[i] + l2);
-            wr[i] = clamp_s16(wr[i] + r2);
+            dl[i^S] = clamp_s16(dl[i^S] + l);
+            dr[i^S] = clamp_s16(dr[i^S] + r);
+            wl[i^S] = clamp_s16(wl[i^S] + l2);
+            wr[i^S] = clamp_s16(wr[i^S] + r2);
         }
 
         // Envelope steps once per 8-sample group
@@ -460,6 +489,7 @@ void alist_envmix_nead(CHle* hle, bool swap_wet_LR,
         in += 8;
         count -= 8;
     }
+
 }
 
 // ──────────────────────────────────────────────
@@ -471,17 +501,15 @@ void alist_mix(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    uint16_t ooff = dmemo & 0xFFF;
-    uint16_t ioff = dmemi & 0xFFF;
-    uint16_t maxBytes = std::min<uint16_t>(0x1000 - ooff, 0x1000 - ioff);
-    uint16_t samples = std::min<uint16_t>(count / 2, maxBytes / 2);
+    int16_t* dst = reinterpret_cast<int16_t*>(buf + dmemo);
+    const int16_t* src = reinterpret_cast<const int16_t*>(buf + dmemi);
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + ioff);
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + ooff);
-
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        dst[i] = clamp_s16(dst[i] + ((static_cast<int32_t>(src[i]) * gain) >> 15));
+    count >>= 1;
+    while (count != 0) {
+        *dst = clamp_s16(*dst + ((static_cast<int32_t>(*src) * gain) >> 15));
+        ++dst;
+        ++src;
+        --count;
     }
 }
 
@@ -490,12 +518,12 @@ void alist_multQ44(CHle* hle, uint16_t dmem, uint16_t count, int8_t gain)
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    uint16_t off = dmem & 0xFFF;
-    uint16_t samples = std::min<uint16_t>(count / 2, (0x1000 - off) / 2);
-    int16_t* data = reinterpret_cast<int16_t*>(buf + off);
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        data[i] = clamp_s16((static_cast<int32_t>(data[i]) * gain) >> 4);
+    int16_t* dst = reinterpret_cast<int16_t*>(buf + dmem);
+    count >>= 1;
+    while (count != 0) {
+        *dst = clamp_s16(*dst * gain >> 4);
+        ++dst;
+        --count;
     }
 }
 
@@ -504,12 +532,15 @@ void alist_add(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count)
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
+    int16_t* dst = reinterpret_cast<int16_t*>(buf + dmemo);
+    const int16_t* src = reinterpret_cast<const int16_t*>(buf + dmemi);
 
-    for (uint16_t i = 0; i < count / 2; i++)
-    {
-        dst[i] = clamp_s16(static_cast<int32_t>(dst[i]) + src[i]);
+    count >>= 1;
+    while (count != 0) {
+        *dst = clamp_s16(*dst + *src);
+        ++dst;
+        ++src;
+        --count;
     }
 }
 
@@ -534,20 +565,14 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
     else
         dram_load_u16(hle, reinterpret_cast<uint16_t*>(last_frame), last_frame_address, 16);
 
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
-
-    // Write initial 16 history samples to output (matches N64 RSP microcode)
-    std::memcpy(dst, last_frame, 16 * sizeof(int16_t));
-    dst += 16;
-
-    const uint8_t* src = buf + (dmemi & 0xFFF);
-    unsigned pos = 0;
+    // Write initial 16 history samples to output using alist_s16 (^S16)
+    for (size_t i = 0; i < 16; ++i, dmemo += 2)
+        *alist_s16(hle, dmemo) = last_frame[i];
 
     for (uint16_t frame = 0; frame < count; frame++)
     {
-        // Read header byte (^1 for byte swap within host-native halfword)
-        uint8_t code = src[pos ^ 1];
-        pos++;
+        // Read header byte using alist_u8 (^S8)
+        uint8_t code = *alist_u8(hle, dmemi++);
 
         unsigned char scaleVal = (code >> 4) & 0x0F;
         const int16_t* cb = codebook + ((code & 0x0F) << 4);
@@ -556,41 +581,41 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
 
         if (!two_bit_per_sample)
         {
-            // 4-bit mode: 8 bytes -> 16 samples (matches mupen64plus adpcm_predict_frame_4bits)
+            // 4-bit mode: 8 bytes -> 16 samples
             unsigned rshift = (scaleVal < 12) ? (12 - scaleVal) : 0;
             for (unsigned i = 0; i < 8; ++i)
             {
-                uint8_t byte = src[(pos + i) ^ 1];
+                uint8_t byte = *alist_u8(hle, dmemi++);
                 samples[i * 2 + 0] = adpcm_predict_sample(byte, 0xF0, 8, rshift);
                 samples[i * 2 + 1] = adpcm_predict_sample(byte, 0x0F, 12, rshift);
             }
-            pos += 8;
         }
         else
         {
-            // 2-bit mode: 4 bytes -> 16 samples (matches mupen64plus adpcm_predict_frame_2bits)
+            // 2-bit mode: 4 bytes -> 16 samples
             unsigned rshift = (scaleVal < 14) ? (14 - scaleVal) : 0;
             for (unsigned i = 0; i < 4; ++i)
             {
-                uint8_t byte = src[(pos + i) ^ 1];
+                uint8_t byte = *alist_u8(hle, dmemi++);
                 samples[i * 4 + 0] = adpcm_predict_sample(byte, 0xC0, 8, rshift);
                 samples[i * 4 + 1] = adpcm_predict_sample(byte, 0x30, 10, rshift);
                 samples[i * 4 + 2] = adpcm_predict_sample(byte, 0x0C, 12, rshift);
                 samples[i * 4 + 3] = adpcm_predict_sample(byte, 0x03, 14, rshift);
             }
-            pos += 4;
         }
 
-        // Apply predictor filter: two half-blocks of 8 samples (matching mupen64plus)
+        // Apply predictor filter
         adpcm_compute_residuals(last_frame    , samples    , cb, last_frame + 14, 8);
         adpcm_compute_residuals(last_frame + 8, samples + 8, cb, last_frame + 6, 8);
 
-        // Write decoded frame to output
-        std::memcpy(dst + frame * 16, last_frame, 16 * sizeof(int16_t));
+        // Write decoded frame to output using alist_s16 (^S16)
+        for (size_t i = 0; i < 16; ++i, dmemo += 2)
+            *alist_s16(hle, dmemo) = last_frame[i];
     }
 
     // Save last frame state
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(last_frame), last_frame_address, 16);
+
 }
 
 // ──────────────────────────────────────────────
@@ -604,44 +629,40 @@ void alist_resample(CHle* hle, bool init, bool flag2,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    // Access DMEM as int16_t array with wrapping (4096 bytes = 2048 samples)
-    int16_t* const samples = reinterpret_cast<int16_t*>(buf);
-    auto smpl = [samples](uint16_t pos) -> int16_t& {
-        return samples[pos & 0x7FF];
-    };
-
     uint32_t pitch_accu;
     uint16_t ipos = dmemi >> 1;
     uint16_t opos = dmemo >> 1;
     count >>= 1;
     ipos -= 4;
 
+    if (flag2)
+        ; // TODO: check which ABI supports it
+
     if (init)
     {
-        smpl(ipos) = 0; smpl(ipos + 1) = 0; smpl(ipos + 2) = 0; smpl(ipos + 3) = 0;
+        for (unsigned k = 0; k < 4; ++k)
+            *sample(hle, ipos + k) = 0;
         pitch_accu = 0;
     }
     else
     {
-        uint16_t sb[5];
-        dram_load_u16(hle, sb, address, 5);
-        smpl(ipos)     = static_cast<int16_t>(sb[0]);
-        smpl(ipos + 1) = static_cast<int16_t>(sb[1]);
-        smpl(ipos + 2) = static_cast<int16_t>(sb[2]);
-        smpl(ipos + 3) = static_cast<int16_t>(sb[3]);
-        pitch_accu = sb[4];
+        // Load state from DRAM (matching mupen64plus alist_resample_load)
+        *sample(hle, ipos + 0) = *dram_u16(hle, address + 0);
+        *sample(hle, ipos + 1) = *dram_u16(hle, address + 2);
+        *sample(hle, ipos + 2) = *dram_u16(hle, address + 4);
+        *sample(hle, ipos + 3) = *dram_u16(hle, address + 6);
+        pitch_accu = *dram_u16(hle, address + 8);
     }
 
     while (count != 0)
     {
         const int16_t* lut = RESAMPLE_LUT + ((pitch_accu & 0xfc00) >> 8);
 
-        int32_t s = static_cast<int32_t>(smpl(ipos))     * lut[0]
-                  + static_cast<int32_t>(smpl(ipos + 1)) * lut[1]
-                  + static_cast<int32_t>(smpl(ipos + 2)) * lut[2]
-                  + static_cast<int32_t>(smpl(ipos + 3)) * lut[3];
-
-        smpl(opos++) = clamp_s16(s >> 15);
+        *sample(hle, opos++) = clamp_s16((
+            (*sample(hle, ipos    ) * lut[0]) +
+            (*sample(hle, ipos + 1) * lut[1]) +
+            (*sample(hle, ipos + 2) * lut[2]) +
+            (*sample(hle, ipos + 3) * lut[3]) ) >> 15);
 
         pitch_accu += pitch;
         ipos += static_cast<uint16_t>(pitch_accu >> 16);
@@ -649,14 +670,12 @@ void alist_resample(CHle* hle, bool init, bool flag2,
         --count;
     }
 
-    // Save state: 4 samples at final ipos + pitch_accu
-    uint16_t sb[5];
-    sb[0] = static_cast<uint16_t>(smpl(ipos));
-    sb[1] = static_cast<uint16_t>(smpl(ipos + 1));
-    sb[2] = static_cast<uint16_t>(smpl(ipos + 2));
-    sb[3] = static_cast<uint16_t>(smpl(ipos + 3));
-    sb[4] = static_cast<uint16_t>(pitch_accu);
-    dram_store_u16(hle, sb, address, 5);
+    // Save state to DRAM (matching mupen64plus alist_resample_save)
+    *dram_u16(hle, address + 0) = *sample(hle, ipos + 0);
+    *dram_u16(hle, address + 2) = *sample(hle, ipos + 1);
+    *dram_u16(hle, address + 4) = *sample(hle, ipos + 2);
+    *dram_u16(hle, address + 6) = *sample(hle, ipos + 3);
+    *dram_u16(hle, address + 8) = static_cast<int16_t>(pitch_accu);
 
     (void)flag2;
 }
@@ -672,27 +691,49 @@ void alist_polef(CHle* hle, bool init,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    int16_t state[4]{};
-    if (!init)
-    {
-        dram_load_u16(hle, reinterpret_cast<uint16_t*>(state), address, 4);
+    int16_t* dst = reinterpret_cast<int16_t*>(buf + dmemo);
+
+    const int16_t* const h1 = table;
+    int16_t* const h2 = table + 8;
+
+    unsigned i;
+    int16_t l1, l2;
+    int16_t h2_before[8];
+    count = align(count, 16);
+
+    if (init) {
+        l1 = 0;
+        l2 = 0;
+    } else {
+        l1 = *dram_u16(hle, address + 4);
+        l2 = *dram_u16(hle, address + 6);
     }
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
-
-    for (uint16_t i = 0; i < count / 2; i++)
-    {
-        int32_t acc = static_cast<int32_t>(src[i]) * gain;
-        acc += static_cast<int32_t>(state[0]) * table[0];
-        acc += static_cast<int32_t>(state[1]) * table[1];
-        acc >>= 14;
-        dst[i] = clamp_s16(acc);
-        state[1] = state[0];
-        state[0] = dst[i];
+    for (i = 0; i < 8; ++i) {
+        h2_before[i] = h2[i];
+        h2[i] = static_cast<int16_t>((static_cast<int32_t>(h2[i]) * gain) >> 14);
     }
 
-    dram_store_u16(hle, reinterpret_cast<const uint16_t*>(state), address, 4);
+    do {
+        int16_t frame[8];
+
+        for (i = 0; i < 8; ++i, dmemi += 2)
+            frame[i] = *alist_s16(hle, dmemi);
+
+        for (i = 0; i < 8; ++i) {
+            int32_t accu = frame[i] * gain;
+            accu += h1[i] * l1 + h2_before[i] * l2 + rdot(i, h2, frame);
+            dst[i ^ S] = clamp_s16(accu >> 14);
+        }
+
+        l1 = dst[6 ^ S];
+        l2 = dst[7 ^ S];
+
+        dst += 8;
+        count -= 16;
+    } while (count != 0);
+
+    dram_store_u32(hle, reinterpret_cast<uint32_t*>(dst - 4), address, 2);
 }
 
 // ──────────────────────────────────────────────
@@ -706,29 +747,47 @@ void alist_iirf(CHle* hle, bool init,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    int16_t state[4]{};
-    if (!init)
-    {
-        dram_load_u16(hle, reinterpret_cast<uint16_t*>(state), address, 4);
+    int16_t* dst = reinterpret_cast<int16_t*>(buf + dmemo);
+    int32_t prev;
+    int16_t frame[8];
+    int16_t ibuf[4];
+    uint16_t index = 7;
+    count = align(count, 16);
+
+    if (init) {
+        for (int i = 0; i < 8; ++i)
+            frame[i] = 0;
+        ibuf[1] = 0;
+        ibuf[2] = 0;
+    } else {
+        frame[6] = *dram_u16(hle, address + 4);
+        frame[7] = *dram_u16(hle, address + 6);
+        ibuf[1] = static_cast<int16_t>(*dram_u16(hle, address + 8));
+        ibuf[2] = static_cast<int16_t>(*dram_u16(hle, address + 10));
     }
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
+    prev = vmulf(table[9], frame[6]) * 2;
+    do {
+        for (int i = 0; i < 8; ++i) {
+            int32_t accu;
+            ibuf[index & 3] = *alist_s16(hle, dmemi);
+            accu = prev + vmulf(table[0], ibuf[index & 3])
+                        + vmulf(table[1], ibuf[(index - 1) & 3])
+                        + vmulf(table[0], ibuf[(index - 2) & 3]);
+            accu += vmulf(table[8], frame[index]) * 2;
+            prev = vmulf(table[9], frame[index]) * 2;
+            dst[i ^ S] = frame[i] = static_cast<int16_t>(accu);
 
-    for (uint16_t i = 0; i < count / 2; i++)
-    {
-        int32_t acc = static_cast<int32_t>(src[i]) * table[0];
-        acc += static_cast<int32_t>(state[0]) * table[1];
-        acc += static_cast<int32_t>(state[1]) * table[2];
-        acc += static_cast<int32_t>(state[2]) * table[3];
-        acc >>= 14;
-        state[2] = state[1];
-        state[1] = state[0];
-        state[0] = src[i];
-        dst[i] = clamp_s16(acc);
-    }
+            index = (index + 1) & 7;
+            dmemi += 2;
+        }
+        dst += 8;
+        count -= 0x10;
+    } while (count > 0);
 
-    dram_store_u16(hle, reinterpret_cast<const uint16_t*>(state), address, 4);
+    dram_store_u16(hle, reinterpret_cast<uint16_t*>(&frame[6]), address + 4, 2);
+    dram_store_u16(hle, reinterpret_cast<uint16_t*>(&ibuf[(index - 2) & 3]), address + 8, 1);
+    dram_store_u16(hle, reinterpret_cast<uint16_t*>(&ibuf[(index - 1) & 3]), address + 10, 1);
 }
 
 // ──────────────────────────────────────────────
@@ -739,17 +798,16 @@ void alist_resample_zoh(CHle* hle,
     uint16_t dmemo, uint16_t dmemi, uint16_t count,
     uint32_t pitch, uint32_t pitch_accu)
 {
-    uint8_t* buf = hle->alist_buffer();
-    if (buf == nullptr) return;
+    uint16_t ipos = dmemi >> 1;
+    uint16_t opos = dmemo >> 1;
+    count >>= 1;
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dst = reinterpret_cast<int16_t*>(buf + (dmemo & 0xFFF));
-
-    for (uint16_t i = 0; i < count / 2; i++)
-    {
-        uint32_t idx = pitch_accu >> 16;
-        dst[i] = src[idx];
+    while (count != 0) {
+        *sample(hle, opos++) = *sample(hle, ipos);
         pitch_accu += pitch;
+        ipos += static_cast<uint16_t>(pitch_accu >> 16);
+        pitch_accu &= 0xffff;
+        --count;
     }
 }
 
@@ -765,52 +823,118 @@ void alist_filter(CHle* hle,
     if (buf == nullptr || hle->dram() == nullptr) return;
     if (lut_address == nullptr) return;
 
-    // Load and average the two coefficient LUTs (8 int16_t each)
-    int16_t lutt6[8], lutt5[8];
-    dram_load_u16(hle, reinterpret_cast<uint16_t*>(lutt6), lut_address[0], 8);
-    dram_load_u16(hle, reinterpret_cast<uint16_t*>(lutt5), lut_address[1], 8);
-
-    for (int x = 0; x < 8; ++x) {
-        int32_t v = (static_cast<int32_t>(lutt5[x]) + static_cast<int32_t>(lutt6[x])) >> 1;
-        lutt5[x] = lutt6[x] = static_cast<int16_t>(v);
-    }
-
-    // Store averaged coefficients back to DRAM
-    dram_store_u16(hle, reinterpret_cast<uint16_t*>(lutt6), lut_address[0], 8);
-    dram_store_u16(hle, reinterpret_cast<uint16_t*>(lutt5), lut_address[1], 8);
-
-    // Load 8-sample history from DRAM
-    int16_t hist[8];
-    dram_load_u16(hle, reinterpret_cast<uint16_t*>(hist), address, 8);
-
-    int16_t* in1 = hist;
-    int16_t* in2 = reinterpret_cast<int16_t*>(buf + (dmem & 0xFFF));
+    int x;
     int16_t outbuff[0x3c0];
     int16_t* outp = outbuff;
 
-    for (int x = 0; x < count; x += 16) {
-        // 8-tap FIR filter per block of 8 samples.
-        // out[j] = sum_{k=0}^{7} combined[j+1+k] * coeff[7-k]
-        // where combined[0..7] = in1 (history), combined[8..15] = in2 (current).
-        for (int j = 0; j < 8; ++j) {
-            int32_t acc = 0;
-            for (int k = 0; k < 8; ++k) {
-                int idx = j + 1 + k;
-                int16_t s = (idx < 8) ? in1[idx] : in2[idx - 8];
-                acc += static_cast<int32_t>(s) * static_cast<int32_t>(lutt6[7 - k]);
-            }
-            outp[j] = static_cast<int16_t>((acc + 0x4000) >> 15);
-        }
+    // Direct DRAM pointers for LUT coefficients (matching mupen64plus)
+    int16_t* const lutt6 = reinterpret_cast<int16_t*>(hle->dram() + lut_address[0]);
+    int16_t* const lutt5 = reinterpret_cast<int16_t*>(hle->dram() + lut_address[1]);
+
+    // History from DRAM (direct pointer)
+    int16_t* in1 = reinterpret_cast<int16_t*>(hle->dram() + address);
+    // Current data from alist_buffer
+    int16_t* in2 = reinterpret_cast<int16_t*>(buf + dmem);
+
+    // Average the two coefficient LUTs
+    for (x = 0; x < 8; ++x) {
+        int32_t v = (lutt5[x] + lutt6[x]) >> 1;
+        lutt5[x] = lutt6[x] = static_cast<int16_t>(v);
+    }
+
+    // FIR filter with hardcoded indices matching RSP vector unit element ordering
+    for (x = 0; x < count; x += 16) {
+        int32_t v[8];
+
+        v[1] =  in1[0] * lutt6[6];
+        v[1] += in1[3] * lutt6[7];
+        v[1] += in1[2] * lutt6[4];
+        v[1] += in1[5] * lutt6[5];
+        v[1] += in1[4] * lutt6[2];
+        v[1] += in1[7] * lutt6[3];
+        v[1] += in1[6] * lutt6[0];
+        v[1] += in2[1] * lutt6[1];
+
+        v[0] =  in1[3] * lutt6[6];
+        v[0] += in1[2] * lutt6[7];
+        v[0] += in1[5] * lutt6[4];
+        v[0] += in1[4] * lutt6[5];
+        v[0] += in1[7] * lutt6[2];
+        v[0] += in1[6] * lutt6[3];
+        v[0] += in2[1] * lutt6[0];
+        v[0] += in2[0] * lutt6[1];
+
+        v[3] =  in1[2] * lutt6[6];
+        v[3] += in1[5] * lutt6[7];
+        v[3] += in1[4] * lutt6[4];
+        v[3] += in1[7] * lutt6[5];
+        v[3] += in1[6] * lutt6[2];
+        v[3] += in2[1] * lutt6[3];
+        v[3] += in2[0] * lutt6[0];
+        v[3] += in2[3] * lutt6[1];
+
+        v[2] =  in1[5] * lutt6[6];
+        v[2] += in1[4] * lutt6[7];
+        v[2] += in1[7] * lutt6[4];
+        v[2] += in1[6] * lutt6[5];
+        v[2] += in2[1] * lutt6[2];
+        v[2] += in2[0] * lutt6[3];
+        v[2] += in2[3] * lutt6[0];
+        v[2] += in2[2] * lutt6[1];
+
+        v[5] =  in1[4] * lutt6[6];
+        v[5] += in1[7] * lutt6[7];
+        v[5] += in1[6] * lutt6[4];
+        v[5] += in2[1] * lutt6[5];
+        v[5] += in2[0] * lutt6[2];
+        v[5] += in2[3] * lutt6[3];
+        v[5] += in2[2] * lutt6[0];
+        v[5] += in2[5] * lutt6[1];
+
+        v[4] =  in1[7] * lutt6[6];
+        v[4] += in1[6] * lutt6[7];
+        v[4] += in2[1] * lutt6[4];
+        v[4] += in2[0] * lutt6[5];
+        v[4] += in2[3] * lutt6[2];
+        v[4] += in2[2] * lutt6[3];
+        v[4] += in2[5] * lutt6[0];
+        v[4] += in2[4] * lutt6[1];
+
+        v[7] =  in1[6] * lutt6[6];
+        v[7] += in2[1] * lutt6[7];
+        v[7] += in2[0] * lutt6[4];
+        v[7] += in2[3] * lutt6[5];
+        v[7] += in2[2] * lutt6[2];
+        v[7] += in2[5] * lutt6[3];
+        v[7] += in2[4] * lutt6[0];
+        v[7] += in2[7] * lutt6[1];
+
+        v[6] =  in2[1] * lutt6[6];
+        v[6] += in2[0] * lutt6[7];
+        v[6] += in2[3] * lutt6[4];
+        v[6] += in2[2] * lutt6[5];
+        v[6] += in2[5] * lutt6[2];
+        v[6] += in2[4] * lutt6[3];
+        v[6] += in2[7] * lutt6[0];
+        v[6] += in2[6] * lutt6[1];
+
+        outp[1] = static_cast<int16_t>((v[1] + 0x4000) >> 15);
+        outp[0] = static_cast<int16_t>((v[0] + 0x4000) >> 15);
+        outp[3] = static_cast<int16_t>((v[3] + 0x4000) >> 15);
+        outp[2] = static_cast<int16_t>((v[2] + 0x4000) >> 15);
+        outp[5] = static_cast<int16_t>((v[5] + 0x4000) >> 15);
+        outp[4] = static_cast<int16_t>((v[4] + 0x4000) >> 15);
+        outp[7] = static_cast<int16_t>((v[7] + 0x4000) >> 15);
+        outp[6] = static_cast<int16_t>((v[6] + 0x4000) >> 15);
         in1 = in2;
         in2 += 8;
         outp += 8;
     }
 
     // Save last input block as new history to DRAM
-    dram_store_u16(hle, reinterpret_cast<uint16_t*>(in2 - 8), address, 8);
-
-    // Copy filtered output back to DMEM
-    std::memcpy(buf + (dmem & 0xFFF), outbuff, count);
+    std::memcpy(hle->dram() + address, in2 - 8, 16);
+    // Copy filtered output back to alist_buffer
+    std::memcpy(buf + dmem, outbuff, count);
 }
 
 // ──────────────────────────────────────────────

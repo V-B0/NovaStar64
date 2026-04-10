@@ -8,6 +8,7 @@
 #include "Vmem.hpp"
 #include "Register.hpp"
 #include <thread>
+#include <cstdio>
 
 namespace N64System {
 

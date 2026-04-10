@@ -525,6 +525,19 @@ private:
     size_t* m_MemoryReadMap = nullptr;
     size_t* m_MemoryWriteMap = nullptr;
 
+public:
+    // SMC (self-modifying code) page bitmap.
+    // One byte per 4KB physical RDRAM page (2048 entries for 8MB).
+    // Non-zero means the page has compiled recompiler code.
+    // Checked inline by the SW/SD JIT fast paths; if set, falls through
+    // to slow path which does the write + code invalidation.
+    static constexpr uint32_t kRdramPages = 0x800000 / 0x1000; // 2048
+    uint8_t m_SmcPageBitmap[kRdramPages] = {};
+
+    uint8_t* GetSmcPageBitmap() { return m_SmcPageBitmap; }
+
+private:
+
     // Register modification value for exception handling
     static uint32_t RegModValue;
 };

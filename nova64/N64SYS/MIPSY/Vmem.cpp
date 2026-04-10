@@ -635,6 +635,15 @@ bool MipsMemoryVM::SB_Memory(uint64_t vAddr, uint32_t value)
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
         *(memoryPtr + (vAddr32 ^ 3)) = static_cast<uint8_t>(value);
+        // SMC detection
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < 0x800000) {
+            uint32_t page = pAddr >> 12;
+            if (m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
+        }
         return true;
     }
     return SB_VAddr32(vAddr32, value);
@@ -667,6 +676,15 @@ bool MipsMemoryVM::SH_Memory(uint64_t vAddr, uint32_t value)
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
         *reinterpret_cast<uint16_t*>(memoryPtr + (vAddr32 ^ 2)) = static_cast<uint16_t>(value);
+        // SMC detection
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < 0x800000) {
+            uint32_t page = pAddr >> 12;
+            if (m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
+        }
         return true;
     }
     return SH_VAddr32(vAddr32, value);
@@ -699,6 +717,15 @@ bool MipsMemoryVM::SW_Memory(uint64_t vAddr, uint32_t value)
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32) = value;
+        // SMC detection: if this page has compiled code, invalidate it
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < 0x800000) {
+            uint32_t page = pAddr >> 12;
+            if (m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
+        }
         return true;
     }
     return SW_VAddr32(vAddr32, value);
@@ -732,6 +759,20 @@ bool MipsMemoryVM::SD_Memory(uint64_t vAddr, uint64_t value)
     {
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 0) = *((uint32_t*)(&value) + 1);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 4) = *((uint32_t*)(&value) + 0);
+        // SMC detection for SD (8-byte store may span two pages)
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < 0x800000) {
+            uint32_t page = pAddr >> 12;
+            if (m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
+            uint32_t page2 = (pAddr + 4) >> 12;
+            if (page2 != page && page2 < kRdramPages && m_SmcPageBitmap[page2]) {
+                m_SmcPageBitmap[page2] = 0;
+                m_System.NotifyDMAToRDRAM(page2 << 12, 0x1000);
+            }
+        }
         return true;
     }
     return SD_VAddr32(vAddr32, value);
@@ -1000,6 +1041,11 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
         if (pAddr < RdramSize())
         {
             *(m_RDRAM + (pAddr ^ 3)) = static_cast<uint8_t>(value);
+            uint32_t page = pAddr >> 12;
+            if (page < kRdramPages && m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
         }
         break;
 
@@ -1036,6 +1082,11 @@ bool MipsMemoryVM::SH_PhysicalAddress(uint32_t pAddr, uint32_t value)
         if (pAddr < RdramSize())
         {
             *reinterpret_cast<uint16_t*>(m_RDRAM + (pAddr ^ 2)) = static_cast<uint16_t>(value);
+            uint32_t page = pAddr >> 12;
+            if (page < kRdramPages && m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
         }
         break;
 
@@ -1073,6 +1124,12 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         if (pAddr < RdramSize())
         {
             *reinterpret_cast<uint32_t*>(m_RDRAM + pAddr) = value;
+            // SMC detection: if this page has compiled code, invalidate it
+            uint32_t page = pAddr >> 12;
+            if (page < kRdramPages && m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
         }
         break;
 
@@ -1142,6 +1199,17 @@ bool MipsMemoryVM::SD_PhysicalAddress(uint32_t pAddr, uint64_t value)
         {
             *reinterpret_cast<uint32_t*>(m_RDRAM + pAddr) = *((uint32_t*)(&value) + 1);
             *reinterpret_cast<uint32_t*>(m_RDRAM + pAddr + 4) = *((uint32_t*)(&value) + 0);
+            // SMC detection for SD
+            uint32_t page = pAddr >> 12;
+            if (page < kRdramPages && m_SmcPageBitmap[page]) {
+                m_SmcPageBitmap[page] = 0;
+                m_System.NotifyDMAToRDRAM(page << 12, 0x1000);
+            }
+            uint32_t page2 = (pAddr + 4) >> 12;
+            if (page2 != page && page2 < kRdramPages && m_SmcPageBitmap[page2]) {
+                m_SmcPageBitmap[page2] = 0;
+                m_System.NotifyDMAToRDRAM(page2 << 12, 0x1000);
+            }
         }
         break;
 

@@ -988,12 +988,25 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         code += "    tileCoord0 = tileCoord0 - floor(tileCoord0 / 2048.0) * 2048.0;\n";
         code += "    tileCoord0 = mix(tileCoord0, tileCoord0 - 2048.0, greaterThan(tileCoord0, vec2(1024.0)));\n";
         code += "    vec2 uv0 = tileCoord0 / max(uTexSize0, vec2(1.0));\n";
-        // Apply N64 wrap/mirror/clamp using tile settings
+        // Apply N64 clamp/wrap/mirror using tile settings.
+        // N64 hardware order: CLAMP first, then MIRROR, then WRAP.
+        // This matches GLideN64's clampWrapMirror() function.
         // uTexClamp0 = (clampS, clampT, mirrorS, mirrorT)
         // uTexMask0 = (maskS, maskT)  — number of mask bits (0 = no mask)
         code += "    {\n";
         code += "      vec2 maskBits0 = uTexMask0;\n";
         code += "      vec2 maskSize0 = pow(vec2(2.0), maskBits0);\n";
+        // Step 1: CLAMP — when mirror is active, extend the clamp range
+        // to cover the full mirror period (2 * texSize texels).  Without
+        // this, clamping at (texSize-1) prevents the mirror operation from
+        // seeing coordinates in the second half of the mirror period,
+        // causing mirrored face textures to show a stretched centre column
+        // instead of a proper symmetric reflection.
+        code += "      float clampHi0x = (uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? (2.0 * uTexSize0.x - 1.0) / uTexSize0.x : (uTexSize0.x - 1.0) / uTexSize0.x;\n";
+        code += "      float clampHi0y = (uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? (2.0 * uTexSize0.y - 1.0) / uTexSize0.y : (uTexSize0.y - 1.0) / uTexSize0.y;\n";
+        code += "      if (uTexClamp0.x > 0.0) uv0.x = clamp(uv0.x, 0.0, clampHi0x);\n";
+        code += "      if (uTexClamp0.y > 0.0) uv0.y = clamp(uv0.y, 0.0, clampHi0y);\n";
+        // Step 2: MIRROR then WRAP (only when mask > 0)
         code += "      if (maskBits0.x > 0.0) {\n";
         code += "        if (uTexClamp0.z > 0.0) {\n"; // mirrorS
         code += "          float period = maskSize0.x * 2.0;\n";
@@ -1014,8 +1027,6 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         code += "          uv0.y = mod(uv0.y * uTexSize0.y, maskSize0.y) / uTexSize0.y;\n";
         code += "        }\n";
         code += "      }\n";
-        code += "      if (uTexClamp0.x > 0.0) uv0.x = clamp(uv0.x, 0.0, 1.0);\n";
-        code += "      if (uTexClamp0.y > 0.0) uv0.y = clamp(uv0.y, 0.0, 1.0);\n";
         code += "    }\n";
         if (features & SF_TEXTURE_LOD) {
             // ── Mipmap tile ladder: compute LOD then sample with explicit level ──
@@ -1077,6 +1088,12 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "    {\n";
             code += "      vec2 maskBits1 = uTexMask1;\n";
             code += "      vec2 maskSize1 = pow(vec2(2.0), maskBits1);\n";
+            // Step 1: CLAMP — extend for mirror (same logic as tile 0)
+            code += "      float clampHi1x = (uTexClamp1.z > 0.0 && maskBits1.x > 0.0) ? (2.0 * uTexSize1.x - 1.0) / uTexSize1.x : (uTexSize1.x - 1.0) / uTexSize1.x;\n";
+            code += "      float clampHi1y = (uTexClamp1.w > 0.0 && maskBits1.y > 0.0) ? (2.0 * uTexSize1.y - 1.0) / uTexSize1.y : (uTexSize1.y - 1.0) / uTexSize1.y;\n";
+            code += "      if (uTexClamp1.x > 0.0) uv1.x = clamp(uv1.x, 0.0, clampHi1x);\n";
+            code += "      if (uTexClamp1.y > 0.0) uv1.y = clamp(uv1.y, 0.0, clampHi1y);\n";
+            // Step 2: MIRROR then WRAP
             code += "      if (maskBits1.x > 0.0) {\n";
             code += "        if (uTexClamp1.z > 0.0) {\n";
             code += "          float period = maskSize1.x * 2.0;\n";
@@ -1097,8 +1114,6 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "          uv1.y = mod(uv1.y * uTexSize1.y, maskSize1.y) / uTexSize1.y;\n";
             code += "        }\n";
             code += "      }\n";
-            code += "      if (uTexClamp1.x > 0.0) uv1.x = clamp(uv1.x, 0.0, 1.0);\n";
-            code += "      if (uTexClamp1.y > 0.0) uv1.y = clamp(uv1.y, 0.0, 1.0);\n";
             code += "    }\n";
             if (features & SF_TEXTURE_3POINT)
                 code += "    vec4 texel1 = n64Filter3Point(uTexture1, uv1, uTexSize1, uGPUScale1);\n";

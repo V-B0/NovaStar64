@@ -592,6 +592,11 @@ void CRegisters::SetTestTimer()
     m_System.m_TestTimer = true;
 }
 
+void CRegisters::InvalidateRecompCode(uint32_t physAddr, uint32_t length)
+{
+    m_System.NotifyDMAToRDRAM(physAddr, length);
+}
+
 void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
 {
     CAUSE_REGISTER.ExceptionCode = ExceptionCode;

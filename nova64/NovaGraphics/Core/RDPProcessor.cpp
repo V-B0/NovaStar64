@@ -1421,18 +1421,19 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
 }
 
 void RDPProcessor::DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1,
-                                   const RenderBatch::Vertex& rv2, uint32_t geometryMode) {
+                                   const RenderBatch::Vertex& rv2, uint32_t geometryMode,
+                                   uint8_t tileIndex) {
     if (m_batch.IsFull()) FlushBatch();
 
     DrawCall call;
     call.type = DrawCall::Type::Triangle;
     call.vertexStart = static_cast<int>(m_batch.vertices.size());
-    call.tileIndex = 0;
+    call.tileIndex = tileIndex;
     call.combineMode = m_state.rdp.combineModeRaw;
     call.otherModeH = m_state.rdp.otherModeH;
     call.otherModeL = m_state.rdp.otherModeL;
     call.geometryMode = geometryMode;
-    PopulateTextureInfo(call, 0);
+    PopulateTextureInfo(call, tileIndex);
     call.primColor = m_state.rdp.primColor;
     call.envColor = m_state.rdp.envColor;
     call.fogColor = m_state.rdp.fogColor;
@@ -2112,7 +2113,6 @@ void RDPProcessor::FlushBatch() {
 
     bool batchUsedN64Depth = false;
 
-
     for (const auto& call : m_batch.drawCalls) {
 
         // --- Build CombinerKey for shader lookup ---
@@ -2172,10 +2172,19 @@ void RDPProcessor::FlushBatch() {
         // N64-accurate Z-image depth compare: enable when Z_CMP is set,
         // the depth buffer manager has a current Z-image texture pair,
         // and the GPU supports fragment shader interlock for imageLoad/imageStore.
+        //
+        // INTEL WORKAROUND: When the MLE blender is also active (SF_MLE_BLENDER),
+        // the shader would need to access 4 image bindings (Z-image, delta-Z,
+        // color, coverage) within a single interlock region.  Intel Iris Xe
+        // drivers silently fail when the interlock region spans too many
+        // image operations, causing all depth-tested MLE draws to become
+        // invisible.  Fall back to GL depth test for these draws — the
+        // MLE blender still handles color/coverage blending correctly.
         if (!DISABLE_N64_DEPTH_COMPARE &&
             (call.otherModeL & 0x0010) && g_depthManager.GetCurrent() &&
             g_depthManager.GetCurrent()->glZImageTex != 0 &&
-            m_renderer->GetCapabilities().supportsFragmentShaderInterlock) {
+            m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
+            !(features & Shader::SF_MLE_BLENDER)) {
             features |= Shader::SF_DEPTH_COMPARE;
             features |= Shader::SF_N64_DEPTH_COMPARE;
         }

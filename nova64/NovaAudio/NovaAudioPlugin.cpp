@@ -206,9 +206,8 @@ void NovaAudioPlugin::ProcessAICommand()
     // read AI_DRAM_ADDR and AI_LEN here. But since AIH handles it,
     // we only need to ensure the audio device is fed.
 
-    if (m_aiHandler) {
-        m_aiHandler->AudioOutput().FeedDevice();
-    }
+    // FeedDevice is called from the frame loop (MainSYS) — not here,
+    // to let audio accumulate in the ring buffer.
 }
 
 uint32_t NovaAudioPlugin::GetAILength()
@@ -250,7 +249,7 @@ void NovaAudioPlugin::AddAudioSamples(const int16_t* buffer, uint32_t length)
     if (!m_aiHandler || !buffer || length == 0) return;
 
     m_aiHandler->AudioOutput().QueueSamples(buffer, length);
-    m_aiHandler->AudioOutput().FeedDevice();
+    // FeedDevice is called from the frame loop (MainSYS) — not here.
 }
 
 bool NovaAudioPlugin::IsPlaying() const

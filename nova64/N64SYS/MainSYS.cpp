@@ -1243,13 +1243,7 @@ void CN64System::RefreshScreen()
     }
 
     
-    // Feed audio device to keep playback smooth (always, even on skipped frames).
-    // Use the Vmem-owned AudioInterfaceHandler — that's the one receiving AI
-    // register writes from the game, so it has the active WASAPI output.
-    if (m_Memory && m_Memory->AudioInterface())
-    {
-        m_Memory->AudioInterface()->AudioOutput().FeedDevice();
-    }
+    // Audio feeding is handled by the dedicated audio thread in CAudioOutput.
     
     auto afterAudio = std::chrono::steady_clock::now();
     accAudioMs += std::chrono::duration<double, std::milli>(afterAudio - afterRender).count();

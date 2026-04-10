@@ -943,16 +943,19 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         const auto& tv1 = geo.vertexBuffer[v1];
         const auto& tv2 = geo.vertexBuffer[v2];
         
-        float aw0 = std::abs(tv0.position[3]);
-        float aw1 = std::abs(tv1.position[3]);
-        float aw2 = std::abs(tv2.position[3]);
-        
-        // Skip culling if any vertex has w too close to zero (degenerate)
+        // Skip culling if any vertex is behind the camera (W < 0) or has
+        // W too close to zero.  When W < 0 the perspective divide flips the
+        // screen-space position, inverting the triangle's apparent winding
+        // and causing false backface rejections.  These triangles will be
+        // properly clipped by the Sutherland-Hodgman clipper below.
+        float w0 = tv0.position[3];
+        float w1 = tv1.position[3];
+        float w2 = tv2.position[3];
         constexpr float wEps = 1e-5f;
-        if (aw0 > wEps && aw1 > wEps && aw2 > wEps) {
-            float w0inv = 1.0f / tv0.position[3];
-            float w1inv = 1.0f / tv1.position[3];
-            float w2inv = 1.0f / tv2.position[3];
+        if (w0 > wEps && w1 > wEps && w2 > wEps) {
+            float w0inv = 1.0f / w0;
+            float w1inv = 1.0f / w1;
+            float w2inv = 1.0f / w2;
             
             // Transform to screen space (viewport transform) for stable cross product
             float sx = geo.viewport.scaleX;
@@ -1033,6 +1036,9 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                         ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ)
                         : 0.0f;
                     rv.z = std::max(0.0f, std::min(1.0f, rv.z));
+                    // Match makeVert: bias away from 1.0 so far-plane geometry
+                    // passes GL_LESS (which is used for opaque Z mode).
+                    if (rv.z >= 1.0f) rv.z = 0.99999f;
                 }
                 rv.w = 1.0f;
                 rv.r = cv.color[0]; rv.g = cv.color[1];
@@ -1057,7 +1063,8 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                     toRenderVert(poly.vertices[0]),
                     toRenderVert(poly.vertices[i]),
                     toRenderVert(poly.vertices[i + 1]),
-                    geo.geometryMode);
+                    geo.geometryMode,
+                    geo.texture.tileIndex);
             }
             m_trianglesProcessed += (poly.vertexCount - 2);
         }

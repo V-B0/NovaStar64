@@ -258,7 +258,8 @@ public:
     
     /// Draw a triangle from raw vertex data (used for clipped triangles)
     void DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1,
-                         const RenderBatch::Vertex& rv2, uint32_t geometryMode);
+                         const RenderBatch::Vertex& rv2, uint32_t geometryMode,
+                         uint8_t tileIndex = 0);
     
     /// Draw a texture rectangle
     void DrawTextureRect(const DecodedRectangle& rect);

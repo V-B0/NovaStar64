@@ -13,6 +13,7 @@
 #include "../../NovaRSP/RSPInfo.hpp"
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
 
 // MI Interrupt bits (matching MIPSYInterfaceHandler convention)
 namespace {
@@ -368,6 +369,13 @@ void SRegistersHandler::SP_DMA_WRITE()
     SP_DRAM_ADDR = WritePos;
     SP_RD_LEN = (SP_RD_LEN & 0xFF800000) | 0x00000FF8;  // P64: length field → 0xFF8
     SP_WR_LEN = (SP_WR_LEN & 0xFF800000) | 0x00000FF8;
+
+    // Invalidate any compiled code that overlaps the RDRAM target range.
+    // Without this, SP DMA writes to code regions (e.g., N64 OS overlay loading
+    // via DMEM→RDRAM) would leave stale compiled blocks in the recompiler cache.
+    uint32_t dramStart = m_PendingSPDramAddr & 0x00FFFFF8;
+    uint32_t totalLen  = static_cast<uint32_t>(Length * Count + (Count > 1 ? Skip * (Count - 1) : 0));
+    m_Reg.InvalidateRecompCode(dramStart, totalLen);
 }
 
 /**
@@ -385,12 +393,6 @@ void SRegistersHandler::SP_DMA_WRITE()
  */
 void SRegistersHandler::ProcessStatusWrite(uint32_t Value)
 {
-    static int pswCount = 0;
-    pswCount++;
-    // Log first 20 entries, then every 100th for ongoing visibility
-    if (pswCount <= 20 || (pswCount % 100 == 0)) {
-        Log::infof("[PSW] ProcessStatusWrite(0x%08X) SP_STATUS_before=0x%08X (count=%d)", Value, SP_STATUS, pswCount);
-    }
     bool shouldClearHalt = false;
     bool shouldSetHalt   = false;
 
@@ -638,6 +640,14 @@ void SRegistersHandler::ClearHalt()
     if (pendingBits & (MI_INTR_SP | MI_INTR_DP)) {
         static constexpr uint32_t MIN_DELAY = 2; // 1 instruction at CountPerOp=2
         m_Reg.GetSystemTimer().set_timer(N64System::TimerType::RspTimer, MIN_DELAY, false);
+
+        // Force the recompiler's slow path at the next block boundary so that
+        // TimerDone() fires the RspTimer promptly.  Without this, forward-only
+        // code paths (function returns, forward branches) can skip TimerDone
+        // indefinitely, delaying SP/DP interrupt delivery by hundreds of
+        // instructions — enough to stall OoT's graphics scheduler during
+        // scene transitions.
+        m_Reg.SetTestTimer();
     }
     
     s_inClearHalt = false;
