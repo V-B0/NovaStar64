@@ -113,6 +113,7 @@ public:
     // State management
     void reset();
     void soft_reset();
+    void set_cic_type(PIF::CicType type) { m_cic_type = type; m_config.cic_type = type; }
     void save_state(std::ostream& os) const;
     void load_state(std::istream& is);
     

@@ -1257,13 +1257,11 @@ void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, 
     if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
 
     // F3DZEX2 Branch_W: compare vertex clip-space W against a threshold.
-    // The threshold is stored as raw IEEE 754 float bits in the command word.
+    // The threshold is an integer value in the command word, converted to float.
     // Branch is taken when the vertex W is less than the threshold
     // (smaller W = closer to camera), used for LOD switching.
     float w = geo.vertexBuffer[vtxIndex].position[3];
-
-    float wThreshold;
-    memcpy(&wThreshold, &wValue, sizeof(float));
+    float wThreshold = static_cast<float>(wValue);
 
     if (w < wThreshold) {
         ctx.pc = ctx.ResolveAddress(address);

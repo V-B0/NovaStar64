@@ -95,8 +95,11 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;
     
     default:
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "F3DEX: Unknown opcode 0x{:02X}", opcode);
+        ++ctx.consecutiveUnknownOpcodes;
+        if (ctx.consecutiveUnknownOpcodes <= 4) {
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+                    "F3DEX: Unknown opcode 0x{:02X}", opcode);
+        }
         break;
     }
     

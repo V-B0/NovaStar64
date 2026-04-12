@@ -200,6 +200,9 @@ public:
     }
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
+
+private:
+    uint32_t m_rdpHalf1 = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,12 +299,14 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0xD9: SetGeometryMode(ctx, ~(w0 & 0x00FFFFFF), w1); return true;
     case 0xDB: MoveWord(ctx, (w0>>16)&0xFF, w0&0xFFFF, w1); return true;
     case 0xDC: Cmd_OBJ_MOVEMEM(ctx, w0, w1); return true;
+    case 0xDD: LoadUcode(ctx, w1, m_rdpHalf1); return !ctx.halted;
     case 0xDE: {
         bool branch = ((w0 >> 16) & 0xFF) == 1;
         DisplayList(ctx, w1, branch);
         return true;
     }
     case 0xDF: EndDisplayList(ctx); return !ctx.halted;
+    case 0xE1: m_rdpHalf1 = w1; return true;
     case 0xE2: {
         uint32_t len = (w0 & 0xFF) + 1;
         uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;

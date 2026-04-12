@@ -230,20 +230,20 @@ private:
                         std::vector<uint32_t>& outPixels, bool fromTMEM);
 
     /// Decode specific N64 formats
-    void DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
     void DecodeRGBA32(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t lineBytes, bool fromTMEM);
     void DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr, uint16_t tileLine,
                            uint32_t* dst, uint32_t width, uint32_t height);
-    void DecodeIA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
-    void DecodeIA8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
-    void DecodeIA4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
-    void DecodeI8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
-    void DecodeI4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+    void DecodeIA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
+    void DecodeIA8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
+    void DecodeIA4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
+    void DecodeI8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
+    void DecodeI4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
     void DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst,
-                    uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false);
+                    uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false, uint32_t wrapMaskQW = 0);
     void DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette,
-                    uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false);
-    void DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM);
+                    uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA = false, uint32_t wrapMaskQW = 0);
+    void DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
 
     /// Calculate CRC for texture data in RDRAM/TMEM
     uint32_t CalculateTextureCRC(const uint8_t* data, uint32_t sizeBytes);

@@ -215,6 +215,7 @@ void MicrocodeDispatcher::HandleUcodeSwitch(
     
     // Switch to new handler
     ActivateHandler(detection.type, newInfo);
+    m_activeInfo = newInfo;
     m_context.microcodeInfo = newInfo;
     
     if (m_activeHandler) {

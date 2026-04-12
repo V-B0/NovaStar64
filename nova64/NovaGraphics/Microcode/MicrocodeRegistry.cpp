@@ -485,6 +485,7 @@ void MicrocodeRegistry::InitializeDatabase() {
         { 0x739C0126, MicrocodeType::F3DEX, "RSP Gfx ucode F3DEX         1.23" },
         { 0x2EDEE7BE, MicrocodeType::F3DEX, "RSP Gfx ucode F3DEX  NoN    1.21" },
         { 0x65CB4B95, MicrocodeType::F3DEX, "RSP Gfx ucode F3DEX  NoN    1.23" },
+        { 0xE500C017, MicrocodeType::S2DEX2, "RSP Gfx ucode S2DEX2 (MM sprites)" },
         
         // F3DEX2 (most common)
         { 0x1A62DC2F, MicrocodeType::F3DEX2, "RSP Gfx ucode F3DEX2       2.04H" },

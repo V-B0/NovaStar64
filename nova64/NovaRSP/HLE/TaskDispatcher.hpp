@@ -72,6 +72,9 @@ private:
     bool DispatchAudioTask(CHle* hle, const TaskInfo& task, const MicrocodeEntry* ucode);
     bool DispatchJpegTask(CHle* hle, const TaskInfo& task, const MicrocodeEntry* ucode);
 
+    // sum_bytes fallback when CRC lookup fails
+    [[nodiscard]] const MicrocodeEntry* TrySumBytesFallback(CHle* hle, const TaskInfo& task);
+
     // Per-address microcode cache (avoids recomputing CRC for same ucode address)
     std::unordered_map<uint32_t, MicrocodeCache> m_UcodeCache;
 

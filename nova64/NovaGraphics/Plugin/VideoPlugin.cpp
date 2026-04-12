@@ -199,7 +199,8 @@ void main() {
         vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0)
     );
     gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
-    v_texCoord = positions[gl_VertexID] * 0.5 + 0.5;
+    vec2 uv = positions[gl_VertexID] * 0.5 + 0.5;
+    v_texCoord = vec2(uv.x, 1.0 - uv.y); // Flip Y: N64 FB is top-to-bottom, GL tex is bottom-to-top
 }
 )";
         static const char* kBlitFS = R"(#version 460 core

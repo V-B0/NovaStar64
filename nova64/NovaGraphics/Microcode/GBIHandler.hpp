@@ -34,6 +34,7 @@ struct DListContext {
     // Display list execution state
     uint32_t        pc = 0;                 // Current program counter (RDRAM address)
     bool            halted = false;         // True when EndDL reached
+    int             consecutiveUnknownOpcodes = 0; // Runaway DL detection
     
     // Display list stack (DL call nesting)
     static constexpr int MAX_DL_STACK = 18;

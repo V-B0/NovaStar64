@@ -574,6 +574,7 @@ struct RendererCaps {
     bool supportsDSA = false;
     bool supportsClipControl = false;
     bool supportsFragmentShaderInterlock = false;
+    bool isIntelGPU = false;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

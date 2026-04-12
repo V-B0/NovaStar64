@@ -464,6 +464,10 @@ void GLRenderer::QueryCapabilities() {
     m_caps.driverVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
     m_caps.apiVersion = "OpenGL 4.6";
 
+    // Detect Intel GPU for driver-specific workarounds
+    const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    m_caps.isIntelGPU = vendorStr && (strstr(vendorStr, "Intel") != nullptr);
+
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, reinterpret_cast<GLint*>(&m_caps.maxTextureSize));
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, reinterpret_cast<GLint*>(&m_caps.maxTextureLayers));
     glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, reinterpret_cast<GLint*>(&m_caps.maxTextureUnits));

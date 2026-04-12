@@ -30,6 +30,7 @@
 #include "MIPSY/Sysevents.hpp"
 #include "Interpreter/InterpreterOps.hpp"
 #include "Recomp/Recompiler.hpp"
+#include "Memoryhandler/PifInterface.hpp"
 #include "../NovaRSP/RSPInfo.hpp"
 #include "../NovaRSP/CPU/RspSystem.hpp"
 #include "../NovaGraphics/Window/WindowManager.hpp"
@@ -791,6 +792,36 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         // These values are read by the N64 OS __osInitialize to configure the system.
         if (rdram && rdramSize >= 0x400)
         {
+            // Detect CIC type from ROM
+            using N64::Rom::CICChip;
+            CICChip cicChip = CICChip::CIC_NUS_6102; // default fallback
+            if (GetRom() && GetRom()->IsLoaded()) {
+                cicChip = GetRom()->GetImage().GetCICChip();
+                if (cicChip == CICChip::Unknown)
+                    cicChip = CICChip::CIC_NUS_6102;
+            }
+
+            // Map CICChip enum to osCicId seed value and PIF CIC type.
+            // N64 OS __osInitialize checks osCicId against the CIC SEED BYTE
+            // (not the chip number), e.g. 0x91 for CIC-6105, 0x3F for 6102.
+            uint32_t cicSeed = 0x3F;
+            PIF::CicType pifCicType = PIF::CicType::NUS_6102;
+            switch (cicChip) {
+                case CICChip::CIC_NUS_6101: cicSeed = 0x3F; pifCicType = PIF::CicType::NUS_6101; break;
+                case CICChip::CIC_NUS_6102: cicSeed = 0x3F; pifCicType = PIF::CicType::NUS_6102; break;
+                case CICChip::CIC_NUS_6103: cicSeed = 0x78; pifCicType = PIF::CicType::NUS_6103; break;
+                case CICChip::CIC_NUS_6105: cicSeed = 0x91; pifCicType = PIF::CicType::NUS_6105; break;
+                case CICChip::CIC_NUS_6106: cicSeed = 0x85; pifCicType = PIF::CicType::NUS_6106; break;
+                default: cicSeed = 0x3F; pifCicType = PIF::CicType::NUS_6102; break;
+            }
+
+            // Update PIF handler with the correct CIC type and re-seed
+            if (m_Memory->PifRam()) {
+                m_Memory->PifRam()->set_cic_type(pifCicType);
+                m_Memory->PifRam()->reset();
+                Log::infof("HLE Boot: Updated PIF CIC type (seed=0x%02X)", cicSeed);
+            }
+
             // 0x0300: osTvType — 0=PAL, 1=NTSC, 2=MPAL
             uint32_t tvType = 1; // Default NTSC
             if (GetRom() && GetRom()->IsLoaded()) {
@@ -811,14 +842,14 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             // 0x030C: osResetType — 0=cold reset, 1=warm reset (NMI)
             *reinterpret_cast<uint32_t*>(rdram + 0x030C) = 0; // cold reset
 
-            // 0x0310: osCicId — CIC chip identifier
-            *reinterpret_cast<uint32_t*>(rdram + 0x0310) = 6105; // CIC-6105
+            // 0x0310: osCicId — CIC seed byte (0x3F=6102, 0x78=6103, 0x91=6105, 0x85=6106)
+            *reinterpret_cast<uint32_t*>(rdram + 0x0310) = cicSeed;
 
             // 0x0314: osVersion — IPL3 version
             *reinterpret_cast<uint32_t*>(rdram + 0x0314) = 0;
 
-            Log::infof("HLE Boot: Wrote PIF boot values: osTvType=%d osRomBase=0xB0000000 osCicId=6105",
-                       tvType);
+            Log::infof("HLE Boot: Wrote PIF boot values: osTvType=%d osRomBase=0xB0000000 osCicId=0x%02X",
+                       tvType, cicSeed);
         }
 
         // NOTE: CIC-6105 IMEM bootstrap is NOT needed for HLE boot.

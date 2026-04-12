@@ -2180,11 +2180,18 @@ void RDPProcessor::FlushBatch() {
         // image operations, causing all depth-tested MLE draws to become
         // invisible.  Fall back to GL depth test for these draws — the
         // MLE blender still handles color/coverage blending correctly.
+        //
+        // INTEL WORKAROUND #2: Also skip N64 depth compare when dual-source
+        // blend is active.  Intel Iris Xe silently fails when image bindings
+        // (Z-image imageLoad/imageStore) are combined with dual-source
+        // fragment outputs (fragColor + fragColor1) in the same shader.
+        // Fall back to GL depth test (with z-bias 0.99999 for far-plane).
         if (!DISABLE_N64_DEPTH_COMPARE &&
             (call.otherModeL & 0x0010) && g_depthManager.GetCurrent() &&
             g_depthManager.GetCurrent()->glZImageTex != 0 &&
             m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
-            !(features & Shader::SF_MLE_BLENDER)) {
+            !(features & Shader::SF_MLE_BLENDER) &&
+            !(m_renderer->GetCapabilities().isIntelGPU && (features & Shader::SF_DUAL_SOURCE_BLEND))) {
             features |= Shader::SF_DEPTH_COMPARE;
             features |= Shader::SF_N64_DEPTH_COMPARE;
         }
@@ -2301,8 +2308,14 @@ void RDPProcessor::FlushBatch() {
                 int cvgDst = (call.otherModeL >> 8) & 0x03;
                 if (cvgDst != 2) needsMem = true; // CLAMP/WRAP/SAVE read mem_cvg
 
+                // INTEL WORKAROUND: Intel Iris Xe fragment shader interlock
+                // with imageLoad/imageStore silently fails for certain MLE
+                // blender configurations (e.g. OoT title screen logo draws
+                // with 2-cycle fog blender).  Fall back to dual-source blend
+                // on Intel GPUs for reliable blender emulation.
                 if (needsMem && !DISABLE_MLE_BLENDER &&
-                    m_renderer->GetCapabilities().supportsFragmentShaderInterlock)
+                    m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
+                    !m_renderer->GetCapabilities().isIntelGPU)
                     features |= Shader::SF_MLE_BLENDER;
                 else if (needsMem)
                     features |= Shader::SF_DUAL_SOURCE_BLEND;

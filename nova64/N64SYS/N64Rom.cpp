@@ -362,13 +362,19 @@ void N64Rom::ParseHeader() {
     
     const uint8_t* header = m_Image->m_Data.data();
     
+    // ROM data is stored in host word order (each 32-bit word byte-reversed
+    // from big-endian on little-endian hosts). Individual byte reads need
+    // XOR 3 to convert big-endian byte offset to host-word-order offset.
+    
     // Extract ROM name (20 bytes starting at offset 0x20)
     char name[21] = {0};
-    std::memcpy(name, header + RomHeader::OFFSET_NAME, RomHeader::NAME_LENGTH);
+    for (int i = 0; i < static_cast<int>(RomHeader::NAME_LENGTH); i++) {
+        name[i] = static_cast<char>(header[(RomHeader::OFFSET_NAME + i) ^ 3]);
+    }
     m_Image->m_RomName = name;
     
     // Clean the ROM name
-    CleanRomName(m_Image->m_RomName, false); // Already byte-swapped
+    CleanRomName(m_Image->m_RomName, false);
     
     // If name is empty, use filename
     if (m_Image->m_RomName.empty()) {
@@ -376,8 +382,8 @@ void N64Rom::ParseHeader() {
         CleanRomName(m_Image->m_RomName, false);
     }
     
-    // Extract country code
-    m_Image->m_Country = static_cast<CountryCode>(header[RomHeader::OFFSET_COUNTRY_CODE]);
+    // Extract country code (single byte — use XOR 3 for byte access)
+    m_Image->m_Country = static_cast<CountryCode>(header[RomHeader::OFFSET_COUNTRY_CODE ^ 3]);
 }
 
 void N64Rom::CalculateCICChip() {

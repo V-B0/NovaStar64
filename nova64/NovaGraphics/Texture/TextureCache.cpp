@@ -469,6 +469,19 @@ static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset,
     return row[byteOffset];
 }
 
+// Compute the row pointer for a given Y coordinate, wrapping the TMEM
+// address at the correct bank boundary.  N64 TMEM is split into two 2KB
+// banks: non-CI textures (no TLUT) can use the full 4KB (wrapMask = 0x1FF
+// QWords), while CI textures with a TLUT only get the lower 2KB (wrapMask
+// = 0xFF QWords) since the upper half holds the palette.
+static inline const uint8_t* GetWrappedRow(const uint8_t* tmemBase,
+                                            uint32_t tmemAddrQW,
+                                            uint32_t lineQW, uint32_t y,
+                                            uint32_t wrapMaskQW) {
+    uint32_t rowQW = (tmemAddrQW + lineQW * y) & wrapMaskQW;
+    return tmemBase + rowQW * 8;
+}
+
 void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
                                    std::vector<uint32_t>& outPixels, bool fromTMEM) {
     uint32_t count = key.width * key.height;
@@ -481,10 +494,22 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
     // key.tmemOffset is the tile's tmemAddr (in 64-bit words).
     const uint8_t* tileData = data + (static_cast<uint32_t>(key.tmemOffset) * 8);
 
+    // TMEM row wrapping: N64 hardware wraps TMEM addresses at bank
+    // boundaries.  CI textures with TLUT use only the lower 2KB (palette
+    // in upper 2KB), so wrap at 256 QWords.  All others use the full 4KB
+    // (512 QWords).  RGBA32 uses split-bank addressing (handled separately
+    // by DecodeRGBA32_TMEM).  When not reading from TMEM, pass 0 to
+    // disable wrapping.
+    uint32_t wrapMaskQW = 0; // 0 = no wrapping
+    if (fromTMEM) {
+        bool hasTLUT = (key.tlutType != 0) || key.format == N64TexFormat::CI;
+        wrapMaskQW = hasTLUT ? 0xFF : 0x1FF;
+    }
+
     switch (key.format) {
         case N64TexFormat::RGBA:
             if (key.size == N64TexSize::Bits16)
-                DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             else if (key.size == N64TexSize::Bits32) {
                 if (fromTMEM)
                     DecodeRGBA32_TMEM(data, key.tmemOffset, key.line, outPixels.data(), key.width, key.height);
@@ -495,18 +520,18 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
 
         case N64TexFormat::IA:
             if (key.size == N64TexSize::Bits16)
-                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             else if (key.size == N64TexSize::Bits8)
-                DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             else if (key.size == N64TexSize::Bits4)
-                DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             break;
 
         case N64TexFormat::I:
             if (key.size == N64TexSize::Bits8)
-                DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             else if (key.size == N64TexSize::Bits4)
-                DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+                DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             break;
 
         case N64TexFormat::CI:
@@ -517,14 +542,14 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
                 bool isIA = (key.tlutType == 3);  // G_TT_IA16
 
                 if (key.size == N64TexSize::Bits8)
-                    DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA);
+                    DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA, wrapMaskQW);
                 else if (key.size == N64TexSize::Bits4)
-                    DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA);
+                    DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA, wrapMaskQW);
             }
             break;
 
         case N64TexFormat::YUV:
-            DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM);
+            DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             break;
 
         default:
@@ -559,9 +584,14 @@ static inline uint32_t IA88toRGBA8(uint16_t c) {
 }
 
 void TextureCache::DecodeRGBA16(const uint8_t* src, uint32_t* dst,
-                                  uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                                  uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                                  const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint16_t pixel = (static_cast<uint16_t>(ReadTextureByte(row, x * 2, y, fromTMEM)) << 8) |
                              ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
@@ -619,9 +649,14 @@ void TextureCache::DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr,
 }
 
 void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst,
-                                uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                                uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                                const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t intensity = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
             uint8_t alpha = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
@@ -631,9 +666,14 @@ void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t val = ReadTextureByte(row, x, y, fromTMEM);
             uint8_t intensity = (val >> 4) & 0xF;
@@ -646,9 +686,14 @@ void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
@@ -663,9 +708,14 @@ void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                              const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t i = ReadTextureByte(row, x, y, fromTMEM);
             dst[y * width + x] = (i << 24) | (i << 16) | (i << 8) | i;
@@ -674,9 +724,14 @@ void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                              const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
@@ -687,11 +742,16 @@ void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
 }
 
 void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA,
+                               uint32_t wrapMaskQW) {
     if (!tmemBase) return;
 
+    const uint32_t tmemOff = (wrapMaskQW > 0) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t idx = ReadTextureByte(row, x, y, fromTMEM);
             // CI8: palette at TMEM_PALETTE_BASE, 8-byte stride (GLideN64 TLUT layout)
@@ -703,11 +763,16 @@ void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32
 }
 
 void TextureCache::DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette,
-                               uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA) {
+                               uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA,
+                               uint32_t wrapMaskQW) {
     if (!tmemBase) return;
 
+    const uint32_t tmemOff = (wrapMaskQW > 0) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t idx = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
@@ -722,12 +787,17 @@ void TextureCache::DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_
 }
 
 void TextureCache::DecodeYUV(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM) {
+                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
+                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     // YUV422: 2 pixels per 32 bits (Y0 U Y1 V)
     // Store raw Y/U/V in R/G/B channels — the shader performs the actual
     // YUV→RGB conversion using the N64's programmable K coefficients.
+    const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
+    const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = src + y * line;
+        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
+            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
+            : src + y * line;
         for (uint32_t x = 0; x < width; x += 2) {
             uint8_t y0 = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
             uint8_t u  = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
