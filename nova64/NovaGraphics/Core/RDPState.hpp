@@ -219,6 +219,11 @@ struct GeometryState {
     // N64 RSP clips at w*clipRatio instead of w, avoiding unnecessary
     // clipping for triangles near screen edges.
     float clipRatio = 1.0f;
+
+    // Widescreen hack: scale factor for horizontal expansion.
+    // 1.0 = native 4:3, 4/3 ≈ 1.333 = 16:9 widescreen.
+    // Applied to projection matrix (inverse), viewport, and clip flags.
+    float widescreenScale = 1.0f;
     
     // Fog usage mode (set by microcode handler):
     // 0 = no fog, 1 = standard fog (alpha), 2 = F3DAM mode 2 (RGB)

@@ -163,10 +163,12 @@ void RDPProcessor::Shutdown() {
 void RDPProcessor::Reset(bool coldReset) {
     FlushBatch();
     uint32_t savedFrameCount = m_state.frameCount;
+    float savedWidescreenScale = m_state.rdp.geometry.widescreenScale;
     m_state.Reset();
     if (!coldReset) {
-        // Warm reset: preserve frame counter across display lists
+        // Warm reset: preserve frame counter and widescreen hack across display lists
         m_state.frameCount = savedFrameCount;
+        m_state.rdp.geometry.widescreenScale = savedWidescreenScale;
     }
     m_commandBuffer.Reset();
     m_batch.Reset();
@@ -455,9 +457,11 @@ void RDPProcessor::HandleSetScissor(const uint32_t* words) {
     m_state.rdp.MarkDirty(RDPDirtyFlag::Scissor);
     m_stats.stateChanges++;
     // Keep FramebufferManager in sync so new FBOs get the right height
+    uint32_t scissorX = m_state.rdp.scissor.xh >> 2;
+    uint32_t scissorY = m_state.rdp.scissor.yh >> 2;
     uint32_t scissorW = m_state.rdp.scissor.xl >> 2;
     uint32_t scissorH = m_state.rdp.scissor.yl >> 2;
-    g_fbManager.SetScissorHint(scissorW, scissorH);
+    g_fbManager.SetScissorHint(scissorX, scissorY, scissorW, scissorH);
 }
 
 void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
@@ -1081,6 +1085,45 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
         rect.y1 = std::ceil(rect.y1);  // Sub-pixel height fixup
     }
 
+    // Widescreen: skip letterbox bars and scale non-fullscreen rects inward.
+    float wsScale = m_state.rdp.geometry.widescreenScale;
+    if (wsScale != 1.0f) {
+        float ciWidth = static_cast<float>(m_state.rdp.colorImage.width);
+        if (ciWidth < 1.0f) ciWidth = 320.0f;
+        float screenH = static_cast<float>(m_state.rdp.scissor.yl >> 2);
+        if (screenH < 1.0f) screenH = 240.0f;
+        float rectW = rect.x1 - rect.x0;
+        float rectH = rect.y1 - rect.y0;
+        bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
+
+        // Skip letterbox bars: full-width, thin (<25% height), touching top/bottom edge.
+        if (isFullWidth && rectH < screenH * 0.25f &&
+            (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
+            return;
+        }
+
+        // Scale non-fullscreen rects inward to maintain 4:3 proportions.
+        // Fullscreen = covers full width AND >75% height (fades, transitions).
+        bool isFullscreen = isFullWidth && rectH > screenH * 0.75f;
+        if (!isFullscreen) {
+            float n64ScreenW = static_cast<float>(m_state.rdp.scissor.xl >> 2);
+            if (n64ScreenW < 1.0f) n64ScreenW = 320.0f;
+            float invScale = 1.0f / wsScale;
+            float halfW = n64ScreenW * 0.5f;
+            float offsetX = halfW * (1.0f - invScale);
+            rect.x0 = rect.x0 * invScale + offsetX;
+            rect.x1 = rect.x1 * invScale + offsetX;
+            // Compensate texture coordinates: the rect is narrower but
+            // must display the same texture content, so increase dsDx.
+            rect.dsDx *= wsScale;
+        } else {
+            // Fullscreen transition/fade: expand Y to cover the full
+            // framebuffer height so it fills the expanded 3D viewport.
+            rect.y0 = 0.0f;
+            rect.y1 = 240.0f;
+        }
+    }
+
     DrawTextureRect(rect);
 }
 
@@ -1098,6 +1141,39 @@ void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
         rect.y1 += 1.0f;  // COPY mode uses exclusive bottom edge
     } else if (rect.y1 - rect.y0 < 1.0f) {
         rect.y1 = std::ceil(rect.y1);  // Sub-pixel height fixup
+    }
+
+    // Widescreen: skip letterbox bars and scale non-fullscreen rects inward.
+    float wsScaleFlip = m_state.rdp.geometry.widescreenScale;
+    if (wsScaleFlip != 1.0f) {
+        float ciWidth = static_cast<float>(m_state.rdp.colorImage.width);
+        if (ciWidth < 1.0f) ciWidth = 320.0f;
+        float screenH = static_cast<float>(m_state.rdp.scissor.yl >> 2);
+        if (screenH < 1.0f) screenH = 240.0f;
+        float rectW = rect.x1 - rect.x0;
+        float rectH = rect.y1 - rect.y0;
+        bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
+
+        if (isFullWidth && rectH < screenH * 0.25f &&
+            (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
+            return;
+        }
+
+        bool isFullscreen = isFullWidth && rectH > screenH * 0.75f;
+        if (!isFullscreen) {
+            float n64ScreenW = static_cast<float>(m_state.rdp.scissor.xl >> 2);
+            if (n64ScreenW < 1.0f) n64ScreenW = 320.0f;
+            float invScale = 1.0f / wsScaleFlip;
+            float halfW = n64ScreenW * 0.5f;
+            float offsetX = halfW * (1.0f - invScale);
+            rect.x0 = rect.x0 * invScale + offsetX;
+            rect.x1 = rect.x1 * invScale + offsetX;
+            // Compensate texture coordinates for narrower rect.
+            rect.dsDx *= wsScaleFlip;
+        } else {
+            rect.y0 = 0.0f;
+            rect.y1 = 240.0f;
+        }
     }
 
     DrawTextureRect(rect);
@@ -1143,6 +1219,33 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
         y1 += 1.0f;
     } else if (y1 == y0) {
         y1 += 1.0f;
+    }
+
+    // Widescreen: skip game-drawn letterbox bars.
+    // Detect by position: full-width FillRects touching the top or bottom edge
+    // that are thin (< 25% of screen height) are cinematic bars.
+    float wsScaleFill = m_state.rdp.geometry.widescreenScale;
+    if (wsScaleFill != 1.0f) {
+        float ciWidth = static_cast<float>(m_state.rdp.colorImage.width);
+        if (ciWidth < 1.0f) ciWidth = 320.0f;
+        float screenH = static_cast<float>(m_state.rdp.scissor.yl >> 2);
+        if (screenH < 1.0f) screenH = 240.0f;
+        bool isFullWidth = (x0 <= 1.0f && x1 >= ciWidth - 1.0f);
+        float rectH = y1 - y0;
+        bool isThin = (rectH < screenH * 0.25f);
+        bool touchesTop = (y0 <= 1.0f);
+        bool touchesBottom = (y1 >= screenH - 1.0f);
+
+        if (isFullWidth && isThin && (touchesTop || touchesBottom)) {
+            return;  // Skip letterbox bar
+        }
+
+        // Expand fullscreen FillRects to cover the full Y range
+        // so transitions/color fills cover the expanded 3D viewport.
+        if (isFullWidth && rectH > screenH * 0.75f) {
+            y0 = 0.0f;
+            y1 = 240.0f;
+        }
     }
 
     DrawFillRect(x0, y0, x1, y1);
@@ -2532,7 +2635,12 @@ void RDPProcessor::FlushBatch() {
                 (call.type == DrawCall::Type::TextureRect || call.type == DrawCall::Type::FillRect) ? 1 : 0);
 
             // Combiner debug output (0 = normal rendering)
-            m_shaderManager->SetDebugOutput(m_debugOutputMode);
+            {
+                int debugMode = m_debugOutputMode;
+                if (m_debugMagenta)     debugMode = 9;  // override: magenta highlight
+                else if (m_debugForceOpaque) debugMode = 8;  // override: force alpha=1
+                m_shaderManager->SetDebugOutput(debugMode);
+            }
 
             // Set alpha reference for alpha compare
             {
@@ -2858,6 +2966,11 @@ void RDPProcessor::FlushBatch() {
                 glDisable(GL_POLYGON_OFFSET_FILL);
                 break;
         }
+        // Debug: force-disable depth test/write
+        if (m_debugDisableDepth) {
+            depth.depthTestEnabled  = false;
+            depth.depthWriteEnabled = false;
+        }
         m_renderer->SetDepthStencilState(depth);
 
         // ��� N64 Z-image depth compare: bind Z-image textures + set mode ����
@@ -2902,6 +3015,16 @@ void RDPProcessor::FlushBatch() {
             int n64sy = static_cast<int>(m_state.rdp.scissor.yh >> 2);
             int n64sw = static_cast<int>((m_state.rdp.scissor.xl >> 2) - n64sx);
             int n64sh = static_cast<int>((m_state.rdp.scissor.yl >> 2) - n64sy);
+
+            // Widescreen: expand scissor Y to full height for all draws.
+            // This lets both 3D content and fullscreen effects (fades,
+            // transitions) fill the expanded viewport area. Letterbox bar
+            // skipping and inward scaling are handled in Handle*Rect().
+            float wsScale = m_state.rdp.geometry.widescreenScale;
+            if (wsScale != 1.0f) {
+                n64sy = 0;
+                n64sh = static_cast<int>(n64H);
+            }
 
             // Scissor interlace mode: mode 2 = even lines only, mode 3 = odd lines only.
             // On real N64, this restricts rendering to alternating scanlines for
@@ -3086,6 +3209,12 @@ void RDPProcessor::FlushBatch() {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
                         gpuScale0[0] = cached0->scaleS;
                         gpuScale0[1] = cached0->scaleT;
+                    } else if (m_debugWhiteTexture) {
+                        // Fallback: bind 1×1 white texture so the draw isn't invisible
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
+                        gpuScale0[0] = 1.0f;
+                        gpuScale0[1] = 1.0f;
                     }
 
                 }
@@ -3120,6 +3249,12 @@ void RDPProcessor::FlushBatch() {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter1);
                         gpuScale1[0] = cached1->scaleS;
                         gpuScale1[1] = cached1->scaleT;
+                    } else if (m_debugWhiteTexture) {
+                        // Fallback: bind 1×1 white texture for stale texture unit
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
+                        gpuScale1[0] = 1.0f;
+                        gpuScale1[1] = 1.0f;
                     }
                 }
             }

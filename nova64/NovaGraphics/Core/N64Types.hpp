@@ -499,7 +499,8 @@ struct N64Light {
     uint8_t pad2;
 
     // Float arrays for computation (filled by light loading routines)
-    float color[3];         // Normalized color (0-1)
+    float color[3];         // Normalized primary color (0-1) — used for even vertices
+    float color2[3];        // Normalized secondary color (0-1) — used for odd vertices (N64 dithered flat shading)
     float direction[3];     // Normalized direction vector
 
     // Point light data (F3DEX2 extended light format)

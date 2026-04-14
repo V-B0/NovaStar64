@@ -1796,6 +1796,8 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     frag += "    else if (uDebugOutput == 5) combined = vec4(vTexCoord0, 0.0, 1.0);\n";
     frag += "    else if (uDebugOutput == 6) combined = vec4(vec3(gl_FragCoord.z), 1.0);\n";
     frag += "    else if (uDebugOutput == 7) combined = vec4(vec3(combined.a), 1.0);\n";
+    frag += "    else if (uDebugOutput == 8) combined.a = 1.0;\n"; // force opaque
+    frag += "    else if (uDebugOutput == 9) combined = vec4(1.0, 0.0, 1.0, 1.0);\n"; // magenta
 
     frag += "    fragColor = combined;\n";
 

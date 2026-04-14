@@ -16,6 +16,7 @@
 #include <array>
 #include <string>
 #include <math.h>
+#include <cstdlib>
 
 // Softfloat library for IEEE 754 compliant FPU emulation
 extern "C"
@@ -2038,7 +2039,12 @@ void R4300iInterpreter::COP0_CO_TLBWI()
 
 void R4300iInterpreter::COP0_CO_TLBWR()
 {
-    m_TLB.WriteEntry(m_Reg.RANDOM_REGISTER & 0x1F, true);
+    // Random register cycles in [WIRED, 31]; compute random index on use
+    uint32_t wired = static_cast<uint32_t>(m_Reg.WIRED_REGISTER) & 0x3F;
+    if (wired > 31) wired = 31;
+    uint32_t range = 32 - wired;
+    uint32_t random_index = wired + (rand() % range);
+    m_TLB.WriteEntry(random_index, true);
 }
 
 void R4300iInterpreter::COP0_CO_TLBP()

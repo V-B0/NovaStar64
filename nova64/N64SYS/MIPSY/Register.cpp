@@ -21,6 +21,7 @@
 
 #include <cstring>
 #include <cfenv>
+#include <cstdlib>
 
 // ============================================================================
 // Register Name Tables
@@ -329,9 +330,19 @@ uint64_t CRegisters::Cop0_MF(COP0Reg Reg)
     // Count/Wired/Random: bring the timer system fully up-to-date first.
     // Like Project64, UpdateTimers() modifies COUNT_REGISTER in place,
     // decrements all timer counters, and fires any expired timers.
-    if (Reg == COP0Reg::Count || Reg == COP0Reg::Wired || Reg == COP0Reg::Random)
+    if (Reg == COP0Reg::Count || Reg == COP0Reg::Wired)
     {
         m_SystemTimer.UpdateTimers();
+    }
+    else if (Reg == COP0Reg::Random)
+    {
+        m_SystemTimer.UpdateTimers();
+        // Random register cycles in range [WIRED, 31].
+        // Rather than decrementing every cycle, generate on read (like PJ64).
+        uint32_t wired = static_cast<uint32_t>(WIRED_REGISTER) & 0x3F;
+        if (wired > 31) wired = 31;
+        uint32_t range = 32 - wired;
+        return wired + (rand() % range);
     }
     // Unused registers return latch value
     else if (regIndex == 7 || regIndex == 21 || regIndex == 22 || 
@@ -381,6 +392,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
     case COP0Reg::Wired:
         m_SystemTimer.UpdateTimers();
         m_CP0[regIndex] = Value & 0x3F;
+        RANDOM_REGISTER = 31; // VR4300: writing Wired resets Random to 31
         break;
         
     case COP0Reg::BadVAddr:
@@ -567,9 +579,14 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
     XCONTEXT_REGISTER.BadVPN2 = Address >> 13;
     XCONTEXT_REGISTER.R = Address >> 62;
 
+    // Save EXL state before TriggerException may set it
+    bool wasExlSet = (STATUS_REGISTER.ExceptionLevel != 0);
+
     TriggerException(ExceptionCode, 0);
     
-    if (SpecialOffset)
+    // TLB refill vector (SpecialOffset) only used when EXL was 0 before exception.
+    // When EXL was already 1 (nested exception), use general exception vector.
+    if (SpecialOffset && !wasExlSet)
     {
         m_System.m_JumpToLocation = (m_System.m_JumpToLocation & 0xFFFFFFFFFFFF0000);
         switch (STATUS_REGISTER.PrevMode)
@@ -601,13 +618,21 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
 {
     CAUSE_REGISTER.ExceptionCode = ExceptionCode;
     CAUSE_REGISTER.CoprocessorUnitNumber = Coprocessor;
-    CAUSE_REGISTER.BranchDelay = (m_System.m_PipelineStage == N64Types::PipelineStage::Jump ||
-                                   m_System.m_PipelineStage == N64Types::PipelineStage::PermanentLoopDelayDone);
     
-    EPC_REGISTER = static_cast<int64_t>(static_cast<int32_t>(m_PROGRAM_COUNTER) - 
-                                         (CAUSE_REGISTER.BranchDelay ? 4 : 0));
+    // Per VR4300 spec: only update EPC, BD, and EXL when EXL is currently 0.
+    // When EXL is already 1 (nested exception), preserve the original return
+    // address so ERET can still return to the correct location.
+    if (STATUS_REGISTER.ExceptionLevel == 0)
+    {
+        CAUSE_REGISTER.BranchDelay = (m_System.m_PipelineStage == N64Types::PipelineStage::Jump ||
+                                       m_System.m_PipelineStage == N64Types::PipelineStage::PermanentLoopDelayDone);
+        
+        EPC_REGISTER = static_cast<int64_t>(static_cast<int32_t>(m_PROGRAM_COUNTER) - 
+                                             (CAUSE_REGISTER.BranchDelay ? 4 : 0));
+        
+        STATUS_REGISTER.ExceptionLevel = 1;
+    }
     
-    STATUS_REGISTER.ExceptionLevel = 1;
     m_System.m_PipelineStage = N64Types::PipelineStage::Jump;
 
     // Exception vector depends on BEV (Bootstrap Exception Vector) bit in STATUS

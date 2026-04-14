@@ -163,7 +163,7 @@ inline void F3DHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_t 
         if (!ctx.state) return;
         int numLights = static_cast<int>(((w1 - 0x80000000u) >> 5) - 1);
         if (numLights < 0) numLights = 0;
-        if (numLights > MAX_LIGHTS) numLights = MAX_LIGHTS;
+        if (numLights >= MAX_LIGHTS) numLights = MAX_LIGHTS - 1;
         ctx.state->geometry.numLights = numLights;
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         return;

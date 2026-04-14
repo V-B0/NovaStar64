@@ -927,7 +927,7 @@ private:
             // MW_NUMLIGHT — custom formula
             int numLights = static_cast<int>(((w1 - 0x80000000u) >> 5) - 1);
             if (numLights < 0) numLights = 0;
-            if (numLights > MAX_LIGHTS) numLights = MAX_LIGHTS;
+            if (numLights >= MAX_LIGHTS) numLights = MAX_LIGHTS - 1;
             geo.numLights = numLights;
             break;
         }

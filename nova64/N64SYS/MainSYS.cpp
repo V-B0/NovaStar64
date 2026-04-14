@@ -811,7 +811,6 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                 case CICChip::CIC_NUS_6102: cicSeed = 0x3F; pifCicType = PIF::CicType::NUS_6102; break;
                 case CICChip::CIC_NUS_6103: cicSeed = 0x78; pifCicType = PIF::CicType::NUS_6103; break;
                 case CICChip::CIC_NUS_6105: cicSeed = 0x91; pifCicType = PIF::CicType::NUS_6105; break;
-                case CICChip::CIC_NUS_6106: cicSeed = 0x85; pifCicType = PIF::CicType::NUS_6106; break;
                 default: cicSeed = 0x3F; pifCicType = PIF::CicType::NUS_6102; break;
             }
 

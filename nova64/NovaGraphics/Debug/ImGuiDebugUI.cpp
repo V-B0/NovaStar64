@@ -78,6 +78,38 @@ void ImGuiDebugUI::CycleDebugOutput() {
     fprintf(stderr, "[Debug] Shader output mode: %d (%s)\n", mode, names[mode]);
 }
 
+void ImGuiDebugUI::ToggleForceOpaque() {
+    if (!m_videoPlugin) return;
+    auto& rdp = m_videoPlugin->GetRDPProcessor();
+    if (!rdp) return;
+    rdp->ToggleDebugForceOpaque();
+    fprintf(stderr, "[Debug] Force Opaque: %s\n", rdp->IsDebugForceOpaque() ? "ON" : "OFF");
+}
+
+void ImGuiDebugUI::ToggleDisableDepth() {
+    if (!m_videoPlugin) return;
+    auto& rdp = m_videoPlugin->GetRDPProcessor();
+    if (!rdp) return;
+    rdp->ToggleDebugDisableDepth();
+    fprintf(stderr, "[Debug] Disable Depth: %s\n", rdp->IsDebugDisableDepth() ? "ON" : "OFF");
+}
+
+void ImGuiDebugUI::ToggleDisableCulling() {
+    if (!m_videoPlugin) return;
+    auto& rdp = m_videoPlugin->GetRDPProcessor();
+    if (!rdp) return;
+    rdp->ToggleDebugDisableCulling();
+    fprintf(stderr, "[Debug] Disable Culling: %s\n", rdp->IsDebugDisableCulling() ? "ON" : "OFF");
+}
+
+void ImGuiDebugUI::ToggleMagenta() {
+    if (!m_videoPlugin) return;
+    auto& rdp = m_videoPlugin->GetRDPProcessor();
+    if (!rdp) return;
+    rdp->ToggleDebugMagenta();
+    fprintf(stderr, "[Debug] Magenta Highlight: %s\n", rdp->IsDebugMagenta() ? "ON" : "OFF");
+}
+
 // ─── Render ──────────────────────────────────────────────────
 
 void ImGuiDebugUI::Render() {

@@ -241,7 +241,9 @@ namespace F3DEX2 {
 // N64 Geometry Mode Flags
 // ──────────────────────────────────────────────
 namespace GeometryMode {
-    // GBI 1 (F3D/F3DEX)
+    // GBI 1 (F3D/F3DEX) — INTERNAL (translated) values used by the Video Plugin.
+    // Raw GBI1 commands use different bit positions: CULL_FRONT=0x1000, CULL_BACK=0x2000.
+    // The RSP HLE stores raw bits, so use the RAW constants below for GBI1 checks.
     inline constexpr uint32_t G_ZBUFFER            = 0x00000001;
     inline constexpr uint32_t G_SHADE              = 0x00000004;
     inline constexpr uint32_t G_CULL_FRONT         = 0x00000200;
@@ -254,11 +256,15 @@ namespace GeometryMode {
     inline constexpr uint32_t G_SHADING_SMOOTH     = 0x00200000;
     inline constexpr uint32_t G_CLIPPING           = 0x00800000;
 
-    // GBI 2 (F3DEX2) - reordered
+    // Raw GBI1 bit positions (as sent by the game in SetGeometryMode commands)
+    inline constexpr uint32_t G_RAW_CULL_FRONT     = 0x00001000;
+    inline constexpr uint32_t G_RAW_CULL_BACK      = 0x00002000;
+
+    // GBI 2 (F3DEX2) - matching F3DEX2.h values
     inline constexpr uint32_t G2_ZBUFFER            = 0x00000001;
-    inline constexpr uint32_t G2_SHADE              = 0x00000200;
-    inline constexpr uint32_t G2_CULL_FRONT         = 0x00000400;
-    inline constexpr uint32_t G2_CULL_BACK          = 0x00000800;
+    inline constexpr uint32_t G2_SHADE              = 0x00000004;
+    inline constexpr uint32_t G2_CULL_FRONT         = 0x00000200;
+    inline constexpr uint32_t G2_CULL_BACK          = 0x00000400;
     inline constexpr uint32_t G2_CULL_BOTH          = G2_CULL_FRONT | G2_CULL_BACK;
     inline constexpr uint32_t G2_FOG                = 0x00010000;
     inline constexpr uint32_t G2_LIGHTING           = 0x00020000;

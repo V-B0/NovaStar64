@@ -145,35 +145,26 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
         tv.position[3] = out[3];
 
         // --- Clip flags ---
-        // Only X/Y and W, matching GLideN64/Angrylion behavior.
+        // Only X/Y and W, matching GLideN64 behavior.
         // Z clipping is handled by the GPU (GL_DEPTH_CLAMP for NoN microcodes).
-        // Including Z clip flags here incorrectly forces many visible triangles
-        // through the software Sutherland-Hodgman clipper, losing geometry.
         tv.clipFlags = 0;
         float w = tv.position[3];
         if (w < 0.01f) {
             tv.clipFlags |= CLIP_W;
         }
-        // Always compute X/Y clip flags even when w < 0.01.
-        // The Sutherland-Hodgman clipper skips planes where no vertex
-        // has the corresponding flag.  If we only set CLIP_W without
-        // the directional flags, the W-near clip can create vertices
-        // that inherit huge X/Y from the original vertex but sit at
-        // w ≈ 0.01, and the LEFT/RIGHT/TOP/BOTTOM clips are skipped
-        // because their flags were never in orFlags — producing
-        // screen-space positions in the millions and texture noise.
-        // Guard-band: compare against w*clipRatio so triangles near
-        // screen edges aren't unnecessarily software-clipped.
-        // The GPU's scissor/viewport clips them precisely later.
-        if (w > 0.0f) {
+        // X/Y clip flags: computed for ALL vertices regardless of W sign,
+        // matching GLideN64's gSPClipVertex().  For negative W the comparisons
+        // may set multiple flags (e.g. both POSX and NEGX), which is correct
+        // for the AND-rejection test.  Post-clip face culling (below) handles
+        // the case where camera-through-wall triangles survive AND-rejection.
+        {
             float wg = w * geo.clipRatio;
-            if (tv.position[0] > +wg) tv.clipFlags |= CLIP_POSX;
-            if (tv.position[0] < -wg) tv.clipFlags |= CLIP_NEGX;
+            float wsInv = (geo.widescreenScale != 1.0f) ? (1.0f / geo.widescreenScale) : 1.0f;
+            float clipX = tv.position[0] * wsInv;
+            if (clipX > +wg) tv.clipFlags |= CLIP_POSX;
+            if (clipX < -wg) tv.clipFlags |= CLIP_NEGX;
             if (tv.position[1] > +wg) tv.clipFlags |= CLIP_POSY;
             if (tv.position[1] < -wg) tv.clipFlags |= CLIP_NEGY;
-        } else {
-            // w <= 0: behind camera, conservatively mark outside all planes
-            tv.clipFlags |= CLIP_POSX | CLIP_NEGX | CLIP_POSY | CLIP_NEGY;
         }
 
         // --- Eye-space normal (shared by lighting and texGen) ---
@@ -196,9 +187,16 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
 
         // --- Lighting ---
         if (lighting) {
-            float lr = geo.lights[geo.numLights].color[0];
-            float lg = geo.lights[geo.numLights].color[1];
-            float lb = geo.lights[geo.numLights].color[2];
+            // N64 RSP alternates between primary and secondary light colors
+            // for even/odd vertices (dithered flat shading). GLideN64 ref:
+            // gSPLightVertexStandard — useFirstColor = ((v + j) & 1) == 0
+            bool useFirstColor = ((startIndex + i) & 1) == 0;
+            const float* ambColor = useFirstColor
+                ? geo.lights[geo.numLights].color
+                : geo.lights[geo.numLights].color2;
+            float lr = ambColor[0];
+            float lg = ambColor[1];
+            float lb = ambColor[2];
 
             bool pointLighting = (geo.geometryMode & G_POINT_LIGHTING) != 0;
 
@@ -248,9 +246,10 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
                                     tnz * geo.lights[l].direction[2];
                     }
                     if (intensity > 0.0f) {
-                        lr += geo.lights[l].color[0] * intensity;
-                        lg += geo.lights[l].color[1] * intensity;
-                        lb += geo.lights[l].color[2] * intensity;
+                        const float* lc = useFirstColor ? geo.lights[l].color : geo.lights[l].color2;
+                        lr += lc[0] * intensity;
+                        lg += lc[1] * intensity;
+                        lb += lc[2] * intensity;
                     }
                 }
             } else {
@@ -260,9 +259,10 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
                                tny * geo.lights[l].direction[1] +
                                tnz * geo.lights[l].direction[2];
                     if (dot > 0.0f) {
-                        lr += geo.lights[l].color[0] * dot;
-                        lg += geo.lights[l].color[1] * dot;
-                        lb += geo.lights[l].color[2] * dot;
+                        const float* lc = useFirstColor ? geo.lights[l].color : geo.lights[l].color2;
+                        lr += lc[0] * dot;
+                        lg += lc[1] * dot;
+                        lb += lc[2] * dot;
                     }
                 }
             }
@@ -444,6 +444,21 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
     if (projection) {
         if (load) {
             geo.projectionStack[geo.projectionStackDepth] = mtx;
+
+            // Widescreen hack: scale projection X to widen horizontal FOV.
+            // For perspective (m[3][3] ≈ 0): only divide m[0][0] to widen FOV.
+            // For ortho (m[3][3] ≈ 1): divide both m[0][0] and m[3][0]
+            //   to scale 2D content (HUD, text) inward to 4:3 proportions.
+            if (geo.widescreenScale != 1.0f) {
+                auto& P = geo.projectionStack[geo.projectionStackDepth];
+                P.m[0][0] /= geo.widescreenScale;
+                // Only adjust ortho translation — perspective m[3][0] is
+                // usually 0 but dividing a non-zero value would shift the
+                // frustum and cause far objects to cull incorrectly.
+                if (fabsf(P.m[3][3]) > 0.5f) {
+                    P.m[3][0] /= geo.widescreenScale;
+                }
+            }
         } else {
             // Multiply: current = new * current (left-multiply)
             // For row-vector convention (v * MV * P), left-multiplying the projection
@@ -551,7 +566,7 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         // value = (numLights-1) * 24 for GBI1, or (numLights) * 24 for GBI2
         // We store the actual light count
         int numLights = static_cast<int>(value / 24);
-        if (numLights > 12) numLights = 12;
+        if (numLights >= MAX_LIGHTS) numLights = MAX_LIGHTS - 1;
         geo.numLights = numLights;
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         break;
@@ -748,12 +763,17 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         // Light data: G_MV_L0..G_MV_L7
         if (index >= MoveMem::G_MV_L0 && index <= MoveMem::G_MV_L7) {
             int lightIdx = (index - MoveMem::G_MV_L0) / 2;
-            if (lightIdx >= 0 && lightIdx < 8 && address + 16 <= ctx.rdramSize) {
+            if (lightIdx >= 0 && lightIdx < MAX_LIGHTS && address + 16 <= ctx.rdramSize) {
                 auto& light = geo.lights[lightIdx];
-                // Color (N64 bytes 0-2)
+                // Primary color (N64 bytes 0-2)
                 light.color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
                 light.color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
                 light.color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
+                // Secondary color (N64 bytes 4-6) — N64 alternates between
+                // primary and secondary colors for even/odd vertices.
+                light.color2[0] = static_cast<float>(ctx.ReadByte(address + 4)) / 255.0f;
+                light.color2[1] = static_cast<float>(ctx.ReadByte(address + 5)) / 255.0f;
+                light.color2[2] = static_cast<float>(ctx.ReadByte(address + 6)) / 255.0f;
                 
                 // Direction (N64 bytes 8-10, signed int8, normalized)
                 light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
@@ -806,13 +826,17 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
         // LookAt X is at offset 0 (index = -2)
         // LookAt Y is at offset 24 (index = -1)
         int lightIdx = (offset / 24) - 2;
-        if (lightIdx >= -2 && lightIdx < 8 && address + 16 <= ctx.rdramSize) {
+        if (lightIdx >= -2 && lightIdx < MAX_LIGHTS && address + 16 <= ctx.rdramSize) {
             if (lightIdx >= 0) {
                 auto& light = geo.lights[lightIdx];
-                // Color (N64 bytes 0-2)
+                // Primary color (N64 bytes 0-2)
                 light.color[0] = static_cast<float>(ctx.ReadByte(address + 0)) / 255.0f;
                 light.color[1] = static_cast<float>(ctx.ReadByte(address + 1)) / 255.0f;
                 light.color[2] = static_cast<float>(ctx.ReadByte(address + 2)) / 255.0f;
+                // Secondary color (N64 bytes 4-6)
+                light.color2[0] = static_cast<float>(ctx.ReadByte(address + 4)) / 255.0f;
+                light.color2[1] = static_cast<float>(ctx.ReadByte(address + 5)) / 255.0f;
+                light.color2[2] = static_cast<float>(ctx.ReadByte(address + 6)) / 255.0f;
                 
                 // Direction (N64 bytes 8-10, signed int8)
                 light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
@@ -882,6 +906,14 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
                 }
                 // Mark NOT dirty so UpdateCombinedMatrix() won't overwrite
                 geo.combinedDirty = false;
+
+                // Widescreen hack: scale combined matrix X focal length.
+                // Only m[0][0] — don't touch the full column, as ForceMatrix
+                // is used for 3D camera matrices where shifting X translation
+                // would break the view.
+                if (geo.widescreenScale != 1.0f) {
+                    geo.combinedMatrix.m[0][0] /= geo.widescreenScale;
+                }
             }
         }
         // ForceMatrix uses two consecutive display list commands (16 bytes).
@@ -921,6 +953,15 @@ void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t lengt
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  Debug flags — disable specific culling/branching mechanisms for diagnosis.
+//  Set to true one at a time to narrow down geometry disappearing issues.
+// ═══════════════════════════════════════════════════════════════════════════
+static constexpr bool DEBUG_DISABLE_CULLDL     = false; // disable CullDisplayList
+static constexpr bool DEBUG_DISABLE_BRANCH     = false; // disable BranchZ / BranchW (never branch = far behavior)
+static constexpr bool DEBUG_FORCE_BRANCH       = false; // FORCE BranchZ/BranchW to always branch (close behavior)
+static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling + AND-rejection in DrawTriangle
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  Triangle Drawing
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -938,7 +979,9 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     
     // Backface culling in screen space (like GLideN64) for numerical stability.
     // NDC-space cross products lose precision for nearly edge-on polygons.
-    if (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) {
+    if (!DEBUG_DISABLE_TRI_REJECT &&
+        (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) &&
+        !ctx.rdpProcessor->IsDebugDisableCulling()) {
         const auto& tv0 = geo.vertexBuffer[v0];
         const auto& tv1 = geo.vertexBuffer[v1];
         const auto& tv2 = geo.vertexBuffer[v2];
@@ -993,16 +1036,25 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     uint32_t orFlags = tv0c.clipFlags | tv1c.clipFlags | tv2c.clipFlags;
     
     // Trivial rejection: all verts on the same side of a plane
-    if (tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags) {
+    if (!DEBUG_DISABLE_TRI_REJECT && (tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags)) {
         return;
     }
     
-    if (orFlags == 0) {
-        // Trivial accept - fully inside frustum, send directly
+    // GLideN64 approach: only software-clip when vertices are behind the
+    // camera (CLIP_W).  For X/Y clip flags the GPU hardware handles clipping
+    // via the viewport/scissor — no need for Sutherland-Hodgman.  The full
+    // 5-plane software clipper was incorrectly dropping edge-case geometry
+    // that the GPU would render fine.
+    bool needsWClip = (orFlags & CLIP_W) != 0;
+    
+    if (!needsWClip) {
+        // No behind-camera vertices — send directly to GPU.
+        // The GPU clips at viewport/scissor boundaries automatically.
         ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
         ++m_trianglesProcessed;
     } else {
-        // Needs clipping - convert to ClipVertex, run Sutherland-Hodgman
+        // W-near clip needed (behind-camera vertices) — run Sutherland-Hodgman
+        // but ONLY against the W-near plane.  X/Y planes are left to the GPU.
         auto toClipVert = [](const TransformedVertex& tv) -> ClipVertex {
             ClipVertex cv;
             cv.position  = { tv.position[0], tv.position[1], tv.position[2], tv.position[3] };
@@ -1010,7 +1062,8 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             cv.texCoord  = { tv.texCoord[0],  tv.texCoord[1] };
             cv.texCoord1 = { tv.texCoord1[0], tv.texCoord1[1] };
             cv.fog       = tv.fogFactor;
-            cv.clipFlags = tv.clipFlags;
+            // Only pass W flag to the clipper — skip X/Y planes
+            cv.clipFlags = tv.clipFlags & CLIP_W;
             return cv;
         };
         
@@ -1058,11 +1111,32 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                 return rv;
             };
             
+            // Post-clip face culling: the pre-clip culling was skipped
+            // when any vertex had W ≤ epsilon (behind camera).  Now that
+            // all clipped vertices have valid W > 0, we can reliably
+            // determine screen-space winding on each sub-triangle.
+            // Without this, backface geometry (e.g. the inside of walls)
+            // passes through unchecked when the camera clips through
+            // objects during cutscenes, covering the camera view.
+            bool doCull = (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) != 0
+                       && !ctx.rdpProcessor->IsDebugDisableCulling();
+
             for (int i = 1; i + 1 < poly.vertexCount; ++i) {
+                RenderBatch::Vertex rv0 = toRenderVert(poly.vertices[0]);
+                RenderBatch::Vertex rv1 = toRenderVert(poly.vertices[i]);
+                RenderBatch::Vertex rv2 = toRenderVert(poly.vertices[i + 1]);
+
+                if (doCull) {
+                    float cross = (rv1.x - rv0.x) * (rv2.y - rv0.y)
+                                - (rv2.x - rv0.x) * (rv1.y - rv0.y);
+                    // scaleY is negative → screen-space winding is flipped.
+                    // CULL_BACK rejects CCW (cross > 0), CULL_FRONT rejects CW (cross < 0).
+                    if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) continue;
+                    if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) continue;
+                }
+
                 ctx.rdpProcessor->DrawTriangleRaw(
-                    toRenderVert(poly.vertices[0]),
-                    toRenderVert(poly.vertices[i]),
-                    toRenderVert(poly.vertices[i + 1]),
+                    rv0, rv1, rv2,
                     geo.geometryMode,
                     geo.texture.tileIndex);
             }
@@ -1145,10 +1219,11 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
     
     switch (where) {
     case 0x10: // G_MWO_POINT_RGBA
-        v.color[0] = static_cast<float>((value >> 24) & 0xFF) / 255.0f;
-        v.color[1] = static_cast<float>((value >> 16) & 0xFF) / 255.0f;
-        v.color[2] = static_cast<float>((value >> 8) & 0xFF) / 255.0f;
-        v.color[3] = static_cast<float>(value & 0xFF) / 255.0f;
+        // GLideN64 uses _FIXED2FLOATCOLOR which divides by 256 (not 255)
+        v.color[0] = static_cast<float>((value >> 24) & 0xFF) / 256.0f;
+        v.color[1] = static_cast<float>((value >> 16) & 0xFF) / 256.0f;
+        v.color[2] = static_cast<float>((value >> 8) & 0xFF) / 256.0f;
+        v.color[3] = static_cast<float>(value & 0xFF) / 256.0f;
         break;
         
     case 0x14: // G_MWO_POINT_ST
@@ -1175,6 +1250,7 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
         int16_t y = static_cast<int16_t>(value & 0xFFFF);
         v.screenX = static_cast<float>(x) / 4.0f;
         v.screenY = static_cast<float>(y) / 4.0f;
+
         v.modifiedXY = true;
         v.clipFlags = 0;
         break;
@@ -1201,6 +1277,7 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
 // ═══════════════════════════════════════════════════════════════════════════
 
 void GBIHandler::CullDisplayList(DListContext& ctx, uint32_t startVtx, uint32_t endVtx) {
+    if constexpr (DEBUG_DISABLE_CULLDL) return;
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
     
@@ -1223,6 +1300,12 @@ void GBIHandler::CullDisplayList(DListContext& ctx, uint32_t startVtx, uint32_t 
 }
 
 void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, uint32_t address) {
+    if constexpr (DEBUG_DISABLE_BRANCH) return;
+    if constexpr (DEBUG_FORCE_BRANCH) {
+        // Force branch = always draw detail geometry regardless of distance
+        ctx.pc = ctx.ResolveAddress(address);
+        return;
+    }
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
     
@@ -1232,8 +1315,8 @@ void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, 
     // G_BRANCH_Z compares the vertex's projected W-derived depth against a
     // fixed-point threshold. The zValue from the command is in the same space
     // as the z-buffer (0x0000..0xFFFF range, normalized from near to far).
-    // GLideN64 uses signed int for zTest. Using unsigned is UB when z/w is
-    // negative and produces wrong branch decisions for terrain LOD.
+    // GLideN64 uses u32 for zTest. The unsigned cast means negative z/w
+    // (behind camera) wraps to a huge value, triggering the branch.
     float w = geo.vertexBuffer[vtxIndex].position[3]; // clip W
     float z = geo.vertexBuffer[vtxIndex].position[2]; // clip Z
 
@@ -1243,14 +1326,20 @@ void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, 
         return;
     }
 
-    int32_t zTest = static_cast<int32_t>((z / w) * 1023.0f);
-    int32_t zVal  = static_cast<int32_t>(zValue);
+    uint32_t zTest = static_cast<uint32_t>((z / w) * 1023.0f);
+    uint32_t zVal  = zValue;
     if (zTest > 0x03FF || zTest <= zVal) {
         ctx.pc = ctx.ResolveAddress(address);
     }
 }
 
 void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, uint32_t address) {
+    if constexpr (DEBUG_DISABLE_BRANCH) return;
+    if constexpr (DEBUG_FORCE_BRANCH) {
+        // Force branch = always draw detail geometry regardless of distance
+        ctx.pc = ctx.ResolveAddress(address);
+        return;
+    }
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
 

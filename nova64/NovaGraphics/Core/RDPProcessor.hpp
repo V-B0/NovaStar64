@@ -372,6 +372,12 @@ private:
     int         m_debugOutputMode = 0; // 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
     static constexpr int kDebugModeCount = 8;
     
+    // Diagnostic debug toggles (runtime, toggled via hotkeys)
+    bool m_debugForceOpaque    = false; // Force alpha=1 on all draws
+    bool m_debugDisableDepth   = false; // Disable depth test/write
+    bool m_debugDisableCulling = false; // Disable backface culling in RSP
+    bool m_debugMagenta        = false; // Render all geometry as magenta
+    
     bool m_initialized = false;
 
     // Callback fired on each SyncFull, before FlushBatch.
@@ -383,6 +389,16 @@ public:
     int  GetDebugOutputMode() const { return m_debugOutputMode; }
     void SetDebugOutputMode(int mode) { m_debugOutputMode = (mode >= 0 && mode < kDebugModeCount) ? mode : 0; }
     void CycleDebugOutputMode() { m_debugOutputMode = (m_debugOutputMode + 1) % kDebugModeCount; }
+
+    // ─── Diagnostic debug toggles ───
+    void ToggleDebugForceOpaque()    { m_debugForceOpaque    = !m_debugForceOpaque; }
+    void ToggleDebugDisableDepth()   { m_debugDisableDepth   = !m_debugDisableDepth; }
+    void ToggleDebugDisableCulling() { m_debugDisableCulling = !m_debugDisableCulling; }
+    void ToggleDebugMagenta()        { m_debugMagenta        = !m_debugMagenta; }
+    bool IsDebugForceOpaque()    const { return m_debugForceOpaque; }
+    bool IsDebugDisableDepth()   const { return m_debugDisableDepth; }
+    bool IsDebugDisableCulling() const { return m_debugDisableCulling; }
+    bool IsDebugMagenta()        const { return m_debugMagenta; }
 
     // ─── Game Hack Flags ───
     // Set by VideoPlugin based on GameProfile. Checked in hot paths.

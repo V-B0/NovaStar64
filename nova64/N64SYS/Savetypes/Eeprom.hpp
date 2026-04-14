@@ -32,5 +32,6 @@ private:
 
     uint8_t m_EEPROM[0x800];
     bool m_ReadOnly;
+    bool m_Is16K;  // true = 16K EEPROM (2048 bytes), false = 4K (512 bytes)
     FileSystem::File m_File;
 };

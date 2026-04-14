@@ -82,6 +82,7 @@ struct GPUFramebuffer {
     bool     isAux       = false;
     bool     gpuModified = false;   // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
     uint64_t lastUsedFrame = 0;
+    uint64_t lastColorClearedFrame = 0;  // Last frame the color buffer was cleared (for overscan)
     FramebufferDesc desc;
 };
 
@@ -273,15 +274,21 @@ public:
 
     /// Hint the expected framebuffer height (derived from the current scissor box).
     /// Called whenever SetScissor fires so OnSetColorImage uses the right height.
-    void SetScissorHint(uint32_t width, uint32_t height) {
+    void SetScissorHint(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
         if (height > 0) m_scissorHeight = height;
         if (width  > 0) m_scissorWidth  = width;
+        m_scissorX = x;
+        m_scissorY = y;
     }
 
     const VIConfig& GetVIConfig() const { return m_viConfig; }
 
     /// Store the RDRAM base pointer for RDRAM→GPU uploads in UpdateVI
     void SetRDRAM(const uint8_t* rdram) { m_rdram = rdram; }
+
+    /// Enable widescreen stretch: BlitToScreen fills the entire window
+    /// instead of preserving the FBO's native aspect ratio.
+    void SetWidescreenStretch(bool enable) { m_widescreenStretch = enable; }
 
     // Intel Iris Xe workaround: FBOs created lazily (after game textures)
     // can have broken texture sampling. Recreating gives a fresh GL object.
@@ -310,6 +317,8 @@ private:
     uint32_t m_msaaSamples = 1;
     uint32_t m_scissorWidth  = 320;
     uint32_t m_scissorHeight = 240;
+    uint32_t m_scissorX = 0;
+    uint32_t m_scissorY = 0;
 
     // RDRAM dirty tracking (1 bit per 4KB page)
     static constexpr uint32_t kRDRAMSize = 8 * 1024 * 1024; // 8MB
@@ -320,6 +329,7 @@ private:
     uint64_t m_frameCounter = 0;
     bool     m_depthClearPending = false;     // Set by OnSetDepthImage, consumed by OnSetColorImage
     bool     m_depthCopiedThisFrame = false;  // PD hack: track depth copy per frame
+    bool     m_widescreenStretch = false;     // Stretch blit to fill entire window (no pillarbox)
     const uint8_t* m_rdram = nullptr;        // Stored RDRAM pointer for CopyToGPU in UpdateVI
     Stats m_stats{};
     bool m_initialized = false;

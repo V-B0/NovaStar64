@@ -42,13 +42,13 @@ static inline uint8_t IntToBCD(int32_t value)
 
 // CEeprom default constructor
 CEeprom::CEeprom(void)
-    : m_ReadOnly(false)
+    : m_ReadOnly(false), m_Is16K(false)
 {
     std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM));
 }
 
 CEeprom::CEeprom(bool ReadOnly)
-    : m_ReadOnly(ReadOnly)
+    : m_ReadOnly(ReadOnly), m_Is16K(false)
 {
     // Initialize EEPROM to 0xFF (unprogrammed state)
     std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM));
@@ -119,11 +119,11 @@ void CEeprom::EepromCommand(uint8_t* Command)
 // Handle EEPROM status check command
 void CEeprom::HandleStatusCommand(uint8_t* Command)
 {
-    // EEPROM always responds to status queries through PIF channel 4,
-    // regardless of the SRAM/FlashRAM save type.  On real N64 hardware,
-    // the PIF routes channel-4 queries to the cartridge EEPROM chip (if
-    // present).  We always respond as 4K EEPROM; games that don't use
-    // EEPROM will simply ignore the response.
+    // EEPROM responds with device type through PIF channel 4.
+    // 0x80 = 4K EEPROM (512 bytes), 0xC0 = 16K EEPROM (2048 bytes).
+    // m_Is16K is auto-detected from save file size or set when a game
+    // writes beyond line 63.
+    const uint8_t sizeIndicator = m_Is16K ? 0xC0 : 0x80;
 
     if (Command[1] != 3)
     {
@@ -134,8 +134,7 @@ void CEeprom::HandleStatusCommand(uint8_t* Command)
         }
         if ((Command[1] & 3) > 1)
         {
-            // Return EEPROM size indicator (always 4K)
-            Command[4] = 0x80;
+            Command[4] = sizeIndicator;
         }
         if ((Command[1] & 3) > 2)
         {
@@ -145,7 +144,7 @@ void CEeprom::HandleStatusCommand(uint8_t* Command)
     else
     {
         Command[3] = 0x00;
-        Command[4] = 0x80;  // 4K EEPROM
+        Command[4] = sizeIndicator;
         Command[5] = 0x00;
     }
 }
@@ -340,6 +339,13 @@ void CEeprom::LoadEeprom()
         // Read existing EEPROM data
         size_t bytesRead = m_File.read(m_EEPROM, sizeof(m_EEPROM));
         
+        // Auto-detect 16K EEPROM from save file size
+        if (bytesRead > 512)
+        {
+            m_Is16K = true;
+            Log::infof("Detected 16K EEPROM from save file size (%zu bytes)", bytesRead);
+        }
+        
         if (bytesRead > 0)
         {
             Log::infof("Loaded EEPROM from: %s (%zu bytes)", fullPath.c_str(), bytesRead);
@@ -406,6 +412,13 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line)
     // Update EEPROM memory
     const int32_t offset = line * 8;
     std::memcpy(&m_EEPROM[offset], Buffer, 8);
+
+    // Auto-upgrade to 16K if game writes beyond 4K boundary (line 64+)
+    if (!m_Is16K && line >= 64)
+    {
+        m_Is16K = true;
+        Log::infof("EEPROM auto-upgraded to 16K (game wrote to line %d)", line);
+    }
 
     // Write to file if not read-only
     if (!m_ReadOnly && m_File.is_open())

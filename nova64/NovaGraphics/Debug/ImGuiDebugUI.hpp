@@ -40,6 +40,12 @@ public:
     // Cycle shader debug output mode (F8 key)
     void CycleDebugOutput();
 
+    // Diagnostic debug toggles
+    void ToggleForceOpaque();
+    void ToggleDisableDepth();
+    void ToggleDisableCulling();
+    void ToggleMagenta();
+
     // Bind the N64 system so we can read registers/memory live
     void SetSystem(CN64System* sys) { m_system = sys; }
 

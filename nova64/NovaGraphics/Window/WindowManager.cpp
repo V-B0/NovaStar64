@@ -14,6 +14,11 @@
 #include <iostream>
 #include <cstring>
 
+#ifdef _WIN32
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#endif
+
 namespace Nova64 { namespace Video {
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -121,6 +126,35 @@ bool WindowManager::Initialize(const WindowConfig& config) {
     SDL_GetWindowPosition(m_window, &m_windowedX, &m_windowedY);
     m_windowedW = config.width;
     m_windowedH = config.height;
+
+#ifdef _WIN32
+    // Remove the 1-pixel colored border that Windows DWM draws around the
+    // window.  Without this, a thin accent-colored line appears at the very
+    // top of the window.  Use multiple strategies for different Windows versions.
+    {
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(m_window, &wmInfo)) {
+            HWND hwnd = wmInfo.info.win.window;
+
+            // Strategy 1: Set border color to black (Windows 11 22H2+)
+            // DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE
+            COLORREF borderBlack = 0x00000000; // Black border = invisible on black background
+            DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/,
+                                  &borderBlack, sizeof(borderBlack));
+
+            // Strategy 2: Remove WS_BORDER from window style (all Windows versions)
+            LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+            if (style & WS_BORDER) {
+                style &= ~WS_BORDER;
+                SetWindowLongW(hwnd, GWL_STYLE, style);
+                // Force the window to redraw its non-client area with the new style
+                SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+            }
+        }
+    }
+#endif
 
     // ── Create OpenGL context ────────────────────────────────────────────
     m_glContext = SDL_GL_CreateContext(m_window);
@@ -380,6 +414,25 @@ bool WindowManager::ProcessEvents() {
         // F8 cycles combiner debug output mode
         if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F8) {
             g_imguiDebugUI.CycleDebugOutput();
+        }
+        // F11 = force opaque (diagnostic)
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F11) {
+            g_imguiDebugUI.ToggleForceOpaque();
+        }
+        // Ctrl+D = disable depth (diagnostic)
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_d &&
+            (event.key.keysym.mod & KMOD_CTRL)) {
+            g_imguiDebugUI.ToggleDisableDepth();
+        }
+        // Ctrl+Shift+C = disable culling (diagnostic)
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c &&
+            (event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT)) {
+            g_imguiDebugUI.ToggleDisableCulling();
+        }
+        // Ctrl+Shift+M = magenta highlight (diagnostic)
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_m &&
+            (event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT)) {
+            g_imguiDebugUI.ToggleMagenta();
         }
 
         HandleSDLEvent(&event);

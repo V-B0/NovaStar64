@@ -491,6 +491,19 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
         glScissor(0, 0, fb->scaledWidth, fb->scaledHeight);
 
+        // Clear color to black on first activation each frame.
+        // N64 games only render within the scissor rect, so pixels outside
+        // it (overscan edges) retain stale data and appear as a colored
+        // strip at the top/right of the screen or a single pixel row during
+        // scene transitions.  Clearing once per frame fixes all three.
+        if (fb->lastColorClearedFrame < m_frameCounter && fb->fbo != 0) {
+            glDisable(GL_SCISSOR_TEST);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glEnable(GL_SCISSOR_TEST);
+            fb->lastColorClearedFrame = m_frameCounter;
+        }
+
         // When a depth image has been set (SetDepthImage called before this
         // SetColorImage — the usual N64 display list order), clear the depth
         // attachment on the NEW color FBO.  Without this, double-buffered
@@ -1071,6 +1084,7 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     if (!displayFB) {
         // Still clear the back buffer so we don't present an undefined frame after SwapBuffers.
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDisable(GL_SCISSOR_TEST);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         return;
@@ -1090,30 +1104,39 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     // Bind default framebuffer (screen)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, screenWidth, screenHeight);
+    glDisable(GL_SCISSOR_TEST);  // FlushBatch leaves scissor enabled with a game scissor rect
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Determine aspect ratio
-    float srcAspect = static_cast<float>(displayFB->width) / static_cast<float>(displayFB->height);
-    float dstAspect = static_cast<float>(screenWidth) / static_cast<float>(screenHeight);
-
     int32_t vpX = 0, vpY = 0;
     uint32_t vpW = screenWidth, vpH = screenHeight;
 
-    if (srcAspect > dstAspect) {
-        // Letterbox (black bars top/bottom)
-        vpH = static_cast<uint32_t>(screenWidth / srcAspect);
-        vpY = (screenHeight - vpH) / 2;
+    if (m_widescreenStretch) {
+        // Widescreen hack: fill the entire window — the projection matrix
+        // already squished the content horizontally, so stretching restores
+        // correct proportions with the wider FOV.
+        vpX = 0; vpY = 0; vpW = screenWidth; vpH = screenHeight;
     } else {
-        // Pillarbox (black bars left/right)
-        vpW = static_cast<uint32_t>(screenHeight * srcAspect);
-        vpX = (screenWidth - vpW) / 2;
+        float srcAspect = static_cast<float>(displayFB->width) / static_cast<float>(displayFB->height);
+        float dstAspect = static_cast<float>(screenWidth) / static_cast<float>(screenHeight);
+
+        if (srcAspect > dstAspect) {
+            // Letterbox (black bars top/bottom)
+            vpH = static_cast<uint32_t>(screenWidth / srcAspect);
+            vpY = (screenHeight - vpH) / 2;
+        } else {
+            // Pillarbox (black bars left/right)
+            vpW = static_cast<uint32_t>(screenHeight * srcAspect);
+            vpX = (screenWidth - vpW) / 2;
+        }
     }
 
     glViewport(vpX, vpY, vpW, vpH);
 
     // Use simple blit (no VI filter) for crisp output
     glUseProgram(m_blitProgram);
+    // Overscan crop is hardcoded in the blit fragment shader (5 native pixels per edge)
 
     GLuint blitTex = (displayFB->presentationTex != 0)
                           ? displayFB->presentationTex : displayFB->colorTex;

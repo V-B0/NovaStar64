@@ -19,6 +19,7 @@
 #pragma once
 
 #include "GBIHandler.hpp"
+#include <set>
 
 namespace Nova64::Video {
 
@@ -181,8 +182,14 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         if (opcode >= 0xE0) {
             HandleRDPCommand(ctx, w0, w1);
         } else {
-            NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
-                    "F3DEX2: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
+            // Warn once per unique opcode to avoid spam (e.g. F3DEX
+            // opcodes 0x09/0x0B that appear during mid-frame microcode
+            // switches and are harmless to skip).
+            static std::set<uint8_t> warnedOpcodes;
+            if (warnedOpcodes.insert(opcode).second) {
+                NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
+                        "F3DEX2: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
+            }
         }
         break;
     }
@@ -220,8 +227,10 @@ inline void F3DEX2Handler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t vtxIndex = ((w0 & 0xFFF) / 2);
-    // N64 BranchZ zval is the full 32-bit w1 word (matching GLideN64)
-    BranchZ(ctx, vtxIndex, w1, m_rdpHalf1);
+    // GLideN64 uses upper 16 bits of w1 as the z threshold:
+    //   gSPBranchLessZ(gDP.half_1, _SHIFTR(w0,1,11), _SHIFTR(w1,16,16))
+    uint32_t zval = (w1 >> 16) & 0xFFFF;
+    BranchZ(ctx, vtxIndex, zval, m_rdpHalf1);
 }
 
 inline void F3DEX2Handler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -614,6 +623,7 @@ inline void F3DCBFDHandler::Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, 
         // CBFD uses 48 bytes per light instead of 32
         if (!ctx.state) return;
         int numLights = static_cast<int>(w1 / 48);
+        if (numLights >= MAX_LIGHTS) numLights = MAX_LIGHTS - 1;
         ctx.state->geometry.numLights = numLights;
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
     } else if (index == G_MW_COORD_MOD) {

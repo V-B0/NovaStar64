@@ -273,8 +273,8 @@ inline bool S2DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
                    opcode == 0xBC || opcode == 0xBD) {
             // Shared GBI1 state commands
             switch (opcode) {
-            case 0xB9: SetOtherModeL(ctx, (w0>>8)&0xFF, (w0&0xFF)+1, w1); break;
-            case 0xBA: SetOtherModeH(ctx, (w0>>8)&0xFF, (w0&0xFF)+1, w1); break;
+            case 0xB9: SetOtherModeL(ctx, (w0>>8)&0xFF, (w0&0xFF), w1); break;
+            case 0xBA: SetOtherModeH(ctx, (w0>>8)&0xFF, (w0&0xFF), w1); break;
             case 0xBB: SetTextureState(ctx, w0, w1); break;
             case 0xBC: MoveWord(ctx, (w0>>16)&0xFF, w0&0xFFFF, w1); break;
             default: break;

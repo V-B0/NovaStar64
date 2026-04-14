@@ -175,6 +175,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // Initialize framebuffer manager (creates blit/filter GL resources)
     g_fbManager.Init(static_cast<uint32_t>(m_config.internalResScale));
 
+    // Apply widescreen hack if configured
+    if (m_config.aspectRatio == AspectRatio::Widescreen16_9) {
+        float wsScale = (16.0f / 9.0f) / (4.0f / 3.0f);  // ≈ 1.333
+        m_rdpProcessor->GetVideoStateMutable().rdp.geometry.widescreenScale = wsScale;
+        g_fbManager.SetWidescreenStretch(true);
+        LOG_INFO("Widescreen 16:9 hack enabled (scale={:.3f})", wsScale);
+    }
+
     // Initialize depth buffer manager (N64-accurate depth compare)
     g_depthManager.Init();
     g_depthManager.InitZLUT();
@@ -207,8 +215,10 @@ void main() {
 layout(binding = 0) uniform sampler2D u_screenTexture;
 layout(location = 0) in vec2 v_texCoord;
 layout(location = 0) out vec4 fragColor;
+uniform vec4 uCropRect;  // (uMin, vMin, uMax, vMax) — overscan crop
 void main() {
-    fragColor = vec4(texture(u_screenTexture, v_texCoord).rgb, 1.0);
+    vec2 uv = mix(uCropRect.xy, uCropRect.zw, v_texCoord);
+    fragColor = vec4(texture(u_screenTexture, uv).rgb, 1.0);
 }
 )";
         // Compile vertex shader
@@ -640,9 +650,11 @@ void VideoPlugin::UpdateScreen() {
             // Set viewport/scissor AFTER BeginFrame (which may reset them)
             int32_t winW = 640, winH = 480;
             if (win) win->GetDrawableSize(winW, winH);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, winW, winH);
-            glScissor(0, 0, winW, winH);
             glDisable(GL_SCISSOR_TEST);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
 
             BlitVIFramebuffer(viType, m_viOrigin & 0x00FFFFFF, m_viWidth, outHeight);
             m_renderer->EndFrame();
@@ -828,6 +840,21 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
     // is the game's color FBO after ProcessDList — corrupting its content.
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glUseProgram(m_viBlitProgram);
+
+    // Crop 4 native overscan pixels from each edge (same as HLE blit path)
+    {
+        float fw = static_cast<float>(fbWidth);
+        float fh = static_cast<float>(fbHeight);
+        constexpr float kCrop = 4.0f;
+        float cropU0 = (fw > kCrop) ? (kCrop / fw) : 0.0f;
+        float cropV0 = (fh > kCrop) ? (kCrop / fh) : 0.0f;
+        float cropU1 = (fw > kCrop) ? ((fw - kCrop) / fw) : 1.0f;
+        float cropV1 = (fh > kCrop) ? ((fh - kCrop) / fh) : 1.0f;
+        GLint cropLoc = glGetUniformLocation(m_viBlitProgram, "uCropRect");
+        if (cropLoc >= 0)
+            glUniform4f(cropLoc, cropU0, cropV0, cropU1, cropV1);
+    }
+
     glBindVertexArray(m_viBlitVAO);
     if (m_viTexture) {
         m_renderer->BindTexture(0, m_viTexture.get());
