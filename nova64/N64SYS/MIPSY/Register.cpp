@@ -589,16 +589,19 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
     if (SpecialOffset && !wasExlSet)
     {
         m_System.m_JumpToLocation = (m_System.m_JumpToLocation & 0xFFFFFFFFFFFF0000);
+        // BEV=1: TLB refill at 0xBFC00200, XTLB at 0xBFC00280
+        // BEV=0: TLB refill at 0x80000000, XTLB at 0x80000080
+        uint16_t bevBase = STATUS_REGISTER.BEV ? 0x0200 : 0x0000;
         switch (STATUS_REGISTER.PrevMode)
         {
         case PrivilegeMode_Kernel:
-            m_System.m_JumpToLocation |= STATUS_REGISTER.KernelEXAddr == 0 ? 0x0000 : 0x0080;
+            m_System.m_JumpToLocation |= STATUS_REGISTER.KernelEXAddr == 0 ? bevBase : (bevBase + 0x0080);
             break;
         case PrivilegeMode_Supervisor:
-            m_System.m_JumpToLocation |= STATUS_REGISTER.SuperVisorEXAddr == 0 ? 0x0000 : 0x0080;
+            m_System.m_JumpToLocation |= STATUS_REGISTER.SuperVisorEXAddr == 0 ? bevBase : (bevBase + 0x0080);
             break;
         case PrivilegeMode_User:
-            m_System.m_JumpToLocation |= STATUS_REGISTER.UserEXAddr == 0 ? 0x0000 : 0x0080;
+            m_System.m_JumpToLocation |= STATUS_REGISTER.UserEXAddr == 0 ? bevBase : (bevBase + 0x0080);
             break;
         }
     }
@@ -629,11 +632,13 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
         
         EPC_REGISTER = static_cast<int64_t>(static_cast<int32_t>(m_PROGRAM_COUNTER) - 
                                              (CAUSE_REGISTER.BranchDelay ? 4 : 0));
-        
         STATUS_REGISTER.ExceptionLevel = 1;
     }
     
     m_System.m_PipelineStage = N64Types::PipelineStage::Jump;
+
+    // Per MIPS spec: LLBit is cleared by any exception
+    m_LLBit = 0;
 
     // Exception vector depends on BEV (Bootstrap Exception Vector) bit in STATUS
     if (STATUS_REGISTER.BEV) {

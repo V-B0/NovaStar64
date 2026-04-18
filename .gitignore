@@ -10,12 +10,16 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
-Legend of Zelda, The - Ocarina of Time (U) (V1.2) [!].z64
+
 
 # Build directories
 build/
 nova64/build/
 .vs/
+Gliden64/
+Saves/
+ShaderCache/
+
 *.pdb
 *.obj
 *.exe
@@ -23,3 +27,5 @@ nova64/build/
 *.ilk
 *.txt
 *.z64
+*.log
+*.ini

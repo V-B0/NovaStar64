@@ -200,9 +200,12 @@ void MicrocodeDispatcher::HandleUcodeSwitch(
     }
     
     NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
-            "Mid-frame microcode switch: {} -> {}",
+            "Mid-frame microcode switch: {} -> {} (CRC=0x{:08X}, method={}, conf={:.2f})",
             MicrocodeTypeName(m_activeInfo.type),
-            MicrocodeTypeName(detection.type));
+            MicrocodeTypeName(detection.type),
+            detection.crc,
+            static_cast<int>(detection.method),
+            detection.confidence);
     
     MicrocodeInfo newInfo = m_registry.GetInfo(
         detection.type, textAddr, textSize, dataAddr, dataSize);

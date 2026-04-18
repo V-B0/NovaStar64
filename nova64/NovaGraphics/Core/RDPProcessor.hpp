@@ -73,7 +73,8 @@ struct DrawCall {
     // Tile descriptor snapshots for texture binding at flush time
     TileDescriptor tileDesc0;
     TileDescriptor tileDesc1;
-    uint32_t textureImageAddr;   // RDRAM address of textureImage at draw time
+    uint32_t textureImageAddr;   // RDRAM address for tile0 at draw time
+    uint32_t textureImageAddr1;  // RDRAM address for tile1 (2-cycle mode)
 
     // Color state snapshot — needed for correct per-draw-call uniforms
     RDPColor primColor;

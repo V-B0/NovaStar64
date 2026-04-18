@@ -547,10 +547,35 @@ void CRecompiler::Execute_VirtualTable() {
         ++m_Stats.blocksExecuted;
         func->Execute();
         
+        // Deferred CheckInterrupts after ERET: on real VR4300, ERET lets at
+        // least one instruction execute before servicing pending interrupts.
+        // The ERET callback sets this flag instead of calling CheckInterrupts
+        // directly, and we service it here — after the block at the ERET
+        // target has executed.
+        if (m_System.m_DeferredCheckInterrupts) {
+            m_System.m_DeferredCheckInterrupts = false;
+            m_Reg.CheckInterrupts();
+        }
+
         // Apply any pending jump (branch target or synchronous exception).
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+        }
+
+        // Address Error on instruction fetch: JR/JALR can set a misaligned
+        // target.  On real hardware this fires after the delay slot executes,
+        // which matches our timing (block already ran the delay slot above).
+        {
+            uint32_t nextPC = static_cast<uint32_t>(m_ProgramCounter);
+            if ((nextPC & 3) != 0) {
+                m_Reg.DoAddressError(
+                    static_cast<int64_t>(static_cast<int32_t>(nextPC)), true);
+                if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+                    m_ProgramCounter = m_System.m_JumpToLocation;
+                    m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
+                }
+            }
         }
 
         // ================================================================

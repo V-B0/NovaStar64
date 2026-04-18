@@ -78,6 +78,7 @@ private:
     
     struct DMAState {
         bool is_active = false;
+        bool is_write = false;          // true = RDRAM→Cart (save), false = Cart→RDRAM (load)
         uint32_t source_address = 0;
         uint32_t dest_address = 0;
         uint32_t length = 0;

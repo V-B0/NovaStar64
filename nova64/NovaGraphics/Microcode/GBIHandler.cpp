@@ -47,12 +47,19 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
         
         ctx.AdvancePC(2);
         
-        if (!ProcessCommand(ctx, w0, w1)) {
+        // Dispatch through the active handler so mid-frame microcode
+        // switches (G_LOAD_UCODE) take effect immediately.
+        GBIHandler* handler = ctx.dispatcher
+            ? ctx.dispatcher->GetCurrentHandler()
+            : this;
+        
+        if (!handler->ProcessCommand(ctx, w0, w1)) {
             break;
         }
         
         ++commandCount;
-        ++m_commandsProcessed;
+        // Credit the command to whichever handler actually ran it
+        ++handler->m_commandsProcessed;
     }
     
     if (commandCount >= MAX_COMMANDS_PER_FRAME) {
@@ -958,7 +965,6 @@ void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t lengt
 // ═══════════════════════════════════════════════════════════════════════════
 static constexpr bool DEBUG_DISABLE_CULLDL     = false; // disable CullDisplayList
 static constexpr bool DEBUG_DISABLE_BRANCH     = false; // disable BranchZ / BranchW (never branch = far behavior)
-static constexpr bool DEBUG_FORCE_BRANCH       = false; // FORCE BranchZ/BranchW to always branch (close behavior)
 static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling + AND-rejection in DrawTriangle
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1301,58 +1307,34 @@ void GBIHandler::CullDisplayList(DListContext& ctx, uint32_t startVtx, uint32_t 
 
 void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, uint32_t address) {
     if constexpr (DEBUG_DISABLE_BRANCH) return;
-    if constexpr (DEBUG_FORCE_BRANCH) {
-        // Force branch = always draw detail geometry regardless of distance
-        ctx.pc = ctx.ResolveAddress(address);
-        return;
-    }
     if (!ctx.state) return;
-    auto& geo = ctx.state->geometry;
-    
-    if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
-    
-    // The N64 z-buffer comparison uses the screen-space Z derived from W.
-    // G_BRANCH_Z compares the vertex's projected W-derived depth against a
-    // fixed-point threshold. The zValue from the command is in the same space
-    // as the z-buffer (0x0000..0xFFFF range, normalized from near to far).
-    // GLideN64 uses u32 for zTest. The unsigned cast means negative z/w
-    // (behind camera) wraps to a huge value, triggering the branch.
-    float w = geo.vertexBuffer[vtxIndex].position[3]; // clip W
-    float z = geo.vertexBuffer[vtxIndex].position[2]; // clip Z
 
-    if (w <= 0.0001f) {
-        // Behind camera / degenerate — always branch (like GLideN64's zTest > 0x03FF)
+    auto& geo = ctx.state->geometry;
+    if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
+    const auto& tv = geo.vertexBuffer[vtxIndex];
+    float w = tv.position[3];
+    if (w == 0.0f) {
         ctx.pc = ctx.ResolveAddress(address);
         return;
     }
-
-    uint32_t zTest = static_cast<uint32_t>((z / w) * 1023.0f);
-    uint32_t zVal  = zValue;
-    if (zTest > 0x03FF || zTest <= zVal) {
+    float zOverW = tv.position[2] / w;
+    uint32_t zTest = static_cast<uint32_t>(std::clamp(zOverW * 1023.0f, 0.0f, 65535.0f));
+    if (zTest > 0x03FFu || zTest <= zValue) {
         ctx.pc = ctx.ResolveAddress(address);
     }
 }
 
 void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, uint32_t address) {
     if constexpr (DEBUG_DISABLE_BRANCH) return;
-    if constexpr (DEBUG_FORCE_BRANCH) {
-        // Force branch = always draw detail geometry regardless of distance
-        ctx.pc = ctx.ResolveAddress(address);
-        return;
-    }
     if (!ctx.state) return;
+
     auto& geo = ctx.state->geometry;
-
     if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
-
-    // F3DZEX2 Branch_W: compare vertex clip-space W against a threshold.
-    // The threshold is an integer value in the command word, converted to float.
-    // Branch is taken when the vertex W is less than the threshold
-    // (smaller W = closer to camera), used for LOD switching.
-    float w = geo.vertexBuffer[vtxIndex].position[3];
-    float wThreshold = static_cast<float>(wValue);
-
-    if (w < wThreshold) {
+    float vertexW = geo.vertexBuffer[vtxIndex].position[3];
+    // F3DZEX2 stores the W threshold as raw IEEE 754 float bits in w1
+    float wThreshold;
+    std::memcpy(&wThreshold, &wValue, sizeof(float));
+    if (vertexW < wThreshold) {
         ctx.pc = ctx.ResolveAddress(address);
     }
 }

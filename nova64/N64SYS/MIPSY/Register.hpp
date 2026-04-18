@@ -79,8 +79,9 @@ union COP0EntryHi {
     uint32_t R() const { return static_cast<uint32_t>((Value >> 62) & 0x3); }          // Fixed: bits 62-63
     
     void SetFromAddress(uint64_t address) {
-        // Clear VPN2 and set from address (align to 2-page boundary)
-        Value = (Value & 0xFF) | ((address & 0xFFFFE000) << 13);
+        // Preserve ASID (bits [7:0]), set VPN2+R+Fill from faulting address
+        // VPN2 occupies bits [39:13] — same position in both address and EntryHi
+        Value = (Value & 0xFF) | (address & 0xFFFFFFFFFFFFE000ULL);
     }
     
     struct {

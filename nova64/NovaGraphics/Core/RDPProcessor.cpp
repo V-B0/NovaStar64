@@ -590,6 +590,8 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
     // GLideN64: gDPSetTileSize(tile, uls, ult, lrs, dxt) inside gDPLoadBlock
     auto& tileRef = m_state.rdp.tiles[tile];
     tileRef.sl = uls; tileRef.tl = ult; tileRef.sh = texels; tileRef.th = dxt;
+    // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
+    m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     ExecuteLoadBlock(tile, uls, ult, texels, dxt);
 }
 
@@ -604,6 +606,8 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
     tileRef.tl = static_cast<int32_t>(tl * 4.0f);
     tileRef.sh = static_cast<int32_t>(sh * 4.0f);
     tileRef.th = static_cast<int32_t>(th * 4.0f);
+    // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
+    m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     ExecuteLoadTile(tile, sl, tl, sh, th);
 }
 
@@ -695,7 +699,14 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     // If there's a GPU framebuffer at the texture source address, sync it.
     // But only if the GPU has actually rendered to it — if not, the RDRAM
     // data (possibly written by the CPU, e.g. logos) is still current.
+    // Reject non-exact matches: FindByAddress's second-pass range matching
+    // can return a framebuffer whose memory range merely contains this
+    // address.  CopyFromGPU would then overwrite the entire FB region in
+    // RDRAM — destroying CPU-written data (e.g. JPEG decoded backgrounds
+    // in OOT) with stale GPU scene data.
     GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
+    if (srcFB && srcFB->desc.address != (texImg.address & 0x7FFFFF))
+        srcFB = nullptr;
     if (srcFB && srcFB->gpuModified) {
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
     }
@@ -807,7 +818,10 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     const auto& tileDesc = m_state.rdp.tiles[tile];
 
     // Same check as LoadBlock — only sync GPU→RDRAM if GPU has rendered to this FB.
+    // Reject non-exact matches (see ExecuteLoadBlock comment).
     GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
+    if (srcFB && srcFB->desc.address != (texImg.address & 0x7FFFFF))
+        srcFB = nullptr;
     if (srcFB && srcFB->gpuModified) {
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
     }
@@ -1769,6 +1783,7 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
     call.textureHash0 = 0;   // Fill rects never use textures
     call.textureHash1 = 0;
     call.textureImageAddr = 0;
+    call.textureImageAddr1 = 0;
     std::memset(&call.tileDesc0, 0, sizeof(call.tileDesc0));
     std::memset(&call.tileDesc1, 0, sizeof(call.tileDesc1));
     call.primColor = m_state.rdp.primColor;
@@ -1834,7 +1849,15 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
-    call.textureImageAddr = m_state.rdp.textureImage.address;
+    // Use per-tile RDRAM source addresses recorded at LoadBlock/LoadTile time.
+    // In 2-cycle mode tile0 and tile1 may come from different SetTextureImage calls.
+    uint32_t addr0 = m_state.rdp.tileLoadAddress[tileIndex & 7];
+    uint32_t addr1 = m_state.rdp.tileLoadAddress[(tileIndex + 1) & 7];
+    // Fallback to the global textureImage address if no load was recorded yet
+    if (addr0 == 0) addr0 = m_state.rdp.textureImage.address;
+    if (addr1 == 0) addr1 = m_state.rdp.textureImage.address;
+    call.textureImageAddr  = addr0;
+    call.textureImageAddr1 = addr1;
 
     // Snapshot tile descriptors for the two possible texture tiles
     const auto& tile0 = m_state.rdp.tiles[tileIndex & 7];
@@ -1874,7 +1897,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     // Compute a quick hash to determine whether a texture is active.
     // A tile is "active" if it has non-zero dimensions and a valid TMEM address
     // or the texture image has been loaded.
-    auto computeHash = [&](const TileDescriptor& td) -> uint64_t {
+    auto computeHash = [&](const TileDescriptor& td, uint32_t rdramAddr) -> uint64_t {
         int w = td.GetWidth();
         int h = td.GetHeight();
         // N64 games can set inverted tile rects (sh < sl).  Use absolute
@@ -1885,7 +1908,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
 
         // Hash from tile fields + textureImage address
         uint64_t hash = 0;
-        hash ^= static_cast<uint64_t>(call.textureImageAddr) * 0x9e3779b97f4a7c15ULL;
+        hash ^= static_cast<uint64_t>(rdramAddr) * 0x9e3779b97f4a7c15ULL;
         hash ^= static_cast<uint64_t>(td.tmemAddr) << 16;
         hash ^= static_cast<uint64_t>(td.format) << 48;
         hash ^= static_cast<uint64_t>(td.size) << 52;
@@ -1899,14 +1922,14 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
 
     // Check cycle type — in 2-cycle mode both tiles can be active
     uint32_t cycleType = (call.otherModeH >> 20) & 0x03;
-    call.textureHash0 = computeHash(call.tileDesc0);
+    call.textureHash0 = computeHash(call.tileDesc0, call.textureImageAddr);
     // When tile1 was cloned from tile0 (LOD active, level==0, triangle),
     // there is no independent second texture.  Clear textureHash1 so
     // SF_TEXTURE_1 is not set; the shader defaults texel1 = texel0.
     if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD)
         call.textureHash1 = 0;
     else
-        call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1) : 0;
+        call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1, call.textureImageAddr1) : 0;
 
     // Copy scrolling � when tile1 was cloned from tile0, use tile0's scroll values
     call.scrollS0 = m_state.rdp.scrollS[tileIndex & 7];
@@ -1983,16 +2006,25 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
     uint32_t tmemSize     = static_cast<uint32_t>(tile.GetBytesPerRow()) *
                             static_cast<uint32_t>(key.height);
-    // RGBA32: flat TMEM stores both "banks" sequentially, so double the CRC range
-    if (key.format == Tex::N64TexFormat::RGBA && key.size == Tex::N64TexSize::Bits32)
-        tmemSize *= 2;
+    // RGBA32: data is stored in two 2KB TMEM banks (RG in bank 0, BA in bank 1).
+    // CRC each bank separately and combine, rather than doubling the range
+    // (which can overshoot TMEM and produce crc=0 for all RGBA32 textures).
+    bool isRGBA32 = (key.format == Tex::N64TexFormat::RGBA && key.size == Tex::N64TexSize::Bits32);
     // CI textures: index data lives in the lower 2KB of TMEM (upper 2KB is palette).
     // Clamp the CRC range so it doesn't bleed into palette data.
-    uint32_t tmemLimit = (key.format == Tex::N64TexFormat::CI) ? TMEM_PALETTE_BASE : TMEM_SIZE;
+    uint32_t tmemLimit = (key.format == Tex::N64TexFormat::CI) ? TMEM_PALETTE_BASE : (isRGBA32 ? 2048u : TMEM_SIZE);
     if (tmemByteAddr + tmemSize > tmemLimit)
         tmemSize = (tmemByteAddr < tmemLimit) ? (tmemLimit - tmemByteAddr) : 0;
     if (tmemSize > 0 && tmemByteAddr + tmemSize <= TMEM_SIZE) {
         key.crc = CRC32_Fast(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
+        if (isRGBA32) {
+            // CRC bank 1 (offset +2048) and mix into the hash
+            uint32_t bank1Addr = tmemByteAddr + 2048;
+            if (bank1Addr + tmemSize <= TMEM_SIZE) {
+                uint32_t bank1Crc = CRC32_Fast(m_state.rdp.tmem.data + bank1Addr, tmemSize);
+                key.crc ^= bank1Crc * 0x9e3779b9u;
+            }
+        }
     } else {
         key.crc = 0;
     }
@@ -2333,8 +2365,15 @@ void RDPProcessor::FlushBatch() {
         if (texFilter == 2) features |= Shader::SF_TEXTURE_3POINT;
         else if (texFilter == 3) features |= Shader::SF_TEXTURE_BILINEAR;
 
-        // Monochrome post-process (game-specific hack � e.g. Zelda OoT cutscenes)
-        if (m_hacks.zeldaMonochrome) features |= Shader::SF_MONOCHROME;
+        // Monochrome post-process (game-specific hack — e.g. Zelda OoT cutscenes).
+        // Only activate when the tile is CI8 over what was originally an RGBA16
+        // framebuffer — that is the specific N64 trick Zelda uses for grayscale
+        // flashbacks.  Applying this unconditionally would desaturate everything.
+        if (m_hacks.zeldaMonochrome &&
+            call.tileDesc0.format == 2 /* G_IM_FMT_CI */ &&
+            call.tileDesc0.size   == 1 /* G_IM_SIZ_8b */ &&
+            g_fbManager.FindByAddress(call.textureImageAddr) != nullptr)
+            features |= Shader::SF_MONOCHROME;
 
         // Texture LOD (G_TL_LOD � mipmap fraction via LOD_FRACTION combiner input)
         if (call.otherModeH & 0x00010000) features |= Shader::SF_TEXTURE_LOD;
@@ -3135,19 +3174,25 @@ void RDPProcessor::FlushBatch() {
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rtFB0 = g_fbManager.FindByAddress(key0.address);
 
-                // �� CfB copy-back detection ������������������������������
-                // When an RGBA32 TextureRect doesn't match any registered
-                // framebuffer, it is very likely a "cfb copy-back" � a common
-                // N64 trick where the CPU writes AA-processed pixel data to
-                // a separate RDRAM region (cfb), then the RDP loads it as an
-                // RGBA32 texture and draws it to the render target via
-                // TextureRect strips.  The cfb was never used as an RDP
-                // color image, so no FB was created for it.
+                // Reject tile-offset matches: only accept exact base address.
+                // FindByAddress's second-pass range matching causes false
+                // positives when regular textures are allocated near FB
+                // addresses, binding the live framebuffer (wrong UV scale,
+                // changing every frame → flickering textures).
+                if (rtFB0 && rtFB0->desc.address != (key0.address & 0x7FFFFF))
+                    rtFB0 = nullptr;
+
+                // ── CfB copy-back detection ──────────────────────────────
+                // Some N64 games (OoT, MM) copy an AA-processed framebuffer
+                // (CfB) back to the display via RGBA32 TextureRect strips.
+                // The CfB was never used as an RDP color image, so no GPU
+                // framebuffer exists for it.  The TMEM data is really
+                // RGBA5551 pixels loaded as RGBA32 → decode produces garbage.
                 //
-                // The TMEM decode path produces garbage because the raw
-                // RGBA5551 bytes are misinterpreted as RGBA8888 channels.
-                // Skip these draws � the underlying rendered scene is already
-                // correct; these strips only apply a subtle AA pass.
+                // Only skip when the texture address is within the RDRAM
+                // range of a known framebuffer (CfB is typically allocated
+                // adjacent to the main framebuffers).  Textures from other
+                // RDRAM regions (e.g. ROM-loaded artwork) are legitimate.
                 //
                 // IMPORTANT: Only skip TextureRect draws.  Triangle draws
                 // with RGBA32 textures (e.g. Zelda logo shield/sword) are
@@ -3155,10 +3200,23 @@ void RDPProcessor::FlushBatch() {
                 if (!rtFB0 &&
                     call.type == DrawCall::Type::TextureRect &&
                     key0.format == Tex::N64TexFormat::RGBA &&
-                    key0.size == Tex::N64TexSize::Bits32 &&
-                    (key0.address & 0x7FFFFF) >= 0x100000)
+                    key0.size == Tex::N64TexSize::Bits32)
                 {
-                    continue;
+                    uint32_t texAddr = key0.address & 0x7FFFFF;
+                    bool nearFB = false;
+                    for (uint32_t fi = 0; fi < g_fbManager.GetFBCount(); ++fi) {
+                        auto* fb = g_fbManager.GetFB(fi);
+                        if (!fb || fb->desc.type != FBType::Color) continue;
+                        uint32_t fbStart = fb->desc.address;
+                        uint32_t fbSize  = fb->desc.ByteSize();
+                        // CfB is typically within 2x framebuffer size of a
+                        // known FB address (one extra buffer worth of room).
+                        if (texAddr >= fbStart && texAddr < fbStart + fbSize * 3) {
+                            nearFB = true;
+                            break;
+                        }
+                    }
+                    if (nearFB) continue;
                 }
 
                 uint32_t fbTex0 = rtFB0 ? g_fbManager.GetSampleableTexture(
@@ -3222,9 +3280,12 @@ void RDPProcessor::FlushBatch() {
         }
         if (m_textureCache && call.textureHash1 != 0) {
             uint8_t tlutType1 = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
-            Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr, tlutType1);
+            Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1);
             if (key1.width > 0 && key1.height > 0) {
                 GPUFramebuffer* rtFB1 = g_fbManager.FindByAddress(key1.address);
+                // Reject tile-offset matches (same as tex0 — prevent flickering)
+                if (rtFB1 && rtFB1->desc.address != (key1.address & 0x7FFFFF))
+                    rtFB1 = nullptr;
                 uint32_t fbTex1 = rtFB1 ? g_fbManager.GetSampleableTexture(
                     rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
                 if (fbTex1 != 0) {

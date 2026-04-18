@@ -262,7 +262,7 @@ void PeripheralInterfaceHandler::HandleDMARead()
         OnFirstDMA();
     }
 
-    uint32_t dramAddr = m_pi_regs.PI_DRAM_ADDR_REG;
+    uint32_t dramAddr = m_pi_regs.PI_DRAM_ADDR_REG & 0x7FFFFE;
     uint32_t cartAddr = m_pi_regs.PI_CART_ADDR_REG;
     uint32_t length = (m_pi_regs.PI_WR_LEN_REG + 1) & ~1;  // Use PI_WR_LEN (Cart->RDRAM)
     

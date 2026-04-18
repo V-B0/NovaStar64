@@ -441,8 +441,10 @@ void FramebufferManager::SnapshotForPresentation() {
     }
 
     // Ensure all pending draws have completed before copying.
-    // glMemoryBarrier is sufficient — avoids the full CPU-GPU stall of glFinish.
-    glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT);
+    // GL_SHADER_IMAGE_ACCESS_BARRIER_BIT is needed for MLE blender imageStore
+    // writes; GL_FRAMEBUFFER_BARRIER_BIT for regular FBO attachment writes.
+    glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT |
+                    GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     // GPU-side copy — no CPU round-trip, no pipeline stall
     glCopyImageSubData(m_currentColor->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
@@ -770,6 +772,7 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     }
 
     MarkRDRAMDirty(addr, fb->desc.ByteSize());
+    fb->gpuModified = false;
     m_stats.gpuToRdramCopies++;
     m_stats.bytesTransferred += pixelCount * 4;
 }

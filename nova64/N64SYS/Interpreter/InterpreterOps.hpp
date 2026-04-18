@@ -184,6 +184,8 @@ private:
     void SWR_32();
     void SC();
     void SC_32();
+    void SCD();
+    void SCD_32();
     void SWC1();
     void SWC1_32();
     void SDC1();
@@ -264,6 +266,7 @@ private:
     void REGIMM_BGEZL();
     void REGIMM_BLTZAL();
     void REGIMM_BGEZAL();
+    void REGIMM_BLTZALL();
     void REGIMM_BGEZALL();
     void REGIMM_TEQI();
     void REGIMM_TGEI();

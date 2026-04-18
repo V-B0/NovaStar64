@@ -227,10 +227,8 @@ inline void F3DEX2Handler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t vtxIndex = ((w0 & 0xFFF) / 2);
-    // GLideN64 uses upper 16 bits of w1 as the z threshold:
-    //   gSPBranchLessZ(gDP.half_1, _SHIFTR(w0,1,11), _SHIFTR(w1,16,16))
-    uint32_t zval = (w1 >> 16) & 0xFFFF;
-    BranchZ(ctx, vtxIndex, zval, m_rdpHalf1);
+    // N64 SDK puts the full 32-bit G_BZ_RANGE value into w1
+    BranchZ(ctx, vtxIndex, w1, m_rdpHalf1);
 }
 
 inline void F3DEX2Handler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) {

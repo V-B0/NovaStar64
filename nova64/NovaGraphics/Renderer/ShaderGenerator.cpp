@@ -794,15 +794,11 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
             ss << "        combined.rgb = clamp(srcContrib, 0.0, 1.0);\n";
             ss << "        fragColor1 = vec4(clamp(dstFactor, 0.0, 1.0));\n";
         } else {
-            // !forceBlend: output P directly (full coverage bypass)
-            if (!p_is_mem) {
-                ss << "        combined.rgb = clamp(bP, 0.0, 1.0);\n";
-                ss << "        fragColor1 = vec4(0.0);\n";
-            } else {
-                // P=memColor → keep destination
-                ss << "        combined.rgb = vec3(0.0);\n";
-                ss << "        fragColor1 = vec4(1.0);\n";
-            }
+            // !forceBlend: full-coverage pixels bypass the blender on real N64
+            // hardware and output the combiner color directly. P is never
+            // evaluated, so P=memColor is irrelevant — output combined.rgb
+            // (the combiner result) regardless of P source.
+            ss << "        fragColor1 = vec4(0.0);\n";
         }
     };
 
@@ -996,14 +992,13 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         code += "    {\n";
         code += "      vec2 maskBits0 = uTexMask0;\n";
         code += "      vec2 maskSize0 = pow(vec2(2.0), maskBits0);\n";
-        // Step 1: CLAMP — when mirror is active, extend the clamp range
-        // to cover the full mirror period (2 * texSize texels).  Without
-        // this, clamping at (texSize-1) prevents the mirror operation from
-        // seeing coordinates in the second half of the mirror period,
-        // causing mirrored face textures to show a stretched centre column
-        // instead of a proper symmetric reflection.
-        code += "      float clampHi0x = (uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? (2.0 * uTexSize0.x - 1.0) / uTexSize0.x : (uTexSize0.x - 1.0) / uTexSize0.x;\n";
-        code += "      float clampHi0y = (uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? (2.0 * uTexSize0.y - 1.0) / uTexSize0.y : (uTexSize0.y - 1.0) / uTexSize0.y;\n";
+        // Step 1: CLAMP — clamp UV to tile boundary.
+        // UV is in tile-normalized [0,1] space; GPU texture scale is applied
+        // at sample time.  Use 1.0 (full tile) as the upper bound, matching
+        // GLideN64's tileWidth/texWidth approach.  For mirror+mask, extend
+        // the range to 2.0 to cover the full mirror period.
+        code += "      float clampHi0x = (uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? 2.0 : 1.0;\n";
+        code += "      float clampHi0y = (uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? 2.0 : 1.0;\n";
         code += "      if (uTexClamp0.x > 0.0) uv0.x = clamp(uv0.x, 0.0, clampHi0x);\n";
         code += "      if (uTexClamp0.y > 0.0) uv0.y = clamp(uv0.y, 0.0, clampHi0y);\n";
         // Step 2: MIRROR then WRAP (only when mask > 0)
@@ -1088,9 +1083,9 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "    {\n";
             code += "      vec2 maskBits1 = uTexMask1;\n";
             code += "      vec2 maskSize1 = pow(vec2(2.0), maskBits1);\n";
-            // Step 1: CLAMP — extend for mirror (same logic as tile 0)
-            code += "      float clampHi1x = (uTexClamp1.z > 0.0 && maskBits1.x > 0.0) ? (2.0 * uTexSize1.x - 1.0) / uTexSize1.x : (uTexSize1.x - 1.0) / uTexSize1.x;\n";
-            code += "      float clampHi1y = (uTexClamp1.w > 0.0 && maskBits1.y > 0.0) ? (2.0 * uTexSize1.y - 1.0) / uTexSize1.y : (uTexSize1.y - 1.0) / uTexSize1.y;\n";
+            // Step 1: CLAMP — tile boundary (same logic as tile 0)
+            code += "      float clampHi1x = (uTexClamp1.z > 0.0 && maskBits1.x > 0.0) ? 2.0 : 1.0;\n";
+            code += "      float clampHi1y = (uTexClamp1.w > 0.0 && maskBits1.y > 0.0) ? 2.0 : 1.0;\n";
             code += "      if (uTexClamp1.x > 0.0) uv1.x = clamp(uv1.x, 0.0, clampHi1x);\n";
             code += "      if (uTexClamp1.y > 0.0) uv1.y = clamp(uv1.y, 0.0, clampHi1y);\n";
             // Step 2: MIRROR then WRAP
@@ -2014,8 +2009,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     src += GenerateNoiseCode(key.features);
     src += "    vec4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
     src += GenerateCombinerCode(key.mux, key.features);
-    src += GenerateCoverageCode(key.features);
-    src += GenerateAlphaTestCode(key.features);
+    src += GenerateAlphaTestCode(key.features);          // N64: alpha compare on RAW combiner output
+    src += GenerateCoverageCode(key.features);            // Coverage modifies alpha AFTER test
     src += GenerateDitherCode(key.features, key.otherModeH);  // N64: dither before blender
     std::string blenderCode3 = GenerateBlenderCode(key.blenderBits, key.otherModeL, key.features);
 

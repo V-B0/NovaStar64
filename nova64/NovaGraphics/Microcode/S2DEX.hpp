@@ -84,34 +84,34 @@ struct ObjMatrix {
 // ═══════════════════════════════════════════════════════════════════════════
 
 namespace S2DEXCmd {
-    // S2DEX1 commands
+    // S2DEX1 commands (GBI1 variant — matches GLideN64 S2DEX.cpp)
+    constexpr uint8_t G_BG_1CYC         = 0x01;
+    constexpr uint8_t G_BG_COPY         = 0x02;
+    constexpr uint8_t G_OBJ_RECTANGLE   = 0x03;
     constexpr uint8_t G_OBJ_SPRITE      = 0x04;
-    constexpr uint8_t G_OBJ_RECTANGLE   = 0x09;
-    constexpr uint8_t G_OBJ_MOVEMEM     = 0x01;
+    constexpr uint8_t G_OBJ_MOVEMEM     = 0x05;
     constexpr uint8_t G_SELECT_DL       = 0xB0;
     constexpr uint8_t G_OBJ_RENDERMODE  = 0xB1;
+    constexpr uint8_t G_OBJ_RECTANGLE_R = 0xB2;
     constexpr uint8_t G_OBJ_LOADTXTR    = 0xC1;
     constexpr uint8_t G_OBJ_LDTX_SPRITE = 0xC2;
     constexpr uint8_t G_OBJ_LDTX_RECT   = 0xC3;
     constexpr uint8_t G_OBJ_LDTX_RECT_R = 0xC4;
-    constexpr uint8_t G_BG_1CYC         = 0x02;
-    constexpr uint8_t G_BG_COPY         = 0x03;
-    constexpr uint8_t G_OBJ_RECTANGLE_R = 0xDA;
     
-    // S2DEX2 commands (different encoding)
+    // S2DEX2 commands (GBI2 variant — matches GLideN64 S2DEX2.cpp)
     namespace V2 {
-        constexpr uint8_t G_OBJ_SPRITE      = 0x04;
-        constexpr uint8_t G_OBJ_RECTANGLE   = 0x09;
-        constexpr uint8_t G_OBJ_MOVEMEM     = 0xDC;
+        constexpr uint8_t G_OBJ_RECTANGLE   = 0x01;
+        constexpr uint8_t G_OBJ_SPRITE      = 0x02;
         constexpr uint8_t G_SELECT_DL       = 0x04;
-        constexpr uint8_t G_OBJ_RENDERMODE  = 0xDA;
-        constexpr uint8_t G_OBJ_LOADTXTR    = 0xC1;
-        constexpr uint8_t G_OBJ_LDTX_SPRITE = 0xC2;
-        constexpr uint8_t G_OBJ_LDTX_RECT   = 0xC3;
-        constexpr uint8_t G_OBJ_LDTX_RECT_R = 0xC4;
-        constexpr uint8_t G_BG_1CYC         = 0x01;
-        constexpr uint8_t G_BG_COPY         = 0x02;
-        constexpr uint8_t G_OBJ_RECTANGLE_R = 0x03;
+        constexpr uint8_t G_OBJ_LOADTXTR    = 0x05;
+        constexpr uint8_t G_OBJ_LDTX_SPRITE = 0x06;
+        constexpr uint8_t G_OBJ_LDTX_RECT   = 0x07;
+        constexpr uint8_t G_OBJ_LDTX_RECT_R = 0x08;
+        constexpr uint8_t G_BG_1CYC         = 0x09;
+        constexpr uint8_t G_BG_COPY         = 0x0A;
+        constexpr uint8_t G_OBJ_RENDERMODE  = 0x0B;
+        constexpr uint8_t G_OBJ_RECTANGLE_R = 0xDA;
+        constexpr uint8_t G_OBJ_MOVEMEM     = 0xDC;
     }
 }
 
@@ -292,39 +292,63 @@ inline bool S2DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
 inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
     
-    // S2DEX2 uses a mix of GBI2 state commands + S2DEX sprite commands
-    // Handle GBI2 state commands
+    // S2DEX2 uses GBI2 state commands in the high range + completely different
+    // low-range sprite opcode assignments from S2DEX1. Handle everything here
+    // without falling through to S2DEXHandler (which uses S2DEX1 opcodes).
     switch (opcode) {
-    case 0xD7: SetTextureState(ctx, w0, w1); return true;
-    case 0xD9: SetGeometryMode(ctx, ~(w0 & 0x00FFFFFF), w1); return true;
-    case 0xDB: MoveWord(ctx, (w0>>16)&0xFF, w0&0xFFFF, w1); return true;
-    case 0xDC: Cmd_OBJ_MOVEMEM(ctx, w0, w1); return true;
+    // ── S2DEX2 sprite commands (low range: 0x00–0x0B) ──
+    case 0x00: break; // NOOP
+    case S2DEXCmd::V2::G_OBJ_RECTANGLE:   Cmd_OBJ_RECTANGLE(ctx, w0, w1); break;   // 0x01
+    case S2DEXCmd::V2::G_OBJ_SPRITE:      Cmd_OBJ_SPRITE(ctx, w0, w1); break;      // 0x02
+    case S2DEXCmd::V2::G_SELECT_DL:       Cmd_SELECT_DL(ctx, w0, w1); break;       // 0x04
+    case S2DEXCmd::V2::G_OBJ_LOADTXTR:    Cmd_OBJ_LOADTXTR(ctx, w0, w1); break;    // 0x05
+    case S2DEXCmd::V2::G_OBJ_LDTX_SPRITE: Cmd_OBJ_LDTX_SPRITE(ctx, w0, w1); break; // 0x06
+    case S2DEXCmd::V2::G_OBJ_LDTX_RECT:   Cmd_OBJ_LDTX_RECT(ctx, w0, w1); break;   // 0x07
+    case S2DEXCmd::V2::G_OBJ_LDTX_RECT_R: Cmd_OBJ_LDTX_RECT(ctx, w0, w1); break;   // 0x08
+    case S2DEXCmd::V2::G_BG_1CYC:         Cmd_BG_1CYC(ctx, w0, w1); break;         // 0x09
+    case S2DEXCmd::V2::G_BG_COPY:         Cmd_BG_COPY(ctx, w0, w1); break;         // 0x0A
+    case S2DEXCmd::V2::G_OBJ_RENDERMODE:  Cmd_OBJ_RENDERMODE(ctx, w0, w1); break;  // 0x0B
+    
+    // ── GBI2 state commands (high range) ──
+    case 0xD7: SetTextureState(ctx, w0, w1); break;
+    case 0xD9: SetGeometryMode(ctx, ~(w0 & 0x00FFFFFF), w1); break;
+    case S2DEXCmd::V2::G_OBJ_RECTANGLE_R: Cmd_OBJ_RECTANGLE_R(ctx, w0, w1); break; // 0xDA
+    case 0xDB: MoveWord(ctx, (w0>>16)&0xFF, w0&0xFFFF, w1); break;
+    case S2DEXCmd::V2::G_OBJ_MOVEMEM:     Cmd_OBJ_MOVEMEM(ctx, w0, w1); break;     // 0xDC
     case 0xDD: LoadUcode(ctx, w1, m_rdpHalf1); return !ctx.halted;
     case 0xDE: {
         bool branch = ((w0 >> 16) & 0xFF) == 1;
         DisplayList(ctx, w1, branch);
-        return true;
+        break;
     }
     case 0xDF: EndDisplayList(ctx); return !ctx.halted;
-    case 0xE1: m_rdpHalf1 = w1; return true;
+    case 0xE1: m_rdpHalf1 = w1; break;
+    // F3DEX2/S2DEX2 swaps the opcodes: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
     case 0xE2: {
         uint32_t len = (w0 & 0xFF) + 1;
         uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;
-        SetOtherModeH(ctx, sft, len, w1);
-        return true;
+        SetOtherModeL(ctx, sft, len, w1);
+        break;
     }
     case 0xE3: {
         uint32_t len = (w0 & 0xFF) + 1;
         uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;
-        SetOtherModeL(ctx, sft, len, w1);
-        return true;
-    }
-    default:
+        SetOtherModeH(ctx, sft, len, w1);
         break;
     }
     
-    // Fall back to base S2DEX handling for sprite commands
-    return S2DEXHandler::ProcessCommand(ctx, w0, w1);
+    default:
+        // RDP passthrough for 0xC0+ (no S2DEX2 texture commands use 0xC1-0xC4)
+        if (opcode >= 0xE0 || (opcode >= 0xC0 && opcode <= 0xCF)) {
+            HandleRDPCommand(ctx, w0, w1);
+        } else {
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+                    "S2DEX2: Unknown opcode 0x{:02X}", opcode);
+        }
+        break;
+    }
+    
+    return !ctx.halted;
 }
 
 // ─── BG Sprite Commands ─────────────────────────────────────────────────
@@ -366,10 +390,33 @@ inline void S2DEXHandler::Cmd_OBJ_RECTANGLE_R(DListContext& ctx, uint32_t w0, ui
 }
 
 inline void S2DEXHandler::Cmd_OBJ_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0;
-    uint32_t addr = ctx.ResolveAddress(w1);
-    if (ReadObjMatrix(ctx, addr, m_objMatrix)) {
-        m_objMatrixValid = true;
+    uint16_t subType = w0 & 0xFFFF;
+    
+    switch (subType) {
+    case 0: { // S2DEX_MV_MATRIX — full 24-byte ObjMtx
+        uint32_t addr = ctx.ResolveAddress(w1);
+        if (ReadObjMatrix(ctx, addr, m_objMatrix)) {
+            m_objMatrixValid = true;
+        }
+        break;
+    }
+    case 2: { // S2DEX_MV_SUBMUTRIX — 8-byte sub-matrix (X, Y, BaseScaleX, BaseScaleY only)
+        uint32_t addr = ctx.ResolveAddress(w1);
+        if (addr + 8 > ctx.rdramSize) break;
+        // N64 uObjSubMtx layout (8 bytes):
+        //   0x00: X (s16), Y (s16)   [first BE halfword = X, second = Y]
+        //   0x04: BaseScaleX (u16), BaseScaleY (u16)
+        m_objMatrix.X = static_cast<int16_t>(ctx.ReadHalf(addr + 0x00));
+        m_objMatrix.Y = static_cast<int16_t>(ctx.ReadHalf(addr + 0x02));
+        m_objMatrix.BaseScaleX = ctx.ReadHalf(addr + 0x04);
+        m_objMatrix.BaseScaleY = ctx.ReadHalf(addr + 0x06);
+        break;
+    }
+    case 8: // S2DEX_MV_VIEWPORT
+        MoveMemGBI1(ctx, 0x80 /*G_MV_VIEWPORT*/, 16, ctx.ResolveAddress(w1));
+        break;
+    default:
+        break;
     }
 }
 
@@ -416,31 +463,31 @@ inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjB
     address = ctx.ResolveAddress(address);
     if (address + 40 > ctx.rdramSize) return false;
     
-    // N64 uObjScaleBg struct layout (40 bytes, big-endian):
-    //   0x00: imageW (u16), imageX (u16)
-    //   0x04: frameW (u16), frameX (s16)
-    //   0x08: imageH (u16), imageY (u16)
-    //   0x0C: frameH (u16), frameY (s16)
+    // N64 uObjScaleBg_t struct layout (40 bytes, big-endian):
+    //   0x00: imageX (u16), imageW (u16)
+    //   0x04: frameX (s16), frameW (u16)
+    //   0x08: imageY (u16), imageH (u16)
+    //   0x0C: frameY (s16), frameH (u16)
     //   0x10: imagePtr (u32)
-    //   0x14: imageSiz (u8), imageFmt (u8), imageLoad (u16)
-    //   0x18: imageFlip (u16), imagePal (u16)
-    //   0x1C: scaleH (u16), scaleW (u16)
+    //   0x14: imageLoad (u16), imageFmt (u8), imageSiz (u8)
+    //   0x18: imagePal (u16), imageFlip (u16)
+    //   0x1C: scaleW (u16), scaleH (u16)
     //   0x20: imageYorig (s32)
-    bg.imageW     = ctx.ReadHalf(address + 0x00);
-    bg.imageX     = ctx.ReadHalf(address + 0x02);
-    bg.frameW     = ctx.ReadHalf(address + 0x04);
-    bg.frameX     = static_cast<int16_t>(ctx.ReadHalf(address + 0x06));
-    bg.imageH     = ctx.ReadHalf(address + 0x08);
-    bg.imageY     = ctx.ReadHalf(address + 0x0A);
-    bg.frameH     = ctx.ReadHalf(address + 0x0C);
-    bg.frameY     = static_cast<int16_t>(ctx.ReadHalf(address + 0x0E));
+    bg.imageX     = ctx.ReadHalf(address + 0x00);
+    bg.imageW     = ctx.ReadHalf(address + 0x02);
+    bg.frameX     = static_cast<int16_t>(ctx.ReadHalf(address + 0x04));
+    bg.frameW     = ctx.ReadHalf(address + 0x06);
+    bg.imageY     = ctx.ReadHalf(address + 0x08);
+    bg.imageH     = ctx.ReadHalf(address + 0x0A);
+    bg.frameY     = static_cast<int16_t>(ctx.ReadHalf(address + 0x0C));
+    bg.frameH     = ctx.ReadHalf(address + 0x0E);
     bg.imageAddr  = ctx.ReadWord(address + 0x10);
-    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x14));
-    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x15));
-    bg.imageFlip  = (ctx.ReadHalf(address + 0x18) & 0x01) != 0;
-    bg.imagePal   = ctx.ReadHalf(address + 0x1A);
-    bg.scaleH     = ctx.ReadHalf(address + 0x1C);
-    bg.scaleW     = ctx.ReadHalf(address + 0x1E);
+    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x16));
+    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x17));
+    bg.imagePal   = ctx.ReadHalf(address + 0x18);
+    bg.imageFlip  = (ctx.ReadHalf(address + 0x1A) & 0x01) != 0;
+    bg.scaleW     = ctx.ReadHalf(address + 0x1C);
+    bg.scaleH     = ctx.ReadHalf(address + 0x1E);
     bg.imageYorig = static_cast<int32_t>(ctx.ReadWord(address + 0x20));
     
     return true;
@@ -450,27 +497,27 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
     address = ctx.ResolveAddress(address);
     if (address + 24 > ctx.rdramSize) return false;
     
-    // N64 uObjSprite layout (24 bytes, big-endian):
-    //   0x00: scaleW (u16), objX (s16)
-    //   0x04: paddingX (u16), imageW (u16)
-    //   0x08: scaleH (u16), objY (s16)
-    //   0x0C: paddingY (u16), imageH (u16)
-    //   0x10: imageAdrs (u16), imageStride (u16)
-    //   0x14: imageFlags (u8), imagePal (u8), imageSiz (u8), imageFmt (u8)
-    obj.scaleW      = ctx.ReadHalf(address + 0x00);
-    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x02));
-    // skip paddingX at 0x04
-    obj.imageW      = ctx.ReadHalf(address + 0x06);
-    obj.scaleH      = ctx.ReadHalf(address + 0x08);
-    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x0A));
-    // skip paddingY at 0x0C
-    obj.imageH      = ctx.ReadHalf(address + 0x0E);
-    obj.imageAdrs   = ctx.ReadHalf(address + 0x10);
-    obj.imageStride = ctx.ReadHalf(address + 0x12);
-    obj.imageFlags  = ctx.ReadByte(address + 0x14);
-    obj.imagePal    = ctx.ReadByte(address + 0x15);
-    obj.imageSiz    = ctx.ReadByte(address + 0x16);
-    obj.imageFmt    = ctx.ReadByte(address + 0x17);
+    // N64 uObjSprite_t layout (24 bytes, big-endian):
+    //   0x00: objX (s16), scaleW (u16)
+    //   0x04: imageW (u16), paddingX (u16)
+    //   0x08: objY (s16), scaleH (u16)
+    //   0x0C: imageH (u16), paddingY (u16)
+    //   0x10: imageStride (u16), imageAdrs (u16)
+    //   0x14: imageFmt (u8), imageSiz (u8), imagePal (u8), imageFlags (u8)
+    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x00));
+    obj.scaleW      = ctx.ReadHalf(address + 0x02);
+    obj.imageW      = ctx.ReadHalf(address + 0x04);
+    // skip paddingX at 0x06
+    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x08));
+    obj.scaleH      = ctx.ReadHalf(address + 0x0A);
+    obj.imageH      = ctx.ReadHalf(address + 0x0C);
+    // skip paddingY at 0x0E
+    obj.imageStride = ctx.ReadHalf(address + 0x10);
+    obj.imageAdrs   = ctx.ReadHalf(address + 0x12);
+    obj.imageFmt    = ctx.ReadByte(address + 0x14);
+    obj.imageSiz    = ctx.ReadByte(address + 0x15);
+    obj.imagePal    = ctx.ReadByte(address + 0x16);
+    obj.imageFlags  = ctx.ReadByte(address + 0x17);
     
     return true;
 }
@@ -720,9 +767,11 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
     if (!ctx.state || !ctx.rdpProcessor) return;
     
     // N64 uObjTxtr (union of Block/Tile/TLUT, each 24 bytes):
-    //   0x00: type (u32) — G_OBJLT_TXTRBLOCK=0x00001033, G_OBJLT_TXTRTILE=0x00001034, G_OBJLT_TLUT=0x00001030
+    //   0x00: type (u32) — identifies which variant
     //   0x04: image (u32) — RDRAM source address (segmented)
     //   0x08-0x17: type-specific fields
+    // GLideN64 constants: TXTRBLOCK=0x00001033, TXTRTILE=0x00fc1034, TLUT=0x00000030
+    // Match only the lower 16 bits for robustness (upper bits vary between games)
     uint32_t type  = ctx.ReadWord(address + 0x00);
     uint32_t image = ctx.ReadWord(address + 0x04);
     
@@ -732,17 +781,17 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
     // Load tile index for S2DEX texture loads (tile 7 = G_TX_LOADTILE)
     constexpr int loadTile = 7;
     
-    switch (type) {
-    case 0x00001033: { // G_OBJLT_TXTRBLOCK
-        uint16_t tsize = ctx.ReadHalf(address + 0x08);
-        uint16_t tmem  = ctx.ReadHalf(address + 0x0A);
-        uint16_t tline = ctx.ReadHalf(address + 0x0E);
+    switch (type & 0xFFFF) {
+    case 0x1033: { // G_OBJLT_TXTRBLOCK
+        uint16_t tmem  = ctx.ReadHalf(address + 0x08);
+        uint16_t tsize = ctx.ReadHalf(address + 0x0A);
+        uint16_t tline = ctx.ReadHalf(address + 0x0C);
         
-        // SetTextureImage: RGBA 16b, width = tsize+1
+        // SetTextureImage: RGBA 16b, width=1 (N64 SDK: gDPSetTextureImage(RGBA, SIZ_16b, 1, image))
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
         ctx.state->textureImage.format  = ImageFormat::RGBA;
         ctx.state->textureImage.size    = ImageSize::Bpp16;
-        ctx.state->textureImage.width   = tsize + 1;
+        ctx.state->textureImage.width   = 1;
         
         // SetTile for load tile
         auto& lt = ctx.state->tiles[loadTile];
@@ -755,14 +804,15 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         lt.maskS = 0; lt.maskT = 0;
         lt.shiftS = 0; lt.shiftT = 0;
         
-        // LoadBlock: sl=0, tl=0, sh = tsize<<2, dxt = tline
-        ctx.rdpProcessor->ExecuteLoadBlock(loadTile, 0, 0, tsize << 2, tline);
+        // LoadBlock: sl=0, tl=0, sh=tsize (texels-1), dxt=tline
+        // N64 SDK: gDPLoadBlock(G_TX_LOADTILE, 0, 0, tsize, tline)
+        ctx.rdpProcessor->ExecuteLoadBlock(loadTile, 0, 0, tsize, tline);
         break;
     }
-    case 0x00001034: { // G_OBJLT_TXTRTILE
-        uint16_t twidth  = ctx.ReadHalf(address + 0x08);
-        uint16_t tmem    = ctx.ReadHalf(address + 0x0A);
-        uint16_t theight = ctx.ReadHalf(address + 0x0E);
+    case 0x1034: { // G_OBJLT_TXTRTILE
+        uint16_t tmem    = ctx.ReadHalf(address + 0x08);
+        uint16_t twidth  = ctx.ReadHalf(address + 0x0A);
+        uint16_t theight = ctx.ReadHalf(address + 0x0C);
         
         // SetTextureImage: RGBA 16b, width = twidth+1
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
@@ -781,14 +831,16 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         lt.maskS = 0; lt.maskT = 0;
         lt.shiftS = 0; lt.shiftT = 0;
         
-        // LoadTile: 0,0 to twidth<<2, theight
+        // LoadTile: 0,0 to twidth, theight (texel coordinates)
+        // N64 SDK: gDPLoadTile(G_TX_LOADTILE, 0, 0, twidth, theight) — u10.2 internally
+        // ExecuteLoadTile expects float texel coords (decoded from u10.2)
         ctx.rdpProcessor->ExecuteLoadTile(loadTile, 0.0f, 0.0f,
-            static_cast<float>(twidth << 2), static_cast<float>(theight));
+            static_cast<float>(twidth), static_cast<float>(theight));
         break;
     }
-    case 0x00001030: { // G_OBJLT_TLUT
-        uint16_t pnum  = ctx.ReadHalf(address + 0x08);
-        uint16_t phead = ctx.ReadHalf(address + 0x0A);
+    case 0x0030: { // G_OBJLT_TLUT (GLideN64 uses 0x00000030)
+        uint16_t phead = ctx.ReadHalf(address + 0x08);
+        uint16_t pnum  = ctx.ReadHalf(address + 0x0A);
         
         // SetTextureImage: RGBA 16b, width = 1
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
@@ -807,8 +859,9 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         lt.maskS = 0; lt.maskT = 0;
         lt.shiftS = 0; lt.shiftT = 0;
         
-        // LoadTLUT: count = pnum<<2
-        ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum << 2);
+        // LoadTLUT: count = pnum + 1 (pnum is count-1 per N64 SDK)
+        // N64 SDK: gDPLoadTLUT(G_TX_LOADTILE, pnum) → DecodeLoadTLUT adds +1
+        ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum + 1);
         break;
     }
     default:

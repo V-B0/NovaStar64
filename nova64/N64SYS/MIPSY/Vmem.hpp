@@ -536,6 +536,22 @@ public:
 
     uint8_t* GetSmcPageBitmap() { return m_SmcPageBitmap; }
 
+    // ========================================================================
+    // IS-Viewer Debug Output (0x13FF0000)
+    // ========================================================================
+    static constexpr uint32_t IS_VIEWER_BASE   = 0x13FF0000;
+    static constexpr uint32_t IS_VIEWER_LENGTH = 0x13FF0014;
+    static constexpr uint32_t IS_VIEWER_BUFFER = 0x13FF0020;
+    static constexpr uint32_t IS_VIEWER_BUF_END= 0x13FF0220;
+
+    uint8_t  m_ISViewerBuf[0x200] = {};
+    uint32_t m_ISViewerLen = 0;
+    char     m_ISViewerLineBuf[1024] = {};
+    uint32_t m_ISViewerLinePos = 0;
+
+    void ISViewer_Write32(uint32_t pAddr, uint32_t value);
+    void ISViewer_WriteByte(uint32_t pAddr, uint8_t value);
+
 private:
 
     // Register modification value for exception handling

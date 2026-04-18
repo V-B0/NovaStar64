@@ -11,6 +11,7 @@
 #include "../Savetypes/Eeprom.hpp"
 #include "../../common/log.hpp"
 #include "SIInterfaceHandler.hpp"
+#include "../../NovaInput/KeyboardInput.hpp"
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
@@ -260,6 +261,9 @@ void PifRamHandler::pif_control_read()
 {
     if (m_pif_ram[0x3F] == 0x02) return;
 
+    // Poll keyboard and update controller 0 state
+    m_controllers[0] = NovaInput::PollKeyboard();
+
     int channel = 0;
     for (int cur = 0; cur < 0x40; )
     {
@@ -267,7 +271,7 @@ void PifRamHandler::pif_control_read()
         {
         case 0x00:
             channel++;
-            if (channel > 6) cur = 0x40;
+            if (channel > 5) cur = 0x40;
             else cur++;
             break;
         case 0xFD: cur = 0x40; break;
@@ -285,7 +289,7 @@ void PifRamHandler::pif_control_read()
                 {
                     ReadControllerCommand(channel, &m_pif_ram[cur]);
                 }
-                cur += m_pif_ram[cur] + (m_pif_ram[cur + 1] & 0x3F) + 1;
+                cur += m_pif_ram[cur] + (m_pif_ram[cur + 1] & 0x3F) + 2;
                 channel++;
             }
             else
@@ -386,7 +390,7 @@ void PifRamHandler::pif_control_write()
         {
         case 0x00:
             channel++;
-            if (channel > 6) cur = 0x40;
+            if (channel > 5) cur = 0x40;
             else cur++;
             break;
         case 0xFD: cur = 0x40; break;
@@ -408,7 +412,7 @@ void PifRamHandler::pif_control_write()
                 {
                     m_eeprom.EepromCommand(&m_pif_ram[cur]);
                 }
-                cur += m_pif_ram[cur] + (m_pif_ram[cur + 1] & 0x3F) + 1;
+                cur += m_pif_ram[cur] + (m_pif_ram[cur + 1] & 0x3F) + 2;
                 channel++;
             }
             else

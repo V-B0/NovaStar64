@@ -85,19 +85,25 @@ bool VideoInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
         case VI_INTR_REG:     value = m_vi_regs.v_intr(); break;
         
         case VI_CURRENT_REG: {
-            // Dynamically compute VI_CURRENT from the live NextTimer countdown.
-            // m_NextTimer decrements by CountPerOp every instruction (live value).
-            // When VI is the current timer (typical), NextTimer ≈ VI remaining.
-            // half_line counts down from ~525 to 0 each frame (P64-style).
-            int32_t next_timer = m_system.m_NextTimer;
+            // Dynamically compute VI_CURRENT from the VI timer's remaining cycles.
+            // cycles_to_fire is only updated at timer checkpoints, so we must
+            // subtract the cycles elapsed since the last UpdateTimers() call
+            // (= last_update_cycles - m_NextTimer) to get a live value.
+            uint32_t vi_stored = m_system_timer.get_timer(N64System::TimerType::ViTimer);
+            int32_t elapsed_since_update =
+                static_cast<int32_t>(m_system_timer.get_last_update_cycles())
+                - m_system.m_NextTimer;
+            if (elapsed_since_update < 0) elapsed_since_update = 0;
+            int32_t vi_remaining = static_cast<int32_t>(vi_stored) - elapsed_since_update;
+            if (vi_remaining < 0) vi_remaining = 0;
             uint32_t count_per_op = m_system.CountPerOp();
             uint32_t vi_period = 781250u * count_per_op;
             uint32_t v_sync_val = m_vi_regs.v_sync();
             uint32_t num_half_lines = (v_sync_val > 0) ? (v_sync_val + 1) : 526u;
             uint32_t vi_refresh_rate = vi_period / num_half_lines;
             uint32_t half_line = 0;
-            if (vi_refresh_rate > 0 && next_timer > 0) {
-                half_line = (uint32_t)next_timer / vi_refresh_rate;
+            if (vi_refresh_rate > 0 && vi_remaining > 0) {
+                half_line = static_cast<uint32_t>(vi_remaining) / vi_refresh_rate;
                 if (half_line >= num_half_lines) half_line = num_half_lines - 1;
             }
             value = (half_line & ~1u) | m_video_state.current_field;

@@ -19,6 +19,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <string>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -942,6 +943,10 @@ bool MipsMemoryVM::LW_PhysicalAddress(uint32_t pAddr, uint32_t& value)
         {
             value = *reinterpret_cast<uint32_t*>(m_RDRAM + pAddr);
         }
+        else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
+        {
+            m_RomMemoryHandler->Read32(pAddr, value);
+        }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
             m_RomMemoryHandler->Read32(pAddr, value);
@@ -1050,17 +1055,28 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     case 0x04000000:
-        m_SPRegistersHandler->Write32(pAddr & ~3, value << ((3 - (pAddr & 3)) * 8), 0xFFFFFFFF);
+    {
+        uint32_t shift = (3 - (pAddr & 3)) * 8;
+        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFu << shift);
         break;
+    }
 
     case 0x1FC00000:
-        m_PifRamHandler->Write32(pAddr & ~3, value << ((3 - (pAddr & 3)) * 8), 0xFFFFFFFF);
+    {
+        uint32_t shift = (3 - (pAddr & 3)) * 8;
+        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFu << shift);
         break;
+    }
 
     default:
-        if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        if ((pAddr & 0xFFFF0000) == IS_VIEWER_BASE)
         {
-            m_RomMemoryHandler->Write32(pAddr, value << ((3 - (pAddr & 3)) * 8), 0xFFFFFFFF);
+            ISViewer_WriteByte(pAddr, static_cast<uint8_t>(value));
+        }
+        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        {
+            uint32_t shift = (3 - (pAddr & 3)) * 8;
+            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
         }
         break;
     }
@@ -1091,17 +1107,24 @@ bool MipsMemoryVM::SH_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     case 0x04000000:
-        m_SPRegistersHandler->Write32(pAddr & ~3, value << ((2 - (pAddr & 2)) * 8), 0xFFFFFFFF);
+    {
+        uint32_t shift = (2 - (pAddr & 2)) * 8;
+        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFFFu << shift);
         break;
+    }
 
     case 0x1FC00000:
-        m_PifRamHandler->Write32(pAddr & ~3, value << ((2 - (pAddr & 2)) * 8), 0xFFFFFFFF);
+    {
+        uint32_t shift = (2 - (pAddr & 2)) * 8;
+        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFu << shift);
         break;
+    }
 
     default:
         if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
-            m_RomMemoryHandler->Write32(pAddr, value << ((2 - (pAddr & 2)) * 8), 0xFFFFFFFF);
+            uint32_t shift = (2 - (pAddr & 2)) * 8;
+            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
         }
         break;
     }
@@ -1174,7 +1197,15 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     default:
-        if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        if ((pAddr & 0xFFFF0000) == IS_VIEWER_BASE)
+        {
+            ISViewer_Write32(pAddr, value);
+        }
+        else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
+        {
+            m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        }
+        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
             m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
         }
@@ -1225,6 +1256,63 @@ bool MipsMemoryVM::SD_PhysicalAddress(uint32_t pAddr, uint64_t value)
         break;
     }
     return true;
+}
+
+// ============================================================================
+// IS-Viewer Debug Output
+// ============================================================================
+
+void MipsMemoryVM::ISViewer_Write32(uint32_t pAddr, uint32_t value)
+{
+    if (pAddr == IS_VIEWER_LENGTH)
+    {
+        // Length register written — flush buffer
+        uint32_t len = value;
+        if (len > sizeof(m_ISViewerBuf)) len = sizeof(m_ISViewerBuf);
+        if (len > 0)
+        {
+            // Accumulate into line buffer and print complete lines
+            for (uint32_t i = 0; i < len; ++i)
+            {
+                char c = static_cast<char>(m_ISViewerBuf[i]);
+                if (c == '\n' || m_ISViewerLinePos >= sizeof(m_ISViewerLineBuf) - 1)
+                {
+                    m_ISViewerLineBuf[m_ISViewerLinePos] = '\0';
+                    fprintf(stdout, "[ISViewer] %s\n", m_ISViewerLineBuf);
+                    fflush(stdout);
+                    m_ISViewerLinePos = 0;
+                }
+                else if (c != '\r')
+                {
+                    m_ISViewerLineBuf[m_ISViewerLinePos++] = c;
+                }
+            }
+        }
+        m_ISViewerLen = 0;
+    }
+    else if (pAddr >= IS_VIEWER_BUFFER && pAddr < IS_VIEWER_BUF_END)
+    {
+        uint32_t off = pAddr - IS_VIEWER_BUFFER;
+        if (off + 3 < sizeof(m_ISViewerBuf))
+        {
+            m_ISViewerBuf[off]     = (value >> 24) & 0xFF;
+            m_ISViewerBuf[off + 1] = (value >> 16) & 0xFF;
+            m_ISViewerBuf[off + 2] = (value >> 8) & 0xFF;
+            m_ISViewerBuf[off + 3] = value & 0xFF;
+        }
+    }
+}
+
+void MipsMemoryVM::ISViewer_WriteByte(uint32_t pAddr, uint8_t value)
+{
+    if (pAddr >= IS_VIEWER_BUFFER && pAddr < IS_VIEWER_BUF_END)
+    {
+        uint32_t off = pAddr - IS_VIEWER_BUFFER;
+        if (off < sizeof(m_ISViewerBuf))
+        {
+            m_ISViewerBuf[off] = value;
+        }
+    }
 }
 
 // ============================================================================

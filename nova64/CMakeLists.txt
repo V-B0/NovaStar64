@@ -217,6 +217,9 @@ set(SOURCES
     NovaRSP/RSPDebugger.cpp
     NovaRSP/RSPInfo.cpp
 
+    # NovaInput - Keyboard input mapping
+    NovaInput/KeyboardInput.cpp
+
     # NovaAudio - Built-in audio plugin
     NovaAudio/NovaAudioPlugin.cpp
 

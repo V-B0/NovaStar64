@@ -47,6 +47,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <atomic>
+#include <immintrin.h>
 
 #pragma STDC FENV_ACCESS ON
 
@@ -64,6 +65,15 @@ namespace Recompiler {
 // Type alias for convenience (PipelineStage already defined in ExitInfo.hpp)
 using MIPS_DWORD = N64Types::MIPS_DWORD;
 using ExceptionCode = N64Types::ExceptionCode;
+
+// Forward declaration: COP1 usable check for interpreter callbacks
+static inline bool CheckCop1Unusable(CRegisters* regs) {
+    if (regs->STATUS_REGISTER.CU1 == 0) {
+        regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
+        return true;
+    }
+    return false;
+}
 
 // =============================================================================
 // Interpreter Callback Functions
@@ -120,12 +130,15 @@ inline void SetPC(CRegisters* regs, uint32_t pc32) {
 
 void Interp_ADDI(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int32_t rsVal = AsDWord(regs->m_GPR[op.Itype.rs]).W[0];
+    int32_t immVal = static_cast<int16_t>(op.Itype.imm);
+    int32_t sum = rsVal + immVal;
+    if ((~(rsVal ^ immVal) & (rsVal ^ sum)) & 0x80000000) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (op.Itype.rt == 0) return;
-    int32_t rs_lo = AsDWord(regs->m_GPR[op.Itype.rs]).W[0];
-    int16_t imm = static_cast<int16_t>(op.Itype.imm);
-    int32_t result = rs_lo + imm;
-    // ADDI can trap on overflow; we skip the trap for now (like most emus)
-    AsDWord(regs->m_GPR[op.Itype.rt]).DW = static_cast<int64_t>(result);
+    AsDWord(regs->m_GPR[op.Itype.rt]).DW = static_cast<int64_t>(sum);
 }
 
 void Interp_ADDIU(CRegisters* regs, uint32_t opcVal) {
@@ -183,10 +196,15 @@ void Interp_LUI(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_DADDI(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int64_t rsVal = AsDWord(regs->m_GPR[op.Itype.rs]).DW;
+    int64_t immVal = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
+    int64_t sum = rsVal + immVal;
+    if ((~(rsVal ^ immVal) & (rsVal ^ sum)) & 0x8000000000000000LL) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (op.Itype.rt == 0) return;
-    int64_t rs = AsDWord(regs->m_GPR[op.Itype.rs]).DW;
-    int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    AsDWord(regs->m_GPR[op.Itype.rt]).DW = rs + imm;
+    AsDWord(regs->m_GPR[op.Itype.rt]).DW = sum;
 }
 
 void Interp_DADDIU(CRegisters* regs, uint32_t opcVal) {
@@ -201,10 +219,15 @@ void Interp_DADDIU(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_ADD(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int32_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0];
+    int32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
+    int32_t sum = rsVal + rtVal;
+    if ((~(rsVal ^ rtVal) & (rsVal ^ sum)) & 0x80000000) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0] +
-                     AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(sum);
 }
 
 void Interp_ADDU(CRegisters* regs, uint32_t opcVal) {
@@ -218,10 +241,15 @@ void Interp_ADDU(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_SUB(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int32_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0];
+    int32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
+    int32_t sub = rsVal - rtVal;
+    if (((rsVal ^ rtVal) & (rsVal ^ sub)) & 0x80000000) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0] -
-                     AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(sub);
 }
 
 void Interp_SUBU(CRegisters* regs, uint32_t opcVal) {
@@ -283,10 +311,15 @@ void Interp_SLTU(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_DADD(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int64_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    int64_t sum = rsVal + rtVal;
+    if ((~(rsVal ^ rtVal) & (rsVal ^ sum)) & 0x8000000000000000LL) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW +
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = sum;
 }
 
 void Interp_DADDU(CRegisters* regs, uint32_t opcVal) {
@@ -299,10 +332,15 @@ void Interp_DADDU(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_DSUB(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    int64_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
+    int64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    int64_t sub = rsVal - rtVal;
+    if (((rsVal ^ rtVal) & (rsVal ^ sub)) & 0x8000000000000000LL) {
+        regs->TriggerException(12); // Overflow
+        return;
+    }
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW -
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = sub;
 }
 
 void Interp_DSUBU(CRegisters* regs, uint32_t opcVal) {
@@ -334,8 +372,10 @@ void Interp_SRL(CRegisters* regs, uint32_t opcVal) {
 void Interp_SRA(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0] >> mips_sa(opcVal);
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
+    // VR4300: shift the full 64-bit GPR value, then truncate low 32 and sign-extend
+    int64_t full = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> mips_sa(opcVal);
+    int32_t lo32 = static_cast<int32_t>(full);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(lo32);
 }
 
 void Interp_SLLV(CRegisters* regs, uint32_t opcVal) {
@@ -360,8 +400,10 @@ void Interp_SRAV(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x1F;
-    int32_t result = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0] >> shift;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
+    // VR4300: shift the full 64-bit GPR value, then truncate low 32 and sign-extend
+    int64_t full = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> shift;
+    int32_t lo32 = static_cast<int32_t>(full);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(lo32);
 }
 
 void Interp_DSLL(CRegisters* regs, uint32_t opcVal) {
@@ -731,21 +773,143 @@ void Interp_LDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     }
 }
 
-// Forward declarations for FR=0 mode 64-bit helpers (defined later with the FPU block)
-static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg);
-static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val);
+// FPR access helpers — work on m_FPR[] directly (matching interpreter).
+// FR=0 (32-bit mode): even/odd pairs share one 64-bit slot in m_FPR[even].
+//   Even reg n → low 32 of m_FPR[n], Odd reg n → high 32 of m_FPR[n & ~1].
+// FR=1 (64-bit mode): each register is independent in m_FPR[reg].
+
+// Data-transfer read (MFC1/SWC1)
+static inline uint32_t fpr_read_w(CRegisters* regs, uint32_t reg) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg & ~1u]);
+        return p[reg & 1];
+    }
+    return static_cast<uint32_t>(regs->m_FPR[reg]);
+}
+
+// Data-transfer write (MTC1/LWC1): preserves the other half of the pair
+static inline void fpr_write_w(CRegisters* regs, uint32_t reg, uint32_t val) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg & ~1u]);
+        p[reg & 1] = val;
+    } else {
+        // FR=1: write only low 32 bits, preserve upper 32
+        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg]);
+        p[0] = val;
+    }
+}
+
+// Arithmetic operand read (single-precision):
+// FR=0: bit 0 ignored, reads low 32 of m_FPR[reg & ~1u]
+// FR=1: reads low 32 of m_FPR[reg]
+static inline float fpr_read_float_op(CRegisters* regs, uint32_t reg) {
+    uint32_t bits;
+    if (regs->STATUS_REGISTER.FR == 0) {
+        bits = static_cast<uint32_t>(regs->m_FPR[reg & ~1u]);
+    } else {
+        bits = static_cast<uint32_t>(regs->m_FPR[reg]);
+    }
+    float result;
+    std::memcpy(&result, &bits, 4);
+    return result;
+}
+
+// Arithmetic result write (single-precision):
+// FR=0: writes to m_FPR[reg] directly (fd bit 0 NOT ignored), clears full 64 bits.
+// FR=1: clears full 64 bits, writes result to low 32.
+static inline void fpr_write_w_result(CRegisters* regs, uint32_t reg, uint32_t val) {
+    regs->m_FPR[reg] = static_cast<uint64_t>(val);
+}
+
+static inline void fpr_write_float_result(CRegisters* regs, uint32_t reg, float val) {
+    uint32_t bits;
+    std::memcpy(&bits, &val, 4);
+    fpr_write_w_result(regs, reg, bits);
+}
+
+// MOV.S result write: writes to m_FPR[reg] (no FR=0 masking).
+// FR=0: clears full 64 bits. FR=1: preserves upper 32 bits.
+static inline void fpr_write_w_move(CRegisters* regs, uint32_t reg, uint32_t val) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        regs->m_FPR[reg] = static_cast<uint64_t>(val);
+    } else {
+        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg]);
+        p[0] = val;
+    }
+}
+
+static inline void fpr_write_float_move(CRegisters* regs, uint32_t reg, float val) {
+    uint32_t bits;
+    std::memcpy(&bits, &val, 4);
+    fpr_write_w_move(regs, reg, bits);
+}
+
+static inline float fpr_read_float(CRegisters* regs, uint32_t reg) {
+    uint32_t bits = fpr_read_w(regs, reg);
+    float result;
+    std::memcpy(&result, &bits, 4);
+    return result;
+}
+
+static inline void fpr_write_float(CRegisters* regs, uint32_t reg, float val) {
+    uint32_t bits;
+    std::memcpy(&bits, &val, 4);
+    fpr_write_w(regs, reg, bits);
+}
+
+static inline double fpr_read_double(CRegisters* regs, uint32_t reg) {
+    uint64_t bits;
+    if (regs->STATUS_REGISTER.FR == 0) {
+        bits = regs->m_FPR[reg & ~1u];
+    } else {
+        bits = regs->m_FPR[reg];
+    }
+    double result;
+    std::memcpy(&result, &bits, 8);
+    return result;
+}
+
+// Arithmetic double write: FR=0: writes to m_FPR[reg] directly (fd bit 0 NOT ignored).
+static inline void fpr_write_double(CRegisters* regs, uint32_t reg, double val) {
+    uint64_t bits;
+    std::memcpy(&bits, &val, 8);
+    regs->m_FPR[reg] = bits;
+}
+
+// Arithmetic 64-bit result write (double/L format):
+// fd bit 0 NOT ignored in FR=0 mode (asymmetric with fs reads).
+static inline void fpr_write_u64_arith(CRegisters* regs, uint32_t reg, uint64_t val) {
+    regs->m_FPR[reg] = val;
+}
+
+static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        return regs->m_FPR[reg & ~1u];
+    }
+    return regs->m_FPR[reg];
+}
+
+static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        regs->m_FPR[reg & ~1u] = val;
+    } else {
+        regs->m_FPR[reg] = val;
+    }
+}
 
 void Interp_LWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
-        regs->m_FPR_Union[mips_ft(opcVal)].u32 = val;
+        fpr_write_w(regs, mips_ft(opcVal), val);
     }
 }
 
 void Interp_LDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
@@ -861,8 +1025,9 @@ void Interp_SC(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
         mmu->SW_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     }
     if (mips_rt(opcVal) != 0) {
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] = regs->m_LLBit;
+        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = (int32_t)regs->m_LLBit;
     }
+    regs->m_LLBit = 0;
 }
 
 void Interp_LLD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
@@ -887,17 +1052,20 @@ void Interp_SCD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     if (mips_rt(opcVal) != 0) {
         AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = regs->m_LLBit;
     }
+    regs->m_LLBit = 0;
 }
 
 void Interp_SWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
-    uint32_t val = regs->m_FPR_Union[mips_ft(opcVal)].u32;
+    uint32_t val = fpr_read_w(regs, mips_ft(opcVal));
     mmu->SW_Memory(addr, val);
 }
 
 void Interp_SDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                     static_cast<int16_t>(op.Itype.imm);
@@ -955,40 +1123,49 @@ void Interp_COP0_CO_TLBP(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) {
 }
 
 void Interp_COP0_CO_ERET(CRegisters* regs, CN64System* sys, uint32_t /*opcVal*/) {
-    static int eretCount = 0;
-    uint64_t returnAddr;
     // Match the interpreter: set PipelineStage = Jump and JumpToLocation,
     // NOT m_PROGRAM_COUNTER directly.  The dispatcher will apply the jump
     // after the block exits.
     if (regs->STATUS_REGISTER.ErrorLevel) {
-        returnAddr = regs->ERROREPC_REGISTER;
         sys->m_JumpToLocation = regs->ERROREPC_REGISTER;
         regs->STATUS_REGISTER.ErrorLevel = 0;
     } else {
-        returnAddr = regs->EPC_REGISTER;
         sys->m_JumpToLocation = regs->EPC_REGISTER;
         regs->STATUS_REGISTER.ExceptionLevel = 0;
     }
     sys->m_PipelineStage = N64Types::PipelineStage::Jump;
-    if (eretCount++ < 40) {
-        Log::infof("[ERET] #%d EPC=0x%08X STATUS=0x%08X",
-                   eretCount, (uint32_t)returnAddr, regs->STATUS_REGISTER.Value);
-    }
     regs->m_LLBit = 0;
-    regs->CheckInterrupts();
+    // Don't call CheckInterrupts here — it would queue an interrupt exception
+    // that fires BEFORE the ERET target instruction executes. On real VR4300,
+    // ERET lets at least one instruction execute before servicing interrupts.
+    // Instead, set a deferred flag so the dispatch loop calls CheckInterrupts
+    // AFTER the next block executes.
+    sys->m_DeferredCheckInterrupts = true;
     sys->m_TestTimer = true;
 }
 
 // ----- COP1 Move/Control Callbacks -----
 
+// DCFC1/DCTC1 (rs=3/7): check CU1 first, then fire FPE if usable
+static void Interp_COP1_DCFC1_DCTC1(CRegisters* regs, uint32_t /*opcVal*/) {
+    if (CheckCop1Unusable(regs)) return;
+    // VR4300: DCFC1/DCTC1 are 64-bit CFC1/CTC1 → Reserved Instruction on VR4300
+    // but the test expects UnimplementedOp (FPE with cause=unimpl)
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+    regs->m_FPCR[31] |= (1 << 17);   // Cause.UnimplementedOp
+    regs->TriggerException(15, 0);    // FPE
+}
+
 void Interp_COP1_MFC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
-        static_cast<int64_t>(static_cast<int32_t>(regs->m_FPR_Union[mips_rd(opcVal)].u32));
+        static_cast<int64_t>(static_cast<int32_t>(fpr_read_w(regs, mips_rd(opcVal))));
 }
 
 void Interp_COP1_DMFC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
@@ -996,12 +1173,14 @@ void Interp_COP1_DMFC1(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_COP1_MTC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    regs->m_FPR_Union[mips_rd(opcVal)].u32 =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
+    fpr_write_w(regs, mips_rd(opcVal),
+        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
 }
 
 void Interp_COP1_DMTC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     fpr_write_u64(regs, mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
 }
@@ -1010,6 +1189,7 @@ void Interp_COP1_DMTC1(CRegisters* regs, uint32_t opcVal) {
 static inline void SyncRoundingMode(CRegisters* regs);
 
 void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
@@ -1017,6 +1197,7 @@ void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     regs->Cop1_CT(mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0]);
     SyncRoundingMode(regs);
@@ -1027,296 +1208,879 @@ void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
 // These are simplified interpreter callbacks - a full implementation would
 // route through the softfloat library for IEEE 754 compliance.
 
-// FR=0 mode double-precision helpers:
-// In FR=0 mode (N64 default), doubles span even/odd FPR pairs.
-// The even register holds the LOW 32 bits, the odd register holds the HIGH 32 bits.
-static inline double fpr_read_double(CRegisters* regs, uint32_t reg) {
-    uint32_t lo = regs->m_FPR_Union[reg & ~1u].u32;
-    uint32_t hi = regs->m_FPR_Union[reg | 1u].u32;
-    uint64_t bits = (static_cast<uint64_t>(hi) << 32) | lo;
-    double result;
-    std::memcpy(&result, &bits, 8);
-    return result;
-}
+// Force precise FP semantics for all FPU callback functions.
+// The project uses /fp:fast which sets FTZ/DAZ and allows the compiler to
+// reorder/optimize FP operations. We need precise semantics for correct
+// N64 FPU emulation (denorm handling, exception flags, rounding modes).
+#pragma float_control(precise, on, push)
+#pragma fenv_access(on)
 
-static inline void fpr_write_double(CRegisters* regs, uint32_t reg, double val) {
-    uint64_t bits;
-    std::memcpy(&bits, &val, 8);
-    regs->m_FPR_Union[reg & ~1u].u32 = static_cast<uint32_t>(bits);
-    regs->m_FPR_Union[reg | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-}
-
-// FR=0 mode 64-bit integer helpers (for LDC1/SDC1, DMFC1/DMTC1, L-format)
-static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg) {
-    uint32_t lo = regs->m_FPR_Union[reg & ~1u].u32;
-    uint32_t hi = regs->m_FPR_Union[reg | 1u].u32;
-    return (static_cast<uint64_t>(hi) << 32) | lo;
-}
-
-static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val) {
-    regs->m_FPR_Union[reg & ~1u].u32 = static_cast<uint32_t>(val);
-    regs->m_FPR_Union[reg | 1u].u32 = static_cast<uint32_t>(val >> 32);
+// VR4300: undefined COP1 format → UnimplementedOp (FPE)
+static void Interp_COP1_Unimplemented(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+    regs->m_FPCR[31] |= (1 << 17);   // Cause.UnimplementedOp
+    regs->TriggerException(15, 0);    // FPE
 }
 
 // Sync the host x86 rounding mode to match MIPS FCR31 bits 1:0.
 // Must be called before any native float operation that depends on rounding.
 static inline void SyncRoundingMode(CRegisters* regs) {
-    static constexpr int mipsToHost[4] = { FE_TONEAREST, FE_TOWARDZERO, FE_UPWARD, FE_DOWNWARD };
-    std::fesetround(mipsToHost[regs->m_FPCR[31] & 3]);
+    // Map MIPS rounding mode to MXCSR rounding control (bits 14:13)
+    // MIPS: 0=Nearest, 1=Zero, 2=PosInf(Ceil), 3=NegInf(Floor)
+    // MXCSR RC: 0=Nearest, 1=NegInf, 2=PosInf, 3=Zero
+    static constexpr unsigned int mipsToMxcsr[4] = { 0, 3, 2, 1 };
+    unsigned int mxcsr = _mm_getcsr();
+    mxcsr &= ~(0x8040u | (3u << 13)); // Clear FTZ, DAZ, and RC bits
+    mxcsr |= (mipsToMxcsr[regs->m_FPCR[31] & 3] << 13); // Set RC
+    _mm_setcsr(mxcsr);
 }
 
 // Update FCR31 exception flags from x86 FP exception status (matching interpreter's SetFPUException)
-static inline void UpdateFCR31FromHostExceptions(CRegisters* regs) {
+static inline bool UpdateFCR31FromHostExceptions(CRegisters* regs) {
     int exc = std::fetestexcept(FE_ALL_EXCEPT);
-    if (exc == 0) return;
+    if (exc == 0) return false;
     FPStatusReg& sr = reinterpret_cast<FPStatusReg&>(regs->m_FPCR[31]);
-    if (exc & FE_INEXACT)   { sr.Cause.Inexact = 1;          if (!sr.Enable.Inexact)          sr.Flags.Inexact = 1; }
-    if (exc & FE_UNDERFLOW) { sr.Cause.Underflow = 1;        if (!sr.Enable.Underflow)        sr.Flags.Underflow = 1; }
-    if (exc & FE_OVERFLOW)  { sr.Cause.Overflow = 1;         if (!sr.Enable.Overflow)         sr.Flags.Overflow = 1; }
-    if (exc & FE_DIVBYZERO) { sr.Cause.DivisionByZero = 1;   if (!sr.Enable.DivisionByZero)   sr.Flags.DivisionByZero = 1; }
-    if (exc & FE_INVALID)   { sr.Cause.InvalidOperation = 1; if (!sr.Enable.InvalidOperation) sr.Flags.InvalidOperation = 1; }
+    if (exc & FE_INEXACT)   { sr.Cause.Inexact = 1;          }
+    if (exc & FE_UNDERFLOW) { sr.Cause.Underflow = 1;        }
+    if (exc & FE_OVERFLOW)  { sr.Cause.Overflow = 1;         }
+    if (exc & FE_DIVBYZERO) { sr.Cause.DivisionByZero = 1;   }
+    if (exc & FE_INVALID)   { sr.Cause.InvalidOperation = 1; }
+    // Check if any enabled exception was raised → FPE
+    uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F; // bits 12-16
+    uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F; // bits 7-11
+    if (causes & enables) {
+        regs->TriggerException(15, 0);
+        return true; // FPE triggered, caller should skip result write
+    }
+    // No FPE — set flags for raised causes
+    if (exc & FE_INEXACT)   sr.Flags.Inexact = 1;
+    if (exc & FE_UNDERFLOW) sr.Flags.Underflow = 1;
+    if (exc & FE_OVERFLOW)  sr.Flags.Overflow = 1;
+    if (exc & FE_DIVBYZERO) sr.Flags.DivisionByZero = 1;
+    if (exc & FE_INVALID)   sr.Flags.InvalidOperation = 1;
+    return false;
 }
 
-// Generic FPU operation callback that operates on the FPR_Union array directly
-// For single-precision operations (S format)
+// Generic FPU operation callback - single-precision (S format)
+// Read single-precision FPR as raw bits using arithmetic fs operand rules
+// (FR=0: bit 0 of register index ignored for fs)
+static inline uint32_t fpr_read_w_op(CRegisters* regs, uint32_t reg) {
+    if (regs->STATUS_REGISTER.FR == 0) {
+        // FR=0: bit 0 ignored for fs, always read low 32 of pair
+        return static_cast<uint32_t>(regs->m_FPR[reg & ~1u]);
+    }
+    return static_cast<uint32_t>(regs->m_FPR[reg]);
+}
+
+// Read single-precision FPR as raw bits for ft operand
+// (FR=0: bit 0 is NOT ignored for ft - VR4300 asymmetry)
+static inline uint32_t fpr_read_w_op_ft(CRegisters* regs, uint32_t reg) {
+    return static_cast<uint32_t>(regs->m_FPR[reg]);
+}
+
+// Read single-precision FPR as float for ft operand
+// (FR=0: bit 0 is NOT ignored for ft)
+static inline float fpr_read_float_op_ft(CRegisters* regs, uint32_t reg) {
+    uint32_t bits = static_cast<uint32_t>(regs->m_FPR[reg]);
+    float result;
+    std::memcpy(&result, &bits, 4);
+    return result;
+}
+
+// Read double FPR for ft operand
+// (FR=0: bit 0 is NOT ignored for ft)
+static inline double fpr_read_double_ft(CRegisters* regs, uint32_t reg) {
+    uint64_t bits = regs->m_FPR[reg];
+    double result;
+    std::memcpy(&result, &bits, 8);
+    return result;
+}
+
+// Read 64-bit FPR for ft operand
+// (FR=0: bit 0 is NOT ignored for ft)
+static inline uint64_t fpr_read_u64_ft(CRegisters* regs, uint32_t reg) {
+    return regs->m_FPR[reg];
+}
+
+// VR4300 ABS/NEG single-precision: operates on bit patterns with special NaN handling
+static void Interp_COP1_S_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) {
+    uint32_t bits = fpr_read_w_op(regs, mips_fs(opcVal));
+    uint32_t exp = (bits >> 23) & 0xFF;
+    uint32_t mant = bits & 0x007FFFFF;
+
+    // Clear Cause bits (InitFpuOperation equivalent)
+    regs->m_FPCR[31] &= ~0x0003F000;
+
+    // Denorm: exp=0, mantissa!=0 → UnimplementedOperation → FPE
+    if (exp == 0 && mant != 0) {
+        regs->m_FPCR[31] |= (1 << 17); // Cause.UnimplementedOperation
+        regs->TriggerException(15, 0);  // FPE, coprocessor 1
+        return;
+    }
+    // sNaN: exp=0xFF, quiet bit=0, mantissa!=0 → UnimplementedOperation → FPE
+    if (exp == 0xFF && mant != 0 && (bits & 0x00400000) == 0) {
+        regs->m_FPCR[31] |= (1 << 17); // Cause.UnimplementedOperation
+        regs->TriggerException(15, 0);
+        return;
+    }
+    // qNaN: exp=0xFF, quiet bit=1 → InvalidOperation, result = canonical sNaN
+    if (exp == 0xFF && (bits & 0x00400000) != 0) {
+        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
+            regs->TriggerException(15, 0);
+            return;
+        }
+        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFF); // canonical sNaN
+        return;
+    }
+    // Normal/zero/inf: ABS clears sign bit, NEG flips sign bit
+    uint32_t result = isNeg ? (bits ^ 0x80000000u) : (bits & 0x7FFFFFFFu);
+    fpr_write_w_result(regs, mips_fd(opcVal), result);
+}
+
+// VR4300 ABS/NEG double-precision: operates on bit patterns with special NaN handling
+static void Interp_COP1_D_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) {
+    uint64_t bits = fpr_read_u64(regs, mips_fs(opcVal));
+    uint32_t exp = static_cast<uint32_t>((bits >> 52) & 0x7FF);
+    uint64_t mant = bits & 0x000FFFFFFFFFFFFFull;
+
+    // Clear Cause bits
+    regs->m_FPCR[31] &= ~0x0003F000;
+
+    // Denorm
+    if (exp == 0 && mant != 0) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    // sNaN
+    if (exp == 0x7FF && mant != 0 && (bits & 0x0008000000000000ull) == 0) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    // qNaN → canonical sNaN
+    if (exp == 0x7FF && (bits & 0x0008000000000000ull) != 0) {
+        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
+            regs->TriggerException(15, 0);
+            return;
+        }
+        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
+        return;
+    }
+    // Normal/zero/inf
+    uint64_t result = isNeg ? (bits ^ 0x8000000000000000ull) : (bits & 0x7FFFFFFFFFFFFFFFull);
+    fpr_write_u64_arith(regs, mips_fd(opcVal), result);
+}
+
+// VR4300 float classification helpers
+static inline bool is_float_denorm(uint32_t bits) {
+    return (bits & 0x7F800000u) == 0 && (bits & 0x007FFFFFu) != 0;
+}
+static inline bool is_float_snan(uint32_t bits) {
+    return (bits & 0x7F800000u) == 0x7F800000u && (bits & 0x00400000u) == 0 && (bits & 0x003FFFFFu) != 0;
+}
+static inline bool is_float_nan(uint32_t bits) {
+    return (bits & 0x7F800000u) == 0x7F800000u && (bits & 0x007FFFFFu) != 0;
+}
+static inline bool is_double_denorm(uint64_t bits) {
+    return (bits & 0x7FF0000000000000ull) == 0 && (bits & 0x000FFFFFFFFFFFFFull) != 0;
+}
+static inline bool is_double_snan(uint64_t bits) {
+    return (bits & 0x7FF0000000000000ull) == 0x7FF0000000000000ull &&
+           (bits & 0x0008000000000000ull) == 0 &&
+           (bits & 0x0007FFFFFFFFFFFFull) != 0;
+}
+static inline bool is_double_nan(uint64_t bits) {
+    return (bits & 0x7FF0000000000000ull) == 0x7FF0000000000000ull && (bits & 0x000FFFFFFFFFFFFFull) != 0;
+}
+
 void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
+    // MOV.S: full 64-bit copy (VR4300: copies upper 32 bits from source)
+    // fs: bit 0 ignored in FR=0; fd: bit 0 NOT ignored
+    if (mips_funct(opcVal) == R4300_FPU_MOV) {
+        uint64_t src = (regs->STATUS_REGISTER.FR == 0)
+            ? regs->m_FPR[mips_fs(opcVal) & ~1u]
+            : regs->m_FPR[mips_fs(opcVal)];
+        regs->m_FPR[mips_fd(opcVal)] = src;
+        return;
+    }
+    // ABS.S/NEG.S: VR4300-specific bit pattern operations
+    if (mips_funct(opcVal) == R4300_FPU_ABS) {
+        Interp_COP1_S_AbsNeg(regs, opcVal, false);
+        return;
+    }
+    if (mips_funct(opcVal) == R4300_FPU_NEG) {
+        Interp_COP1_S_AbsNeg(regs, opcVal, true);
+        return;
+    }
     R4300iOps op; op.Value = opcVal;
-    float fs = regs->m_FPR_Union[mips_fs(opcVal)].f32;
-    float ft = regs->m_FPR_Union[mips_ft(opcVal)].f32;
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+    bool flush_denorm = (regs->m_FPCR[31] >> 24) & 1; // FS bit
+
+    // VR4300: check inputs for denorm/sNaN → UnimplementedOperation
+    uint32_t fs_bits = fpr_read_w_op(regs, mips_fs(opcVal));
+    if (is_float_denorm(fs_bits) || is_float_snan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    if (mips_funct(opcVal) != R4300_FPU_SQRT) {
+        uint32_t ft_bits = fpr_read_w_op_ft(regs, mips_ft(opcVal));
+        if (is_float_denorm(ft_bits) || is_float_snan(ft_bits)) {
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+    }
+
+    float fs, ft;
+    std::memcpy(&fs, &fs_bits, 4);
+    uint32_t ft_raw = fpr_read_w_op_ft(regs, mips_ft(opcVal));
+    std::memcpy(&ft, &ft_raw, 4);
     float result = 0.0f;
-    bool checkExc = true;
-    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits (matching interpreter InitFpuOperation)
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
+    // Clear MXCSR exception flags directly (bits 0-5)
+    { unsigned int m = _mm_getcsr(); _mm_setcsr(m & ~0x3Fu); }
     switch (mips_funct(opcVal)) {
         case R4300_FPU_ADD:  result = fs + ft; break;
         case R4300_FPU_SUB:  result = fs - ft; break;
         case R4300_FPU_MUL:  result = fs * ft; break;
         case R4300_FPU_DIV:  result = fs / ft; break;
         case R4300_FPU_SQRT: result = sqrtf(fs); break;
-        case R4300_FPU_ABS:  result = fabsf(fs); checkExc = false; break;
-        case R4300_FPU_NEG:  result = -fs; checkExc = false; break;
-        case R4300_FPU_MOV:  result = fs; checkExc = false; break;
         default:
             Log::errorf("COP1_S: Unknown funct %d", mips_funct(opcVal));
             return;
     }
-    if (checkExc) UpdateFCR31FromHostExceptions(regs);
-    regs->m_FPR_Union[mips_fd(opcVal)].f32 = result;
+    // Read MXCSR exception flags: bit0=Invalid, bit1=Denorm, bit2=DivZero, bit3=Overflow, bit4=Underflow, bit5=Inexact
+    unsigned int mxcsr_exc = _mm_getcsr() & 0x3Fu;
+    int host_exc = 0;
+    if (mxcsr_exc & 0x01) host_exc |= FE_INVALID;
+    if (mxcsr_exc & 0x04) host_exc |= FE_DIVBYZERO;
+    if (mxcsr_exc & 0x08) host_exc |= FE_OVERFLOW;
+    if (mxcsr_exc & 0x10) host_exc |= FE_UNDERFLOW;
+    if (mxcsr_exc & 0x20) host_exc |= FE_INEXACT;
+
+    // VR4300: check result for NaN → replace with canonical sNaN
+    uint32_t result_bits;
+    std::memcpy(&result_bits, &result, 4);
+    if (is_float_nan(result_bits)) {
+        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFFu);
+        return;
+    }
+    // VR4300 "tininess before rounding": if the result rounded to ±FLT_MIN but
+    // the infinite-precision result was subnormal, treat as underflow.
+    // Detect by recomputing in double (exact for single-precision operations).
+    uint32_t exp_s = (result_bits >> 23) & 0xFF;
+    bool tininess_s = false;
+    if (exp_s == 1) {
+        // Recompute in double precision to detect tininess-before-rounding.
+        // Double precision is exact for single-precision arithmetic operations.
+        double dfs = static_cast<double>(fs);
+        double dft = static_cast<double>(ft);
+        double exact;
+        switch (mips_funct(opcVal)) {
+            case R4300_FPU_ADD:  exact = dfs + dft; break;
+            case R4300_FPU_SUB:  exact = dfs - dft; break;
+            case R4300_FPU_MUL:  exact = dfs * dft; break;
+            case R4300_FPU_DIV:  exact = dfs / dft; break;
+            case R4300_FPU_SQRT: exact = sqrt(dfs); break;
+            default: exact = static_cast<double>(result); break;
+        }
+        uint64_t exact_bits;
+        std::memcpy(&exact_bits, &exact, 8);
+        uint64_t exact_abs = exact_bits & 0x7FFFFFFFFFFFFFFFull;
+        // FLT_MIN = 2^-126 in double: 0x3810000000000000
+        if (exact_abs != 0 && exact_abs < 0x3810000000000000ull) {
+            tininess_s = true;
+        }
+    }
+    // VR4300: check for underflow (denorm result, zero-from-nonzero, or tininess-before-rounding)
+    bool is_denorm_s = is_float_denorm(result_bits);
+    bool is_zero_uf_s = (!is_denorm_s && result == 0.0f && (host_exc & FE_UNDERFLOW));
+    if (is_denorm_s || is_zero_uf_s || tininess_s) {
+        if (!flush_denorm) { // FS=0 → UnimplementedOp
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+        // FS=1: check if underflow_enable or inexact_enable → UnimplementedOp
+        if (regs->m_FPCR[31] & ((1 << 8) | (1 << 7))) {
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+        // Flush: rounding-mode-aware
+        bool is_negative = std::signbit(result);
+        int rm = regs->m_FPCR[31] & 3;
+        uint32_t flushed;
+        if (rm == 2) { // PositiveInfinity
+            flushed = is_negative ? 0x80000000u : 0x00800000u;
+        } else if (rm == 3) { // NegativeInfinity
+            flushed = is_negative ? 0x80800000u : 0x00000000u;
+        } else { // Nearest or Zero → always flush to ±0
+            flushed = is_negative ? 0x80000000u : 0x00000000u;
+        }
+        regs->m_FPCR[31] |= (1 << 13) | (1 << 12); // Cause.Underflow + Cause.Inexact
+        regs->m_FPCR[31] |= (1 << 3) | (1 << 2);   // Flag.Underflow + Flag.Inexact
+        fpr_write_w_result(regs, mips_fd(opcVal), flushed);
+        return;
+    }
+    // Check for overflow (bit-level inf check: std::isinf is broken by /fp:fast)
+    if ((result_bits & 0x7FFFFFFFu) == 0x7F800000u && (host_exc & FE_OVERFLOW)) {
+        regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
+        uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
+        uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
+        if (causes & enables) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
+    }
+    // Check for division by zero
+    if (host_exc & FE_DIVBYZERO) {
+        regs->m_FPCR[31] |= (1 << 15); // Cause.DivisionByZero
+        if (regs->m_FPCR[31] & (1 << 10)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 5); // Flag.DivisionByZero
+    }
+    // Check for inexact (not already handled by underflow/overflow)
+    if ((host_exc & FE_INEXACT) && !(host_exc & (FE_UNDERFLOW | FE_OVERFLOW))) {
+        regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
+    }
+    fpr_write_float_result(regs, mips_fd(opcVal), result);
 }
 
 // Double-precision FPU operations
 void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
+    // MOV.D: full 64-bit copy, no FCSR modification
+    // fs: bit 0 ignored in FR=0; fd: bit 0 NOT ignored
+    if (mips_funct(opcVal) == R4300_FPU_MOV) {
+        uint64_t bits = fpr_read_u64(regs, mips_fs(opcVal));
+        regs->m_FPR[mips_fd(opcVal)] = bits;
+        return;
+    }
+    // ABS.D/NEG.D: VR4300-specific bit pattern operations
+    if (mips_funct(opcVal) == R4300_FPU_ABS) {
+        Interp_COP1_D_AbsNeg(regs, opcVal, false);
+        return;
+    }
+    if (mips_funct(opcVal) == R4300_FPU_NEG) {
+        Interp_COP1_D_AbsNeg(regs, opcVal, true);
+        return;
+    }
     R4300iOps op; op.Value = opcVal;
-    double fs = fpr_read_double(regs, mips_fs(opcVal));
-    double ft = fpr_read_double(regs, mips_ft(opcVal));
-    double result = 0.0;
-    bool checkExc = true;
     regs->m_FPCR[31] &= ~0x0003F000;
+    bool flush_denorm = (regs->m_FPCR[31] >> 24) & 1;
+
+    // VR4300: check inputs for denorm/sNaN → UnimplementedOperation
+    uint64_t fs_bits = fpr_read_u64(regs, mips_fs(opcVal));
+    if (is_double_denorm(fs_bits) || is_double_snan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    if (mips_funct(opcVal) != R4300_FPU_SQRT) {
+        uint64_t ft_bits = fpr_read_u64_ft(regs, mips_ft(opcVal));
+        if (is_double_denorm(ft_bits) || is_double_snan(ft_bits)) {
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+    }
+
+    double fs, ft;
+    std::memcpy(&fs, &fs_bits, 8);
+    uint64_t ft_raw = fpr_read_u64_ft(regs, mips_ft(opcVal));
+    std::memcpy(&ft, &ft_raw, 8);
+    double result = 0.0;
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
+    // Clear MXCSR exception flags directly (bits 0-5)
+    { unsigned int m = _mm_getcsr(); _mm_setcsr(m & ~0x3Fu); }
     switch (mips_funct(opcVal)) {
         case R4300_FPU_ADD:  result = fs + ft; break;
         case R4300_FPU_SUB:  result = fs - ft; break;
         case R4300_FPU_MUL:  result = fs * ft; break;
         case R4300_FPU_DIV:  result = fs / ft; break;
         case R4300_FPU_SQRT: result = sqrt(fs); break;
-        case R4300_FPU_ABS:  result = fabs(fs); checkExc = false; break;
-        case R4300_FPU_NEG:  result = -fs; checkExc = false; break;
-        case R4300_FPU_MOV:  result = fs; checkExc = false; break;
         default:
             Log::errorf("COP1_D: Unknown funct %d", mips_funct(opcVal));
             return;
     }
-    if (checkExc) UpdateFCR31FromHostExceptions(regs);
+    // Read MXCSR exception flags
+    unsigned int mxcsr_exc_d = _mm_getcsr() & 0x3Fu;
+    int host_exc = 0;
+    if (mxcsr_exc_d & 0x01) host_exc |= FE_INVALID;
+    if (mxcsr_exc_d & 0x04) host_exc |= FE_DIVBYZERO;
+    if (mxcsr_exc_d & 0x08) host_exc |= FE_OVERFLOW;
+    if (mxcsr_exc_d & 0x10) host_exc |= FE_UNDERFLOW;
+    if (mxcsr_exc_d & 0x20) host_exc |= FE_INEXACT;
+
+    // VR4300: check result for NaN → replace with canonical sNaN
+    uint64_t result_bits;
+    std::memcpy(&result_bits, &result, 8);
+    if (is_double_nan(result_bits)) {
+        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
+        return;
+    }
+    // VR4300 "tininess before rounding": if result rounded to ±DBL_MIN but
+    // the infinite-precision result was subnormal, treat as underflow.
+    // Detect by recomputing with FE_TOWARDZERO (truncation toward zero).
+    uint32_t exp_d = (result_bits >> 52) & 0x7FF;
+    bool tininess_d = false;
+    if (exp_d == 1) {
+        unsigned int saved_mxcsr = _mm_getcsr();
+        // Set toward-zero rounding, no FTZ/DAZ, clear exception flags, exceptions masked
+        _mm_setcsr((saved_mxcsr & ~0xE07Fu) | 0x1F80u | (3u << 13));
+        double trunc_result;
+        switch (mips_funct(opcVal)) {
+            case R4300_FPU_ADD:  trunc_result = fs + ft; break;
+            case R4300_FPU_SUB:  trunc_result = fs - ft; break;
+            case R4300_FPU_MUL:  trunc_result = fs * ft; break;
+            case R4300_FPU_DIV:  trunc_result = fs / ft; break;
+            case R4300_FPU_SQRT: trunc_result = sqrt(fs); break;
+            default: trunc_result = result; break;
+        }
+        uint64_t trunc_bits;
+        double trunc_val = trunc_result;
+        std::memcpy(&trunc_bits, &trunc_val, 8);
+        // Restore MXCSR
+        _mm_setcsr(saved_mxcsr);
+        // Re-disable FTZ/DAZ
+        { unsigned int m = _mm_getcsr(); _mm_setcsr(m & ~0x8040u); }
+        if (is_double_denorm(trunc_bits) || (trunc_result == 0.0 && fs != 0.0)) {
+            tininess_d = true;
+        }
+    }
+    // VR4300: check for underflow (denorm result, zero-from-nonzero, or tininess-before-rounding)
+    bool is_denorm_d = is_double_denorm(result_bits);
+    bool is_zero_uf_d = (!is_denorm_d && result == 0.0 && (host_exc & FE_UNDERFLOW));
+    if (is_denorm_d || is_zero_uf_d || tininess_d) {
+        if (!flush_denorm) { // FS=0 → UnimplementedOp
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+        // FS=1: check if underflow_enable or inexact_enable → UnimplementedOp
+        if (regs->m_FPCR[31] & ((1 << 8) | (1 << 7))) {
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
+        }
+        // Flush: rounding-mode-aware
+        bool is_negative = std::signbit(result);
+        int rm = regs->m_FPCR[31] & 3;
+        uint64_t flushed;
+        if (is_denorm_d) {
+            if (rm == 2) { // PositiveInfinity
+                flushed = is_negative ? 0x8000000000000000ull : 0x0010000000000000ull;
+            } else if (rm == 3) { // NegativeInfinity
+                flushed = is_negative ? 0x8010000000000000ull : 0x0000000000000000ull;
+            } else { // Nearest or Zero → always flush to ±0
+                flushed = is_negative ? 0x8000000000000000ull : 0x0000000000000000ull;
+            }
+        } else {
+            // Zero from underflow → preserve sign
+            flushed = is_negative ? 0x8000000000000000ull : 0x0000000000000000ull;
+        }
+        regs->m_FPCR[31] |= (1 << 13) | (1 << 12); // Cause.Underflow + Cause.Inexact
+        regs->m_FPCR[31] |= (1 << 3) | (1 << 2);   // Flag.Underflow + Flag.Inexact
+        fpr_write_u64_arith(regs, mips_fd(opcVal), flushed);
+        return;
+    }
+    // Check for overflow (bit-level inf check: std::isinf is broken by /fp:fast)
+    if ((result_bits & 0x7FFFFFFFFFFFFFFFull) == 0x7FF0000000000000ull && (host_exc & FE_OVERFLOW)) {
+        regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
+        uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
+        uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
+        if (causes & enables) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
+    }
+    // Check for division by zero
+    if (host_exc & FE_DIVBYZERO) {
+        regs->m_FPCR[31] |= (1 << 15); // Cause.DivisionByZero
+        if (regs->m_FPCR[31] & (1 << 10)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 5); // Flag.DivisionByZero
+    }
+    // Check for inexact (not already handled by underflow/overflow)
+    if ((host_exc & FE_INEXACT) && !(host_exc & (FE_UNDERFLOW | FE_OVERFLOW))) {
+        regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
+    }
     fpr_write_double(regs, mips_fd(opcVal), result);
+}
+
+// VR4300 float/double → int32 conversion helper
+// Handles CVT.W, ROUND.W, TRUNC.W, CEIL.W, FLOOR.W with proper VR4300 semantics:
+// - NaN/Inf/out-of-range → UnimplementedOp (not InvalidOp)
+// - Manual inexact detection (no fenv dependency)
+// - ROUND uses nearest-even (not half-away-from-zero)
+static void VR4300_ConvertToW(CRegisters* regs, uint32_t opcVal, double input, int funct) {
+    if (std::isnan(input) || std::isinf(input)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    int saved_rm = std::fegetround();
+    switch (funct) {
+        case R4300_FPU_ROUND_W: std::fesetround(FE_TONEAREST); break;
+        case R4300_FPU_TRUNC_W: std::fesetround(FE_TOWARDZERO); break;
+        case R4300_FPU_CEIL_W:  std::fesetround(FE_UPWARD); break;
+        case R4300_FPU_FLOOR_W: std::fesetround(FE_DOWNWARD); break;
+        default: break; // CVT_W: keep current mode from SyncRoundingMode
+    }
+    double rounded = std::nearbyint(input);
+    std::fesetround(saved_rm);
+    if (rounded > 2147483647.0 || rounded < -2147483648.0) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    int32_t result = static_cast<int32_t>(rounded);
+    if (rounded != input) {
+        regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
+    }
+    fpr_write_w_result(regs, mips_fd(opcVal), static_cast<uint32_t>(result));
+}
+
+// VR4300 float/double → int64 conversion helper
+// VR4300 limits: |result| must be < 2^53 (NOT full int64 range)
+static void VR4300_ConvertToL(CRegisters* regs, uint32_t opcVal, double input, int funct) {
+    if (std::isnan(input) || std::isinf(input)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    int saved_rm = std::fegetround();
+    switch (funct) {
+        case R4300_FPU_ROUND_L: std::fesetround(FE_TONEAREST); break;
+        case R4300_FPU_TRUNC_L: std::fesetround(FE_TOWARDZERO); break;
+        case R4300_FPU_CEIL_L:  std::fesetround(FE_UPWARD); break;
+        case R4300_FPU_FLOOR_L: std::fesetround(FE_DOWNWARD); break;
+        default: break; // CVT_L: keep current mode
+    }
+    double rounded = std::nearbyint(input);
+    std::fesetround(saved_rm);
+    constexpr double limit = 9007199254740992.0; // 2^53
+    if (rounded >= limit || rounded <= -limit) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+    int64_t result = static_cast<int64_t>(rounded);
+    if (rounded != input) {
+        regs->m_FPCR[31] |= (1 << 12);
+        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        regs->m_FPCR[31] |= (1 << 2);
+    }
+    fpr_write_u64_arith(regs, mips_fd(opcVal), static_cast<uint64_t>(result));
 }
 
 // Single-precision conversions
 void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    float fs = regs->m_FPR_Union[mips_fs(opcVal)].f32;
     regs->m_FPCR[31] &= ~0x0003F000;
+
+    // VR4300: check input for denorm/sNaN (IEEE sNaN)
+    uint32_t fs_bits = fpr_read_w_op(regs, mips_fs(opcVal));
+    if (is_float_denorm(fs_bits) || is_float_snan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    float fs;
+    std::memcpy(&fs, &fs_bits, 4);
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
-    switch (mips_funct(opcVal)) {
-        case R4300_FPU_CVT_D: {
-            double dval = static_cast<double>(fs);
-            UpdateFCR31FromHostExceptions(regs);
-            fpr_write_double(regs, mips_fd(opcVal), dval);
-            break;
+
+    int funct = mips_funct(opcVal);
+
+    // CVT.S.S doesn't exist → UnimplementedOp
+    if (funct == R4300_FPU_CVT_S) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    if (funct == R4300_FPU_CVT_D) {
+        // NaN input → InvalidOp + canonical sNaN
+        if (is_float_nan(fs_bits)) {
+            regs->m_FPCR[31] |= (1 << 16);
+            if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 6);
+            fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
+            return;
         }
-        case R4300_FPU_CVT_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(lrintf(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_CVT_L:
-            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(llrintf(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_ROUND_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(lroundf(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_TRUNC_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(truncf(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_CEIL_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(ceilf(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_FLOOR_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(floorf(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_ROUND_L:
-            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(llroundf(fs))));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_TRUNC_L:
-            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(truncf(fs))));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_CEIL_L:
-            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(ceilf(fs))));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_FLOOR_L:
-            fpr_write_u64(regs, mips_fd(opcVal), static_cast<uint64_t>(static_cast<int64_t>(floorf(fs))));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        default:
-            Log::errorf("COP1_S_CVT: Unknown funct %d", mips_funct(opcVal));
-            break;
+        double dval = static_cast<double>(fs);
+        fpr_write_double(regs, mips_fd(opcVal), dval);
+        return;
+    }
+
+    // NaN (any kind) → UnimplementedOp for all float→int conversions
+    if (is_float_nan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    double input = static_cast<double>(fs); // exact
+    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W ||
+        funct == R4300_FPU_TRUNC_W || funct == R4300_FPU_CEIL_W ||
+        funct == R4300_FPU_FLOOR_W) {
+        VR4300_ConvertToW(regs, opcVal, input, funct);
+    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L ||
+               funct == R4300_FPU_TRUNC_L || funct == R4300_FPU_CEIL_L ||
+               funct == R4300_FPU_FLOOR_L) {
+        VR4300_ConvertToL(regs, opcVal, input, funct);
+    } else {
+        Log::errorf("COP1_S_CVT: Unknown funct %d", funct);
     }
 }
 
 // Double-precision conversions
 void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    double fs = fpr_read_double(regs, mips_fs(opcVal));
     regs->m_FPCR[31] &= ~0x0003F000;
+
+    // VR4300: check input for denorm/sNaN (IEEE sNaN)
+    uint64_t fs_bits = fpr_read_u64(regs, mips_fs(opcVal));
+    if (is_double_denorm(fs_bits) || is_double_snan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    double fs;
+    std::memcpy(&fs, &fs_bits, 8);
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
-    switch (mips_funct(opcVal)) {
-        case R4300_FPU_CVT_S: {
-            float fval = static_cast<float>(fs);
-            UpdateFCR31FromHostExceptions(regs);
-            regs->m_FPR_Union[mips_fd(opcVal)].f32 = fval;
-            break;
+
+    int funct = mips_funct(opcVal);
+
+    // CVT.D.D doesn't exist → UnimplementedOp
+    if (funct == R4300_FPU_CVT_D) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    if (funct == R4300_FPU_CVT_S) {
+        // NaN input → InvalidOp + canonical sNaN
+        if (is_double_nan(fs_bits)) {
+            regs->m_FPCR[31] |= (1 << 16);
+            if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 6);
+            fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFFu);
+            return;
         }
-        case R4300_FPU_CVT_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(lrint(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_CVT_L: {
-            uint64_t bits;
-            int64_t ival = llrint(fs);
-            UpdateFCR31FromHostExceptions(regs);
-            std::memcpy(&bits, &ival, 8);
-            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
-            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-            break;
+        float fval = static_cast<float>(fs);
+        uint32_t result_bits;
+        std::memcpy(&result_bits, &fval, 4);
+        uint32_t abs_bits = result_bits & 0x7FFFFFFFu;
+        // Detect underflow: result is zero or denorm, but input was nonzero
+        bool result_is_subnormal_or_zero = ((result_bits & 0x7F800000u) == 0);
+        if (result_is_subnormal_or_zero && fs != 0.0) {
+            bool flush_denorm = (regs->m_FPCR[31] >> 24) & 1;
+            if (flush_denorm) {
+                // FS=1: check if underflow_enable or inexact_enable → UnimplementedOp
+                if (regs->m_FPCR[31] & ((1 << 8) | (1 << 7))) {
+                    regs->m_FPCR[31] |= (1 << 17);
+                    regs->TriggerException(15, 0);
+                    return;
+                }
+                bool is_negative = std::signbit(fs);
+                int rm = regs->m_FPCR[31] & 3;
+                uint32_t flushed;
+                if (rm == 2) { // PositiveInfinity
+                    flushed = is_negative ? 0x80000000u : 0x00800000u;
+                } else if (rm == 3) { // NegativeInfinity
+                    flushed = is_negative ? 0x80800000u : 0x00000000u;
+                } else { // Nearest or Zero → always flush to ±0
+                    flushed = is_negative ? 0x80000000u : 0x00000000u;
+                }
+                regs->m_FPCR[31] |= (1 << 13) | (1 << 12); // Cause.Underflow + Cause.Inexact
+                regs->m_FPCR[31] |= (1 << 3) | (1 << 2); // Flag.Underflow + Flag.Inexact
+                fpr_write_w_result(regs, mips_fd(opcVal), flushed);
+                return;
+            }
+            regs->m_FPCR[31] |= (1 << 17);
+            regs->TriggerException(15, 0);
+            return;
         }
-        case R4300_FPU_ROUND_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(lround(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_TRUNC_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(trunc(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_CEIL_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(ceil(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_FLOOR_W:
-            regs->m_FPR_Union[mips_fd(opcVal)].u32 = static_cast<uint32_t>(static_cast<int32_t>(floor(fs)));
-            UpdateFCR31FromHostExceptions(regs);
-            break;
-        case R4300_FPU_ROUND_L: {
-            uint64_t bits;
-            int64_t ival = static_cast<int64_t>(llround(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            std::memcpy(&bits, &ival, 8);
-            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
-            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-            break;
+        // Check for overflow (bit-level check: isinf can be broken by /fp:fast)
+        uint32_t result_abs = result_bits & 0x7FFFFFFFu;
+        bool result_is_inf = (result_abs == 0x7F800000u);
+        uint64_t fs_abs = fs_bits & 0x7FFFFFFFFFFFFFFFull;
+        bool fs_is_inf = (fs_abs == 0x7FF0000000000000ull);
+        if (result_is_inf && !fs_is_inf) {
+            regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
+            uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
+            uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
+            if (causes & enables) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
+            fpr_write_float_result(regs, mips_fd(opcVal), fval);
+            return;
         }
-        case R4300_FPU_TRUNC_L: {
-            uint64_t bits;
-            int64_t ival = static_cast<int64_t>(trunc(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            std::memcpy(&bits, &ival, 8);
-            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
-            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-            break;
+        // Check for inexact (normal result)
+        if (static_cast<double>(fval) != fs) {
+            regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
         }
-        case R4300_FPU_CEIL_L: {
-            uint64_t bits;
-            int64_t ival = static_cast<int64_t>(ceil(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            std::memcpy(&bits, &ival, 8);
-            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
-            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-            break;
-        }
-        case R4300_FPU_FLOOR_L: {
-            uint64_t bits;
-            int64_t ival = static_cast<int64_t>(floor(fs));
-            UpdateFCR31FromHostExceptions(regs);
-            std::memcpy(&bits, &ival, 8);
-            regs->m_FPR_Union[mips_fd(opcVal) & ~1u].u32 = static_cast<uint32_t>(bits);
-            regs->m_FPR_Union[mips_fd(opcVal) | 1u].u32 = static_cast<uint32_t>(bits >> 32);
-            break;
-        }
-        default:
-            Log::errorf("COP1_D_CVT: Unknown funct %d", mips_funct(opcVal));
-            break;
+        fpr_write_float_result(regs, mips_fd(opcVal), fval);
+        return;
+    }
+
+    // NaN (any kind) → UnimplementedOp for all double→int conversions
+    if (is_double_nan(fs_bits)) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W ||
+        funct == R4300_FPU_TRUNC_W || funct == R4300_FPU_CEIL_W ||
+        funct == R4300_FPU_FLOOR_W) {
+        VR4300_ConvertToW(regs, opcVal, fs, funct);
+    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L ||
+               funct == R4300_FPU_TRUNC_L || funct == R4300_FPU_CEIL_L ||
+               funct == R4300_FPU_FLOOR_L) {
+        VR4300_ConvertToL(regs, opcVal, fs, funct);
+    } else {
+        Log::errorf("COP1_D_CVT: Unknown funct %d", funct);
     }
 }
 
 // Word-to-float/double conversion
 void Interp_COP1_W_CVT(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    int32_t w = static_cast<int32_t>(regs->m_FPR_Union[mips_fs(opcVal)].u32);
+    // W-format CVT: fs bit 0 ignored in FR=0 (arithmetic read rules)
+    int32_t w = static_cast<int32_t>(fpr_read_w_op(regs, mips_fs(opcVal)));
     regs->m_FPCR[31] &= ~0x0003F000;
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
     if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
-        regs->m_FPR_Union[mips_fd(opcVal)].f32 = static_cast<float>(w);
+        float result = static_cast<float>(w);
+        // Manual inexact detection: double can represent both int32 and float exactly
+        if (static_cast<double>(result) != static_cast<double>(w)) {
+            regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+            if (regs->m_FPCR[31] & (1 << 7)) { // Enable.Inexact → FPE
+                regs->TriggerException(15, 0);
+                return;
+            }
+            regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
+        }
+        fpr_write_float_result(regs, mips_fd(opcVal), result);
     } else if (mips_funct(opcVal) == R4300_FPU_CVT_D) {
+        // int32 → double is always exact (53-bit mantissa > 31 significant bits)
         fpr_write_double(regs, mips_fd(opcVal), static_cast<double>(w));
+    } else {
+        // CVT.W.W, ROUND.W.W, etc. don't exist → UnimplementedOp
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
     }
-    UpdateFCR31FromHostExceptions(regs);
 }
 
 // Long-to-float/double conversion
 void Interp_COP1_L_CVT(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
     int64_t l = static_cast<int64_t>(fpr_read_u64(regs, mips_fs(opcVal)));
     regs->m_FPCR[31] &= ~0x0003F000;
     SyncRoundingMode(regs);
-    std::feclearexcept(FE_ALL_EXCEPT);
-    if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
-        regs->m_FPR_Union[mips_fd(opcVal)].f32 = static_cast<float>(l);
-    } else if (mips_funct(opcVal) == R4300_FPU_CVT_D) {
-        fpr_write_double(regs, mips_fd(opcVal), static_cast<double>(l));
+
+    // VR4300: L-format only supports CVT.S.L and CVT.D.L; others → UnimplementedOp
+    if (mips_funct(opcVal) != R4300_FPU_CVT_S && mips_funct(opcVal) != R4300_FPU_CVT_D) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
     }
-    UpdateFCR31FromHostExceptions(regs);
+
+    // VR4300 range check: |value| must fit in signed 56-bit (-(2^55) to 2^55-1)
+    constexpr int64_t max_val = (1LL << 55) - 1;
+    constexpr int64_t min_val = -(1LL << 55);
+    if (l > max_val || l < min_val) {
+        regs->m_FPCR[31] |= (1 << 17);
+        regs->TriggerException(15, 0);
+        return;
+    }
+
+    if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
+        float result = static_cast<float>(l);
+        // Manual inexact: check if |l| has more than 24 significant bits
+        uint64_t u = static_cast<uint64_t>(l); if (l < 0) u = -u;
+        bool inexact = false;
+        if (u != 0) {
+            int msb = 63; while (msb > 0 && !(u & (1ull << msb))) msb--;
+            if (msb >= 24) inexact = (u & ((1ull << (msb - 23)) - 1)) != 0;
+        }
+        if (inexact) {
+            regs->m_FPCR[31] |= (1 << 12);
+            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 2);
+        }
+        fpr_write_float_result(regs, mips_fd(opcVal), result);
+    } else {
+        double result = static_cast<double>(l);
+        // Manual inexact: check if |l| has more than 53 significant bits
+        uint64_t u = static_cast<uint64_t>(l); if (l < 0) u = -u;
+        bool inexact = false;
+        if (u != 0) {
+            int msb = 63; while (msb > 0 && !(u & (1ull << msb))) msb--;
+            if (msb >= 53) inexact = (u & ((1ull << (msb - 52)) - 1)) != 0;
+        }
+        if (inexact) {
+            regs->m_FPCR[31] |= (1 << 12);
+            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            regs->m_FPCR[31] |= (1 << 2);
+        }
+        fpr_write_double(regs, mips_fd(opcVal), result);
+    }
 }
 
 // COP1 Compare (C.cond.S / C.cond.D)
 constexpr uint32_t FPCSR_C = 0x00800000;
 
 void Interp_COP1_S_CMP(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    float fs = regs->m_FPR_Union[mips_fs(opcVal)].f32;
-    float ft = regs->m_FPR_Union[mips_ft(opcVal)].f32;
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+
+    uint32_t fs_bits = fpr_read_w_op(regs, mips_fs(opcVal));
+    uint32_t ft_bits = fpr_read_w_op_ft(regs, mips_ft(opcVal));
+
+    float fs, ft;
+    std::memcpy(&fs, &fs_bits, 4);
+    std::memcpy(&ft, &ft_bits, 4);
     bool less = false, equal = false, unordered = false;
     if (std::isnan(fs) || std::isnan(ft)) {
         unordered = true;
+        // VR4300 NaN convention: signaling comparisons (bit 3) raise for any NaN;
+        // non-signaling raise only if any input is qNaN (IEEE bit22=1 = VR4300 sNaN)
+        bool has_ieee_qnan = (is_float_nan(fs_bits) && !is_float_snan(fs_bits)) ||
+                             (is_float_nan(ft_bits) && !is_float_snan(ft_bits));
+        if ((mips_funct(opcVal) & 8) || has_ieee_qnan) {
+            regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+            if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
+                regs->TriggerException(15, 0);
+                return;
+            }
+            regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        }
     } else {
         less = (fs < ft);
         equal = (fs == ft);
@@ -1329,12 +2093,31 @@ void Interp_COP1_S_CMP(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
+    if (CheckCop1Unusable(regs)) return;
     R4300iOps op; op.Value = opcVal;
-    double fs = fpr_read_double(regs, mips_fs(opcVal));
-    double ft = fpr_read_double(regs, mips_ft(opcVal));
+    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+
+    uint64_t fs_bits = fpr_read_u64(regs, mips_fs(opcVal));
+    uint64_t ft_bits = fpr_read_u64_ft(regs, mips_ft(opcVal));
+
+    double fs, ft;
+    std::memcpy(&fs, &fs_bits, 8);
+    std::memcpy(&ft, &ft_bits, 8);
     bool less = false, equal = false, unordered = false;
     if (std::isnan(fs) || std::isnan(ft)) {
         unordered = true;
+        // VR4300 NaN convention: signaling comparisons (bit 3) raise for any NaN;
+        // non-signaling raise only if any input is qNaN (IEEE bit52=1 = VR4300 sNaN)
+        bool has_ieee_qnan = (is_double_nan(fs_bits) && !is_double_snan(fs_bits)) ||
+                             (is_double_nan(ft_bits) && !is_double_snan(ft_bits));
+        if ((mips_funct(opcVal) & 8) || has_ieee_qnan) {
+            regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+            if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
+                regs->TriggerException(15, 0);
+                return;
+            }
+            regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        }
     } else {
         less = (fs < ft);
         equal = (fs == ft);
@@ -1345,6 +2128,10 @@ void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
     if (cond) regs->m_FPCR[31] |= FPCSR_C;
     else      regs->m_FPCR[31] &= ~FPCSR_C;
 }
+
+// Restore /fp:fast for the rest of the file
+#pragma fenv_access(off)
+#pragma float_control(pop)
 
 // ----- System / Trap / CACHE Callbacks -----
 
@@ -1532,12 +2319,14 @@ void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 }
 
 void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
     SetPC(regs, (!fpCond) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
     SetPC(regs, (fpCond) ? (pc + 4 + offset) : (pc + 8));
@@ -1565,10 +2354,12 @@ void Interp_JR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 
 void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     uint32_t rd = mips_rd(opcVal);
+    // Read target BEFORE writing link (handles rd==rs case)
+    uint32_t target = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
     if (rd != 0) {
         AsDWord(regs->m_GPR[rd]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     }
-    SetPC(regs, static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW));
+    SetPC(regs, target);
     // Match interpreter: JALR always sets TestTimer.
     regs->SetTestTimer();
 }
@@ -1905,42 +2696,79 @@ static void TriggerCop1UnusableException(CRegisters* regs) {
     regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
 }
 
+// Static helper called from emitted code when COP2 is accessed
+static void TriggerCop2UnusableException(CRegisters* regs) {
+    regs->TriggerException(11, 2); // EXC_CPU=11, Coprocessor=2
+}
+
+// Static COP2 dispatch callback: checks CU2 before accessing COP2
+static void Interp_COP2_Dispatch(CRegisters* regs, Nova64::MipsMemoryVM* mmu, uint32_t opcVal, uint32_t compileAddr) {
+    uint32_t rs = mips_rs(opcVal);
+
+    // Set PC to the COP2 instruction's address from compile time.
+    regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr));
+
+    // Check CU2 bit in Status register FIRST (before any RI checks)
+    if (regs->STATUS_REGISTER.CU2 == 0) {
+        regs->TriggerException(11, 2); // EXC_CPU=11, Coprocessor=2
+        return;
+    }
+    // CU2=1: DCFC2 (rs=3) and DCTC2 (rs=7) are Reserved Instruction on VR4300
+    // Real hardware sets CE=2 in CAUSE for RI from COP2 instructions
+    if (rs == 3 || rs == 7) {
+        regs->TriggerException(10, 2); // EXC_II=10, CE=2 (from COP2)
+        return;
+    }
+    // No exception fired — advance PC past this COP2 instruction so the
+    // block exit doesn't re-execute it (the block always exits immediately
+    // with m_BlockEnded=true, so m_PROGRAM_COUNTER must point to the NEXT
+    // instruction for the dispatch loop to continue correctly).
+    regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr)) + 4;
+    // CU2=1: COP2 operations are NOPs on N64 (no real COP2 on R4300)
+    // MFC2 (rs=0), DMFC2 (rs=1): read 0 into rt
+    if (rs == 0 || rs == 1) {
+        uint32_t rt = mips_rt(opcVal);
+        if (rt != 0)
+            AsDWord(regs->m_GPR[rt]).DW = 0;
+    }
+    // CFC2 (rs=2): read 0 into rt
+    if (rs == 2) {
+        uint32_t rt = mips_rt(opcVal);
+        if (rt != 0)
+            AsDWord(regs->m_GPR[rt]).DW = 0;
+    }
+    // MTC2 (rs=4), DMTC2 (rs=5), CTC2 (rs=6): write to non-existent COP2 = NOP
+}
+
+// Static helper called from emitted code when COP3 is accessed (RI exception)
+static void TriggerCop3ReservedInstruction(CRegisters* regs, uint32_t compileAddr) {
+    // Set PC to the COP3 instruction's address from compile time
+    regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr));
+    // COP3 doesn't exist on N64 — fire Reserved Instruction with CE=0
+    // (hardware doesn't set CE for non-existent coprocessors)
+    regs->TriggerException(10, 0); // EXC_II=10, CE=0
+}
+
+// Static helper called from emitted code on integer overflow
+static void TriggerOverflowException(CRegisters* regs) {
+    regs->TriggerException(12, 0); // EXC_OV=12
+}
+
+// Static helper: Check COP1 usable and trigger exception if not.
+// Returns 1 if exception was triggered (CU1=0), 0 if COP1 is usable.
+static uint32_t CheckCop1UsableAndTrigger(CRegisters* regs) {
+    uint32_t statusVal = static_cast<uint32_t>(regs->STATUS_REGISTER.Value);
+    if ((statusVal & 0x20000000) == 0) {
+        regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
+        return 1;
+    }
+    return 0;
+}
+
 void CX64RecompilerOps::EmitCop1UsableCheck() {
-    // Check if COP1 (FPU) is usable. If STATUS_REGISTER.CU1 == 0,
-    // trigger a Coprocessor Unusable exception and exit the block.
-    // This matches the interpreter's TestCop1UsableException() which
-    // the N64 OS uses for lazy FP context management.
-    if (!m_CurrentContext || m_BlockEnded) return;
-
-    auto& a = m_Assembler->GetAssembler();
-    // Compute STATUS_REGISTER offset from CRegisters base (RBX)
-    int32_t statusOff = static_cast<int32_t>(
-        reinterpret_cast<uintptr_t>(&m_Context.registers.STATUS_REGISTER) -
-        reinterpret_cast<uintptr_t>(&m_Context.registers));
-
-    // test dword [rbx + statusOff], STATUS_CU1 (0x20000000)
-    a.test(asmjit::x86::dword_ptr(asmjit::x86::rbx, statusOff),
-           static_cast<int32_t>(0x20000000));
-    asmjit::Label cu1Ok = a.new_label();
-    a.jnz(cu1Ok);
-
-    // CU1 not set — store correct PC for EPC computation
-    EmitPCUpdate();
-
-    // Call TriggerCop1UnusableException(&registers)
-    // RBX = &CRegisters
-    a.mov(asmjit::x86::rcx, asmjit::x86::rbx);
-    a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&TriggerCop1UnusableException));
-    a.call(asmjit::x86::rax);
-
-    // Decrement timer for this instruction (interpreter decrements NextTimer
-    // even for exception-triggering instructions)
-    EmitTimerDecrement();
-
-    // Exit block — PipelineStage is now Jump, recompiler will handle it
-    a.jmp(m_BlockExitLabel);
-
-    a.bind(cu1Ok);
+    // CU1 checks are now inside each COP1 callback directly.
+    // The EmitPipelineStageCheck after each instruction handles the block exit
+    // when TriggerException sets PipelineStage=Jump.
 }
 
 void CX64RecompilerOps::EmitTimerDecrement() {
@@ -2246,6 +3074,17 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         case R4300_COP1_MT:  COP1_MT(); break;
         case R4300_COP1_DMT: COP1_DMT(); break;
         case R4300_COP1_CT:  COP1_CT(); break;
+        case 3: // DCFC1
+        case 7: // DCTC1
+        {
+            // 64-bit CFC1/CTC1: check CU1 first, then RI
+            if (!m_CurrentContext) break;
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DCFC1_DCTC1),
+                                 m_CurrentContext->opcode.Value);
+            m_BlockEnded = true;
+            break;
+        }
         case R4300_COP1_BC: {
             switch (op.Itype.rt & 3) {
 #if FORCE_CALLBACK_BRANCH
@@ -2279,7 +3118,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_FPU_ABS:  COP1_S_ABS(); break;
                 case R4300_FPU_MOV:  COP1_S_MOV(); break;
                 case R4300_FPU_NEG:  COP1_S_NEG(); break;
-                default: UnknownOpcode(); break;
+                default:
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented), opcVal);
+                    break;
                 }
             }
             break;
@@ -2302,7 +3143,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_FPU_ABS:  COP1_D_ABS(); break;
                 case R4300_FPU_MOV:  COP1_D_MOV(); break;
                 case R4300_FPU_NEG:  COP1_D_NEG(); break;
-                default: UnknownOpcode(); break;
+                default:
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented), opcVal);
+                    break;
                 }
             }
             break;
@@ -2311,7 +3154,10 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             switch (mips_funct(opcVal)) {
             case R4300_FPU_CVT_S: COP1_W_CVT_S(); break;
             case R4300_FPU_CVT_D: COP1_W_CVT_D(); break;
-            default: UnknownOpcode(); break;
+            default:
+                // Unknown W-format function → route to interpreter (handles UnimplementedOp)
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT), opcVal);
+                break;
             }
             break;
         }
@@ -2319,18 +3165,85 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             switch (mips_funct(opcVal)) {
             case R4300_FPU_CVT_S: COP1_L_CVT_S(); break;
             case R4300_FPU_CVT_D: COP1_L_CVT_D(); break;
-            default: UnknownOpcode(); break;
+            default:
+                // Unknown L-format function → route to interpreter (handles UnimplementedOp)
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT), opcVal);
+                break;
             }
             break;
         }
-        default: UnknownOpcode(); break;
+        default: {
+            // Undefined COP1 arithmetic format → UnimplementedOp (FPE)
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented),
+                                 opcVal);
+            m_BlockEnded = true;
+            break;
         }
+        }
+        break;
+    }
+    case R4300_CP2: {
+        // COP2 dispatch: checks CU2, handles DCFC2/DCTC2 as RI
+        EmitPCUpdate();
+        {
+            auto& a = m_Assembler->GetAssembler();
+            m_Assembler->AddComment("COP2 dispatch");
+            m_RegisterSet->FlushRegisters(true);
+            // Call Interp_COP2_Dispatch(regs, mmu, opcVal, compileAddr)
+            a.mov(asmjit::x86::rcx, asmjit::x86::rbx);   // rcx = regs
+            a.mov(asmjit::x86::rdx, asmjit::x86::r12);    // rdx = mmu
+            a.mov(asmjit::x86::r8d, static_cast<int32_t>(opcVal)); // r8d = opcVal
+            a.mov(asmjit::x86::r9d, static_cast<int32_t>(m_CurrentContext->virtualAddress)); // r9d = compileAddr
+            a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&Interp_COP2_Dispatch));
+            a.call(asmjit::x86::rax);
+            EmitTimerDecrement();
+            a.jmp(m_BlockExitLabel);
+        }
+        m_BlockEnded = true;
+        break;
+    }
+    case R4300_CP3: {
+        // COP3 access — Reserved Instruction exception on N64
+        EmitPCUpdate();
+        {
+            auto& a = m_Assembler->GetAssembler();
+            m_Assembler->AddComment("COP3 -> Reserved Instruction exception");
+            m_RegisterSet->FlushRegisters(true);
+            a.mov(asmjit::x86::rcx, asmjit::x86::rbx);
+            a.mov(asmjit::x86::edx, static_cast<int32_t>(m_CurrentContext->virtualAddress)); // compileAddr
+            a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&TriggerCop3ReservedInstruction));
+            a.call(asmjit::x86::rax);
+            EmitTimerDecrement();
+            a.jmp(m_BlockExitLabel);
+        }
+        m_BlockEnded = true;
         break;
     }
     case R4300_BEQL:   BEQL_Compare_Likely(); break;
     case R4300_BNEL:   BNEL_Compare_Likely(); break;
     case R4300_BLEZL:  BLEZL_Compare_Likely(); break;
     case R4300_BGTZL:  BGTZL_Compare_Likely(); break;
+    case R4300_RES:    // 0x1C
+    case 0x1D:
+    case 0x1E:
+    case 0x1F: {
+        // Reserved opcodes — trigger Reserved Instruction exception
+        EmitPCUpdate();
+        {
+            auto& a = m_Assembler->GetAssembler();
+            m_Assembler->AddComment("Reserved opcode -> RI exception");
+            m_RegisterSet->FlushRegisters(true);
+            a.mov(asmjit::x86::rcx, asmjit::x86::rbx);
+            a.mov(asmjit::x86::edx, static_cast<int32_t>(m_CurrentContext->virtualAddress)); // compileAddr
+            a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&TriggerCop3ReservedInstruction));
+            a.call(asmjit::x86::rax);
+            EmitTimerDecrement();
+            a.jmp(m_BlockExitLabel);
+        }
+        m_BlockEnded = true;
+        break;
+    }
 #if FORCE_CALLBACK_IMM
     case R4300_DADDI:  m_Assembler->AddComment("DADDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
     case R4300_DADDIU: m_Assembler->AddComment("DADDIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
@@ -2692,8 +3605,8 @@ TranslationResult CX64RecompilerOps::TranslateCop1Instruction(const TranslationC
 
 TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationContext& /*ctx*/)
 {
-    Log::errorf("COP2 not supported in N64");
-    return TranslationResult::Unsupported;
+    // COP2 doesn't exist on N64 CPU — always fire CopUnusable exception
+    return TranslationResult::Success;
 }
 
 // =============================================================================
@@ -3383,15 +4296,9 @@ void CX64RecompilerOps::JAL()
 void CX64RecompilerOps::ADDI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("ADDI");
-    a.mov(eax, dword_ptr(rbx, JIT_GPR(op.Itype.rs)));
-    a.add(eax, static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)));
-    a.movsxd(rax, eax);
-    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Assembler->AddComment("ADDI (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -3510,16 +4417,9 @@ void CX64RecompilerOps::LUI() {
 void CX64RecompilerOps::DADDI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("DADDI");
-    int64_t immSext = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
-    a.mov(rcx, immSext);
-    a.add(rax, rcx);
-    a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
+    m_Assembler->AddComment("DADDI (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -3576,8 +4476,11 @@ void CX64RecompilerOps::LW() {
     uint32_t base = mips_base(opcVal);
     int32_t  off  = static_cast<int32_t>(mips_offset(opcVal)); // sign-extended
 
-    // Write to $zero is a no-op (LW has no memory side-effects for mapped regions)
+    // LW $0 still performs the memory access (alignment/TLB checks can trigger
+    // exceptions), but the result is discarded.  Fall through to the slow path.
     if (rt == 0) {
+        m_Assembler->AddComment("LW $0 (side-effects only)");
+        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LW), opcVal);
         m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
         return;
     }
@@ -3774,9 +4677,10 @@ void CX64RecompilerOps::SPECIAL_SRA() {
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SRA");
-    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    // VR4300: shift full 64-bit GPR value, then truncate low 32 and sign-extend
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     uint32_t sa = mips_sa(opcVal);
-    if (sa != 0) a.sar(eax, sa);
+    if (sa != 0) a.sar(rax, sa);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
     m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
@@ -3828,8 +4732,9 @@ void CX64RecompilerOps::SPECIAL_SRAV() {
     m_Assembler->AddComment("SPECIAL_SRAV");
     a.mov(ecx, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.and_(ecx, 0x1F);
-    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
-    a.sar(eax, cl);
+    // VR4300: shift full 64-bit GPR value, then truncate low 32 and sign-extend
+    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
+    a.sar(rax, cl);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
     m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
@@ -4014,15 +4919,9 @@ void CX64RecompilerOps::SPECIAL_DDIVU() {
 void CX64RecompilerOps::SPECIAL_ADD() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("SPECIAL_ADD");
-    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
-    a.add(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
-    a.movsxd(rax, eax);
-    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Assembler->AddComment("SPECIAL_ADD (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -4044,15 +4943,9 @@ void CX64RecompilerOps::SPECIAL_ADDU() {
 void CX64RecompilerOps::SPECIAL_SUB() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("SPECIAL_SUB");
-    a.mov(eax, dword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
-    a.sub(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
-    a.movsxd(rax, eax);
-    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Assembler->AddComment("SPECIAL_SUB (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -4169,14 +5062,9 @@ void CX64RecompilerOps::SPECIAL_SLTU() {
 void CX64RecompilerOps::SPECIAL_DADD() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("SPECIAL_DADD");
-    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
-    a.add(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
-    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Assembler->AddComment("SPECIAL_DADD (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -4197,14 +5085,9 @@ void CX64RecompilerOps::SPECIAL_DADDU() {
 void CX64RecompilerOps::SPECIAL_DSUB() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
-    auto& a = m_Assembler->GetAssembler();
-    using namespace asmjit::x86;
-    m_Assembler->AddComment("SPECIAL_DSUB");
-    a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
-    a.sub(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
-    a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
+    m_Assembler->AddComment("SPECIAL_DSUB (callback - overflow trap)");
+    EmitPCUpdate();
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
     m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
 }
 
@@ -4390,7 +5273,15 @@ void CX64RecompilerOps::COP0_MT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_MT");
-    EmitPCUpdate();
+    // Use PC+4 (next instruction) so that if Cop0_MT calls CheckInterrupts
+    // (e.g. Status/Compare/Count writes) and an interrupt fires, EPC points
+    // to the next instruction — matching real VR4300 async interrupt timing.
+    if (m_CurrentContext && !m_BlockEnded) {
+        auto& a = m_Assembler->GetAssembler();
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
+              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+              static_cast<int32_t>(m_CurrentContext->virtualAddress + 4));
+    }
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MTC0),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
@@ -4400,7 +5291,13 @@ void CX64RecompilerOps::COP0_DMT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_DMT");
-    EmitPCUpdate();
+    // Same PC+4 logic as COP0_MT — DMTC0 to Status also calls CheckInterrupts.
+    if (m_CurrentContext && !m_BlockEnded) {
+        auto& a = m_Assembler->GetAssembler();
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
+              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+              static_cast<int32_t>(m_CurrentContext->virtualAddress + 4));
+    }
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMTC0),
                          m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
@@ -4475,6 +5372,7 @@ void CX64RecompilerOps::COP1_MF()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_MF");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MFC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4484,6 +5382,7 @@ void CX64RecompilerOps::COP1_DMF()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_DMF");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMFC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4493,6 +5392,7 @@ void CX64RecompilerOps::COP1_CF()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_CF");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CFC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4502,6 +5402,7 @@ void CX64RecompilerOps::COP1_MT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_MT");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MTC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4511,6 +5412,7 @@ void CX64RecompilerOps::COP1_DMT()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_DMT");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMTC1),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4531,6 +5433,7 @@ void CX64RecompilerOps::COP1_CT()
     void CX64RecompilerOps::COP1_S_##name() { \
         if (!m_CurrentContext) return; \
         m_Assembler->AddComment("COP1_S_" #name); \
+        EmitPCUpdate(); \
         EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_Arith), \
                              m_CurrentContext->opcode.Value); \
         m_Stats.floatingPointOps++; \
@@ -4551,6 +5454,7 @@ DEFINE_COP1_S_ARITH(MOV)
     void CX64RecompilerOps::COP1_S_##name() { \
         if (!m_CurrentContext) return; \
         m_Assembler->AddComment("COP1_S_" #name); \
+        EmitPCUpdate(); \
         EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CVT), \
                              m_CurrentContext->opcode.Value); \
         m_Stats.floatingPointOps++; \
@@ -4573,6 +5477,7 @@ void CX64RecompilerOps::COP1_S_CMP()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_S_CMP");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CMP),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4584,6 +5489,7 @@ void CX64RecompilerOps::COP1_S_CMP()
     void CX64RecompilerOps::COP1_D_##name() { \
         if (!m_CurrentContext) return; \
         m_Assembler->AddComment("COP1_D_" #name); \
+        EmitPCUpdate(); \
         EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_Arith), \
                              m_CurrentContext->opcode.Value); \
         m_Stats.floatingPointOps++; \
@@ -4604,6 +5510,7 @@ DEFINE_COP1_D_ARITH(MOV)
     void CX64RecompilerOps::COP1_D_##name() { \
         if (!m_CurrentContext) return; \
         m_Assembler->AddComment("COP1_D_" #name); \
+        EmitPCUpdate(); \
         EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CVT), \
                              m_CurrentContext->opcode.Value); \
         m_Stats.floatingPointOps++; \
@@ -4626,6 +5533,7 @@ void CX64RecompilerOps::COP1_D_CMP()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_D_CMP");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CMP),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4637,6 +5545,7 @@ void CX64RecompilerOps::COP1_W_CVT_S()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_W_CVT_S");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4646,6 +5555,7 @@ void CX64RecompilerOps::COP1_W_CVT_D()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_W_CVT_D");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4655,6 +5565,7 @@ void CX64RecompilerOps::COP1_L_CVT_S()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_L_CVT_S");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
@@ -4664,6 +5575,7 @@ void CX64RecompilerOps::COP1_L_CVT_D()
 {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_L_CVT_D");
+    EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT),
                          m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;

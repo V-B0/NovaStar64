@@ -156,6 +156,9 @@ public:
     std::string timer_status_to_string() const;
     std::string get_timer_name(TimerType type) const;
     
+    /// Return the m_NextTimer snapshot taken at the last UpdateTimers() call.
+    uint32_t get_last_update_cycles() const { return last_update_cycles; }
+    
 private:
     // Internal helper methods
     void fire_timer(TimerType type);

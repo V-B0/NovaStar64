@@ -60,6 +60,7 @@ CEeprom::~CEeprom()
 {
     if (m_File.is_open())
     {
+        m_File.flush();
         m_File.close();
         Log::debug("EEPROM file closed");
     }
@@ -317,8 +318,11 @@ void CEeprom::LoadEeprom()
                                FileSystem::OpenMode::Read | 
                                FileSystem::OpenMode::Write | 
                                FileSystem::OpenMode::Create);
-                    // Write initial unprogrammed state
-                    m_File.write(m_EEPROM, sizeof(m_EEPROM));
+                    // Write initial unprogrammed state — only write the
+                    // bytes that correspond to the EEPROM size so that the
+                    // auto-detect on next load works correctly.
+                    size_t initSize = m_Is16K ? sizeof(m_EEPROM) : 512;
+                    m_File.write(m_EEPROM, initSize);
                     m_File.seek(0, FileSystem::SeekOrigin::Begin);
                     Log::infof("Created new EEPROM save file: %s", fullPath.c_str());
                 } catch (...) {
@@ -430,6 +434,7 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line)
         {
             Log::errorf("EEPROM write failed: wrote %zu/8 bytes at line %d", bytesWritten, line);
         }
+        m_File.flush();
     }
 }
 

@@ -108,22 +108,26 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
             si.romCountry = static_cast<uint8_t>(img.GetCountry());
             si.isPAL      = img.IsPal();
 
-            // Read CRC1/CRC2 from ROM header (big-endian)
+            // Read CRC1/CRC2 from ROM header.
+            // ROM data is in host word order (each 32-bit word byte-reversed
+            // from big-endian on LE hosts), so a native uint32_t read gives
+            // the correct value.  Do NOT use read32be — that double-swaps.
             if (img.Size() >= N64::Rom::RomHeader::OFFSET_CRC2 + 4) {
                 const auto* hdr = img.Data();
-                auto read32be = [](const uint8_t* p) -> uint32_t {
-                    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
-                           (uint32_t(p[2]) << 8)  |  uint32_t(p[3]);
-                };
-                si.romCRC1 = read32be(hdr + N64::Rom::RomHeader::OFFSET_CRC1);
-                si.romCRC2 = read32be(hdr + N64::Rom::RomHeader::OFFSET_CRC2);
+                si.romCRC1 = *reinterpret_cast<const uint32_t*>(hdr + N64::Rom::RomHeader::OFFSET_CRC1);
+                si.romCRC2 = *reinterpret_cast<const uint32_t*>(hdr + N64::Rom::RomHeader::OFFSET_CRC2);
             }
 
-            // 2-byte cart ID at offset 0x3C
-            if (img.Size() >= N64::Rom::RomHeader::OFFSET_CART_ID + 2) {
+            // 4-byte game code: manufacturer(0x3B) + cartID(0x3C-0x3D) + country(0x3E).
+            // Individual bytes need XOR 3 for host-word-order access.
+            if (img.Size() >= N64::Rom::RomHeader::OFFSET_COUNTRY_CODE + 1) {
                 const auto* hdr = img.Data();
-                si.romGameId.assign(
-                    reinterpret_cast<const char*>(hdr + N64::Rom::RomHeader::OFFSET_CART_ID), 2);
+                char gameId[5] = {0};
+                gameId[0] = static_cast<char>(hdr[N64::Rom::RomHeader::OFFSET_MANUFACTURER ^ 3]);
+                gameId[1] = static_cast<char>(hdr[N64::Rom::RomHeader::OFFSET_CART_ID ^ 3]);
+                gameId[2] = static_cast<char>(hdr[(N64::Rom::RomHeader::OFFSET_CART_ID + 1) ^ 3]);
+                gameId[3] = static_cast<char>(hdr[N64::Rom::RomHeader::OFFSET_COUNTRY_CODE ^ 3]);
+                si.romGameId.assign(gameId, 4);
             }
         }
     }
@@ -165,6 +169,9 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
         LOG_ERROR("NovaGraphicsGFXPlugin: VideoPlugin init failed");
         return false;
     }
+
+    // Load game profile and apply game-specific hacks
+    m_videoPlugin.RomOpen(si);
 
     // Give the debug UI access to the N64 system for live register/memory display
     g_imguiDebugUI.SetSystem(system);

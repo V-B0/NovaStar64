@@ -177,6 +177,7 @@ public:
     int32_t m_NextTimer;
     bool m_bCleanFrameBox;
     bool m_TestTimer;
+    bool m_DeferredCheckInterrupts; // Set by ERET; dispatch loop calls CheckInterrupts after next block
     uint32_t m_CyclesToSkip;
     uint64_t m_JumpToLocation;
     uint64_t m_JumpDelayLocation;

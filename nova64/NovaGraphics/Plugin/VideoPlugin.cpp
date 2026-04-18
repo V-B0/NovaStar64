@@ -826,6 +826,15 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
         desc.usage  = BufferUsage::Dynamic;
         desc.mipLevels = 1;
         m_viTexture = m_renderer->CreateTexture(desc);
+        // Use nearest-neighbor for crisp pixel-perfect VI output
+        if (m_viTexture) {
+            SamplerDesc sampler;
+            sampler.minFilter = SamplerFilter::Nearest;
+            sampler.magFilter = SamplerFilter::Nearest;
+            sampler.wrapS = TextureWrap::ClampToEdge;
+            sampler.wrapT = TextureWrap::ClampToEdge;
+            m_viTexture->SetSampler(sampler);
+        }
     }
 
     if (m_viTexture) {

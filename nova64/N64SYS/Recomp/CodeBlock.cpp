@@ -466,9 +466,6 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         case R4300_R_BLTZ:
         case R4300_R_BLTZAL: {
             uint32_t tgt = branch_target();
-            if (tgt == pc + 8) {
-                break; // NOP branch (target is next instruction after delay slot)
-            }
             bool perm = check_perm_loop(tgt);
             result.add_branch(pc, tgt, false, true, false);
             if (perm) {
@@ -480,9 +477,6 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         case R4300_R_BGEZ:
         case R4300_R_BGEZAL: {
             uint32_t tgt = branch_target();
-            if (tgt == pc + 8) {
-                break;
-            }
             if (tgt == pc && rs == 0) {
                 // BGEZ $zero is always taken => unconditional self-loop => end block
                 result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true);
@@ -557,9 +551,6 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     // =================================================================
     case R4300_BEQ: {
         uint32_t tgt = branch_target();
-        if (tgt == pc + 8) {
-            break; // NOP branch
-        }
         bool perm = check_perm_loop(tgt);
         // BEQ $zero,$zero is unconditional
         result.add_branch(pc, tgt, false, true, (rs == 0 && rt == 0));
@@ -577,9 +568,6 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     case R4300_BLEZ:
     case R4300_BGTZ: {
         uint32_t tgt = branch_target();
-        if (tgt == pc + 8) {
-            break;
-        }
         bool perm = check_perm_loop(tgt);
         result.add_branch(pc, tgt, false, true, false);
         if (perm) {
@@ -700,9 +688,6 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
             case R4300_COP1_BC_BCT:  // BC1T
             {
                 uint32_t tgt = branch_target();
-                if (tgt == pc + 8) {
-                    break;
-                }
                 result.add_branch(pc, tgt, false, true, false);
                 result.contains_cop1_op = true;
                 result.flags = result.flags | BlockFlags::HasFloatOps;

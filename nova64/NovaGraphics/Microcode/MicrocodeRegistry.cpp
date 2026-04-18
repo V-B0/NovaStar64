@@ -514,6 +514,8 @@ void MicrocodeRegistry::InitializeDatabase() {
         { 0x8805C26A, MicrocodeType::F3DZEX, "RSP Gfx ucode F3DZEX  NoN  2.08I" },
         { 0x0D7BBE18, MicrocodeType::F3DZEX, "RSP Gfx ucode F3DZEX  NoN  2.08J" },
         { 0xCB8391EB, MicrocodeType::F3DZEX, "RSP Gfx ucode F3DZEX (OOT 1.0-1.2)" },
+        { 0xC71C0011, MicrocodeType::F3DZEX, "RSP Gfx ucode F3DZEX (MM reload)" },
+        { 0xDF528A85, MicrocodeType::F3DZEX, "RSP Gfx ucode F3DZEX (MM/OOT reload)" },
         
         // F3DPD (Perfect Dark)
         { 0x1ECFD18A, MicrocodeType::F3DPD, "RSP Gfx ucode F3DPD" },
@@ -536,6 +538,7 @@ void MicrocodeRegistry::InitializeDatabase() {
         // S2DEX2
         { 0xA346A5CC, MicrocodeType::S2DEX2, "RSP Gfx ucode S2DEX2 2.05" },
         { 0x6D8F8F8A, MicrocodeType::S2DEX2, "RSP Gfx ucode S2DEX2 2.08" },
+        { 0x02C399DD, MicrocodeType::S2DEX2, "RSP Gfx ucode S2DEX2 (MM/OOT)" },
         
         // Turbo3D
         { 0xFC6529AA, MicrocodeType::Turbo3D, "Turbo3D" },

@@ -135,6 +135,7 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     m_NextTimer(0),
     m_bCleanFrameBox(true),
     m_TestTimer(false),
+    m_DeferredCheckInterrupts(false),
     m_CyclesToSkip(0),
     m_JumpToLocation(0),
     m_JumpDelayLocation(0),
@@ -739,6 +740,19 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                    // and stale data at 0xFC0 (OSTask.type) causes false task detection.
                    std::memset(dmem + 0xFC0, 0, 0x40);
                    Log::infof("Copied %zu bytes of boot code to SP DMEM (cleared OSTask area)", copySize);
+
+                   // Write IPL3 output values to DMEM[0x00..0x0F].
+                   // Real IPL3 stores system info here before jumping to the game.
+                   // Libdragon-based ROMs (e.g. n64-systemtest) read these to
+                   // determine memory size and ROM layout.
+                   uint32_t dmemRdramSize = m_Memory->RdramSize();
+                   *reinterpret_cast<uint32_t*>(dmem + 0x00) = dmemRdramSize;
+                   *reinterpret_cast<uint32_t*>(dmem + 0x04) = 1;  // TV type: NTSC
+                   *reinterpret_cast<uint32_t*>(dmem + 0x08) = 0;  // Reset type: cold boot
+                   // DMEM[0x0C]: upper 16 bits = ROM-to-RAM offset indicator
+                   // (0x10 << 8 = 0x1000 = standard ROM program offset)
+                   *reinterpret_cast<uint32_t*>(dmem + 0x0C) = 0x00100000;
+                   Log::infof("HLE Boot: Wrote RDRAM size 0x%08X to DMEM[0x00]", dmemRdramSize);
                 }
             }
         }
@@ -747,12 +761,19 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     // HLE Boot: Copy ROM code to RDRAM at the entry point physical offset
     // (matching what the boot code's PI DMA would do)
     uint32_t entryPoint = 0x80000400; // default
+    bool isLibdragonElf = false;
     if (GetRom() && GetRom()->IsLoaded() && m_Memory)
     {
         const uint8_t* romData = GetRom()->GetRomAddress();
         uint32_t romSize = static_cast<uint32_t>(GetRom()->GetSize());
         uint8_t* rdram = m_Memory->Rdram();
         uint32_t rdramSize = m_Memory->RdramSize();
+
+        // IPL3 initializes and clears all RDRAM; HLE boot must do the same
+        if (rdram && rdramSize > 0)
+        {
+            std::memset(rdram, 0, rdramSize);
+        }
 
         // Read entry point from ROM header (offset 0x08)
         if (romSize >= 0x0C)
@@ -761,20 +782,161 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             Log::infof("HLE Boot: ROM entry point = 0x%08X", entryPoint);
         }
 
-        // The boot code DMAs from ROM offset 0x1000 to RDRAM at entry_point_physical
-        uint32_t dramBase = entryPoint & 0x1FFFFFFF; // physical address of entry point
-        uint32_t romOffset = 0x1000;
-        uint32_t dmaLen = 0x100000; // 1MB
-        if (romOffset + dmaLen > romSize)
-            dmaLen = romSize - romOffset;
-        if (dramBase + dmaLen > rdramSize)
-            dmaLen = rdramSize - dramBase;
-
-        if (rdram && romData && dmaLen > 0)
+        // ================================================================
+        // Detect libdragon ROMs: scan from ROM[0x1000] for ELF magic.
+        // nust64 embeds the raw ELF file starting around ROM[0x1900].
+        // The libdragon IPL3 parses ELF program headers and loads each
+        // PT_LOAD segment to its correct virtual address.
+        // ================================================================
+        uint32_t elfOffset = 0;
+        for (uint32_t scan = 0x1000; scan < romSize - 4 && scan < 0x4000; scan += 0x100)
         {
-            std::memcpy(rdram + dramBase, romData + romOffset, dmaLen);
-            Log::infof("HLE Boot: Copied 0x%X bytes from ROM[0x%X] to RDRAM[0x%X]",
-                       dmaLen, romOffset, dramBase);
+            // Check for ELF magic: 7F 45 4C 46 (big-endian, not byte-swapped)
+            // ROM data is in host word order after DetectFormatAndByteSwap,
+            // so bytes within each 32-bit word are reversed on LE hosts.
+            uint32_t word = *reinterpret_cast<const uint32_t*>(romData + scan);
+            // ELF magic as uint32 in host order
+            if (word == 0x7F454C46 || word == 0x464C457F)  // BE or LE host
+            {
+                elfOffset = scan;
+                Log::infof("HLE Boot: Found ELF header at ROM[0x%X]", elfOffset);
+                break;
+            }
+        }
+
+        if (elfOffset != 0 && rdram && romData)
+        {
+            // ── Libdragon ELF-in-ROM loading ────────────────────────
+            isLibdragonElf = true;
+            const uint8_t* elf = romData + elfOffset;
+            uint32_t elfSize = romSize - elfOffset;
+
+            // Helper to read a big-endian 32-bit value from the ELF.
+            // The ROM is stored in host word order (each 32-bit word
+            // byte-swapped from big-endian).  The ELF sits at an
+            // arbitrary offset inside the ROM, so its header fields
+            // are NOT necessarily word-aligned relative to the ROM's
+            // byte-swap grid.  Read individual bytes and reconstruct
+            // big-endian manually.
+            auto readBE16 = [](const uint8_t* p) -> uint16_t {
+                // bytes in host-word-order ROM: within each 4-byte
+                // group the bytes are reversed on LE hosts.
+                // We'll just use the actual byte values.
+                uint32_t wordOff = reinterpret_cast<uintptr_t>(p) & 3;
+                (void)wordOff;
+                return (static_cast<uint16_t>(p[0]) << 8) | p[1];
+            };
+            auto readBE32 = [](const uint8_t* p) -> uint32_t {
+                return (static_cast<uint32_t>(p[0]) << 24) |
+                       (static_cast<uint32_t>(p[1]) << 16) |
+                       (static_cast<uint32_t>(p[2]) << 8) |
+                       static_cast<uint32_t>(p[3]);
+            };
+
+            // But wait — the ROM data has been byte-swapped per 32-bit
+            // word during ROM loading (DetectFormatAndByteSwap).  So
+            // the bytes within each 4-byte group at romData are in LE
+            // order on a LE host.  To read big-endian ELF fields we
+            // must un-swap: for a field at ROM offset O, the original
+            // .z64 byte at O is now at romData[(O & ~3) | (3 - (O & 3))]
+            // on a little-endian host.
+            // Simpler: just read the uint32 word and extract bytes in
+            // big-endian order by shifting.
+            auto elfByte = [&](uint32_t off) -> uint8_t {
+                // Read the 32-bit host-order word that contains 'off',
+                // then pick the big-endian byte within it.
+                uint32_t wordIdx = off & ~3u;
+                uint32_t w = *reinterpret_cast<const uint32_t*>(elf + wordIdx);
+                // 'w' contains the 4 big-endian bytes in host int order.
+                // Byte 0 of the BE group is in bits 31-24, etc.
+                uint32_t shift = (3 - (off & 3)) * 8;
+                return static_cast<uint8_t>((w >> shift) & 0xFF);
+            };
+            auto elfU16 = [&](uint32_t off) -> uint16_t {
+                return (static_cast<uint16_t>(elfByte(off)) << 8) | elfByte(off + 1);
+            };
+            auto elfU32 = [&](uint32_t off) -> uint32_t {
+                return (static_cast<uint32_t>(elfByte(off)) << 24) |
+                       (static_cast<uint32_t>(elfByte(off + 1)) << 16) |
+                       (static_cast<uint32_t>(elfByte(off + 2)) << 8) |
+                       static_cast<uint32_t>(elfByte(off + 3));
+            };
+
+            // Parse ELF header (32-bit big-endian)
+            uint32_t e_phoff  = elfU32(0x1C);  // program header offset
+            uint16_t e_phentsize = elfU16(0x2A);
+            uint16_t e_phnum  = elfU16(0x2C);
+
+            Log::infof("HLE Boot: ELF phoff=0x%X phnum=%u phentsize=%u",
+                       e_phoff, e_phnum, e_phentsize);
+
+            uint32_t totalLoaded = 0;
+            for (uint16_t i = 0; i < e_phnum; ++i)
+            {
+                uint32_t phdr = e_phoff + i * e_phentsize;
+                uint32_t p_type   = elfU32(phdr + 0x00);
+                uint32_t p_offset = elfU32(phdr + 0x04);
+                uint32_t p_vaddr  = elfU32(phdr + 0x08);
+                uint32_t p_filesz = elfU32(phdr + 0x10);
+                uint32_t p_memsz  = elfU32(phdr + 0x14);
+
+                if (p_type != 1) continue;  // PT_LOAD = 1
+
+                uint32_t pAddr = p_vaddr & 0x1FFFFFFF;
+                if (pAddr + p_filesz > rdramSize) continue;  // out of range
+                if (elfOffset + p_offset + p_filesz > romSize) continue;
+
+                // Copy segment data from ROM ELF to RDRAM.
+                // The source is raw byte data that was already byte-swapped
+                // per-word during ROM load.  We need to un-swap it to get
+                // the original big-endian bytes, then write to RDRAM (which
+                // also stores data in host word order).  Since both source
+                // and destination use the same per-word byte order, a plain
+                // memcpy is correct as long as we copy whole words.
+                // For simplicity, copy word-by-word.
+                const uint8_t* src = romData + elfOffset + p_offset;
+                uint8_t* dst = rdram + pAddr;
+                std::memcpy(dst, src, p_filesz);
+
+                // Zero-fill BSS (memsz > filesz)
+                if (p_memsz > p_filesz && pAddr + p_memsz <= rdramSize) {
+                    std::memset(dst + p_filesz, 0, p_memsz - p_filesz);
+                }
+
+                Log::infof("HLE Boot: ELF PT_LOAD[%u] ROM[0x%X] -> RDRAM[0x%X] (0x%X bytes, vaddr 0x%08X)",
+                           i, elfOffset + p_offset, pAddr, p_filesz, p_vaddr);
+                totalLoaded += p_filesz;
+            }
+
+            Log::infof("HLE Boot: Loaded %u bytes from %u ELF segments", totalLoaded, e_phnum);
+
+            // Update DMEM values for libdragon
+            uint8_t* dmem = m_Memory->Dmem();
+            if (dmem) {
+                *reinterpret_cast<uint32_t*>(dmem + 0x00) = rdramSize;
+                *reinterpret_cast<uint32_t*>(dmem + 0x04) = 0;   // entropy
+                *reinterpret_cast<uint32_t*>(dmem + 0x08) = 0x00010000; // TV=NTSC(1)<<16
+                // DMEM[0x0C]: encodes elf offset so ((val>>16)<<8) = elfOffset
+                *reinterpret_cast<uint32_t*>(dmem + 0x0C) = (elfOffset >> 8) << 16;
+            }
+        }
+        else
+        {
+            // ── Standard Nintendo IPL3 boot ─────────────────────────
+            uint32_t dramBase = 0x400;
+            uint32_t romOffset = 0x1000;
+            uint32_t dmaLen = 0x100000; // standard 1MB
+            if (romOffset + dmaLen > romSize)
+                dmaLen = romSize - romOffset;
+            if (dramBase + dmaLen > rdramSize)
+                dmaLen = rdramSize - dramBase;
+
+            if (rdram && romData && dmaLen > 0)
+            {
+                std::memcpy(rdram + dramBase, romData + romOffset, dmaLen);
+                Log::infof("HLE Boot: Copied 0x%X bytes from ROM[0x%X] to RDRAM[0x%X]",
+                           dmaLen, romOffset, dramBase);
+            }
         }
 
         // Write RDRAM size to CIC-expected location
@@ -872,6 +1034,13 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     {
         m_Registers->m_PROGRAM_COUNTER = entryPoint;
         Log::infof("HLE Boot: Set PC to entry point 0x%08X (skipping boot code + CRC)", entryPoint);
+
+        // For libdragon ROMs, the IPL3 sets SP to end-of-RDRAM
+        if (isLibdragonElf && m_Memory) {
+            uint64_t spVal = 0x80000000ULL + m_Memory->RdramSize();
+            m_Registers->m_GPR[29] = static_cast<int64_t>(static_cast<int32_t>(spVal));
+            Log::infof("HLE Boot: Set SP to 0x%08X (libdragon)", static_cast<uint32_t>(spVal));
+        }
     }
 
     // Reset components

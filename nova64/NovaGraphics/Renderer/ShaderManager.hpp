@@ -365,6 +365,9 @@ public:
     const ShaderCacheStats& GetStats() const { return m_stats; }
     void AdvanceFrame() { m_currentFrame++; }
 
+    /// Iterate all cache entries (under lock). Callback receives key + mutable shader.
+    void ForEachEntry(std::function<void(const CombinerKey&, CompiledShader&)> callback);
+
 private:
     struct CacheEntry {
         CompiledShader shader;

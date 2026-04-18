@@ -133,7 +133,7 @@ void ShaderCache::EvictLRU(int count) {
 
 // Binary format: [MAGIC][VERSION][COUNT][ [KEY][VERT_LEN][VERT_SRC][FRAG_LEN][FRAG_SRC] ... ]
 static const uint32_t CACHE_MAGIC   = 0x4E565343; // 'NVSC'
-static const uint32_t CACHE_VERSION = 18;
+static const uint32_t CACHE_VERSION = 19;
 
 bool ShaderCache::SaveToDisk(const std::string& path) const {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -204,6 +204,10 @@ bool ShaderCache::LoadFromDisk(const std::string& path) {
         file.read(reinterpret_cast<char*>(&fragLen), sizeof(fragLen));
         fragSource.resize(fragLen);
         file.read(&fragSource[0], fragLen);
+
+        // Don't overwrite valid (binary-loaded) entries with invalid source
+        if (m_cache.find(key) != m_cache.end())
+            continue;
 
         // Store source for later recompilation
         CacheEntry entry;
@@ -341,6 +345,13 @@ bool ShaderCache::LoadBinaryCache(const std::string& path) {
     }
 
     return loaded > 0;
+}
+
+void ShaderCache::ForEachEntry(std::function<void(const CombinerKey&, CompiledShader&)> callback) {
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    for (auto& [key, entry] : m_cache) {
+        callback(key, entry.shader);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -673,11 +684,32 @@ void ShaderManager::ClearCache() {
 }
 
 bool ShaderManager::SaveCache(const std::string& path) {
-    return m_cache.SaveToDisk(path);
+    bool srcOk = m_cache.SaveToDisk(path);
+    // Also save binary cache for instant reload next launch
+    std::string binPath = path + ".bin";
+    bool binOk = m_cache.SaveBinaryCache(binPath);
+    return srcOk || binOk;
 }
 
 bool ShaderManager::LoadCache(const std::string& path) {
-    return m_cache.LoadFromDisk(path);
+    // 1. Try binary cache first — pre-compiled GPU programs load in microseconds
+    std::string binPath = path + ".bin";
+    m_cache.LoadBinaryCache(binPath);
+
+    // 2. Load source cache — fills entries not covered by binary cache
+    //    (LoadFromDisk will skip entries already loaded from binary)
+    m_cache.LoadFromDisk(path);
+
+    // 3. Resolve uniform locations for binary-loaded shaders
+    if (m_compiler) {
+        m_cache.ForEachEntry([this](const CombinerKey& /*key*/, CompiledShader& shader) {
+            if (shader.valid && shader.handle != INVALID_SHADER) {
+                QueryUniformLocations(shader);
+            }
+        });
+    }
+
+    return m_cache.GetStats().currentCacheSize > 0;
 }
 
 const ShaderCacheStats& ShaderManager::GetStats() const {

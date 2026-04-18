@@ -345,6 +345,12 @@ struct RDPState {
     float scrollS[8] = {0};
     float scrollT[8] = {0};
     
+    // ── Per-tile RDRAM source address (set by LoadBlock/LoadTile) ──
+    // Tracks which textureImage.address was active when each tile was loaded.
+    // Used by PopulateTextureInfo so tile0/tile1 get the correct RDRAM source
+    // even in 2-cycle mode with two different texture loads.
+    uint32_t tileLoadAddress[MAX_TILES] = {0};
+    
     // ── Scissor ──
     ScissorRect scissor;
     

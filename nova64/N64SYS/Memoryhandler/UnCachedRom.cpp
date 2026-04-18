@@ -224,10 +224,16 @@ UncachedRom::MemoryRegion UncachedRom::decodeRegion(uint32_t address) const
 {
     if (address >= 0x10000000 && address < 0x1FC00000)
         return MemoryRegion::ROM;
-    if (address >= 0x08000000 && address < 0x08010000)
-        return MemoryRegion::SRAM;
     if (address >= 0x08000000 && address < 0x08020000)
+    {
+        // SRAM and FlashRAM share the same address range (0x08000000).
+        // The FlashRAM command/status register is at 0x08000000 (same as SRAM data).
+        // Key insight: SRAM games ONLY use DMA for save access, never I/O (Read32/Write32).
+        // Any I/O access to this range is a FlashRAM command/status register access.
+        // Always route I/O through FLASH_RAM to enable proper auto-detection,
+        // even if processDMATransfer already guessed SRAM from an earlier DMA.
         return MemoryRegion::FLASH_RAM;
+    }
     if (address >= 0x04600000 && address < 0x04700000)
         return MemoryRegion::PI_REGS;
     if (address >= 0x05000000 && address < 0x06000000)
@@ -276,6 +282,15 @@ bool UncachedRom::handleFlashRamAccess(uint32_t address, uint32_t& value, bool i
         return false;
     }
     
+    // Auto-detect FlashRAM when a FlashRAM command/status access occurs.
+    // Allow upgrading from SRAM too — an early DMA may have guessed SRAM,
+    // but any I/O access to this range proves it's actually FlashRAM.
+    if (m_system.m_SaveUsing != N64Types::SaveChipType::FlashRam)
+    {
+        m_system.m_SaveUsing = N64Types::SaveChipType::FlashRam;
+        Log::infof("UncachedRom: Auto-detected FlashRAM (I/O access at 0x%08X)", address);
+    }
+    
     if (is_write)
     {
         m_flash_ram->WriteToFlashCommand(value);
@@ -303,6 +318,7 @@ bool UncachedRom::handleDDInterface(uint32_t address, uint32_t& value, bool is_w
 void UncachedRom::startDMARead(uint32_t source, uint32_t dest, uint32_t length)
 {
     m_dma_state.is_active = true;
+    m_dma_state.is_write = false;  // Cart → RDRAM (load)
     m_dma_state.source_address = source;
     m_dma_state.dest_address = dest;
     m_dma_state.length = length;
@@ -312,6 +328,7 @@ void UncachedRom::startDMARead(uint32_t source, uint32_t dest, uint32_t length)
 void UncachedRom::startDMAWrite(uint32_t source, uint32_t dest, uint32_t length)
 {
     m_dma_state.is_active = true;
+    m_dma_state.is_write = true;  // RDRAM → Cart (save)
     m_dma_state.source_address = source;
     m_dma_state.dest_address = dest;
     m_dma_state.length = length;
@@ -323,35 +340,55 @@ void UncachedRom::processDMATransfer()
     if (!m_dma_state.is_active)
         return;
     
-    uint32_t cart_addr = m_dma_state.source_address;
-    uint32_t dram_addr = m_dma_state.dest_address;
+    // For DMARead (Cart→RDRAM):  source=cartAddr, dest=dramAddr
+    // For DMAWrite (RDRAM→Cart): source=dramAddr, dest=cartAddr
+    uint32_t cart_addr, dram_addr;
+    if (m_dma_state.is_write) {
+        // RDRAM → Cart (save): source=dram, dest=cart
+        dram_addr = m_dma_state.source_address;
+        cart_addr = m_dma_state.dest_address;
+    } else {
+        // Cart → RDRAM (load): source=cart, dest=dram
+        cart_addr = m_dma_state.source_address;
+        dram_addr = m_dma_state.dest_address;
+    }
     uint32_t length = m_dma_state.length;
     
-    MemoryRegion region = decodeRegion(cart_addr);
-    bool is_write_to_cart = (dram_addr < cart_addr);
+    // Determine save handler based on game's save type
+    // Both m_sram and m_flash_ram are always allocated; use m_SaveUsing to pick the right one.
+    uint8_t* rdram = m_mmu.Rdram();
+    bool handled = false;
     
-    if (region == MemoryRegion::SRAM && m_sram)
+    if (rdram && dram_addr < 0x00800000 && cart_addr >= 0x08000000 && cart_addr < 0x08020000)
     {
-        uint8_t* rdram = m_mmu.Rdram();
-        if (rdram && dram_addr < 0x00800000)
+        auto saveType = m_system.m_SaveUsing;
+        
+        // Auto-detect: DMA without prior FlashRAM command writes defaults to SRAM.
+        // FlashRAM games set m_SaveUsing via handleFlashRamAccess before DMA.
+        if (saveType == N64Types::SaveChipType::Auto)
         {
-            if (is_write_to_cart)
-                m_sram->DmaToSram(rdram + dram_addr, cart_addr & 0xFFFF, length);
-            else
-                m_sram->DmaFromSram(rdram + dram_addr, cart_addr & 0xFFFF, length);
-            m_stats.dma_bytes_transferred += length;
+            saveType = N64Types::SaveChipType::Sram;
+            m_system.m_SaveUsing = saveType;
+            Log::infof("UncachedRom: Auto-detected SRAM (DMA access without FlashRAM commands)");
         }
-    }
-    else if (region == MemoryRegion::FLASH_RAM && m_flash_ram)
-    {
-        uint8_t* rdram = m_mmu.Rdram();
-        if (rdram && dram_addr < 0x00800000)
+        
+        if (saveType == N64Types::SaveChipType::FlashRam)
         {
-            if (is_write_to_cart)
+            if (m_dma_state.is_write)
                 m_flash_ram->DmaToFlashram(rdram + dram_addr, cart_addr & 0xFFFF, length);
             else
                 m_flash_ram->DmaFromFlashram(rdram + dram_addr, cart_addr & 0xFFFF, length);
             m_stats.dma_bytes_transferred += length;
+            handled = true;
+        }
+        else if (saveType == N64Types::SaveChipType::Sram)
+        {
+            if (m_dma_state.is_write)
+                m_sram->DmaToSram(rdram + dram_addr, cart_addr & 0xFFFF, length);
+            else
+                m_sram->DmaFromSram(rdram + dram_addr, cart_addr & 0xFFFF, length);
+            m_stats.dma_bytes_transferred += length;
+            handled = true;
         }
     }
     
