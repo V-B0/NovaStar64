@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file RDPProcessor.cpp
  * @brief RDP command processor implementation
  */
@@ -696,17 +696,10 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     const auto& texImg = m_state.rdp.textureImage;
     const auto& tileDesc = m_state.rdp.tiles[tile];
 
-    // If there's a GPU framebuffer at the texture source address, sync it.
-    // But only if the GPU has actually rendered to it — if not, the RDRAM
-    // data (possibly written by the CPU, e.g. logos) is still current.
-    // Reject non-exact matches: FindByAddress's second-pass range matching
-    // can return a framebuffer whose memory range merely contains this
-    // address.  CopyFromGPU would then overwrite the entire FB region in
-    // RDRAM — destroying CPU-written data (e.g. JPEG decoded backgrounds
-    // in OOT) with stale GPU scene data.
+    // Reactive sync: only copy from GPU if the texture source address overlaps 
+    // with a modified GPU framebuffer. Loosen the match to catch sub-region 
+    // background captures (Zelda MM background blur).
     GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
-    if (srcFB && srcFB->desc.address != (texImg.address & 0x7FFFFF))
-        srcFB = nullptr;
     if (srcFB && srcFB->gpuModified) {
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
     }
@@ -817,11 +810,8 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     const auto& texImg = m_state.rdp.textureImage;
     const auto& tileDesc = m_state.rdp.tiles[tile];
 
-    // Same check as LoadBlock — only sync GPU→RDRAM if GPU has rendered to this FB.
-    // Reject non-exact matches (see ExecuteLoadBlock comment).
+    // Same check as LoadBlock
     GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
-    if (srcFB && srcFB->desc.address != (texImg.address & 0x7FFFFF))
-        srcFB = nullptr;
     if (srcFB && srcFB->gpuModified) {
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
     }
@@ -955,14 +945,23 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
         return static_cast<uint16_t>((v << 8) | (v >> 8));
     };
 
+        // TMEM layout: palettes live in the upper 2KB of TMEM (starting at byte 0x800).
+    // Each of the 256 palette entries occupies an 8-byte TMEM "word".
+    // The N64 hardware replicates the 16-bit color across all 4 banks
+    // so they are accessible regardless of the current CI format's bank-swizzling.
     for (int i = 0; i < count; i++) {
         uint32_t rdAddr = address & (m_rdramSize - 1);
         if (rdAddr + 1 < m_rdramSize) {
+            uint32_t entryIdx = (tileDesc.tmemAddr + i) & 0x3FF;
             uint16_t val = *reinterpret_cast<const uint16_t*>(m_rdram + (rdAddr ^ 2));
-            tmem16[(destIdx | 0x0400) & 0x07FF] = swapword(val);
+            uint16_t color = swapword(val);
+            // Replicate color across all 4 banks (8 bytes total per entry)
+            tmem16[entryIdx * 4 + 0] = color;
+            tmem16[entryIdx * 4 + 1] = color;
+            tmem16[entryIdx * 4 + 2] = color;
+            tmem16[entryIdx * 4 + 3] = color;
         }
         address += 2;
-        destIdx += 4;
     }
 
     // CRC from RDRAM source
@@ -1292,70 +1291,56 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     call.primDeltaZ  = m_state.rdp.primDeltaZ;
     call.fogUsage    = m_state.rdp.geometry.fogUsage;
     
-    // Reconstruct 3 triangle vertices from RDP edge coefficients.
-    // The RDP defines 3 edges:
-    //   H edge: from yh to yl (major edge spanning full height)  start X = xh, slope = dxhDy
-    //   M edge: from yh to ym (upper minor edge)                 start X = xm, slope = dxmDy
-    //   L edge: from ym to yl (lower minor edge)                 start X = xl, slope = dxlDy
-    // The 3 triangle corners are:
-    //   Top:    (xh, yh) � where H and M edges both start
-    //   Mid:    (xl, ym) � where M edge ends / L edge starts (the "knee")
-    //   Bottom: (xh + dxhDy*(yl-yh), yl) � where H and L edges meet
-    float yTop = tri.edge.yh;
-    float yMid = tri.edge.ym;
-    float yBot = tri.edge.yl;
+    // Reconstruct 3 triangle vertices from RDP edge coefficients using double precision
+    // to avoid "texture vibration" caused by floating-point rounding errors.
+    double yTop = static_cast<double>(tri.edge.yh);
+    double yMid = static_cast<double>(tri.edge.ym);
+    double yBot = static_cast<double>(tri.edge.yl);
+    double xh = static_cast<double>(tri.edge.xh);
+    double dxhDy = static_cast<double>(tri.edge.dxhDy);
     
     RenderBatch::Vertex v0, v1, v2;
     
     // Top vertex: start of major (H) edge
-    v0.x = tri.edge.xh;
-    v0.y = yTop;
+    v0.x = static_cast<float>(xh);
+    v0.y = static_cast<float>(yTop);
     
     // Mid vertex: start of L edge = end of M edge (the "knee" on the non-major side)
-    v1.x = tri.edge.xl;
-    v1.y = yMid;
+    v1.x = static_cast<float>(tri.edge.xl);
+    v1.y = static_cast<float>(yMid);
     
     // Bottom vertex: end of major (H) edge
-    v2.x = tri.edge.xh + tri.edge.dxhDy * (yBot - yTop);
-    v2.y = yBot;
+    v2.x = static_cast<float>(xh + dxhDy * (yBot - yTop));
+    v2.y = static_cast<float>(yBot);
     
     // Attribute interpolation using edge (dDe) and X (dDx) derivatives.
-    // At (x, y), attr = attr_start + dDe * (y - yh) + dDx * (x - xH_at_y)
-    // where xH_at_y = xh + dxhDy * (y - yh) is the major edge X at scanline y.
-    auto interpAttr = [&](float base, float dDe, float dDx, float x, float y) -> float {
-        float dy = y - yTop;
-        float xMajor = tri.edge.xh + tri.edge.dxhDy * dy; // major edge X at this Y
-        return base + dDe * dy + dDx * (x - xMajor);
+    // Use double precision to prevent sub-pixel jitter in textures and colors.
+    auto interpAttr = [&](double base, double dDe, double dDx, double x, double y) -> float {
+        double dy = y - yTop;
+        double xMajor = xh + dxhDy * dy; // major edge X at this Y
+        return static_cast<float>(base + dDe * dy + dDx * (x - xMajor));
     };
     
     // Depth
     if (tri.hasDepth) {
-        v0.z = tri.depth.z;
+        v0.z = static_cast<float>(tri.depth.z);
         v1.z = interpAttr(tri.depth.z, tri.depth.dzDe, tri.depth.dzDx, v1.x, v1.y);
-        v2.z = tri.depth.z + tri.depth.dzDe * (yBot - yTop); // bot is on major edge, dDx term = 0
-        // LLE depth coefficients are S15.16 normalised to [0,1]; clamp for safety.
-        v0.z = std::max(0.0f, std::min(1.0f, v0.z));
-        v1.z = std::max(0.0f, std::min(1.0f, v1.z));
-        v2.z = std::max(0.0f, std::min(1.0f, v2.z));
+        v2.z = static_cast<float>(tri.depth.z + tri.depth.dzDe * (yBot - yTop));
+        v0.z = std::clamp(v0.z, 0.0f, 1.0f);
+        v1.z = std::clamp(v1.z, 0.0f, 1.0f);
+        v2.z = std::clamp(v2.z, 0.0f, 1.0f);
     } else {
         v0.z = v1.z = v2.z = 0.0f;
     }
     
-    // Perspective W from RDP texture coefficients.
-    // tri.texture.w = 1/clip_W (s15.16 format, same scale as s,t coefficients).
-    // Store as perspW so the fragment shader can recover perspective-correct texcoords:
-    //   tc = vTexCoord / vClipW  (= (s/W * scale) / (1/W * scale) = s).
-    // Position W must remain 1.0 � the ortho matrix assumes pre-divided screen-space inputs.
     if (tri.hasTexture && tri.texture.w != 0.0f) {
         v0.perspW = tri.texture.w;
-        float w1 = interpAttr(tri.texture.w, tri.texture.dwDe, tri.texture.dwDx, v1.x, v1.y);
-        float w2 = tri.texture.w + tri.texture.dwDe * (yBot - yTop);
-        v1.perspW = w1;
-        v2.perspW = w2;
+        v1.perspW = interpAttr(tri.texture.w, tri.texture.dwDe, tri.texture.dwDx, v1.x, v1.y);
+        v2.perspW = static_cast<float>(tri.texture.w + tri.texture.dwDe * (yBot - yTop));
     } else {
         v0.perspW = v1.perspW = v2.perspW = 1.0f;
     }
-    v0.w = v1.w = v2.w = 1.0f;  // Position W always 1.0 for ortho projection
+    v0.w = v1.w = v2.w = 1.0f;
     
     // Shade (color)
     if (tri.hasShade) {
@@ -1367,11 +1352,11 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         v1.b = interpAttr(tri.shade.b, tri.shade.dbDe, tri.shade.dbDx, v1.x, v1.y) / 255.0f;
         v1.a = interpAttr(tri.shade.a, tri.shade.daDe, tri.shade.daDx, v1.x, v1.y) / 255.0f;
         
-        float dy2 = yBot - yTop;
-        v2.r = (tri.shade.r + tri.shade.drDe * dy2) / 255.0f;
-        v2.g = (tri.shade.g + tri.shade.dgDe * dy2) / 255.0f;
-        v2.b = (tri.shade.b + tri.shade.dbDe * dy2) / 255.0f;
-        v2.a = (tri.shade.a + tri.shade.daDe * dy2) / 255.0f;
+        double dy2 = yBot - yTop;
+        v2.r = static_cast<float>(tri.shade.r + tri.shade.drDe * dy2) / 255.0f;
+        v2.g = static_cast<float>(tri.shade.g + tri.shade.dgDe * dy2) / 255.0f;
+        v2.b = static_cast<float>(tri.shade.b + tri.shade.dbDe * dy2) / 255.0f;
+        v2.a = static_cast<float>(tri.shade.a + tri.shade.daDe * dy2) / 255.0f;
     } else {
         v0.r = v0.g = v0.b = v0.a = 1.0f;
         v1.r = v1.g = v1.b = v1.a = 1.0f;
@@ -1383,9 +1368,9 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         v0.s = tri.texture.s; v0.t = tri.texture.t;
         v1.s = interpAttr(tri.texture.s, tri.texture.dsDe, tri.texture.dsDx, v1.x, v1.y);
         v1.t = interpAttr(tri.texture.t, tri.texture.dtDe, tri.texture.dtDx, v1.x, v1.y);
-        float dy2 = yBot - yTop;
-        v2.s = tri.texture.s + tri.texture.dsDe * dy2;
-        v2.t = tri.texture.t + tri.texture.dtDe * dy2;
+        double dy2 = yBot - yTop;
+        v2.s = static_cast<float>(tri.texture.s + tri.texture.dsDe * dy2);
+        v2.t = static_cast<float>(tri.texture.t + tri.texture.dtDe * dy2);
     } else {
         v0.s = v0.t = 0; v1.s = v1.t = 0; v2.s = v2.t = 0;
     }
@@ -1402,7 +1387,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         v0.fogFactor = v1.fogFactor = v2.fogFactor = 0.0f;
     }
     
-    // LLE triangles are in screen space � no clip flags needed
+    // LLE triangles are in screen space - no clip flags needed
     v0.clipFlags = v1.clipFlags = v2.clipFlags = 0;
     
     m_batch.vertices.push_back(v0);
@@ -2013,8 +1998,9 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     // CI textures: index data lives in the lower 2KB of TMEM (upper 2KB is palette).
     // Clamp the CRC range so it doesn't bleed into palette data.
     uint32_t tmemLimit = (key.format == Tex::N64TexFormat::CI) ? TMEM_PALETTE_BASE : (isRGBA32 ? 2048u : TMEM_SIZE);
-    if (tmemByteAddr + tmemSize > tmemLimit)
-        tmemSize = (tmemByteAddr < tmemLimit) ? (tmemLimit - tmemByteAddr) : 0;
+    if (tmemByteAddr < tmemLimit && tmemByteAddr + tmemSize > tmemLimit) {
+        tmemSize = tmemLimit - tmemByteAddr;
+    }
     if (tmemSize > 0 && tmemByteAddr + tmemSize <= TMEM_SIZE) {
         key.crc = CRC32_Fast(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
         if (isRGBA32) {
@@ -3174,13 +3160,20 @@ void RDPProcessor::FlushBatch() {
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rtFB0 = g_fbManager.FindByAddress(key0.address);
 
-                // Reject tile-offset matches: only accept exact base address.
-                // FindByAddress's second-pass range matching causes false
-                // positives when regular textures are allocated near FB
-                // addresses, binding the live framebuffer (wrong UV scale,
-                // changing every frame → flickering textures).
-                if (rtFB0 && rtFB0->desc.address != (key0.address & 0x7FFFFF))
-                    rtFB0 = nullptr;
+                // FB-as-texture address policy:
+                //   - Exact base address → always accept (normal FB reuse).
+                //   - Offset into an FB → accept ONLY when the texture's
+                //     width matches the FB's width (the "full-row strip /
+                //     backdrop snapshot" pattern used by OoT/MM pause menus
+                //     to draw the world behind the inventory).
+                //   - Reject everything else: small misaligned textures
+                //     coincidentally near FB addresses would otherwise bind
+                //     the live framebuffer with wrong UV scale, producing
+                //     per-frame flickering on regular artwork.
+                if (rtFB0 && rtFB0->desc.address != (key0.address & 0x7FFFFF)) {
+                    if (key0.width == 0 || key0.width != rtFB0->desc.width)
+                        rtFB0 = nullptr;
+                }
 
                 // ── CfB copy-back detection ──────────────────────────────
                 // Some N64 games (OoT, MM) copy an AA-processed framebuffer
@@ -3283,9 +3276,11 @@ void RDPProcessor::FlushBatch() {
             Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1);
             if (key1.width > 0 && key1.height > 0) {
                 GPUFramebuffer* rtFB1 = g_fbManager.FindByAddress(key1.address);
-                // Reject tile-offset matches (same as tex0 — prevent flickering)
-                if (rtFB1 && rtFB1->desc.address != (key1.address & 0x7FFFFF))
-                    rtFB1 = nullptr;
+                // Same offset-policy as tex0: exact base or full-width strip only.
+                if (rtFB1 && rtFB1->desc.address != (key1.address & 0x7FFFFF)) {
+                    if (key1.width == 0 || key1.width != rtFB1->desc.width)
+                        rtFB1 = nullptr;
+                }
                 uint32_t fbTex1 = rtFB1 ? g_fbManager.GetSampleableTexture(
                     rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
                 if (fbTex1 != 0) {

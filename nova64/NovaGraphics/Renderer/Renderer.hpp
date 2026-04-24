@@ -43,6 +43,7 @@ enum class BackendType : uint8_t {
     OpenGL46,       // OpenGL 4.6 Core Profile + DSA
     D3D11,          // Direct3D 11 (Windows)
     Software,       // Software fallback (debug only)
+    Vulkan,         // Vulkan 1.2+ (stub — not yet implemented)
     Count
 };
 
@@ -363,6 +364,7 @@ struct SamplerDesc {
     TextureWrap wrapS = TextureWrap::Repeat;
     TextureWrap wrapT = TextureWrap::Repeat;
     float maxAnisotropy = 1.0f;
+    float lodBias       = 0.0f;
     float borderColor[4] = {0, 0, 0, 0};
     bool useN64_3Point = false;
 };

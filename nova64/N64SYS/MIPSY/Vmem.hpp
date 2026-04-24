@@ -56,6 +56,15 @@ class CRegisters;
 
 namespace Nova64 {
 
+// ----------------------------------------------------------------------------
+// Memory Watch (debug-only).
+// Emits a log line whenever a DMA into RDRAM touches the configured range.
+// Configured via the same NOVA_WATCH_ADDR/LEN/FILE environment variables as
+// the CPU store watch in Vmem.cpp. `source` is a short tag like "PI", "SP",
+// "SI", "DD", etc. for distinguishing the originator in the log output.
+// ----------------------------------------------------------------------------
+void WatchDMA(uint32_t pAddr, uint32_t length, const char* source);
+
 // Forward declarations
 // using N64System = ::CN64System;
 // using Registers = ::CRegisters;
@@ -251,6 +260,12 @@ public:
     bool SH_Memory(uint64_t vAddr, uint32_t value);
     bool SW_Memory(uint64_t vAddr, uint32_t value);
     bool SD_Memory(uint64_t vAddr, uint64_t value);
+
+    // MI repeat mode: invalidate/restore RDRAM write maps
+    void SetMIRepeatMode(bool active);
+
+    // MI repeat store (handles the byte-fill when MI init mode is active)
+    bool MI_RepeatStore(uint32_t pAddr, uint64_t busData, uint32_t patternSize, uint32_t byteOffset);
 
     // ========================================================================
     // Exception Handling

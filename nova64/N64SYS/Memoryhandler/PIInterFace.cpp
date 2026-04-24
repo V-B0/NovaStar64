@@ -116,7 +116,14 @@ bool PeripheralInterfaceHandler::Read32(uint32_t addr, uint32_t& val)
         case 0x04600004: val = m_pi_regs.PI_CART_ADDR_REG; break;
         case 0x04600008: val = m_pi_regs.PI_RD_LEN_REG; break;
         case 0x0460000C: val = m_pi_regs.PI_WR_LEN_REG; break;
-        case 0x04600010: val = m_pi_regs.PI_STATUS_REG; break;
+        case 0x04600010:
+            val = m_pi_regs.PI_STATUS_REG;
+            // IO_BUSY reflects whether the cart ROM latch is active
+            if (m_uncached_rom.IsLatchActive())
+                val |= STATUS_IO_BUSY;
+            else
+                val &= ~STATUS_IO_BUSY;
+            break;
         case 0x04600014: val = m_pi_regs.PI_DOMAIN1_REG; break;
         case 0x04600018: val = m_pi_regs.PI_BSD_DOM1_PWD_REG; break;
         case 0x0460001C: val = m_pi_regs.PI_BSD_DOM1_PGS_REG; break;
@@ -156,10 +163,7 @@ bool PeripheralInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t m
             
         case 0x04600004:  // PI_CART_ADDR_REG
             m_pi_regs.PI_CART_ADDR_REG = (m_pi_regs.PI_CART_ADDR_REG & ~mask) | maskedVal;
-            // Most games use aligned DMA, but some don't
-            if (!m_config.allow_unaligned_dma) {
-                m_pi_regs.PI_CART_ADDR_REG &= 0xFFFFFFFE;
-            }
+            m_pi_regs.PI_CART_ADDR_REG &= 0xFFFFFFFE;  // Bit 0 always cleared on real hardware
             Log::debugf("PIInterface: PI_CART_ADDR = 0x%08X", m_pi_regs.PI_CART_ADDR_REG);
             break;
             
@@ -264,7 +268,7 @@ void PeripheralInterfaceHandler::HandleDMARead()
 
     uint32_t dramAddr = m_pi_regs.PI_DRAM_ADDR_REG & 0x7FFFFE;
     uint32_t cartAddr = m_pi_regs.PI_CART_ADDR_REG;
-    uint32_t length = (m_pi_regs.PI_WR_LEN_REG + 1) & ~1;  // Use PI_WR_LEN (Cart->RDRAM)
+    uint32_t length = (m_pi_regs.PI_WR_LEN_REG & 0x00FFFFFF) + 1;  // Raw transfer length
     
     Log::debugf("PIInterface: DMA Read - RDRAM=0x%08X Cart=0x%08X Length=0x%X",
         dramAddr, cartAddr, length);
@@ -362,7 +366,7 @@ void PeripheralInterfaceHandler::HandleDMAWrite()
     
     uint32_t dramAddr = m_pi_regs.PI_DRAM_ADDR_REG & 0x7FFFFE;
     uint32_t cartAddr = m_pi_regs.PI_CART_ADDR_REG;
-    uint32_t length = (m_pi_regs.PI_RD_LEN_REG + 1);  // Use PI_RD_LEN (RDRAM->Cart)
+    uint32_t length = (m_pi_regs.PI_RD_LEN_REG & 0x00FFFFFF) + 1;  // Raw transfer length
     
     Log::debugf("PIInterface: DMA Write - RDRAM=0x%08X Cart=0x%08X Length=0x%X",
         dramAddr, cartAddr, length);
@@ -504,18 +508,23 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
     
     m_stats.bytes_read += transferLen;
 
+    // Update PI address registers to reflect the post-DMA state.
+    // On real hardware, these registers advance by the transfer amount.
+    m_pi_regs.PI_CART_ADDR_REG = cartAddr;
+    m_pi_regs.PI_DRAM_ADDR_REG = dramAddr;
+
     // Invalidate any recompiler blocks that overlap this DMA target range
     // so stale compiled code is discarded after ROM-to-RDRAM copies.
     // Use the saved start address, NOT dramAddr (which has been advanced
     // past the end of the transfer by the copy loop above).
     m_system.NotifyDMAToRDRAM(dramStart, transferLen);
 
-    // Complete DMA immediately — data is already copied to RDRAM above.
-    // Many N64 emulators complete PI DMA instantly; delayed timing via PiTimer
-    // requires careful timer bookkeeping that can cause DMA_BUSY to hang.
-    // Timer-based completion could be revisited once the timer system
-    // properly handles mid-period timer insertions.
-    CompleteDMA();
+    Nova64::WatchDMA(dramStart, transferLen, "PI");
+
+    // Apply accurate DMA copy latency for racing checks
+    m_pi_regs.PI_STATUS_REG |= STATUS_DMA_BUSY;
+    uint32_t cycles = (transferLen * 64) / 25; 
+    m_system.GetSystemTimer()->set_timer(N64System::TimerType::PiTimer, cycles < 100 ? 100 : cycles, false);
 }
 
 // ============================================================================

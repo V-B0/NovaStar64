@@ -325,6 +325,7 @@ private:
     void HandleLoadTile(const uint32_t* words);
     void HandleLoadTLUT(const uint32_t* words);
     void HandleScrollTex(const uint32_t* words);
+
     void HandleSyncFull();
     void HandleSyncPipe();
     void HandleSyncTile();

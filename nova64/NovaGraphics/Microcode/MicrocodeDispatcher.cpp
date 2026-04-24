@@ -199,7 +199,7 @@ void MicrocodeDispatcher::HandleUcodeSwitch(
         return;
     }
     
-    NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
             "Mid-frame microcode switch: {} -> {} (CRC=0x{:08X}, method={}, conf={:.2f})",
             MicrocodeTypeName(m_activeInfo.type),
             MicrocodeTypeName(detection.type),

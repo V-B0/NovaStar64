@@ -835,11 +835,17 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
         if (branchInstrIdx != static_cast<size_t>(-1) &&
             i == branchInstrIdx + 1) {
             ops.EmitDelaySlotSetup(addr);
+            ops.SetInDelaySlot(true);
         }
 
         if (!ops.CompileInstruction(instrCtx)) {
             log_error("x64 CompileInstruction failed at 0x" + std::to_string(addr));
             // emit a NOP fallback so the block is still valid
+        }
+
+        if (branchInstrIdx != static_cast<size_t>(-1) &&
+            i == branchInstrIdx + 1) {
+            ops.SetInDelaySlot(false);
         }
 
         // Decrement m_NextTimer by CountPerOp after each instruction.

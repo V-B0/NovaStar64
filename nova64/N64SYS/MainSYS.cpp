@@ -44,6 +44,8 @@
 #include <format>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
 
 // Using directives for Trace namespace
 using Trace::ModuleID;
@@ -164,9 +166,6 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     // Re-initialize TLB with memory pointer now that MipsMemoryVM is created
     if(m_TLB) m_TLB->Initialize(GetMemory(), GetRegisters(), nullptr);
 
-    // Initialize Memory Handlers
-    m_Eeprom = std::make_unique<CEeprom>(false);
-
     // RDRAM
     m_RDRAMInterfaceHandler = std::make_unique<RDRAMInterfaceHandler>(*m_Registers);
     m_RDRAMRegistersHandler = std::make_unique<RDRAMRegistersHandler>(*m_Registers, RDRAMRegistersHandler::Config{});
@@ -246,6 +245,9 @@ bool CN64System::LoadFileImage(const char* FileLoc)
     try
     {
         g_Rom->LoadRom(FileLoc);
+
+        // Save-chip override is applied on the live CN64System instance in RunLoadedImage().
+
         if (g_Rom->GetImage().IsDDIPL())
         {
             // 64DD IPL
@@ -454,6 +456,42 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
     g_BaseSystem = new CN64System((uint32_t)time(nullptr), false, false);
     if (g_BaseSystem)
     {
+        // Default save chip selection to auto-detect, then apply known-title overrides.
+        g_BaseSystem->m_SaveUsing = SAVE_CHIP_UNKNOWN;
+        if (g_Rom != nullptr)
+        {
+            std::string romName = g_Rom->GetImage().GetRomName();
+            std::transform(romName.begin(), romName.end(), romName.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+            // Cart-ID based detection (more reliable than name parsing).
+            // Header offset 0x3C is a 4-char ID like "NZSE" (MM US),
+            // "NZPE"/"NZSP" (MM PAL), "NZSJ" (MM Japan).
+            // Stored byte-swapped (host-word order) so XOR 3 to read.
+            char cartId[4] = {0};
+            const uint8_t* romData = g_Rom->GetImage().Data();
+            size_t romSize = g_Rom->GetImage().Size();
+            if (romData != nullptr && romSize >= 0x40)
+            {
+                for (int i = 0; i < 4; i++)
+                    cartId[i] = static_cast<char>(romData[(0x3C + i) ^ 3]);
+            }
+            std::string cartIdStr(cartId, 4);
+            Log::infof("ROM identification: name='%s' cartId='%s'",
+                       romName.c_str(), cartIdStr.c_str());
+
+            // FlashRAM games (Majora's Mask, Pokemon Stadium 2, etc.)
+            // MM cart IDs: NZSE (US), NZPE/NZSP (PAL), NZSJ (Japan).
+            bool isMM = romName.find("MAJORA") != std::string::npos
+                     || cartIdStr.compare(0, 3, "NZS") == 0
+                     || cartIdStr.compare(0, 3, "NZP") == 0;
+            if (isMM)
+            {
+                g_BaseSystem->m_SaveUsing = N64Types::SaveChipType::FlashRam;
+                Log::info("Save chip override: FlashRAM (Majora's Mask)");
+            }
+        }
+
         // Initialize memory (allocates RDRAM, creates memory maps)
         if (!g_BaseSystem->m_Memory->Initialize())
         {
@@ -776,11 +814,16 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         }
 
         // Read entry point from ROM header (offset 0x08)
+        // ROM data is in host word order after DetectFormatAndByteSwap.
+        uint32_t headerEntryPoint = 0x80000400;
         if (romSize >= 0x0C)
         {
-            entryPoint = *reinterpret_cast<const uint32_t*>(romData + 0x08);
-            Log::infof("HLE Boot: ROM entry point = 0x%08X", entryPoint);
+            headerEntryPoint = *reinterpret_cast<const uint32_t*>(romData + 0x08);
+            Log::infof("HLE Boot: ROM header entry point = 0x%08X", headerEntryPoint);
         }
+        // IPL3 copies 1MB from ROM[0x1000] to the RDRAM address derived from the
+        // header entry point, then jumps there.  HLE boot must replicate this.
+        entryPoint = headerEntryPoint;
 
         // ================================================================
         // Detect libdragon ROMs: scan from ROM[0x1000] for ELF magic.
@@ -923,7 +966,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         else
         {
             // ── Standard Nintendo IPL3 boot ─────────────────────────
-            uint32_t dramBase = 0x400;
+            // IPL3 copies 1MB from ROM[0x1000] to RDRAM at the physical
+            // address derived from the header entry point (offset 0x08).
+            uint32_t dramBase = headerEntryPoint & 0x1FFFFFFF; // KSEG0/1 → physical
             uint32_t romOffset = 0x1000;
             uint32_t dmaLen = 0x100000; // standard 1MB
             if (romOffset + dmaLen > romSize)
@@ -1196,6 +1241,11 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                     Log::info("Graphics plugin display initialized with window handle");
                 } else {
                     Log::warning("Graphics plugin display initialization failed");
+                }
+
+                // Wire GFX plugin to DPC handler for direct RDP command processing
+                if (m_Memory && m_Memory->DPCommandRegisters()) {
+                    m_Memory->DPCommandRegisters()->SetGraphicsPlugin(gfxPlugin);
                 }
             }
 

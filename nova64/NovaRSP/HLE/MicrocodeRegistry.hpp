@@ -118,6 +118,7 @@ inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
     { 0xB94B80C7, 0, UcodeType::NeadOOT,       alist_process_nead_oot,  "NEAD OOT (alt data CRC)" },
     { 0xDBC54543, 0, UcodeType::NeadOOT,       alist_process_nead_oot,  "NEAD OOT (alt text CRC)" },
     { 0x4FC2E19E, 0, UcodeType::NeadMM,        alist_process_nead_mm,   "NEAD Majora's Mask" },
+    { 0x3083B431, 0x9CA82D44, UcodeType::NeadMM, alist_process_nead_mm,  "NEAD Majora's Mask (alt CRC pair)" },
     { 0x68EC50E1, 0, UcodeType::NeadMMB,       alist_process_nead_mmb,  "NEAD Majora's Mask B" },
     { 0x15EF3C70, 0, UcodeType::NeadAC,        alist_process_nead_ac,   "NEAD Animal Crossing" },
 

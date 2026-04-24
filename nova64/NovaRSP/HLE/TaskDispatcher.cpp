@@ -277,7 +277,17 @@ static UcodeHandler IdentifyAudioBySignature(CHle* hle, uint32_t ucodeData)
 bool CTaskDispatcher::DispatchAudioTask(CHle* hle, const TaskInfo& task, const MicrocodeEntry* ucode)
 {
     if (!hle->AudioHle()) {
-        return false;
+        // BUG-FIX: when audio HLE is disabled but we have no LLE RSP path
+        // wired up to actually run the audio ucode, returning false here
+        // and letting the task drop on the floor causes the game's audio
+        // thread to block forever waiting for SP_INTR. That backpressure
+        // stalls the OS message queue and corrupts dependent thread state
+        // (notably MM's gSaveContext updates after item-get cutscenes,
+        // producing the "Link instant-dies after magic bar" symptom).
+        // Always signal task complete so the audio thread can drain its
+        // queue. Cost: silent audio. Benefit: stable game logic.
+        hle->rsp_break(0);
+        return true;
     }
 
     ++s_audioTaskCount;

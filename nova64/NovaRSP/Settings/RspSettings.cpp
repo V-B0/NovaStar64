@@ -146,11 +146,29 @@ void CRSPSettings::SetRomOpen(bool opened)
 void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2)
 {
     const GameOverrides* overrides = LookupGameOverrides(crc1, crc2);
+    uint32_t matchedCrc1 = crc1;
+    uint32_t matchedCrc2 = crc2;
+
+    if (overrides == nullptr)
+    {
+        const uint32_t swappedCrc1 = ((crc1 & 0x000000FFu) << 24)
+                                   | ((crc1 & 0x0000FF00u) << 8)
+                                   | ((crc1 & 0x00FF0000u) >> 8)
+                                   | ((crc1 & 0xFF000000u) >> 24);
+        const uint32_t swappedCrc2 = ((crc2 & 0x000000FFu) << 24)
+                                   | ((crc2 & 0x0000FF00u) << 8)
+                                   | ((crc2 & 0x00FF0000u) >> 8)
+                                   | ((crc2 & 0xFF000000u) >> 24);
+        overrides = LookupGameOverrides(swappedCrc1, swappedCrc2);
+        matchedCrc1 = swappedCrc1;
+        matchedCrc2 = swappedCrc2;
+    }
+
     if (overrides == nullptr)
         return;
 
     std::fprintf(stderr, "RSP: Per-game overrides for '%s' (CRC %08X/%08X)\n",
-        overrides->name ? overrides->name : "?", crc1, crc2);
+        overrides->name ? overrides->name : "?", matchedCrc1, matchedCrc2);
 
     if (overrides->graphicsHle.has_value())
     {

@@ -71,6 +71,60 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 message(STATUS "stb fetched for stb_image PNG decoding: ${stb_SOURCE_DIR}")
 
+# ── Vulkan (headers + volk dynamic loader) ──
+# volk dlopens vulkan-1.dll at runtime; no SDK install required.
+# We fetch sources for both repos but build volk.c manually as a small
+# static library so we can fully control include directories without
+# fighting cross-directory target modification policies.
+FetchContent_Declare(
+    VulkanHeaders
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+    GIT_TAG        v1.3.275
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(VulkanHeaders)
+
+FetchContent_Declare(
+    volk
+    GIT_REPOSITORY https://github.com/zeux/volk.git
+    GIT_TAG        1.3.270
+    EXCLUDE_FROM_ALL
+)
+# Populate (download) but do NOT add volk's CMakeLists — we build volk.c ourselves.
+FetchContent_GetProperties(volk)
+if(NOT volk_POPULATED)
+    FetchContent_Populate(volk)
+endif()
+
+add_library(nova_volk STATIC "${volk_SOURCE_DIR}/volk.c")
+target_include_directories(nova_volk PUBLIC
+    "${volk_SOURCE_DIR}"
+    "${vulkanheaders_SOURCE_DIR}/include"
+)
+target_compile_definitions(nova_volk PUBLIC VK_NO_PROTOTYPES)
+if(WIN32)
+    target_compile_definitions(nova_volk PUBLIC VK_USE_PLATFORM_WIN32_KHR)
+endif()
+message(STATUS "Vulkan integrated via volk (no SDK install required)")
+
+# ── glslang (GLSL → SPIR-V compiler for the Vulkan backend) ──
+# Disable everything we don't need to keep the dep light.
+set(ENABLE_OPT OFF CACHE BOOL "" FORCE)                 # SPIRV-Tools optimizer
+set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "" FORCE)
+set(ENABLE_CTEST OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTERNAL OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    glslang
+    GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+    GIT_TAG        14.2.0
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(glslang)
+message(STATUS "glslang integrated for runtime GLSL→SPIRV compilation")
+
 # ── ImGui (immediate-mode GUI for debug panels) ──
 FetchContent_Declare(
     imgui
@@ -331,6 +385,18 @@ set(SOURCES
     NovaGraphics/Renderer/D3D/D3DDevice.cpp
     NovaGraphics/Renderer/D3D/D3DTexture.cpp
 
+    # NovaGraphics - Graphics plugin (Renderer/VK - real impl via volk loader)
+    NovaGraphics/Renderer/VK/VKBackend.cpp
+    NovaGraphics/Renderer/VK/VKInstance.cpp
+    NovaGraphics/Renderer/VK/VKDevice.cpp
+    NovaGraphics/Renderer/VK/VKSwapchain.cpp
+    NovaGraphics/Renderer/VK/VKMemory.cpp
+    NovaGraphics/Renderer/VK/VKBuffer.cpp
+    NovaGraphics/Renderer/VK/VKTexture.cpp
+    NovaGraphics/Renderer/VK/VKShader.cpp
+    NovaGraphics/Renderer/VK/VKPipeline.cpp
+    NovaGraphics/Renderer/VK/VKRenderTarget.cpp
+
     # SoftwareRenderer removed — dead code, replaced by OpenGL/D3D backends
 
     # NovaGraphics - Graphics plugin (Texture)
@@ -458,6 +524,17 @@ target_link_libraries(nova64 PRIVATE softfloat)
 target_link_libraries(nova64 PRIVATE ${SDL2_LIBRARIES} glad_gl46 imgui)
 find_package(OpenGL REQUIRED)
 target_link_libraries(nova64 PRIVATE OpenGL::GL)
+
+# Vulkan backend dependencies (volk dynamically loads vulkan-1.dll at runtime;
+# Vulkan::Headers provides the headers; we never link vulkan-1.lib directly).
+target_link_libraries(nova64 PRIVATE nova_volk)
+target_compile_definitions(nova64 PRIVATE VK_NO_PROTOTYPES)
+if(WIN32)
+    target_compile_definitions(nova64 PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
+# glslang (runtime GLSL→SPIR-V compiler for the Vulkan backend)
+target_link_libraries(nova64 PRIVATE glslang SPIRV glslang-default-resource-limits)
 
 # WASAPI audio output (Windows)
 if(WIN32)

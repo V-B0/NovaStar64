@@ -10,6 +10,7 @@
 #include "SPregistersHandler.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
+#include "../MIPSY/Vmem.hpp"
 #include "../../NovaRSP/RSPInfo.hpp"
 #include <algorithm>
 #include <cstring>
@@ -376,6 +377,7 @@ void SRegistersHandler::SP_DMA_WRITE()
     uint32_t dramStart = m_PendingSPDramAddr & 0x00FFFFF8;
     uint32_t totalLen  = static_cast<uint32_t>(Length * Count + (Count > 1 ? Skip * (Count - 1) : 0));
     m_Reg.InvalidateRecompCode(dramStart, totalLen);
+    Nova64::WatchDMA(dramStart, totalLen, "SP");
 }
 
 /**
@@ -634,6 +636,8 @@ void SRegistersHandler::ClearHalt()
         m_Reg.m_GfxIntrReg |= MI_INTR_DP;
         m_Reg.m_Mips_Interface[2] |= MI_INTR_DP;
         m_Reg.m_DpFreshFromHLE = true;  // Tell RspTimer handler to restore DP
+        // SyncFull drains the RDP pipeline — clear activity flags
+        m_Reg.m_Display_ControlReg[3] &= ~(0x020u | 0x008u);  // PIPE_BUSY | START_GCLK
     }
     
     // Schedule SP+DP interrupt delivery via RspTimer (fires at block boundary)

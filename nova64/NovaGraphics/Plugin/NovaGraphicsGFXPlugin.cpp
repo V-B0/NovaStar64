@@ -143,6 +143,9 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
     if (system && system->GetRegisters()) {
         auto* regs = system->GetRegisters();
         cb.checkInterrupts = [regs]() {
+            // SyncFull drains the RDP pipeline — clear activity flags
+            // DPC_STATUS is index 3: PIPE_BUSY=0x020, START_GCLK=0x008
+            regs->m_Display_ControlReg[3] &= ~(0x020u | 0x008u);
             if (regs->m_defer_hle_interrupts) {
                 regs->m_deferred_mi_intr |= 0x20;  // MI_INTR_DP
             } else {

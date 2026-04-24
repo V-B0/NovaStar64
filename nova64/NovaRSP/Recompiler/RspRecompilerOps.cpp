@@ -1424,10 +1424,11 @@ void CRSPRecompilerOps::EmitSignedSaturation(uint8_t xmmMid, uint8_t xmmAccHi)
     m_Assembler->Movdqa_XmmToXmm(xmmNeg, xmmAccHi);
     m_Assembler->Psraw_XmmImm(xmmNeg, 15);
 
-    // overflow_val = pandn(neg, allones) → 0xFFFF (0x7FFF after blend) for pos overflow, 0x0000 for neg
+    // overflow_val = neg ^ 0x7FFF → 0x7FFF for positive overflow, 0x8000 for negative overflow
     uint8_t xmmOvf = m_RegState.MapXmmTemp(false, 0, 0);
-    m_Assembler->Pcmpeqw_XmmToXmm(xmmOvf, xmmOvf);      // allones
-    m_Assembler->Pandn_XmmToXmm(xmmNeg, xmmOvf);         // ~neg & allones
+    m_Assembler->Pcmpeqw_XmmToXmm(xmmOvf, xmmOvf);      // allones = 0xFFFF
+    m_Assembler->Psrlw_XmmImm(xmmOvf, 1);                 // 0x7FFF per lane
+    m_Assembler->Pxor_XmmToXmm(xmmNeg, xmmOvf);          // 0x7FFF^0=0x7FFF, 0x7FFF^FFFF=0x8000
 
     // Blend: result = (mid & match) | (~match & overflow_val)
     m_Assembler->Pand_XmmToXmm(xmmMid, xmmMatch);        // mid where in range
@@ -3538,32 +3539,18 @@ void CRSPRecompilerOps::Vector_VMOV()
     m_RegState.ProtectXmm(xmmVt);
     m_Assembler->Movdqa_MemFromXmm(m_ACCUM.LowData(), "ACCUM_Lo", xmmVt);
 
-    // Compute element indices at JIT compile time
-    // RSP dest element: index = 7 - (de & 7)
-    // Source RSP element via EleSpec[e]: replicate the formula from Build_RSP
-    uint8_t e = m_OpCode.e;
-    uint8_t dstElemRsp = 7 - (m_OpCode.de & 0x7);
-    uint8_t srcElemRsp;
-    if (e <= 1)       srcElemRsp = dstElemRsp;                           // identity
-    else if (e <= 3)  srcElemRsp = (dstElemRsp & 0x6) | (e & 0x1);      // pair broadcast
-    else if (e <= 7)  srcElemRsp = (dstElemRsp & 0x4) | (e & 0x3);      // quad broadcast
-    else              srcElemRsp = e & 0x7;                               // scalar broadcast
+    // Internal XMM word position for N64 destination element (reversed layout)
+    uint8_t dstXmmWord = 7 - (m_OpCode.de & 0x7);
 
-    // Convert RSP element indices to XMM word positions (reversed)
-    uint8_t srcXmmWord = 7 - srcElemRsp;
-    uint8_t dstXmmWord = m_OpCode.de & 0x7;  // = 7 - dstElemRsp
-
-    // Extract source element from vt (loaded plain, not broadcast)
-    // For broadcast cases, MapXmmTemp loaded plain vt, so use computed srcXmmWord
-    // pextrw eax, xmmVt, srcXmmWord
-    m_Assembler->Pextrw(0 /*RAX*/, xmmVt, srcXmmWord);
+    // MapXmmTemp applied the broadcast pshufb, so position dstXmmWord
+    // already contains the correct source value for this destination element
+    m_Assembler->Pextrw(0 /*RAX*/, xmmVt, dstXmmWord);
 
     // Load vd into a temp XMM
     uint8_t xmmVd = m_RegState.MapXmmTemp(true, m_OpCode.vd, 0);
     m_RegState.ProtectXmm(xmmVd);
 
     // Insert the extracted word into vd at the destination position
-    // pinsrw xmmVd, eax, dstXmmWord
     m_Assembler->Pinsrw(xmmVd, 0 /*RAX*/, dstXmmWord);
 
     // Store result

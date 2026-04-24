@@ -41,14 +41,11 @@ union COP0EntryLo {
         uint32_t V : 1;        // Bit 1 (Valid)
         uint32_t D : 1;        // Bit 2 (Dirty)
         uint32_t C : 3;        // Bits 3-5 (Cache algorithm)
-        uint32_t PFN : 20;     // Bits 6-25 (Physical Frame Number, lower 20 bits)
+        uint32_t PFN : 20;     // Bits 6-25 (Physical Frame Number)
         uint32_t : 6;          // Bits 26-31 (Reserved)
         
         // Upper 32 bits (64-bit mode only, not used in N64 32-bit mode)
-        uint32_t PFN_Hi : 8;   // Bits 32-39 (PFN upper bits for 64-bit)
-        uint32_t : 20;         // Bits 40-59 (Reserved/padding)
-        uint32_t UC : 2;       // Bits 60-61 (Uncached bits for 64-bit)
-        uint32_t : 2;          // Bits 62-63 (Reserved)
+        uint32_t : 32;         // Bits 32-63 (Reserved)
     };
     
     // Constructor for initialization
@@ -495,6 +492,7 @@ public:
         WatchLo = 18,
         WatchHi = 19,
         XContext = 20,
+        ECC = 26,
         TagLo = 28,
         TagHi = 29,
         ErrorEPC = 30
@@ -514,10 +512,16 @@ public:
     
     // Timer access for deferred SP interrupt scheduling
     N64System::SystemTimer& GetSystemTimer() { return m_SystemTimer; }
+    CN64System& GetSystem() { return m_System; }
 
     // Allow recompiler branch callbacks to set TestTimer (matching interpreter
     // JR/JALR behavior where every indirect jump triggers a timer check).
     void SetTestTimer();
+
+    // Get the link address for branch-in-delay-slot: if the CPU is in a delay
+    // slot (PipelineStage == Jump), returns outer_jump_target + 4.
+    // Otherwise returns fallback (typically pc + 8).
+    int32_t GetLinkAddress(int32_t fallback) const;
 
     // Flush compiled code for a physical RDRAM range.
     // Called by SP DMA Write (DMEM/IMEM→RDRAM) and SMC detection paths.

@@ -192,6 +192,8 @@ void PifRamHandler::dma_read()
         }
     }
 
+    Nova64::WatchDMA(si_dram_addr, 64, "SI");
+
     m_stats.dma_operations++;
 
     // SI DMA timing — schedule interrupt. Timer period must account for CountPerOp

@@ -574,8 +574,8 @@ void Interp_DDIVU(CRegisters* regs, uint32_t opcVal) {
     uint64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW;
     uint64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
     if (rt == 0) {
-        AsDWord(regs->m_LO).DW = -1;
-        AsDWord(regs->m_HI).DW = static_cast<int64_t>(rs);
+        AsDWord(regs->m_LO).UDW = 0xFFFFFFFFFFFFFFFFULL;
+        AsDWord(regs->m_HI).UDW = rs;
     } else {
         AsDWord(regs->m_LO).UDW = rs / rt;
         AsDWord(regs->m_HI).UDW = rs % rt;
@@ -695,6 +695,8 @@ void Interp_LL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
         if (mips_rt(opcVal) != 0)
             AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(static_cast<int32_t>(val));
         regs->m_LLBit = 1;
+    } else {
+        regs->m_LLBit = 0;
     }
 }
 
@@ -794,31 +796,25 @@ static inline void fpr_write_w(CRegisters* regs, uint32_t reg, uint32_t val) {
         p[reg & 1] = val;
     } else {
         // FR=1: write only low 32 bits, preserve upper 32
-        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg]);
-        p[0] = val;
+        regs->m_FPR[reg] = val;
+        
     }
 }
 
 // Arithmetic operand read (single-precision):
-// FR=0: bit 0 ignored, reads low 32 of m_FPR[reg & ~1u]
-// FR=1: reads low 32 of m_FPR[reg]
+// FR=0: read selected 32-bit half of the even/odd pair
+// FR=1: read low 32 of m_FPR[reg]
 static inline float fpr_read_float_op(CRegisters* regs, uint32_t reg) {
-    uint32_t bits;
-    if (regs->STATUS_REGISTER.FR == 0) {
-        bits = static_cast<uint32_t>(regs->m_FPR[reg & ~1u]);
-    } else {
-        bits = static_cast<uint32_t>(regs->m_FPR[reg]);
-    }
+    uint32_t bits = fpr_read_w(regs, reg);
     float result;
     std::memcpy(&result, &bits, 4);
     return result;
 }
 
 // Arithmetic result write (single-precision):
-// FR=0: writes to m_FPR[reg] directly (fd bit 0 NOT ignored), clears full 64 bits.
-// FR=1: clears full 64 bits, writes result to low 32.
+// Matches interpreter: write one 32-bit lane and preserve the paired lane.
 static inline void fpr_write_w_result(CRegisters* regs, uint32_t reg, uint32_t val) {
-    regs->m_FPR[reg] = static_cast<uint64_t>(val);
+    fpr_write_w(regs, reg, val);
 }
 
 static inline void fpr_write_float_result(CRegisters* regs, uint32_t reg, float val) {
@@ -827,15 +823,9 @@ static inline void fpr_write_float_result(CRegisters* regs, uint32_t reg, float 
     fpr_write_w_result(regs, reg, bits);
 }
 
-// MOV.S result write: writes to m_FPR[reg] (no FR=0 masking).
-// FR=0: clears full 64 bits. FR=1: preserves upper 32 bits.
+// MOV.S writes one 32-bit lane.
 static inline void fpr_write_w_move(CRegisters* regs, uint32_t reg, uint32_t val) {
-    if (regs->STATUS_REGISTER.FR == 0) {
-        regs->m_FPR[reg] = static_cast<uint64_t>(val);
-    } else {
-        uint32_t* p = reinterpret_cast<uint32_t*>(&regs->m_FPR[reg]);
-        p[0] = val;
-    }
+    fpr_write_w(regs, reg, val);
 }
 
 static inline void fpr_write_float_move(CRegisters* regs, uint32_t reg, float val) {
@@ -857,6 +847,9 @@ static inline void fpr_write_float(CRegisters* regs, uint32_t reg, float val) {
     fpr_write_w(regs, reg, bits);
 }
 
+static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg);
+static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val);
+
 static inline double fpr_read_double(CRegisters* regs, uint32_t reg) {
     uint64_t bits;
     if (regs->STATUS_REGISTER.FR == 0) {
@@ -869,17 +862,17 @@ static inline double fpr_read_double(CRegisters* regs, uint32_t reg) {
     return result;
 }
 
-// Arithmetic double write: FR=0: writes to m_FPR[reg] directly (fd bit 0 NOT ignored).
+// Arithmetic double write: FR=0 uses even/odd pair mapping.
 static inline void fpr_write_double(CRegisters* regs, uint32_t reg, double val) {
     uint64_t bits;
     std::memcpy(&bits, &val, 8);
-    regs->m_FPR[reg] = bits;
+    fpr_write_u64(regs, reg, bits);
 }
 
 // Arithmetic 64-bit result write (double/L format):
-// fd bit 0 NOT ignored in FR=0 mode (asymmetric with fs reads).
+// FR=0 uses even/odd pair mapping.
 static inline void fpr_write_u64_arith(CRegisters* regs, uint32_t reg, uint64_t val) {
-    regs->m_FPR[reg] = val;
+    fpr_write_u64(regs, reg, val);
 }
 
 static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg) {
@@ -958,10 +951,16 @@ void Interp_SWL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t memVal = 0;
-    if (mmu->LW_Memory(addr & ~3, memVal)) {
+    // Use MemoryValue32 (no exception on miss) instead of LW_Memory
+    // so that on TLB miss, SW_Memory raises TLBS (not TLBL from LW_Memory)
+    uint32_t alignedAddr32 = static_cast<uint32_t>(addr) & ~3u;
+    if (mmu->MemoryValue32(alignedAddr32, memVal)) {
         uint32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
         memVal = (memVal & SWL_MASK[offset]) | (rtVal >> SWL_SHIFT[offset]);
         mmu->SW_Memory(addr & ~3, memVal);
+    } else {
+        // Trigger TLBS with the original (possibly unaligned) address as BadVAddr
+        regs->TriggerAddressException(addr, static_cast<uint32_t>(ExceptionCode::TLBStoreMiss));
     }
 }
 
@@ -973,10 +972,16 @@ void Interp_SWR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t memVal = 0;
-    if (mmu->LW_Memory(addr & ~3, memVal)) {
+    // Use MemoryValue32 (no exception on miss) instead of LW_Memory
+    // so that on TLB miss, SW_Memory raises TLBS (not TLBL from LW_Memory)
+    uint32_t alignedAddr32 = static_cast<uint32_t>(addr) & ~3u;
+    if (mmu->MemoryValue32(alignedAddr32, memVal)) {
         uint32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
         memVal = (memVal & SWR_MASK[offset]) | (rtVal << SWR_SHIFT[offset]);
         mmu->SW_Memory(addr & ~3, memVal);
+    } else {
+        // Trigger TLBS with the original (possibly unaligned) address as BadVAddr
+        regs->TriggerAddressException(addr, static_cast<uint32_t>(ExceptionCode::TLBStoreMiss));
     }
 }
 
@@ -991,10 +996,15 @@ void Interp_SDL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t memVal = 0;
-    if (mmu->LD_Memory(addr & ~7, memVal)) {
+    // Use MemoryValue64 (no exception on miss) instead of LD_Memory
+    // so that on TLB miss, SD_Memory raises TLBS (not TLBL from LD_Memory)
+    uint32_t alignedAddr32 = static_cast<uint32_t>(addr) & ~7u;
+    if (mmu->MemoryValue64(alignedAddr32, memVal)) {
         uint64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
         memVal = (memVal & SDL_MASK[offset]) | (rtVal >> SDL_SHIFT[offset]);
         mmu->SD_Memory(addr & ~7, memVal);
+    } else {
+        regs->TriggerAddressException(addr, static_cast<uint32_t>(ExceptionCode::TLBStoreMiss));
     }
 }
 
@@ -1010,22 +1020,27 @@ void Interp_SDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
                     static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t memVal = 0;
-    if (mmu->LD_Memory(addr & ~7, memVal)) {
+    // Use MemoryValue64 (no exception on miss) instead of LD_Memory
+    uint32_t alignedAddr32_r = static_cast<uint32_t>(addr) & ~7u;
+    if (mmu->MemoryValue64(alignedAddr32_r, memVal)) {
         uint64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
         memVal = (memVal & SDR_MASK[offset]) | (rtVal << SDR_SHIFT[offset]);
         mmu->SD_Memory(addr & ~7, memVal);
+    } else {
+        regs->TriggerAddressException(addr, static_cast<uint32_t>(ExceptionCode::TLBStoreMiss));
     }
 }
 
 void Interp_SC(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    bool success = false;
     if (regs->m_LLBit == 1) {
         uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                         static_cast<int16_t>(mips_offset(opcVal));
-        mmu->SW_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
+        success = mmu->SW_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     }
     if (mips_rt(opcVal) != 0) {
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = (int32_t)regs->m_LLBit;
+        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = success ? 1 : 0;
     }
     regs->m_LLBit = 0;
 }
@@ -1039,18 +1054,21 @@ void Interp_LLD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
         if (mips_rt(opcVal) != 0)
             AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
         regs->m_LLBit = 1;
+    } else {
+        regs->m_LLBit = 0;
     }
 }
 
 void Interp_SCD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op; op.Value = opcVal;
+    bool success = false;
     if (regs->m_LLBit == 1) {
         uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
                         static_cast<int16_t>(mips_offset(opcVal));
-        mmu->SD_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
+        success = mmu->SD_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
     }
     if (mips_rt(opcVal) != 0) {
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = regs->m_LLBit;
+        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = success ? 1 : 0;
     }
     regs->m_LLBit = 0;
 }
@@ -1264,43 +1282,39 @@ static inline bool UpdateFCR31FromHostExceptions(CRegisters* regs) {
 
 // Generic FPU operation callback - single-precision (S format)
 // Read single-precision FPR as raw bits using arithmetic fs operand rules
-// (FR=0: bit 0 of register index ignored for fs)
+// (FR=0: select 32-bit half by register index)
 static inline uint32_t fpr_read_w_op(CRegisters* regs, uint32_t reg) {
-    if (regs->STATUS_REGISTER.FR == 0) {
-        // FR=0: bit 0 ignored for fs, always read low 32 of pair
-        return static_cast<uint32_t>(regs->m_FPR[reg & ~1u]);
-    }
-    return static_cast<uint32_t>(regs->m_FPR[reg]);
+    return fpr_read_w(regs, reg);
 }
 
 // Read single-precision FPR as raw bits for ft operand
-// (FR=0: bit 0 is NOT ignored for ft - VR4300 asymmetry)
+// (FR=0: select 32-bit half by register index)
 static inline uint32_t fpr_read_w_op_ft(CRegisters* regs, uint32_t reg) {
-    return static_cast<uint32_t>(regs->m_FPR[reg]);
+    return fpr_read_w(regs, reg);
 }
 
 // Read single-precision FPR as float for ft operand
-// (FR=0: bit 0 is NOT ignored for ft)
+// (FR=0: select 32-bit half by register index)
 static inline float fpr_read_float_op_ft(CRegisters* regs, uint32_t reg) {
-    uint32_t bits = static_cast<uint32_t>(regs->m_FPR[reg]);
+    uint32_t bits = fpr_read_w(regs, reg);
     float result;
     std::memcpy(&result, &bits, 4);
     return result;
 }
 
 // Read double FPR for ft operand
-// (FR=0: bit 0 is NOT ignored for ft)
+// (FR=0: bit 0 ignored, use even/odd pair mapping)
 static inline double fpr_read_double_ft(CRegisters* regs, uint32_t reg) {
-    uint64_t bits = regs->m_FPR[reg];
+    uint64_t bits = fpr_read_u64(regs, reg);
     double result;
     std::memcpy(&result, &bits, 8);
     return result;
 }
 
 // Read 64-bit FPR for ft operand
-// (FR=0: bit 0 is NOT ignored for ft)
+// (FR=0: bit 0 ignored, use even/odd pair mapping)
 static inline uint64_t fpr_read_u64_ft(CRegisters* regs, uint32_t reg) {
-    return regs->m_FPR[reg];
+    return fpr_read_u64(regs, reg);
 }
 
 // VR4300 ABS/NEG single-precision: operates on bit patterns with special NaN handling
@@ -1401,13 +1415,10 @@ static inline bool is_double_nan(uint64_t bits) {
 
 void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    // MOV.S: full 64-bit copy (VR4300: copies upper 32 bits from source)
-    // fs: bit 0 ignored in FR=0; fd: bit 0 NOT ignored
+    // MOV.S copies a single 32-bit lane.
     if (mips_funct(opcVal) == R4300_FPU_MOV) {
-        uint64_t src = (regs->STATUS_REGISTER.FR == 0)
-            ? regs->m_FPR[mips_fs(opcVal) & ~1u]
-            : regs->m_FPR[mips_fs(opcVal)];
-        regs->m_FPR[mips_fd(opcVal)] = src;
+        uint32_t src = fpr_read_w(regs, mips_fs(opcVal));
+        fpr_write_w_move(regs, mips_fd(opcVal), src);
         return;
     }
     // ABS.S/NEG.S: VR4300-specific bit pattern operations
@@ -1534,8 +1545,8 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
         fpr_write_w_result(regs, mips_fd(opcVal), flushed);
         return;
     }
-    // Check for overflow (bit-level inf check: std::isinf is broken by /fp:fast)
-    if ((result_bits & 0x7FFFFFFFu) == 0x7F800000u && (host_exc & FE_OVERFLOW)) {
+    // Check for overflow (MXCSR flag — result may be ±inf or ±MAX_NORMAL depending on rounding mode)
+    if (host_exc & FE_OVERFLOW) {
         regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
         uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
         uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
@@ -1698,8 +1709,8 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
         fpr_write_u64_arith(regs, mips_fd(opcVal), flushed);
         return;
     }
-    // Check for overflow (bit-level inf check: std::isinf is broken by /fp:fast)
-    if ((result_bits & 0x7FFFFFFFFFFFFFFFull) == 0x7FF0000000000000ull && (host_exc & FE_OVERFLOW)) {
+    // Check for overflow (MXCSR flag — result may be ±inf or ±MAX_NORMAL depending on rounding mode)
+    if (host_exc & FE_OVERFLOW) {
         regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
         uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
         uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
@@ -2307,14 +2318,14 @@ void Interp_BGEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 void Interp_BLTZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, (rs < 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
 void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, (rs >= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
@@ -2340,7 +2351,7 @@ void Interp_J_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 
 void Interp_JAL_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
-    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, target);
 }
 
@@ -2357,7 +2368,7 @@ void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     // Read target BEFORE writing link (handles rd==rs case)
     uint32_t target = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
     if (rd != 0) {
-        AsDWord(regs->m_GPR[rd]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+        AsDWord(regs->m_GPR[rd]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     }
     SetPC(regs, target);
     // Match interpreter: JALR always sets TestTimer.
@@ -2415,7 +2426,7 @@ int Interp_BGEZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 int Interp_BLTZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     if (rs < 0) { SetPC(regs, pc + 4 + offset); return 1; }
     else { SetPC(regs, pc + 8); return 0; }
 }
@@ -2423,7 +2434,7 @@ int Interp_BLTZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) 
 int Interp_BGEZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
+    AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     if (rs >= 0) { SetPC(regs, pc + 4 + offset); return 1; }
     else { SetPC(regs, pc + 8); return 0; }
 }
@@ -2724,20 +2735,46 @@ static void Interp_COP2_Dispatch(CRegisters* regs, Nova64::MipsMemoryVM* mmu, ui
     // with m_BlockEnded=true, so m_PROGRAM_COUNTER must point to the NEXT
     // instruction for the dispatch loop to continue correctly).
     regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr)) + 4;
-    // CU2=1: COP2 operations are NOPs on N64 (no real COP2 on R4300)
-    // MFC2 (rs=0), DMFC2 (rs=1): read 0 into rt
-    if (rs == 0 || rs == 1) {
+    // CU2=1: COP2 operations use a latch register on VR4300
+    // MFC2 (rs=0): read COP2 latch into rt (sign-extended to 64-bit)
+    if (rs == 0) {
         uint32_t rt = mips_rt(opcVal);
-        if (rt != 0)
-            AsDWord(regs->m_GPR[rt]).DW = 0;
+        if (rt != 0) {
+            uint32_t rd = mips_rd(opcVal);
+            AsDWord(regs->m_GPR[rt]).DW = static_cast<int64_t>(static_cast<int32_t>(regs->Cop2_MF(rd)));
+        }
     }
-    // CFC2 (rs=2): read 0 into rt
-    if (rs == 2) {
+    // DMFC2 (rs=1): read COP2 latch into rt (full 64-bit)
+    else if (rs == 1) {
         uint32_t rt = mips_rt(opcVal);
-        if (rt != 0)
-            AsDWord(regs->m_GPR[rt]).DW = 0;
+        if (rt != 0) {
+            uint32_t rd = mips_rd(opcVal);
+            AsDWord(regs->m_GPR[rt]).DW = static_cast<int64_t>(regs->Cop2_MF(rd));
+        }
     }
-    // MTC2 (rs=4), DMTC2 (rs=5), CTC2 (rs=6): write to non-existent COP2 = NOP
+    // CFC2 (rs=2): read COP2 control latch into rt
+    else if (rs == 2) {
+        uint32_t rt = mips_rt(opcVal);
+        if (rt != 0) {
+            uint32_t rd = mips_rd(opcVal);
+            AsDWord(regs->m_GPR[rt]).DW = static_cast<int64_t>(static_cast<int32_t>(regs->Cop2_MF(rd)));
+        }
+    }
+    // MTC2 (rs=4): write rt to COP2 latch (full 64-bit GPR value)
+    else if (rs == 4) {
+        uint32_t rd = mips_rd(opcVal);
+        regs->Cop2_MT(rd, static_cast<uint64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW));
+    }
+    // DMTC2 (rs=5): write rt to COP2 latch (full 64-bit)
+    else if (rs == 5) {
+        uint32_t rd = mips_rd(opcVal);
+        regs->Cop2_MT(rd, static_cast<uint64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW));
+    }
+    // CTC2 (rs=6): write rt to COP2 control latch (full 64-bit GPR value)
+    else if (rs == 6) {
+        uint32_t rd = mips_rd(opcVal);
+        regs->Cop2_MT(rd, static_cast<uint64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW));
+    }
 }
 
 // Static helper called from emitted code when COP3 is accessed (RI exception)
@@ -3119,7 +3156,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_FPU_MOV:  COP1_S_MOV(); break;
                 case R4300_FPU_NEG:  COP1_S_NEG(); break;
                 default:
+                    EmitPCUpdate();
                     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented), opcVal);
+                    m_BlockEnded = true;
                     break;
                 }
             }
@@ -3144,7 +3183,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_FPU_MOV:  COP1_D_MOV(); break;
                 case R4300_FPU_NEG:  COP1_D_NEG(); break;
                 default:
+                    EmitPCUpdate();
                     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented), opcVal);
+                    m_BlockEnded = true;
                     break;
                 }
             }
@@ -3156,7 +3197,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             case R4300_FPU_CVT_D: COP1_W_CVT_D(); break;
             default:
                 // Unknown W-format function → route to interpreter (handles UnimplementedOp)
+                EmitPCUpdate();
                 EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT), opcVal);
+                m_BlockEnded = true;
                 break;
             }
             break;
@@ -3167,7 +3210,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             case R4300_FPU_CVT_D: COP1_L_CVT_D(); break;
             default:
                 // Unknown L-format function → route to interpreter (handles UnimplementedOp)
+                EmitPCUpdate();
                 EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT), opcVal);
+                m_BlockEnded = true;
                 break;
             }
             break;
@@ -4156,9 +4201,18 @@ void CX64RecompilerOps::BLTZAL_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BLTZAL");
-    // Always write return address to GPR[31]
-    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    // Read rs BEFORE writing return address (rs may be GPR[31])
     a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    if (m_InDelaySlot) {
+        // Branch-in-delay-slot: RA = outer_jump_target + 4
+        a.mov(rax, reinterpret_cast<uint64_t>(&m_Context.system.m_JumpToLocation));
+        a.mov(rdx, qword_ptr(rax));
+        a.add(edx, 4);
+        a.movsxd(rdx, edx);
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), rdx);
+    } else {
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    }
     a.test(rcx, rcx);
     a.mov(rax, notTakenPC);
     a.mov(rdx, takenPC);
@@ -4177,9 +4231,18 @@ void CX64RecompilerOps::BGEZAL_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BGEZAL");
-    // Always write return address to GPR[31]
-    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    // Read rs BEFORE writing return address (rs may be GPR[31])
     a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
+    if (m_InDelaySlot) {
+        // Branch-in-delay-slot: RA = outer_jump_target + 4
+        a.mov(rax, reinterpret_cast<uint64_t>(&m_Context.system.m_JumpToLocation));
+        a.mov(rdx, qword_ptr(rax));
+        a.add(edx, 4);
+        a.movsxd(rdx, edx);
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), rdx);
+    } else {
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    }
     a.test(rcx, rcx);
     a.mov(rax, notTakenPC);
     a.mov(rdx, takenPC);
@@ -4280,8 +4343,17 @@ void CX64RecompilerOps::JAL()
     uint32_t pc = m_CurrentContext->virtualAddress;
     uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     m_Assembler->AddComment("JAL");
-    // GPR[31] = sign_extend(pc + 8) — return address
-    a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    // GPR[31] = return address
+    if (m_InDelaySlot) {
+        // Branch-in-delay-slot: RA = outer_jump_target + 4 = m_JumpToLocation + 4
+        a.mov(rax, reinterpret_cast<uint64_t>(&m_Context.system.m_JumpToLocation));
+        a.mov(rcx, qword_ptr(rax));
+        a.add(ecx, 4);
+        a.movsxd(rcx, ecx);
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), rcx);
+    } else {
+        a.mov(qword_ptr(rbx, JIT_GPR(31)), static_cast<int32_t>(pc + 8));
+    }
     // PC = sign_extend(target)
     a.mov(qword_ptr(rbx, JIT_PC), static_cast<int32_t>(target));
     m_Stats.branchesTranslated++;
@@ -4581,6 +4653,15 @@ void CX64RecompilerOps::SW() {
     // Alignment check: vAddr32 & 3
     a.test(eax, 3);
     a.jnz(slowPath);
+
+    // 64-bit sign-extension check: full 64-bit address must equal
+    // sign-extension of low 32 bits, otherwise it's an Address Error.
+    a.mov(r9, qword_ptr(rbx, JIT_GPR(base)));
+    if (off != 0)
+        a.add(r9, off);
+    a.movsxd(rcx, eax);
+    a.cmp(rcx, r9);
+    a.jne(slowPath);
 
     // Page lookup: rcx = WriteMap[vAddr32 >> 12]
     // Load WriteMap base pointer as immediate (friend access, stable allocation)

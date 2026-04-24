@@ -18,6 +18,8 @@
 
 #include "MIPSYInterfaceHandler.hpp"
 #include "../MIPSY/Register.hpp"
+#include "../MainSYS.hpp"
+#include "../MIPSY/Vmem.hpp"
 #include "../../common/log.hpp"
 #include <cstdarg>
 #include <cstdio>
@@ -192,11 +194,15 @@ void MIPSYInterfaceHandler::ProcessModeWrite(uint32_t val)
     // Process control bits
     if (val & MIMode::CLR_INIT) {
         *MI_MODE_REG &= ~MIMode::INIT;
+        if (auto* mem = m_Reg.GetSystem().GetMemory())
+            mem->SetMIRepeatMode(false);
         WriteLog(LogLevel::Debug, "MIPSYInterface: Clear INIT mode");
     }
     
     if (val & MIMode::SET_INIT) {
         *MI_MODE_REG |= MIMode::INIT;
+        if (auto* mem = m_Reg.GetSystem().GetMemory())
+            mem->SetMIRepeatMode(true);
         WriteLog(LogLevel::Debug, "MIPSYInterface: Set INIT mode");
     }
     

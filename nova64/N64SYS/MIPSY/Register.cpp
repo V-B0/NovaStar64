@@ -338,9 +338,11 @@ uint64_t CRegisters::Cop0_MF(COP0Reg Reg)
     {
         m_SystemTimer.UpdateTimers();
         // Random register cycles in range [WIRED, 31].
-        // Rather than decrementing every cycle, generate on read (like PJ64).
+        // When Wired > 31, hardware wraps through the full 0-31 range.
         uint32_t wired = static_cast<uint32_t>(WIRED_REGISTER) & 0x3F;
-        if (wired > 31) wired = 31;
+        if (wired > 31) {
+            return rand() % 64;
+        }
         uint32_t range = 32 - wired;
         return wired + (rand() % range);
     }
@@ -378,7 +380,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         
     case COP0Reg::EntryLo0:
     case COP0Reg::EntryLo1:
-        m_CP0[regIndex] = Value & 0x3FFFFFFF;
+        m_CP0[regIndex] = Value & 0x3FFFFFFF;  // VR4300: 30-bit (PFN[29:6] C[5:3] D V G)
         break;
         
     case COP0Reg::Context:
@@ -386,7 +388,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         break;
         
     case COP0Reg::PageMask:
-        m_CP0[regIndex] = Value & 0x1FFE000;
+        m_CP0[regIndex] = Value & 0x01FFE000;
         break;
         
     case COP0Reg::Wired:
@@ -448,6 +450,10 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         
     case COP0Reg::XContext:
         m_CP0[regIndex] = (Value & 0xFFFFFFFE00000000) | (m_CP0[regIndex] & 0x00000001FFFFFFFF);
+        break;
+
+    case COP0Reg::ECC:
+        m_CP0[regIndex] = Value & 0xFF;
         break;
         
     default:
@@ -566,8 +572,12 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
         ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_WMISS))
     {
         bool Dirty = false;
-        SpecialOffset = !m_TLB.AddressDefined(Address, Dirty);
-        if (ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_WMISS) && !Dirty)
+        auto result = m_TLB.AddressLookup(Address, Dirty);
+        // Only use refill vector for actual TLB miss (no match).
+        // Match with V=0 (invalid) uses the general vector.
+        SpecialOffset = (result == CTLB::TlbLookupResult::NoMatch);
+        if (ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_WMISS) &&
+            result == CTLB::TlbLookupResult::MatchValid && !Dirty)
         {
             ExceptionCode = static_cast<uint32_t>(ExceptionCode::EXC_MOD);
         }
@@ -610,6 +620,14 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
 void CRegisters::SetTestTimer()
 {
     m_System.m_TestTimer = true;
+}
+
+int32_t CRegisters::GetLinkAddress(int32_t fallback) const
+{
+    if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
+        return static_cast<int32_t>(m_System.m_JumpToLocation + 4);
+    }
+    return fallback;
 }
 
 void CRegisters::InvalidateRecompCode(uint32_t physAddr, uint32_t length)

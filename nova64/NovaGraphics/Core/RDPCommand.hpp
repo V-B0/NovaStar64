@@ -25,17 +25,17 @@ namespace Nova64::Video {
 
 struct TriangleEdge {
     // Major edge (longest edge)
-    float yh;           // Y top (s11.2 → float, top of triangle)
-    float ym;           // Y middle
-    float yl;           // Y bottom (s11.2 → float, bottom of triangle)
+    double yh;           // Y top (s11.2 → double, top of triangle)
+    double ym;           // Y middle
+    double yl;           // Y bottom (s11.2 → double, bottom of triangle)
     
-    float xh;           // X at top (s15.16 → float)
-    float xm;           // X at middle
-    float xl;           // X at bottom
+    double xh;           // X at top (s15.16 → double)
+    double xm;           // X at middle
+    double xl;           // X at bottom
     
-    float dxhDy;        // dX/dY for high edge
-    float dxmDy;        // dX/dY for middle edge
-    float dxlDy;        // dX/dY for low edge
+    double dxhDy;        // dX/dY for high edge
+    double dxmDy;        // dX/dY for middle edge
+    double dxlDy;        // dX/dY for low edge
     
     bool  leftMajor;    // Left-major triangle
 };
@@ -199,8 +199,8 @@ private:
     uint32_t ReadWord(uint32_t address) const;
     
     /// Read a signed fixed-point value and convert to float
-    static float ReadFixed_S15_16(uint32_t hi, uint32_t lo);
-    static float ReadFixed_S11_2(uint32_t packed);
+    static double ReadFixed_S15_16(uint32_t hi, uint32_t lo);
+    static double ReadFixed_S11_2(uint32_t packed);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

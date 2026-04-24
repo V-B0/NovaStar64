@@ -964,7 +964,7 @@ void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t lengt
 //  Set to true one at a time to narrow down geometry disappearing issues.
 // ═══════════════════════════════════════════════════════════════════════════
 static constexpr bool DEBUG_DISABLE_CULLDL     = false; // disable CullDisplayList
-static constexpr bool DEBUG_DISABLE_BRANCH     = false; // disable BranchZ / BranchW (never branch = far behavior)
+static constexpr bool DEBUG_DISABLE_BRANCH     = false;  // force-disable BranchZ/BranchW: always render high-detail DL (fixes MM building / distant texture pop-out)
 static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling + AND-rejection in DrawTriangle
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1236,9 +1236,11 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
     {
         int16_t s = static_cast<int16_t>((value >> 16) & 0xFFFF);
         int16_t t = static_cast<int16_t>(value & 0xFFFF);
-        // Convert s10.5 fixed-point to float, then divide by texture scale
-        // because the draw path (makeVert) multiplies by gSPTexture scale.
-        // Without this division, the coordinates would be double-scaled.
+        // GLideN64 reference (gSPModifyVertex G_MWO_POINT_ST):
+        //   vtx.s = _FIXED2FLOAT(s, 5) / gSP.texture.scales
+        //   vtx.t = _FIXED2FLOAT(t, 5) / gSP.texture.scalet
+        // Pre-divide by texture scale because makeVert multiplies by scale
+        // at draw time. Without this division, coordinates are double-scaled.
         float scaleS = geo.texture.GetScaleSFloat();
         float scaleT = geo.texture.GetScaleTFloat();
         v.texCoord[0] = (static_cast<float>(s) / 32.0f) / scaleS;
@@ -1313,12 +1315,11 @@ void GBIHandler::BranchZ(DListContext& ctx, uint32_t vtxIndex, uint32_t zValue, 
     if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
     const auto& tv = geo.vertexBuffer[vtxIndex];
     float w = tv.position[3];
-    if (w == 0.0f) {
-        ctx.pc = ctx.ResolveAddress(address);
-        return;
-    }
-    float zOverW = tv.position[2] / w;
-    uint32_t zTest = static_cast<uint32_t>(std::clamp(zOverW * 1023.0f, 0.0f, 65535.0f));
+    if (w == 0.0f) return; // vertex at infinity — don't branch
+    // GLideN64 reference (gSPBranchLessZ):
+    //   zTest = u32((v.z / v.w) * 1023.0f)
+    //   branch if zTest > 0x03FF || zTest <= zval
+    uint32_t zTest = static_cast<uint32_t>((tv.position[2] / w) * 1023.0f);
     if (zTest > 0x03FFu || zTest <= zValue) {
         ctx.pc = ctx.ResolveAddress(address);
     }
@@ -1331,17 +1332,18 @@ void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, 
     auto& geo = ctx.state->geometry;
     if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
     float vertexW = geo.vertexBuffer[vtxIndex].position[3];
-    // F3DZEX2 stores the W threshold as raw IEEE 754 float bits in w1
-    float wThreshold;
-    std::memcpy(&wThreshold, &wValue, sizeof(float));
+    // GLideN64 reference (gSPBranchLessW): branch if v.w < (float)wval
+    float wThreshold = static_cast<float>(wValue);
     if (vertexW < wThreshold) {
         ctx.pc = ctx.ResolveAddress(address);
     }
 }
 
 void GBIHandler::LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress) {
-    // Dynamic microcode loading — switch microcode mid-frame
-    NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
+    // Dynamic microcode loading � switch microcode mid-frame
+    // Demoted to Debug: MM/OoT issue G_LOAD_UCODE every frame (HUD<->world
+    // ucode swap), which floods INFO-level logs with thousands of lines.
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
             "G_LOAD_UCODE: text=0x{:08X}, data=0x{:08X}", address, dataAddress);
     
     // Signal the dispatcher to re-detect and switch handler

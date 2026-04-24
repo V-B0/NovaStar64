@@ -282,6 +282,11 @@ void GLTexture::SetSampler(const SamplerDesc& desc) {
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, desc.maxAnisotropy);
     }
 
+    // Apply per-game LOD bias (sharpen/blur mip selection)
+    if (desc.lodBias != 0.0f) {
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, desc.lodBias);
+    }
+
     if (desc.wrapS == TextureWrap::ClampToBorder || desc.wrapT == TextureWrap::ClampToBorder) {
         glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, desc.borderColor);
     }

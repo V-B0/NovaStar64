@@ -193,6 +193,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     samplerDesc.wrapS = translateWrap(key.cms);
     samplerDesc.wrapT = translateWrap(key.cmt);
     samplerDesc.maxAnisotropy = m_config.anisotropicLevel;
+    samplerDesc.lodBias = m_config.lodBias;
 
     gpuTex->SetSampler(samplerDesc);
 
@@ -352,6 +353,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     samplerDesc.wrapS = translateWrap(key.cms);
     samplerDesc.wrapT = translateWrap(key.cmt);
     samplerDesc.maxAnisotropy = m_config.anisotropicLevel;
+    samplerDesc.lodBias = m_config.lodBias;
     gpuTex->SetSampler(samplerDesc);
 
     // Create cache entry
@@ -936,6 +938,7 @@ bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key)
     samplerDesc.wrapS = translateWrap(key.cms);
     samplerDesc.wrapT = translateWrap(key.cmt);
     samplerDesc.maxAnisotropy = std::max(m_config.anisotropicLevel, 4.0f);
+    samplerDesc.lodBias = m_config.lodBias;
     gpuTex->SetSampler(samplerDesc);
 
     entry.key = key;

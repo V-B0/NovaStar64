@@ -169,6 +169,7 @@ struct TextureCacheConfig {
     bool forceLinearFilter = false;
     bool force16bpp = false;                       // Force RGBA4444 for memory savings
     float anisotropicLevel = 1.0f;                 // 1.0 = off, up to 16.0
+    float lodBias = 0.0f;                          // GL_TEXTURE_LOD_BIAS, set from game profile
     std::string hiResTexturePath;                  // Path to hi-res texture packs
 };
 

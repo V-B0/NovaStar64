@@ -87,6 +87,12 @@ inline constexpr GameDBEntry kGameDatabase[] = {
     { 0x09465AC8, 0xB7BB0B5C, { "Zelda: Ocarina of Time (U) v1.2", true, true, 3 } },
 
     // The Legend of Zelda: Majora's Mask
+    // Audio HLE re-enabled: MM uses NEAD audio ucode (CRC 0x4FC2E19E)
+    // which we DO have registered (alist_process_nead_mm). The previous
+    // false setting silently dropped audio tasks without signaling
+    // SP_INTR, blocking MM's audio thread and causing downstream state
+    // corruption (Link instant-dies after item-get / cutscene events
+    // because the audio thread block stalls game-state update propagation).
     { 0x5354631C, 0x03A2DEF0, { "Zelda: Majora's Mask (U)", true, true, 3 } },
 
     // Banjo-Kazooie

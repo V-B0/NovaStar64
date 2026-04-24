@@ -123,4 +123,12 @@ private:
         uint64_t dma_operations = 0;
         uint64_t dma_bytes_transferred = 0;
     } m_stats;
+    
+    // Cart ROM write latch (VR4300 PI bus behavior)
+    uint32_t m_rom_latch_value = 0;
+    bool     m_rom_latch_active = false;
+    int32_t  m_rom_latch_timer = 0;  // m_NextTimer snapshot at write time
+    
+public:
+    [[nodiscard]] bool IsLatchActive() const noexcept { return m_rom_latch_active; }
 };

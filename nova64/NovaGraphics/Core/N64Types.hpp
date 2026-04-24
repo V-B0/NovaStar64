@@ -648,7 +648,7 @@ constexpr int MAX_FRAME_BUFFERS = 6;
 enum class RDPCommandID : uint8_t {
     Nop                 = 0x00,
     // 0x01-0x07 reserved
-    ScrollTex           = 0x04,
+
     
     // Triangles
     TriNoShade          = 0x08,
@@ -678,6 +678,7 @@ enum class RDPCommandID : uint8_t {
     
     // Load/Set Tile
     LoadTLUT            = 0x30,
+    ScrollTex           = 0x31,
     SetTileSize         = 0x32,
     LoadBlock           = 0x33,
     LoadTile            = 0x34,

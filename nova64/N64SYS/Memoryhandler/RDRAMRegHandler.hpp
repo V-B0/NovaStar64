@@ -148,7 +148,7 @@ class RDRAMRegistersHandler final : public MemoryHandler {
 public:
     struct Config {
         size_t device_count = 4;  
-        bool enable_expansion_pak = false;
+        bool enable_expansion_pak = true;
         bool enable_debug_logging = false;
         bool emulate_power_states = true;
     };

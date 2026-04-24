@@ -585,16 +585,29 @@ void RSPOp::Cop0_MT()
     case 4: m_RSPRegisterHandler->WriteReg(RSPRegister::Status,   m_GPR[m_OpCode.rt].UW); break;
     case 7: *m_SP_SEMAPHORE_REG = 0; break;
     case 8:
-        *m_DPC_START_REG = m_GPR[m_OpCode.rt].UW;
-        *m_DPC_CURRENT_REG = m_GPR[m_OpCode.rt].UW;
+    {
+        uint32_t masked = m_GPR[m_OpCode.rt].UW & 0x00FFFFF8;
+        // On hardware, writes to START are ignored while START_VALID is set
+        if (!(*m_DPC_STATUS_REG & DPCStatus::StartValid)) {
+            *m_DPC_START_REG = masked;
+            *m_DPC_STATUS_REG |= DPCStatus::StartValid;
+        }
         break;
+    }
     case 9:
-        *m_DPC_END_REG = m_GPR[m_OpCode.rt].UW;
+    {
+        *m_DPC_END_REG = m_GPR[m_OpCode.rt].UW & 0x00FFFFF8;
+        // When END is written and START_VALID is set, commit pending start
+        if (*m_DPC_STATUS_REG & DPCStatus::StartValid) {
+            *m_DPC_CURRENT_REG = *m_DPC_START_REG;
+            *m_DPC_STATUS_REG &= ~DPCStatus::StartValid;
+        }
         if (ProcessRdpList != nullptr)
         {
             ProcessRdpList();
         }
         break;
+    }
     case 10:
         *m_DPC_CURRENT_REG = m_GPR[m_OpCode.rt].UW;
         break;
@@ -1380,7 +1393,7 @@ void RSPOp::Vector_VRCPL()
 void RSPOp::Vector_VRCPH()
 {
     m_Reg.m_High = true;
-    m_Reg.m_In = m_Vect[m_OpCode.vt].u16(EleSpec[m_OpCode.e].UB[m_OpCode.de & 0x7]);
+    m_Reg.m_In = m_Vect[m_OpCode.vt].u16(7 - (m_OpCode.e & 0x7));
     for (uint8_t i = 0; i < 8; i++)
         m_ACCUM.Low(i) = m_Vect[m_OpCode.vt].u16(EleSpec[m_OpCode.e].UB[i]);
     m_Vect[m_OpCode.vd].u16(7 - (m_OpCode.de & 0x7)) = m_Reg.m_Result;
@@ -1397,24 +1410,30 @@ void RSPOp::Vector_VMOV()
 void RSPOp::Vector_VRSQ()
 {
     int32_t input = m_Vect[m_OpCode.vt].s16(7 - (m_OpCode.e & 0x7));
-    int32_t mask  = input >> 31;
-    int32_t data  = input ^ mask;
-    if (input > -32768) data -= mask;
 
-    int64_t result;
-    if (data == 0)
+    uint32_t uinput = static_cast<uint32_t>(input);
+    int32_t result;
+
+    if (uinput == 0)
         result = 0x7FFFFFFF;
-    else if (input == static_cast<int32_t>(0xFFFF8000))
-        result = static_cast<int64_t>(0xFFFF0000);
+    else if (uinput == 0xFFFF8000u)
+        result = static_cast<int32_t>(0xFFFF0000u);
     else
     {
-        uint32_t shift = clz32(data);
-        uint32_t index = (static_cast<uint64_t>(data) << shift & 0x7FC00000) >> 22;
-        result = (((0x10000 | m_Reg.m_InverseSquareRoots[(index & 0x1FE) | (shift & 1)]) << 14) >> ((31 - shift) >> 1)) ^ mask;
+        if (uinput > 0xFFFF8000u) uinput--;
+        int32_t sinput = static_cast<int32_t>(uinput);
+        int32_t mask = sinput >> 31;
+        uinput ^= static_cast<uint32_t>(mask);
+
+        uint32_t shift = clz32(uinput) + 1;
+        uint32_t index = ((uinput << (shift & 31)) >> 24) | ((shift & 1) << 8);
+        uint32_t rom = static_cast<uint32_t>(m_Reg.m_InverseSquareRoots[index]) << 14;
+        uint32_t r_shift = (32 - shift) >> 1;
+        result = static_cast<int32_t>((0x40000000u | rom) >> r_shift) ^ mask;
     }
 
     m_Reg.m_High = false;
-    m_Reg.m_Result = static_cast<int16_t>(result >> 16);
+    m_Reg.m_Result = static_cast<uint16_t>(static_cast<uint32_t>(result) >> 16);
     for (uint8_t i = 0; i < 8; i++)
         m_ACCUM.Low(i) = m_Vect[m_OpCode.vt].ue(i, m_OpCode.e);
     m_Vect[m_OpCode.vd].s16(7 - (m_OpCode.rd & 0x7)) = static_cast<int16_t>(result);
@@ -1422,27 +1441,34 @@ void RSPOp::Vector_VRSQ()
 
 void RSPOp::Vector_VRSQL()
 {
-    int32_t input = m_Reg.m_High
-        ? (m_Reg.m_In << 16 | m_Vect[m_OpCode.vt].u16(7 - (m_OpCode.e & 0x7)))
-        : m_Vect[m_OpCode.vt].s16(7 - (m_OpCode.e & 0x7));
-    int32_t mask = input >> 31;
-    int32_t data = input ^ mask;
-    if (input > -32768) data -= mask;
+    uint32_t uinput;
+    if (m_Reg.m_High)
+        uinput = (static_cast<uint32_t>(m_Reg.m_In) << 16) | m_Vect[m_OpCode.vt].u16(7 - (m_OpCode.e & 0x7));
+    else
+        uinput = static_cast<uint32_t>(m_Vect[m_OpCode.vt].s16(7 - (m_OpCode.e & 0x7)));
 
     int32_t result;
-    if (data == 0)
+
+    if (uinput == 0)
         result = 0x7FFFFFFF;
-    else if (input == static_cast<int32_t>(0xFFFF8000))
-        result = static_cast<int32_t>(0xFFFF0000);
+    else if (uinput == 0xFFFF8000u)
+        result = static_cast<int32_t>(0xFFFF0000u);
     else
     {
-        uint32_t shift = clz32(data);
-        uint32_t index = (static_cast<uint64_t>(data) << shift & 0x7FC00000) >> 22;
-        result = (((0x10000 | m_Reg.m_InverseSquareRoots[(index & 0x1FE) | (shift & 1)]) << 14) >> ((31 - shift) >> 1)) ^ mask;
+        if (uinput > 0xFFFF8000u) uinput--;
+        int32_t sinput = static_cast<int32_t>(uinput);
+        int32_t mask = sinput >> 31;
+        uinput ^= static_cast<uint32_t>(mask);
+
+        uint32_t shift = clz32(uinput) + 1;
+        uint32_t index = ((uinput << (shift & 31)) >> 24) | ((shift & 1) << 8);
+        uint32_t rom = static_cast<uint32_t>(m_Reg.m_InverseSquareRoots[index]) << 14;
+        uint32_t r_shift = (32 - shift) >> 1;
+        result = static_cast<int32_t>((0x40000000u | rom) >> r_shift) ^ mask;
     }
 
     m_Reg.m_High = false;
-    m_Reg.m_Result = static_cast<uint16_t>(result >> 16);
+    m_Reg.m_Result = static_cast<uint16_t>(static_cast<uint32_t>(result) >> 16);
     for (uint8_t i = 0; i < 8; i++)
         m_ACCUM.Low(i) = m_Vect[m_OpCode.vt].u16(EleSpec[m_OpCode.e].UB[i]);
     m_Vect[m_OpCode.vd].s16(7 - (m_OpCode.rd & 0x7)) = static_cast<int16_t>(result);
@@ -1451,7 +1477,7 @@ void RSPOp::Vector_VRSQL()
 void RSPOp::Vector_VRSQH()
 {
     m_Reg.m_High = true;
-    m_Reg.m_In = m_Vect[m_OpCode.vt].u16(EleSpec[m_OpCode.e].UB[m_OpCode.rd & 0x7]);
+    m_Reg.m_In = m_Vect[m_OpCode.vt].u16(7 - (m_OpCode.e & 0x7));
     for (uint8_t i = 0; i < 8; i++)
         m_ACCUM.Low(i) = m_Vect[m_OpCode.vt].u16(EleSpec[m_OpCode.e].UB[i]);
     m_Vect[m_OpCode.vd].u16(7 - (m_OpCode.rd & 0x7)) = m_Reg.m_Result;

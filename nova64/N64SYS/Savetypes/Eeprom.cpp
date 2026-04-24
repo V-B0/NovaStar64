@@ -58,6 +58,7 @@ CEeprom::CEeprom(bool ReadOnly)
 
 CEeprom::~CEeprom()
 {
+    std::lock_guard<std::mutex> lock(m_FileMutex);
     if (m_File.is_open())
     {
         m_File.flush();
@@ -370,6 +371,8 @@ void CEeprom::ReadFrom(uint8_t* Buffer, int32_t line)
         return;
     }
 
+    std::lock_guard<std::mutex> lock(m_FileMutex);
+
     // Ensure EEPROM is loaded
     if (!m_File.is_open())
     {
@@ -398,6 +401,8 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line)
         Log::error("WriteTo called with null buffer");
         return;
     }
+
+    std::lock_guard<std::mutex> lock(m_FileMutex);
 
     // Ensure EEPROM is loaded
     if (!m_File.is_open())

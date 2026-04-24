@@ -9,9 +9,9 @@
 #include "RSPCpu.hpp"
 #include "RspSystem.hpp"
 #include "RSPInterpreterOps.hpp"
+#include "RSPRomTables.hpp"
 #include "../RSPDebugger.hpp"
 #include <cstring>
-#include <cmath>
 
 namespace Nova64::RSP {
 
@@ -50,30 +50,33 @@ void Build_RSP()
 
     // e = 0,1: scalar / no broadcast (identity already set)
 
-    // e = 2,3: broadcast even/odd pairs (0,0,2,2,4,4,6,6) or (1,1,3,3,5,5,7,7)
+    // e = 2,3: broadcast even/odd pairs
+    // In reversed internal layout: e=2 selects odd internal indices (even N64 elements)
     for (int e = 2; e < 4; e++)
     {
         for (int i = 0; i < 8; i++)
         {
-            EleSpec[e].UB[i] = static_cast<uint8_t>((i & 0x6) | (e & 0x1));
+            EleSpec[e].UB[i] = static_cast<uint8_t>((i & 0x6) | (~e & 0x1));
         }
     }
 
-    // e = 4..7: broadcast quads (0,0,0,0,4,4,4,4) etc.
+    // e = 4..7: broadcast quads
+    // In reversed internal layout: need to invert the sub-index within each quad
     for (int e = 4; e < 8; e++)
     {
         for (int i = 0; i < 8; i++)
         {
-            EleSpec[e].UB[i] = static_cast<uint8_t>((i & 0x4) | (e & 0x3));
+            EleSpec[e].UB[i] = static_cast<uint8_t>((i & 0x4) | (~e & 0x3));
         }
     }
 
     // e = 8..15: single-element broadcast (all elements read from one)
+    // In reversed internal layout: N64 element (e&7) maps to internal index 7-(e&7)
     for (int e = 8; e < 16; e++)
     {
         for (int i = 0; i < 8; i++)
         {
-            EleSpec[e].UB[i] = static_cast<uint8_t>(e & 0x7);
+            EleSpec[e].UB[i] = static_cast<uint8_t>(7 - (e & 0x7));
         }
     }
 
@@ -90,39 +93,12 @@ void Build_RSP()
     }
 
     // ──────────────────────────────────────────────
-    // Build reciprocal ROM table (512 entries)
-    // Hardware-accurate: entry[i] = floor(2^34 / (i + 512)) - 2^16
+    // Copy hardware-accurate ROM tables (512 entries each)
+    // These are burned into the RSP silicon and verified against n64-systemtest.
     // ──────────────────────────────────────────────
     auto& reg = RSPSystem.Registers();
-    for (int i = 0; i < 512; i++)
-    {
-        uint32_t b = static_cast<uint32_t>((uint64_t(1) << 34) / (i + 512));
-        reg.m_Reciprocals[i] = static_cast<uint16_t>(b & 0xFFFF);
-    }
-
-    // ──────────────────────────────────────────────
-    // Build inverse square root ROM table (512 entries)
-    // Even entries: floor(2^17 * sqrt(2^31 / (i/2 + 256))) - 2^16
-    // Odd entries:  floor(2^17 * sqrt(2^32 / ((i-1)/2 + 256))) - 2^16
-    // ──────────────────────────────────────────────
-    for (int i = 0; i < 512; i++)
-    {
-        uint32_t a = (i >> 1) + 256;
-        if ((i & 1) == 0)
-        {
-            // Even index: lookup for even shifts
-            double val = 1.0 / sqrt(static_cast<double>(a) / 8192.0);
-            val = floor(val * 65536.0);
-            reg.m_InverseSquareRoots[i] = static_cast<uint16_t>(static_cast<uint32_t>(val) & 0xFFFF);
-        }
-        else
-        {
-            // Odd index: lookup for odd shifts
-            double val = 1.0 / sqrt(static_cast<double>(a) / 4096.0);
-            val = floor(val * 65536.0);
-            reg.m_InverseSquareRoots[i] = static_cast<uint16_t>(static_cast<uint32_t>(val) & 0xFFFF);
-        }
-    }
+    std::memcpy(reg.m_Reciprocals, RcpRom, sizeof(RcpRom));
+    std::memcpy(reg.m_InverseSquareRoots, RsqRom, sizeof(RsqRom));
 }
 
 } // namespace Nova64::RSP

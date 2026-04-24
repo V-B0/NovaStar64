@@ -173,6 +173,9 @@ public:
     // the correct BranchDelay bit and EPC if the delay slot faults.
     void EmitDelaySlotSetup(uint32_t delaySlotAddr);
     
+    // Mark whether the current instruction being compiled is in a delay slot.
+    void SetInDelaySlot(bool inDelaySlot) { m_InDelaySlot = inDelaySlot; }
+    
     // Emit per-instruction timer decrement: sub [&m_NextTimer], countPerOp.
     // This keeps COUNT accurate within blocks and handles early exits correctly.
     void EmitTimerDecrement();

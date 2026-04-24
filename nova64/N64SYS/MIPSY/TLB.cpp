@@ -125,28 +125,31 @@ void TranslationLookasideBuffer::read_entry() {
     page_mask.Mask = entry.page_mask.mask;
     registers->Cop0_MT(CP0_PAGEMASK, page_mask.Value);
     
-    // Write EntryHi
+    // Write EntryHi - clear VPN2 bits covered by page mask, restore R field
     COP0EntryHi entry_hi;
-    entry_hi.Raw.VPN2 = entry.entry_hi.vpn2;
-    entry_hi.Raw.ASID = entry.entry_hi.asid;
+    uint32_t masked_vpn2 = entry.entry_hi.vpn2 & ~static_cast<uint32_t>(entry.page_mask.mask);
+    entry_hi.Value = 0;
+    entry_hi.Value = static_cast<uint64_t>(entry.entry_hi.asid)
+                   | (static_cast<uint64_t>(masked_vpn2) << 13)
+                   | (static_cast<uint64_t>(entry.entry_hi.r) << 62);
     registers->Cop0_MT(CP0_ENTRYHI, entry_hi.Value);
     
-    // Write EntryLo0
+    // Write EntryLo0 - G bit is AND of both lo0 and lo1 globals
     COP0EntryLo entry_lo0;
     entry_lo0.PFN = entry.entry_lo0.pfn;
     entry_lo0.C = entry.entry_lo0.cache_algorithm;
     entry_lo0.D = entry.entry_lo0.dirty;
     entry_lo0.V = entry.entry_lo0.valid;
-    entry_lo0.GLOBAL = entry.entry_lo0.global;
+    entry_lo0.GLOBAL = entry.global;
     registers->Cop0_MT(CP0_ENTRYLO0, entry_lo0.Value);
     
-    // Write EntryLo1
+    // Write EntryLo1 - G bit is AND of both lo0 and lo1 globals
     COP0EntryLo entry_lo1;
     entry_lo1.PFN = entry.entry_lo1.pfn;
     entry_lo1.C = entry.entry_lo1.cache_algorithm;
     entry_lo1.D = entry.entry_lo1.dirty;
     entry_lo1.V = entry.entry_lo1.valid;
-    entry_lo1.GLOBAL = entry.entry_lo1.global;
+    entry_lo1.GLOBAL = entry.global;
     registers->Cop0_MT(CP0_ENTRYLO1, entry_lo1.Value);
 }
 
@@ -169,10 +172,17 @@ void TranslationLookasideBuffer::write_entry(uint32_t index, bool random) {
     entry.defined = true;
     entry.random = random;
     
-    entry.page_mask.mask = static_cast<uint32_t>(pm.Mask); 
+    entry.page_mask.mask = static_cast<uint32_t>(pm.Mask);
+    // VR4300 normalizes PageMask: within each pair of bits, low bit is forced to match high bit
+    {
+        uint32_t m = entry.page_mask.mask & 0xFFF; // 12 bits (6 pairs)
+        uint32_t high_bits = m & 0xAAA;            // high bit of each pair
+        entry.page_mask.mask = high_bits | (high_bits >> 1);
+    }
     
     entry.entry_hi.vpn2 = eh.VPN2();
     entry.entry_hi.asid = static_cast<uint8_t>(eh.ASID());
+    entry.entry_hi.r = static_cast<uint8_t>(eh.R());
     
     entry.entry_lo0.pfn = el0.PFN;
     entry.entry_lo0.cache_algorithm = static_cast<uint8_t>(el0.C);
@@ -326,10 +336,8 @@ void CTLB::Probe() {
     // Get EntryHi values
     uint64_t entry_hi_val = m_Reg->Cop0_MF(Reg::EntryHi);
     
-    // Extract VPN2 and ASID
-    // VPN2 is bits 39-13 (in 64-bit) or 31-13 (in 32-bit check)
-    // EntryHi: [63:62 R] [61:60 00] [59:40 Fill] [39:13 VPN2] [12:8 0] [7:0 ASID]
-    // We'll trust the manual extraction similar to TranslationLookasideBuffer
+    // Extract R, VPN2 and ASID
+    uint8_t r_field = static_cast<uint8_t>((entry_hi_val >> 62) & 0x3);
     uint32_t vpn2 = (entry_hi_val >> 13) & 0x7FFFF; // 19 bits
     uint8_t asid = static_cast<uint8_t>(entry_hi_val & 0xFF);
     
@@ -339,15 +347,17 @@ void CTLB::Probe() {
         const auto& entry = m_tlb[i];
         if (!entry.EntryDefined) continue;
         
-        // PageMask determines which bits of VPN2 are compared
-        // Mask: 0 = compare, 1 = ignore
-        uint32_t mask = static_cast<uint32_t>((entry.PageMask.Value >> 13) & 0x7FFFF); // Extract mask from PageMask
+        // Compare R field (bits 62-63 of EntryHi)
+        uint8_t entry_r = static_cast<uint8_t>((entry.EntryHi.Value >> 62) & 0x3);
+        if (r_field != entry_r) continue;
+        
+        uint32_t mask = static_cast<uint32_t>((entry.PageMask.Value >> 13) & 0x7FFFF);
         
         uint32_t masked_vpn2 = vpn2 & ~mask;
         uint32_t entry_vpn2 = (entry.EntryHi.Value >> 13) & 0x7FFFF;
         uint32_t masked_entry_vpn2 = entry_vpn2 & ~mask;
         
-        bool global = (entry.EntryLo0.Value & 1) && (entry.EntryLo1.Value & 1); // G bit 0
+        bool global = (entry.EntryLo0.Value & 1) && (entry.EntryLo1.Value & 1);
         uint8_t entry_asid = static_cast<uint8_t>(entry.EntryHi.Value & 0xFF);
         
         if (masked_vpn2 == masked_entry_vpn2 && (global || entry_asid == asid)) {
@@ -359,9 +369,8 @@ void CTLB::Probe() {
     }
     
     if (!match_found) {
-        // Set bit 31 (P) of Index register if no match
-        uint32_t index_val = static_cast<uint32_t>(m_Reg->Cop0_MF(Reg::Index));
-        m_Reg->Cop0_MT(Reg::Index, index_val | 0x80000000);
+        // No match: set P (probe) bit, clear index field
+        m_Reg->Cop0_MT(Reg::Index, 0x80000000u);
     }
 }
 
@@ -377,9 +386,27 @@ void CTLB::ReadEntry() {
     const auto& entry = m_tlb[index];
     
     m_Reg->Cop0_MT(Reg::PageMask, entry.PageMask.Value);
-    m_Reg->Cop0_MT(Reg::EntryHi, entry.EntryHi.Value);
-    m_Reg->Cop0_MT(Reg::EntryLo0, entry.EntryLo0.Value);
-    m_Reg->Cop0_MT(Reg::EntryLo1, entry.EntryLo1.Value);
+    
+    // TLBR: EntryHi VPN2 bits covered by PageMask are cleared
+    // Also restore R field at correct position (bits 62-63)
+    {
+        uint64_t hi_val = entry.EntryHi.Value;
+        uint32_t mask12 = static_cast<uint32_t>((entry.PageMask.Value >> 13) & 0xFFF);
+        // Clear VPN2 bits that correspond to mask bits (mask bits 0-11 → VPN2 bits 0-11 → register bits 13-24)
+        uint64_t vpn2_clear_mask = static_cast<uint64_t>(mask12) << 13;
+        hi_val &= ~vpn2_clear_mask;
+        m_Reg->Cop0_MT(Reg::EntryHi, hi_val);
+    }
+    
+    // TLBR: G bit in both EntryLo registers is the AND of stored G bits
+    // PFN is 20 bits (bits 6-25), bits 26-29 are cleared on readback
+    bool g_combined = (entry.EntryLo0.Value & 1) && (entry.EntryLo1.Value & 1);
+    uint64_t lo0 = entry.EntryLo0.Value & 0x03FFFFFFULL; // Mask to 26 bits (PFN 20 bits + lower 6 bits)
+    uint64_t lo1 = entry.EntryLo1.Value & 0x03FFFFFFULL;
+    lo0 = g_combined ? (lo0 | 1) : (lo0 & ~1ull);
+    lo1 = g_combined ? (lo1 | 1) : (lo1 & ~1ull);
+    m_Reg->Cop0_MT(Reg::EntryLo0, lo0);
+    m_Reg->Cop0_MT(Reg::EntryLo1, lo1);
 }
 
 void CTLB::WriteEntry(uint32_t Index, bool Random) {
@@ -402,7 +429,13 @@ void CTLB::WriteEntry(uint32_t Index, bool Random) {
     }
     
     entry.EntryDefined = true;
-    entry.PageMask.Value = pagemask_val;
+    // VR4300 normalizes PageMask: within each pair of bits, low bit is forced to match high bit
+    {
+        uint32_t mask_raw = static_cast<uint32_t>((pagemask_val >> 13) & 0xFFF);
+        uint32_t high_bits = mask_raw & 0xAAA;
+        uint32_t normalized = high_bits | (high_bits >> 1);
+        entry.PageMask.Value = static_cast<uint64_t>(normalized) << 13;
+    }
     entry.EntryHi.Value = entryhi_val;
     entry.EntryLo0.Value = entrylo0_val;
     entry.EntryLo1.Value = entrylo1_val;
@@ -477,6 +510,49 @@ bool CTLB::AddressDefined(uint64_t VAddr, bool& Dirty) {
     }
     
     return false;
+}
+
+CTLB::TlbLookupResult CTLB::AddressLookup(uint64_t VAddr, bool& Dirty) {
+    uint32_t vaddr_32 = static_cast<uint32_t>(VAddr);
+    
+    // KSEG0/1 are always defined
+    if (vaddr_32 >= 0x80000000 && vaddr_32 <= 0xBFFFFFFF) {
+        Dirty = true;
+        return TlbLookupResult::MatchValid;
+    }
+    
+    if (!m_Reg) return TlbLookupResult::NoMatch;
+    
+    uint8_t current_asid = static_cast<uint8_t>(m_Reg->Cop0_MF(Reg::EntryHi) & 0xFF);
+    uint32_t vpn2 = (vaddr_32 >> 13) & 0x7FFFF;
+    
+    for (const auto& entry : m_tlb) {
+        if (!entry.EntryDefined) continue;
+        
+        uint32_t mask = static_cast<uint32_t>((entry.PageMask.Value >> 13) & 0x7FFFF);
+        uint32_t entry_vpn2 = (entry.EntryHi.Value >> 13) & 0x7FFFF;
+        
+        uint32_t masked_vpn_req = vpn2 & ~mask;
+        uint32_t masked_vpn_ent = entry_vpn2 & ~mask;
+        
+        bool global = (entry.EntryLo0.Value & 1) && (entry.EntryLo1.Value & 1);
+        uint8_t entry_asid = static_cast<uint8_t>(entry.EntryHi.Value & 0xFF);
+        
+        if (masked_vpn_req == masked_vpn_ent && (global || entry_asid == current_asid)) {
+            uint32_t offset_mask = (mask << 12) | 0xFFF;
+            uint32_t select_mask = (offset_mask + 1);
+            bool odd_page = (vaddr_32 & select_mask) != 0;
+            uint64_t lo_val = odd_page ? entry.EntryLo1.Value : entry.EntryLo0.Value;
+            
+            bool valid = (lo_val & 2) != 0;
+            if (!valid) return TlbLookupResult::MatchInvalid;
+            
+            Dirty = (lo_val & 4) != 0;
+            return TlbLookupResult::MatchValid;
+        }
+    }
+    
+    return TlbLookupResult::NoMatch;
 }
 
 CTLB::TLB_ENTRY& CTLB::TlbEntry(int32_t Entry) {

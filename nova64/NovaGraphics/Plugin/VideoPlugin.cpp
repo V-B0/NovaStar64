@@ -474,9 +474,9 @@ void VideoPlugin::ProcessDList() {
 
 void VideoPlugin::ProcessRDPList() {
     if (m_status != PluginStatus::Running && m_status != PluginStatus::Initialized) return;
-    if (!m_sysInfo.dpcStartReg || !m_sysInfo.dpcEndReg || !m_sysInfo.dpcCurrentReg) return;
+    if (!m_sysInfo.dpcCurrentReg || !m_sysInfo.dpcEndReg) return;
 
-    uint32_t startAddr   = *m_sysInfo.dpcStartReg & 0x00FFFFFF;
+    uint32_t startAddr   = *m_sysInfo.dpcCurrentReg & 0x00FFFFFF;
     uint32_t endAddr     = *m_sysInfo.dpcEndReg & 0x00FFFFFF;
 
     if (endAddr <= startAddr) return;
@@ -505,10 +505,8 @@ void VideoPlugin::ProcessRDPList() {
     // UpdateScreen will blit the game FBO instead of the VI RDRAM buffer.
     m_hleRenderedThisFrame = true;
 
-    // Signal RDP interrupt
-    if (m_callbacks.checkInterrupts) {
-        m_callbacks.checkInterrupts();
-    }
+    // Note: DP interrupt is signaled by the RDP processor's SyncFull callback,
+    // not here. This ensures the interrupt only fires when sync_full is processed.
 }
 
 void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
@@ -634,8 +632,20 @@ void VideoPlugin::UpdateScreen() {
         // HLE content is available — present it directly (no VI RDRAM compositing).
         int32_t winW = 640, winH = 480;
         if (win) win->GetDrawableSize(winW, winH);
-        g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
-        didRender = true;
+
+        // VI_STATUS bottom 2 bits = colour depth: 0 = blank.
+        // When the game intentionally blanks the screen (transitions,
+        // fades, white flashes) we must clear to black instead of
+        // re-presenting the last HLE frame, otherwise the user sees the
+        // previous menu colour persisting through the transition.
+        if (viType == 0) {
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            didRender = true;
+        } else {
+            g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
+            didRender = true;
+        }
     } else if (useVIBlit && m_viWidth != 0) {
         // Compute output resolution from xscale/yscale
         uint32_t yscale = m_viYScale & 0xFFF;
@@ -721,6 +731,19 @@ void VideoPlugin::UpdateScreen() {
     // the start of the next UpdateScreen call.
     glFlush();
     m_swapPending = true;
+
+    // ── HLE Framebuffer Writeback (GPU → RDRAM) ──────────────────
+    // Majora's Mask (and other games) sample the previous frame from RDRAM
+    // (e.g. for the pause menu blurred background, motion blur, etc.). When
+    // we render with HLE the pixels live only in GPU memory, so the game
+    // sees zeros and draws a black background. Copy the display framebuffer
+    // back into the emulated RDRAM at the VI origin so the CPU sees real
+    // image data when it reads the frame.
+    if (m_sysInfo.rdram && m_viOrigin && m_hleEverRendered) {
+        if (auto* displayFB = g_fbManager.GetDisplayFramebuffer()) {
+            g_fbManager.CopyFromGPU(displayFB, m_sysInfo.rdram);
+        }
+    }
 
 
 
@@ -1131,11 +1154,17 @@ bool VideoPlugin::CreateDisplayWindow() {
 }
 
 bool VideoPlugin::CreateDisplayRenderer() {
-    // The WindowManager creates an SDL+OpenGL context, so we must use the
-    // OpenGL backend regardless of what DetectBestBackend() returns (it
-    // would pick D3D11 on Windows, but D3D11 has no swap-chain wired to our
-    // SDL window and would crash on the first GL call).
     BackendType backend = BackendType::OpenGL46;
+
+    // Use requested backend from configuration if available
+    int cfgBackend = m_config.backendType;
+    if (cfgBackend == 1) {
+        backend = BackendType::Vulkan;
+    } else if (cfgBackend == 2) {
+        // D3D11 not completely enabled on external window context yet for now
+        // backend = BackendType::D3D11; 
+    }
+
     m_renderer = Nova64::Video::CreateRenderer(backend);
     if (!m_renderer) {
         LOG_ERROR("Failed to create {} renderer", GetBackendName(backend));
@@ -1258,6 +1287,11 @@ void VideoPlugin::ApplyGameSpecificHacks() {
     if (prof.textureLodBias != 0.0f) {
         LOG_INFO("  Texture LOD bias: {:.2f}", prof.textureLodBias);
         m_config.lodBias = prof.textureLodBias;
+        if (m_textureCache) {
+            Tex::TextureCacheConfig tcCfg2 = m_textureCache->GetConfig();
+            tcCfg2.lodBias = prof.textureLodBias;
+            m_textureCache->SetConfig(tcCfg2);
+        }
     }
     if (prof.fogAdjust != 1.0f) {
         LOG_INFO("  Fog adjust: {:.2f}", prof.fogAdjust);

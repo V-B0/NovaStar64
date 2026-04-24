@@ -498,7 +498,10 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         // it (overscan edges) retain stale data and appear as a colored
         // strip at the top/right of the screen or a single pixel row during
         // scene transitions.  Clearing once per frame fixes all three.
-        if (fb->lastColorClearedFrame < m_frameCounter && fb->fbo != 0) {
+        const uint32_t viOrigin = m_viConfig.origin & 0x7FFFFF;
+        if (fb->lastColorClearedFrame < m_frameCounter &&
+            fb->fbo != 0 &&
+            fb->desc.address != viOrigin) {
             glDisable(GL_SCISSOR_TEST);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -1145,9 +1148,12 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
                           ? displayFB->presentationTex : displayFB->colorTex;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, blitTex);
-    // Force nearest-neighbor for crisp pixel-perfect scaling
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // Bilinear filtering for smooth presentation scaling.
+    // The internal FBO resolution rarely matches the display exactly
+    // (e.g. 1600x1200 FBO → 1920x1080 window), so bilinear gives a
+    // clean image instead of the uneven pixel sizes from GL_NEAREST.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindVertexArray(m_blitVAO);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);

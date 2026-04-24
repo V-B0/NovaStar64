@@ -93,6 +93,9 @@ public:
     // Reset
     void Reset();
 
+    // Set DMEM pointer for XBUS mode
+    void SetDMEM(uint8_t* dmem) { m_DMEM = dmem; }
+
 private:
     void ProcessStatusCommand(uint32_t cmd);
     void ProcessDisplayList();
@@ -100,9 +103,11 @@ private:
     CRegisters& m_Reg;
     Plugins::GFXPlugin* m_GfxPlugin;
     uint32_t* m_Registers;
+    uint8_t* m_DMEM = nullptr;
     
     // State
     bool m_ProcessingDList;
+    bool m_pendingPipelineClear = false;
     uint32_t m_DListStart;
     uint32_t m_DListEnd;
 };

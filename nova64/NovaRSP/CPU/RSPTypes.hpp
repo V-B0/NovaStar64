@@ -93,22 +93,22 @@ public:
         High(idx) = static_cast<int16_t>((value >> 32) & 0xFFFF);
     }
 
-    // Saturate element for VSAW readback
+    // Saturate element for signed/unsigned clamp
     [[nodiscard]] uint16_t Saturate(uint8_t el, bool highValue) const {
         if (highValue) {
+            // Signed saturation: clamp to [0x8000, 0x7FFF]
             if (High(el) < 0) {
-                return (High(el) == -1 && Mid(el) < 0) ? static_cast<uint16_t>(Mid(el)) : 0x0000;
+                return (High(el) == -1 && Mid(el) < 0) ? static_cast<uint16_t>(Mid(el)) : 0x8000;
             }
-            return (High(el) != 0 || Mid(el) < 0) ? 0xFFFF : static_cast<uint16_t>(Mid(el));
+            return (High(el) != 0 || Mid(el) < 0) ? 0x7FFF : static_cast<uint16_t>(Mid(el));
         } else {
-            // Unsigned saturation of accumulator low
-            if (High(el) < 0) {
-                return 0x0000;
-            }
-            if (High(el) != 0 || Mid(el) < 0) {
-                return 0xFFFF;
-            }
-            return static_cast<uint16_t>(Low(el));
+            // Unsigned saturation: clamp to [0x0000, 0xFFFF]
+            // Sign extension check: if High is the sign extension of Mid,
+            // the accumulator value fits in 32 bits, so return Low directly
+            if (High(el) == 0 && Mid(el) >= 0) return static_cast<uint16_t>(Low(el));
+            if (High(el) == -1 && Mid(el) < 0) return static_cast<uint16_t>(Low(el));
+            if (High(el) < 0) return 0x0000;
+            return 0xFFFF;
         }
     }
 
@@ -146,9 +146,9 @@ public:
     //   e=8-15: single-element scalar broadcast
     [[nodiscard]] static uint8_t BroadcastIndex(uint8_t idx, uint8_t e) {
         if (e < 2) return idx;
-        if (e < 4) return (idx & 0x6) | (e & 0x1);
-        if (e < 8) return (idx & 0x4) | (e & 0x3);
-        return e & 0x7;
+        if (e < 4) return (idx & 0x6) | (~e & 0x1);
+        if (e < 8) return (idx & 0x4) | (~e & 0x3);
+        return 7 - (e & 0x7);
     }
     [[nodiscard]] uint16_t& ue(uint8_t idx, uint8_t element) {
         return reinterpret_cast<uint16_t*>(m_Data)[BroadcastIndex(idx, element)];
@@ -158,8 +158,8 @@ public:
     }
 
     // Direct element access
-    [[nodiscard]] int8_t&   s8(uint8_t idx)  { return reinterpret_cast<int8_t*>(m_Data)[idx ^ 1]; }
-    [[nodiscard]] uint8_t&  u8(uint8_t idx)  { return reinterpret_cast<uint8_t*>(m_Data)[idx ^ 1]; }
+    [[nodiscard]] int8_t&   s8(uint8_t idx)  { return reinterpret_cast<int8_t*>(m_Data)[idx]; }
+    [[nodiscard]] uint8_t&  u8(uint8_t idx)  { return reinterpret_cast<uint8_t*>(m_Data)[idx]; }
     [[nodiscard]] int16_t&  s16(uint8_t idx) { return reinterpret_cast<int16_t*>(m_Data)[idx]; }
     [[nodiscard]] uint16_t& u16(uint8_t idx) { return reinterpret_cast<uint16_t*>(m_Data)[idx]; }
     [[nodiscard]] int32_t&  s32(uint8_t idx) { return reinterpret_cast<int32_t*>(m_Data)[idx]; }
@@ -204,14 +204,14 @@ public:
     [[nodiscard]] uint8_t GetPacked() const {
         uint8_t result = 0;
         for (int i = 0; i < 8; i++) {
-            if (m_Flags[i]) result |= (1 << i);
+            if (m_Flags[i]) result |= (1 << (7 - i));
         }
         return result;
     }
 
     void SetPacked(uint8_t value) {
         for (int i = 0; i < 8; i++) {
-            m_Flags[i] = (value & (1 << i)) ? 0xFFFF : 0x0000;
+            m_Flags[i] = (value & (1 << (7 - i))) ? 0xFFFF : 0x0000;
         }
     }
 

@@ -227,8 +227,11 @@ inline void F3DEX2Handler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t vtxIndex = ((w0 & 0xFFF) / 2);
-    // N64 SDK puts the full 32-bit G_BZ_RANGE value into w1
-    BranchZ(ctx, vtxIndex, w1, m_rdpHalf1);
+    // GLideN64 reference (F3DEX_Branch_Z):
+    //   vtx = _SHIFTR(w0, 1, 11), zval = _SHIFTR(w1, 16, 16)
+    // Only the upper 16 bits of w1 contain the Z threshold.
+    uint32_t zValue = (w1 >> 16) & 0xFFFF;
+    BranchZ(ctx, vtxIndex, zValue, m_rdpHalf1);
 }
 
 inline void F3DEX2Handler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -389,6 +392,9 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     switch (opcode) {
     case 0x04: // G_BRANCH_W — F3DZEX2 uses W-based LOD culling (not Z like F3DEX2)
     {
+        // GLideN64 reference (F3DZEX2_Branch_W):
+        //   vtx = _SHIFTR(w0, 1, 7)  — bits [7:1]
+        //   wval = w1 (full 32-bit integer)
         uint32_t vtxIndex = (w0 >> 1) & 0x7F;
         BranchW(ctx, vtxIndex, w1, m_rdpHalf1);
         return !ctx.halted;

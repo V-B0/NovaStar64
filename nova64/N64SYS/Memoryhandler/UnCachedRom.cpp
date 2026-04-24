@@ -55,6 +55,22 @@ bool UncachedRom::Read32(uint32_t address, uint32_t& value)
     case MemoryRegion::ROM:
     case MemoryRegion::DD_ROM:
     {
+        // Check cart ROM write latch first
+        if (m_rom_latch_active) {
+            // m_NextTimer counts down by CountPerOp per instruction.
+            // elapsed = snapshot_at_write - current (positive = time passed)
+            // If timer fired in between, current > snapshot → elapsed wraps negative
+            // which we treat as "definitely decayed".
+            int32_t elapsed = m_rom_latch_timer - m_system.m_NextTimer;
+            if (elapsed < 0 || elapsed > 256) {
+                // Latch has decayed — clear it and return ROM data
+                m_rom_latch_active = false;
+            } else {
+                value = m_rom_latch_value;
+                m_rom_latch_active = false;
+                return true;
+            }
+        }
         // Read actual ROM data
         N64Rom* rom = m_system.GetRom();
         if (rom && rom->IsLoaded()) {
@@ -85,7 +101,6 @@ bool UncachedRom::Read32(uint32_t address, uint32_t& value)
 bool UncachedRom::Write32(uint32_t address, uint32_t value, uint32_t mask)
 {
     m_stats.write_count++;
-    value &= mask;
     
     MemoryRegion region = decodeRegion(address);
     
@@ -93,26 +108,32 @@ bool UncachedRom::Write32(uint32_t address, uint32_t value, uint32_t mask)
     {
     case MemoryRegion::SRAM:
         {
-            uint32_t dummy = value;
+            uint32_t dummy = value & mask;
             return handleSramAccess(address, dummy, true);
         }
     case MemoryRegion::FLASH_RAM:
         {
-            uint32_t dummy = value;
+            uint32_t dummy = value & mask;
             return handleFlashRamAccess(address, dummy, true);
         }
     case MemoryRegion::PI_REGS:
         {
-            uint32_t dummy = value;
+            uint32_t dummy = value & mask;
             return handlePiRegisters(address, dummy, true);
         }
     case MemoryRegion::DD_REGS:
         {
-            uint32_t dummy = value;
+            uint32_t dummy = value & mask;
             return handleDDInterface(address, dummy, true);
         }
     case MemoryRegion::ROM:
     case MemoryRegion::DD_ROM:
+        // PI bus IO-busy: drop writes while latch is active (real HW behavior)
+        if (!m_rom_latch_active) {
+            m_rom_latch_active = true;
+            m_rom_latch_value = value;
+            m_rom_latch_timer = m_system.m_NextTimer;
+        }
         return true;
     case MemoryRegion::UNMAPPED:
     default:
@@ -374,10 +395,13 @@ void UncachedRom::processDMATransfer()
         
         if (saveType == N64Types::SaveChipType::FlashRam)
         {
+            // FlashRAM is mapped at 0x08000000-0x0801FFFF (128KB) — use 17-bit
+            // mask so addresses above 0x08010000 are not truncated to 0.
+            uint32_t flashOffset = cart_addr & 0x1FFFF;
             if (m_dma_state.is_write)
-                m_flash_ram->DmaToFlashram(rdram + dram_addr, cart_addr & 0xFFFF, length);
+                m_flash_ram->DmaToFlashram(rdram + dram_addr, flashOffset, length);
             else
-                m_flash_ram->DmaFromFlashram(rdram + dram_addr, cart_addr & 0xFFFF, length);
+                m_flash_ram->DmaFromFlashram(rdram + dram_addr, flashOffset, length);
             m_stats.dma_bytes_transferred += length;
             handled = true;
         }
@@ -399,5 +423,10 @@ void UncachedRom::completeDMA()
 {
     m_dma_state.is_active = false;
     m_dma_state.current_offset = 0;
-    m_registers.m_Peripheral_Interface[PI::Register::PI_STATUS] &= ~0x3;
+    m_registers.m_Peripheral_Interface[PI::Register::PI_STATUS] &= ~0x3; // Clear DMA Busy
+    m_registers.m_Peripheral_Interface[PI::Register::PI_STATUS] |= 0x8;  // Set Interrupt
+    
+    // Set MI interrupt
+    m_registers.m_Mips_Interface[2] |= 0x10; // MI_INTR_PI
+    m_registers.CheckInterrupts();
 }

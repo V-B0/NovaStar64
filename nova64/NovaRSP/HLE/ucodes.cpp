@@ -20,22 +20,34 @@ namespace Nova64::RSP::HLE {
 
 // ──────────────────────────────────────────────
 // CIC x105 boot microcode
-// Shuffles IMEM data into RDRAM for IPL3 signature
+// Used during IPL3 stage of CIC-NUS-6105 games (Banjo-Tooie, Zelda OoT/MM,
+// Perfect Dark, ...). The RSP performs DMA transactions needed for booting.
+// Reference: Mupen64Plus mupen64plus-rsp-hle/src/cicx105.c
 // ──────────────────────────────────────────────
 
 void cicx105_ucode(CHle* hle)
 {
-    // CIC-NUS-6105 challenge/response boot code
-    // Copies IMEM data into DRAM at a fixed offset
     uint8_t* imem = hle->imem();
     uint8_t* dram = hle->dram();
     if (imem == nullptr || dram == nullptr) return;
 
-    constexpr uint32_t count = 0x170;
-    for (uint32_t i = 0; i < count; i += 4)
+    // SuperNova64 stores RDRAM/IMEM with the same byte-swap convention as
+    // Mupen (XOR_S8=3 on LE host => native 32-bit word order). For copies
+    // whose source/destination addresses and length are 4-byte aligned, a
+    // raw memcpy preserves the N64-visible byte sequence correctly.
+
+    // dma_read(0x1120, 0x1e8, 0x1e8): IMEM[0x120 .. 0x310) <- DRAM[0x1e8 .. 0x3d8)
+    std::memcpy(imem + 0x120, dram + 0x1e8, 0x1f0);
+
+    // dma_write(0x1120, 0x2fb1f0, 0xfe817000): scatter 24 * 8 bytes from
+    // IMEM[0x120..0x1e0) into DRAM with destination stride 0xff0.
+    uint8_t* dst = dram + 0x2fb1f0;
+    uint8_t* src = imem + 0x120;
+    for (unsigned i = 0; i < 24; ++i)
     {
-        uint32_t value = *u32(imem, 0x040 + i);
-        *u32(dram, 0x00000040 + i) = value;
+        std::memcpy(dst, src, 8);
+        dst += 0xff0;
+        src += 0x8;
     }
 
     hle->rsp_break(0);

@@ -88,6 +88,7 @@ struct TlbEntry {
     struct EntryHi {
         uint32_t vpn2 = 0;             // Virtual Page Number / 2
         uint8_t asid = 0;              // Address Space ID
+        uint8_t r = 0;                 // Region (bits 62-63)
         uint32_t get_vpn() const { return vpn2 << 13; }
     } entry_hi;
     
@@ -352,7 +353,10 @@ public:
     void WriteEntry(uint32_t Index, bool Random);
     void COP0StatusChanged();
     
+    enum class TlbLookupResult { NoMatch, MatchInvalid, MatchValid };
+
     bool AddressDefined(uint64_t VAddr, bool& Dirty);
+    TlbLookupResult AddressLookup(uint64_t VAddr, bool& Dirty);
     TLB_ENTRY& TlbEntry(int32_t Entry);
     
     bool VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused);

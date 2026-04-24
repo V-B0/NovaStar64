@@ -48,6 +48,12 @@ bool DisplayProcessorHandler::Read32(uint32_t addr, uint32_t& val)
             
         case 0x0000C:  // DPC_STATUS_REG
             val = m_Registers[DPC_STATUS];
+            // Deferred pipeline clear: return busy state on first read, then clear
+            if (m_pendingPipelineClear) {
+                m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::PIPE_BUSY);
+                m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::START_GCLK);
+                m_pendingPipelineClear = false;
+            }
             break;
             
         case 0x00010:  // DPC_CLOCK_REG
@@ -89,22 +95,41 @@ bool DisplayProcessorHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask
     
     switch (addr & 0x000FFFFF) {
         case 0x00000:  // DPC_START_REG
-            Log::debugf("DisplayProcessorHandler: DPC_START = 0x%08X", val);
-            m_Registers[DPC_START] = val & 0x00FFFFF8;  // 24-bit, 8-byte aligned
-            m_Registers[DPC_CURRENT] = m_Registers[DPC_START];
-            m_DListStart = m_Registers[DPC_START];
+        {
+            uint32_t masked = val & 0x00FFFFF8;  // 24-bit, 8-byte aligned
+            // On real hardware, writes to START are ignored while START_VALID is set
+            if (!(m_Registers[DPC_STATUS] & static_cast<uint32_t>(DPCStatus::START_VALID))) {
+                m_Registers[DPC_START] = masked;
+                m_DListStart = masked;
+                m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::START_VALID);
+            }
             break;
+        }
             
         case 0x00004:  // DPC_END_REG
+        {
             Log::debugf("DisplayProcessorHandler: DPC_END = 0x%08X", val);
             m_Registers[DPC_END] = val & 0x00FFFFF8;  // 24-bit, 8-byte aligned
             m_DListEnd = m_Registers[DPC_END];
             
-            // Trigger display list processing
-            if (m_Registers[DPC_END] != m_Registers[DPC_START]) {
+            // When END is written and START_VALID is set, commit the pending start
+            if (m_Registers[DPC_STATUS] & static_cast<uint32_t>(DPCStatus::START_VALID)) {
+                m_Registers[DPC_CURRENT] = m_Registers[DPC_START];
+                m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::START_VALID);
+            }
+            
+            // Writing END activates the RDP pipeline
+            m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::START_GCLK);
+            m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::CBUF_READY);
+            m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::PIPE_BUSY);
+            
+            // Process display list if not frozen and there is data
+            if (!(m_Registers[DPC_STATUS] & static_cast<uint32_t>(DPCStatus::FREEZE)) &&
+                m_Registers[DPC_CURRENT] < m_Registers[DPC_END]) {
                 ProcessDisplayList();
             }
             break;
+        }
             
         case 0x0000C:  // DPC_STATUS_REG (write-only, command register)
             Log::debugf("DisplayProcessorHandler: DPC_STATUS = 0x%08X", val);
@@ -209,42 +234,59 @@ void DisplayProcessorHandler::ProcessDisplayList()
         return;
     }
     
-    uint32_t start = m_Registers[DPC_START];
+    uint32_t current = m_Registers[DPC_CURRENT];
     uint32_t end = m_Registers[DPC_END];
     
-    if (start >= end) {
-        Log::warningf("DisplayProcessorHandler: Invalid display list range: 0x%08X - 0x%08X", start, end);
+    if (current >= end) {
         return;
     }
     
-    uint32_t length = end - start;
+    uint32_t length = end - current;
     
     Log::debugf("DisplayProcessorHandler: Processing display list: 0x%08X - 0x%08X (length=0x%X)",
-        start, end, length);
+        current, end, length);
     
     // Set busy flags
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::PIPE_BUSY);
+    m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::START_GCLK);
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::CMD_BUSY);
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::DMA_BUSY);
-    m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::START_VALID);
     m_ProcessingDList = true;
     
-    // Process with graphics plugin
-    if (m_GfxPlugin) {
-        m_GfxPlugin->ProcessDList(start, end);
-    } else {
-        Log::warning("DisplayProcessorHandler: No graphics plugin available");
+    bool xbus = (m_Registers[DPC_STATUS] & static_cast<uint32_t>(DPCStatus::XBUS_DMEM_DMA)) != 0;
+    
+    if (xbus && m_DMEM && m_GfxPlugin) {
+        // XBUS mode: read RDP commands from SP DMEM
+        // DMEM is stored in native (host) word order
+        // Handle wrapping within 4KB DMEM boundary
+        uint32_t startOff = current & 0xFFF;
+        uint32_t bytesToProcess = end - current;
+        uint32_t processed = 0;
+        while (processed + 8 <= bytesToProcess) {
+            uint32_t addr = (startOff + processed) & 0xFFF;
+            uint32_t w0 = *reinterpret_cast<const uint32_t*>(&m_DMEM[addr]);
+            uint32_t w1 = *reinterpret_cast<const uint32_t*>(&m_DMEM[(addr + 4) & 0xFFF]);
+            uint64_t cmd = (static_cast<uint64_t>(w0) << 32) | w1;
+            m_GfxPlugin->ProcessRDPCommand(cmd);
+            processed += 8;
+        }
+    } else if (m_GfxPlugin) {
+        // Normal mode: process RDP commands from RDRAM
+        m_GfxPlugin->UpdateRDPStatus();
     }
     
     // Update current register to end
     m_Registers[DPC_CURRENT] = end;
     
-    // Clear busy flags
-    m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::PIPE_BUSY);
+    // Clear busy flags - pipeline is no longer active after processing completes
     m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::CMD_BUSY);
     m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::DMA_BUSY);
+    m_Registers[DPC_STATUS] &= ~static_cast<uint32_t>(DPCStatus::END_VALID);
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::CBUF_READY);
-    m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::END_VALID);
+    
+    // Defer PIPE_BUSY/START_GCLK clear until next DPC_STATUS read
+    // (so the CPU can observe the busy state at least once)
+    m_pendingPipelineClear = true;
     
     m_ProcessingDList = false;
     
@@ -252,10 +294,8 @@ void DisplayProcessorHandler::ProcessDisplayList()
     m_Registers[DPC_CLOCK]++;
     m_Registers[DPC_BUFBUSY]++;
     
-    // Signal DP interrupt through MI
-    m_Reg.m_GfxIntrReg |= 0x20;  // MI_INTR_DP
-    m_Reg.m_Mips_Interface[2] |= 0x20;
-    m_Reg.CheckInterrupts();
+    // Note: DP interrupt (MI_INTR_DP) is fired by the GFX plugin's SyncFull
+    // callback, not here. PIPE_BUSY and START_GCLK persist until that interrupt.
     
     Log::debug("DisplayProcessorHandler: Display list processing complete");
 }

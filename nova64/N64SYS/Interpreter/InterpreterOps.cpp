@@ -1111,6 +1111,10 @@ void R4300iInterpreter::LL()
         m_TLB.VAddrToPAddr(Address, PhysicalAddr, MemoryUsed);
         m_CP0[17] = PhysicalAddr >> 4;
     }
+    else
+    {
+        m_LLBit = 0;
+    }
 }
 
 void R4300iInterpreter::LL_32()
@@ -1125,6 +1129,10 @@ void R4300iInterpreter::LL_32()
         bool MemoryUsed;
         m_TLB.VAddrToPAddr(Address, PhysicalAddr, MemoryUsed);
         m_CP0[17] = PhysicalAddr >> 4;
+    }
+    else
+    {
+        m_LLBit = 0;
     }
 }
 
@@ -1159,6 +1167,10 @@ void R4300iInterpreter::LLD()
         m_TLB.VAddrToPAddr(Address, PhysicalAddr, MemoryUsed);
         m_CP0[17] = PhysicalAddr >> 4;
     }
+    else
+    {
+        m_LLBit = 0;
+    }
 }
 
 void R4300iInterpreter::LLD_32()
@@ -1171,6 +1183,10 @@ void R4300iInterpreter::LLD_32()
         bool MemoryUsed;
         m_TLB.VAddrToPAddr(Address, PhysicalAddr, MemoryUsed);
         m_CP0[17] = PhysicalAddr >> 4;
+    }
+    else
+    {
+        m_LLBit = 0;
     }
 }
 
@@ -1412,44 +1428,48 @@ void R4300iInterpreter::CACHE()
 void R4300iInterpreter::SC()
 {
     uint64_t Address = m_GPR[base()].DW + (int16_t)offset();
+    bool success = false;
     if (m_LLBit == 1)
     {
-        m_MMU.SW_Memory(Address, m_GPR[rt()].UW[0]);
+        success = m_MMU.SW_Memory(Address, m_GPR[rt()].UW[0]);
     }
-    m_GPR[rt()].DW = (int32_t)m_LLBit;
+    m_GPR[rt()].UDW = success ? 1 : 0;
     m_LLBit = 0;
 }
 
 void R4300iInterpreter::SC_32()
 {
     uint64_t Address = m_GPR[base()].W[0] + (int16_t)offset();
+    bool success = false;
     if (m_LLBit == 1)
     {
-        m_MMU.SW_Memory(Address, m_GPR[rt()].UW[0]);
+        success = m_MMU.SW_Memory(Address, m_GPR[rt()].UW[0]);
     }
-    m_GPR[rt()].DW = (int32_t)m_LLBit;
+    m_GPR[rt()].UDW = success ? 1 : 0;
     m_LLBit = 0;
 }
 
 void R4300iInterpreter::SCD()
 {
     uint64_t Address = m_GPR[base()].DW + (int16_t)offset();
+    bool success = false;
     if (m_LLBit == 1)
     {
-        m_MMU.SD_Memory(Address, m_GPR[rt()].UDW);
+        success = m_MMU.SD_Memory(Address, m_GPR[rt()].UDW);
     }
-    m_GPR[rt()].DW = (int64_t)m_LLBit;
+    m_GPR[rt()].UDW = success ? 1 : 0;
     m_LLBit = 0;
 }
 
 void R4300iInterpreter::SCD_32()
 {
     uint64_t Address = m_GPR[base()].W[0] + (int16_t)offset();
+    bool success = false;
     if (m_LLBit == 1)
     {
-        m_MMU.SD_Memory(Address, m_GPR[rt()].UDW);
+        success = m_MMU.SD_Memory(Address, m_GPR[rt()].UDW);
     }
-    m_GPR[rt()].DW = (int64_t)m_LLBit;
+    m_GPR[rt()].UDW = success ? 1 : 0;
     m_LLBit = 0;
 }
 
@@ -1708,8 +1728,8 @@ void R4300iInterpreter::SPECIAL_DDIVU()
     }
     else
     {
-        m_RegLO.DW = (int64_t)0xFFFFFFFFFFFFFFFFLL;
-        m_RegHI.DW = m_GPR[rs()].DW;
+        m_RegLO.UDW = 0xFFFFFFFFFFFFFFFFULL;
+        m_RegHI.UDW = m_GPR[rs()].UDW;
     }
 }
 

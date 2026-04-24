@@ -745,6 +745,7 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
         ctx.state->textureImage.width = static_cast<uint16_t>(texW);
         ctx.state->textureImage.format = static_cast<ImageFormat>(obj.imageFmt);
         ctx.state->textureImage.size   = static_cast<ImageSize>(obj.imageSiz);
+        ctx.state->textureImage.address = obj.imageAdrs; // Fix: set address for texture cache/FB detection
     }
 
     // dsDx/dtDy: texels per screen pixel (reciprocal of scale)
@@ -758,6 +759,24 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
     rect.dsDx = dsDx;  rect.dtDy = dtDy;
     rect.tileIndex = 0;
     rect.flipped = (obj.imageFlags & 0x01) != 0;
+
+    // DIAG: log first 50 sprite renders + 1-in-200 sampling thereafter, capped
+    // at 600 lines. MM HUD likely doesn't go through this path (uses F3DZEX
+    // TexRect instead) but we'll capture any S2DEX2 cinematic/title sprites.
+    static int s_spriteSeen = 0;
+    static int s_spriteLogCount = 0;
+    ++s_spriteSeen;
+    bool shouldLogSprite = (s_spriteLogCount < 600) &&
+                           ((s_spriteLogCount < 50) || ((s_spriteSeen % 200) == 0));
+    if (shouldLogSprite) {
+        ++s_spriteLogCount;
+        NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
+            "S2DEX OBJ_SPRITE #{} (call {}): pos=({:.1f},{:.1f}) size=({:.1f}x{:.1f}) imageAdrs=0x{:04X} fmt={} siz={} pal={} stride={}",
+            s_spriteLogCount, s_spriteSeen, x, y, screenW, screenH,
+            (unsigned)obj.imageAdrs, (int)obj.imageFmt, (int)obj.imageSiz,
+            (int)obj.imagePal, (int)obj.imageStride);
+    }
+
     ctx.rdpProcessor->DrawTextureRect(rect);
 }
 

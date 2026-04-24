@@ -21,15 +21,15 @@ uint32_t RDPCommandDecoder::ReadWord(uint32_t address) const {
     return *reinterpret_cast<const uint32_t*>(m_rdram + address);
 }
 
-float RDPCommandDecoder::ReadFixed_S15_16(uint32_t hi, uint32_t lo) {
+double RDPCommandDecoder::ReadFixed_S15_16(uint32_t hi, uint32_t lo) {
     int32_t value = (static_cast<int32_t>(hi) << 16) | (lo & 0xFFFF);
-    return static_cast<float>(value) / 65536.0f;
+    return static_cast<double>(value) / 65536.0;
 }
 
-float RDPCommandDecoder::ReadFixed_S11_2(uint32_t packed) {
+double RDPCommandDecoder::ReadFixed_S11_2(uint32_t packed) {
     int16_t raw = static_cast<int16_t>(packed & 0x3FFF);
     if (packed & 0x2000) raw |= 0xC000; // Sign extend
-    return static_cast<float>(raw) / 4.0f;
+    return static_cast<double>(raw) / 4.0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -264,27 +264,27 @@ void RDPCommandDecoder::DecodeTriangle(const uint32_t* words, int wordCount,
     // YL, YM, YH (12.2 signed)
     int32_t ylRaw = static_cast<int32_t>(words[0] & 0x3FFF);
     if (ylRaw & 0x2000) ylRaw |= ~0x3FFF;
-    tri.edge.yl = static_cast<float>(ylRaw) / 4.0f;
+    tri.edge.yl = static_cast<double>(ylRaw) / 4.0;
     
     int32_t ymRaw = static_cast<int32_t>((words[1] >> 16) & 0x3FFF);
     if (ymRaw & 0x2000) ymRaw |= ~0x3FFF;
-    tri.edge.ym = static_cast<float>(ymRaw) / 4.0f;
+    tri.edge.ym = static_cast<double>(ymRaw) / 4.0;
     
     int32_t yhRaw = static_cast<int32_t>(words[1] & 0x3FFF);
     if (yhRaw & 0x2000) yhRaw |= ~0x3FFF;
-    tri.edge.yh = static_cast<float>(yhRaw) / 4.0f;
+    tri.edge.yh = static_cast<double>(yhRaw) / 4.0;
     
     // XL (s15.16)
-    tri.edge.xl = static_cast<float>(static_cast<int32_t>(words[2])) / 65536.0f;
-    tri.edge.dxlDy = static_cast<float>(static_cast<int32_t>(words[3])) / 65536.0f;
+    tri.edge.xl = static_cast<double>(static_cast<int32_t>(words[2])) / 65536.0;
+    tri.edge.dxlDy = static_cast<double>(static_cast<int32_t>(words[3])) / 65536.0;
     
     // XH (s15.16)
-    tri.edge.xh = static_cast<float>(static_cast<int32_t>(words[4])) / 65536.0f;
-    tri.edge.dxhDy = static_cast<float>(static_cast<int32_t>(words[5])) / 65536.0f;
+    tri.edge.xh = static_cast<double>(static_cast<int32_t>(words[4])) / 65536.0;
+    tri.edge.dxhDy = static_cast<double>(static_cast<int32_t>(words[5])) / 65536.0;
     
     // XM (s15.16)
-    tri.edge.xm = static_cast<float>(static_cast<int32_t>(words[6])) / 65536.0f;
-    tri.edge.dxmDy = static_cast<float>(static_cast<int32_t>(words[7])) / 65536.0f;
+    tri.edge.xm = static_cast<double>(static_cast<int32_t>(words[6])) / 65536.0;
+    tri.edge.dxmDy = static_cast<double>(static_cast<int32_t>(words[7])) / 65536.0;
     
     int offset = 8; // Current word index
     
@@ -424,8 +424,6 @@ void RDPCommandDecoder::DecodeTextureRect(const uint32_t* words, DecodedRectangl
 void RDPCommandDecoder::DecodeTextureRectFlip(const uint32_t* words, DecodedRectangle& rect) {
     DecodeTextureRect(words, rect);
     rect.flipped = true;
-    // Swap dsDx and dtDy for the flip
-    std::swap(rect.dsDx, rect.dtDy);
 }
 
 void RDPCommandDecoder::DecodeFillRect(const uint32_t* words,

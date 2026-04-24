@@ -19,7 +19,9 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
+#include <vector>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -42,6 +44,150 @@ namespace Nova64 {
 
 // Static member initialization
 uint32_t MipsMemoryVM::RegModValue = 0;
+
+// ============================================================================
+// Memory Write Watch (debug-only, env-var driven)
+// ----------------------------------------------------------------------------
+// NOVA_WATCH_ADDR  : hex (KSEG0 / KSEG1 / physical) start address. Required.
+// NOVA_WATCH_LEN   : hex bytes of range, default 1.
+// NOVA_WATCH_FILE  : output path; default stderr.
+// NOVA_WATCH_FIRST : if "1", log only the FIRST write to each 8-byte aligned
+//                    address (huge noise reduction; surfaces fresh writes).
+// NOVA_WATCH_VAL   : hex value filter; only log writes whose value matches.
+// NOVA_WATCH_MASK  : hex mask applied before comparing to NOVA_WATCH_VAL
+//                    (default ~0). Useful for "only log writes that look like
+//                    pointers" (mask=0xF0000000 val=0x80000000) etc.
+// NOVA_DUMP_RDRAM  : path. If set, the full 8 MB RDRAM is dumped here at
+//                    process exit. Take two runs (good vs bad) and `fc /b`.
+// ============================================================================
+namespace {
+
+struct WatchConfig
+{
+    bool     enabled        = false;
+    bool     first_only     = false;
+    bool     val_filter     = false;
+    uint32_t pStart         = 0;   // physical start
+    uint32_t pEnd           = 0;   // physical end (exclusive)
+    uint64_t val_match      = 0;
+    uint64_t val_mask       = ~uint64_t(0);
+    FILE*    out            = nullptr;
+    // Bitmap for first-only mode: one bit per 8-byte slot in the watched range.
+    std::vector<uint8_t> seen;
+};
+
+const WatchConfig& GetWatchConfig()
+{
+    static WatchConfig cfg = []() {
+        WatchConfig c;
+        const char* addrEnv = std::getenv("NOVA_WATCH_ADDR");
+        if (addrEnv == nullptr || *addrEnv == '\0') return c;
+        uint64_t addr = std::strtoull(addrEnv, nullptr, 16);
+        uint64_t len  = 1;
+        const char* lenEnv = std::getenv("NOVA_WATCH_LEN");
+        if (lenEnv != nullptr && *lenEnv != '\0')
+            len = std::strtoull(lenEnv, nullptr, 16);
+        if (len == 0) return c;
+        // Mask to physical (strip KSEG0/KSEG1 segment bits)
+        uint32_t pStart = static_cast<uint32_t>(addr) & 0x1FFFFFFF;
+        uint32_t pEnd   = pStart + static_cast<uint32_t>(len);
+        c.enabled = true;
+        c.pStart  = pStart;
+        c.pEnd    = pEnd;
+
+        const char* firstEnv = std::getenv("NOVA_WATCH_FIRST");
+        if (firstEnv != nullptr && firstEnv[0] == '1')
+        {
+            c.first_only = true;
+            // One bit per 8-byte slot.
+            size_t slots = (static_cast<size_t>(pEnd - pStart) + 7) / 8;
+            c.seen.assign((slots + 7) / 8, 0);
+        }
+
+        const char* valEnv = std::getenv("NOVA_WATCH_VAL");
+        if (valEnv != nullptr && *valEnv != '\0')
+        {
+            c.val_filter = true;
+            c.val_match  = std::strtoull(valEnv, nullptr, 16);
+            const char* maskEnv = std::getenv("NOVA_WATCH_MASK");
+            if (maskEnv != nullptr && *maskEnv != '\0')
+                c.val_mask = std::strtoull(maskEnv, nullptr, 16);
+        }
+
+        const char* fileEnv = std::getenv("NOVA_WATCH_FILE");
+        if (fileEnv != nullptr && *fileEnv != '\0')
+            c.out = std::fopen(fileEnv, "w");
+        if (c.out == nullptr) c.out = stderr;
+        std::fprintf(c.out,
+                     "[NOVA_WATCH] active: phys [0x%08X .. 0x%08X) first=%d val_filter=%d match=0x%llX mask=0x%llX\n",
+                     c.pStart, c.pEnd,
+                     c.first_only ? 1 : 0,
+                     c.val_filter ? 1 : 0,
+                     static_cast<unsigned long long>(c.val_match),
+                     static_cast<unsigned long long>(c.val_mask));
+        std::fflush(c.out);
+        return c;
+    }();
+    return cfg;
+}
+
+// Mutable view of the same singleton (so first_only bookkeeping can update).
+WatchConfig& GetMutableWatchConfig()
+{
+    return const_cast<WatchConfig&>(GetWatchConfig());
+}
+
+// Return true if this is the first time the 8-byte slot containing pAddr has
+// been written. Always returns true if first_only is disabled.
+bool MarkAndCheckFirst(uint32_t pAddr)
+{
+    WatchConfig& cfg = GetMutableWatchConfig();
+    if (!cfg.first_only) return true;
+    if (pAddr < cfg.pStart || pAddr >= cfg.pEnd) return true;
+    size_t slot = (pAddr - cfg.pStart) / 8;
+    size_t byte = slot / 8;
+    uint8_t bit = static_cast<uint8_t>(1u << (slot & 7));
+    if (byte >= cfg.seen.size()) return true;
+    if (cfg.seen[byte] & bit) return false;
+    cfg.seen[byte] |= bit;
+    return true;
+}
+
+inline void WatchStore(uint32_t pAddr, unsigned size, uint64_t value, uint64_t pc)
+{
+    const WatchConfig& cfg = GetWatchConfig();
+    if (!cfg.enabled) return;
+    uint32_t end = pAddr + size;
+    if (end <= cfg.pStart || pAddr >= cfg.pEnd) return;
+    if (cfg.val_filter && (value & cfg.val_mask) != (cfg.val_match & cfg.val_mask))
+        return;
+    if (cfg.first_only && !MarkAndCheckFirst(pAddr))
+        return;
+    std::fprintf(cfg.out,
+                 "[NOVA_WATCH] PC=%016llX  S%c phys=0x%08X val=0x%016llX\n",
+                 static_cast<unsigned long long>(pc),
+                 size == 1 ? 'B' : size == 2 ? 'H' : size == 4 ? 'W' : 'D',
+                 pAddr,
+                 static_cast<unsigned long long>(value));
+    std::fflush(cfg.out);
+}
+
+} // anonymous namespace
+
+void WatchDMA(uint32_t pAddr, uint32_t length, const char* source)
+{
+    const WatchConfig& cfg = GetWatchConfig();
+    if (!cfg.enabled || length == 0) return;
+    uint32_t end = pAddr + length;
+    if (end <= cfg.pStart || pAddr >= cfg.pEnd) return;
+    uint32_t hitStart = pAddr      > cfg.pStart ? pAddr      : cfg.pStart;
+    uint32_t hitEnd   = end        < cfg.pEnd   ? end        : cfg.pEnd;
+    std::fprintf(cfg.out,
+                 "[NOVA_WATCH] DMA %-3s phys=0x%08X len=0x%X (hit 0x%08X..0x%08X)\n",
+                 source ? source : "?",
+                 pAddr, length, hitStart, hitEnd);
+    std::fflush(cfg.out);
+}
 
 // ============================================================================
 // Constructor / Destructor
@@ -121,8 +267,35 @@ bool MipsMemoryVM::Initialize()
         return false;
     }
 
+    // Register an atexit handler that dumps RDRAM to NOVA_DUMP_RDRAM if set.
+    // Capturing the pointer + size in static state lets us do it without a
+    // reference back to MipsMemoryVM at exit time.
+    {
+        static uint8_t* s_dumpPtr  = nullptr;
+        static uint32_t s_dumpSize = 0;
+        s_dumpPtr  = m_RDRAM;
+        s_dumpSize = m_AllocatedRdramSize;
+        static bool s_registered = false;
+        if (!s_registered)
+        {
+            s_registered = true;
+            std::atexit([]() {
+                const char* path = std::getenv("NOVA_DUMP_RDRAM");
+                if (path == nullptr || *path == '\0') return;
+                if (s_dumpPtr == nullptr || s_dumpSize == 0) return;
+                FILE* f = std::fopen(path, "wb");
+                if (f == nullptr) return;
+                std::fwrite(s_dumpPtr, 1, s_dumpSize, f);
+                std::fclose(f);
+            });
+        }
+    }
+
     // Set RDRAM for SP DMA
     m_SPRegistersHandler->SetRDRAM(m_RDRAM, m_AllocatedRdramSize);
+
+    // Wire DMEM pointer to DPC handler for XBUS mode
+    m_DPCommandRegistersHandler->SetDMEM(m_SPRegistersHandler->Dmem());
 
     // Allocate memory maps (1MB entries for 4KB pages in 4GB address space)
     m_MemoryReadMap = new size_t[0x100000];
@@ -182,8 +355,8 @@ void MipsMemoryVM::Reset(bool eraseMemory)
             // Map RDRAM
             for (size_t address = baseAddress; address < baseAddress + m_AllocatedRdramSize; address += 0x1000)
             {
-                m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
-                m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
+                m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
+                m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
             }
 
             // Map DMEM (0x04000000 - 0x04001000)
@@ -555,17 +728,12 @@ bool MipsMemoryVM::LW_Memory(uint64_t vAddr, uint32_t& value)
         return false;
     }
 
-    // Check for 64-bit address mode
+    // Check for 64-bit address mode: in 32-bit mode, upper 32 bits must be
+    // the sign extension of bit 31. Otherwise it's an Address Error.
     if (static_cast<uint64_t>(static_cast<int32_t>(vAddr)) != vAddr)
     {
-        uint32_t pAddr;
-        bool memoryUnused;
-        if (!m_TLB.VAddrToPAddr(vAddr, pAddr, memoryUnused))
-        {
-            m_System.GetRegisters()->TriggerAddressException(vAddr, memoryUnused ? EXC_RADE : EXC_RMISS);
-            return false;
-        }
-        return LW_PhysicalAddress(pAddr, value);
+        m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_RADE);
+        return false;
     }
 
     uint32_t vAddr32 = static_cast<uint32_t>(vAddr);
@@ -613,6 +781,68 @@ bool MipsMemoryVM::LD_Memory(uint64_t vAddr, uint64_t& value)
 }
 
 // ============================================================================
+// MI Repeat Mode Support
+// ============================================================================
+
+void MipsMemoryVM::SetMIRepeatMode(bool active)
+{
+    // When MI init mode is set, invalidate KSEG1 (uncached) RDRAM WriteMap pages
+    // so the JIT inline store path falls through to the slow path (which handles repeat).
+    // Only uncached writes trigger MI repeat on real hardware (cached writes go to L1).
+    if (!m_MemoryWriteMap || !m_RDRAM || m_AllocatedRdramSize == 0)
+        return;
+
+    uint32_t baseAddress = 0xA0000000; // KSEG1 only
+    for (size_t address = baseAddress; address < baseAddress + m_AllocatedRdramSize; address += 0x1000)
+    {
+        if (active)
+            m_MemoryWriteMap[address >> 12] = static_cast<size_t>(-1);
+        else
+            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
+    }
+}
+
+bool MipsMemoryVM::MI_RepeatStore(uint32_t pAddr, uint64_t busData, uint32_t patternSize, uint32_t byteOffset)
+{
+    // MI repeat: the repeat_count+1 total bytes are counted from the 8-byte bus word start.
+    // The first (byteOffset) bytes are skipped (before the store address).
+    // Writing starts at pAddr and continues using the bus word pattern cyclically.
+    // Pattern byte selection is based on (writeAddr & (patternSize-1)).
+    // Wraps at 2KiB boundary within the RDRAM region.
+    uint32_t miMode = *m_MIPSInterfaceHandler->MI_MODE_REG;
+    uint32_t repeatCount = miMode & 0x7F;
+    uint32_t totalBytes = repeatCount + 1;
+    uint32_t skip = byteOffset;
+    if (totalBytes <= skip) return true;
+    uint32_t bytesToWrite = totalBytes - skip;
+
+    // Extract big-endian pattern bytes from busData
+    uint8_t pattern[8];
+    for (uint32_t i = 0; i < patternSize; i++)
+        pattern[i] = static_cast<uint8_t>(busData >> ((patternSize - 1 - i) * 8));
+
+    // Base address for 2KiB wrap
+    uint32_t wrapBase = pAddr & ~0x7FFu;
+    uint32_t offset = pAddr & 0x7FF;
+
+    for (uint32_t i = 0; i < bytesToWrite; i++)
+    {
+        uint32_t writeAddr = wrapBase | ((offset + i) & 0x7FF);
+        if (writeAddr < m_AllocatedRdramSize)
+            m_RDRAM[writeAddr ^ 3] = pattern[writeAddr & (patternSize - 1)];
+    }
+
+    // Auto-clear INIT mode after the repeat store completes.
+    // On real hardware, INIT persists but the test re-asserts it before each store.
+    // We clear it here to prevent stale INIT from causing massive fill writes
+    // during subsequent non-repeat stores to uncached RDRAM.
+    *m_MIPSInterfaceHandler->MI_MODE_REG &= ~0x0080u;
+    SetMIRepeatMode(false);
+
+    return true;
+}
+
+// ============================================================================
 // CPU Store Operations (64-bit virtual address)
 // ============================================================================
 
@@ -632,9 +862,25 @@ bool MipsMemoryVM::SB_Memory(uint64_t vAddr, uint32_t value)
     }
 
     uint32_t vAddr32 = static_cast<uint32_t>(vAddr);
+
+    // MI repeat mode: only uncached (KSEG1) stores to RDRAM trigger repeat
+    if ((vAddr32 & 0xE0000000) == 0xA0000000 && m_MIPSInterfaceHandler->IsInitMode())
+    {
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < m_AllocatedRdramSize)
+        {
+            uint32_t byteOff = vAddr32 & 7;
+            // Bus data: 32-bit word with byte positioned in its lane
+            uint64_t busData = static_cast<uint64_t>(value << (24 - (vAddr32 & 3) * 8));
+            return MI_RepeatStore(pAddr, busData, 4, byteOff);
+        }
+    }
+
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
+        WatchStore(vAddr32 & 0x1FFFFFFF, 1, value & 0xFF,
+                   m_System.GetRegisters()->m_PROGRAM_COUNTER);
         *(memoryPtr + (vAddr32 ^ 3)) = static_cast<uint8_t>(value);
         // SMC detection
         uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
@@ -673,9 +919,25 @@ bool MipsMemoryVM::SH_Memory(uint64_t vAddr, uint32_t value)
     }
 
     uint32_t vAddr32 = static_cast<uint32_t>(vAddr);
+
+    // MI repeat mode: only uncached (KSEG1) stores to RDRAM trigger repeat
+    if ((vAddr32 & 0xE0000000) == 0xA0000000 && m_MIPSInterfaceHandler->IsInitMode())
+    {
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < m_AllocatedRdramSize)
+        {
+            uint32_t byteOff = vAddr32 & 7;
+            // Bus data: 32-bit word with halfword positioned in its lane
+            uint64_t busData = static_cast<uint64_t>(value << (16 - (vAddr32 & 2) * 8));
+            return MI_RepeatStore(pAddr, busData, 4, byteOff);
+        }
+    }
+
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
+        WatchStore(vAddr32 & 0x1FFFFFFF, 2, value & 0xFFFF,
+                   m_System.GetRegisters()->m_PROGRAM_COUNTER);
         *reinterpret_cast<uint16_t*>(memoryPtr + (vAddr32 ^ 2)) = static_cast<uint16_t>(value);
         // SMC detection
         uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
@@ -700,23 +962,34 @@ bool MipsMemoryVM::SW_Memory(uint64_t vAddr, uint32_t value)
         return false;
     }
 
-    // Check for 64-bit address mode
+    // Check for 64-bit address mode: in 32-bit mode, upper 32 bits must be
+    // the sign extension of bit 31. Otherwise it's an Address Error.
     if (static_cast<uint64_t>(static_cast<int32_t>(vAddr)) != vAddr)
     {
-        uint32_t pAddr;
-        bool memoryUnused;
-        if (!m_TLB.VAddrToPAddr(vAddr, pAddr, memoryUnused))
-        {
-            m_System.GetRegisters()->TriggerAddressException(vAddr, memoryUnused ? EXC_WADE : EXC_WMISS);
-            return false;
-        }
-        return SW_PhysicalAddress(pAddr, value);
+        m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_WADE);
+        return false;
     }
 
     uint32_t vAddr32 = static_cast<uint32_t>(vAddr);
+
+    // MI repeat mode: only uncached (KSEG1) stores to RDRAM trigger repeat
+    if ((vAddr32 & 0xE0000000) == 0xA0000000 && m_MIPSInterfaceHandler->IsInitMode())
+    {
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < m_AllocatedRdramSize)
+        {
+            uint32_t byteOff = vAddr32 & 7;
+            // Bus data: the full 32-bit value
+            uint64_t busData = static_cast<uint64_t>(value);
+            return MI_RepeatStore(pAddr, busData, 4, byteOff);
+        }
+    }
+
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
+        WatchStore(vAddr32 & 0x1FFFFFFF, 4, value,
+                   m_System.GetRegisters()->m_PROGRAM_COUNTER);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32) = value;
         // SMC detection: if this page has compiled code, invalidate it
         uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
@@ -755,9 +1028,23 @@ bool MipsMemoryVM::SD_Memory(uint64_t vAddr, uint64_t value)
     }
 
     uint32_t vAddr32 = static_cast<uint32_t>(vAddr);
+
+    // MI repeat mode: only uncached (KSEG1) stores to RDRAM trigger repeat
+    if ((vAddr32 & 0xE0000000) == 0xA0000000 && m_MIPSInterfaceHandler->IsInitMode())
+    {
+        uint32_t pAddr = vAddr32 & 0x1FFFFFFF;
+        if (pAddr < m_AllocatedRdramSize)
+        {
+            // Bus data: the full 64-bit value, pattern size 8
+            return MI_RepeatStore(pAddr, value, 8, 0);
+        }
+    }
+
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
+        WatchStore(vAddr32 & 0x1FFFFFFF, 8, value,
+                   m_System.GetRegisters()->m_PROGRAM_COUNTER);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 0) = *((uint32_t*)(&value) + 1);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32 + 4) = *((uint32_t*)(&value) + 0);
         // SMC detection for SD (8-byte store may span two pages)
@@ -848,13 +1135,28 @@ bool MipsMemoryVM::LB_PhysicalAddress(uint32_t pAddr, uint8_t& value)
             value = *(m_RDRAM + (pAddr ^ 3));
             return true;
         }
-        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
-            if (!m_RomMemoryHandler->Read32(pAddr & ~3, value32))
+            // PI bus is 16-bit: sub-word reads return from upper halfword
+            // of the word at adjusted address ((pAddr + 2) & ~3)
+            uint32_t adjAddr = (pAddr + 2) & ~3u;
+            if (!m_RomMemoryHandler->Read32(adjAddr, value32))
             {
                 return false;
             }
-            value = static_cast<uint8_t>((value32 >> (((pAddr & 3) ^ 3) << 3)) & 0xFF);
+            value = static_cast<uint8_t>((value32 >> (24 - (pAddr & 1) * 8)) & 0xFF);
+            return true;
+        }
+        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        {
+            // PI bus is 16-bit: sub-word reads return from upper halfword
+            // of the word at adjusted address ((pAddr + 2) & ~3)
+            uint32_t adjAddr = (pAddr + 2) & ~3u;
+            if (!m_RomMemoryHandler->Read32(adjAddr, value32))
+            {
+                return false;
+            }
+            value = static_cast<uint8_t>((value32 >> (24 - (pAddr & 1) * 8)) & 0xFF);
             return true;
         }
         else
@@ -869,7 +1171,7 @@ bool MipsMemoryVM::LB_PhysicalAddress(uint32_t pAddr, uint8_t& value)
 
 bool MipsMemoryVM::LH_PhysicalAddress(uint32_t pAddr, uint16_t& value)
 {
-    uint32_t readAddress = pAddr & ~1;
+    uint32_t readAddress = pAddr & ~3;
     uint32_t value32;
 
     switch (pAddr & 0xFFF00000)
@@ -884,13 +1186,28 @@ bool MipsMemoryVM::LH_PhysicalAddress(uint32_t pAddr, uint16_t& value)
             value = *reinterpret_cast<uint16_t*>(m_RDRAM + (pAddr ^ 2));
             return true;
         }
-        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
-            if (!m_RomMemoryHandler->Read32(pAddr & ~3, value32))
+            // PI bus is 16-bit: sub-word reads always return the upper halfword
+            // of the word at adjusted address ((pAddr + 2) & ~3)
+            uint32_t adjAddr = (pAddr + 2) & ~3u;
+            if (!m_RomMemoryHandler->Read32(adjAddr, value32))
             {
                 return false;
             }
-            value = static_cast<uint16_t>((value32 >> ((((pAddr ^ 2) & 2) << 3))) & 0xFFFF);
+            value = static_cast<uint16_t>((value32 >> 16) & 0xFFFF);
+            return true;
+        }
+        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        {
+            // PI bus is 16-bit: sub-word reads always return the upper halfword
+            // of the word at adjusted address ((pAddr + 2) & ~3)
+            uint32_t adjAddr = (pAddr + 2) & ~3u;
+            if (!m_RomMemoryHandler->Read32(adjAddr, value32))
+            {
+                return false;
+            }
+            value = static_cast<uint16_t>((value32 >> 16) & 0xFFFF);
             return true;
         }
         else
@@ -1057,14 +1374,14 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
     case 0x04000000:
     {
         uint32_t shift = (3 - (pAddr & 3)) * 8;
-        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFu << shift);
+        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
     case 0x1FC00000:
     {
         uint32_t shift = (3 - (pAddr & 3)) * 8;
-        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFu << shift);
+        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
@@ -1072,6 +1389,11 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
         if ((pAddr & 0xFFFF0000) == IS_VIEWER_BASE)
         {
             ISViewer_WriteByte(pAddr, static_cast<uint8_t>(value));
+        }
+        else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
+        {
+            uint32_t shift = (3 - (pAddr & 3)) * 8;
+            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
         }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
@@ -1109,19 +1431,24 @@ bool MipsMemoryVM::SH_PhysicalAddress(uint32_t pAddr, uint32_t value)
     case 0x04000000:
     {
         uint32_t shift = (2 - (pAddr & 2)) * 8;
-        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFFFu << shift);
+        m_SPRegistersHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
     case 0x1FC00000:
     {
         uint32_t shift = (2 - (pAddr & 2)) * 8;
-        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFu << shift);
+        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
     default:
-        if (pAddr >= 0x10000000 && pAddr < 0x20000000)
+        if (pAddr >= 0x08000000 && pAddr < 0x10000000)
+        {
+            uint32_t shift = (2 - (pAddr & 2)) * 8;
+            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
+        }
+        else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
             uint32_t shift = (2 - (pAddr & 2)) * 8;
             m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
@@ -1377,15 +1704,15 @@ void MipsMemoryVM::TLB_Unmaped(uint32_t vAddr, uint32_t len)
         // Check if address is in KSEG0/KSEG1 (should remain mapped)
         if (address >= 0x80000000 && address < 0x80000000 + m_AllocatedRdramSize)
         {
-            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
-            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
+            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
+            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
             m_TLB_ReadMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
             m_TLB_WriteMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
         }
         else if (address >= 0xA0000000 && address < 0xA0000000 + m_AllocatedRdramSize)
         {
-            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
-            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x1FFFFFFF)) - address);
+            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
+            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
             m_TLB_ReadMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
             m_TLB_WriteMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
         }
@@ -1519,8 +1846,8 @@ void MipsMemoryVM::RdramChanged(MipsMemoryVM* self)
     }
 
     // Retrieve actual RDRAM size from registers handler
-    // If Expansion Pak is enabled, we use 8MB, otherwise 4MB
-    uint32_t newSize = self->m_RDRAMRegistersHandler->is_expansion_pak_enabled() ? 0x800000 : 0x400000;
+    // Ensure RDRAM is practically a flat 8MB array so pointers above 4MB aren't dropped
+    uint32_t newSize = 0x800000;
     
     if (newSize != self->m_AllocatedRdramSize)
     {

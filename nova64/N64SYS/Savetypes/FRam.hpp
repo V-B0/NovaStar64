@@ -40,4 +40,5 @@ private:
     uint32_t m_FlashRAM_Offset;
     bool m_ReadOnly;
     FileSystem::File m_File;
+    uint8_t m_PageBuffer[128];
 };

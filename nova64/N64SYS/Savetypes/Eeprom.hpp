@@ -4,6 +4,7 @@
  */
 #pragma once
 #include <cstdint>
+#include <mutex>
 #include "../../common/file.hpp"
 
 class CEeprom
@@ -34,4 +35,5 @@ private:
     bool m_ReadOnly;
     bool m_Is16K;  // true = 16K EEPROM (2048 bytes), false = 4K (512 bytes)
     FileSystem::File m_File;
+    mutable std::mutex m_FileMutex;
 };

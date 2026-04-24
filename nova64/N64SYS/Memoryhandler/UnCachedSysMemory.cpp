@@ -165,14 +165,14 @@ bool UnCachedSysMemory::DMARead()
     
     Log::debugf("UnCachedSysMemory: DMA Read - Cart[0x%08X] -> RDRAM[0x%08X], length=0x%X",
         cartAddr, dramAddr, length);
+
+    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
     
     // Auto-detect save chip type
     if (m_System.m_SaveUsing == N64Types::SaveChipType::Auto) {
-        m_System.m_SaveUsing = N64Types::SaveChipType::Sram;  // Default to SRAM for DMA
-        Log::infof("UnCachedSysMemory: Auto-detected SRAM (DMA read)");
+        AutoDetectSaveType(offset);
     }
-    
-    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
+
     uint8_t* rdram = m_MMU.Rdram();
     
     if (!rdram) {
@@ -185,9 +185,9 @@ bool UnCachedSysMemory::DMARead()
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
     
     if (saveType == N64Types::SaveChipType::Sram) {
-        m_Sram.DmaToSram(rdram + dramAddr, offset, length);
+        m_Sram.DmaFromSram(rdram + dramAddr, offset, length);
     } else if (saveType == N64Types::SaveChipType::FlashRam) {
-        m_FlashRam.DmaToFlashram(rdram + dramAddr, offset, length);
+        m_FlashRam.DmaFromFlashram(rdram + dramAddr, offset, length);
     } else {
         Log::errorf("UnCachedSysMemory: DMA read failed - unknown save type");
         CompleteDMA(true);
@@ -210,11 +210,12 @@ void UnCachedSysMemory::DMAWrite()
     
     Log::debugf("UnCachedSysMemory: DMA Write - RDRAM[0x%08X] -> Cart[0x%08X], length=0x%X",
         dramAddr, cartAddr, length);
+
+    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
     
     // Auto-detect save chip type
     if (m_System.m_SaveUsing == N64Types::SaveChipType::Auto) {
-        m_System.m_SaveUsing = N64Types::SaveChipType::Sram;  // Default to SRAM for DMA
-        Log::infof("UnCachedSysMemory: Auto-detected SRAM (DMA write)");
+        AutoDetectSaveType(offset);
     }
     
     // Check if saves are read-only
@@ -224,7 +225,6 @@ void UnCachedSysMemory::DMAWrite()
         return;
     }
     
-    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
     uint8_t* rdram = m_MMU.Rdram();
     
     if (!rdram) {
@@ -237,9 +237,9 @@ void UnCachedSysMemory::DMAWrite()
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
     
     if (saveType == N64Types::SaveChipType::Sram) {
-        m_Sram.DmaFromSram(rdram + dramAddr, offset, length);
+        m_Sram.DmaToSram(rdram + dramAddr, offset, length);
     } else if (saveType == N64Types::SaveChipType::FlashRam) {
-        m_FlashRam.DmaFromFlashram(rdram + dramAddr, offset, length);
+        m_FlashRam.DmaToFlashram(rdram + dramAddr, offset, length);
     } else {
         Log::errorf("UnCachedSysMemory: DMA write failed - unknown save type");
         CompleteDMA(true);
