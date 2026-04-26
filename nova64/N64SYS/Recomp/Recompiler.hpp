@@ -46,6 +46,11 @@ class MipsMemoryVM;
 
 namespace Recompiler {
 
+// Diagnostic: global per-thread counters incremented on every CompileCode call.
+// Used by MainSYS SPIKE log to attribute frame stalls to JIT compilation.
+extern std::atomic<uint64_t> g_CompileCount;
+extern std::atomic<uint64_t> g_CompileTimeNs;
+
 /**
  * @enum RemoveReason
  * @brief Reasons for removing compiled code

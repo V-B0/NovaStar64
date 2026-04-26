@@ -74,6 +74,10 @@ static bool SafeExecuteBlock(Nova64::Recompiler::CCompiledFunc* func, uint32_t /
 
 namespace Nova64::Recompiler {
 
+// Diagnostic counters (defined in Recompiler.hpp as extern)
+std::atomic<uint64_t> g_CompileCount{0};
+std::atomic<uint64_t> g_CompileTimeNs{0};
+
 // =============================================================================
 // CRecompiler Implementation
 // =============================================================================
@@ -489,6 +493,10 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     if (compiledFunc) {
         ++m_Stats.blocksCompiled;
     }
+
+    // Diagnostic globals (read by MainSYS SPIKE log to attribute frame stalls)
+    g_CompileCount.fetch_add(1, std::memory_order_relaxed);
+    g_CompileTimeNs.fetch_add(compileTime.count(), std::memory_order_relaxed);
     
     return compiledFunc;
 }

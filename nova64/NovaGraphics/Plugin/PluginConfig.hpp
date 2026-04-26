@@ -114,6 +114,13 @@ struct PluginConfig {
     bool     fbWriteAccess       = true;    // Copy from RDRAM → GPU
     bool     depthCopy           = true;
     bool     nativeResFB         = false;   // Always use native res for FB ops
+    // Perform GPU→RDRAM framebuffer readback once every N VI frames.
+    // 1 = every frame (most accurate, costs ~10ms/frame on Intel iGPU due to
+    // glMapBufferRange stalls + a 30-50ms spike every Nth frame on idle iGPUs).
+    // 60 = once per second (default, sustains a true 60 FPS; sufficient for
+    // pause-menu blur and save-state thumbnails). Lower this if a game relies
+    // on continuous CPU reads of the framebuffer (rare).
+    int      fbReadbackInterval  = 60;
 
     // ── Depth buffer ──────────────────────────────────────────
     bool     depthCompare        = true;

@@ -1458,6 +1458,16 @@ void CN64System::RefreshScreen()
     auto frameEntryTime = std::chrono::steady_clock::now();
     static double accCpuMs = 0, accRenderMs = 0, accAudioMs = 0, accPaceMs = 0, accSwapMs = 0;
     static int profileFrameCount = 0;
+
+    // Cycle timer: real wall clock between successive RefreshScreen entries
+    static auto lastEntry = frameEntryTime;
+    static double accCycleMs = 0;
+    accCycleMs += std::chrono::duration<double, std::milli>(frameEntryTime - lastEntry).count();
+    lastEntry = frameEntryTime;
+
+    // Snapshot recompiler counters at frame entry to attribute CPU spikes
+    uint64_t recompCountStart = Nova64::Recompiler::g_CompileCount.load(std::memory_order_relaxed);
+    uint64_t recompTimeNsStart = Nova64::Recompiler::g_CompileTimeNs.load(std::memory_order_relaxed);
     
     double cpuMs = std::chrono::duration<double, std::milli>(frameEntryTime - profileFrameStart).count();
     accCpuMs += cpuMs;
@@ -1521,9 +1531,10 @@ void CN64System::RefreshScreen()
         {
             m_FramePaceStart = clock::now();
             m_FramePaceInitialized = true;
-#ifdef _WIN32
-            timeBeginPeriod(1); // Set Windows timer to 1ms resolution
-#endif
+            // NOTE: timeBeginPeriod(1) was here previously but caused +2-5ms latency
+            // in OpenGL driver / scheduler overhead system-wide. With it removed,
+            // sleep precision relies on default ~15.6ms quanta, but our spin loop
+            // at the end of pace closes the gap to <1us.
         }
         else
         {
@@ -1539,20 +1550,23 @@ void CN64System::RefreshScreen()
             }
             else if (remaining > nanoseconds(0))
             {
-                // Sleep for the bulk of the wait (leave 2ms for spin-wait).
-                // With timeBeginPeriod(1), sleep granularity is ~1-2ms.
-                auto sleepThreshold = microseconds(2000);
+                auto sleepThreshold = microseconds(8000);
+                auto preSleep = clock::now();
+                double sleptMs = 0;
                 if (remaining > sleepThreshold)
                 {
                     std::this_thread::sleep_for(remaining - sleepThreshold);
+                    sleptMs = std::chrono::duration<double, std::milli>(clock::now() - preSleep).count();
                 }
-                // Spin-wait the final portion for precise timing
+                auto preSpin = clock::now();
                 while (clock::now() < m_FramePaceStart)
                 {
 #ifdef _WIN32
-                    _mm_pause(); // Reduce power and give SMT sibling time
+                    _mm_pause();
 #endif
                 }
+                (void)preSpin;
+                (void)sleptMs;
             }
         }
     }
@@ -1567,8 +1581,11 @@ void CN64System::RefreshScreen()
         double renderMs = std::chrono::duration<double, std::milli>(afterRender - frameEntryTime).count();
         double audioMs = std::chrono::duration<double, std::milli>(afterAudio - afterRender).count();
         double paceMs = std::chrono::duration<double, std::milli>(afterPace - afterAudio).count();
-        Log::infof("SPIKE frame %llu: CPU=%.1fms Render=%.1fms Audio=%.1fms Pace=%.1fms TOTAL=%.1fms",
-                   frameNum, cpuMs, renderMs, audioMs, paceMs, frameTotalMs);
+        uint64_t recompCount = Nova64::Recompiler::g_CompileCount.load(std::memory_order_relaxed) - recompCountStart;
+        double recompMs = (Nova64::Recompiler::g_CompileTimeNs.load(std::memory_order_relaxed) - recompTimeNsStart) / 1'000'000.0;
+        Log::infof("SPIKE frame %llu: CPU=%.1fms Render=%.1fms Audio=%.1fms Pace=%.1fms TOTAL=%.1fms | JIT compiles=%llu time=%.1fms",
+                   frameNum, cpuMs, renderMs, audioMs, paceMs, frameTotalMs,
+                   (unsigned long long)recompCount, recompMs);
     }
     
     if (profileFrameCount >= 60) {
@@ -1577,11 +1594,12 @@ void CN64System::RefreshScreen()
         double avgAudio = accAudioMs / profileFrameCount;
         double avgPace = accPaceMs / profileFrameCount;
         double avgSwap = accSwapMs / profileFrameCount;
+        double avgCycle = accCycleMs / profileFrameCount;
         double avgTotal = (accCpuMs + accRenderMs + accAudioMs + accPaceMs) / profileFrameCount;
-        double fps = (avgTotal > 0) ? (1000.0 / avgTotal) : 0;
-        Log::infof("PERF[%d frames] CPU=%.1fms Render=%.1fms(swap=%.1fms) Audio=%.1fms Pace=%.1fms Total=%.1fms FPS=%.1f",
-                   profileFrameCount, avgCpu, avgRender, avgSwap, avgAudio, avgPace, avgTotal, fps);
-        accCpuMs = accRenderMs = accAudioMs = accPaceMs = accSwapMs = 0;
+        double fps = (avgCycle > 0) ? (1000.0 / avgCycle) : 0;
+        Log::infof("PERF[%d frames] CPU=%.1fms Render=%.1fms(swap=%.1fms) Audio=%.1fms Pace=%.1fms Sum=%.1fms Cycle=%.1fms FPS=%.1f",
+                   profileFrameCount, avgCpu, avgRender, avgSwap, avgAudio, avgPace, avgTotal, avgCycle, fps);
+        accCpuMs = accRenderMs = accAudioMs = accPaceMs = accSwapMs = accCycleMs = 0;
         profileFrameCount = 0;
     }
     profileFrameStart = std::chrono::steady_clock::now();

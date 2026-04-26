@@ -1166,7 +1166,14 @@ void RDPProcessor::HandleSyncFull() {
     // �� GPU � RDRAM readback ��
     // After the frame is complete, copy rendered pixels back to RDRAM so the
     // CPU sees up-to-date data if it reads the framebuffer memory directly.
-    if (sceneDraws >= 1 && m_rdram) {
+    //
+    // Throttle: glMapBufferRange(GL_MAP_READ_BIT) blocks ~10-50ms on Intel Iris Xe
+    // even with a signaled fence (driver bug). Doing this every SyncFull tanks
+    // FPS to ~47. Throttling to every Nth call keeps the bulk of frames at native
+    // pace; mid-frame CPU reads of stale FB data are uncommon and tolerated.
+    static uint64_t s_rbCounter = 0;
+    constexpr uint64_t kRdpReadbackInterval = 8;
+    if (sceneDraws >= 1 && m_rdram && (s_rbCounter++ % kRdpReadbackInterval) == 0) {
         // Complete any previous async readback first
         if (g_fbManager.IsReadbackPending())
             g_fbManager.FinishAsyncReadback(m_rdram);

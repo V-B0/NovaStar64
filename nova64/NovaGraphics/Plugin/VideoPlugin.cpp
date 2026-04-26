@@ -553,6 +553,10 @@ void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
 
 void VideoPlugin::UpdateScreen() {
     auto start = std::chrono::high_resolution_clock::now();
+    auto stage = start;
+    double tSwap=0, tVI=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
+    auto markStage = [&](double& slot){ auto now = std::chrono::high_resolution_clock::now();
+        slot += std::chrono::duration<double, std::milli>(now - stage).count(); stage = now; };
     std::lock_guard<std::mutex> lock(m_glMutex);
 
     // Ensure GL context is current on this thread (may be called from CPU thread)
@@ -571,6 +575,7 @@ void VideoPlugin::UpdateScreen() {
             swapEnd - swapStart).count();
         m_swapPending = false;
     }
+    markStage(tSwap);
 
     m_frameCount++;
     m_frameStats.viInterrupts++;
@@ -696,6 +701,7 @@ void VideoPlugin::UpdateScreen() {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
+    markStage(tCompose);
 
     // Reset HLE flag for next frame
     m_hleRenderedThisFrame = false;
@@ -734,9 +740,11 @@ void VideoPlugin::UpdateScreen() {
         // Run post-process chain: intermediate tex → default FB 0
         m_postProcess->Apply(m_ppTex, 0, ppW, ppH);
     }
+    markStage(tPost);
 
     // Render ImGui debug panels (on top of everything, before swap)
     g_imguiDebugUI.Render();
+    markStage(tImgui);
 
     // Force default-framebuffer alpha to 1.0 so the Windows DWM compositor
     // never makes the window see-through (it reads the backbuffer alpha).
@@ -745,12 +753,14 @@ void VideoPlugin::UpdateScreen() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    markStage(tAlpha);
 
     // Deferred swap: submit all GPU work now so the GPU can finish while
     // the CPU continues emulating.  The actual SwapBuffers is deferred to
     // the start of the next UpdateScreen call.
     glFlush();
     m_swapPending = true;
+    markStage(tFlush);
 
     // ── HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ───────────
     // Majora's Mask (and other games) sample the previous frame from RDRAM
@@ -765,15 +775,31 @@ void VideoPlugin::UpdateScreen() {
     // non-blocking and incurs at most one frame of latency. We only submit a
     // new readback here as a fallback, when nothing is in flight and the
     // display FB still has unsynced GPU writes.
-    if (m_sysInfo.rdram && m_viOrigin && m_hleEverRendered) {
-        g_fbManager.FinishAsyncReadback(m_sysInfo.rdram);
+    double tFinish=0, tBegin=0;
+    if (m_sysInfo.rdram && m_viOrigin && m_hleEverRendered && m_config.fbReadAccess) {
+        // Throttle GPU→RDRAM readback. On Intel iGPUs the glMapBufferRange
+        // call inside FinishAsyncReadback blocks ~10ms even with a fence,
+        // because the driver doesn't actually finish the readback until the
+        // map. Doing it every Nth frame cuts steady-state render time by ~75%
+        // while still keeping RDRAM fresh enough for most games.
+        static uint64_t s_readCounter = 0;
+        const int interval = std::max(1, m_config.fbReadbackInterval);
+        if ((s_readCounter++ % static_cast<uint64_t>(interval)) == 0) {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            g_fbManager.FinishAsyncReadback(m_sysInfo.rdram);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            tFinish = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
-        if (auto* displayFB = g_fbManager.GetDisplayFramebuffer()) {
-            if (!g_fbManager.IsReadbackPending() && displayFB->gpuModified) {
-                g_fbManager.BeginAsyncReadback(displayFB);
+            if (auto* displayFB = g_fbManager.GetDisplayFramebuffer()) {
+                if (!g_fbManager.IsReadbackPending() && displayFB->gpuModified) {
+                    g_fbManager.BeginAsyncReadback(displayFB);
+                }
             }
+            auto t2 = std::chrono::high_resolution_clock::now();
+            tBegin = std::chrono::duration<double, std::milli>(t2 - t1).count();
         }
     }
+    markStage(tRead);
 
 
 
@@ -786,6 +812,19 @@ void VideoPlugin::UpdateScreen() {
     if (totalMs > 100.0) {
         LOG_WARN("UpdateScreen slow: total={:.1f}ms swap={:.1f}ms frame={}",
                  totalMs, m_frameStats.swapTimeMs, m_frameCount);
+    }
+
+    // Per-stage averages every 60 frames
+    {
+        static double aSwap=0,aVI=0,aCompose=0,aPost=0,aImgui=0,aAlpha=0,aFlush=0,aRead=0,aFin=0,aBeg=0,aTotal=0;
+        static int aFrames=0;
+        aSwap+=tSwap; aCompose+=tCompose; aPost+=tPost; aImgui+=tImgui;
+        aAlpha+=tAlpha; aFlush+=tFlush; aRead+=tRead; aFin+=tFinish; aBeg+=tBegin; aTotal+=totalMs;
+        if (++aFrames >= 60) {
+            Log::infof("RENDER[60f avg ms] total=%.2f | swap=%.2f compose=%.2f post=%.2f imgui=%.2f alpha=%.2f flush=%.2f read=%.2f (fin=%.2f beg=%.2f)",
+                       aTotal/60, aSwap/60, aCompose/60, aPost/60, aImgui/60, aAlpha/60, aFlush/60, aRead/60, aFin/60, aBeg/60);
+            aSwap=aCompose=aPost=aImgui=aAlpha=aFlush=aRead=aFin=aBeg=aTotal=0; aFrames=0;
+        }
     }
 }
 

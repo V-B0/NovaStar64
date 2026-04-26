@@ -85,6 +85,7 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
         if (key == "fbWriteAccess")      { fbWriteAccess = (val == "1" || val == "true"); return true; }
         if (key == "depthCopy")          { depthCopy = (val == "1" || val == "true"); return true; }
         if (key == "nativeResFB")        { nativeResFB = (val == "1" || val == "true"); return true; }
+        if (key == "fbReadbackInterval") { fbReadbackInterval = std::max(1, std::stoi(val)); return true; }
 
         // Depth
         if (key == "depthCompare")       { depthCompare = (val == "1" || val == "true"); return true; }
