@@ -269,22 +269,27 @@ std::string ShaderGenerator::GetVertexOutputs() const {
             "    float4 position  : SV_Position;\n"
             "    float4 vColor    : COLOR;\n"
             "    noperspective float4 vColorNP : COLOR1;\n"
-            "    float2 vTexCoord0: TEXCOORD0;\n"
-            "    float2 vTexCoord1: TEXCOORD1;\n"
+            // vTexCoord0/1 and vClipW are already pre-divided by clip W in the
+            // vertex stage (so the fragment can recover screen-space tc via
+            // tc / vClipW).  They MUST be noperspective — otherwise the
+            // rasterizer divides them by W a second time, producing the
+            // close-up texel-marching artefact on near geometry.
+            "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
+            "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
             "    float  vFog      : FOG;\n"
             "    float  vDepth    : DEPTH_INTERP;\n"
-            "    float  vClipW    : TEXCOORD2;\n"
+            "    noperspective float  vClipW    : TEXCOORD2;\n"
             "    float4 vBaryCoord: TEXCOORD3;\n"
             "};\n";
     }
     return
         "out vec4 vColor;\n"
         "noperspective out vec4 vColorNP;\n"
-        "out vec2 vTexCoord0;\n"
-        "out vec2 vTexCoord1;\n"
+        "noperspective out vec2 vTexCoord0;\n"
+        "noperspective out vec2 vTexCoord1;\n"
         "out float vFog;\n"
         "out float vDepth;\n"
-        "out float vClipW;\n"
+        "noperspective out float vClipW;\n"
         "out vec4 vBaryCoord;\n";
 }
 
@@ -295,22 +300,23 @@ std::string ShaderGenerator::GetFragmentInputs() const {
             "    float4 position  : SV_Position;\n"
             "    float4 vColor    : COLOR;\n"
             "    noperspective float4 vColorNP : COLOR1;\n"
-            "    float2 vTexCoord0: TEXCOORD0;\n"
-            "    float2 vTexCoord1: TEXCOORD1;\n"
+            // Must match VSOutput qualifiers exactly.
+            "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
+            "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
             "    float  vFog      : FOG;\n"
             "    float  vDepth    : DEPTH_INTERP;\n"
-            "    float  vClipW    : TEXCOORD2;\n"
+            "    noperspective float  vClipW    : TEXCOORD2;\n"
             "    float4 vBaryCoord: TEXCOORD3;\n"
             "};\n";
     }
     return
         "in vec4 vColor;\n"
         "noperspective in vec4 vColorNP;\n"
-        "in vec2 vTexCoord0;\n"
-        "in vec2 vTexCoord1;\n"
+        "noperspective in vec2 vTexCoord0;\n"
+        "noperspective in vec2 vTexCoord1;\n"
         "in float vFog;\n"
         "in float vDepth;\n"
-        "in float vClipW;\n"
+        "noperspective in float vClipW;\n"
         "in vec4 vBaryCoord;\n";
 }
 

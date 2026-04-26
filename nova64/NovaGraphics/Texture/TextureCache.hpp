@@ -65,7 +65,7 @@ struct TextureKey {
     uint16_t tmemOffset;    // Tile base offset in TMEM (in 64-bit words = tmemAddr)
     uint8_t  tlutType;      // 0=none, 2=RGBA16, 3=IA16 (from otherModeH bits 15:14)
     uint8_t  mipLevels;     // Number of mip levels in tile chain (0 = base only)
-    uint32_t crc;           // Content hash for change detection
+    uint64_t crc;           // Content hash for change detection
 
     bool operator==(const TextureKey& other) const {
         return address == other.address &&
@@ -92,7 +92,7 @@ struct TextureKeyHash {
     size_t operator()(const TextureKey& k) const {
         size_t h = std::hash<uint32_t>{}(k.address);
         h ^= std::hash<uint32_t>{}(k.palette) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint32_t>{}(k.crc) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint64_t>{}(k.crc) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint16_t>{}(k.width) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint16_t>{}(k.height) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint8_t>{}(static_cast<uint8_t>(k.format)) << 16;

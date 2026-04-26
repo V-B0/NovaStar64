@@ -34,6 +34,52 @@ static constexpr bool DISABLE_N64_DEPTH_COMPARE = false;
 
 namespace Nova64::Video {
 
+static bool IsRGBAFramebufferFormat(ImageFormat format, ImageSize size) {
+    return format == ImageFormat::RGBA &&
+           (size == ImageSize::Bpp16 || size == ImageSize::Bpp32);
+}
+
+static bool IsRGBAFramebufferFormat(const Tex::TextureKey& key) {
+    return key.format == Tex::N64TexFormat::RGBA &&
+           (key.size == Tex::N64TexSize::Bits16 || key.size == Tex::N64TexSize::Bits32);
+}
+
+static bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool framebufferFormat) {
+    if (!fb) return false;
+
+    // Depth FBs must never be sampled as color textures.
+    if (fb->desc.type != FBType::Color) return false;
+
+    const uint32_t rdramAddress = address & 0x7FFFFF;
+    if (fb->desc.address == rdramAddress) return true;
+
+    // For non-exact matches, require RGBA fb-format AND stride-aligned offset.
+    // Non-stride-aligned in-range hits are almost always game textures whose
+    // RDRAM happens to lie inside an old FB's footprint — sampling the FB
+    // there replaces the texture with stale framebuffer pixels.
+    if (!framebufferFormat || rdramAddress < fb->desc.address)
+        return false;
+    if (fb->desc.stride == 0 || rdramAddress >= fb->desc.EndAddress())
+        return false;
+    return ((rdramAddress - fb->desc.address) % fb->desc.stride) == 0;
+}
+
+static bool TraceMMRdpEnabled() {
+    static const bool enabled = []() {
+        const char* value = std::getenv("NOVA64_MM_RDP_TRACE");
+        return value && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
+#define MM_RDP_TRACE(fmt, ...)                                                   \
+    do {                                                                         \
+        if (TraceMMRdpEnabled()) {                                               \
+            NOVA_LOG(LogLevel::Info, LogSubsystem::RDP, "[MMRDP] " fmt,          \
+                     ##__VA_ARGS__);                                             \
+        }                                                                        \
+    } while (0)
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Construction / Initialization
 // ═══════════════════════════════════════════════════════════════════════════
@@ -473,6 +519,14 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
     m_decoder.DecodeSetColorImage(words, m_state.rdp.colorImage);
     m_state.rdp.colorImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.colorImage.address);
 
+    MM_RDP_TRACE("SetColorImage prev=0x{:06X} addr=0x{:06X} fmt={} size={} width={} z=0x{:06X}",
+                 prevAddr & 0x7FFFFF,
+                 m_state.rdp.colorImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.colorImage.format),
+                 static_cast<int>(m_state.rdp.colorImage.size),
+                 m_state.rdp.colorImage.width,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF);
+
     // NOTE: We intentionally do NOT do a proactive CopyFromGPU here.
     // The reactive copies in LoadBlock/LoadTile already handle reading
     // from GPU framebuffers when needed.  A proactive copy here would
@@ -497,6 +551,14 @@ void RDPProcessor::HandleSetMaskImage(const uint32_t* words) {
     FlushBatch();
     m_decoder.DecodeSetMaskImage(words, m_state.rdp.zbufferImage);
     m_state.rdp.zbufferImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.zbufferImage.address);
+
+    MM_RDP_TRACE("SetMaskImage z=0x{:06X} color=0x{:06X} colorFmt={} colorSize={} colorWidth={}",
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
+                 m_state.rdp.colorImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.colorImage.format),
+                 static_cast<int>(m_state.rdp.colorImage.size),
+                 m_state.rdp.colorImage.width);
+
     m_state.rdp.MarkDirty(RDPDirtyFlag::ZBufferImage);
     m_stats.stateChanges++;
 
@@ -524,6 +586,15 @@ void RDPProcessor::HandleSetMaskImage(const uint32_t* words) {
 void RDPProcessor::HandleSetTextureImage(const uint32_t* words) {
     m_decoder.DecodeSetTextureImage(words, m_state.rdp.textureImage);
     m_state.rdp.textureImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.textureImage.address);
+
+    MM_RDP_TRACE("SetTextureImage addr=0x{:06X} fmt={} size={} width={} color=0x{:06X} z=0x{:06X}",
+                 m_state.rdp.textureImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size),
+                 m_state.rdp.textureImage.width,
+                 m_state.rdp.colorImage.address & 0x7FFFFF,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF);
+
     m_state.rdp.MarkDirty(RDPDirtyFlag::TextureImage);
     m_stats.stateChanges++;
 }
@@ -590,6 +661,23 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
     // GLideN64: gDPSetTileSize(tile, uls, ult, lrs, dxt) inside gDPLoadBlock
     auto& tileRef = m_state.rdp.tiles[tile];
     tileRef.sl = uls; tileRef.tl = ult; tileRef.sh = texels; tileRef.th = dxt;
+
+    MM_RDP_TRACE("LoadBlock tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} uls={} ult={} texels={} dxt={} tileFmt={} tileSize={} tmem={} line={} pal={}",
+                 tile,
+                 m_state.rdp.textureImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size),
+                 m_state.rdp.textureImage.width,
+                 uls,
+                 ult,
+                 texels,
+                 dxt,
+                 tileRef.format,
+                 tileRef.size,
+                 tileRef.tmemAddr,
+                 tileRef.line,
+                 tileRef.palette);
+
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     ExecuteLoadBlock(tile, uls, ult, texels, dxt);
@@ -606,6 +694,23 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
     tileRef.tl = static_cast<int32_t>(tl * 4.0f);
     tileRef.sh = static_cast<int32_t>(sh * 4.0f);
     tileRef.th = static_cast<int32_t>(th * 4.0f);
+
+    MM_RDP_TRACE("LoadTile tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} sl={:.2f} tl={:.2f} sh={:.2f} th={:.2f} tileFmt={} tileSize={} tmem={} line={} pal={}",
+                 tile,
+                 m_state.rdp.textureImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size),
+                 m_state.rdp.textureImage.width,
+                 sl,
+                 tl,
+                 sh,
+                 th,
+                 tileRef.format,
+                 tileRef.size,
+                 tileRef.tmemAddr,
+                 tileRef.line,
+                 tileRef.palette);
+
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     ExecuteLoadTile(tile, sl, tl, sh, th);
@@ -615,6 +720,18 @@ void RDPProcessor::HandleLoadTLUT(const uint32_t* words) {
     if (!m_batch.drawCalls.empty()) FlushBatch();
     int tile, count;
     m_decoder.DecodeLoadTLUT(words, tile, count);
+    const auto& tileRef = m_state.rdp.tiles[tile];
+    MM_RDP_TRACE("LoadTLUT tile={} count={} tex=0x{:06X} texFmt={} texSize={} texWidth={} tmem={} sl={} tl={} pal={}",
+                 tile,
+                 count,
+                 m_state.rdp.textureImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size),
+                 m_state.rdp.textureImage.width,
+                 tileRef.tmemAddr,
+                 tileRef.sl,
+                 tileRef.tl,
+                 tileRef.palette);
     ExecuteLoadTLUT(tile, count);
 }
 
@@ -696,14 +813,6 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     const auto& texImg = m_state.rdp.textureImage;
     const auto& tileDesc = m_state.rdp.tiles[tile];
 
-    // Reactive sync: only copy from GPU if the texture source address overlaps 
-    // with a modified GPU framebuffer. Loosen the match to catch sub-region 
-    // background captures (Zelda MM background blur).
-    GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
-    if (srcFB && srcFB->gpuModified) {
-        g_fbManager.CopyFromGPU(srcFB, m_rdram);
-    }
-
     // Byte count from tile size (matches GLideN64)
     uint32_t width = (texels - uls + 1) & 0x0FFF;
     uint32_t bytes = width << tileDesc.size >> 1;
@@ -715,6 +824,30 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     address &= (m_rdramSize - 1);
 
     if (bytes == 0 || (address + bytes) > m_rdramSize) return;
+
+    GPUFramebuffer* rawSrcFB = g_fbManager.FindByAddress(address);
+    bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
+    GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
+    MM_RDP_TRACE("ExecuteLoadBlock tile={} src=0x{:06X} bytes={} tmem={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} gpuModified={}",
+                 tile,
+                 address & 0x7FFFFF,
+                 bytes,
+                 tileDesc.tmemAddr,
+                 static_cast<int>(texImg.format),
+                 static_cast<int>(texImg.size),
+                 rawSrcFB != nullptr,
+                 canAliasSrcFB,
+                 rawSrcFB ? rawSrcFB->desc.address : 0u,
+                 rawSrcFB ? rawSrcFB->gpuModified : false);
+    if (srcFB && srcFB->gpuModified) {
+        MM_RDP_TRACE("CopyFromGPU LoadBlock src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
+                     address & 0x7FFFFF,
+                     srcFB->desc.address,
+                     srcFB->desc.width,
+                     srcFB->desc.height,
+                     srcFB->desc.stride);
+        g_fbManager.CopyFromGPU(srcFB, m_rdram);
+    }
 
     uint32_t tmemWordAddr = tileDesc.tmemAddr; // in 64-bit word units
 
@@ -810,12 +943,6 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     const auto& texImg = m_state.rdp.textureImage;
     const auto& tileDesc = m_state.rdp.tiles[tile];
 
-    // Same check as LoadBlock
-    GPUFramebuffer* srcFB = g_fbManager.FindByAddress(texImg.address);
-    if (srcFB && srcFB->gpuModified) {
-        g_fbManager.CopyFromGPU(srcFB, m_rdram);
-    }
-
     int iuls = static_cast<int>(sl) & 0x3FF;
     int iult = static_cast<int>(tl) & 0x3FF;
     int ilrs = static_cast<int>(sh) & 0x3FF;
@@ -852,6 +979,33 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         + static_cast<uint32_t>(iult) * srcLineBytes
         + (static_cast<uint32_t>(iuls) << static_cast<int>(texImg.size) >> 1);
     address &= (m_rdramSize - 1);
+
+    GPUFramebuffer* rawSrcFB = g_fbManager.FindByAddress(address);
+    bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
+    GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
+    MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} gpuModified={}",
+                 tile,
+                 address & 0x7FFFFF,
+                 width,
+                 height,
+                 rowBytes,
+                 tileDesc.tmemAddr,
+                 tileDesc.line,
+                 static_cast<int>(texImg.format),
+                 static_cast<int>(texImg.size),
+                 rawSrcFB != nullptr,
+                 canAliasSrcFB,
+                 rawSrcFB ? rawSrcFB->desc.address : 0u,
+                 rawSrcFB ? rawSrcFB->gpuModified : false);
+    if (srcFB && srcFB->gpuModified) {
+        MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
+                     address & 0x7FFFFF,
+                     srcFB->desc.address,
+                     srcFB->desc.width,
+                     srcFB->desc.height,
+                     srcFB->desc.stride);
+        g_fbManager.CopyFromGPU(srcFB, m_rdram);
+    }
 
     uint32_t tmemWordAddr = tileDesc.tmemAddr; // 64-bit word address
     int totalBytes = 0;
@@ -937,6 +1091,17 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
         + (tileDesc.tl >> 2) * (texImg.width * GetBitsPerPixel(texImg.size) / 8)
         + ((tileDesc.sl >> 2) << static_cast<int>(texImg.size) >> 1);
 
+    MM_RDP_TRACE("ExecuteLoadTLUT tile={} count={} src=0x{:06X} baseTex=0x{:06X} tmem={} destU16={} texFmt={} texSize={} texWidth={}",
+                 tile,
+                 count,
+                 address & 0x7FFFFF,
+                 texImg.address & 0x7FFFFF,
+                 tileDesc.tmemAddr,
+                 tileDesc.tmemAddr << 2,
+                 static_cast<int>(texImg.format),
+                 static_cast<int>(texImg.size),
+                 texImg.width);
+
     uint16_t* tmem16 = reinterpret_cast<uint16_t*>(m_state.rdp.tmem.data);
     uint32_t destIdx = tileDesc.tmemAddr << 2; // in u16 units
 
@@ -952,7 +1117,7 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
     for (int i = 0; i < count; i++) {
         uint32_t rdAddr = address & (m_rdramSize - 1);
         if (rdAddr + 1 < m_rdramSize) {
-            uint32_t entryIdx = (tileDesc.tmemAddr + i) & 0x3FF;
+            uint32_t entryIdx = (tileDesc.tmemAddr + i) & 0x1FF;
             uint16_t val = *reinterpret_cast<const uint16_t*>(m_rdram + (rdAddr ^ 2));
             uint16_t color = swapword(val);
             // Replicate color across all 4 banks (8 bytes total per entry)
@@ -1196,13 +1361,33 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     float x0, y0, x1, y1;
     m_decoder.DecodeFillRect(words, x0, y0, x1, y1);
 
+    bool sameColorDepth = (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
+                           m_state.rdp.colorImage.address != 0);
+    MM_RDP_TRACE("FillRect raw=0x{:08X} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) color=0x{:06X} z=0x{:06X} sameColorDepth={} colorSize={} cycle={}",
+                 m_state.rdp.fillColorRaw,
+                 x0,
+                 y0,
+                 x1,
+                 y1,
+                 m_state.rdp.colorImage.address & 0x7FFFFF,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
+                 sameColorDepth,
+                 static_cast<int>(m_state.rdp.colorImage.size),
+                 static_cast<int>((m_state.rdp.otherModeH >> 20) & 0x03));
+
     // �� Detect depth buffer clear ��
     // The N64 clears the depth buffer by setting the color image to the depth
-    // buffer address, then issuing FillRect with the depth clear fill color.
-    // Detect this pattern and perform a GL depth clear instead of drawing.
-    if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address) {
-        // The standard N64 depth clear color is 0xFFFCFFFC (Z=max, dZ=0).
-        // Accept any fill to the depth address as a depth clear.
+    // buffer address, then issuing FillRect with the canonical depth-clear
+    // value. Some games, including Majora's Mask, also use the depth-image
+    // address as an auxiliary color buffer, so only the real clear value should
+    // be intercepted here.
+    constexpr uint32_t kN64DepthClearFillColor = 0xFFFCFFFCu;
+    if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
+        m_state.rdp.colorImage.size == ImageSize::Bpp16 &&
+        m_state.rdp.fillColorRaw == kN64DepthClearFillColor) {
+        MM_RDP_TRACE("DepthClearIntercept raw=0x{:08X} addr=0x{:06X}",
+                     m_state.rdp.fillColorRaw,
+                     m_state.rdp.colorImage.address & 0x7FFFFF);
         FlushBatch();
         if (g_fbManager.GetCurrentColor()) {
             GLuint fbo = g_fbManager.GetCurrentColor()->fbo;
@@ -1291,115 +1476,112 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     call.primDeltaZ  = m_state.rdp.primDeltaZ;
     call.fogUsage    = m_state.rdp.geometry.fogUsage;
     
-    // Reconstruct 3 triangle vertices from RDP edge coefficients using double precision
-    // to avoid "texture vibration" caused by floating-point rounding errors.
-    double yTop = static_cast<double>(tri.edge.yh);
-    double yMid = static_cast<double>(tri.edge.ym);
-    double yBot = static_cast<double>(tri.edge.yl);
-    double xh = static_cast<double>(tri.edge.xh);
-    double dxhDy = static_cast<double>(tri.edge.dxhDy);
-    
-    RenderBatch::Vertex v0, v1, v2;
-    
-    // Top vertex: start of major (H) edge
-    v0.x = static_cast<float>(xh);
-    v0.y = static_cast<float>(yTop);
-    
-    // Mid vertex: start of L edge = end of M edge (the "knee" on the non-major side)
-    v1.x = static_cast<float>(tri.edge.xl);
-    v1.y = static_cast<float>(yMid);
-    
-    // Bottom vertex: end of major (H) edge
-    v2.x = static_cast<float>(xh + dxhDy * (yBot - yTop));
-    v2.y = static_cast<float>(yBot);
-    
-    // Attribute interpolation using edge (dDe) and X (dDx) derivatives.
-    // Use double precision to prevent sub-pixel jitter in textures and colors.
+    // N64 RDP triangles are defined by a major edge and two minor edges.
+    // They are split at the middle Y coordinate (ym).
+    double yh = tri.edge.yh;
+    double ym = tri.edge.ym;
+    double yl = tri.edge.yl;
+    double xh = tri.edge.xh;
+    double xm = tri.edge.xm;
+    double xl = tri.edge.xl;
+    double dxhdy = tri.edge.dxhDy;
+    double dxmdy = tri.edge.dxmDy;
+    double dxldy = tri.edge.dxlDy;
+
+    // Attribute interpolation helper
     auto interpAttr = [&](double base, double dDe, double dDx, double x, double y) -> float {
-        double dy = y - yTop;
-        double xMajor = xh + dxhDy * dy; // major edge X at this Y
+        double dy = y - yh;
+        double xMajor = xh + dxhdy * dy; // major edge X at this Y
         return static_cast<float>(base + dDe * dy + dDx * (x - xMajor));
     };
+
+    auto fillVertex = [&](RenderBatch::Vertex& v, double x, double y) {
+        v.x = static_cast<float>(x);
+        v.y = static_cast<float>(y);
+        v.w = 1.0f;
+
+        if (tri.hasDepth) {
+            v.z = std::clamp(interpAttr(tri.depth.z, tri.depth.dzDe, tri.depth.dzDx, x, y), 0.0f, 1.0f);
+        } else {
+            v.z = 0.0f;
+        }
+
+        if (tri.hasTexture && tri.texture.w != 0.0f) {
+            v.perspW = interpAttr(tri.texture.w, tri.texture.dwDe, tri.texture.dwDx, x, y);
+            v.s = interpAttr(tri.texture.s, tri.texture.dsDe, tri.texture.dsDx, x, y);
+            v.t = interpAttr(tri.texture.t, tri.texture.dtDe, tri.texture.dtDx, x, y);
+        } else {
+            v.perspW = 1.0f;
+            v.s = v.t = 0.0f;
+        }
+
+        if (tri.hasShade) {
+            v.r = interpAttr(tri.shade.r, tri.shade.drDe, tri.shade.drDx, x, y) / 255.0f;
+            v.g = interpAttr(tri.shade.g, tri.shade.dgDe, tri.shade.dgDx, x, y) / 255.0f;
+            v.b = interpAttr(tri.shade.b, tri.shade.dbDe, tri.shade.dbDx, x, y) / 255.0f;
+            v.a = interpAttr(tri.shade.a, tri.shade.daDe, tri.shade.daDx, x, y) / 255.0f;
+            v.fogFactor = v.a;
+        } else {
+            v.r = v.g = v.b = v.a = 1.0f;
+            v.fogFactor = 0.0f;
+        }
+        v.s1 = v.t1 = 0;
+        v.clipFlags = 0;
+    };
+
+    // Calculate mid-point on major edge
+    double x_major_mid = xh + dxhdy * (ym - yh);
     
-    // Depth
-    if (tri.hasDepth) {
-        v0.z = static_cast<float>(tri.depth.z);
-        v1.z = interpAttr(tri.depth.z, tri.depth.dzDe, tri.depth.dzDx, v1.x, v1.y);
-        v2.z = static_cast<float>(tri.depth.z + tri.depth.dzDe * (yBot - yTop));
-        v0.z = std::clamp(v0.z, 0.0f, 1.0f);
-        v1.z = std::clamp(v1.z, 0.0f, 1.0f);
-        v2.z = std::clamp(v2.z, 0.0f, 1.0f);
-    } else {
-        v0.z = v1.z = v2.z = 0.0f;
-    }
-    
-    if (tri.hasTexture && tri.texture.w != 0.0f) {
-        v0.perspW = tri.texture.w;
-        v1.perspW = interpAttr(tri.texture.w, tri.texture.dwDe, tri.texture.dwDx, v1.x, v1.y);
-        v2.perspW = static_cast<float>(tri.texture.w + tri.texture.dwDe * (yBot - yTop));
-    } else {
-        v0.perspW = v1.perspW = v2.perspW = 1.0f;
-    }
-    v0.w = v1.w = v2.w = 1.0f;
-    
-    // Shade (color)
-    if (tri.hasShade) {
-        v0.r = tri.shade.r / 255.0f; v0.g = tri.shade.g / 255.0f;
-        v0.b = tri.shade.b / 255.0f; v0.a = tri.shade.a / 255.0f;
+    // Triangle 1 (Top half: yh to ym)
+    // Vertices: (xh, yh), (xm, yh), (xl, ym), (x_major_mid, ym)
+    RenderBatch::Vertex vt0, vt1, vt2, vt3;
+    fillVertex(vt0, xh, yh);
+    fillVertex(vt1, xm, yh);
+    fillVertex(vt2, xl, ym);
+    fillVertex(vt3, x_major_mid, ym);
+
+    // Standard N64 triangle starts as a single point: xh == xm
+    bool hasTop = std::abs(ym - yh) > 0.001;
+    if (hasTop) {
+        m_batch.vertices.push_back(vt0);
+        m_batch.vertices.push_back(vt1);
+        m_batch.vertices.push_back(vt2);
         
-        v1.r = interpAttr(tri.shade.r, tri.shade.drDe, tri.shade.drDx, v1.x, v1.y) / 255.0f;
-        v1.g = interpAttr(tri.shade.g, tri.shade.dgDe, tri.shade.dgDx, v1.x, v1.y) / 255.0f;
-        v1.b = interpAttr(tri.shade.b, tri.shade.dbDe, tri.shade.dbDx, v1.x, v1.y) / 255.0f;
-        v1.a = interpAttr(tri.shade.a, tri.shade.daDe, tri.shade.daDx, v1.x, v1.y) / 255.0f;
+        m_batch.vertices.push_back(vt0);
+        m_batch.vertices.push_back(vt2);
+        m_batch.vertices.push_back(vt3);
+        call.vertexCount += 6;
+    }
+
+    // Triangle 2 (Bottom half: ym to yl)
+    // Vertices: (xl, ym), (x_major_mid, ym), (xl + dxldy*(yl-ym), yl), (xh + dxhdy*(yl-yh), yl)
+    bool hasBot = std::abs(yl - ym) > 0.001;
+    if (hasBot) {
+        double x_minor_bot = xl + dxldy * (yl - ym);
+        double x_major_bot = xh + dxhdy * (yl - yh);
         
-        double dy2 = yBot - yTop;
-        v2.r = static_cast<float>(tri.shade.r + tri.shade.drDe * dy2) / 255.0f;
-        v2.g = static_cast<float>(tri.shade.g + tri.shade.dgDe * dy2) / 255.0f;
-        v2.b = static_cast<float>(tri.shade.b + tri.shade.dbDe * dy2) / 255.0f;
-        v2.a = static_cast<float>(tri.shade.a + tri.shade.daDe * dy2) / 255.0f;
-    } else {
-        v0.r = v0.g = v0.b = v0.a = 1.0f;
-        v1.r = v1.g = v1.b = v1.a = 1.0f;
-        v2.r = v2.g = v2.b = v2.a = 1.0f;
+        RenderBatch::Vertex vb0, vb1, vb2, vb3;
+        fillVertex(vb0, xl, ym);
+        fillVertex(vb1, x_major_mid, ym);
+        fillVertex(vb2, x_minor_bot, yl);
+        fillVertex(vb3, x_major_bot, yl);
+
+        m_batch.vertices.push_back(vb0);
+        m_batch.vertices.push_back(vb1);
+        m_batch.vertices.push_back(vb2);
+        
+        m_batch.vertices.push_back(vb1);
+        m_batch.vertices.push_back(vb2);
+        m_batch.vertices.push_back(vb3);
+        call.vertexCount += 6;
     }
-    
-    // Texture coordinates (in TMEM texel space)
-    if (tri.hasTexture) {
-        v0.s = tri.texture.s; v0.t = tri.texture.t;
-        v1.s = interpAttr(tri.texture.s, tri.texture.dsDe, tri.texture.dsDx, v1.x, v1.y);
-        v1.t = interpAttr(tri.texture.t, tri.texture.dtDe, tri.texture.dtDx, v1.x, v1.y);
-        double dy2 = yBot - yTop;
-        v2.s = static_cast<float>(tri.texture.s + tri.texture.dsDe * dy2);
-        v2.t = static_cast<float>(tri.texture.t + tri.texture.dtDe * dy2);
-    } else {
-        v0.s = v0.t = 0; v1.s = v1.t = 0; v2.s = v2.t = 0;
+
+    if (call.vertexCount > 0) {
+        m_batch.AppendDrawCall(call);
+        m_stats.trianglesDrawn += (call.vertexCount / 3);
+        m_stats.frameTriangles += (call.vertexCount / 3);
+        m_state.rdp.triangleCount++;
     }
-    
-    v0.s1 = v0.t1 = 0; v1.s1 = v1.t1 = 0; v2.s1 = v2.t1 = 0;
-    // LLE triangles: the RSP bakes fog factor into shade alpha when G_FOG is set.
-    // Copy shade alpha to the fog attribute so the shader's fog path uses the
-    // correct per-vertex fog instead of the depth-based fallback.
-    if (tri.hasShade) {
-        v0.fogFactor = v0.a;
-        v1.fogFactor = v1.a;
-        v2.fogFactor = v2.a;
-    } else {
-        v0.fogFactor = v1.fogFactor = v2.fogFactor = 0.0f;
-    }
-    
-    // LLE triangles are in screen space - no clip flags needed
-    v0.clipFlags = v1.clipFlags = v2.clipFlags = 0;
-    
-    m_batch.vertices.push_back(v0);
-    m_batch.vertices.push_back(v1);
-    m_batch.vertices.push_back(v2);
-    call.vertexCount = 3;
-    
-    m_batch.AppendDrawCall(call);
-    
-    m_stats.trianglesDrawn++;
-    m_stats.frameTriangles++;
-    m_state.rdp.triangleCount++;
 }
 
 void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo) {
@@ -1417,9 +1599,16 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         } else {
             v.x = tv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
             v.y = tv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
-            // Sub-pixel snap to 1/4 pixel (N64 RSP uses 10.2 fixed-point screen coords)
-            v.x = std::floor(v.x * 4.0f) * 0.25f;
-            v.y = std::floor(v.y * 4.0f) * 0.25f;
+            // NOTE: 1/4-pixel snap intentionally NOT applied here. The N64 RSP
+            // does snap, but our texcoords are stored as s*invW (pre-divided
+            // for perspective interpolation). When the camera is close to a
+            // surface invW is large, so quantising the screen position by
+            // 0.25 px makes the corresponding texel step visibly each time
+            // the camera moves — the "horizontal/vertical back-and-forth"
+            // texture march users see on water and walls. The far-distance
+            // wobble that motivated snapping is solved by using the FBO size
+            // (not the per-draw scissor) for the ortho projection in
+            // FlushBatch, which is the actual stable mapping.
         }
         // Normalize screen-space z to [0,1]. The ortho maps this to clip_z = 2*z_norm - 1 ? [-1,1]
         // (full NDC range). Near z_norm=0 � window_depth=0, Far z_norm=1 � window_depth=1.0 (clear).
@@ -1623,6 +1812,24 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     call.otherModeL = m_state.rdp.otherModeL;
     call.geometryMode = 0;
     PopulateTextureInfo(call, rect.tileIndex);
+
+    MM_RDP_TRACE("TextureRect tile={} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) st=({:.2f},{:.2f}) dsdx={:.4f} dtdy={:.4f} tex0=0x{:06X} tex1=0x{:06X} hash0=0x{:016X} hash1=0x{:016X} color=0x{:06X} z=0x{:06X} shadow={}",
+                 rect.tileIndex,
+                 rect.x0,
+                 rect.y0,
+                 rect.x1,
+                 rect.y1,
+                 rect.s,
+                 rect.t,
+                 rect.dsDx,
+                 rect.dtDy,
+                 call.textureImageAddr & 0x7FFFFF,
+                 call.textureImageAddr1 & 0x7FFFFF,
+                 call.textureHash0,
+                 call.textureHash1,
+                 m_state.rdp.colorImage.address & 0x7FFFFF,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
+                 shadowMapRect);
 
     call.primColor = m_state.rdp.primColor;
     call.envColor = m_state.rdp.envColor;
@@ -1988,6 +2195,15 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
 
     // Compute CRC over the relevant TMEM region for content-change detection.
     // The tile's TMEM byte address tells us where the data lives in TMEM.
+    auto FNV1a_64 = [](const uint8_t* data, size_t length) -> uint64_t {
+        uint64_t hash = 14695981039346656037ULL;
+        for (size_t i = 0; i < length; ++i) {
+            hash ^= data[i];
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    };
+
     uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
     uint32_t tmemSize     = static_cast<uint32_t>(tile.GetBytesPerRow()) *
                             static_cast<uint32_t>(key.height);
@@ -2002,13 +2218,13 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         tmemSize = tmemLimit - tmemByteAddr;
     }
     if (tmemSize > 0 && tmemByteAddr + tmemSize <= TMEM_SIZE) {
-        key.crc = CRC32_Fast(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
+        key.crc = FNV1a_64(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
         if (isRGBA32) {
             // CRC bank 1 (offset +2048) and mix into the hash
             uint32_t bank1Addr = tmemByteAddr + 2048;
             if (bank1Addr + tmemSize <= TMEM_SIZE) {
-                uint32_t bank1Crc = CRC32_Fast(m_state.rdp.tmem.data + bank1Addr, tmemSize);
-                key.crc ^= bank1Crc * 0x9e3779b9u;
+                uint64_t bank1Crc = FNV1a_64(m_state.rdp.tmem.data + bank1Addr, tmemSize);
+                key.crc ^= bank1Crc * 0x9e3779b97f4a7c15ULL;
             }
         }
     } else {
@@ -2020,18 +2236,40 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     // half of TMEM.  Mix the palette region CRC into the texture CRC so a
     // palette change triggers a cache miss.
     if (key.format == Tex::N64TexFormat::CI || tlutType != 0) {
-        uint32_t palCrc = 0;
+        uint64_t palCrc = 0;
         if (key.size == Tex::N64TexSize::Bits4) {
             // CI4: 16 entries starting at TMEM_PALETTE_BASE + palette*0x80, each 8 bytes apart
             uint32_t palBase = TMEM_PALETTE_BASE + static_cast<uint32_t>(tile.palette) * 0x80;
             if (palBase + 16 * 8 <= TMEM_SIZE)
-                palCrc = CRC32_Fast(m_state.rdp.tmem.data + palBase, 16 * 8);
+                palCrc = FNV1a_64(m_state.rdp.tmem.data + palBase, 16 * 8);
         } else {
             // CI8: 256 entries starting at TMEM_PALETTE_BASE, each 8 bytes apart (full upper TMEM)
             if (TMEM_PALETTE_BASE + 256 * 8 <= TMEM_SIZE)
-                palCrc = CRC32_Fast(m_state.rdp.tmem.data + TMEM_PALETTE_BASE, 256 * 8);
+                palCrc = FNV1a_64(m_state.rdp.tmem.data + TMEM_PALETTE_BASE, 256 * 8);
         }
-        key.crc ^= palCrc * 0x9e3779b9;
+        key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
+    }
+
+    if (TraceMMRdpEnabled()) {
+        bool interestingTexture = key.format == Tex::N64TexFormat::CI ||
+                                  tlutType != 0 ||
+                                  g_fbManager.FindByAddress(key.address) != nullptr ||
+                                  ((key.address & 0x7FFFFF) == (m_state.rdp.zbufferImage.address & 0x7FFFFF) && key.address != 0);
+        if (interestingTexture) {
+            MM_RDP_TRACE("BuildTextureKey addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} line={} tmem={} crc=0x{:016X} color=0x{:06X} z=0x{:06X}",
+                         key.address & 0x7FFFFF,
+                         static_cast<int>(key.format),
+                         static_cast<int>(key.size),
+                         key.width,
+                         key.height,
+                         key.palette,
+                         key.tlutType,
+                         key.line,
+                         key.tmemOffset,
+                         key.crc,
+                         m_state.rdp.colorImage.address & 0x7FFFFF,
+                         m_state.rdp.zbufferImage.address & 0x7FFFFF);
+        }
     }
 
     // Incorporate mip tile chain TMEM data into the CRC for mipmapped textures
@@ -2043,8 +2281,8 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
             uint32_t mipSize = static_cast<uint32_t>(mipTiles[i].GetBytesPerRow()) *
                                static_cast<uint32_t>(std::max(1, mipTiles[i].GetHeight()));
             if (mipSize > 0 && mipByteAddr + mipSize <= 4096) {
-                uint32_t mipCrc = CRC32_Fast(m_state.rdp.tmem.data + mipByteAddr, mipSize);
-                key.crc ^= mipCrc * (0x9e3779b9 + static_cast<uint32_t>(i + 1));
+                uint64_t mipCrc = FNV1a_64(m_state.rdp.tmem.data + mipByteAddr, mipSize);
+                key.crc ^= mipCrc * (0x9e3779b97f4a7c15ULL + static_cast<uint64_t>(i + 1));
             }
         }
     }
@@ -2191,9 +2429,19 @@ void RDPProcessor::FlushBatch() {
     //  2. Iterate draw calls, set state, and draw
     // =======================================================================
 
-    // Compute N64 screen dimensions from scissor for ortho projection
-    float n64W = static_cast<float>(m_state.rdp.scissor.xl >> 2);
-    float n64H = static_cast<float>(m_state.rdp.scissor.yl >> 2);
+    // Compute N64 screen dimensions for the ortho projection.
+    // CRITICAL: must use the active color framebuffer dimensions, NOT the
+    // scissor.  The scissor is for fragment clipping and changes frequently
+    // (per draw call, per frame) — using it as the projection range causes
+    // every vertex we've already snapped to N64 screen coords to be remapped
+    // to NDC with a different scale each time, producing visible per-frame
+    // wobble / "vibrating textures".  The FBO size is the canonical N64
+    // render target and stays constant for the duration of a scene.
+    GPUFramebuffer* projFB = g_fbManager.GetCurrentColor();
+    float n64W = projFB ? static_cast<float>(projFB->width)  : 0.0f;
+    float n64H = projFB ? static_cast<float>(projFB->height) : 0.0f;
+    if (n64W < 1.0f) n64W = static_cast<float>(m_state.rdp.scissor.xl >> 2);
+    if (n64H < 1.0f) n64H = static_cast<float>(m_state.rdp.scissor.yl >> 2);
     if (n64W < 1.0f) n64W = 320.0f;
     if (n64H < 1.0f) n64H = 240.0f;
 
@@ -2317,12 +2565,15 @@ void RDPProcessor::FlushBatch() {
             features |= Shader::SF_N64_DEPTH_COMPARE;
         }
 
-        // Depth render: when the color image IS the depth image, the
-        // combiner output (fragColor.r) is a depth value that needs to be
-        // written into the Z-image and gl_FragDepth.  Games that rely on
-        // this include Zelda: Majora's Mask (depth buffer copy effects).
+        // Depth render: when triangles explicitly render to the depth image,
+        // the combiner output (fragColor.r) is a depth value that needs to be
+        // written into the Z-image and gl_FragDepth. Screen-space rectangles
+        // can also target the same address as an auxiliary color buffer
+        // (Majora's Mask pause/backdrop effects), so do not force them down
+        // the depth-render path.
         if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
-            m_state.rdp.colorImage.address != 0) {
+            m_state.rdp.colorImage.address != 0 &&
+            call.type == DrawCall::Type::Triangle) {
             features |= Shader::SF_DEPTH_RENDER;
         }
 
@@ -3158,22 +3409,26 @@ void RDPProcessor::FlushBatch() {
                                                     call.mipLevelCount > 0 ? call.mipTiles : nullptr,
                                                     call.mipLevelCount);
             if (key0.width > 0 && key0.height > 0) {
-                GPUFramebuffer* rtFB0 = g_fbManager.FindByAddress(key0.address);
+                GPUFramebuffer* rawRTFB0 = g_fbManager.FindByAddress(key0.address);
+                bool aliasRTFB0 = CanAliasFramebuffer(rawRTFB0, key0.address, IsRGBAFramebufferFormat(key0));
+                GPUFramebuffer* rtFB0 = aliasRTFB0 ? rawRTFB0 : nullptr;
 
-                // FB-as-texture address policy:
-                //   - Exact base address → always accept (normal FB reuse).
-                //   - Offset into an FB → accept ONLY when the texture's
-                //     width matches the FB's width (the "full-row strip /
-                //     backdrop snapshot" pattern used by OoT/MM pause menus
-                //     to draw the world behind the inventory).
-                //   - Reject everything else: small misaligned textures
-                //     coincidentally near FB addresses would otherwise bind
-                //     the live framebuffer with wrong UV scale, producing
-                //     per-frame flickering on regular artwork.
-                if (rtFB0 && rtFB0->desc.address != (key0.address & 0x7FFFFF)) {
-                    if (key0.width == 0 || key0.width != rtFB0->desc.width)
-                        rtFB0 = nullptr;
-                }
+                MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
+                             static_cast<int>(call.type),
+                             key0.address & 0x7FFFFF,
+                             static_cast<int>(key0.format),
+                             static_cast<int>(key0.size),
+                             key0.width,
+                             key0.height,
+                             key0.palette,
+                             key0.tlutType,
+                             key0.tmemOffset,
+                             key0.crc,
+                             rawRTFB0 != nullptr,
+                             aliasRTFB0,
+                             rawRTFB0 ? rawRTFB0->desc.address : 0u,
+                             m_state.rdp.colorImage.address & 0x7FFFFF,
+                             m_state.rdp.zbufferImage.address & 0x7FFFFF);
 
                 // ── CfB copy-back detection ──────────────────────────────
                 // Some N64 games (OoT, MM) copy an AA-processed framebuffer
@@ -3209,7 +3464,14 @@ void RDPProcessor::FlushBatch() {
                             break;
                         }
                     }
-                    if (nearFB) continue;
+                    if (nearFB) {
+                        MM_RDP_TRACE("SkipTex0CfBCopy addr=0x{:06X} drawType={} fmt={} size={}",
+                                     key0.address & 0x7FFFFF,
+                                     static_cast<int>(call.type),
+                                     static_cast<int>(key0.format),
+                                     static_cast<int>(key0.size));
+                        continue;
+                    }
                 }
 
                 uint32_t fbTex0 = rtFB0 ? g_fbManager.GetSampleableTexture(
@@ -3218,8 +3480,8 @@ void RDPProcessor::FlushBatch() {
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, fbTex0);
                     // Set UV scale based on FB dimensions so texcoords map correctly
-                    gpuScale0[0] = 1.0f / static_cast<float>(rtFB0->width);
-                    gpuScale0[1] = 1.0f / static_cast<float>(rtFB0->height);
+                    gpuScale0[0] = 1.0f / static_cast<float>(rtFB0->desc.width);
+                    gpuScale0[1] = 1.0f / static_cast<float>(rtFB0->desc.height);
                     // FB-as-texture monochrome detection (matches GLideN64 UFrameBufferInfo):
                     //  size==1 (8-bit): mono mode 1 (red channel), fixedAlpha if IM_RD off
                     //  tile IA16: mono mode 2 (weighted luminance)
@@ -3229,6 +3491,16 @@ void RDPProcessor::FlushBatch() {
                     } else if (call.tileDesc0.size == 2 && call.tileDesc0.format == 3) {
                         fbMono0 = 2; // IA16 luminance
                     }
+                    MM_RDP_TRACE("UseFBTex0 addr=0x{:06X} fbTex={} fbAddr=0x{:06X} fbSize={}x{} gpuScale={:.4f},{:.4f} mono={} alpha={}",
+                                 key0.address & 0x7FFFFF,
+                                 fbTex0,
+                                 rtFB0->desc.address,
+                                 rtFB0->desc.width,
+                                 rtFB0->desc.height,
+                                 gpuScale0[0],
+                                 gpuScale0[1],
+                                 fbMono0,
+                                 fbAlpha0);
                 } else {
                     // Build mip tile info for tile-chain mipmapping
                     Tex::TextureCache::MipTileInfo mipInfo[7];
@@ -3260,12 +3532,25 @@ void RDPProcessor::FlushBatch() {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
                         gpuScale0[0] = cached0->scaleS;
                         gpuScale0[1] = cached0->scaleT;
+                        MM_RDP_TRACE("UseCachedTex0 addr=0x{:06X} scale={:.4f},{:.4f} mipCount={} texFilter={}",
+                                     key0.address & 0x7FFFFF,
+                                     gpuScale0[0],
+                                     gpuScale0[1],
+                                     mipCount,
+                                     texFilter);
                     } else if (m_debugWhiteTexture) {
                         // Fallback: bind 1×1 white texture so the draw isn't invisible
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
                         gpuScale0[0] = 1.0f;
                         gpuScale0[1] = 1.0f;
+                        MM_RDP_TRACE("FallbackWhiteTex0 addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
+                                     key0.address & 0x7FFFFF,
+                                     static_cast<int>(key0.format),
+                                     static_cast<int>(key0.size),
+                                     key0.width,
+                                     key0.height,
+                                     key0.crc);
                     }
 
                 }
@@ -3275,23 +3560,49 @@ void RDPProcessor::FlushBatch() {
             uint8_t tlutType1 = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
             Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1);
             if (key1.width > 0 && key1.height > 0) {
-                GPUFramebuffer* rtFB1 = g_fbManager.FindByAddress(key1.address);
-                // Same offset-policy as tex0: exact base or full-width strip only.
-                if (rtFB1 && rtFB1->desc.address != (key1.address & 0x7FFFFF)) {
-                    if (key1.width == 0 || key1.width != rtFB1->desc.width)
-                        rtFB1 = nullptr;
-                }
+                GPUFramebuffer* rawRTFB1 = g_fbManager.FindByAddress(key1.address);
+                bool aliasRTFB1 = CanAliasFramebuffer(rawRTFB1, key1.address, IsRGBAFramebufferFormat(key1));
+                GPUFramebuffer* rtFB1 = aliasRTFB1 ? rawRTFB1 : nullptr;
+                MM_RDP_TRACE("BindTex1 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
+                             static_cast<int>(call.type),
+                             key1.address & 0x7FFFFF,
+                             static_cast<int>(key1.format),
+                             static_cast<int>(key1.size),
+                             key1.width,
+                             key1.height,
+                             key1.palette,
+                             key1.tlutType,
+                             key1.tmemOffset,
+                             key1.crc,
+                             rawRTFB1 != nullptr,
+                             aliasRTFB1,
+                             rawRTFB1 ? rawRTFB1->desc.address : 0u,
+                             m_state.rdp.colorImage.address & 0x7FFFFF,
+                             m_state.rdp.zbufferImage.address & 0x7FFFFF);
                 uint32_t fbTex1 = rtFB1 ? g_fbManager.GetSampleableTexture(
                     rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
                 if (fbTex1 != 0) {
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, fbTex1);
+                    // Set UV scale based on FB dimensions so texcoords map correctly
+                    gpuScale1[0] = 1.0f / static_cast<float>(rtFB1->desc.width);
+                    gpuScale1[1] = 1.0f / static_cast<float>(rtFB1->desc.height);
                     if (rtFB1->desc.size == 1) {
                         fbMono1 = 1;
                         if ((call.otherModeL & 0x40) == 0) fbAlpha1 = 1;
                     } else if (call.tileDesc1.size == 2 && call.tileDesc1.format == 3) {
                         fbMono1 = 2;
                     }
+                    MM_RDP_TRACE("UseFBTex1 addr=0x{:06X} fbTex={} fbAddr=0x{:06X} fbSize={}x{} gpuScale={:.4f},{:.4f} mono={} alpha={}",
+                                 key1.address & 0x7FFFFF,
+                                 fbTex1,
+                                 rtFB1->desc.address,
+                                 rtFB1->desc.width,
+                                 rtFB1->desc.height,
+                                 gpuScale1[0],
+                                 gpuScale1[1],
+                                 fbMono1,
+                                 fbAlpha1);
                 } else {
                     Tex::CachedTexture* cached1 = m_textureCache->GetTexture(
                         key1, m_rdram, m_state.rdp.tmem.data);
@@ -3305,12 +3616,24 @@ void RDPProcessor::FlushBatch() {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter1);
                         gpuScale1[0] = cached1->scaleS;
                         gpuScale1[1] = cached1->scaleT;
+                        MM_RDP_TRACE("UseCachedTex1 addr=0x{:06X} scale={:.4f},{:.4f} texFilter={}",
+                                     key1.address & 0x7FFFFF,
+                                     gpuScale1[0],
+                                     gpuScale1[1],
+                                     texFilter);
                     } else if (m_debugWhiteTexture) {
                         // Fallback: bind 1×1 white texture for stale texture unit
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
                         gpuScale1[0] = 1.0f;
                         gpuScale1[1] = 1.0f;
+                        MM_RDP_TRACE("FallbackWhiteTex1 addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
+                                     key1.address & 0x7FFFFF,
+                                     static_cast<int>(key1.format),
+                                     static_cast<int>(key1.size),
+                                     key1.width,
+                                     key1.height,
+                                     key1.crc);
                     }
                 }
             }

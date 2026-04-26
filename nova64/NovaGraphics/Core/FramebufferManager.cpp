@@ -357,6 +357,9 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
 }
 
 void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
+    // Drop any stale async-readback FB pointer so FinishAsyncReadback
+    // doesn't dereference freed memory.
+    if (m_pboFB == &fb) m_pboFB = nullptr;
     if (fb.resolvedFbo) { glDeleteFramebuffers(1, &fb.resolvedFbo); fb.resolvedFbo = 0; }
     if (fb.resolvedTex) { glDeleteTextures(1, &fb.resolvedTex);     fb.resolvedTex = 0; }
     if (fb.snapshotTex) { glDeleteTextures(1, &fb.snapshotTex);     fb.snapshotTex = 0; }
@@ -863,6 +866,7 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
         // Delete old fence without completing — data is lost
         glDeleteSync(static_cast<GLsync>(m_pboFence));
         m_pboFence = nullptr;
+        m_pboFB = nullptr;
     }
 
     const uint32_t w = fb->width;
@@ -915,6 +919,7 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
     m_pboWidth = w;
     m_pboHeight = h;
     m_pboFormat = fb->desc.format;
+    m_pboFB = fb;
 }
 
 bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
@@ -955,6 +960,16 @@ bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
         m_stats.bytesTransferred += byteSize;
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+    // The GPU pixels just landed in RDRAM, so the FB no longer has
+    // unsynced GPU-side modifications. Without this, the next frame's
+    // mid-frame texture loads (LoadBlock/LoadTile aliased to this FB)
+    // would re-trigger a synchronous glGetTextureImage stall.
+    if (m_pboFB) {
+        m_pboFB->gpuModified = false;
+        ClearRDRAMDirty(m_pboAddress, m_pboFB->desc.ByteSize());
+        m_pboFB = nullptr;
+    }
 
     return true;
 }

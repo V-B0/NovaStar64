@@ -17,6 +17,7 @@
 
 #include <glad/gl.h>
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -29,6 +30,16 @@
 #endif
 
 namespace Nova64::Video {
+
+static LogLevel ParseVideoLogLevel(const char* value) {
+    if (!value || value[0] == '\0') return LogLevel::Info;
+    if (std::strcmp(value, "trace") == 0 || std::strcmp(value, "TRACE") == 0) return LogLevel::Trace;
+    if (std::strcmp(value, "debug") == 0 || std::strcmp(value, "DEBUG") == 0) return LogLevel::Debug;
+    if (std::strcmp(value, "info") == 0 || std::strcmp(value, "INFO") == 0) return LogLevel::Info;
+    if (std::strcmp(value, "warning") == 0 || std::strcmp(value, "WARNING") == 0) return LogLevel::Warning;
+    if (std::strcmp(value, "error") == 0 || std::strcmp(value, "ERROR") == 0) return LogLevel::Error;
+    return LogLevel::Info;
+}
 
 const char* PluginStatusName(PluginStatus status) {
     switch (status) {
@@ -72,9 +83,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     if (!g_logger.IsEnabled(LogLevel::Info, LogSubsystem::Core)) {
         LoggerConfig logCfg;
         logCfg.consoleOutput = true;
-        logCfg.fileOutput    = false;
+        const char* videoLogPath = std::getenv("NOVA64_VIDEO_LOG");
+        logCfg.fileOutput    = videoLogPath && videoLogPath[0] != '\0';
+        if (logCfg.fileOutput) logCfg.logFilePath = videoLogPath;
         logCfg.colorConsole  = true;
-        logCfg.globalLevel   = LogLevel::Info;
+        logCfg.globalLevel   = ParseVideoLogLevel(std::getenv("NOVA64_VIDEO_LOG_LEVEL"));
+        if (std::getenv("NOVA64_MM_RDP_TRACE")) {
+            logCfg.subsystemLevels[static_cast<size_t>(LogSubsystem::RDP)] = LogLevel::Info;
+        }
         g_logger.Init(logCfg);
     }
 
@@ -124,11 +140,15 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // WindowManager, so passing nullptr for the window handle is correct.
     {
         int32_t winW = m_config.windowWidth, winH = m_config.windowHeight;
-        if (auto* win = GetActiveWindow()) win->GetDrawableSize(winW, winH);
-        if (!m_renderer->Initialize(nullptr,
+        void* windowHandle = nullptr;
+        if (auto* win = GetActiveWindow()) {
+            win->GetDrawableSize(winW, winH);
+            windowHandle = win->GetSDLWindow();
+        }
+        if (!m_renderer->Initialize(windowHandle,
                                      static_cast<uint32_t>(winW),
                                      static_cast<uint32_t>(winH))) {
-            LOG_WARN("Renderer Initialize() failed — continuing with reduced GL state");
+            LOG_WARN("Renderer Initialize() failed — continuing with reduced state");
         }
     }
 
@@ -732,16 +752,26 @@ void VideoPlugin::UpdateScreen() {
     glFlush();
     m_swapPending = true;
 
-    // ── HLE Framebuffer Writeback (GPU → RDRAM) ──────────────────
+    // ── HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ───────────
     // Majora's Mask (and other games) sample the previous frame from RDRAM
     // (e.g. for the pause menu blurred background, motion blur, etc.). When
     // we render with HLE the pixels live only in GPU memory, so the game
     // sees zeros and draws a black background. Copy the display framebuffer
     // back into the emulated RDRAM at the VI origin so the CPU sees real
     // image data when it reads the frame.
+    //
+    // Use the async PBO path: each frame we first try to consume the PBO
+    // submitted earlier (typically by RDPProcessor::HandleSyncFull) — this is
+    // non-blocking and incurs at most one frame of latency. We only submit a
+    // new readback here as a fallback, when nothing is in flight and the
+    // display FB still has unsynced GPU writes.
     if (m_sysInfo.rdram && m_viOrigin && m_hleEverRendered) {
+        g_fbManager.FinishAsyncReadback(m_sysInfo.rdram);
+
         if (auto* displayFB = g_fbManager.GetDisplayFramebuffer()) {
-            g_fbManager.CopyFromGPU(displayFB, m_sysInfo.rdram);
+            if (!g_fbManager.IsReadbackPending() && displayFB->gpuModified) {
+                g_fbManager.BeginAsyncReadback(displayFB);
+            }
         }
     }
 
@@ -1159,7 +1189,16 @@ bool VideoPlugin::CreateDisplayRenderer() {
     // Use requested backend from configuration if available
     int cfgBackend = m_config.backendType;
     if (cfgBackend == 1) {
-        backend = BackendType::Vulkan;
+        // The Vulkan backend is currently a Stage-1 (clear-only) skeleton —
+        // the IRenderer surface for textures, shaders, draw submission and
+        // framebuffer integration with the RDP pipeline is not implemented
+        // yet, so any actual rendering call after init crashes.  Until the
+        // backend reaches feature parity, refuse to switch and fall back to
+        // OpenGL so the emulator stays usable when the user toggles it in
+        // the config.
+        LOG_WARN("Vulkan backend is not feature-complete yet (clear-only). "
+                 "Falling back to OpenGL.");
+        backend = BackendType::OpenGL46;
     } else if (cfgBackend == 2) {
         // D3D11 not completely enabled on external window context yet for now
         // backend = BackendType::D3D11; 

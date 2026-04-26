@@ -356,6 +356,7 @@ private:
     uint32_t m_pboWidth = 0;                // Width of pending readback
     uint32_t m_pboHeight = 0;              // Height of pending readback
     FBFormat m_pboFormat = FBFormat::RGBA16; // Format for conversion on completion
+    GPUFramebuffer* m_pboFB = nullptr;       // FB whose readback is in flight (for clearing gpuModified)
 
     // Cached downscale FBO for PBO readback (avoid per-frame alloc)
     uint32_t m_readbackFBO = 0;

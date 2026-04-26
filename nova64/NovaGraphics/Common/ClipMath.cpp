@@ -137,7 +137,11 @@ static float PlaneDistance(const Vec4f& pos, ClipPlane plane, float clipRatio = 
         case PLANE_RIGHT:  return wg - x;       // x <= w*ratio
         case PLANE_BOTTOM: return y + wg;       // y >= -w*ratio
         case PLANE_TOP:    return wg - y;       // y <= w*ratio
-        case PLANE_W_NEAR: return w - 0.01f;   // w >= 0.01 (behind-camera guard)
+        // GLideN64 clips against the actual camera plane (w = 0), then
+        // clamps the resulting vertex w to 0.01 below to avoid divide-by-zero.
+        // This preserves all geometry that's even barely in front of the
+        // camera while still keeping 1/W finite for perspective math.
+        case PLANE_W_NEAR: return w;           // w >= 0
         default:           return 0.0f;
     }
 }
@@ -182,7 +186,15 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
                 float t = distCurr / denom;
                 t = std::max(0.0f, std::min(1.0f, t));
                 if (outCount < MAX_CLIPPED_VERTS) {
-                    vertsOut[outCount++] = LerpClipVertex(curr, nxt, t);
+                    ClipVertex& nv = vertsOut[outCount++];
+                    nv = LerpClipVertex(curr, nxt, t);
+                    // GLideN64 W-near workaround: when clipping against the
+                    // camera plane (w=0), the new vertex's w is exactly 0
+                    // which would explode 1/w downstream.  Clamp to 0.01 to
+                    // match GLideN64 (DepthBufferRender/ClipPolygon.cpp).
+                    if (plane == PLANE_W_NEAR && nv.position.f[3] < 0.01f) {
+                        nv.position.f[3] = 0.01f;
+                    }
                 }
             }
         }

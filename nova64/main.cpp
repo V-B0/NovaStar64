@@ -43,7 +43,11 @@ int main(int argc, char* argv[])
     int targetFPS = 60;      // Default: 60 FPS (NTSC)
     int windowWidth = 1280;   // Default: 16:9 HD (1280x720)
     int windowHeight = 720;
-    int internalResScale = 3; // Default: 3x (960x720 internal)
+    // Sentinel 0 means "don't override config". A non-zero value comes from
+    // an explicit --scale CLI flag and overrides NovaGraphics.ini.  Resolution
+    // presets only set window size now — they used to also force scale, which
+    // silently overwrote the ini every run.
+    int internalResScale = 0;
     int fullscreenMode = 1;  // 0 = windowed, 1 = borderless fullscreen (default), 2 = exclusive fullscreen
 
     // Parse command line arguments
@@ -79,17 +83,28 @@ int main(int argc, char* argv[])
         else if (std::strcmp(argv[i], "--resolution") == 0 && i + 1 < argc)
         {
             const char* res = argv[++i];
-            if (std::strcmp(res, "480p") == 0)       { windowWidth = 854;  windowHeight = 480;  internalResScale = 2; }
-            else if (std::strcmp(res, "720p") == 0)  { windowWidth = 1280; windowHeight = 720;  internalResScale = 3; }
-            else if (std::strcmp(res, "960p") == 0)  { windowWidth = 1706; windowHeight = 960;  internalResScale = 4; }
-            else if (std::strcmp(res, "1080p") == 0) { windowWidth = 1920; windowHeight = 1080; internalResScale = 4; }
-            else if (std::strcmp(res, "1440p") == 0) { windowWidth = 2560; windowHeight = 1440; internalResScale = 6; }
-            else if (std::strcmp(res, "4k") == 0)    { windowWidth = 3840; windowHeight = 2160; internalResScale = 8; }
+            // Window size only — internal scale is governed by NovaGraphics.ini
+            // (or by an explicit --scale flag below).
+            if (std::strcmp(res, "480p") == 0)       { windowWidth = 854;  windowHeight = 480;  }
+            else if (std::strcmp(res, "720p") == 0)  { windowWidth = 1280; windowHeight = 720;  }
+            else if (std::strcmp(res, "960p") == 0)  { windowWidth = 1706; windowHeight = 960;  }
+            else if (std::strcmp(res, "1080p") == 0) { windowWidth = 1920; windowHeight = 1080; }
+            else if (std::strcmp(res, "1440p") == 0) { windowWidth = 2560; windowHeight = 1440; }
+            else if (std::strcmp(res, "4k") == 0)    { windowWidth = 3840; windowHeight = 2160; }
             else {
                 std::fprintf(stderr, "Unknown resolution: %s (use 480p, 720p, 960p, 1080p, 1440p, 4k)\n", res);
                 return 1;
             }
             Log::infof("Resolution set to: %dx%d", windowWidth, windowHeight);
+        }
+        else if (std::strcmp(argv[i], "--scale") == 0 && i + 1 < argc)
+        {
+            internalResScale = std::atoi(argv[++i]);
+            if (internalResScale < 1 || internalResScale > 8) {
+                std::fprintf(stderr, "--scale must be 1..8\n");
+                return 1;
+            }
+            Log::infof("Internal resolution scale: %dx (overrides ini)", internalResScale);
         }
         else if (std::strcmp(argv[i], "--fullscreen") == 0)
         {

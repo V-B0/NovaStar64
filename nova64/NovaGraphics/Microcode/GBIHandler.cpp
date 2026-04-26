@@ -156,6 +156,10 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
         // Z clipping is handled by the GPU (GL_DEPTH_CLAMP for NoN microcodes).
         tv.clipFlags = 0;
         float w = tv.position[3];
+        // W-near detection: matches GLideN64 (gSP.cpp gSPClipVertex).  Threshold
+        // is 0.01 — the actual clip plane is at w=0 (camera plane), and the
+        // post-clip vertex w is clamped to 0.01 in ClipMath.cpp to keep 1/W
+        // finite for downstream perspective math.
         if (w < 0.01f) {
             tv.clipFlags |= CLIP_W;
         }
@@ -1046,21 +1050,22 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         return;
     }
     
-    // GLideN64 approach: only software-clip when vertices are behind the
-    // camera (CLIP_W).  For X/Y clip flags the GPU hardware handles clipping
-    // via the viewport/scissor — no need for Sutherland-Hodgman.  The full
-    // 5-plane software clipper was incorrectly dropping edge-case geometry
-    // that the GPU would render fine.
-    bool needsWClip = (orFlags & CLIP_W) != 0;
-    
-    if (!needsWClip) {
-        // No behind-camera vertices — send directly to GPU.
-        // The GPU clips at viewport/scissor boundaries automatically.
+    // Skipping X/Y software clipping (only running W-near via the
+    // CLIP_W mask) caused texture flicker / "vibration" from certain
+    // camera angles: when a triangle straddled the screen edge AND
+    // had a vertex very close to the W-near plane, the W-clip produced
+    // a new vertex that inherited huge X/Y from the original; the
+    // GPU then rasterised across millions of texels worth of
+    // screen space, producing aliased garbage in the visible area.
+    // Re-enabling the full 5-plane Sutherland-Hodgman clipper fixes
+    // this without measurable perf cost (most triangles still trivial-
+    // accept via orFlags == 0).
+    if (orFlags == 0) {
+        // Trivial accept - fully inside frustum, send directly
         ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
         ++m_trianglesProcessed;
     } else {
-        // W-near clip needed (behind-camera vertices) — run Sutherland-Hodgman
-        // but ONLY against the W-near plane.  X/Y planes are left to the GPU.
+        // Needs clipping - convert to ClipVertex, run Sutherland-Hodgman
         auto toClipVert = [](const TransformedVertex& tv) -> ClipVertex {
             ClipVertex cv;
             cv.position  = { tv.position[0], tv.position[1], tv.position[2], tv.position[3] };
@@ -1068,8 +1073,7 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             cv.texCoord  = { tv.texCoord[0],  tv.texCoord[1] };
             cv.texCoord1 = { tv.texCoord1[0], tv.texCoord1[1] };
             cv.fog       = tv.fogFactor;
-            // Only pass W flag to the clipper — skip X/Y planes
-            cv.clipFlags = tv.clipFlags & CLIP_W;
+            cv.clipFlags = tv.clipFlags;
             return cv;
         };
         
@@ -1085,9 +1089,8 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                 float invW = (cv.position[3] != 0.0f) ? 1.0f / cv.position[3] : 1.0f;
                 rv.x = cv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
                 rv.y = cv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
-                // Sub-pixel snap to 1/4 pixel (N64 RSP uses 10.2 fixed-point screen coords)
-                rv.x = std::floor(rv.x * 4.0f) * 0.25f;
-                rv.y = std::floor(rv.y * 4.0f) * 0.25f;
+                // Snap intentionally disabled here too — see makeVert in
+                // RDPProcessor::DrawTriangle for the rationale.
                 {
                     float z_screen = cv.position[2] * invW * geo.viewport.scaleZ + geo.viewport.transZ;
                     float absScaleZ = std::abs(geo.viewport.scaleZ);

@@ -81,6 +81,9 @@ struct WindowConfig {
     int32_t glMinor = 6;
     bool glDebug = false;
     int32_t multiSamples = 0;      // 0 = disabled
+
+    // Backend selection
+    int32_t backendType = 0;       // 0 = OpenGL, 1 = Vulkan
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

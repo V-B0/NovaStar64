@@ -63,7 +63,18 @@ WindowManager::~WindowManager() {
     Shutdown();
 }
 
-bool WindowManager::Initialize(const WindowConfig& config) {
+bool WindowManager::Initialize(const WindowConfig& configIn) {
+    WindowConfig config = configIn;
+
+    // Vulkan backend is currently a Stage-1 (clear-only) skeleton; coerce it
+    // to OpenGL up-front so the window is created with a usable GL context
+    // instead of a VK surface that nothing can render into.  Keep this in
+    // sync with the matching fallback in VideoPlugin::CreateDisplayRenderer.
+    if (config.backendType == 1) {
+        std::cerr << "WindowManager: Vulkan backend not feature-complete, falling back to OpenGL." << std::endl;
+        config.backendType = 0;
+    }
+
     m_config = config;
 
     // ── Initialize SDL Video ─────────────────────────────────────────────
@@ -71,31 +82,38 @@ bool WindowManager::Initialize(const WindowConfig& config) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
     }
-
     // ── Set OpenGL attributes ────────────────────────────────────────────
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, config.glMajor);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, config.glMinor);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    if (config.backendType == 0) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, config.glMajor);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, config.glMinor);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    if (config.glDebug) {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
-    }
+        if (config.glDebug) {
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+        }
 
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
 
-    if (config.multiSamples > 0) {
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, config.multiSamples);
+        if (config.multiSamples > 0) {
+            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+            SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, config.multiSamples);
+        }
     }
 
     // ── Create window ────────────────────────────────────────────────────
-    uint32_t flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+    uint32_t flags = SDL_WINDOW_SHOWN;
+    if (config.backendType == 0) {
+        flags |= SDL_WINDOW_OPENGL;
+    } else if (config.backendType == 1) {
+        flags |= SDL_WINDOW_VULKAN;
+    }
+
     if (config.resizable) flags |= SDL_WINDOW_RESIZABLE;
     // Force HighDPI off until UI layer is fixed for Windows scaling virtualization
     // if (config.highDPI) flags |= SDL_WINDOW_ALLOW_HIGHDPI;
@@ -157,60 +175,66 @@ bool WindowManager::Initialize(const WindowConfig& config) {
 #endif
 
     // ── Create OpenGL context ────────────────────────────────────────────
-    m_glContext = SDL_GL_CreateContext(m_window);
-    if (!m_glContext) {
-        std::cerr << "SDL_GL_CreateContext failed: " << SDL_GetError() << std::endl;
-
-        // Try fallback to GL 4.3
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    if (config.backendType == 0) {
         m_glContext = SDL_GL_CreateContext(m_window);
-
         if (!m_glContext) {
-            std::cerr << "Fallback GL 4.3 context also failed: " << SDL_GetError() << std::endl;
+            std::cerr << "SDL_GL_CreateContext failed: " << SDL_GetError() << std::endl;
+
+            // Try fallback to GL 4.3
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+            m_glContext = SDL_GL_CreateContext(m_window);
+
+            if (!m_glContext) {
+                std::cerr << "Fallback GL 4.3 context also failed: " << SDL_GetError() << std::endl;
+                SDL_DestroyWindow(m_window);
+                m_window = nullptr;
+                SDL_Quit();
+                return false;
+            }
+        }
+
+        SDL_GL_MakeCurrent(m_window, m_glContext);
+        m_glContextThread = std::this_thread::get_id(); // Track initial GL context thread
+
+        // ── Load OpenGL via glad ─────────────────────────────────────────────
+        int version = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
+        if (!version) {
+            std::cerr << "gladLoadGL failed" << std::endl;
+            SDL_GL_DeleteContext(m_glContext);
+            m_glContext = nullptr;
             SDL_DestroyWindow(m_window);
             m_window = nullptr;
             SDL_Quit();
             return false;
         }
-    }
 
-    SDL_GL_MakeCurrent(m_window, m_glContext);
-    m_glContextThread = std::this_thread::get_id(); // Track initial GL context thread
+        std::cout << "OpenGL " << GLAD_VERSION_MAJOR(version) << "." << GLAD_VERSION_MINOR(version)
+                << " loaded" << std::endl;
+        std::cout << "  Vendor:   " << glGetString(GL_VENDOR) << std::endl;
+        std::cout << "  Renderer: " << glGetString(GL_RENDERER) << std::endl;
+        std::cout << "  Version:  " << glGetString(GL_VERSION) << std::endl;
+        std::cout << "  GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
-    // ── Load OpenGL via glad ─────────────────────────────────────────────
-    int version = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
-    if (!version) {
-        std::cerr << "gladLoadGL failed" << std::endl;
-        SDL_GL_DeleteContext(m_glContext);
-        m_glContext = nullptr;
-        SDL_DestroyWindow(m_window);
-        m_window = nullptr;
-        SDL_Quit();
-        return false;
-    }
-
-    std::cout << "OpenGL " << GLAD_VERSION_MAJOR(version) << "." << GLAD_VERSION_MINOR(version)
-              << " loaded" << std::endl;
-    std::cout << "  Vendor:   " << glGetString(GL_VENDOR) << std::endl;
-    std::cout << "  Renderer: " << glGetString(GL_RENDERER) << std::endl;
-    std::cout << "  Version:  " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "  GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-
-    // ── Enable GL debug output ───────────────────────────────────────────
-    if (config.glDebug && GLAD_GL_KHR_debug) {
-        glEnable(GL_DEBUG_OUTPUT);
-        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-        glDebugMessageCallback(GLDebugCallback, nullptr);
-        glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+        // ── Enable GL debug output ───────────────────────────────────────────
+        if (config.glDebug && GLAD_GL_KHR_debug) {
+            glEnable(GL_DEBUG_OUTPUT);
+            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+            glDebugMessageCallback(GLDebugCallback, nullptr);
+            glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+        }
+    } else {
+        std::cout << "Vulkan window initialized." << std::endl;
     }
 
     // ── Set VSync ────────────────────────────────────────────────────────
-    SetVSync(config.vsync ? 1 : 0);
+    if (config.backendType == 0) {
+        SetVSync(config.vsync ? 1 : 0);
 
-    // ── Set initial GL state ─────────────────────────────────────────────
-    glViewport(0, 0, config.width, config.height);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        // ── Set initial GL state ─────────────────────────────────────────────
+        glViewport(0, 0, config.width, config.height);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    }
 
     m_fullscreen = config.fullscreen;
     m_hasFocus = true;
@@ -364,10 +388,11 @@ void WindowManager::ReleaseContext() {
 
 void WindowManager::SwapBuffers() {
     if (m_window) {
-        // Re-assert VSync=OFF before every swap. Intel drivers can
-        // reset the swap interval internally; re-setting it each frame
-        // prevents unexpected blocking.
-        SDL_GL_SetSwapInterval(0);
+        if (m_config.backendType == 1) return; // Vulkan backend manages its own swapchain
+        // Note: do NOT call SDL_GL_SetSwapInterval here. The interval is set
+        // once at init (and again whenever the user toggles vsync); calling
+        // it on every swap is pure overhead and on some drivers triggers an
+        // implicit GPU sync.
         SDL_GL_SwapWindow(m_window);
     }
 }

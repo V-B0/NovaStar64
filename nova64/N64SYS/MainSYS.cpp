@@ -35,6 +35,7 @@
 #include "../NovaRSP/CPU/RspSystem.hpp"
 #include "../NovaGraphics/Window/WindowManager.hpp"
 #include "../NovaGraphics/Plugin/NovaGraphicsGFXPlugin.hpp"
+#include "../common/IniFile.hpp"
 
 #include <cstring>
 #include <memory>
@@ -63,7 +64,7 @@ N64Rom* g_Rom = nullptr;
 int CN64System::s_TargetFPS = 60;
 int CN64System::s_WindowWidth = 1280;
 int CN64System::s_WindowHeight = 960;
-int CN64System::s_InternalResScale = 4;
+int CN64System::s_InternalResScale = 0;
 int CN64System::s_FullscreenMode = 0; // Default: windowed
 
 // ──────────────────────────────────────────────
@@ -1196,6 +1197,16 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         windowConfig.vsync = false;  // Software frame pacing handles timing
         windowConfig.glMajor = 4;
         windowConfig.glMinor = 6;
+        
+        // Read backendType from NovaGraphics.ini
+        int32_t backendType = 0; // Default to OpenGL
+        CPath iniPath(std::string("NovaGraphics.ini"));
+        if (iniPath.Exists()) {
+            CIniFile ini("NovaGraphics.ini");
+            // VideoPlugin uses "Backend" section
+            backendType = ini.GetNumber("Backend", "backendType", 0);
+        }
+        windowConfig.backendType = backendType;
         
         // Fullscreen mode: borderless fullscreen by default to bypass DWM compositor stalls
         if (s_FullscreenMode == 2) {
