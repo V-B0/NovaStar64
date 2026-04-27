@@ -27,6 +27,7 @@ static void PrintUsage(const char* programName)
     std::printf("  --resolution <R> Window resolution: 480p, 720p, 960p, 1080p, 1440p, 4k (default: 960p)\n");
     std::printf("  --fullscreen     Run in exclusive fullscreen mode\n");
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
+    std::printf("  --interpreter    Force interpreter mode (slower, but better for debugging)\n");
 }
 
 int main(int argc, char* argv[])
@@ -115,6 +116,11 @@ int main(int argc, char* argv[])
         {
             fullscreenMode = 0;
             Log::info("Windowed mode enabled");
+        }
+        else if (std::strcmp(argv[i], "--interpreter") == 0)
+        {
+            CN64System::s_UseInterpreter = true;
+            Log::info("Interpreter mode forced via CLI");
         }
         else if (argv[i][0] != '-')
         {

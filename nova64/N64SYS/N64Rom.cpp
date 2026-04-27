@@ -262,9 +262,11 @@ CICChip N64Rom::DetectCICChip(const uint8_t* romData, uint64_t* crc) noexcept {
                 if (crc != nullptr) {
                     *crc = crcAleck64;
                 }
-                return CICChip::CIC_NUS_6101; // Aleck64 uses similar CIC
+                return CICChip::CIC_NUS_5101_ALECK64;
             }
-            return CICChip::Unknown;
+            
+            Log::warningf("DetectCICChip: Unknown CIC CRC 0x%016llX (defaulting to 6102)", calcCrc);
+            return CICChip::CIC_NUS_6102;
     }
 }
 
@@ -321,9 +323,6 @@ void N64Rom::ClearRomSettingID() {
 }
 
 // ============================================================================
-// Private Helper Methods
-// ============================================================================
-
 void N64Rom::DetectFormatAndByteSwap() {
     if (!m_Image || m_Image->m_Data.size() < 4) {
         return;
@@ -332,21 +331,20 @@ void N64Rom::DetectFormatAndByteSwap() {
     uint32_t magic = *reinterpret_cast<uint32_t*>(m_Image->m_Data.data());
     
     switch (magic) {
-        case 0x80371240: // Big endian - native N64 format
+        case 0x40123780: // Big endian - native N64 format (read as LE: 0x80371240 -> 0x40123780)
             m_Image->m_Format = RomFormat::BigEndian;
-            // No swap needed
+            ByteSwapN64(); // Convert to host order (40 12 37 80)
             break;
             
-        case 0x37804012: // Byte swapped (V64)
-        case 0x12408037: // Byte swapped (little endian stored)
+        case 0x12408037: // Byte swapped (V64) (read as LE: 0x37804012 -> 0x12408037)
             m_Image->m_Format = RomFormat::ByteSwapped;
-            ByteSwapV64();
+            ByteSwapV64(); // Convert to Big Endian (80 37 12 40)
+            ByteSwapN64(); // Convert to host order (40 12 37 80)
             break;
             
-        case 0x40123780: // Little endian (N64)
-        case 0x40072780: // 64DD IPL little endian
+        case 0x80371240: // Little endian (N64) (read as LE: 0x40123780 -> 0x80371240)
             m_Image->m_Format = RomFormat::LittleEndian;
-            ByteSwapN64();
+            // No swap needed, already in host order (40 12 37 80)
             break;
             
         default:

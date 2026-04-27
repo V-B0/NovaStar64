@@ -228,7 +228,42 @@ void alist_interleave(CHle* hle, uint16_t dmemo, uint16_t left, uint16_t right, 
 }
 
 // ──────────────────────────────────────────────
-// Envelope mixing (exponential)
+// Ramp helpers (matching mupen64plus alist.c)
+// ──────────────────────────────────────────────
+namespace {
+struct ramp_t {
+    int64_t value;
+    int64_t step;
+    int64_t target;
+};
+
+inline int16_t ramp_step(ramp_t* ramp)
+{
+    ramp->value += ramp->step;
+    bool target_reached = (ramp->step <= 0)
+        ? (ramp->value <= ramp->target)
+        : (ramp->value >= ramp->target);
+    if (target_reached) {
+        ramp->value = ramp->target;
+        ramp->step  = 0;
+    }
+    return static_cast<int16_t>(ramp->value >> 16);
+}
+
+inline void sample_mix(int16_t* dst, int16_t src, int16_t gain)
+{
+    *dst = clamp_s16(*dst + ((static_cast<int32_t>(src) * gain) >> 15));
+}
+
+inline void alist_envmix_mix_n(size_t n, int16_t** dst, const int16_t* gains, int16_t src)
+{
+    for (size_t i = 0; i < n; ++i)
+        sample_mix(dst[i], src, gains[i]);
+}
+} // anonymous namespace
+
+// ──────────────────────────────────────────────
+// Envelope mixing (exponential) — port of mupen64plus alist_envmix_exp
 // ──────────────────────────────────────────────
 
 void alist_envmix_exp(CHle* hle, bool init, bool aux,
@@ -239,61 +274,93 @@ void alist_envmix_exp(CHle* hle, bool init, bool aux,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    int16_t volL = vol[0], volR = vol[1];
-    const int16_t targetL = target[0], targetR = target[1];
-    const int32_t rateL = rate[0], rateR = rate[1];
+    const size_t n = aux ? 4 : 2;
+
+    int16_t* const in = reinterpret_cast<int16_t*>(buf + dmemi);
+    int16_t* const dl = reinterpret_cast<int16_t*>(buf + dmem_dl);
+    int16_t* const dr = reinterpret_cast<int16_t*>(buf + dmem_dr);
+    int16_t* const wl = reinterpret_cast<int16_t*>(buf + dmem_wl);
+    int16_t* const wr = reinterpret_cast<int16_t*>(buf + dmem_wr);
+
+    ramp_t ramps[2];
+    int32_t exp_seq[2];
+    int32_t exp_rates[2];
 
     int16_t save_buffer[40];
-    if (init)
-    {
-        std::memset(save_buffer, 0, sizeof(save_buffer));
-    }
-    else
-    {
-        dram_load_u16(hle, reinterpret_cast<uint16_t*>(save_buffer), address, 40);
-    }
+    dram_load_u16(hle, reinterpret_cast<uint16_t*>(save_buffer), address, 40);
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dryL = reinterpret_cast<int16_t*>(buf + (dmem_dl & 0xFFF));
-    int16_t* dryR = reinterpret_cast<int16_t*>(buf + (dmem_dr & 0xFFF));
-    int16_t* wetL = aux ? reinterpret_cast<int16_t*>(buf + (dmem_wl & 0xFFF)) : nullptr;
-    int16_t* wetR = aux ? reinterpret_cast<int16_t*>(buf + (dmem_wr & 0xFFF)) : nullptr;
-
-    const uint16_t samples = count / 2;
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        int32_t sample = src[i];
-
-        // Apply envelope
-        int32_t outL = clamp_s16(static_cast<int32_t>((sample * volL) >> 16));
-        int32_t outR = clamp_s16(static_cast<int32_t>((sample * volR) >> 16));
-
-        // Mix into dry buffers
-        dryL[i] = clamp_s16(dryL[i] + ((outL * dry) >> 16));
-        dryR[i] = clamp_s16(dryR[i] + ((outR * dry) >> 16));
-
-        // Mix into wet buffers if aux
-        if (wetL != nullptr) wetL[i] = clamp_s16(wetL[i] + ((outL * wet) >> 16));
-        if (wetR != nullptr) wetR[i] = clamp_s16(wetR[i] + ((outR * wet) >> 16));
-
-        // Exponential envelope ramp
-        int32_t diffL = targetL - volL;
-        int32_t diffR = targetR - volR;
-        volL += static_cast<int16_t>((diffL * rateL) >> 16);
-        volR += static_cast<int16_t>((diffR * rateR) >> 16);
+    if (init) {
+        ramps[0].value  = (int64_t)vol[0] << 16;
+        ramps[1].value  = (int64_t)vol[1] << 16;
+        ramps[0].target = (int64_t)target[0] << 16;
+        ramps[1].target = (int64_t)target[1] << 16;
+        exp_rates[0]    = rate[0];
+        exp_rates[1]    = rate[1];
+        exp_seq[0]      = static_cast<int32_t>(vol[0] * rate[0]);
+        exp_seq[1]      = static_cast<int32_t>(vol[1] * rate[1]);
+    } else {
+        wet             = *(int16_t*)(save_buffer +  0);
+        dry             = *(int16_t*)(save_buffer +  2);
+        ramps[0].target = *(int32_t*)(save_buffer +  4);
+        ramps[1].target = *(int32_t*)(save_buffer +  6);
+        exp_rates[0]    = *(int32_t*)(save_buffer +  8);
+        exp_rates[1]    = *(int32_t*)(save_buffer + 10);
+        exp_seq[0]      = *(int32_t*)(save_buffer + 12);
+        exp_seq[1]      = *(int32_t*)(save_buffer + 14);
+        ramps[0].value  = *(int32_t*)(save_buffer + 16);
+        ramps[1].value  = *(int32_t*)(save_buffer + 18);
     }
 
-    // Save state back to DRAM
-    save_buffer[0] = volL;
-    save_buffer[1] = volR;
+    ramps[0].step = ramps[0].target - ramps[0].value;
+    ramps[1].step = ramps[1].target - ramps[1].value;
+
+    uint32_t ptr = 0;
+    for (int y = 0; y < count; y += 16) {
+        if (ramps[0].step != 0) {
+            exp_seq[0] = static_cast<int32_t>(((int64_t)exp_seq[0] * (int64_t)exp_rates[0]) >> 16);
+            ramps[0].step = (exp_seq[0] - ramps[0].value) >> 3;
+        }
+        if (ramps[1].step != 0) {
+            exp_seq[1] = static_cast<int32_t>(((int64_t)exp_seq[1] * (int64_t)exp_rates[1]) >> 16);
+            ramps[1].step = (exp_seq[1] - ramps[1].value) >> 3;
+        }
+
+        for (int x = 0; x < 8; ++x) {
+            int16_t  gains[4];
+            int16_t* buffers[4];
+            int16_t l_vol = ramp_step(&ramps[0]);
+            int16_t r_vol = ramp_step(&ramps[1]);
+
+            buffers[0] = dl + (ptr ^ S);
+            buffers[1] = dr + (ptr ^ S);
+            buffers[2] = wl + (ptr ^ S);
+            buffers[3] = wr + (ptr ^ S);
+
+            gains[0] = clamp_s16((l_vol * dry + 0x4000) >> 15);
+            gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
+            gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
+            gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+
+            alist_envmix_mix_n(n, buffers, gains, in[ptr ^ S]);
+            ++ptr;
+        }
+    }
+
+    *(int16_t*)(save_buffer +  0) = wet;
+    *(int16_t*)(save_buffer +  2) = dry;
+    *(int32_t*)(save_buffer +  4) = static_cast<int32_t>(ramps[0].target);
+    *(int32_t*)(save_buffer +  6) = static_cast<int32_t>(ramps[1].target);
+    *(int32_t*)(save_buffer +  8) = exp_rates[0];
+    *(int32_t*)(save_buffer + 10) = exp_rates[1];
+    *(int32_t*)(save_buffer + 12) = exp_seq[0];
+    *(int32_t*)(save_buffer + 14) = exp_seq[1];
+    *(int32_t*)(save_buffer + 16) = static_cast<int32_t>(ramps[0].value);
+    *(int32_t*)(save_buffer + 18) = static_cast<int32_t>(ramps[1].value);
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
 // ──────────────────────────────────────────────
-// Envelope mixing (GoldenEye / GE variant)
-// GE uses a fixed-step linear ramp computed once
-// at init, rather than the iterative exponential
-// approach of the standard envmixer.
+// Envelope mixing (GoldenEye GE) — port of mupen64plus alist_envmix_ge
 // ──────────────────────────────────────────────
 
 void alist_envmix_ge(CHle* hle, bool init, bool aux,
@@ -304,63 +371,69 @@ void alist_envmix_ge(CHle* hle, bool init, bool aux,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    int16_t volL, volR;
-    int32_t stepL, stepR;
+    const size_t n = aux ? 4 : 2;
 
+    int16_t* const in = reinterpret_cast<int16_t*>(buf + dmemi);
+    int16_t* const dl = reinterpret_cast<int16_t*>(buf + dmem_dl);
+    int16_t* const dr = reinterpret_cast<int16_t*>(buf + dmem_dr);
+    int16_t* const wl = reinterpret_cast<int16_t*>(buf + dmem_wl);
+    int16_t* const wr = reinterpret_cast<int16_t*>(buf + dmem_wr);
+
+    ramp_t ramps[2];
     int16_t save_buffer[40];
-    if (init)
-    {
-        volL = vol[0];
-        volR = vol[1];
-        // GE computes a fixed linear step from rate and (target - current)
-        stepL = static_cast<int32_t>((static_cast<int64_t>(target[0] - volL) * rate[0]) >> 16);
-        stepR = static_cast<int32_t>((static_cast<int64_t>(target[1] - volR) * rate[1]) >> 16);
-        std::memset(save_buffer, 0, sizeof(save_buffer));
-    }
-    else
-    {
-        dram_load_u16(hle, reinterpret_cast<uint16_t*>(save_buffer), address, 40);
-        volL  = save_buffer[0];
-        volR  = save_buffer[1];
-        stepL = static_cast<int32_t>(save_buffer[2]);
-        stepR = static_cast<int32_t>(save_buffer[3]);
-    }
+    dram_load_u16(hle, reinterpret_cast<uint16_t*>(save_buffer), address, 40);
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dryL = reinterpret_cast<int16_t*>(buf + (dmem_dl & 0xFFF));
-    int16_t* dryR = reinterpret_cast<int16_t*>(buf + (dmem_dr & 0xFFF));
-    int16_t* wetL = aux ? reinterpret_cast<int16_t*>(buf + (dmem_wl & 0xFFF)) : nullptr;
-    int16_t* wetR = aux ? reinterpret_cast<int16_t*>(buf + (dmem_wr & 0xFFF)) : nullptr;
-
-    const uint16_t samples = count / 2;
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        int32_t sample = src[i];
-
-        int32_t outL = clamp_s16(static_cast<int32_t>((sample * volL) >> 16));
-        int32_t outR = clamp_s16(static_cast<int32_t>((sample * volR) >> 16));
-
-        dryL[i] = clamp_s16(dryL[i] + ((outL * dry) >> 16));
-        dryR[i] = clamp_s16(dryR[i] + ((outR * dry) >> 16));
-
-        if (wetL != nullptr) wetL[i] = clamp_s16(wetL[i] + ((outL * wet) >> 16));
-        if (wetR != nullptr) wetR[i] = clamp_s16(wetR[i] + ((outR * wet) >> 16));
-
-        // GE: fixed linear step ramp (step computed once at init)
-        volL = clamp_s16(static_cast<int32_t>(volL) + stepL);
-        volR = clamp_s16(static_cast<int32_t>(volR) + stepR);
+    if (init) {
+        ramps[0].value  = (int64_t)vol[0] << 16;
+        ramps[1].value  = (int64_t)vol[1] << 16;
+        ramps[0].target = (int64_t)target[0] << 16;
+        ramps[1].target = (int64_t)target[1] << 16;
+        ramps[0].step   = rate[0] / 8;
+        ramps[1].step   = rate[1] / 8;
+    } else {
+        wet             = *(int16_t*)(save_buffer +  0);
+        dry             = *(int16_t*)(save_buffer +  2);
+        ramps[0].target = *(int32_t*)(save_buffer +  4);
+        ramps[1].target = *(int32_t*)(save_buffer +  6);
+        ramps[0].step   = *(int32_t*)(save_buffer +  8);
+        ramps[1].step   = *(int32_t*)(save_buffer + 10);
+        ramps[0].value  = *(int32_t*)(save_buffer + 16);
+        ramps[1].value  = *(int32_t*)(save_buffer + 18);
     }
 
-    // Save state back to DRAM
-    save_buffer[0] = volL;
-    save_buffer[1] = volR;
-    save_buffer[2] = static_cast<int16_t>(stepL);
-    save_buffer[3] = static_cast<int16_t>(stepR);
+    const unsigned samples = count >> 1;
+    for (unsigned k = 0; k < samples; ++k) {
+        int16_t  gains[4];
+        int16_t* buffers[4];
+        int16_t l_vol = ramp_step(&ramps[0]);
+        int16_t r_vol = ramp_step(&ramps[1]);
+
+        buffers[0] = dl + (k ^ S);
+        buffers[1] = dr + (k ^ S);
+        buffers[2] = wl + (k ^ S);
+        buffers[3] = wr + (k ^ S);
+
+        gains[0] = clamp_s16((l_vol * dry + 0x4000) >> 15);
+        gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
+        gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
+        gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+
+        alist_envmix_mix_n(n, buffers, gains, in[k ^ S]);
+    }
+
+    *(int16_t*)(save_buffer +  0) = wet;
+    *(int16_t*)(save_buffer +  2) = dry;
+    *(int32_t*)(save_buffer +  4) = static_cast<int32_t>(ramps[0].target);
+    *(int32_t*)(save_buffer +  6) = static_cast<int32_t>(ramps[1].target);
+    *(int32_t*)(save_buffer +  8) = static_cast<int32_t>(ramps[0].step);
+    *(int32_t*)(save_buffer + 10) = static_cast<int32_t>(ramps[1].step);
+    *(int32_t*)(save_buffer + 16) = static_cast<int32_t>(ramps[0].value);
+    *(int32_t*)(save_buffer + 18) = static_cast<int32_t>(ramps[1].value);
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
 // ──────────────────────────────────────────────
-// Envelope mixing (linear ramp)
+// Envelope mixing (linear ramp) — port of mupen64plus alist_envmix_lin
 // ──────────────────────────────────────────────
 
 void alist_envmix_lin(CHle* hle, bool init,
@@ -371,66 +444,63 @@ void alist_envmix_lin(CHle* hle, bool init,
     uint8_t* buf = hle->alist_buffer();
     if (buf == nullptr) return;
 
-    int16_t volL, volR;
-    const int16_t stepL = static_cast<int16_t>(rate[0] >> 16);
-    const int16_t stepR = static_cast<int16_t>(rate[1] >> 16);
+    int16_t* const in = reinterpret_cast<int16_t*>(buf + dmemi);
+    int16_t* const dl = reinterpret_cast<int16_t*>(buf + dmem_dl);
+    int16_t* const dr = reinterpret_cast<int16_t*>(buf + dmem_dr);
+    int16_t* const wl = reinterpret_cast<int16_t*>(buf + dmem_wl);
+    int16_t* const wr = reinterpret_cast<int16_t*>(buf + dmem_wr);
 
-    // Load persisted volume state if not initializing
-    if (init)
-    {
-        volL = vol[0];
-        volR = vol[1];
-    }
-    else if (address != 0)
-    {
-        int16_t saved[4]{};
-        dram_load_u16(hle, reinterpret_cast<uint16_t*>(saved), address, 4);
-        volL = saved[0];
-        volR = saved[1];
-    }
-    else
-    {
-        volL = vol[0];
-        volR = vol[1];
-    }
+    ramp_t ramps[2]{};
+    int16_t save_buffer[40];
+    dram_load_u16(hle, reinterpret_cast<uint16_t*>(save_buffer), address, 40);
 
-    const int16_t* src = reinterpret_cast<const int16_t*>(buf + (dmemi & 0xFFF));
-    int16_t* dryL = reinterpret_cast<int16_t*>(buf + (dmem_dl & 0xFFF));
-    int16_t* dryR = reinterpret_cast<int16_t*>(buf + (dmem_dr & 0xFFF));
-    int16_t* wetL = reinterpret_cast<int16_t*>(buf + (dmem_wl & 0xFFF));
-    int16_t* wetR = reinterpret_cast<int16_t*>(buf + (dmem_wr & 0xFFF));
-
-    const uint16_t samples = count / 2;
-    for (uint16_t i = 0; i < samples; i++)
-    {
-        int32_t sample = src[i];
-        int32_t outL = clamp_s16((sample * volL) >> 16);
-        int32_t outR = clamp_s16((sample * volR) >> 16);
-
-        dryL[i] = clamp_s16(dryL[i] + ((outL * dry) >> 16));
-        dryR[i] = clamp_s16(dryR[i] + ((outR * dry) >> 16));
-        wetL[i] = clamp_s16(wetL[i] + ((outL * wet) >> 16));
-        wetR[i] = clamp_s16(wetR[i] + ((outR * wet) >> 16));
-
-        // Linear ramp: clamp at target
-        if ((stepL > 0 && volL < target[0]) || (stepL < 0 && volL > target[0]))
-            volL += stepL;
-        else
-            volL = target[0];
-        if ((stepR > 0 && volR < target[1]) || (stepR < 0 && volR > target[1]))
-            volR += stepR;
-        else
-            volR = target[1];
+    if (init) {
+        ramps[0].step   = rate[0] / 8;
+        ramps[0].value  = (int64_t)vol[0] << 16;
+        ramps[0].target = (int64_t)target[0] << 16;
+        ramps[1].step   = rate[1] / 8;
+        ramps[1].value  = (int64_t)vol[1] << 16;
+        ramps[1].target = (int64_t)target[1] << 16;
+    } else {
+        wet             = *(int16_t*)(save_buffer +  0);
+        dry             = *(int16_t*)(save_buffer +  2);
+        ramps[0].target = (int64_t)(*(int16_t*)(save_buffer +  4)) << 16;
+        ramps[1].target = (int64_t)(*(int16_t*)(save_buffer +  6)) << 16;
+        ramps[0].step   = *(int32_t*)(save_buffer +  8);
+        ramps[1].step   = *(int32_t*)(save_buffer + 10);
+        ramps[0].value  = *(int32_t*)(save_buffer + 16);
+        ramps[1].value  = *(int32_t*)(save_buffer + 18);
     }
 
-    // Save volume state for next call
-    if (address != 0)
-    {
-        int16_t save_state[4]{};
-        save_state[0] = volL;
-        save_state[1] = volR;
-        dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_state), address, 4);
+    const unsigned samples = count >> 1;
+    for (unsigned k = 0; k < samples; ++k) {
+        int16_t  gains[4];
+        int16_t* buffers[4];
+        int16_t l_vol = ramp_step(&ramps[0]);
+        int16_t r_vol = ramp_step(&ramps[1]);
+
+        buffers[0] = dl + (k ^ S);
+        buffers[1] = dr + (k ^ S);
+        buffers[2] = wl + (k ^ S);
+        buffers[3] = wr + (k ^ S);
+
+        gains[0] = clamp_s16((l_vol * dry + 0x4000) >> 15);
+        gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
+        gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
+        gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+
+        alist_envmix_mix_n(4, buffers, gains, in[k ^ S]);
     }
+
+    *(int16_t*)(save_buffer +  0) = wet;
+    *(int16_t*)(save_buffer +  2) = dry;
+    *(int16_t*)(save_buffer +  4) = static_cast<int16_t>(ramps[0].target >> 16);
+    *(int16_t*)(save_buffer +  6) = static_cast<int16_t>(ramps[1].target >> 16);
+    *(int32_t*)(save_buffer +  8) = static_cast<int32_t>(ramps[0].step);
+    *(int32_t*)(save_buffer + 10) = static_cast<int32_t>(ramps[1].step);
+    *(int32_t*)(save_buffer + 16) = static_cast<int32_t>(ramps[0].value);
+    *(int32_t*)(save_buffer + 18) = static_cast<int32_t>(ramps[1].value);
+    dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
 // ──────────────────────────────────────────────
@@ -569,7 +639,9 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
     for (size_t i = 0; i < 16; ++i, dmemo += 2)
         *alist_s16(hle, dmemo) = last_frame[i];
 
-    for (uint16_t frame = 0; frame < count; frame++)
+    // count is in BYTES of *output*; each ADPCM frame produces 32 bytes (16 samples).
+    // Mupen reference: while (count != 0) { ...; count -= 32; }
+    while (count != 0)
     {
         // Read header byte using alist_u8 (^S8)
         uint8_t code = *alist_u8(hle, dmemi++);
@@ -611,6 +683,8 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
         // Write decoded frame to output using alist_s16 (^S16)
         for (size_t i = 0; i < 16; ++i, dmemo += 2)
             *alist_s16(hle, dmemo) = last_frame[i];
+
+        count -= 32;
     }
 
     // Save last frame state

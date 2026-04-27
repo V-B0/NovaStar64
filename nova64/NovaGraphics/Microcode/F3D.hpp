@@ -45,6 +45,7 @@ private:
     void Cmd_G_RDPHALF_2(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_RDPHALF_CONT(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -65,28 +66,43 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
         return true;
     }
     
+    // Command Logging (Task 3)
+    if (m_commandsProcessed < 1000) { // Log first 1000 commands
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Microcode,
+                 "F3D DL: [0x{:08X}] 0x{:08X} 0x{:08X} ({})",
+                 ctx.pc - 8, w0, w1, DescribeGBI1Command(w0, w1));
+    }
+
+    // F3D opcode dispatch — mirrors GLideN64 F3D_Init() table exactly
     switch (opcode) {
-    case 0x00: Cmd_G_SPNOOP(ctx, w0, w1); break;
-    case 0x01: Cmd_G_MTX(ctx, w0, w1); break;
-    case 0x03: Cmd_G_MOVEMEM(ctx, w0, w1); break;
-    case 0x04: Cmd_G_VTX(ctx, w0, w1); break;
-    case 0x06: Cmd_G_DL(ctx, w0, w1); break;
-    case 0x09: Cmd_G_SPRITE2D_BASE(ctx, w0, w1); break;
-    
-    case 0xB2: Cmd_G_RDPHALF_CONT(ctx, w0, w1); break;
-    case 0xB3: Cmd_G_RDPHALF_2(ctx, w0, w1); break;
-    case 0xB4: Cmd_G_RDPHALF_1(ctx, w0, w1); break;
-    case 0xB6: Cmd_G_CLEARGEOMETRYMODE(ctx, w0, w1); break;
-    case 0xB7: Cmd_G_SETGEOMETRYMODE(ctx, w0, w1); break;
-    case 0xB8: Cmd_G_ENDDL(ctx, w0, w1); break;
-    case 0xB9: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
-    case 0xBA: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
-    case 0xBB: Cmd_G_TEXTURE(ctx, w0, w1); break;
-    case 0xBC: Cmd_G_MOVEWORD(ctx, w0, w1); break;
-    case 0xBD: Cmd_G_POPMTX(ctx, w0, w1); break;
-    case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;
-    case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;
-    
+    // Low opcodes (0x00 .. 0x09)
+    case 0x00: Cmd_G_SPNOOP(ctx, w0, w1); break;       // G_SPNOOP
+    case 0x01: Cmd_G_MTX(ctx, w0, w1); break;          // G_MTX
+    case 0x02: /* G_RESERVED0 */ break;
+    case 0x03: Cmd_G_MOVEMEM(ctx, w0, w1); break;      // G_MOVEMEM
+    case 0x04: Cmd_G_VTX(ctx, w0, w1); break;          // G_VTX
+    case 0x05: /* G_RESERVED1 */ break;
+    case 0x06: Cmd_G_DL(ctx, w0, w1); break;           // G_DL
+    case 0x07: /* G_RESERVED2 */ break;
+    case 0x08: /* G_RESERVED3 */ break;
+    case 0x09: Cmd_G_SPRITE2D_BASE(ctx, w0, w1); break; // G_SPRITE2D_BASE
+
+    // High opcodes (0xB1 .. 0xBF) — F3D-style high-end commands
+    case 0xB2: Cmd_G_RDPHALF_CONT(ctx, w0, w1); break; // G_RDPHALF_CONT
+    case 0xB3: Cmd_G_RDPHALF_2(ctx, w0, w1); break;    // G_RDPHALF_2
+    case 0xB4: Cmd_G_RDPHALF_1(ctx, w0, w1); break;    // G_RDPHALF_1
+    case 0xB5: Cmd_G_QUAD(ctx, w0, w1); break;         // G_QUAD (F3D)
+    case 0xB6: Cmd_G_CLEARGEOMETRYMODE(ctx, w0, w1); break; // G_CLEARGEOMETRYMODE
+    case 0xB7: Cmd_G_SETGEOMETRYMODE(ctx, w0, w1); break;   // G_SETGEOMETRYMODE
+    case 0xB8: Cmd_G_ENDDL(ctx, w0, w1); break;        // G_ENDDL
+    case 0xB9: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break; // G_SETOTHERMODE_L
+    case 0xBA: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break; // G_SETOTHERMODE_H
+    case 0xBB: Cmd_G_TEXTURE(ctx, w0, w1); break;      // G_TEXTURE
+    case 0xBC: Cmd_G_MOVEWORD(ctx, w0, w1); break;     // G_MOVEWORD
+    case 0xBD: Cmd_G_POPMTX(ctx, w0, w1); break;       // G_POPMTX
+    case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;       // G_CULLDL
+    case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;         // G_TRI1
+
     default:
         NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
                 "F3D: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
@@ -97,54 +113,71 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
 }
 
 // ─── Individual command implementations ──────────────────────────────────
+// All implementations mirror GLideN64 uCodes/F3D.cpp exactly.
 
 inline void F3DHandler::Cmd_G_SPNOOP(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)ctx; (void)w0; (void)w1;
 }
 
 inline void F3DHandler::Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint32_t params = w0 & 0x00FFFFFF;
-    bool push = (params & 0x01) == 0; // bit 0: 0=push, 1=nopush
-    bool load = (params & 0x02) != 0; // bit 1: 0=mul, 1=load
-    bool proj = (params & 0x04) != 0; // bit 2: 0=modelview, 1=projection
-    
+    // GLideN64: gSPMatrix(w1, _SHIFTR(w0, 16, 8))
+    // Param byte (w0[23:16]) bit definitions in F3D:
+    //   bit 0: 0=modelview,  1=projection
+    //   bit 1: 0=mul,        1=load
+    //   bit 2: 0=nopush,     1=push
+    uint8_t params = static_cast<uint8_t>((w0 >> 16) & 0xFF);
+    bool proj = (params & 0x01) != 0;
+    bool load = (params & 0x02) != 0;
+    bool push = (params & 0x04) != 0;
     LoadMatrix(ctx, w1, push, load, proj);
 }
 
 inline void F3DHandler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint8_t index = (w0 >> 16) & 0xFF;
-    uint8_t size = ((w0 >> 19) & 0x1F) * 8;
+    // GLideN64: switch on _SHIFTR(w0, 16, 8) — index byte used as-is.
+    // No size byte exists in GBI1 G_MOVEMEM (size is implicit per index).
+    uint8_t index   = static_cast<uint8_t>((w0 >> 16) & 0xFF);
     uint32_t address = w1;
-    
-    MoveMemGBI1(ctx, index, size, address);
+    MoveMemGBI1(ctx, index, 0, address);
 }
 
 inline void F3DHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // F3D vertex format: count-1 in bits [23:20], v0 in bits [19:16]
-    int count = ((w0 >> 20) & 0xF) + 1;
-    int startIndex = ((w0 >> 16) & 0xF);
-    
+    // GLideN64: gSPVertex(w1, _SHIFTR(w0, 20, 4) + 1, _SHIFTR(w0, 16, 4))
+    int count      = static_cast<int>(((w0 >> 20) & 0xF) + 1);
+    int startIndex = static_cast<int>((w0 >> 16) & 0xF);
     LoadVertices(ctx, w1, count, startIndex);
 }
 
 inline void F3DHandler::Cmd_G_DL(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GLideN64: G_DL_PUSH(0)=call, G_DL_NOPUSH(1)=branch
     bool branch = ((w0 >> 16) & 0xFF) == 1;
     DisplayList(ctx, w1, branch);
 }
 
 inline void F3DHandler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w0;
-    // F3D: vertex indices in w1 bytes
-    int v0 = ((w1 >> 16) & 0xFF) / 10; // F3D uses vtx*10 encoding
-    int v1 = ((w1 >> 8) & 0xFF) / 10;
-    int v2 = (w1 & 0xFF) / 10;
-    
+    // GLideN64: gSP1Triangle(_SHIFTR(w1,16,8)/10, _SHIFTR(w1,8,8)/10, _SHIFTR(w1,0,8)/10)
+    int v0 = static_cast<int>(((w1 >> 16) & 0xFF) / 10);
+    int v1 = static_cast<int>(((w1 >> 8)  & 0xFF) / 10);
+    int v2 = static_cast<int>(( w1        & 0xFF) / 10);
     DrawTriangle(ctx, v0, v1, v2);
 }
 
+inline void F3DHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    (void)w0;
+    // GLideN64: gSP1Quadrangle(_SHIFTR(w1,24,8)/10, _SHIFTR(w1,16,8)/10,
+    //                          _SHIFTR(w1,8,8)/10,  _SHIFTR(w1,0,8)/10)
+    // Decomposed into two triangles: (v0,v1,v2) and (v0,v2,v3)
+    int v0 = static_cast<int>(((w1 >> 24) & 0xFF) / 10);
+    int v1 = static_cast<int>(((w1 >> 16) & 0xFF) / 10);
+    int v2 = static_cast<int>(((w1 >> 8)  & 0xFF) / 10);
+    int v3 = static_cast<int>(( w1        & 0xFF) / 10);
+    DrawTriangle2(ctx, v0, v1, v2, v0, v2, v3);
+}
+
 inline void F3DHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint32_t start = ((w0 & 0x00FFFFFF) / 40);
-    uint32_t end = (w1 / 40) - 1;  // F3D encodes exclusive end
+    // GLideN64: gSPCullDisplayList(_SHIFTR(w0,0,24)/40, (w1/40)-1)
+    uint32_t start = (w0 & 0x00FFFFFF) / 40;
+    uint32_t end   = (w1 / 40) - 1;
     CullDisplayList(ctx, start, end);
 }
 
@@ -230,13 +263,15 @@ static inline uint32_t TranslateGBI1ToGBI2(uint32_t gbi1) {
 }
 
 inline void F3DHandler::Cmd_G_SETGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF));
+    (void)w0;
+    // GBI1: geometry mode bits are in w1, not w0
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2(w1));
 }
 
 inline void F3DHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    SetGeometryMode(ctx, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF), 0);
+    (void)w0;
+    // GBI1: geometry mode bits are in w1, not w0
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2(w1), 0);
 }
 
 inline void F3DHandler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {

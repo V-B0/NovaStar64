@@ -79,6 +79,7 @@ struct MicrocodeEntry {
 inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
     // ── Standard Audio ABI ──
     { 0x1DC6CB36, 0, UcodeType::AudioStandard, alist_process_audio,     "ABI Standard 1.0" },
+    { 0x1A13A51A, 0, UcodeType::AudioStandard, alist_process_audio,     "ABI Standard 1.0 (SM64)" },
     { 0x4A90240B, 0, UcodeType::AudioStandard, alist_process_audio,     "ABI Standard 1.1" },
     { 0xB9D5BEBB, 0, UcodeType::AudioStandard, alist_process_audio,     "ABI Standard 1.2 (SM64)" },
     { 0xA1A44F91, 0, UcodeType::AudioStandard, alist_process_audio,     "ABI Standard 1.3 (MK64)" },

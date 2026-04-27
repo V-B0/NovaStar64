@@ -404,6 +404,9 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value)
     // P64: CLR only if SET is not also set, and vice versa
     if ((Value & SPStatusWrite::CLR_HALT) && !(Value & SPStatusWrite::SET_HALT))
     {
+        if (SP_STATUS & SPStatus::HALT) {
+            Log::debugf("RSP: Starting execution from PC 0x%03X", SP_PC & 0xFFF);
+        }
         SP_STATUS &= ~SPStatus::HALT;
         shouldClearHalt = true;
     }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file Recompiler.cpp
  * @brief Implementation of the main dynamic recompiler
  * 
@@ -398,6 +398,8 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     
     CCompiledFunc* compiledFunc = nullptr;
     
+    Log::infof("CRecompiler: Compiling new block at 0x%08X", address);
+
     try {
         // ---- Step 1: Create and analyse the CodeBlock -------------------
         CodeBlock::Config blockCfg;
@@ -597,7 +599,16 @@ void CRecompiler::Execute_VirtualTable() {
         // ================================================================
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC > pc && !m_System.m_TestTimer) {
+
+            // Add periodic logging to identify where the CPU is spinning
+            static uint64_t blockCounter = 0;
+            if ((++blockCounter % 100000) == 0) {
+                Log::infof("CRecompiler: PC=0x%08X (blocks: %llu)", newPC, (unsigned long long)m_Stats.blocksExecuted);
+            }
+
+            // CRITICAL FIX: If m_NextTimer <= 0, we MUST enter the slow path to process timers
+            // and trigger interrupts. Skipping this causes hangs in long forward-only code sequences.
+            if (newPC > pc && !m_System.m_TestTimer && m_System.m_NextTimer > 0) {
                 // Even on the fast path, process pending system events
                 // (interrupts, resets) so they aren't delayed across many
                 // forward-only blocks.  Timer processing is still deferred
@@ -617,7 +628,17 @@ void CRecompiler::Execute_VirtualTable() {
         // SLOW PATH: Backward branch, self-loop, or TestTimer.
         // Process idle detection, timers, events, and frame limit.
         // ================================================================
+        static uint64_t slowPathCounter = 0;
+        if ((++slowPathCounter % 10000) == 0) {
+            Log::infof("CRecompiler: SLOW PATH PC=0x%08X (nextTimer=%d testTimer=%d)", 
+                       pc, nextTimer, m_System.m_TestTimer);
+        }
 
+        m_System.m_TestTimer = false;
+
+        // Periodic interrupt check in slow path (e.g. after Status register write)
+        m_Reg.CheckInterrupts();
+        
         // Idle loop detection: if the block is a tiny self-loop (e.g. `b .` + NOP),
         // advance the timer directly to the next event instead of spinning.
         {

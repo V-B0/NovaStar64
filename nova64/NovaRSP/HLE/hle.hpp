@@ -6,6 +6,7 @@
 #pragma once
 #include "ucodes.hpp"
 #include "AudioOutput.hpp"
+#include "TaskDispatcher.hpp"
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -154,6 +155,9 @@ private:
 
     // Audio output device
     CAudioOutput m_audioOutput;
+
+    // Microcode dispatcher (persistent across tasks for caching)
+    CTaskDispatcher m_Dispatcher;
 };
 
 } // namespace Nova64::RSP::HLE

@@ -70,30 +70,35 @@ static void AUDIO_SEGMENTS(CHle* hle, uint32_t w1, uint32_t w2)
         state.segments[seg] = w2 & 0x00FFFFFF;
 }
 
+// SM64 / standard audio ABI uses DMEM_BASE offset for all buffer addresses
+// (matches mupen64plus-rsp-hle alist_audio.c).
+static constexpr uint16_t DMEM_BASE = 0x5C0;
+
 static void AUDIO_SETBUFF(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
-    if ((w1 >> 16) & 0x8)
+    if ((w1 >> 16) & A_AUX)
     {
         // Aux buffer setup
-        s.dry_right = static_cast<uint16_t>(w1);
-        s.wet_left  = static_cast<uint16_t>(w2 >> 16);
-        s.wet_right = static_cast<uint16_t>(w2);
+        s.dry_right = static_cast<uint16_t>(w1) + DMEM_BASE;
+        s.wet_left  = static_cast<uint16_t>(w2 >> 16) + DMEM_BASE;
+        s.wet_right = static_cast<uint16_t>(w2) + DMEM_BASE;
     }
     else
     {
-        s.in    = static_cast<uint16_t>(w1);
-        s.out   = static_cast<uint16_t>(w2 >> 16);
+        s.in    = static_cast<uint16_t>(w1) + DMEM_BASE;
+        s.out   = static_cast<uint16_t>(w2 >> 16) + DMEM_BASE;
         s.count = static_cast<uint16_t>(w2);
     }
 }
 
 static void AUDIO_DMEMMOVE(CHle* hle, uint32_t w1, uint32_t w2)
 {
-    uint16_t dmemi = static_cast<uint16_t>(w1);
-    uint16_t dmemo = static_cast<uint16_t>(w2 >> 16);
+    uint16_t dmemi = static_cast<uint16_t>(w1) + DMEM_BASE;
+    uint16_t dmemo = static_cast<uint16_t>(w2 >> 16) + DMEM_BASE;
     uint16_t count = static_cast<uint16_t>(w2);
-    alist_move(hle, dmemo, dmemi, count);
+    if (count == 0) return;
+    alist_move(hle, dmemo, dmemi, static_cast<uint16_t>(align(count, 16)));
 }
 
 static void AUDIO_LOADBUFF(CHle* hle, uint32_t w1, uint32_t w2)
@@ -102,6 +107,18 @@ static void AUDIO_LOADBUFF(CHle* hle, uint32_t w1, uint32_t w2)
     uint32_t addr = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
     alist_load(hle, s.in, addr, s.count);
     (void)w1;
+}
+
+// ABI Standard (GBI0/ABI1) LOADADPCM — loads ADPCM codebook from DRAM into s.table.
+// count = low 16 bits of w1 (byte count), address = w2 & 0xFFFFFF.
+// Pattern mirrors NEAD_OOT_LOADADPCM.
+static void AUDIO_LOADADPCM(CHle* hle, uint32_t w1, uint32_t w2)
+{
+    auto& s = hle->alist_audio();
+    uint16_t count   = static_cast<uint16_t>(w1);
+    uint32_t address = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
+    dram_load_u16(hle, reinterpret_cast<uint16_t*>(s.table), address,
+                  static_cast<uint16_t>(align(count, 8)) >> 1);
 }
 
 static void AUDIO_SAVEBUFF(CHle* hle, uint32_t w1, uint32_t w2)
@@ -114,34 +131,38 @@ static void AUDIO_SAVEBUFF(CHle* hle, uint32_t w1, uint32_t w2)
 
 static void AUDIO_SETLOOP(CHle* hle, uint32_t /*w1*/, uint32_t w2)
 {
-    hle->alist_audio().loop = w2 & 0x00FFFFFF;
+    auto& s = hle->alist_audio();
+    s.loop = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
 }
 
 static void AUDIO_ADPCM(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
-    bool init = (w1 >> 16) & 0x01;
-    bool loop = (w1 >> 16) & 0x02;
+    bool init = (w1 >> 16) & A_INIT;
+    bool loop = (w1 >> 16) & A_LOOP;
     uint32_t addr = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
-    alist_adpcm(hle, init, loop, false, s.out, s.in, s.count,
+    alist_adpcm(hle, init, loop, false, s.out, s.in,
+                static_cast<uint16_t>(align(s.count, 32)),
                 s.table, s.loop, addr);
 }
 
 static void AUDIO_RESAMPLE(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
-    bool init  = (w1 >> 16) & 0x01;
+    bool init  = (w1 >> 16) & A_INIT;
     bool flag2 = (w1 >> 16) & 0x02;
     uint32_t pitch = w1 & 0xFFFF;
     uint32_t addr = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
-    alist_resample(hle, init, flag2, s.out, s.in, s.count, pitch << 1, addr);
+    alist_resample(hle, init, flag2, s.out, s.in,
+                   static_cast<uint16_t>(align(s.count, 16)),
+                   pitch << 1, addr);
 }
 
 static void AUDIO_ENVMIXER(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
-    bool init = (w1 >> 16) & 0x01;
-    bool aux  = (w1 >> 16) & 0x08;
+    bool init = (w1 >> 16) & A_INIT;
+    bool aux  = (w1 >> 16) & A_AUX;
     uint32_t addr = alist_get_address(hle, w2, s.segments, N_SEGMENTS);
     alist_envmix_exp(hle, init, aux,
                      s.out, s.dry_right, s.wet_left, s.wet_right,
@@ -153,49 +174,58 @@ static void AUDIO_SETVOL(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
     uint8_t flags = static_cast<uint8_t>(w1 >> 16);
-    if (flags & 0x04)
+
+    // Matches mupen64plus-rsp-hle alist_audio.c::SETVOL exactly.
+    // dry/wet/vol/target are stored in 16-bit fields (cast truncates),
+    // rate is the full 32-bit w2 (signed).
+    if (flags & A_AUX)
     {
-        // Set target
-        s.target[0] = static_cast<int16_t>(w1);
-        s.target[1] = static_cast<int16_t>(w2 >> 16);
-    }
-    else if (flags & 0x08)
-    {
-        // Set rate
-        s.rate[0] = static_cast<int32_t>(w1 & 0xFFFF) << 16 | (w2 >> 16);
-        s.rate[1] = static_cast<int32_t>(w2 & 0xFFFF) << 16;
+        s.dry = static_cast<int16_t>(w1);
+        s.wet = static_cast<int16_t>(w2);
     }
     else
     {
-        // Set volume
-        s.vol[0] = static_cast<int16_t>(w1);
-        s.dry    = static_cast<int16_t>(w2 >> 16);
-        s.wet    = static_cast<int16_t>(w2);
+        unsigned lr = (flags & A_LEFT) ? 0u : 1u;
+        if (flags & A_VOL)
+        {
+            s.vol[lr] = static_cast<int16_t>(w1);
+        }
+        else
+        {
+            s.target[lr] = static_cast<int16_t>(w1);
+            s.rate[lr]   = static_cast<int32_t>(w2);
+        }
     }
 }
 
 static void AUDIO_CLEARBUFF(CHle* hle, uint32_t w1, uint32_t w2)
 {
-    uint16_t dmem  = static_cast<uint16_t>(w1);
-    uint16_t count = static_cast<uint16_t>(w2);
-    alist_clear(hle, dmem, count);
+    uint16_t dmem  = static_cast<uint16_t>(w1) + DMEM_BASE;
+    uint16_t count = static_cast<uint16_t>(w2 & 0xFFF);
+    if (count == 0) return;
+    alist_clear(hle, dmem, static_cast<uint16_t>(align(count, 16)));
 }
 
 static void AUDIO_MIXER(CHle* hle, uint32_t w1, uint32_t w2)
 {
-    uint16_t dmemo = static_cast<uint16_t>(w2 >> 16);
-    uint16_t dmemi = static_cast<uint16_t>(w2);
+    // mupen reference: dmemi = (w2>>16) + DMEM_BASE, dmemo = w2 + DMEM_BASE
+    uint16_t dmemi = static_cast<uint16_t>(w2 >> 16) + DMEM_BASE;
+    uint16_t dmemo = static_cast<uint16_t>(w2) + DMEM_BASE;
     auto& s = hle->alist_audio();
     int16_t gain = static_cast<int16_t>(w1);
-    alist_mix(hle, dmemo, dmemi, s.count, gain);
+    if (s.count == 0) return;
+    alist_mix(hle, dmemo, dmemi,
+              static_cast<uint16_t>(align(s.count, 32)), gain);
 }
 
 static void AUDIO_INTERLEAVE(CHle* hle, uint32_t w1, uint32_t w2)
 {
     auto& s = hle->alist_audio();
-    uint16_t left  = static_cast<uint16_t>(w2 >> 16);
-    uint16_t right = static_cast<uint16_t>(w2);
-    alist_interleave(hle, s.out, left, right, s.count);
+    uint16_t left  = static_cast<uint16_t>(w2 >> 16) + DMEM_BASE;
+    uint16_t right = static_cast<uint16_t>(w2) + DMEM_BASE;
+    if (s.count == 0) return;
+    alist_interleave(hle, s.out, left, right,
+                     static_cast<uint16_t>(align(s.count, 16)));
     (void)w1;
 }
 
@@ -213,7 +243,7 @@ void alist_process_audio(CHle* hle)
     static const AcmdCallback ABI[32] = {
         SPNOOP,            AUDIO_ADPCM,      AUDIO_CLEARBUFF,  AUDIO_ENVMIXER,
         AUDIO_LOADBUFF,    AUDIO_RESAMPLE,    AUDIO_SAVEBUFF,   AUDIO_SEGMENTS,
-        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADBUFF,
+        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADADPCM,
         AUDIO_MIXER,       AUDIO_INTERLEAVE,  AUDIO_POLEF,      AUDIO_SETLOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,
@@ -243,7 +273,7 @@ void alist_process_audio_ge(CHle* hle)
     static const AcmdCallback ABI_GE[32] = {
         SPNOOP,            AUDIO_ADPCM,      AUDIO_CLEARBUFF,  AUDIO_ENVMIXER_GE,
         AUDIO_LOADBUFF,    AUDIO_RESAMPLE,    AUDIO_SAVEBUFF,   AUDIO_SEGMENTS,
-        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADBUFF,
+        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADADPCM,
         AUDIO_MIXER,       AUDIO_INTERLEAVE,  AUDIO_POLEF,      AUDIO_SETLOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,
@@ -261,7 +291,7 @@ void alist_process_audio_bc(CHle* hle)
     static const AcmdCallback ABI_BC[32] = {
         SPNOOP,            AUDIO_ADPCM,      AUDIO_CLEARBUFF,  AUDIO_ENVMIXER_GE,
         AUDIO_LOADBUFF,    AUDIO_RESAMPLE,    AUDIO_SAVEBUFF,   AUDIO_SEGMENTS,
-        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADBUFF,
+        AUDIO_SETBUFF,     AUDIO_SETVOL,      AUDIO_DMEMMOVE,   AUDIO_LOADADPCM,
         AUDIO_MIXER,       AUDIO_INTERLEAVE,  AUDIO_POLEF,      AUDIO_SETLOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,
         SPNOOP,            SPNOOP,            SPNOOP,           SPNOOP,

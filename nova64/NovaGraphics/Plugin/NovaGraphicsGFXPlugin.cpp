@@ -312,6 +312,13 @@ void NovaGraphicsGFXPlugin::UpdateScreen()
 {
     m_videoPlugin.UpdateScreen();
     m_viCount++;
+    
+    // Log DL count for SM64 troubleshooting
+    const auto& stats = m_videoPlugin.GetFrameStats();
+    if ((stats.viInterrupts % 60) == 0) {
+        Log::infof("NovaGraphics: Last frame DLs: %u | Total VIs: %u | HLE Rendered: %s", 
+                   stats.dlistCount, stats.viInterrupts, m_videoPlugin.GetRDPProcessor() ? "YES" : "NO");
+    }
 
     // Compute stats every second
     auto now = std::chrono::steady_clock::now();

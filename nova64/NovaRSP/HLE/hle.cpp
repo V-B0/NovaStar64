@@ -208,8 +208,7 @@ bool CHle::try_fast_audio_dispatching()
         return false;
 
     // Use CRC-based dispatcher for audio tasks
-    CTaskDispatcher dispatcher;
-    if (dispatcher.DispatchTask(this))
+    if (m_Dispatcher.DispatchTask(this))
         return true;
 
     // Audio task not handled by CRC dispatcher — fall through to normal_task_dispatching()
@@ -224,8 +223,7 @@ bool CHle::normal_task_dispatching()
     const uint32_t type = *u32(m_dmem, TaskOffset::Type);
 
     // Try the full CRC-based dispatcher first (handles both video + audio via CRC)
-    CTaskDispatcher dispatcher;
-    if (dispatcher.DispatchTask(this))
+    if (m_Dispatcher.DispatchTask(this))
         return true;
 
     // Fallback: basic type-based dispatch

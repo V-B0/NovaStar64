@@ -479,6 +479,7 @@ void MicrocodeRegistry::InitializeDatabase() {
         // F3D (original Fast3D)
         { 0xBC45382E, MicrocodeType::F3D, "RSP SW Version: 2.0D, 04-01-96" },
         { 0x47A4F3DE, MicrocodeType::F3D, "RSP SW Version: 2.0D, 04-01-96 (alt)" },
+        { 0x6932365F, MicrocodeType::F3D, "F3D (Super Mario 64 US)" },
         
         // F3DEX
         { 0x4AED54A0, MicrocodeType::F3DEX, "RSP Gfx ucode F3DEX         1.21" },

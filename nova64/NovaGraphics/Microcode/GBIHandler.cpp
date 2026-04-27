@@ -111,7 +111,7 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
         uint32_t words[4] = { w0, w1, st_word, dsdx_word };
         ctx.rdpProcessor->ProcessCommandBuffer(words, 4);
     } else {
-        // SetTextureImage (0x3D), SetDepthImage (0x3E), SetColorImage (0x3F)
+        // SetTextureImage (0x3D), SetDepthImage (0x3E), SetColorImage (0x3F), LoadBlock (0x33)
         // carry RDRAM addresses in w1 that need segment resolution.
         // The real RSP microcode resolves segments before emitting to the RDP.
         if (opcode == 0x3D || opcode == 0x3E || opcode == 0x3F) {
@@ -816,6 +816,31 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         }
         break;
     }
+    
+    case MoveMem::G_MV_MATRIX_1:
+    {
+        // gSPForceMatrix (GBI1) — directly sets the combined matrix (MVP)
+        if (address + 64 <= ctx.rdramSize) {
+            auto& geo = ctx.state->geometry;
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    int idx = i * 4 + j;
+                    int16_t intPart = static_cast<int16_t>(ctx.ReadHalf(address + idx * 2));
+                    uint16_t fracPart = ctx.ReadHalf(address + 32 + idx * 2);
+                    int32_t fixed = (static_cast<int32_t>(intPart) << 16) | fracPart;
+                    geo.combinedMatrix.m[i][j] = static_cast<float>(fixed) / 65536.0f;
+                }
+            }
+            geo.combinedDirty = false; // Prevent UpdateCombinedMatrix from overwriting
+            
+            // Widescreen hack
+            if (geo.widescreenScale != 1.0f) {
+                geo.combinedMatrix.m[0][0] /= geo.widescreenScale;
+            }
+            ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
+        }
+        break;
+    }
     }
 }
 
@@ -1387,9 +1412,32 @@ std::string DescribeGBI1Command(uint32_t w0, uint32_t w1) {
     case GBI1::G_CULLDL:        return "G_CULLDL";
     case GBI1::G_POPMTX:        return "G_POPMTX";
     case GBI1::G_TEXTURE:       return "G_TEXTURE";
+    case GBI1::G_MOVEWORD:      return "G_MOVEWORD index=" + std::to_string(w0 & 0xFF) + " offset=" + std::to_string((w0 >> 8) & 0xFFFF) + " val=0x" + std::to_string(w1);
+    case GBI1::G_SETOTHERMODE_H: return "G_SETOTHERMODE_H";
+    case GBI1::G_SETOTHERMODE_L: return "G_SETOTHERMODE_L";
+    case GBI1::G_SETGEOMETRYMODE: return "G_SETGEOMETRYMODE";
+    case GBI1::G_CLEARGEOMETRYMODE: return "G_CLEARGEOMETRYMODE";
+    case GBI1::G_RDPHALF_1:     return "G_RDPHALF_1 val=0x" + std::to_string(w1);
+    case GBI1::G_RDPHALF_2:     return "G_RDPHALF_2 val=0x" + std::to_string(w1);
     case GBI1::G_ENDDL:         return "G_ENDDL";
+    case 0xAF:                  return "G_LOAD_UCODE";
+    case 0xDB:                  return "G_MOVEWORD (GBI2_STYLE)";
     default: {
-        if (opcode >= 0xC0)     return "RDP_CMD_0x" + std::to_string(opcode);
+        if (opcode >= 0xC0) {
+            uint8_t rdpOp = (w0 >> 24) & 0x3F;
+            switch(rdpOp) {
+                case 0x3F: return "G_SETCIMG";
+                case 0x3E: return "G_SETZIMG";
+                case 0x3D: return "G_SETTIMG";
+                case 0x3B: return "G_SETCOMBINE";
+                case 0x33: return "G_LOADBLOCK";
+                case 0x34: return "G_LOADTILE";
+                case 0x2F: return "G_SETCOLOR";
+                case 0x24: return "G_TEXRECT";
+                case 0x22: return "G_FILLRECT";
+                default: return "RDP_CMD_0x" + std::to_string(rdpOp);
+            }
+        }
         return "GBI1_UNKNOWN_0x" + std::to_string(opcode);
     }
     }

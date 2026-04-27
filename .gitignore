@@ -14,11 +14,12 @@ CMakeUserPresets.json
 
 # Build directories
 build/
-nova64/build/
+SuperNova/nova64/build/
 .vs/
 Gliden64/
 Saves/
 ShaderCache/
+nova64/build/nova64.dir/
 
 *.pdb
 *.obj

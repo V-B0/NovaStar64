@@ -80,9 +80,11 @@ public:
     static bool RunDiskComboImage(const char* FileLoc, const char* FileLocDisk);
     static void RunLoadedImage(uint64_t frameLimit = 0);
     static void CloseSystem(void);
+    static bool s_UseInterpreter;
 
     // Instance method for interactive loop (called from RunLoadedImage)
     void RunInteractiveLoop();
+    void DumpRegisters();
 
     // Accessors
     N64System::SystemTimer* GetSystemTimer() const;

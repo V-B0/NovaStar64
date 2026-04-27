@@ -566,11 +566,27 @@ void FramebufferManager::OnSetDepthImage(uint32_t address) {
 }
 
 GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
-    // Search existing
+    // Search existing — exact match first
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (m_framebuffers[i].desc == desc) {
             m_stats.framebuffersReused++;
             return &m_framebuffers[i];
+        }
+    }
+
+    // Height-scissor reuse: same address+type+width+format, existing FB is tall enough.
+    // Games (e.g. SM64) often reduce the scissor height each frame without reallocating;
+    // reusing a larger buffer avoids "Max framebuffers reached" spam.
+    for (uint32_t i = 0; i < m_fbCount; ++i) {
+        auto& fb = m_framebuffers[i];
+        if (fb.desc.address == desc.address &&
+            fb.desc.type    == desc.type    &&
+            fb.desc.width   == desc.width   &&
+            fb.desc.format  == desc.format  &&
+            fb.desc.height  >= desc.height)
+        {
+            m_stats.framebuffersReused++;
+            return &fb;
         }
     }
 

@@ -42,6 +42,18 @@ bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
     if (index < static_cast<uint32_t>(AI::Register::REGISTER_COUNT)) {
         if (index == static_cast<uint32_t>(AI::Register::STATUS)) {
             value = m_ai_regs.status();
+        } else if (index == static_cast<uint32_t>(AI::Register::LEN)) {
+            // Calculate remaining length if DMA is busy
+            if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
+                uint32_t cycles_left = m_system_timer.get_timer(N64System::TimerType::AiTimerDMA);
+                uint32_t dac_period = m_ai_regs.dacrate() + 1;
+                
+                // len = (cycles * 4 * AI_BASE_FREQ) / (dac_period * CPU_CLOCK)
+                uint64_t remaining = (static_cast<uint64_t>(cycles_left) * 4 * AI_BASE_FREQ);
+                value = static_cast<uint32_t>(remaining / (static_cast<uint64_t>(dac_period) * 93750000ULL));
+            } else {
+                value = 0; // Not busy -> 0 bytes remaining
+            }
         } else {
              value = m_registers[index];
         }

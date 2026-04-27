@@ -64,6 +64,7 @@ enum class CICChip : uint8_t {
     CIC_NUS_5167,   ///< 64DD conversion
     CIC_NUS_8303,   ///< 64DD retail
     CIC_NUS_DDUS,   ///< 64DD US
+    CIC_NUS_5101_ALECK64, ///< Aleck64 arcade
     Unknown
 };
 
