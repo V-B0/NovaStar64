@@ -201,8 +201,9 @@ inline void F3DEXHandler::Cmd_G_LOAD_UCODE(DListContext& ctx, uint32_t w0, uint3
 }
 
 inline void F3DEXHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint8_t index = (w0 >> 16) & 0xFF;
-    uint16_t offset = w0 & 0xFFFF;
+    // GBI1 encoding: index at bits [7:0], offset at bits [23:8]
+    uint8_t index = w0 & 0xFF;
+    uint16_t offset = static_cast<uint16_t>((w0 >> 8) & 0xFFFF);
     MoveWord(ctx, index, offset, w1);
 }
 
