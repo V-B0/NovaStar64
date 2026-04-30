@@ -121,14 +121,14 @@ inline void F3DHandler::Cmd_G_SPNOOP(DListContext& ctx, uint32_t w0, uint32_t w1
 
 inline void F3DHandler::Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // GLideN64: gSPMatrix(w1, _SHIFTR(w0, 16, 8))
-    // Param byte (w0[23:16]) bit definitions in F3D:
-    //   bit 0: 0=push,       1=nopush
-    //   bit 1: 0=modelview,  2=projection
-    //   bit 2: 0=load,       4=mul
+    // N64 SDK GBI1 (F3D/F3DEX) bit definitions:
+    //   bit 0 (0x01): G_MTX_PROJECTION (1) or G_MTX_MODELVIEW (0)
+    //   bit 1 (0x02): G_MTX_LOAD (1) or G_MTX_MUL (0)
+    //   bit 2 (0x04): G_MTX_PUSH (1) or G_MTX_NOPUSH (0)
     uint8_t params = static_cast<uint8_t>((w0 >> 16) & 0xFF);
-    bool push = (params & 0x01) == 0; // 0 = push, 1 = nopush
-    bool proj = (params & 0x02) != 0; // 2 = projection, 0 = modelview
-    bool load = (params & 0x04) == 0; // 0 = load, 4 = multiply
+    bool proj = (params & 0x01) != 0;
+    bool load = (params & 0x02) != 0;
+    bool push = (params & 0x04) != 0;
     LoadMatrix(ctx, w1, push, load, proj);
 }
 

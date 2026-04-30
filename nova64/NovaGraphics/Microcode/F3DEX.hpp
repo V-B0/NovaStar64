@@ -120,10 +120,11 @@ inline void F3DEXHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1)
 }
 
 inline void F3DEXHandler::Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GBI1: params at w0[23:16], same bit definitions as F3D
     uint8_t params = static_cast<uint8_t>((w0 >> 16) & 0xFF);
-    bool push = (params & 0x01) == 0;
-    bool proj = (params & 0x02) != 0;
-    bool load = (params & 0x04) == 0;
+    bool proj = (params & 0x01) != 0;
+    bool load = (params & 0x02) != 0;
+    bool push = (params & 0x04) != 0;
     LoadMatrix(ctx, w1, push, load, proj);
 }
 
