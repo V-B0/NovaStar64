@@ -243,13 +243,15 @@ static inline uint32_t TranslateGBI1ToGBI2_F3DEX(uint32_t gbi1) {
 }
 
 inline void F3DEXHandler::Cmd_G_SETGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2_F3DEX(w0 & 0x00FFFFFF));
+    (void)w0;
+    // GBI1 (F3DEX): geometry mode bits are in w1 (shares F3D handler: gSPSetGeometryMode(w1))
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2_F3DEX(w1));
 }
 
 inline void F3DEXHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    SetGeometryMode(ctx, TranslateGBI1ToGBI2_F3DEX(w0 & 0x00FFFFFF), 0);
+    (void)w0;
+    // GBI1 (F3DEX): geometry mode bits are in w1 (shares F3D handler: gSPClearGeometryMode(w1))
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2_F3DEX(w1), 0);
 }
 
 inline void F3DEXHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {

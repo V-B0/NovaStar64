@@ -263,15 +263,16 @@ static inline uint32_t TranslateGBI1ToGBI2(uint32_t gbi1) {
 }
 
 inline void F3DHandler::Cmd_G_SETGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    // GBI1: geometry mode bits are in w0[23:0] (GLideN64: _w0 & 0x00FFFFFF)
-    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF));
+    (void)w0;
+    // GBI1 (F3D): geometry mode bits are in w1 (GLideN64: gSPSetGeometryMode(w1))
+    // SDK macro: gsSPSetGeometryMode(word) → { opcode<<24, word }
+    SetGeometryMode(ctx, 0, TranslateGBI1ToGBI2(w1));
 }
 
 inline void F3DHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w1;
-    // GBI1: geometry mode bits are in w0[23:0] (GLideN64: _w0 & 0x00FFFFFF)
-    SetGeometryMode(ctx, TranslateGBI1ToGBI2(w0 & 0x00FFFFFF), 0);
+    (void)w0;
+    // GBI1 (F3D): geometry mode bits are in w1 (GLideN64: gSPClearGeometryMode(w1))
+    SetGeometryMode(ctx, TranslateGBI1ToGBI2(w1), 0);
 }
 
 inline void F3DHandler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
