@@ -270,6 +270,8 @@ private:
     // Memory and code
     uint8_t*            m_MemoryStack = nullptr;
     std::vector<CCompiledFunc*> m_ActiveFunctions;  ///< Functions currently in cache
+    std::vector<CCompiledFunc*> m_PendingDeletions; ///< Functions queued for deletion (avoids freeing actively executing JIT blocks)
+    void ProcessPendingDeletions();
     
     // Statistics and profiling
     RecompilerStats     m_Stats;

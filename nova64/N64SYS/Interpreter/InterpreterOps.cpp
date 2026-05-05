@@ -47,7 +47,7 @@ namespace {
     constexpr uint32_t EXC_TRAP    = static_cast<uint32_t>(ExceptionCode::EXC_TRAP);
     constexpr uint32_t EXC_FPE     = static_cast<uint32_t>(ExceptionCode::EXC_FPE);
 
-    // Pipeline stage aliases matching Project64 naming
+    
     constexpr auto PIPELINE_STAGE_NORMAL              = PipelineStage::Normal;
     constexpr auto PIPELINE_STAGE_DELAY_SLOT          = PipelineStage::DelaySlot;
     constexpr auto PIPELINE_STAGE_JUMP                = PipelineStage::Jump;
@@ -160,11 +160,10 @@ void R4300iInterpreter::ExecuteCPU()
 
 void R4300iInterpreter::InPermLoop()
 {
-    // If interrupts are disabled, we're truly stuck
+    
     if ((m_Reg.STATUS_REGISTER.InterruptEnable) == 0 ||
         (m_Reg.STATUS_REGISTER.ExceptionLevel) != 0 ||
-        (m_Reg.STATUS_REGISTER.ErrorLevel) != 0 ||
-        (m_Reg.STATUS_REGISTER.InterruptMask) == 0)
+        (m_Reg.STATUS_REGISTER.ErrorLevel) != 0)
     {
         Log::infof("[PERM] Permanent loop detected at PC=0x%08X STATUS=0x%08X CAUSE=0x%08X MI_INTR=0x%08X MI_MASK=0x%08X IE=%u EXL=%u ERL=%u IM=0x%02X",
                    (uint32_t)m_PROGRAM_COUNTER, (uint32_t)m_Reg.STATUS_REGISTER.Value,
@@ -593,7 +592,9 @@ void R4300iInterpreter::BuildInterpreter(bool Force32bit)
     Jump_CoP0_Function[8] = &R4300iInterpreter::COP0_CO_TLBP;
     for (int i = 9; i < 24; i++) Jump_CoP0_Function[i] = &R4300iInterpreter::UnknownOpcode;
     Jump_CoP0_Function[24] = &R4300iInterpreter::COP0_CO_ERET;
-    for (int i = 25; i < 64; i++) Jump_CoP0_Function[i] = &R4300iInterpreter::UnknownOpcode;
+    for (int i = 25; i < 32; i++) Jump_CoP0_Function[i] = &R4300iInterpreter::UnknownOpcode;
+    Jump_CoP0_Function[32] = &R4300iInterpreter::COP0_CO_WAIT;
+    for (int i = 33; i < 64; i++) Jump_CoP0_Function[i] = &R4300iInterpreter::UnknownOpcode;
 
     Jump_CoP1[0] = &R4300iInterpreter::COP1_MF;
     Jump_CoP1[1] = &R4300iInterpreter::COP1_DMF;
@@ -2142,6 +2143,13 @@ void R4300iInterpreter::COP0_CO_ERET()
     m_System.m_TestTimer = true;
 }
 
+void R4300iInterpreter::COP0_CO_WAIT()
+{
+    // The WAIT instruction pauses execution until an interrupt occurs.
+    // In our emulator, we can treat it as a NOOP. The fast-forward features
+    // in the recompiler and interpreter loop handle fast-forwarding the timer.
+}
+
 // ============================================================================
 // COP1 Functions
 // ============================================================================
@@ -2918,7 +2926,12 @@ void R4300iInterpreter::ReservedInstruction()
 
 void R4300iInterpreter::UnknownOpcode()
 {
-    m_System.m_EndEmulation = true;
+    // Treat any unrecognized opcode as a Reserved Instruction exception,
+    // exactly like ReservedInstruction(). Setting m_EndEmulation here is
+    // wrong: it silently kills emulation whenever the recompiler falls back
+    // to InterpretSingleInstruction() for an instruction the dispatch table
+    // doesn't recognise.
+    m_Reg.TriggerException(EXC_II);
 }
 
 // ============================================================================

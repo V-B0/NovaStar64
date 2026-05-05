@@ -331,7 +331,8 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
         }
 
         // Check for end block markers in temp_result
-        if (temp_result.contains_syscall || temp_result.contains_breakpoint) {
+        if (temp_result.contains_syscall || temp_result.contains_breakpoint ||
+            temp_result.contains_wait) {
             break;
         }
 
@@ -647,6 +648,9 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 case R4300_COP0_C0_ERET:
                     // ERET - return from exception, ends block
                     result.add_branch(pc, static_cast<uint32_t>(-1), false, false, true);
+                    break;
+                case R4300_COP0_C0_WAIT:
+                    result.contains_wait = true;
                     break;
                 default:
                     log_error("Unknown COP0 CO funct=0x" + std::to_string(funct) +

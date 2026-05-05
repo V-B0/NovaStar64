@@ -593,9 +593,8 @@ static void NEAD_ADPCM(CHle* hle, uint32_t w1, uint32_t w2)
     bool init = flags & 0x01;
     bool loop = flags & 0x02;
     bool two_bit = flags & 0x04;
-    // s.count is byte count; each ADPCM frame decodes 16 samples = 32 bytes
-    uint16_t frames = (s.count + 31) >> 5;
-    alist_adpcm(hle, init, loop, two_bit, s.out, s.in, frames,
+    alist_adpcm(hle, init, loop, two_bit, s.out, s.in,
+                static_cast<uint16_t>(align(s.count, 32)),
                 s.table, s.loop, w2 & 0x00FFFFFF);
 }
 

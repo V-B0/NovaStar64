@@ -404,11 +404,12 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value)
     // P64: CLR only if SET is not also set, and vice versa
     if ((Value & SPStatusWrite::CLR_HALT) && !(Value & SPStatusWrite::SET_HALT))
     {
-        if (SP_STATUS & SPStatus::HALT) {
+        const bool wasHalted = (SP_STATUS & SPStatus::HALT) != 0;
+        if (wasHalted) {
             Log::debugf("RSP: Starting execution from PC 0x%03X", SP_PC & 0xFFF);
         }
         SP_STATUS &= ~SPStatus::HALT;
-        shouldClearHalt = true;
+        shouldClearHalt = wasHalted;
     }
     if ((Value & SPStatusWrite::SET_HALT) && !(Value & SPStatusWrite::CLR_HALT)
         && !(SP_STATUS & SPStatus::HALT))  // P64: only set if not already halted
@@ -604,8 +605,17 @@ void SRegistersHandler::ClearHalt()
     m_Reg.m_defer_hle_interrupts = true;
     m_Reg.m_deferred_mi_intr = 0;
     
+    const uint32_t taskType = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFC0]);
+    const uint32_t ucode = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFD0]);
+    const uint32_t dataPtr = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFF0]);
+    // Log::infof("RSPTRACE ClearHalt enter status=0x%08X pc=0x%03X task=%u ucode=0x%08X data=0x%08X",
+    //           SP_STATUS, SP_PC & 0xFFF, taskType, ucode, dataPtr);
+
     // Execute RSP until it BREAKs or halts itself
     Nova64::RSP::DoRspCycles(0xFFFFFFFF);
+
+    // Log::infof("RSPTRACE ClearHalt exit status=0x%08X pc=0x%03X",
+    //           SP_STATUS, SP_PC & 0xFFF);
     
     m_Reg.m_defer_hle_interrupts = false;
     
@@ -657,6 +667,7 @@ void SRegistersHandler::ClearHalt()
         m_Reg.SetTestTimer();
     }
     
+    // Log::infof("RSPTRACE ClearHalt finishing with pendingBits=0x%08X MI_INTR_REG=0x%08X MASK=0x%08X", pendingBits, m_Reg.m_Mips_Interface[2], m_Reg.m_Mips_Interface[3]);
     s_inClearHalt = false;
 }
 

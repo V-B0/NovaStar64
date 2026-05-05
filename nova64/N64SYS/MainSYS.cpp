@@ -84,11 +84,13 @@ static void RSP_ProcessDList()
 {
     // Called by RSP HLE when a video (GFX) task is detected.
     // Forward to the GFX plugin's ProcessDList.
+    // Log::info("RSPTRACE ProcessDList enter");
     if (g_System && g_System->GetPluginManager())
     {
         auto* gfx = g_System->GetPluginManager()->GetGraphicsPlugin();
         if (gfx) { gfx->ProcessDList(0, 0); }
     }
+    // Log::info("RSPTRACE ProcessDList exit");
 
     // Signal DP (Display Processor) completion interrupt.
     // After HLE processes the display list, the RDP is "done".

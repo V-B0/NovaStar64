@@ -263,14 +263,15 @@ void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, 
     Log::debugf("CRecompiler: ClearRecompCode_Phys(0x%08X, len=%zu, reason=%d) activeFuncs=%zu",
                physicalAddress, length, static_cast<int>(reason), m_ActiveFunctions.size());
     
-    // Clear SMC bitmap for the affected physical pages
+    // Clear SMC bitmap for the affected physical chunks
     if (physicalAddress < 0x800000) {
         auto* bitmap = m_MMU.GetSmcPageBitmap();
-        uint32_t pageStart = physicalAddress >> 12;
-        uint32_t pageEnd = std::min((physicalAddress + static_cast<uint32_t>(length) + 0xFFF) >> 12,
-                                     MipsMemoryVM::kRdramPages);
-        for (uint32_t p = pageStart; p < pageEnd; ++p)
-            bitmap[p] = 0;
+        uint32_t chunkStart = physicalAddress >> MipsMemoryVM::kSmcShift;
+        uint32_t chunkEnd = std::min((physicalAddress + static_cast<uint32_t>(length) +
+                                      MipsMemoryVM::kSmcChunkSize - 1) >> MipsMemoryVM::kSmcShift,
+                                     MipsMemoryVM::kSmcChunks);
+        for (uint32_t chunk = chunkStart; chunk < chunkEnd; ++chunk)
+            bitmap[chunk] = 0;
     }
 
     // Convert physical to virtual address
@@ -461,17 +462,17 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
         // Store in function map (O(1) lookup by virtual address)
         Store(address, funcMem);
 
-        // Mark physical RDRAM pages covered by this function in the SMC bitmap
-        // so that SW/SD fast paths can detect writes to code regions.
+        // Mark physical RDRAM chunks covered by this function in the SMC bitmap
+        // so that SW fast paths can detect writes to code regions.
         {
             uint32_t physStart = startAddr & 0x1FFFFFFF;
             uint32_t physEnd   = endAddr   & 0x1FFFFFFF;
             if (physEnd < 0x800000) { // within RDRAM
-                uint32_t pageStart = physStart >> 12;
-                uint32_t pageEnd   = physEnd   >> 12;
+                uint32_t chunkStart = physStart >> MipsMemoryVM::kSmcShift;
+                uint32_t chunkEnd   = physEnd   >> MipsMemoryVM::kSmcShift;
                 auto* bitmap = m_MMU.GetSmcPageBitmap();
-                for (uint32_t p = pageStart; p <= pageEnd; ++p)
-                    bitmap[p] = 1;
+                for (uint32_t chunk = chunkStart; chunk <= chunkEnd; ++chunk)
+                    bitmap[chunk] = 1;
             }
         }
 
@@ -556,6 +557,7 @@ void CRecompiler::Execute_VirtualTable() {
         // DMA and CACHE callbacks handle code invalidation).
         ++m_Stats.blocksExecuted;
         func->Execute();
+        ProcessPendingDeletions();
         
         // Deferred CheckInterrupts after ERET: on real VR4300, ERET lets at
         // least one instruction execute before servicing pending interrupts.
@@ -607,8 +609,11 @@ void CRecompiler::Execute_VirtualTable() {
             }
 
             // CRITICAL FIX: If m_NextTimer <= 0, we MUST enter the slow path to process timers
-            // and trigger interrupts. Skipping this causes hangs in long forward-only code sequences.
-            if (newPC > pc && !m_System.m_TestTimer && m_System.m_NextTimer > 0) {
+            // and trigger interrupts. Also compare against this block's end, not its entry:
+            // a branch can loop backward inside the same compiled block while still landing
+            // at an address greater than the block entry PC.
+            const uint32_t blockEndPC = func->MaxPC();
+            if (newPC > blockEndPC && !m_System.m_TestTimer && m_System.m_NextTimer > 0) {
                 // Even on the fast path, process pending system events
                 // (interrupts, resets) so they aren't delayed across many
                 // forward-only blocks.  Timer processing is still deferred
@@ -630,8 +635,9 @@ void CRecompiler::Execute_VirtualTable() {
         // ================================================================
         static uint64_t slowPathCounter = 0;
         if ((++slowPathCounter % 10000) == 0) {
-            Log::infof("CRecompiler: SLOW PATH PC=0x%08X (nextTimer=%d testTimer=%d)", 
-                       pc, nextTimer, m_System.m_TestTimer);
+            // Log::infof("CRecompiler: SLOW PATH PC=0x%08X (nextTimer=%d testTimer=%d EXL=%d IE=%d pend=%x)", 
+            //           pc, nextTimer, 
+            //           m_System.m_TestTimer, m_Reg.STATUS_REGISTER.ExceptionLevel, m_Reg.STATUS_REGISTER.InterruptEnable, (m_Reg.CAUSE_REGISTER.PendingInterrupts & m_Reg.STATUS_REGISTER.InterruptMask));
         }
 
         m_System.m_TestTimer = false;
@@ -716,14 +722,14 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         }
         
         ++m_Stats.blocksExecuted;
-        if (!SafeExecuteBlock(func, pc)) {
+        if (!SafeExecuteBlock(func, pc)) { ProcessPendingDeletions();
             ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
                                  RemoveReason::Cache);
             InterpretSingleInstruction();
             continue;
         }
         
-        // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -803,14 +809,14 @@ void CRecompiler::Execute_MemoryChange() {
         }
         
         ++m_Stats.blocksExecuted;
-        if (!SafeExecuteBlock(func, pc)) {
+        if (!SafeExecuteBlock(func, pc)) { ProcessPendingDeletions();
             ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
                                  RemoveReason::Cache);
             InterpretSingleInstruction();
             continue;
         }
         
-        // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -880,14 +886,14 @@ void CRecompiler::Execute_Lookup() {
         }
         
         ++m_Stats.blocksExecuted;
-        if (!SafeExecuteBlock(func, pc)) {
+        if (!SafeExecuteBlock(func, pc)) { ProcessPendingDeletions();
             ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
                                  RemoveReason::Cache);
             InterpretSingleInstruction();
             continue;
         }
         
-        // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -964,14 +970,14 @@ void CRecompiler::Execute_Lookup_Validate() {
         }
         
         ++m_Stats.blocksExecuted;
-        if (!SafeExecuteBlock(func, pc)) {
+        if (!SafeExecuteBlock(func, pc)) { ProcessPendingDeletions();
             ClearRecompCode_Virt(pc, func->MaxPC() - func->MinPC() + 4,
                                  RemoveReason::Cache);
             InterpretSingleInstruction();
             continue;
         }
         
-        // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -1079,10 +1085,18 @@ void CRecompiler::ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reas
         // Erase from profiling map to avoid dangling pointers
         m_FunctionProfiles.erase(func);
         
-        delete func;
+        m_PendingDeletions.push_back(func);
     }
     
     Log::debugf("CRecompiler: Removed %zu functions", toRemove.size());
+}
+
+void CRecompiler::ProcessPendingDeletions() {
+    if (m_PendingDeletions.empty()) return;
+    for (auto* func : m_PendingDeletions) {
+        delete func;
+    }
+    m_PendingDeletions.clear();
 }
 
 void CRecompiler::HandleSelfModifyingCode(uint32_t address, RemoveReason reason) {

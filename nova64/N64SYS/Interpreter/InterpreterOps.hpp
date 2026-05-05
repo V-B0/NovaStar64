@@ -290,6 +290,7 @@ private:
     void COP0_CO_TLBWR();
     void COP0_CO_TLBP();
     void COP0_CO_ERET();
+    void COP0_CO_WAIT();
 
     // ========================================================================
     // COP1 Functions

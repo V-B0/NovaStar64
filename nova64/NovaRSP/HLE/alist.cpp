@@ -639,9 +639,9 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
     for (size_t i = 0; i < 16; ++i, dmemo += 2)
         *alist_s16(hle, dmemo) = last_frame[i];
 
-    // count is in BYTES of *output*; each ADPCM frame produces 32 bytes (16 samples).
-    // Mupen reference: while (count != 0) { ...; count -= 32; }
-    while (count != 0)
+    // count is in BYTES of output; each ADPCM frame produces 32 bytes (16 samples).
+    uint16_t frames = static_cast<uint16_t>((count + 31u) >> 5);
+    while (frames != 0)
     {
         // Read header byte using alist_u8 (^S8)
         uint8_t code = *alist_u8(hle, dmemi++);
@@ -684,7 +684,7 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample,
         for (size_t i = 0; i < 16; ++i, dmemo += 2)
             *alist_s16(hle, dmemo) = last_frame[i];
 
-        count -= 32;
+        --frames;
     }
 
     // Save last frame state

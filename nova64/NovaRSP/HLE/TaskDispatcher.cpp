@@ -311,6 +311,7 @@ bool CTaskDispatcher::DispatchAudioTask(CHle* hle, const TaskInfo& task, const M
     // Unknown audio microcode — try generic audio dispatch
     if (task.DataPtr != 0 && task.DataSize > 0)
     {
+        hle->WarnMessage("RSP HLE: Falling back to generic alist_process_audio for unknown audio UCode");
         alist_process_audio(hle);
         hle->rsp_break(0);
         return true;

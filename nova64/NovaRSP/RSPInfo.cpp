@@ -14,6 +14,7 @@
 #include "RSPDebugger.hpp"
 #include "Settings/RspSettings.hpp"
 #include "HLE/hle.hpp"
+#include "../common/log.hpp"
 #include <cstring>
 #include <memory>
 
@@ -126,24 +127,36 @@ void FreeRSP()
 uint32_t DoRspCycles(uint32_t cycles)
 {
     const auto method = CRSPSettings::CPUMethod();
+    const uint8_t* dmem = RSPSystem.DMEM();
+    const uint32_t taskType = dmem ? *reinterpret_cast<const uint32_t*>(dmem + 0xFC0) : 0;
+    // Log::infof("RSPTRACE DoRspCycles enter cycles=0x%08X method=%u task=%u",
+    //           cycles, static_cast<uint32_t>(method), taskType);
 
     // Try HLE dispatch first (fast path for known microcode tasks)
     if (method != RSPCpuMethod::Interpreter)
     {
-        if (s_HleContext && s_HleContext->Execute())
+        // Log::info("RSPTRACE HLE execute enter");
+        const bool hleHandled = s_HleContext && s_HleContext->Execute();
+        // Log::infof("RSPTRACE HLE execute exit handled=%d", hleHandled ? 1 : 0);
+        if (hleHandled)
             return cycles;
     }
 
     // Recompiler path (task-based JIT)
     if (method == RSPCpuMethod::RecompilerTasks)
     {
-        if (RSPSystem.RunRecompiledTask(s_RecompMem))
+        // Log::info("RSPTRACE RSP recompiler enter");
+        const bool recompiled = RSPSystem.RunRecompiledTask(s_RecompMem);
+        // Log::infof("RSPTRACE RSP recompiler exit handled=%d", recompiled ? 1 : 0);
+        if (recompiled)
             return cycles;
     }
 
     // Interpreter fallback — run until RSP halts (BREAK instruction)
     // Pass -1 as targetPC to disable the PC breakpoint (0 would break immediately at the start)
+    // Log::info("RSPTRACE interpreter fallback enter");
     RSPSystem.ExecuteOps(cycles, static_cast<uint32_t>(-1));
+    // Log::info("RSPTRACE interpreter fallback exit");
     return 0;
 }
 

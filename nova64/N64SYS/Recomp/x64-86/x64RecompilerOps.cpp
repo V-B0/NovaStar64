@@ -2162,6 +2162,10 @@ void Interp_BREAK(CRegisters* regs, uint32_t /*opcVal*/) {
     regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Breakpoint));
 }
 
+void Interp_RESERVED(CRegisters* regs, uint32_t /*opcVal*/) {
+    regs->TriggerException(static_cast<uint32_t>(ExceptionCode::ReservedInstruction));
+}
+
 void Interp_SYNC(CRegisters* /*regs*/, uint32_t /*opcVal*/) {
     // SYNC is a memory barrier - no-op in our single-threaded interpreter context
 }
@@ -2330,6 +2334,7 @@ void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 }
 
 void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    SetPC(regs, pc);
     if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
@@ -2337,6 +2342,7 @@ void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 }
 
 void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    SetPC(regs, pc);
     if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
@@ -2440,6 +2446,8 @@ int Interp_BGEZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) 
 }
 
 int Interp_BC1FL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    SetPC(regs, pc);
+    if (CheckCop1Unusable(regs)) return -1;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
     if (!fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
@@ -2447,6 +2455,8 @@ int Interp_BC1FL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 }
 
 int Interp_BC1TL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+    SetPC(regs, pc);
+    if (CheckCop1Unusable(regs)) return -1;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
     if (fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
@@ -2531,6 +2541,7 @@ void Interp_ImmDispatch(CRegisters* regs, uint32_t opcVal) {
 
 // Helper: emit call to a register-only callback: void(CRegisters*, uint32_t)
 void CX64RecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
+    EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
 
@@ -2550,17 +2561,12 @@ void CX64RecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
 
 // Helper: emit call to a memory callback: void(CRegisters*, MipsMemoryVM*, uint32_t)
 void CX64RecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
+    EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
 
     m_Assembler->AddComment("  -> memory callback");
     m_RegisterSet->FlushRegisters(true);
-
-    // Set m_PROGRAM_COUNTER so exceptions report the correct faulting PC.
-    if (m_CurrentContext && !m_BlockEnded) {
-        a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
-              static_cast<int32_t>(m_CurrentContext->virtualAddress));
-    }
 
     // RBX = &CRegisters, R12 = &MipsMemoryVM (set up in EnterCodeBlock)
 #ifdef _WIN32
@@ -2577,6 +2583,7 @@ void CX64RecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
 
 // Helper: emit call to a TLB callback: void(CRegisters*, CTLB*, uint32_t)
 void CX64RecompilerOps::EmitTlbCallback(void* callback, uint32_t opcVal) {
+    EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
 
@@ -2636,13 +2643,22 @@ void CX64RecompilerOps::EmitBranchLikelyCallback(void* callback, uint32_t opcVal
     m_Assembler->EmitCall(callback);
 
     // Callback returns int in EAX: 1 = taken (execute delay slot), 0 = not taken (skip delay slot)
+    // COP1 branch-likely callbacks return -1 after raising CopUnusable; exit before delay-slot setup.
+    a.mov(ecx, eax);
+    asmjit::Label noException = a.new_label();
+    a.cmp(ecx, -1);
+    a.jne(noException);
+    EmitTimerDecrement();
+    a.jmp(m_BlockExitLabel);
+    a.bind(noException);
+
     // Emit the timer decrement for the branch instruction BEFORE the
     // conditional skip.  The branch itself always executes (evaluates its
     // condition), so its timer must always fire — even when the delay slot
     // is skipped on a not-taken branch-likely.  Without this, every
     // not-taken branch-likely undercounts NextTimer by CountPerOp, causing
     // a cumulative COUNT_REGISTER drift vs the interpreter.
-    a.mov(ecx, eax);     // save callback result (ecx is caller-saved, not used by EmitTimerDecrement)
+    // ecx holds callback result (caller-saved, not used by EmitTimerDecrement)
     EmitTimerDecrement(); // sub [&NextTimer], CountPerOp  (clobbers rax)
     m_BranchLikelySkipLabel = a.new_label();
     m_HasPendingBranchLikelySkip = true;
@@ -2806,6 +2822,33 @@ void CX64RecompilerOps::EmitCop1UsableCheck() {
     // CU1 checks are now inside each COP1 callback directly.
     // The EmitPipelineStageCheck after each instruction handles the block exit
     // when TriggerException sets PipelineStage=Jump.
+}
+
+void CX64RecompilerOps::EmitCop1BranchUsableCheck(uint32_t pc) {
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    asmjit::Label cu1Usable = a.new_label();
+    uint64_t statusAddr = reinterpret_cast<uint64_t>(&m_Context.registers.STATUS_REGISTER.Value);
+
+    m_Assembler->AddComment("  -> COP1 branch CU1 check");
+    a.mov(rax, statusAddr);
+    a.test(dword_ptr(rax), 0x20000000);
+    a.jnz(cu1Usable);
+
+    m_RegisterSet->FlushRegisters(true);
+    a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+          static_cast<int32_t>(pc));
+#ifdef _WIN32
+    a.mov(rcx, rbx);
+#else
+    a.mov(rdi, rbx);
+#endif
+    m_Assembler->EmitCall(reinterpret_cast<void*>(&TriggerCop1UnusableException));
+    EmitTimerDecrement();
+    a.jmp(m_BlockExitLabel);
+
+    a.bind(cu1Usable);
 }
 
 void CX64RecompilerOps::EmitTimerDecrement() {
@@ -3093,6 +3136,7 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_COP0_C0_TLBWR: COP0_CO_TLBWR(); break;
                 case R4300_COP0_C0_TLBP:  COP0_CO_TLBP(); break;
                 case R4300_COP0_C0_ERET:  COP0_CO_ERET(); break;
+                case R4300_COP0_C0_WAIT:  COP0_CO_WAIT(); break;
                 default: UnknownOpcode(); break;
                 }
             } else {
@@ -4261,6 +4305,7 @@ void CX64RecompilerOps::COP1_BCF_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BC1F");
+    EmitCop1BranchUsableCheck(pc);
     // Branch if FP condition is false (FPCSR_C bit NOT set)
     a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
     a.mov(rax, notTakenPC);
@@ -4280,6 +4325,7 @@ void CX64RecompilerOps::COP1_BCT_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BC1T");
+    EmitCop1BranchUsableCheck(pc);
     // Branch if FP condition is true (FPCSR_C bit set)
     a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
     a.mov(rax, notTakenPC);
@@ -4677,10 +4723,10 @@ void CX64RecompilerOps::SW() {
 
     // SMC check: if this page has compiled recompiler code, use slow path
     // which will do the write + invalidate stale compiled code.
-    // physPage = (vAddr & 0x1FFFFFFF) >> 12
+    // physChunk = (vAddr & 0x1FFFFFFF) >> kSmcShift
     a.mov(r8d, eax);
     a.and_(r8d, 0x1FFFFFFF);
-    a.shr(r8d, 12);
+    a.shr(r8d, MipsMemoryVM::kSmcShift);
     a.mov(rdx, reinterpret_cast<uint64_t>(m_Context.mmu.GetSmcPageBitmap()));
     a.cmp(byte_ptr(rdx, r8), 0);
     a.jne(slowPath);
@@ -5445,6 +5491,25 @@ void CX64RecompilerOps::COP0_CO_ERET()
     m_BlockEnded = true;
 }
 
+void CX64RecompilerOps::COP0_CO_WAIT()
+{
+    if (!m_CurrentContext) return;
+    m_Assembler->AddComment("COP0_CO_WAIT");
+
+    auto& a = m_Assembler->GetAssembler();
+    using namespace asmjit::x86;
+
+    a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+          static_cast<int32_t>(m_CurrentContext->virtualAddress + 4));
+
+    const uint64_t testTimerAddr = reinterpret_cast<uint64_t>(&m_Context.system.m_TestTimer);
+    a.mov(rax, testTimerAddr);
+    a.mov(byte_ptr(rax), 1);
+
+    m_Stats.categories.coprocessor++;
+    m_BlockEnded = true;
+}
+
 // =============================================================================
 // Private - COP1 (FPU) Instructions
 // =============================================================================
@@ -5671,8 +5736,7 @@ void CX64RecompilerOps::UnknownOpcode()
     uint32_t opcVal = m_CurrentContext ? m_CurrentContext->opcode.Value : 0;
     Log::errorf("CX64RecompilerOps: Unknown opcode 0x%08X", opcVal);
     m_Assembler->AddComment("UNKNOWN OPCODE");
-    // Generate a break/trap for debugging
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), opcVal);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_RESERVED), opcVal);
     m_BlockEnded = true;
 }
 

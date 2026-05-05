@@ -333,6 +333,7 @@ private:
         bool contains_loop = false;
         bool contains_syscall = false;
         bool contains_breakpoint = false;
+        bool contains_wait = false;
         bool contains_tlb_op = false;
         bool contains_cop1_op = false;
         size_t max_stack_depth = 0;

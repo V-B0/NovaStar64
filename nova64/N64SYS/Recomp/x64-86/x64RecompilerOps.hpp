@@ -380,6 +380,7 @@ private:
     
     // Helper methods
     void EmitCop1UsableCheck();
+    void EmitCop1BranchUsableCheck(uint32_t pc);
     void EmitRegisterCallback(void* callback, uint32_t opcVal);
     void EmitMemoryCallback(void* callback, uint32_t opcVal);
     void EmitTlbCallback(void* callback, uint32_t opcVal);
@@ -542,6 +543,7 @@ private:
     void COP0_CO_TLBWR();
     void COP0_CO_TLBP();
     void COP0_CO_ERET();
+    void COP0_CO_WAIT();
     
     // COP1 (FPU) instructions
     void COP1_MF();

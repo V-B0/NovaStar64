@@ -418,6 +418,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         m_CP0[regIndex] = Value;
         CAUSE_REGISTER.PendingInterrupts &= ~COP0Flags::CAUSE_IP7;
         m_SystemTimer.update_compare_timer();
+        m_System.m_TestTimer = true;
         break;
         
     case COP0Reg::Status:
@@ -430,6 +431,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         }
         m_TLB.COP0StatusChanged();
         CheckInterrupts();
+        m_System.m_TestTimer = true;
         break;
     }
     
@@ -571,6 +573,13 @@ void CRegisters::TriggerAddressException(uint64_t Address, uint32_t ExceptionCod
     bool SpecialOffset = false;
     
     if (ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_RMISS) ||
+        ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_WMISS) ||
+        ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_MOD))
+    {
+        Log::infof("Address Exception (TLB/Align): Code=%d BadVAddr=0x%016llX PC=0x%08X", ExceptionCode, Address, static_cast<uint32_t>(m_PROGRAM_COUNTER));
+    }
+    
+    if (ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_RMISS) ||
         ExceptionCode == static_cast<uint32_t>(ExceptionCode::EXC_WMISS))
     {
         bool Dirty = false;
@@ -642,6 +651,10 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
     CAUSE_REGISTER.ExceptionCode = ExceptionCode;
     CAUSE_REGISTER.CoprocessorUnitNumber = Coprocessor;
     
+    if (ExceptionCode != 0) {
+        Log::infof("GUEST CPU EXCEPTION: Code=%d PC=0x%08X (EXL=%d)", ExceptionCode, static_cast<uint32_t>(m_PROGRAM_COUNTER), STATUS_REGISTER.ExceptionLevel);
+    }
+    
     // Per VR4300 spec: only update EPC, BD, and EXL when EXL is currently 0.
     // When EXL is already 1 (nested exception), preserve the original return
     // address so ERET can still return to the correct location.
@@ -654,6 +667,7 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor)
                                              (CAUSE_REGISTER.BranchDelay ? 4 : 0));
         STATUS_REGISTER.ExceptionLevel = 1;
     }
+
     
     m_System.m_PipelineStage = N64Types::PipelineStage::Jump;
 
