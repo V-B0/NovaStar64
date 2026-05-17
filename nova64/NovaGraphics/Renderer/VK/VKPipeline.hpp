@@ -24,7 +24,7 @@ namespace Nova64 { namespace Video { namespace VK {
 // Engine-wide fixed descriptor set layout (set 0):
 //   binding 0  : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER          (vertex+fragment)
 //   binding 1-4: VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER  (fragment)
-constexpr uint32_t kVKMaxTexturesPerDraw = 4;
+constexpr uint32_t kVKMaxTexturesPerDraw = 11; // UBO=binding0, textures at 1..11
 
 /// Lazily build (per-device) the shared descriptor set layout. Owned by caller
 /// (VulkanRenderer); destroyed via vkDestroyDescriptorSetLayout.

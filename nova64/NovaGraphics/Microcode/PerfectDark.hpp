@@ -187,9 +187,9 @@ inline void F3DPDHandler::Cmd_G_MTX_PD(DListContext& ctx, uint32_t w0, uint32_t 
 }
 
 inline void F3DPDHandler::Cmd_G_MOVEMEM_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GBI1: no size field — payload size determined by index in MoveMemGBI1
     uint8_t index = (w0 >> 16) & 0xFF;
-    uint8_t size = ((w0 >> 19) & 0x1F) * 8;
-    MoveMemGBI1(ctx, index, size, w1);
+    MoveMemGBI1(ctx, index, 0, w1);
 }
 
 inline void F3DPDHandler::Cmd_G_TRI1_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -329,8 +329,7 @@ inline void F3DPDHandler::Cmd_G_RDPHALF_2_PD(DListContext& ctx, uint32_t w0, uin
 
 inline void F3DPDHandler::Cmd_G_LOAD_UCODE_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t textSize = (w0 & 0xFFFF) + 1;
-    (void)textSize;
-    LoadUcode(ctx, w1, m_rdpHalf1);
+    LoadUcode(ctx, w1, m_rdpHalf1, textSize);
 }
 
 inline void F3DPDHandler::Cmd_G_BRANCH_Z_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {

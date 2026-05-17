@@ -12,8 +12,10 @@
 #include "Microcode.hpp"
 #include "../Core/RDPState.hpp"
 #include "../Core/RDPProcessor.hpp"
+#include "../RT/SceneTypes.hpp"
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 
 namespace Nova64::Video {
 
@@ -47,7 +49,27 @@ struct DListContext {
     
     // Microcode info for current task
     MicrocodeInfo   microcodeInfo;
-    
+
+    // RT: world-space geometry consumer (null = RT disabled / not yet initialized).
+    // Set by VideoPlugin before ProcessGraphicsTask.  All triangle-emitting commands
+    // (G_TRI1, G_TRI2, G_QUAD) call this after the normal RDP path.
+    RT::ISceneGeometryConsumer* geometryConsumer = nullptr;
+
+    // S2DEX status registers — gSP.status[] equivalent (GLideN64).
+    // Must persist across G_LOAD_UCODE microcode switches: OOT/MM switch
+    // F3DEX2 <-> S2DEX2 every frame, which calls S2DEXHandler::Initialize()
+    // and would zero them if stored there.  Only indices 0-3 are used
+    // (uObjTxtr sid field is a byte offset 0/4/8/12; >>2 gives 0-3).
+    uint32_t s2dexStatusRegs[4] = {};
+
+    // Branch source tracking for DL loop detection (intra-task scope).
+    // Cleared at the start of each RSP task in MicrocodeDispatcher.
+    // Each G_DL branch instruction address is recorded here the first time
+    // it executes.  If the same address attempts to branch a second time
+    // in the same task, it is a cycle — execution is halted rather than
+    // looping indefinitely.
+    std::unordered_set<uint32_t> dlBranchVisited;
+
     // ─── Helper Methods ──────────────────────────────────────────────
     
     /// Read a 32-bit word from RDRAM (native endian — emulator stores RDRAM in host byte order)
@@ -86,9 +108,16 @@ struct DListContext {
         return true;
     }
     
-    /// Resolve a segmented address using current segment table
+    /// Resolve a segmented address using current segment table.
+    /// Applies (rdramSize - 1) mask on the result to match N64 hardware
+    /// wrap-around behavior.  GLideN64 equivalent:
+    ///   (segment[n] + (addr & RDRAMSize)) & RDRAMSize  [RDRAMSize = 0x7FFFFF]
     uint32_t ResolveAddress(uint32_t segAddr) const {
-        if (state) return state->geometry.ResolveAddress(segAddr);
+        if (state) {
+            uint32_t resolved = state->geometry.ResolveAddress(segAddr);
+            if (rdramSize > 0) resolved &= (rdramSize - 1); // wrap to physical RDRAM
+            return resolved;
+        }
         return segAddr & 0x00FFFFFF;
     }
     
@@ -246,7 +275,7 @@ protected:
     void BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, uint32_t address);
     
     /// Process G_LOAD_UCODE
-    void LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress);
+    void LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress, uint32_t textSize = 4096);
     
     /// Process G_RDPHALF_1 / G_RDPHALF_2
     uint32_t m_rdpHalf1 = 0;

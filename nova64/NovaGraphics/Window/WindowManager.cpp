@@ -66,15 +66,6 @@ WindowManager::~WindowManager() {
 bool WindowManager::Initialize(const WindowConfig& configIn) {
     WindowConfig config = configIn;
 
-    // Vulkan backend is currently a Stage-1 (clear-only) skeleton; coerce it
-    // to OpenGL up-front so the window is created with a usable GL context
-    // instead of a VK surface that nothing can render into.  Keep this in
-    // sync with the matching fallback in VideoPlugin::CreateDisplayRenderer.
-    if (config.backendType == 1) {
-        std::cerr << "WindowManager: Vulkan backend not feature-complete, falling back to OpenGL." << std::endl;
-        config.backendType = 0;
-    }
-
     m_config = config;
 
     // ── Initialize SDL Video ─────────────────────────────────────────────

@@ -19,20 +19,26 @@ std::atomic<int> g_glslangRefcount{0};
 
 EShLanguage ToEShLang(ShaderStage s) {
     switch (s) {
-        case ShaderStage::Vertex:   return EShLangVertex;
-        case ShaderStage::Fragment: return EShLangFragment;
-        case ShaderStage::Geometry: return EShLangGeometry;
-        case ShaderStage::Compute:  return EShLangCompute;
+        case ShaderStage::Vertex:        return EShLangVertex;
+        case ShaderStage::Fragment:      return EShLangFragment;
+        case ShaderStage::Geometry:      return EShLangGeometry;
+        case ShaderStage::Compute:       return EShLangCompute;
+        case ShaderStage::RayGen:        return EShLangRayGen;
+        case ShaderStage::RayMiss:       return EShLangMiss;
+        case ShaderStage::RayClosestHit: return EShLangClosestHit;
     }
     return EShLangVertex;
 }
 
 const char* StageName(ShaderStage s) {
     switch (s) {
-        case ShaderStage::Vertex:   return "vertex";
-        case ShaderStage::Fragment: return "fragment";
-        case ShaderStage::Geometry: return "geometry";
-        case ShaderStage::Compute:  return "compute";
+        case ShaderStage::Vertex:        return "vertex";
+        case ShaderStage::Fragment:      return "fragment";
+        case ShaderStage::Geometry:      return "geometry";
+        case ShaderStage::Compute:       return "compute";
+        case ShaderStage::RayGen:        return "raygen";
+        case ShaderStage::RayMiss:       return "miss";
+        case ShaderStage::RayClosestHit: return "closesthit";
     }
     return "?";
 }
@@ -61,9 +67,15 @@ std::vector<uint32_t> CompileGLSLtoSPIRV(ShaderStage stage,
 
     const char* src = source.c_str();
     shader.setStrings(&src, 1);
+    // RT stages require Vulkan 1.2 / SPIR-V 1.4 minimum
+    const bool isRT = (stage == ShaderStage::RayGen ||
+                       stage == ShaderStage::RayMiss ||
+                       stage == ShaderStage::RayClosestHit);
+    const auto vkTarget  = isRT ? glslang::EShTargetVulkan_1_2 : glslang::EShTargetVulkan_1_1;
+    const auto spvTarget = isRT ? glslang::EShTargetSpv_1_4    : glslang::EShTargetSpv_1_3;
     shader.setEnvInput(glslang::EShSourceGlsl, lang, glslang::EShClientVulkan, 100);
-    shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_1);
-    shader.setEnvTarget(glslang::EShTargetSpv,    glslang::EShTargetSpv_1_3);
+    shader.setEnvClient(glslang::EShClientVulkan, vkTarget);
+    shader.setEnvTarget(glslang::EShTargetSpv,    spvTarget);
 
     const TBuiltInResource* res = GetDefaultResources();
     EShMessages messages = static_cast<EShMessages>(EShMsgSpvRules | EShMsgVulkanRules);

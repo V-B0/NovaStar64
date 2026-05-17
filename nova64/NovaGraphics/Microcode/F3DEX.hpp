@@ -108,12 +108,9 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
 
 inline void F3DEXHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // F3DEX: count = ((w0 >> 10) & 0x3F), v0 = ((w0 >> 17) & 0x7F)
+    // GLideN64 ref: gSPVertex(w1, _SHIFTR(w0,10,6), _SHIFTR(w0,17,7) - _SHIFTR(w0,10,6))
     int count = (w0 >> 10) & 0x3F;
-    int startIndex = ((w0 >> 17) & 0x7F);
-    
-    // The start index can exceed the count by the buffer offset
-    // F3DEX stores: v0 = (last_vtx + 1 - count)
-    startIndex = startIndex + 1 - count;
+    int startIndex = ((w0 >> 17) & 0x7F) - count;
     if (startIndex < 0) startIndex = 0;
     
     LoadVertices(ctx, w1, count, startIndex);
@@ -129,9 +126,14 @@ inline void F3DEXHandler::Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1)
 }
 
 inline void F3DEXHandler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GBI1 G_MOVEMEM has no size field — index byte determines payload size
+    // implicitly via MoveMemGBI1's per-index dispatch.
     uint8_t index = (w0 >> 16) & 0xFF;
-    uint8_t size = ((w0 >> 19) & 0x1F) * 8;
-    MoveMemGBI1(ctx, index, size, w1);
+    MoveMemGBI1(ctx, index, 0, w1);
+    // gSPForceMatrix (GBI1) emits 4 consecutive MOVEMEM commands that together
+    // carry a 64-byte matrix.  The first command does the work; skip the 3
+    // continuation commands (24 bytes).  Matches F3D.hpp and GLideN64.
+    if (index == MoveMem::G_MV_MATRIX_1) ctx.pc += 24;
 }
 
 inline void F3DEXHandler::Cmd_G_DL(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -185,8 +187,10 @@ inline void F3DEXHandler::Cmd_G_MODIFYVTX(DListContext& ctx, uint32_t w0, uint32
 }
 
 inline void F3DEXHandler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GBI: Z compare value is in the upper 16 bits of w1
     uint32_t vtxIndex = ((w0 & 0xFFF) / 2);
-    BranchZ(ctx, vtxIndex, w1, m_rdpHalf1);
+    uint32_t zValue = (w1 >> 16) & 0xFFFFu;
+    BranchZ(ctx, vtxIndex, zValue, m_rdpHalf1);
 }
 
 inline void F3DEXHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -197,14 +201,44 @@ inline void F3DEXHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t 
 
 inline void F3DEXHandler::Cmd_G_LOAD_UCODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t textSize = (w0 & 0xFFFF) + 1;
-    (void)textSize;
-    LoadUcode(ctx, w1, m_rdpHalf1);
+    LoadUcode(ctx, w1, m_rdpHalf1, textSize);
 }
 
 inline void F3DEXHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // GBI1 encoding: index at bits [7:0], offset at bits [23:8]
     uint8_t index = w0 & 0xFF;
     uint16_t offset = static_cast<uint16_t>((w0 >> 8) & 0xFFFF);
+
+    // GBI1 numLights formula: w1 = 0x80000000 + (numLights+1)*32
+    if (index == MoveWord::MW_NUMLIGHT) {
+        if (!ctx.state) return;
+        int numLights = static_cast<int>(((w1 - 0x80000000u) >> 5) - 1);
+        if (numLights < 0) numLights = 0;
+        if (numLights >= MAX_LIGHTS) numLights = MAX_LIGHTS - 1;
+        ctx.state->geometry.numLights = numLights;
+        ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+        return;
+    }
+
+    // GBI1 light colors: 32-byte stride (offsets 0x00,0x20,0x40,...)
+    // Base handler uses 24-byte stride (GBI2), so intercept here
+    if (index == MoveWord::MW_LIGHTCOL) {
+        if (!ctx.state) return;
+        // Only handle "a" offsets (primary color at offset % 0x20 == 0)
+        // "b" offsets (0x04,0x24,...) are secondary copies, ignored by GLideN64
+        if ((offset & 0x1F) == 0) {
+            int lightIdx = offset / 0x20;
+            if (lightIdx >= 0 && lightIdx < MAX_LIGHTS) {
+                auto& light = ctx.state->geometry.lights[lightIdx];
+                light.color[0] = static_cast<float>((w1 >> 24) & 0xFF) / 255.0f;
+                light.color[1] = static_cast<float>((w1 >> 16) & 0xFF) / 255.0f;
+                light.color[2] = static_cast<float>((w1 >> 8)  & 0xFF) / 255.0f;
+                ctx.state->MarkDirty(RDPDirtyFlag::Lights);
+            }
+        }
+        return;
+    }
+
     MoveWord(ctx, index, offset, w1);
 }
 

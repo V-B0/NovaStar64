@@ -138,6 +138,100 @@ std::string ShaderGenerator::GetCommonUniforms() const {
             "    float4 uTexCoordBounds1;\n"
             "};\n";
     }
+    // ── Vulkan / SPIR-V path: all uniforms packed in a single UBO ────────
+    // std140 layout; all 16-byte aligned. vec2 pairs packed into vec4.
+    // #define aliases expose the original uniform names to shader body code.
+    if (m_language == ShaderLanguage::SPIRV) {
+        return
+            "layout(set=0, binding=0, std140) uniform N64UBO {\n"
+            "    mat4  uMVPMatrix;\n"         //  [0]
+            "    mat4  uModelView;\n"         //  [64]
+            "    mat4  uProjection;\n"        //  [128]
+            "    vec4  uPrimColor;\n"         //  [192]
+            "    vec4  uEnvColor;\n"          //  [208]
+            "    vec4  uFogColor;\n"          //  [224]
+            "    vec4  uBlendColor;\n"        //  [240]
+            "    vec4  uFillColor;\n"         //  [256]
+            "    vec4  uCenterColor;\n"       //  [272] xyz used
+            "    vec4  uScaleColor;\n"        //  [288] xyz used
+            "    vec4  uConvertK;\n"          //  [304]
+            "    vec4  uTexClamp0;\n"         //  [320]
+            "    vec4  uTexClamp1;\n"         //  [336]
+            "    vec4  uTexCoordBounds0;\n"   //  [352]
+            "    vec4  uTexCoordBounds1;\n"   //  [368]
+            "    vec4  uKeyWidth_MinLod;\n"   //  [384] xyz=uKeyWidth w=uMinLod
+            "    vec4  uTexScale01;\n"        //  [400] xy=scale0 zw=scale1
+            "    vec4  uTexOffset01;\n"       //  [416] xy=off0 zw=off1
+            "    vec4  uTexMask01;\n"         //  [432] xy=mask0 zw=mask1
+            "    vec4  uTexSize01;\n"         //  [448] xy=size0 zw=size1
+            "    vec4  uGPUScale01;\n"        //  [464] xy=gpu0 zw=gpu1
+            "    vec4  uScreenSizes;\n"       //  [480] xy=screenSz zw=invScreenSz
+            "    vec4  uScreenScaleResScale;\n" // [496] xy=screenScale zw=resScale
+            "    vec4  uPrimLODs_K4K5;\n"    //  [512] x=primLOD y=primLODFrac z=K4 w=K5
+            "    vec4  uFogParams;\n"         //  [528] x=alphaRef y=fogMult z=fogOff w=primDepth
+            "    vec4  uDepthParams;\n"       //  [544] x=depthScale y=depthOff z=primDeltaZ w=0
+            "    ivec4 uIntBits0;\n"          //  [560] x=frameCount y=zMode z=useTexCoordBounds w=texPersp
+            "    ivec4 uIntBits1;\n"          //  [576] x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
+            "    ivec4 uIntBits2;\n"          //  [592] x=fogUsage y=sst z=texDetail w=maxTile
+            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput yzw=0
+            "} uN64;\n"
+            // Aliases mapping original uniform names → UBO fields
+            "#define uMVPMatrix           uN64.uMVPMatrix\n"
+            "#define uModelView           uN64.uModelView\n"
+            "#define uProjection          uN64.uProjection\n"
+            "#define uPrimColor           uN64.uPrimColor\n"
+            "#define uEnvColor            uN64.uEnvColor\n"
+            "#define uFogColor            uN64.uFogColor\n"
+            "#define uBlendColor          uN64.uBlendColor\n"
+            "#define uFillColor           uN64.uFillColor\n"
+            "#define uCenterColor         uN64.uCenterColor.xyz\n"
+            "#define uScaleColor          uN64.uScaleColor.xyz\n"
+            "#define uConvertK            uN64.uConvertK\n"
+            "#define uTexClamp0           uN64.uTexClamp0\n"
+            "#define uTexClamp1           uN64.uTexClamp1\n"
+            "#define uTexCoordBounds0     uN64.uTexCoordBounds0\n"
+            "#define uTexCoordBounds1     uN64.uTexCoordBounds1\n"
+            "#define uKeyWidth            uN64.uKeyWidth_MinLod.xyz\n"
+            "#define uMinLod              uN64.uKeyWidth_MinLod.w\n"
+            "#define uTexScale0           uN64.uTexScale01.xy\n"
+            "#define uTexScale1           uN64.uTexScale01.zw\n"
+            "#define uTexOffset0          uN64.uTexOffset01.xy\n"
+            "#define uTexOffset1          uN64.uTexOffset01.zw\n"
+            "#define uTexMask0            uN64.uTexMask01.xy\n"
+            "#define uTexMask1            uN64.uTexMask01.zw\n"
+            "#define uTexSize0            uN64.uTexSize01.xy\n"
+            "#define uTexSize1            uN64.uTexSize01.zw\n"
+            "#define uGPUScale0           uN64.uGPUScale01.xy\n"
+            "#define uGPUScale1           uN64.uGPUScale01.zw\n"
+            "#define uScreenSize          uN64.uScreenSizes.xy\n"
+            "#define uInvScreenSize       uN64.uScreenSizes.zw\n"
+            "#define uScreenScale         uN64.uScreenScaleResScale.xy\n"
+            "#define uResolutionScale     uN64.uScreenScaleResScale.zw\n"
+            "#define uPrimLOD             uN64.uPrimLODs_K4K5.x\n"
+            "#define uPrimLODFrac         uN64.uPrimLODs_K4K5.y\n"
+            "#define uK4                  uN64.uPrimLODs_K4K5.z\n"
+            "#define uK5                  uN64.uPrimLODs_K4K5.w\n"
+            "#define uAlphaRef            uN64.uFogParams.x\n"
+            "#define uFogMultiplier       uN64.uFogParams.y\n"
+            "#define uFogOffset           uN64.uFogParams.z\n"
+            "#define uPrimDepth           uN64.uFogParams.w\n"
+            "#define uDepthScale          uN64.uDepthParams.x\n"
+            "#define uDepthOffset         uN64.uDepthParams.y\n"
+            "#define uPrimDeltaZ          uN64.uDepthParams.z\n"
+            "#define uFrameCount          uN64.uIntBits0.x\n"
+            "#define uZMode               uN64.uIntBits0.y\n"
+            "#define uUseTexCoordBounds   uN64.uIntBits0.z\n"
+            "#define uTexturePersp        uN64.uIntBits0.w\n"
+            "#define uFbMonochrome0       uN64.uIntBits1.x\n"
+            "#define uFbMonochrome1       uN64.uIntBits1.y\n"
+            "#define uFbFixedAlpha0       uN64.uIntBits1.z\n"
+            "#define uFbFixedAlpha1       uN64.uIntBits1.w\n"
+            "#define uFogUsage            uN64.uIntBits2.x\n"
+            "#define uScreenSpaceTriangle uN64.uIntBits2.y\n"
+            "#define uTextureDetail       uN64.uIntBits2.z\n"
+            "#define uMaxTile             uN64.uIntBits2.w\n"
+            "#define uDebugOutput         uN64.uIntBits3.x\n";
+    }
     return
         "uniform mat4  uMVPMatrix;\n"
         "uniform mat4  uModelView;\n"
@@ -235,6 +329,22 @@ std::string ShaderGenerator::GetTextureUniforms() const {
         "layout(binding = 10) uniform sampler2D uZLUT;\n";
 }
 
+// Vulkan-specific texture uniforms: binding 0 = UBO, textures start at 1.
+std::string ShaderGenerator::GetTextureUniformsVK() const {
+    return
+        "layout(set=0, binding=1)  uniform sampler2D uTexture0;\n"
+        "layout(set=0, binding=2)  uniform sampler2D uTexture1;\n"
+        "layout(set=0, binding=3)  uniform sampler2D uTLUT0;\n"
+        "layout(set=0, binding=4)  uniform sampler2D uTLUT1;\n"
+        "layout(set=0, binding=5)  uniform sampler2D uDepthTexture;\n"
+        "layout(set=0, binding=6)  uniform sampler2D uNoiseTexture;\n"
+        "layout(set=0, binding=7)  uniform sampler2D uDitherTexture;\n"
+        "layout(set=0, binding=8)  uniform sampler2D uFBTexture;\n"
+        "layout(set=0, binding=9)  uniform sampler2D uZImageTex;\n"
+        "layout(set=0, binding=10) uniform sampler2D uDeltaZImageTex;\n"
+        "layout(set=0, binding=11) uniform sampler2D uZLUT;\n";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPER: INPUTS / OUTPUTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -282,6 +392,17 @@ std::string ShaderGenerator::GetVertexOutputs() const {
             "    float4 vBaryCoord: TEXCOORD3;\n"
             "};\n";
     }
+    if (m_language == ShaderLanguage::SPIRV) {
+        return
+            "layout(location=0) out vec4 vColor;\n"
+            "layout(location=1) noperspective out vec4 vColorNP;\n"
+            "layout(location=2) noperspective out vec2 vTexCoord0;\n"
+            "layout(location=3) noperspective out vec2 vTexCoord1;\n"
+            "layout(location=4) out float vFog;\n"
+            "layout(location=5) out float vDepth;\n"
+            "layout(location=6) noperspective out float vClipW;\n"
+            "layout(location=7) out vec4 vBaryCoord;\n";
+    }
     return
         "out vec4 vColor;\n"
         "noperspective out vec4 vColorNP;\n"
@@ -308,6 +429,17 @@ std::string ShaderGenerator::GetFragmentInputs() const {
             "    noperspective float  vClipW    : TEXCOORD2;\n"
             "    float4 vBaryCoord: TEXCOORD3;\n"
             "};\n";
+    }
+    if (m_language == ShaderLanguage::SPIRV) {
+        return
+            "layout(location=0) in vec4 vColor;\n"
+            "layout(location=1) noperspective in vec4 vColorNP;\n"
+            "layout(location=2) noperspective in vec2 vTexCoord0;\n"
+            "layout(location=3) noperspective in vec2 vTexCoord1;\n"
+            "layout(location=4) in float vFog;\n"
+            "layout(location=5) in float vDepth;\n"
+            "layout(location=6) noperspective in float vClipW;\n"
+            "layout(location=7) in vec4 vBaryCoord;\n";
     }
     return
         "in vec4 vColor;\n"
@@ -1144,13 +1276,11 @@ vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
     vec4 c01 = texture(tex, baseUV + vec2(0.0, step.y));
     vec4 c11 = texture(tex, baseUV + step);
 
-#ifdef ALPHA_TEST
     // Pre-multiply RGB by alpha to prevent color bleeding at edges
     c00.rgb *= c00.a;
     c10.rgb *= c10.a;
     c01.rgb *= c01.a;
     c11.rgb *= c11.a;
-#endif
 
     vec4 result;
     if (fracPart.x + fracPart.y < 1.0) {
@@ -1159,11 +1289,9 @@ vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
         result = c11 + (1.0 - fracPart.x) * (c01 - c11) + (1.0 - fracPart.y) * (c10 - c11);
     }
 
-#ifdef ALPHA_TEST
     // Un-premultiply to recover final color
     if (result.a > 0.001)
         result.rgb /= result.a;
-#endif
 
     return result;
 }
@@ -1678,7 +1806,8 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         return tmpl;
     }
 
-    // ── GLSL path (unchanged) ────────────────────────────────────────────
+    // ── GLSL path (OpenGL 4.6 or Vulkan/SPIRV) ──────────────────────────
+    const bool isVK = (m_language == ShaderLanguage::SPIRV);
 
     // ── vertex header ────────────────────────────────────────────────────
     tmpl.vertexHeader =
@@ -1691,13 +1820,20 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     tmpl.vertexBody =
         "void main() {\n"
         "    gl_Position = uMVPMatrix * aPosition;\n"
+        + std::string(isVK ?
+        // Vulkan NDC fixup: remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
+        // Y-flip is handled by the negative-height viewport (VK_KHR_maintenance1),
+        // so no shader Y-flip is needed here — adding one would double-flip the image.
+        "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n"
+        : "")
+        +
+        "    vDepth      = gl_Position.z / gl_Position.w;\n"
         "    vColor      = aColor;\n"
         "    vTexCoord0  = aTexCoord0;\n"
         "    vTexCoord1  = aTexCoord1;\n"
         "    vFog        = aFog;\n"
         "    vClipW      = aClipW;\n"
         "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
-        "    vDepth      = gl_Position.z / gl_Position.w;\n"
         "    if (uFogUsage == 1)\n"
         "        vColor.a = vFog;\n"
         "    else if (uFogUsage == 2)\n"
@@ -1711,7 +1847,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     // (imageLoad/imageStore on the Z-image) to prevent race conditions
     // between overlapping fragments from the same draw call.
     bool needsInterlock = (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) != 0;
-    if (needsInterlock) {
+    if (needsInterlock && !isVK) {
         tmpl.fragmentHeader +=
             "#extension GL_ARB_fragment_shader_interlock : enable\n"
             "layout(pixel_interlock_ordered) in;\n";
@@ -1720,25 +1856,33 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         GetFragmentInputs() +
         GetFragmentOutputs(f) +
         GetCommonUniforms() +
-        GetTextureUniforms();
-    if (f & SF_N64_DEPTH_COMPARE) {
-        tmpl.fragmentHeader +=
-            "layout(binding = 0, r32f) uniform restrict image2D uZImageImg;\n"
-            "layout(binding = 1, r32f) uniform restrict image2D uDeltaZImageImg;\n";
-    }
-    if (f & SF_MLE_BLENDER) {
-        tmpl.fragmentHeader +=
-            "layout(binding = 2, rgba8) uniform restrict image2D uColorImage;\n"
-            "layout(binding = 3, r8ui) uniform restrict uimage2D uCoverageImage;\n";
+        (isVK ? GetTextureUniformsVK() : GetTextureUniforms());
+    if (!isVK) {
+        // OpenGL image load/store bindings
+        if (f & SF_N64_DEPTH_COMPARE) {
+            tmpl.fragmentHeader +=
+                "layout(binding = 0, r32f) uniform restrict image2D uZImageImg;\n"
+                "layout(binding = 1, r32f) uniform restrict image2D uDeltaZImageImg;\n";
+        }
+        if (f & SF_MLE_BLENDER) {
+            tmpl.fragmentHeader +=
+                "layout(binding = 2, rgba8) uniform restrict image2D uColorImage;\n"
+                "layout(binding = 3, r8ui) uniform restrict uimage2D uCoverageImage;\n";
+        }
+    } else {
+        // Vulkan: image load/store not yet wired — emit dummy declarations
+        // so that shaders requiring them fail to compile and fall back to the
+        // flat-color fallback shader (rather than crashing).
+        // (Deep feature parity will be addressed in a later pass.)
+        (void)0;
     }
     if (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) {
-        if (needsInterlock) {
+        if (needsInterlock && !isVK) {
             tmpl.fragmentHeader +=
                 "#define BEGIN_INTERLOCK() beginInvocationInterlockARB()\n"
                 "#define END_INTERLOCK() endInvocationInterlockARB()\n";
         } else {
-            // No interlock: Intel Iris Xe workaround — just use plain
-            // imageLoad/imageStore without synchronization.
+            // No interlock: Intel Iris Xe workaround OR Vulkan path.
             tmpl.fragmentHeader +=
                 "#define BEGIN_INTERLOCK()\n"
                 "#define END_INTERLOCK()\n";
@@ -1851,6 +1995,7 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
             "}\n";
         return src;
     }
+    const bool isVKvs = (m_language == ShaderLanguage::SPIRV);
     std::string src;
     src += GetVersionDirective();
     src += GetVertexInputs();
@@ -1858,14 +2003,21 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
     src += GetCommonUniforms();
     src +=
         "void main() {\n"
-        "    gl_Position = uMVPMatrix * aPosition;\n"
+        "    gl_Position = uMVPMatrix * aPosition;\n";
+    if (isVKvs) {
+        // Remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
+        // Y-flip is handled by the negative-height viewport — no shader flip needed.
+        src +=
+            "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
+    }
+    src +=
+        "    vDepth      = gl_Position.z / gl_Position.w;\n"
         "    vColor      = aColor;\n"
         "    vTexCoord0  = aTexCoord0;\n"
         "    vTexCoord1  = aTexCoord1;\n"
         "    vFog        = aFog;\n"
         "    vClipW      = aClipW;\n"
         "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
-        "    vDepth      = gl_Position.z / gl_Position.w;\n"
         "    if (uFogUsage == 1)\n"
         "        vColor.a = vFog;\n"
         "    else if (uFogUsage == 2)\n"

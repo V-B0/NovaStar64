@@ -163,8 +163,7 @@ bool VKRenderTargetImpl::BuildResources() {
             barrier(m_depth->GetImage(), asp,
                     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
         }
-        EndOneShotAndWait(m_ctx->device, m_ctx->transientPool,
-                          m_ctx->transferQueue, cmd);
+        EndOneShotAndWait(*m_ctx, cmd);
     }
     return true;
 }

@@ -6,6 +6,7 @@
 #include "VKShader.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -131,7 +132,7 @@ VkPolygonMode ToVkPolygonMode(PolygonMode p) {
 VkDescriptorSetLayout CreateStandardSetLayout(VkDevice device) {
     std::array<VkDescriptorSetLayoutBinding, 1 + kVKMaxTexturesPerDraw> bindings{};
     bindings[0].binding         = 0;
-    bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     bindings[0].descriptorCount = 1;
     bindings[0].stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     for (uint32_t i = 0; i < kVKMaxTexturesPerDraw; ++i) {
@@ -238,9 +239,12 @@ bool VKPipelineImpl::Build(const VKContext& ctx,
 
     // ── Depth/stencil ───────────────────────────────────────
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    ds.depthTestEnable  = desc.depthStencil.depthTestEnabled  ? VK_TRUE : VK_FALSE;
-    ds.depthWriteEnable = desc.depthStencil.depthWriteEnabled ? VK_TRUE : VK_FALSE;
-    ds.depthCompareOp   = ToVkCompareOp(desc.depthStencil.depthFunc);
+    // depthTestEnable/depthWriteEnable/depthCompareOp are dynamic states on
+    // Intel Iris Xe (see dynamic array below).  The static values here are
+    // conservative defaults that are overridden by per-draw vkCmdSet* calls.
+    ds.depthTestEnable  = VK_TRUE;
+    ds.depthWriteEnable = VK_TRUE;
+    ds.depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL;
     ds.stencilTestEnable = desc.depthStencil.stencilEnabled ? VK_TRUE : VK_FALSE;
     ds.front.failOp      = ToVkStencilOp(desc.depthStencil.stencilFail);
     ds.front.depthFailOp = ToVkStencilOp(desc.depthStencil.depthFail);
@@ -268,10 +272,21 @@ bool VKPipelineImpl::Build(const VKContext& ctx,
     std::memcpy(cb.blendConstants, desc.blend.blendColor, sizeof(float) * 4);
 
     // ── Dynamic state ───────────────────────────────────────
-    std::array<VkDynamicState, 3> dyn = {
+    // depth-test/write/compare are made dynamic so that ISA warmup draws can
+    // disable depth testing (forcing the fragment shader to execute for all
+    // rasterised pixels) while reusing the same VkPipeline as production draws.
+    // This prevents Intel Iris Xe from compiling a "depth-early-exit" ISA
+    // variant during warmup (where depth test fails → fragment shader skipped)
+    // and then needing to compile the "full-fragment" ISA variant on the first
+    // Clock Town draw, which would cause a 2 s+ GPU stall and trigger TDR.
+    std::array<VkDynamicState, 7> dyn = {
         VK_DYNAMIC_STATE_VIEWPORT,
         VK_DYNAMIC_STATE_SCISSOR,
         VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+        VK_DYNAMIC_STATE_DEPTH_BIAS,
+        VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT,
+        VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT,
+        VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT,
     };
     VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     dy.dynamicStateCount = static_cast<uint32_t>(dyn.size());
@@ -288,6 +303,11 @@ bool VKPipelineImpl::Build(const VKContext& ctx,
 
     // ── Graphics pipeline ───────────────────────────────────
     VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    // DISABLE_OPTIMIZATION removed: Intel Iris Xe may do background ISA
+    // recompilation when this bit is set, triggering a GPU flush at ~t=26s
+    // that causes a 2s non-responsiveness period and TDR.  Without the bit
+    // Intel compiles a single optimised ISA upfront; no background recompile.
+    gpi.flags               = 0;
     gpi.stageCount          = stageCount;
     gpi.pStages             = stages.data();
     gpi.pVertexInputState   = &vi;
@@ -302,12 +322,20 @@ bool VKPipelineImpl::Build(const VKContext& ctx,
     gpi.renderPass          = compatibleRenderPass;
     gpi.subpass             = 0;
 
+    auto t0 = std::chrono::steady_clock::now();
     if (vkCreateGraphicsPipelines(ctx.device, ctx.pipelineCache, 1, &gpi,
                                   nullptr, &m_pipeline) != VK_SUCCESS) {
         Logger::Error("VKPipeline: vkCreateGraphicsPipelines failed");
         vkDestroyPipelineLayout(ctx.device, m_layout, nullptr);
         m_layout = VK_NULL_HANDLE;
         return false;
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    auto pipelineMs = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    if (pipelineMs > 200) {
+        Logger::Warn("VKPipeline: vkCreateGraphicsPipelines took {}ms "
+                     "(stageCount={} pipeline={:p})",
+                     pipelineMs, stageCount, static_cast<void*>(m_pipeline));
     }
     return true;
 }

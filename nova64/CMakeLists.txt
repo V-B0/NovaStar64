@@ -396,6 +396,9 @@ set(SOURCES
     NovaGraphics/Renderer/VK/VKShader.cpp
     NovaGraphics/Renderer/VK/VKPipeline.cpp
     NovaGraphics/Renderer/VK/VKRenderTarget.cpp
+    NovaGraphics/Renderer/VK/VKAccelStruct.cpp
+    NovaGraphics/Renderer/VK/VKRTPipeline.cpp
+    NovaGraphics/Renderer/VK/VKShaderCompiler.cpp
 
     # SoftwareRenderer removed — dead code, replaced by OpenGL/D3D backends
 

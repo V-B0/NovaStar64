@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+#include <atomic>
 
 namespace Nova64::Video {
 
@@ -31,14 +32,36 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
     ctx.halted = false;
     ctx.dlStackDepth = 0;
     
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+            "GBIHandler::ExecuteDisplayList pc=0x{:08X} rdram={} rdramSize=0x{:08X}",
+            ctx.pc, ctx.rdram ? "valid" : "NULL", ctx.rdramSize);
+    
+    // Limit commands per RSP task.  Real N64 DLs have at most a few thousand
+    // commands; 50 000 is generous for any legitimate list while limiting the
+    // GPU draw count from runaway loops to ~20× less than the old 1 000 000
+    // cap.  This prevents Intel Iris Xe GPU TDR caused by a single looping
+    // RSP task flooding the Vulkan command buffer with draws.
+    // 2000 commands per RSP task is the TDR-safe ceiling on Intel Iris Xe with
+    // draw-skip mitigation. Balances rendering quality against GPU ISA compile time.
+    // (2000 = no TDR; 3000 = TDR at ~38s; 5000 = TDR at ~27s)
     static constexpr int MAX_COMMANDS_PER_FRAME = 1000000;
     int commandCount = 0;
-    
+
+    // Track whether this is the very first DL executed in this session.
+    // Only the first DL is logged at Info level; all others use Debug to
+    // avoid flooding the log with ~500K lines per SM64 session.
+    static std::atomic<int> s_dlsExecuted{0};
+    const bool isFirstDL = (s_dlsExecuted.fetch_add(1, std::memory_order_relaxed) == 0);
+
+    uint32_t prevW0 = 0, prevW1 = 0;
+    const char* prevHandler = "(none)";
+
     while (!ctx.halted && commandCount < MAX_COMMANDS_PER_FRAME) {
         // Validate PC
         if (ctx.pc + 8 > ctx.rdramSize) {
             NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-                    "Display list PC out of range: 0x{:08X}", ctx.pc);
+                    "Display list PC out of range: 0x{:08X} (prev cmd: handler={} w0=0x{:08X} w1=0x{:08X} op=0x{:02X})",
+                    ctx.pc, prevHandler, prevW0, prevW1, (prevW0 >> 24) & 0xFF);
             break;
         }
         
@@ -52,7 +75,34 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
         GBIHandler* handler = ctx.dispatcher
             ? ctx.dispatcher->GetCurrentHandler()
             : this;
-        
+
+        if (!handler) {
+            NOVA_LOG(LogLevel::Error, LogSubsystem::Core,
+                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}: "
+                    "null handler (dispatcher={}), aborting display list",
+                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF,
+                    ctx.dispatcher ? "valid" : "null");
+            break;
+        }
+
+        // Log the first 200 commands of the very first DL at Info level so
+        // OOT/MM startup crashes can be diagnosed.  All subsequent DLs use
+        // Debug to avoid generating hundreds of thousands of log lines per
+        // SM64 session (which caused severe startup slowness).
+        if (isFirstDL && commandCount < 200) {
+            NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
+                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
+                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
+        } else {
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
+                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
+        }
+
+        prevW0 = w0;
+        prevW1 = w1;
+        prevHandler = handler->GetName();
+
         if (!handler->ProcessCommand(ctx, w0, w1)) {
             break;
         }
@@ -75,7 +125,8 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
 void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     if (!ctx.rdpProcessor) return;
 
-    uint8_t opcode = (w0 >> 24) & 0x3F; // RDP command ID is bits 29:24
+    uint8_t fullOpcode = (w0 >> 24) & 0xFF;  // Full 8-bit opcode from DL word
+    uint8_t opcode = fullOpcode & 0x3F; // RDP command ID is bits 29:24
     // TextureRectangle (0x24) and TextureRectFlip (0x25) need S, T, dSdX,
     // and dTdY from continuation words that follow in the display list.
     //
@@ -86,7 +137,15 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     //
     // Detect the format by checking for a known RDPHALF opcode byte at
     // bits [31:24] of the first continuation w0.
-    if (opcode == 0x24 || opcode == 0x25) {
+    //
+    // GUARD: Only read extra words if the full opcode is a known GBI2 texrect
+    // wrapper (0xE4 = G_TEXRECT, 0xE5 = G_TEXRECTFLIP in F3DEX2/F3DEX).
+    // Without this guard, S2DEX2's G_RDPHALF_0 (also 0xE4 in S2DEX2) would
+    // be treated as G_TEXRECT and consume 2 extra DL words, corrupting PC.
+    bool isTexrectOpcode = (opcode == 0x24 || opcode == 0x25)
+                        && (fullOpcode == 0xE4 || fullOpcode == 0xE5  // F3DEX2/GBI2 texrect
+                         || fullOpcode == 0x24 || fullOpcode == 0x25); // raw RDP (no GBI wrap)
+    if (isTexrectOpcode) {
         uint32_t cont1_w0 = ctx.ReadWord(ctx.pc);
         uint32_t cont1_w1 = ctx.ReadWord(ctx.pc + 4);
         ctx.AdvancePC(2);
@@ -136,6 +195,16 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
 
     for (int i = 0; i < count; ++i) {
         TransformedVertex& tv = geo.vertexBuffer[startIndex + i];
+
+        // --- World-space position: ModelView * object-pos (RT intercept) ---
+        // Computed BEFORE applying projection so the RT pipeline has true 3D
+        // positions unaffected by the perspective projection matrix.
+        {
+            float ox = tv.position[0], oy = tv.position[1], oz = tv.position[2];
+            tv.worldPos[0] = ox*mvMtx.m[0][0] + oy*mvMtx.m[1][0] + oz*mvMtx.m[2][0] + mvMtx.m[3][0];
+            tv.worldPos[1] = ox*mvMtx.m[0][1] + oy*mvMtx.m[1][1] + oz*mvMtx.m[2][1] + mvMtx.m[3][1];
+            tv.worldPos[2] = ox*mvMtx.m[0][2] + oy*mvMtx.m[1][2] + oz*mvMtx.m[2][2] + mvMtx.m[3][2];
+        }
 
         // --- MVP transform (row-vector: v_clip = v * Combined) ---
         float in[4] = { tv.position[0], tv.position[1], tv.position[2], 1.0f };
@@ -1178,6 +1247,40 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         }
     }
     } // end clip rejection block
+
+    // RT: submit the original world-space triangle to the geometry consumer.
+    // Done AFTER culling (so backfacing triangles are skipped) but uses the
+    // original v0/v1/v2 positions rather than clipped sub-triangles, which is
+    // correct for BVH construction (ray tracing handles off-screen geometry fine).
+    if (ctx.geometryConsumer) {
+        const auto& vb = ctx.state->geometry.vertexBuffer;
+        RT::SceneTriangle st{};
+        auto fillV = [](RT::SceneVertex& sv, const TransformedVertex& tv) {
+            sv.worldPos[0] = tv.worldPos[0];
+            sv.worldPos[1] = tv.worldPos[1];
+            sv.worldPos[2] = tv.worldPos[2];
+            sv.normal[0]   = tv.normal[0];
+            sv.normal[1]   = tv.normal[1];
+            sv.normal[2]   = tv.normal[2];
+            sv.uv[0]       = tv.texCoord[0];
+            sv.uv[1]       = tv.texCoord[1];
+            sv.color[0]    = tv.color[0];
+            sv.color[1]    = tv.color[1];
+            sv.color[2]    = tv.color[2];
+            sv.color[3]    = tv.color[3];
+        };
+        fillV(st.v[0], vb[v0]);
+        fillV(st.v[1], vb[v1]);
+        fillV(st.v[2], vb[v2]);
+        st.materialHash  = ctx.state->combineModeRaw;
+        st.geometryMode  = ctx.state->geometry.geometryMode;
+        st.otherModeH    = ctx.state->otherModeH;
+        st.otherModeL    = ctx.state->otherModeL;
+        // ALPHA_CVG_SEL (bit 6 of otherModeL) → translucent geometry
+        st.isTranslucent = (ctx.state->otherModeL & 0x40) != 0;
+        ctx.geometryConsumer->SubmitTriangle(st);
+    }
+
     } // end geo scope
 }
 
@@ -1191,12 +1294,32 @@ void GBIHandler::DrawTriangle2(DListContext& ctx, int v0, int v1, int v2, int v3
 // ═══════════════════════════════════════════════════════════════════════════
 
 void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
+    uint32_t rawAddress = address;
     address = ctx.ResolveAddress(address);
+    if (address + 8 > ctx.rdramSize) {
+        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
+            "DisplayList: resolved address 0x{:08X} (raw=0x{:08X}) out of range — skipping",
+            address, rawAddress);
+        return;
+    }
     
     if (branch) {
         // Branch: replace current DL (no push).
         // Detect self-branch (infinite loop) — halt instead.
         if (address == ctx.pc - 8) {
+            ctx.halted = true;
+            return;
+        }
+        // Detect any repeated branch source within this RSP task.
+        // Real N64 DLs never branch from the same G_DL instruction twice in
+        // one task — if we see the same source address again it must be a cycle
+        // (e.g. A→B→A or a recursive trampoline).  Halt now to avoid
+        // flooding the GPU command buffer with thousands of repeated draws.
+        const uint32_t srcAddr = ctx.pc - 8; // address of the G_DL opcode
+        if (!ctx.dlBranchVisited.insert(srcAddr).second) {
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+                "DisplayList: branch loop detected at G_DL src=0x{:08X} target=0x{:08X} — halting task",
+                srcAddr, address);
             ctx.halted = true;
             return;
         }
@@ -1367,21 +1490,19 @@ void GBIHandler::BranchW(DListContext& ctx, uint32_t vtxIndex, uint32_t wValue, 
     }
 }
 
-void GBIHandler::LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress) {
+void GBIHandler::LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress, uint32_t textSize) {
     // Dynamic microcode loading � switch microcode mid-frame
     // Demoted to Debug: MM/OoT issue G_LOAD_UCODE every frame (HUD<->world
     // ucode swap), which floods INFO-level logs with thousands of lines.
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-            "G_LOAD_UCODE: text=0x{:08X}, data=0x{:08X}", address, dataAddress);
+            "G_LOAD_UCODE: text=0x{:08X}, data=0x{:08X}, size={}", address, dataAddress, textSize);
     
     // Signal the dispatcher to re-detect and switch handler
     if (ctx.dispatcher) {
-        // N64 IMEM is 4KB, DMEM is 4KB
-        constexpr uint32_t IMEM_SIZE = 4096;
         constexpr uint32_t DMEM_SIZE = 4096;
         uint32_t textAddr = ctx.ResolveAddress(address);
         uint32_t dataAddr = ctx.ResolveAddress(dataAddress);
-        ctx.dispatcher->HandleUcodeSwitch(textAddr, IMEM_SIZE, dataAddr, DMEM_SIZE);
+        ctx.dispatcher->HandleUcodeSwitch(textAddr, textSize, dataAddr, DMEM_SIZE);
     }
 }
 

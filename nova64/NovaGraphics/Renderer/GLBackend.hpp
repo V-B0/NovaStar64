@@ -425,6 +425,8 @@ public:
     void BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat format) override;
     void UnbindAllImages() override;
     void SetColorWriteMask(bool r, bool g, bool b, bool a) override;
+    void DisableRasterizerColorOutput() override;
+    void RestoreRasterizerColorOutput() override;
     void ImageMemoryBarrier() override;
 
     // ─── Drawing ───────────────────────────────────────────────

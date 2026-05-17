@@ -20,6 +20,7 @@
 #include <functional>
 #include <array>
 #include <list>
+#include <deque>
 
 namespace Nova64 { namespace Video { namespace Tex {
 
@@ -276,6 +277,18 @@ private:
     };
 
     std::unordered_map<TextureKey, CacheEntry, TextureKeyHash> m_cache;
+
+    // Deferred-destruction zombie queue.
+    // Textures evicted from the cache are held here for kZombieFrameDelay frames
+    // before their GPU resources are actually freed. This ensures any in-flight
+    // GPU command buffers that still reference the texture's VkImageView have
+    // completed before the view is destroyed (avoids GPU fault / TDR).
+    static constexpr uint64_t kZombieFrameDelay = 3; // kFramesInFlight + 1
+    struct Zombie {
+        std::unique_ptr<ITexture> gpuTex;
+        uint64_t safeDestroyFrame; // m_frameCounter value at which it's safe to destroy
+    };
+    std::deque<Zombie> m_zombies;
 };
 
 }}} // namespace Nova64::Video::Tex

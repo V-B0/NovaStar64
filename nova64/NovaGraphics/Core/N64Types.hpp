@@ -317,6 +317,10 @@ struct TransformedVertex {
     bool     modifiedXY;        // True when gSPModifyVertex XYSCREEN was applied
     bool     modifiedZ;         // True when gSPModifyVertex ZSCREEN was applied
 
+    // World-space position (ModelView * object-pos) captured BEFORE MVP projection.
+    // Used by the hardware raytracing pipeline via ISceneGeometryConsumer.
+    float worldPos[3];
+
     static constexpr uint32_t CLIP_LEFT   = 0x01;
     static constexpr uint32_t CLIP_RIGHT  = 0x02;
     static constexpr uint32_t CLIP_BOTTOM = 0x04;

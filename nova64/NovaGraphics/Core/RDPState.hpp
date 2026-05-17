@@ -128,9 +128,13 @@ struct TMEMState {
     LoadedRegion regions[MAX_REGIONS];
     int regionCount = 0;
     
-    void Reset() {
-        std::memset(data, 0, TMEM_SIZE);
-        regionCount = 0;
+    void Reset(bool cold = true) {
+        // N64 hardware does NOT clear TMEM between RSP tasks.
+        // Only clear TMEM on a true cold reset (emulator init / ROM change).
+        if (cold) {
+            std::memset(data, 0, TMEM_SIZE);
+            regionCount = 0;
+        }
     }
     
     /// Record a load into TMEM
@@ -350,6 +354,17 @@ struct RDPState {
     // Used by PopulateTextureInfo so tile0/tile1 get the correct RDRAM source
     // even in 2-cycle mode with two different texture loads.
     uint32_t tileLoadAddress[MAX_TILES] = {0};
+
+    // ── Per-TMEM-slot RDRAM source address (set by LoadBlock/LoadTile) ──
+    // Indexed by TMEM word address (0–511 for 4 KB TMEM / 8-byte words).
+    // N64 games use a dedicated "loading tile" (typically tile 7) for G_LOADBLOCK
+    // which sets tileLoadAddress[7], but the render tile (tile 0) is distinct and
+    // tileLoadAddress[0] stays zero.  Both tiles share the same tmemAddr so
+    // tmemSourceAddress[tmemAddr] bridges them correctly.  Also handles the case
+    // where a G_SETTEXTUREIMAGE for TLUT loading changes textureImage.address
+    // between the main texture load and the draw call.
+    static constexpr int TMEM_WORDS = 512;
+    uint32_t tmemSourceAddress[TMEM_WORDS] = {0};
     
     // ── Scissor ──
     ScissorRect scissor;
@@ -389,7 +404,7 @@ struct RDPState {
     //  Methods
     // ═════════════════════════════════════════════════════════════════
     
-    void Reset() {
+    void Reset(bool cold = true) {
         otherModeH = 0;
         otherModeL = 0;
         rdpOtherModeH = 0;
@@ -419,7 +434,7 @@ struct RDPState {
         for (auto& tile : tiles)
             std::memset(&tile, 0, sizeof(tile));
         
-        tmem.Reset();
+        tmem.Reset(cold);
         
         fillColor = {};
         fillColorRaw = 0;
@@ -440,6 +455,15 @@ struct RDPState {
         
         std::memset(convertK, 0, sizeof(convertK));
         std::memset(&chromaKey, 0, sizeof(chromaKey));
+        // tileLoadAddress and tmemSourceAddress track which RDRAM address fed
+        // each TMEM slot/tile. Preserve on warm reset so that textures loaded in
+        // a prior DL are still identifiable when drawn in the next DL.
+        if (cold) {
+            std::memset(tileLoadAddress, 0, sizeof(tileLoadAddress));
+            std::memset(tmemSourceAddress, 0, sizeof(tmemSourceAddress));
+        }
+        std::memset(scrollS, 0, sizeof(scrollS));
+        std::memset(scrollT, 0, sizeof(scrollT));
         
         dirtyFlags = RDPDirtyFlag::All;
         
@@ -528,8 +552,8 @@ struct VideoState {
     uint32_t frameCount;
     bool     displayListActive;
 
-    void Reset() {
-        rdp.Reset();
+    void Reset(bool cold = true) {
+        rdp.Reset(cold);
         frameCount = 0;
         displayListActive = false;
     }

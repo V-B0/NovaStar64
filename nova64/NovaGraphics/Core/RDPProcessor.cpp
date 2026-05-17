@@ -116,14 +116,23 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize,
         std::vector<uint8_t> noiseData(NOISE_SIZE * NOISE_SIZE);
         for (auto& p : noiseData) p = static_cast<uint8_t>(dist(rng));
 
-        glCreateTextures(GL_TEXTURE_2D, 1, &m_noiseTexture);
-        glTextureStorage2D(m_noiseTexture, 1, GL_R8, NOISE_SIZE, NOISE_SIZE);
-        glTextureSubImage2D(m_noiseTexture, 0, 0, 0, NOISE_SIZE, NOISE_SIZE,
-                            GL_RED, GL_UNSIGNED_BYTE, noiseData.data());
-        glTextureParameteri(m_noiseTexture, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTextureParameteri(m_noiseTexture, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTextureParameteri(m_noiseTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(m_noiseTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        TextureDesc desc;
+        desc.width = NOISE_SIZE;
+        desc.height = NOISE_SIZE;
+        desc.mipLevels = 1;
+        desc.format = TextureFormat::R8;
+        desc.usage = BufferUsage::Dynamic;
+        desc.debugName = "NovaNoise";
+        m_noiseTexture = m_renderer->CreateTexture(desc);
+        if (m_noiseTexture) {
+            m_noiseTexture->Upload(noiseData.data(), noiseData.size());
+            SamplerDesc s;
+            s.minFilter = SamplerFilter::Nearest;
+            s.magFilter = SamplerFilter::Nearest;
+            s.wrapS = TextureWrap::Repeat;
+            s.wrapT = TextureWrap::Repeat;
+            m_noiseTexture->SetSampler(s);
+        }
     }
 
     // �� Create N64 dither textures (4x4 R8, bound to unit 6) ��
@@ -141,14 +150,21 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize,
             219,   0, 255,  36,
              73, 146, 109, 182
         };
-        glCreateTextures(GL_TEXTURE_2D, 1, &m_ditherTexture);
-        glTextureStorage2D(m_ditherTexture, 1, GL_R8, 4, 4);
-        glTextureSubImage2D(m_ditherTexture, 0, 0, 0, 4, 4,
-                            GL_RED, GL_UNSIGNED_BYTE, magicSquare4x4);
-        glTextureParameteri(m_ditherTexture, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTextureParameteri(m_ditherTexture, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTextureParameteri(m_ditherTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(m_ditherTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        TextureDesc desc;
+        desc.width = 4; desc.height = 4; desc.mipLevels = 1;
+        desc.format = TextureFormat::R8;
+        desc.usage = BufferUsage::Static;
+        desc.debugName = "NovaDitherMagic";
+        m_ditherTexture = m_renderer->CreateTexture(desc);
+        if (m_ditherTexture) {
+            m_ditherTexture->Upload(magicSquare4x4, sizeof(magicSquare4x4));
+            SamplerDesc s;
+            s.minFilter = SamplerFilter::Nearest;
+            s.magFilter = SamplerFilter::Nearest;
+            s.wrapS = TextureWrap::Repeat;
+            s.wrapT = TextureWrap::Repeat;
+            m_ditherTexture->SetSampler(s);
+        }
 
         // N64 Bayer dither matrix (normalized 0-7 � 0-255)
         static constexpr uint8_t bayer4x4[16] = {
@@ -157,27 +173,41 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize,
             109, 255,  73, 219,
             255, 109, 219,  73
         };
-        glCreateTextures(GL_TEXTURE_2D, 1, &m_ditherBayerTexture);
-        glTextureStorage2D(m_ditherBayerTexture, 1, GL_R8, 4, 4);
-        glTextureSubImage2D(m_ditherBayerTexture, 0, 0, 0, 4, 4,
-                            GL_RED, GL_UNSIGNED_BYTE, bayer4x4);
-        glTextureParameteri(m_ditherBayerTexture, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTextureParameteri(m_ditherBayerTexture, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTextureParameteri(m_ditherBayerTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(m_ditherBayerTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        TextureDesc desc2;
+        desc2.width = 4; desc2.height = 4; desc2.mipLevels = 1;
+        desc2.format = TextureFormat::R8;
+        desc2.usage = BufferUsage::Static;
+        desc2.debugName = "NovaDitherBayer";
+        m_ditherBayerTexture = m_renderer->CreateTexture(desc2);
+        if (m_ditherBayerTexture) {
+            m_ditherBayerTexture->Upload(bayer4x4, sizeof(bayer4x4));
+            SamplerDesc s;
+            s.minFilter = SamplerFilter::Nearest;
+            s.magFilter = SamplerFilter::Nearest;
+            s.wrapS = TextureWrap::Repeat;
+            s.wrapT = TextureWrap::Repeat;
+            m_ditherBayerTexture->SetSampler(s);
+        }
     }
 
     // �� Create debug white texture (1x1 RGBA8, for diagnostic tests) ��
     {
         uint32_t white = 0xFFFFFFFF;
-        glCreateTextures(GL_TEXTURE_2D, 1, &m_debugWhiteTexture);
-        glTextureStorage2D(m_debugWhiteTexture, 1, GL_RGBA8, 1, 1);
-        glTextureSubImage2D(m_debugWhiteTexture, 0, 0, 0, 1, 1,
-                            GL_RGBA, GL_UNSIGNED_BYTE, &white);
-        glTextureParameteri(m_debugWhiteTexture, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTextureParameteri(m_debugWhiteTexture, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTextureParameteri(m_debugWhiteTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(m_debugWhiteTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        TextureDesc desc;
+        desc.width = 1; desc.height = 1; desc.mipLevels = 1;
+        desc.format = TextureFormat::RGBA8;
+        desc.usage = BufferUsage::Static;
+        desc.debugName = "NovaDebugWhite";
+        m_debugWhiteTexture = m_renderer->CreateTexture(desc);
+        if (m_debugWhiteTexture) {
+            m_debugWhiteTexture->Upload(&white, sizeof(white));
+            SamplerDesc s;
+            s.minFilter = SamplerFilter::Nearest;
+            s.magFilter = SamplerFilter::Nearest;
+            s.wrapS = TextureWrap::Repeat;
+            s.wrapT = TextureWrap::Repeat;
+            m_debugWhiteTexture->SetSampler(s);
+        }
     }
 
     m_initialized = true;
@@ -192,10 +222,11 @@ void RDPProcessor::Shutdown() {
     
     FlushBatch();
 
-    if (m_noiseTexture)       { glDeleteTextures(1, &m_noiseTexture);       m_noiseTexture = 0; }
-    if (m_ditherTexture)      { glDeleteTextures(1, &m_ditherTexture);      m_ditherTexture = 0; }
-    if (m_ditherBayerTexture) { glDeleteTextures(1, &m_ditherBayerTexture); m_ditherBayerTexture = 0; }
-    if (m_shadowTLUTTexture)  { glDeleteTextures(1, &m_shadowTLUTTexture);  m_shadowTLUTTexture = 0; }
+    m_noiseTexture.reset();
+    m_ditherTexture.reset();
+    m_ditherBayerTexture.reset();
+    m_debugWhiteTexture.reset();
+    if (m_shadowTLUTTexture && g_fbManager.IsGL())  { glDeleteTextures(1, &m_shadowTLUTTexture);  m_shadowTLUTTexture = 0; }
 
     m_state.Reset();
     m_commandBuffer.Reset();
@@ -210,7 +241,7 @@ void RDPProcessor::Reset(bool coldReset) {
     FlushBatch();
     uint32_t savedFrameCount = m_state.frameCount;
     float savedWidescreenScale = m_state.rdp.geometry.widescreenScale;
-    m_state.Reset();
+    m_state.Reset(coldReset);
     if (!coldReset) {
         // Warm reset: preserve frame counter and widescreen hack across display lists
         m_state.frameCount = savedFrameCount;
@@ -680,6 +711,9 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
 
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
+    // Also index by TMEM slot: the render tile (tile 0) and loading tile (tile 7)
+    // share the same tmemAddr, so this bridges them in PopulateTextureInfo.
+    m_state.rdp.tmemSourceAddress[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = m_state.rdp.textureImage.address;
     ExecuteLoadBlock(tile, uls, ult, texels, dxt);
 }
 
@@ -713,6 +747,8 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
 
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
+    // Also index by TMEM slot: connects loading tile to render tile via shared tmemAddr.
+    m_state.rdp.tmemSourceAddress[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = m_state.rdp.textureImage.address;
     ExecuteLoadTile(tile, sl, tl, sh, th);
 }
 
@@ -847,6 +883,40 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                      srcFB->desc.height,
                      srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
+
+        // Vulkan: CopyFromGPU is a no-op (no per-N64-FB GL textures).
+        // Instead, snapshot the current swapchain image so the subsequent
+        // FB-as-texture draw (inventory background, lens of truth, etc.) can
+        // sample it directly via m_renderer->BindTexture().
+        if (!g_fbManager.IsGL() && m_renderer) {
+            const uint32_t snapW = m_renderer->GetWidth();
+            const uint32_t snapH = m_renderer->GetHeight();
+            if (snapW > 0 && snapH > 0) {
+                std::vector<uint8_t> pixels(static_cast<size_t>(snapW) * snapH * 4);
+                m_renderer->ReadPixels(0, 0, snapW, snapH, TextureFormat::RGBA8, pixels.data());
+
+                // Create or resize the snapshot texture.
+                bool needRecreate = !m_vkFBSnapshot;
+                if (!needRecreate) {
+                    // ITexture doesn't expose dimensions; re-use if dimensions unchanged.
+                    // Use the snapshotAddr change as a proxy: always recreate for safety.
+                    needRecreate = (m_vkFBSnapshotAddr != srcFB->desc.address);
+                }
+                if (needRecreate) {
+                    TextureDesc snapDesc{};
+                    snapDesc.width     = snapW;
+                    snapDesc.height    = snapH;
+                    snapDesc.format    = TextureFormat::RGBA8;
+                    snapDesc.usage     = BufferUsage::Dynamic;
+                    snapDesc.mipLevels = 1;
+                    m_vkFBSnapshot = m_renderer->CreateTexture(snapDesc);
+                }
+                if (m_vkFBSnapshot) {
+                    m_vkFBSnapshot->Upload(pixels.data(), pixels.size());
+                    m_vkFBSnapshotAddr = srcFB->desc.address;
+                }
+            }
+        }
     }
 
     uint32_t tmemWordAddr = tileDesc.tmemAddr; // in 64-bit word units
@@ -1206,7 +1276,7 @@ void RDPProcessor::HandleSyncFull() {
     // producing visible wireframe outlines on every triangle.
     // Clear the coverage image at frame boundaries so the next frame starts
     // with cvg=0 everywhere (matching N64's post-fill state).
-    {
+    if (g_fbManager.IsGL()) {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->coverageTex) {
             const GLuint zero = 0;
@@ -1215,13 +1285,13 @@ void RDPProcessor::HandleSyncFull() {
         }
     }
 
-    // ��� Defensive depth clear ������������������������������������������
+    // ─── Defensive depth clear ──────────────────────────────────────────
     // Games normally clear depth via FillRect targeting the Z-buffer address,
     // which we intercept in HandleFillRect.  However, if a game skips that
     // clear (or if our detection missed it), stale depth from the previous
     // frame can cause 2D HUD elements to be hidden behind 3D geometry.
     // Clear the GL depth buffer at frame boundaries as a safety net.
-    {
+    if (g_fbManager.IsGL()) {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->fbo) {
             glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
@@ -1396,9 +1466,14 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
                      m_state.rdp.fillColorRaw,
                      m_state.rdp.colorImage.address & 0x7FFFFF);
         FlushBatch();
-        if (g_fbManager.GetCurrentColor()) {
+        if (g_fbManager.IsGL() && g_fbManager.GetCurrentColor()) {
             GLuint fbo = g_fbManager.GetCurrentColor()->fbo;
             glClearNamedFramebufferfi(fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
+        } else if (!g_fbManager.IsGL() && m_renderer) {
+            // Vulkan: clear the active swapchain depth attachment via
+            // vkCmdClearAttachments so HUD geometry drawn after this point
+            // starts with a fresh depth slate instead of stale scene depth.
+            m_renderer->ClearDepthBuffer(1.0f);
         }
         // Also clear the N64 Z-image so imageLoad-based depth compare
         // sees max depth (1.0) for newly cleared pixels.
@@ -2048,21 +2123,28 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
-    // Use per-tile RDRAM source addresses recorded at LoadBlock/LoadTile time.
-    // In 2-cycle mode tile0 and tile1 may come from different SetTextureImage calls.
-    uint32_t addr0 = m_state.rdp.tileLoadAddress[tileIndex & 7];
-    uint32_t addr1 = m_state.rdp.tileLoadAddress[(tileIndex + 1) & 7];
-    // Fallback to the global textureImage address if no load was recorded yet
-    if (addr0 == 0) addr0 = m_state.rdp.textureImage.address;
-    if (addr1 == 0) addr1 = m_state.rdp.textureImage.address;
-    call.textureImageAddr  = addr0;
-    call.textureImageAddr1 = addr1;
-
-    // Snapshot tile descriptors for the two possible texture tiles
+    // Snapshot tile descriptors first — we need tmemAddr to look up the source address.
     const auto& tile0 = m_state.rdp.tiles[tileIndex & 7];
     const auto& tile1 = m_state.rdp.tiles[(tileIndex + 1) & 7];
     call.tileDesc0 = tile0;
     call.tileDesc1 = tile1;
+
+    // Resolve the RDRAM source address for each tile via TMEM-slot tracking.
+    // N64 games load textures into a "loading tile" (typically tile 7) via G_LOADBLOCK;
+    // tmemSourceAddress[tile7.tmemAddr] is set to the source RDRAM address at that time.
+    // The render tile (tile 0) shares the same tmemAddr, so the lookup here returns the
+    // correct address even when a later G_SETTEXTUREIMAGE (e.g. for TLUT loading) has
+    // already changed textureImage.address by the time we reach the draw call.
+    uint32_t addr0 = m_state.rdp.tmemSourceAddress[tile0.tmemAddr & 0x1FF];
+    uint32_t addr1 = m_state.rdp.tmemSourceAddress[tile1.tmemAddr & 0x1FF];
+    // Fall back to per-tile-index tracking (set when LoadBlock targets tile 0 directly)
+    if (addr0 == 0) addr0 = m_state.rdp.tileLoadAddress[tileIndex & 7];
+    if (addr1 == 0) addr1 = m_state.rdp.tileLoadAddress[(tileIndex + 1) & 7];
+    // Last resort: current textureImage address
+    if (addr0 == 0) addr0 = m_state.rdp.textureImage.address;
+    if (addr1 == 0) addr1 = m_state.rdp.textureImage.address;
+    call.textureImageAddr  = addr0;
+    call.textureImageAddr1 = addr1;
 
     // RSP tile-clone for HLE triangles:
     // When texture LOD is enabled in the RDP mode word AND the RSP has
@@ -2130,7 +2212,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     else
         call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1, call.textureImageAddr1) : 0;
 
-    // Copy scrolling � when tile1 was cloned from tile0, use tile0's scroll values
+    // Copy scrolling when tile1 was cloned from tile0, use tile0's scroll values
     call.scrollS0 = m_state.rdp.scrollS[tileIndex & 7];
     call.scrollT0 = m_state.rdp.scrollT[tileIndex & 7];
     if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD) {
@@ -2140,6 +2222,18 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
         call.scrollS1 = m_state.rdp.scrollS[(tileIndex + 1) & 7];
         call.scrollT1 = m_state.rdp.scrollT[(tileIndex + 1) & 7];
     }
+
+    // Snapshot the TMEM content CRC at draw-queue time.
+    // BuildTextureKey (called later at flush time) reads TMEM when building the
+    // texture cache key. If a subsequent LoadBlock overwrites TMEM before the
+    // batch is flushed, all batched draws would be keyed against the LAST loaded
+    // texture rather than their own.  Capturing the CRC now, while TMEM holds
+    // the correct data, avoids this flush-time mismatch.
+    uint8_t snapTlutType = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
+    if (call.textureHash0 != 0)
+        call.snapshotCrc0 = BuildTextureKey(call.tileDesc0, call.textureImageAddr, snapTlutType).crc;
+    if (call.textureHash1 != 0)
+        call.snapshotCrc1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, snapTlutType).crc;
 }
 
 // Compute the effective texture dimensions for a tile, accounting for
@@ -2178,7 +2272,8 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
                                                uint32_t textureImageAddr,
                                                uint8_t tlutType,
                                                const TileDescriptor* mipTiles,
-                                               int mipCount) const {
+                                               int mipCount,
+                                               uint64_t overrideCrc) const {
     Tex::TextureKey key{};
     key.address = textureImageAddr;
     key.palette = tile.palette;
@@ -2202,6 +2297,8 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
 
     // Compute CRC over the relevant TMEM region for content-change detection.
     // The tile's TMEM byte address tells us where the data lives in TMEM.
+    // When overrideCrc is supplied (non-zero), it was captured at draw-queue
+    // time when TMEM had the correct content; skip the TMEM read.
     auto FNV1a_64 = [](const uint8_t* data, size_t length) -> uint64_t {
         uint64_t hash = 14695981039346656037ULL;
         for (size_t i = 0; i < length; ++i) {
@@ -2210,10 +2307,26 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         }
         return hash;
     };
+    if (overrideCrc != 0) {
+        key.crc = overrideCrc;
+    } else {
 
     uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
-    uint32_t tmemSize     = static_cast<uint32_t>(tile.GetBytesPerRow()) *
-                            static_cast<uint32_t>(key.height);
+    // When the render tile has line=0 (common for TextureRect item/sprite draws,
+    // where stride is irrelevant to the hardware), GetBytesPerRow() returns 0 and
+    // tmemSize would be 0 → crc=0 for all such tiles.  If multiple items share the
+    // same SetTextureImage address (loaded via different tl offsets into a texture
+    // table), they'd all hash to the same cache key and show the first item's texture.
+    // Fix: when line=0, derive the row stride from width and bits-per-pixel so that
+    // the CRC covers the actual texel data in TMEM.
+    uint32_t bytesPerRow = static_cast<uint32_t>(tile.GetBytesPerRow());
+    if (bytesPerRow == 0 && key.width > 0) {
+        // bitsPerPixel = 4 << size  (4/8/16/32 for size 0/1/2/3)
+        uint32_t bitsPerPixel = 4u << (static_cast<uint32_t>(tile.size) & 3u);
+        bytesPerRow = (static_cast<uint32_t>(key.width) * bitsPerPixel + 7u) / 8u;
+        bytesPerRow = (bytesPerRow + 7u) & ~7u;  // round up to 8-byte TMEM word
+    }
+    uint32_t tmemSize = bytesPerRow * static_cast<uint32_t>(key.height);
     // RGBA32: data is stored in two 2KB TMEM banks (RG in bank 0, BA in bank 1).
     // CRC each bank separately and combine, rather than doubling the range
     // (which can overshoot TMEM and produce crc=0 for all RGBA32 textures).
@@ -2242,7 +2355,7 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     // lookup makes the decoded pixels depend on the TLUT contents in the upper
     // half of TMEM.  Mix the palette region CRC into the texture CRC so a
     // palette change triggers a cache miss.
-    if (key.format == Tex::N64TexFormat::CI || tlutType != 0) {
+    if (overrideCrc == 0 && (key.format == Tex::N64TexFormat::CI || tlutType != 0)) {
         uint64_t palCrc = 0;
         if (key.size == Tex::N64TexSize::Bits4) {
             // CI4: 16 entries starting at TMEM_PALETTE_BASE + palette*0x80, each 8 bytes apart
@@ -2256,6 +2369,7 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         }
         key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
     }
+    } // end else (overrideCrc == 0)
 
     if (TraceMMRdpEnabled()) {
         bool interestingTexture = key.format == Tex::N64TexFormat::CI ||
@@ -2306,6 +2420,32 @@ void RDPProcessor::FlushBatch() {
     if (!m_renderer) {
         m_batch.Reset();
         return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  MLE Director — classify batch before GPU submission
+    // ═══════════════════════════════════════════════════════════════════
+    bool batchNeedsMleBlender = false;  // true → force FSI blender for this batch
+    if (m_mleDirector) {
+        BatchInfo bi{};
+        bi.drawCallCount = static_cast<uint32_t>(m_batch.drawCalls.size());
+        for (const DrawCall& dc : m_batch.drawCalls) {
+            bi.triangleCount  += static_cast<uint32_t>(dc.type == DrawCall::Type::Triangle
+                                     ? dc.vertexCount / 3 : 0);
+            bi.hasFillOps     |= (dc.type == DrawCall::Type::FillRect);
+            bi.hasCopyOps     |= (dc.type == DrawCall::Type::TextureRect && dc.textureHash0 != 0);
+            bi.hasTexturedTri |= (dc.type == DrawCall::Type::Triangle    && dc.textureHash0 != 0);
+            bi.hasTranslucent |= ((dc.otherModeL & (1u << 6)) != 0);  // ALPHA_CVG_SEL
+            if (bi.combineModeRaw == 0) bi.combineModeRaw = dc.combineMode;
+            bi.otherModeH  |= dc.otherModeH;
+            bi.otherModeL  |= dc.otherModeL;
+            bi.geometryMode |= dc.geometryMode;
+        }
+        MLELevel level = m_mleDirector->Evaluate(bi, m_state.rdp);
+        // HLE_Accurate or LLE: force the FSI imageLoad/imageStore blender path
+        // for this entire batch so blending is pixel-accurate regardless of
+        // whether per-draw needsMem analysis would have selected it.
+        batchNeedsMleBlender = (level >= MLELevel::HLE_Accurate);
     }
 
     // Mark the current render-target framebuffer as GPU-modified so that
@@ -2453,12 +2593,12 @@ void RDPProcessor::FlushBatch() {
     if (n64H < 1.0f) n64H = 240.0f;
 
     // Intel Iris Xe workaround: FBOs created lazily (after game textures are
-    // loaded) can fail texture sampling.  Recreating the FBO here � during the
+    // loaded) can fail texture sampling. GL-only: Recreating the FBO here � during the
     // rendering phase � produces a fresh GL object that works correctly.
     {
         static std::unordered_set<uint32_t> recreatedFBOs;
         GPUFramebuffer* curFB = g_fbManager.GetCurrentColor();
-        if (curFB && curFB->fbo != 0 && recreatedFBOs.find(curFB->fbo) == recreatedFBOs.end()) {
+        if (g_fbManager.IsGL() && curFB && curFB->fbo != 0 && recreatedFBOs.find(curFB->fbo) == recreatedFBOs.end()) {
             g_fbManager.RecreateGPUFramebuffer(*curFB);
             glBindFramebuffer(GL_FRAMEBUFFER, curFB->fbo);
             glViewport(0, 0, curFB->scaledWidth, curFB->scaledHeight);
@@ -2598,7 +2738,12 @@ void RDPProcessor::FlushBatch() {
         }
 
         // Fog (from geometry mode)
-        if (call.geometryMode & 0x00010000) features |= Shader::SF_FOG;
+        // Disabled on Intel Iris Xe: SF_FOG combined with SF_DUAL_SOURCE_BLEND +
+        // SF_COVERAGE_ENABLE + SF_2CYCLE produces a shader whose GPU ISA compilation
+        // exceeds 2 s on Intel (non-preemptable), triggering Windows TDR.
+        // Without fog, the shader maps to a known-safe variant (ISA < 2 s).
+        if ((call.geometryMode & 0x00010000) && !m_renderer->GetCapabilities().isIntelGPU)
+            features |= Shader::SF_FOG;
 
         // Texture filter (otherModeH bits 12-13)
         //   0 = G_TF_POINT   � nearest-neighbor (no flag)
@@ -2606,7 +2751,10 @@ void RDPProcessor::FlushBatch() {
         //   3 = G_TF_AVERAGE � true bilinear (for LOD blending)
         // COPY mode always uses point sampling on real N64 hardware.
         uint32_t texFilter = (cycleType == 2) ? 0 : ((call.otherModeH >> 12) & 0x03);
-        if (texFilter == 2) features |= Shader::SF_TEXTURE_3POINT;
+        // SF_TEXTURE_3POINT disabled: the N64 3-point GLSL function causes >1s glslang
+        // compilation and likely >2s GPU ISA compile on Intel Iris Xe → Windows TDR.
+        // Use SF_TEXTURE_BILINEAR (VK LINEAR sampler) as a quality-equivalent substitute.
+        if (texFilter == 2) features |= Shader::SF_TEXTURE_BILINEAR;
         else if (texFilter == 3) features |= Shader::SF_TEXTURE_BILINEAR;
 
         // Monochrome post-process (game-specific hack — e.g. Zelda OoT cutscenes).
@@ -2652,15 +2800,21 @@ void RDPProcessor::FlushBatch() {
         }
 
         // RGB dither (otherModeH bits 6-7: 0=magic square, 1=bayer, 2=noise, 3=none)
+        // Disabled on Intel Iris Xe: the dither code (4×4 matrix lookup + RGB
+        // perturbation) adds significant shader complexity that causes >2 s GPU ISA
+        // compilation and Windows TDR.  Visual impact is negligible on 24-bit displays.
         {
             uint32_t rgbDither = (call.otherModeH >> 6) & 0x03;
-            if (rgbDither != 3) features |= Shader::SF_DITHER_ENABLE;
+            if (rgbDither != 3 && !m_renderer->GetCapabilities().isIntelGPU)
+                features |= Shader::SF_DITHER_ENABLE;
         }
 
         // Alpha dither (otherModeH bits 4-5: 0=pattern, 1=~pattern, 2=noise, 3=none)
+        // Disabled on Intel Iris Xe for the same reason as SF_DITHER_ENABLE above.
         {
             uint32_t alphaDither = (call.otherModeH >> 4) & 0x03;
-            if (alphaDither != 3) features |= Shader::SF_ALPHA_DITHER;
+            if (alphaDither != 3 && !m_renderer->GetCapabilities().isIntelGPU)
+                features |= Shader::SF_ALPHA_DITHER;
         }
 
         // Framebuffer read & blender memColor strategy.
@@ -2699,7 +2853,7 @@ void RDPProcessor::FlushBatch() {
                 // blender configurations (e.g. OoT title screen logo draws
                 // with 2-cycle fog blender).  Fall back to dual-source blend
                 // on Intel GPUs for reliable blender emulation.
-                if (needsMem && !DISABLE_MLE_BLENDER &&
+                if ((needsMem || batchNeedsMleBlender) && !DISABLE_MLE_BLENDER &&
                     m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
                     !m_renderer->GetCapabilities().isIntelGPU)
                     features |= Shader::SF_MLE_BLENDER;
@@ -2714,7 +2868,12 @@ void RDPProcessor::FlushBatch() {
         if (call.otherModeL & 0x4000) features |= Shader::SF_FORCE_BLEND;
 
         // Coverage / AA flags (otherModeL)
-        if (call.otherModeL & 0x0008) features |= Shader::SF_COVERAGE_ENABLE;  // AA_EN   bit 3
+        // SF_COVERAGE_ENABLE (AA_EN) disabled on Intel Iris Xe: the 8-sample barycentric
+        // coverage loop (dFdx/dFdy × 8 iterations) adds enough fragment shader complexity
+        // that GPU ISA compilation can exceed 2 s on Intel (non-preemptable), triggering TDR.
+        // When disabled, cov defaults to 1.0 (full coverage) — correct for non-edge geometry.
+        if ((call.otherModeL & 0x0008) && !m_renderer->GetCapabilities().isIntelGPU)
+            features |= Shader::SF_COVERAGE_ENABLE;  // AA_EN bit 3
         if (call.otherModeL & 0x0080) features |= Shader::SF_COLOR_ON_COVERAGE; // CLR_ON_CVG bit 7
         if (call.otherModeL & 0x1000) features |= Shader::SF_ALPHA_CVG;         // CVG_X_ALPHA bit 12
         if (call.otherModeL & 0x2000) features |= Shader::SF_ALPHA_CVG_SEL;     // ALPHA_CVG_SEL bit 13
@@ -3240,14 +3399,14 @@ void RDPProcessor::FlushBatch() {
         // offset to lift decals above the base surface.  OPA/INTER/XLU
         // should NOT use polygon offset (it causes z-fighting and ground
         // plane instability).
-        switch (zMode) {
-            case 3: // DEC
-                glEnable(GL_POLYGON_OFFSET_FILL);
-                glPolygonOffset(-3.0f, -3.0f);
-                break;
-            default: // OPA, INTER, XLU
-                glDisable(GL_POLYGON_OFFSET_FILL);
-                break;
+        {
+            RasterizerState rast{};
+            rast.cullMode = CullMode::None;
+            if (zMode == 3) {  // DECAL
+                rast.depthBias = -3.0f;
+                rast.depthBiasSlope = -3.0f;
+            }
+            m_renderer->SetRasterizerState(rast);
         }
         // Debug: force-disable depth test/write
         if (m_debugDisableDepth) {
@@ -3339,15 +3498,16 @@ void RDPProcessor::FlushBatch() {
             if (scissor.y + scissor.height > fboHi) scissor.height = fboHi - scissor.y;
 
             if (scissor.width > 0 && scissor.height > 0) {
-                glEnable(GL_SCISSOR_TEST);
+                if (g_fbManager.IsGL()) glEnable(GL_SCISSOR_TEST);
                 m_renderer->SetScissor(scissor);
             } else {
-                glDisable(GL_SCISSOR_TEST);
+                if (g_fbManager.IsGL()) glDisable(GL_SCISSOR_TEST);
             }
         }
 
         // --- Shadow map: bind depth texture & TLUT, override blend ----
         if (call.isShadowMap) {
+            if (g_fbManager.IsGL()) {
             // Bind the current FBO's depth texture on unit 4 (uDepthTexture)
             GPUFramebuffer* curFB_shadow = g_fbManager.GetCurrentColor();
             if (curFB_shadow && curFB_shadow->depthTex) {
@@ -3357,7 +3517,7 @@ void RDPProcessor::FlushBatch() {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
             }
-            // Create or update the 256�1 R8 shadow TLUT texture on unit 2 (uTLUT0)
+            // Create or update the 256x1 R8 shadow TLUT texture on unit 2 (uTLUT0)
             if (!m_shadowTLUTTexture) {
                 glCreateTextures(GL_TEXTURE_2D, 1, &m_shadowTLUTTexture);
                 glTextureStorage2D(m_shadowTLUTTexture, 1, GL_R8, 256, 1);
@@ -3368,6 +3528,7 @@ void RDPProcessor::FlushBatch() {
             glTextureSubImage2D(m_shadowTLUTTexture, 0, 0, 0, 256, 1,
                                 GL_RED, GL_UNSIGNED_BYTE, call.shadowTLUT);
             glBindTextureUnit(2, m_shadowTLUTTexture);
+            } // end if (g_fbManager.IsGL()) shadow map textures
 
             // Override blend for shadow: SRC_ALPHA / ONE_MINUS_SRC_ALPHA
             blend.enabled  = true;
@@ -3414,19 +3575,21 @@ void RDPProcessor::FlushBatch() {
             uint8_t tlutType0 = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
             Tex::TextureKey key0 = BuildTextureKey(call.tileDesc0, call.textureImageAddr, tlutType0,
                                                     call.mipLevelCount > 0 ? call.mipTiles : nullptr,
-                                                    call.mipLevelCount);
+                                                    call.mipLevelCount,
+                                                    call.snapshotCrc0);
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rawRTFB0 = g_fbManager.FindByAddress(key0.address);
                 bool aliasRTFB0 = CanAliasFramebuffer(rawRTFB0, key0.address, IsRGBAFramebufferFormat(key0));
                 GPUFramebuffer* rtFB0 = aliasRTFB0 ? rawRTFB0 : nullptr;
 
-                MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
+                MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} line={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
                              static_cast<int>(call.type),
                              key0.address & 0x7FFFFF,
                              static_cast<int>(key0.format),
                              static_cast<int>(key0.size),
                              key0.width,
                              key0.height,
+                             key0.line,
                              key0.palette,
                              key0.tlutType,
                              key0.tmemOffset,
@@ -3483,9 +3646,23 @@ void RDPProcessor::FlushBatch() {
 
                 uint32_t fbTex0 = rtFB0 ? g_fbManager.GetSampleableTexture(
                     rtFB0, rtFB0 == g_fbManager.GetCurrentColor()) : 0;
+
+                // Vulkan: GetSampleableTexture returns 0 (no per-N64-FB GL texture).
+                // If we have a swapchain snapshot taken during ExecuteLoadBlock, use it.
+                bool useVKSnapshot0 = false;
+                if (fbTex0 == 0 && rtFB0 && !g_fbManager.IsGL() &&
+                    m_vkFBSnapshot && m_vkFBSnapshotAddr == (key0.address & 0x7FFFFF)) {
+                    fbTex0 = 1; // Non-zero sentinel — don't do GL binding below
+                    useVKSnapshot0 = true;
+                }
+
                 if (fbTex0 != 0) {
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, fbTex0);
+                    if (g_fbManager.IsGL()) {
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, fbTex0);
+                    } else if (useVKSnapshot0) {
+                        m_renderer->BindTexture(0, m_vkFBSnapshot.get());
+                    }
                     // Set UV scale based on FB dimensions so texcoords map correctly
                     gpuScale0[0] = 1.0f / static_cast<float>(rtFB0->desc.width);
                     gpuScale0[1] = 1.0f / static_cast<float>(rtFB0->desc.height);
@@ -3530,13 +3707,15 @@ void RDPProcessor::FlushBatch() {
                         : m_textureCache->GetTexture(key0, m_rdram, m_state.rdp.tmem.data);
                     if (cached0 && cached0->gpuTexture) {
                         m_renderer->BindTexture(0, cached0->gpuTexture.get());
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, getGLWrapMode(call.tileDesc0, true));
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, getGLWrapMode(call.tileDesc0, false));
-                        // Force correct per-draw filter mode from otherModeH
-                        // texFilter 0/1=point, 2=3-point (shader samples texels manually), 3=bilinear
-                        GLenum glFilter = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
+                        if (g_fbManager.IsGL()) {
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, getGLWrapMode(call.tileDesc0, true));
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, getGLWrapMode(call.tileDesc0, false));
+                            // Force correct per-draw filter mode from otherModeH
+                            // texFilter 0/1=point, 2=3-point (shader samples texels manually), 3=bilinear
+                            GLenum glFilter = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
+                        }
                         gpuScale0[0] = cached0->scaleS;
                         gpuScale0[1] = cached0->scaleT;
                         MM_RDP_TRACE("UseCachedTex0 addr=0x{:06X} scale={:.4f},{:.4f} mipCount={} texFilter={}",
@@ -3547,8 +3726,7 @@ void RDPProcessor::FlushBatch() {
                                      texFilter);
                     } else if (m_debugWhiteTexture) {
                         // Fallback: bind 1×1 white texture so the draw isn't invisible
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
+                        m_renderer->BindTexture(0, m_debugWhiteTexture.get());
                         gpuScale0[0] = 1.0f;
                         gpuScale0[1] = 1.0f;
                         MM_RDP_TRACE("FallbackWhiteTex0 addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
@@ -3565,7 +3743,8 @@ void RDPProcessor::FlushBatch() {
         }
         if (m_textureCache && call.textureHash1 != 0) {
             uint8_t tlutType1 = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
-            Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1);
+            Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1,
+                                                    nullptr, 0, call.snapshotCrc1);
             if (key1.width > 0 && key1.height > 0) {
                 GPUFramebuffer* rawRTFB1 = g_fbManager.FindByAddress(key1.address);
                 bool aliasRTFB1 = CanAliasFramebuffer(rawRTFB1, key1.address, IsRGBAFramebufferFormat(key1));
@@ -3589,8 +3768,10 @@ void RDPProcessor::FlushBatch() {
                 uint32_t fbTex1 = rtFB1 ? g_fbManager.GetSampleableTexture(
                     rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
                 if (fbTex1 != 0) {
-                    glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, fbTex1);
+                    if (g_fbManager.IsGL()) {
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, fbTex1);
+                    }
                     // Set UV scale based on FB dimensions so texcoords map correctly
                     gpuScale1[0] = 1.0f / static_cast<float>(rtFB1->desc.width);
                     gpuScale1[1] = 1.0f / static_cast<float>(rtFB1->desc.height);
@@ -3615,12 +3796,14 @@ void RDPProcessor::FlushBatch() {
                         key1, m_rdram, m_state.rdp.tmem.data);
                     if (cached1 && cached1->gpuTexture) {
                         m_renderer->BindTexture(1, cached1->gpuTexture.get());
-                        // Texture is already bound on unit 1 by BindTexture above
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, getGLWrapMode(call.tileDesc1, true));
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, getGLWrapMode(call.tileDesc1, false));
-                        GLenum glFilter1 = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter1);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter1);
+                        if (g_fbManager.IsGL()) {
+                            // Texture is already bound on unit 1 by BindTexture above
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, getGLWrapMode(call.tileDesc1, true));
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, getGLWrapMode(call.tileDesc1, false));
+                            GLenum glFilter1 = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter1);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter1);
+                        }
                         gpuScale1[0] = cached1->scaleS;
                         gpuScale1[1] = cached1->scaleT;
                         MM_RDP_TRACE("UseCachedTex1 addr=0x{:06X} scale={:.4f},{:.4f} texFilter={}",
@@ -3630,8 +3813,7 @@ void RDPProcessor::FlushBatch() {
                                      texFilter);
                     } else if (m_debugWhiteTexture) {
                         // Fallback: bind 1×1 white texture for stale texture unit
-                        glActiveTexture(GL_TEXTURE1);
-                        glBindTexture(GL_TEXTURE_2D, m_debugWhiteTexture);
+                        m_renderer->BindTexture(1, m_debugWhiteTexture.get());
                         gpuScale1[0] = 1.0f;
                         gpuScale1[1] = 1.0f;
                         MM_RDP_TRACE("FallbackWhiteTex1 addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
@@ -3650,18 +3832,16 @@ void RDPProcessor::FlushBatch() {
 
         // --- Bind noise (unit 5) and dither (unit 6) textures ---
         if (m_noiseTexture) {
-            glActiveTexture(GL_TEXTURE5);
-            glBindTexture(GL_TEXTURE_2D, m_noiseTexture);
+            m_renderer->BindTexture(5, m_noiseTexture.get());
         }
         {
             // Select dither texture based on N64 rgb_dither_sel (otherModeH bits 6-7)
             // 0 = Magic Square (default), 1 = Bayer, 2 = noise (uses noise tex), 3 = none
             uint32_t rgbDitherMode = (call.otherModeH >> 6) & 0x03;
-            uint32_t ditherTex = (rgbDitherMode == 1) ? m_ditherBayerTexture : m_ditherTexture;
-            if (rgbDitherMode == 2) ditherTex = m_noiseTexture; // noise dither reuses noise
+            ITexture* ditherTex = (rgbDitherMode == 1) ? m_ditherBayerTexture.get() : m_ditherTexture.get();
+            if (rgbDitherMode == 2) ditherTex = m_noiseTexture.get(); // noise dither reuses noise
             if (ditherTex) {
-                glActiveTexture(GL_TEXTURE6);
-                glBindTexture(GL_TEXTURE_2D, ditherTex);
+                m_renderer->BindTexture(6, ditherTex);
             }
         }
 
@@ -3670,7 +3850,7 @@ void RDPProcessor::FlushBatch() {
             GPUFramebuffer* fbForRead = g_fbManager.GetCurrentColor();
             if (fbForRead) {
                 uint32_t fbTex = g_fbManager.GetSampleableTexture(fbForRead, true);
-                if (fbTex != 0) {
+                if (fbTex != 0 && g_fbManager.IsGL()) {
                     glActiveTexture(GL_TEXTURE7);
                     glBindTexture(GL_TEXTURE_2D, fbTex);
                 }
@@ -3809,8 +3989,8 @@ void RDPProcessor::OnFrameEnd() {
         std::mt19937 rng(static_cast<uint32_t>(m_state.frameCount) * 2654435761u);
         std::uniform_int_distribution<int> dist(0, 255);
         for (auto& p : noiseData) p = static_cast<uint8_t>(dist(rng));
-        glTextureSubImage2D(m_noiseTexture, 0, 0, 0, NOISE_SIZE, NOISE_SIZE,
-                            GL_RED, GL_UNSIGNED_BYTE, noiseData.data());
+        m_noiseTexture->UploadSubRegion(0, 0, NOISE_SIZE, NOISE_SIZE,
+                                         noiseData.data(), noiseData.size(), 0);
     }
 
     // Advance depth buffer manager frame counter / eviction

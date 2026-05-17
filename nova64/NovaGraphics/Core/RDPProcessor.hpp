@@ -15,10 +15,12 @@
 #include "../Common/Logger.hpp"
 #include "../Renderer/Renderer.hpp"
 #include "../Texture/TextureCache.hpp"
+#include "../MLE/MLEDirector.hpp"
 
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <array>
 #include <string>
@@ -69,6 +71,12 @@ struct DrawCall {
     // Texture hash for this draw call (non-zero → texture is active on that unit)
     uint64_t textureHash0;
     uint64_t textureHash1;
+
+    // TMEM content CRC snapshotted at draw-queue time (not flush time).
+    // This ensures each draw uses its own TMEM state even when multiple
+    // draws share the same batch and subsequent loads overwrite TMEM.
+    uint64_t snapshotCrc0;
+    uint64_t snapshotCrc1;
 
     // Tile descriptor snapshots for texture binding at flush time
     TileDescriptor tileDesc0;
@@ -301,6 +309,10 @@ public:
     /// Get description of last processed command
     const std::string& GetLastCommandDesc() const { return m_lastCommandDesc; }
 
+    /// Attach an MLEDirector to classify each batch before flushing.
+    /// Pass nullptr to detach.
+    void SetMLEDirector(MLEDirector* d) { m_mleDirector = d; }
+
 private:
     // ─── Command Handlers ───
     
@@ -362,12 +374,23 @@ private:
     Shader::ShaderManager* m_shaderManager = nullptr;
 
     // GPU noise & dither textures (bound to units 5 and 6)
-    uint32_t m_noiseTexture = 0;
-    uint32_t m_ditherTexture = 0;      // N64 Magic Square (default)
-    uint32_t m_ditherBayerTexture = 0; // N64 Bayer (mode 1)
-    uint32_t m_debugWhiteTexture = 0;  // 1x1 white texture for diagnostics
+    std::unique_ptr<ITexture> m_noiseTexture;
+    std::unique_ptr<ITexture> m_ditherTexture;      // N64 Magic Square (default)
+    std::unique_ptr<ITexture> m_ditherBayerTexture; // N64 Bayer (mode 1)
+    std::unique_ptr<ITexture> m_debugWhiteTexture;  // 1x1 white texture for diagnostics
     uint32_t m_shadowTLUTTexture = 0;  // 256×1 R8 — shadow map palette from TMEM
+
+    // Vulkan framebuffer-as-texture snapshot.
+    // When the inventory (or any draw) reads the previously-rendered N64 framebuffer
+    // as a source texture, the GL path can directly sample the GL FBO color texture.
+    // In the Vulkan path there is no per-N64-FB texture — all rendering goes to the
+    // swapchain — so we snapshot the swapchain via ReadPixels and keep it here.
+    std::unique_ptr<ITexture> m_vkFBSnapshot;     // Last swapchain snapshot for FB-as-tex
+    uint32_t                  m_vkFBSnapshotAddr = 0; // N64 RDRAM address it was taken from
     
+    // MLE heuristic router (optional — set via SetMLEDirector)
+    MLEDirector* m_mleDirector = nullptr;
+
     // Debug
     bool        m_logCommands = false;
     std::string m_lastCommandDesc;
@@ -430,10 +453,13 @@ private:
     void PopulateTextureInfo(DrawCall& call, int tileIndex);
     
     /// Build a Tex::TextureKey from a snapshotted TileDescriptor.
+    /// Pass overrideCrc != 0 to skip the TMEM read and use the supplied CRC directly
+    /// (used when a CRC was captured at draw-queue time rather than flush time).
     Tex::TextureKey BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr,
                                     uint8_t tlutType = 0,
                                     const TileDescriptor* mipTiles = nullptr,
-                                    int mipCount = 0) const;
+                                    int mipCount = 0,
+                                    uint64_t overrideCrc = 0) const;
 };
 
 } // namespace Nova64::Video

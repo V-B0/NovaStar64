@@ -119,6 +119,18 @@ void MicrocodeDispatcher::ProcessGraphicsTask(
     m_context.microcodeInfo = info;
     m_context.halted = false;
     m_context.dlStackDepth = 0;
+    // Reset S2DEX status registers at the start of each RSP task.
+    // On real N64 the CPU writes SP_STATUS signal bits before each DL
+    // submission; our HLE approximates this by zeroing the four status
+    // words so SELECT_DL deduplication is scoped to one task at a time.
+    // This allows animated DLs to re-execute every VI frame (inter-task)
+    // while still preventing intra-task DL cycles that would loop forever
+    // and flood the GPU with draws (triggering Intel Iris Xe TDR).
+    m_context.s2dexStatusRegs[0] = 0;
+    m_context.s2dexStatusRegs[1] = 0;
+    m_context.s2dexStatusRegs[2] = 0;
+    m_context.s2dexStatusRegs[3] = 0;
+    m_context.dlBranchVisited.clear();
     
     // Execute
     m_activeHandler->OnFrameBegin(m_context);
@@ -194,6 +206,13 @@ void MicrocodeDispatcher::HandleUcodeSwitch(
     DetectionResult detection = m_registry.Detect(
         imemData, textSize, dmemData, dataSize);
     
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+            "HandleUcodeSwitch: textAddr=0x{:08X} textSize={} CRC=0x{:08X} detected={} method={} conf={:.2f}",
+            textAddr, textSize, detection.crc,
+            MicrocodeTypeName(detection.type),
+            static_cast<int>(detection.method),
+            detection.confidence);
+
     if (detection.type == m_activeInfo.type) {
         // Same microcode — no switch needed
         return;

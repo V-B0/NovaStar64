@@ -33,6 +33,7 @@ class IUniformBuffer;
 class ITexture;
 class IShaderProgram;
 class IPipeline;
+namespace RT { class RTSceneManager; }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ENUMERATIONS
@@ -43,7 +44,7 @@ enum class BackendType : uint8_t {
     OpenGL46,       // OpenGL 4.6 Core Profile + DSA
     D3D11,          // Direct3D 11 (Windows)
     Software,       // Software fallback (debug only)
-    Vulkan,         // Vulkan 1.2+ (stub — not yet implemented)
+    Vulkan,         // Vulkan 1.2+
     Count
 };
 
@@ -577,6 +578,10 @@ struct RendererCaps {
     bool supportsClipControl = false;
     bool supportsFragmentShaderInterlock = false;
     bool isIntelGPU = false;
+
+    // Vulkan hardware raytracing (VK_KHR_ray_tracing_pipeline + AS extensions)
+    bool supportsRayTracing = false;
+    uint32_t maxRayRecursionDepth = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -630,6 +635,15 @@ public:
     virtual void UnbindAllImages() = 0;
     /// Control per-channel color write mask (equivalent to glColorMask / D3D blend write mask).
     virtual void SetColorWriteMask(bool r, bool g, bool b, bool a) = 0;
+    /// Detach the color attachment from the rasterizer output (GL: glDrawBuffer(GL_NONE)).
+    /// Default no-op for backends that don't need explicit detach (D3D/VK use null RTV).
+    virtual void DisableRasterizerColorOutput() {}
+    virtual void RestoreRasterizerColorOutput() {}
+    /// Clear the depth buffer mid-frame (while a render pass is active).
+    /// Used when the N64 game explicitly clears the Z-buffer via a FillRect
+    /// so that subsequent draws (e.g. HUD) start with a clean depth slate.
+    /// Default no-op for GL (uses glClearNamedFramebufferfi on the FBO directly).
+    virtual void ClearDepthBuffer(float depth = 1.0f) { (void)depth; }
     /// Issue an image-access memory barrier (GL: glMemoryBarrier, D3D: no-op with ROV).
     virtual void ImageMemoryBarrier() = 0;
 
@@ -640,6 +654,22 @@ public:
 
     // ─── Compute ───────────────────────────────────────────────
     virtual void DispatchCompute(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) = 0;
+
+    // ─── Ray Tracing ───────────────────────────────────────────
+    /// Dispatch hardware ray tracing pass.  Default no-op for non-RT backends.
+    /// tlas:        backend-native TLAS handle (VkAccelerationStructureKHR)
+    /// outputImage: backend-native image handle for ray output (VkImageView)
+    /// w, h:        dispatch dimensions in pixels
+    virtual void DispatchRayTracing(void* tlas, void* outputImage,
+                                    uint32_t w, uint32_t h) {
+        (void)tlas; (void)outputImage; (void)w; (void)h;
+    }
+    /// High-level RT entry point: build acceleration structure from scene
+    /// geometry then dispatch rays.  Default no-op for non-RT backends.
+    virtual void ExecuteRayTracing(RT::RTSceneManager* scene,
+                                   uint32_t w, uint32_t h) {
+        (void)scene; (void)w; (void)h;
+    }
 
     // ─── Readback ──────────────────────────────────────────────
     virtual void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
@@ -660,6 +690,12 @@ public:
     virtual void OnResize(uint32_t width, uint32_t height) = 0;
     virtual uint32_t GetWidth() const = 0;
     virtual uint32_t GetHeight() const = 0;
+
+    // ─── Vulkan UBO helper ─────────────────────────────────────
+    /// Return a pointer to the persistently-mapped scratch UBO for the current
+    /// frame so that a Vulkan-aware shader compiler can write uniform data into
+    /// it directly. Default returns nullptr (non-Vulkan backends).
+    virtual void* GetMappedUBOPtr() { return nullptr; }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

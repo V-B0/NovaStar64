@@ -124,7 +124,7 @@ bool UploadDeviceLocal(const VKContext& ctx,
     copy.dstOffset = dstOffset;
     copy.size      = size;
     vkCmdCopyBuffer(cmd, staging.buffer, dst.buffer, 1, &copy);
-    EndOneShotAndWait(ctx.device, ctx.transientPool, ctx.transferQueue, cmd);
+    EndOneShotAndWait(ctx, cmd);
 
     DestroyBufferStorage(ctx, staging);
     return true;

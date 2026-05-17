@@ -10,6 +10,7 @@
 #pragma once
 
 #include "VKCommon.hpp"
+#include <atomic>
 
 namespace Nova64 { namespace Video { namespace VK {
 
@@ -21,6 +22,24 @@ struct VKContext {
     VkQueue          transferQueue = VK_NULL_HANDLE; // = graphics queue
     VkCommandPool    transientPool = VK_NULL_HANDLE; // for one-shot uploads
     VkPipelineCache  pipelineCache = VK_NULL_HANDLE; // shared cache (optional)
+
+    /// Set to true when vkAcquireNextImageKHR / vkQueueSubmit /
+    /// vkQueuePresentKHR returns VK_ERROR_DEVICE_LOST.  All GPU operations
+    /// check this flag and bail out immediately to avoid flooding the log
+    /// with hundreds of DEVICE_LOST errors per second (e.g. async texture
+    /// loading that keeps firing after the device is gone).
+    /// Mutable so it can be set through a const VKContext* (e.g. resource classes).
+    mutable std::atomic<bool> deviceLost{false};
+
+    /// Reset all handles and status flags to their default null values.
+    void Reset() {
+        physical      = VK_NULL_HANDLE;
+        device        = VK_NULL_HANDLE;
+        transferQueue = VK_NULL_HANDLE;
+        transientPool = VK_NULL_HANDLE;
+        pipelineCache = VK_NULL_HANDLE;
+        deviceLost.store(false, std::memory_order_relaxed);
+    }
 };
 
 /// Find a memory type matching `typeBits` (from VkMemoryRequirements) and `props`.
@@ -34,7 +53,8 @@ uint32_t FindMemoryType(VkPhysicalDevice physical,
 VkCommandBuffer BeginOneShot(VkDevice device, VkCommandPool pool);
 
 /// End the command buffer, submit on `queue`, vkQueueWaitIdle, then free it.
-void EndOneShotAndWait(VkDevice device, VkCommandPool pool,
-                       VkQueue queue, VkCommandBuffer cmd);
+/// If `ctx.deviceLost` is already true the command buffer is just freed.
+/// On VK_ERROR_DEVICE_LOST, `ctx.deviceLost` is set to true.
+void EndOneShotAndWait(const VKContext& ctx, VkCommandBuffer cmd);
 
 }}} // namespace Nova64::Video::VK

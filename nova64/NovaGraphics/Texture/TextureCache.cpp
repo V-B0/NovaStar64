@@ -23,6 +23,59 @@
 namespace Nova64 { namespace Video { namespace Tex {
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  ALPHA BLEEDING
+//  Many N64 textures use alpha=0 to mark transparent texels but leave the RGB
+//  channels at undefined values (often white).  When the GPU does bilinear
+//  filtering across the transparent edge, the white RGB bleeds into the
+//  visible color, producing a "white halo / faint white gradient" outline
+//  around foliage, paths, decals, etc.
+//
+//  Fix: for every fully transparent pixel (alpha == 0), copy the RGB from a
+//  nearby non-transparent neighbor.  This way bilinear filtering at the edge
+//  blends sensible color values together and the alpha gradient handles
+//  transparency.  This matches the "alpha bleed" pre-processing used by
+//  GLideN64 and ParaLLEl-RDP.
+// ═══════════════════════════════════════════════════════════════════════════════
+static void BleedAlphaEdges(uint32_t* pixels, uint32_t width, uint32_t height) {
+    if (!pixels || width == 0 || height == 0) return;
+    // Single 8-neighbour pass — sufficient for the 1-2 texel bleed that bilinear
+    // filtering can sample.  Multiple passes would propagate further but cost
+    // more; one pass is the GLideN64-default and works well in practice.
+    std::vector<uint32_t> src(pixels, pixels + width * height);
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            uint32_t idx = y * width + x;
+            uint32_t p = src[idx];
+            if ((p >> 24) != 0) continue; // already opaque, skip
+            // Search 8 neighbours; pick the first opaque one.
+            uint32_t r = 0, g = 0, b = 0, count = 0;
+            for (int dy = -1; dy <= 1; ++dy) {
+                int ny = static_cast<int>(y) + dy;
+                if (ny < 0 || ny >= static_cast<int>(height)) continue;
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = static_cast<int>(x) + dx;
+                    if (nx < 0 || nx >= static_cast<int>(width)) continue;
+                    uint32_t np = src[ny * width + nx];
+                    if ((np >> 24) == 0) continue; // also transparent
+                    r += (np >> 0)  & 0xFF;
+                    g += (np >> 8)  & 0xFF;
+                    b += (np >> 16) & 0xFF;
+                    ++count;
+                }
+            }
+            if (count > 0) {
+                r /= count; g /= count; b /= count;
+                pixels[idx] = (r) | (g << 8) | (b << 16); // alpha stays 0
+            } else {
+                // No opaque neighbour at all — zero RGB to avoid bleeding white.
+                pixels[idx] = 0;
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  TEXTURE CACHE LIFECYCLE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -39,6 +92,7 @@ bool TextureCache::Initialize(IRenderer* renderer, const TextureCacheConfig& con
 }
 
 void TextureCache::Shutdown() {
+    m_zombies.clear(); // safe: GPU must be idle at shutdown
     m_cache.clear();
     m_lruList.clear();
     m_stats = {};
@@ -47,6 +101,13 @@ void TextureCache::Shutdown() {
 
 void TextureCache::BeginFrame() {
     m_frameCounter++;
+    // Release deferred-destroy zombies whose GPU lifetime has elapsed.
+    // After BeginFrame(N), VKBackend has already waited for Fence(N-2),
+    // so any GPU work that could have referenced a texture evicted at
+    // frame N-3 or earlier is guaranteed complete.
+    while (!m_zombies.empty() && m_zombies.front().safeDestroyFrame <= m_frameCounter) {
+        m_zombies.pop_front(); // unique_ptr destruction happens here — GPU is done
+    }
     // Periodic eviction — every 60 frames, clean stale textures
     if ((m_frameCounter & 0x3F) == 0) {
         EvictStale(m_frameCounter);
@@ -130,6 +191,10 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     }
 
     if (pixels.empty()) return nullptr;
+
+    // Eliminate the white-halo / alpha-edge bleed produced by GPU bilinear
+    // filtering on N64 textures with undefined RGB at alpha=0 texels.
+    BleedAlphaEdges(pixels.data(), key.width, key.height);
 
     // Calculate GPU texture dimensions (may round up to power of 2)
     uint32_t gpuWidth = key.width;
@@ -394,11 +459,15 @@ void TextureCache::InvalidateRange(uint32_t addressStart, uint32_t sizeBytes) {
         uint32_t texEnd = key.address + CalculateTMEMSize(key);
 
         if (key.address < addressEnd && texEnd > addressStart) {
-            // Overlap — invalidate
+            // Overlap — invalidate (defer GPU resource destruction)
             m_stats.currentBytes -= it->second.texture.sizeBytes;
             m_stats.currentEntries--;
             m_stats.evictions++;
             m_lruList.erase(it->second.lruIterator);
+            Zombie z;
+            z.gpuTex = std::move(it->second.texture.gpuTexture);
+            z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
+            m_zombies.push_back(std::move(z));
             it = m_cache.erase(it);
         } else {
             ++it;
@@ -431,6 +500,11 @@ void TextureCache::EvictStale(uint64_t currentFrame) {
                 m_stats.currentEntries--;
                 m_stats.evictions++;
                 auto toErase = std::next(it).base();
+                // Defer GPU resource destruction (same as EvictLRU).
+                Zombie z;
+                z.gpuTex = std::move(cacheIt->second.texture.gpuTexture);
+                z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
+                m_zombies.push_back(std::move(z));
                 m_cache.erase(cacheIt);
                 m_lruList.erase(toErase);
                 it = m_lruList.rbegin(); // Reset after modification
@@ -452,6 +526,13 @@ void TextureCache::EvictLRU() {
         m_stats.currentBytes -= it->second.texture.sizeBytes;
         m_stats.currentEntries--;
         m_stats.evictions++;
+        // Defer GPU resource destruction: move to zombie queue so the texture's
+        // VkImageView stays valid until all in-flight GPU frames that might
+        // reference it have completed.
+        Zombie z;
+        z.gpuTex = std::move(it->second.texture.gpuTexture);
+        z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
+        m_zombies.push_back(std::move(z));
         m_cache.erase(it);
     }
 }
@@ -491,6 +572,11 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
     m_stats.conversions++;
 
     uint32_t lineBytes = key.line * 8; // N64 tile line is in 64-bit words
+    if (lineBytes == 0 && key.width > 0) {
+        uint32_t bitsPerPixel = 4u << (static_cast<uint32_t>(key.size) & 3u);
+        lineBytes = (static_cast<uint32_t>(key.width) * bitsPerPixel + 7u) / 8u;
+        lineBytes = (lineBytes + 7u) & ~7u;
+    }
 
     // When data points to the full TMEM base, offset to this tile's start.
     // key.tmemOffset is the tile's tmemAddr (in 64-bit words).
@@ -530,7 +616,11 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
             break;
 
         case N64TexFormat::I:
-            if (key.size == N64TexSize::Bits8)
+            if (key.size == N64TexSize::Bits16)
+                // I16 is not a native N64 format; treat as IA16 (intensity+alpha, 8-bit each).
+                // Some games use format=I size=16b for the coverage-framebuffer copy path.
+                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+            else if (key.size == N64TexSize::Bits8)
                 DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
             else if (key.size == N64TexSize::Bits4)
                 DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);

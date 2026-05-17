@@ -33,6 +33,7 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
     m_resScale = std::max(1u, resolutionScale);
     Reset();
 
+    if (m_isGL) {
     // Create fullscreen blit resources
     // Fullscreen triangle (covers NDC [-1,1])
     static const float blitVerts[] = {
@@ -195,6 +196,7 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
     glLinkProgram(m_gammaProgram);
     glDeleteShader(vs);
     glDeleteShader(gFS);
+    } // end if (m_isGL)
 
     m_initialized = true;
     NOVA_LOG_INFO("FramebufferManager initialized (scale={}x)", m_resScale);
@@ -209,6 +211,7 @@ void FramebufferManager::Shutdown() {
     }
     m_fbCount = 0;
 
+    if (m_isGL) {
     if (m_pboFence) { glDeleteSync(static_cast<GLsync>(m_pboFence)); m_pboFence = nullptr; }
     if (m_pbo) { glDeleteBuffers(1, &m_pbo); m_pbo = 0; }
     if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
@@ -229,6 +232,7 @@ void FramebufferManager::Shutdown() {
     m_pboSize = 0;
     if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
     if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
+    } // if (m_isGL)
 
     m_currentColor = nullptr;
     m_currentDepth = nullptr;
@@ -256,6 +260,7 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     fb.scaledWidth  = fb.width * m_resScale;
     fb.scaledHeight = fb.height * m_resScale;
     fb.msaaSamples  = m_msaaSamples;
+    if (!m_isGL) return;
 
     // Intel Iris Xe workaround: flush pending GL operations before creating
     // new FBO objects to avoid lazy driver state issues.
@@ -360,6 +365,7 @@ void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
     // Drop any stale async-readback FB pointer so FinishAsyncReadback
     // doesn't dereference freed memory.
     if (m_pboFB == &fb) m_pboFB = nullptr;
+    if (!m_isGL) return;
     if (fb.resolvedFbo) { glDeleteFramebuffers(1, &fb.resolvedFbo); fb.resolvedFbo = 0; }
     if (fb.resolvedTex) { glDeleteTextures(1, &fb.resolvedTex);     fb.resolvedTex = 0; }
     if (fb.snapshotTex) { glDeleteTextures(1, &fb.snapshotTex);     fb.snapshotTex = 0; }
@@ -376,7 +382,7 @@ void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
 // ═══════════════════════════════════════════════════════════════
 
 uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSelfTexture) {
-    if (!fb || fb->colorTex == 0) return 0;
+    if (!m_isGL || !fb || fb->colorTex == 0) return 0;
 
     if (fb->msaaSamples > 1) {
         // colorTex is GL_TEXTURE_2D_MULTISAMPLE — can't bind as regular sampler2D.
@@ -426,6 +432,7 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
 }
 
 void FramebufferManager::SnapshotForPresentation() {
+    if (!m_isGL) return;
     if (!m_currentColor || m_currentColor->fbo == 0 || m_currentColor->colorTex == 0)
         return;
 
@@ -492,23 +499,36 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     if (fb) {
         m_currentColor = fb;
         fb->lastUsedFrame = m_frameCounter;
-        glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
-        glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
-        glScissor(0, 0, fb->scaledWidth, fb->scaledHeight);
+        if (m_isGL) {
+            glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
+            glViewport(0, 0, fb->scaledWidth, fb->scaledHeight);
+            glScissor(0, 0, fb->scaledWidth, fb->scaledHeight);
+        }
 
         // Clear color to black on first activation each frame.
         // N64 games only render within the scissor rect, so pixels outside
         // it (overscan edges) retain stale data and appear as a colored
         // strip at the top/right of the screen or a single pixel row during
         // scene transitions.  Clearing once per frame fixes all three.
+        //
+        // IMPORTANT: Do NOT clear when gpuModified is already set.
+        // OoT/MM render the world scene to a framebuffer, then immediately
+        // open the inventory which re-activates the same color image address.
+        // That re-activation must NOT clear the world render, because the
+        // inventory background texture IS the world render (read back via
+        // SetTextureImage + LoadBlock on the same address).  Clearing it
+        // here turns the inventory background black.
         const uint32_t viOrigin = m_viConfig.origin & 0x7FFFFF;
         if (fb->lastColorClearedFrame < m_frameCounter &&
+            !fb->gpuModified &&
             fb->fbo != 0 &&
             fb->desc.address != viOrigin) {
-            glDisable(GL_SCISSOR_TEST);
-            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            glEnable(GL_SCISSOR_TEST);
+            if (m_isGL) {
+                glDisable(GL_SCISSOR_TEST);
+                glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glEnable(GL_SCISSOR_TEST);
+            }
             fb->lastColorClearedFrame = m_frameCounter;
         }
 
@@ -520,8 +540,9 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         // The flag ensures we only clear once per SetDepthImage call, so that
         // multiple SetColorImage switches within one frame don't wipe depth
         // that was written by earlier rendering passes.
-        if (m_depthClearPending && fb->fbo != 0) {
-            glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
+        if (m_depthClearPending) {
+            if (m_isGL && fb->fbo != 0)
+                glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
             m_depthClearPending = false;
         }
 
@@ -529,7 +550,7 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         // Without this, double-buffered games (e.g. OoT alternating FB-A/FB-B)
         // retain coverage from 2 frames ago — the MLE blender reads stale
         // coverage at triangle edges, producing visible wireframe outlines.
-        if (fb->coverageTex) {
+        if (m_isGL && fb->coverageTex) {
             const GLuint zero = 0;
             glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER,
                             GL_UNSIGNED_BYTE, &zero);
@@ -560,7 +581,7 @@ void FramebufferManager::OnSetDepthImage(uint32_t address) {
 
     // Also clear the GL depth attachment on the current color FBO (if already bound).
     // This handles single-buffered games where the same FBO stays current.
-    if (m_currentColor && m_currentColor->fbo != 0) {
+    if (m_isGL && m_currentColor && m_currentColor->fbo != 0) {
         glClearNamedFramebufferfi(m_currentColor->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
 }
@@ -690,7 +711,7 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
 // ═══════════════════════════════════════════════════════════════
 
 void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
-    if (!fb || !rdram) return;
+    if (!fb || !rdram || !m_isGL) return;
 
     const uint32_t addr = fb->desc.address;
     const uint32_t w = fb->width;
@@ -738,7 +759,7 @@ void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
 }
 
 void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
-    if (!fb || !rdram) return;
+    if (!fb || !rdram || !m_isGL) return;
 
     const uint32_t w = fb->width;
     const uint32_t h = fb->height;
@@ -804,7 +825,7 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
 // ═══════════════════════════════════════════════════════════════
 
 void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
-    if (!fb || !rdram || !fb->depthTex) return;
+    if (!fb || !rdram || !fb->depthTex || !m_isGL) return;
 
     // Perfect Dark hack: only copy depth once per frame
     if (m_fbHacks.pdDepthOncePerFrame) {
@@ -874,7 +895,7 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
 // ═══════════════════════════════════════════════════════════════
 
 void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
-    if (!fb) return;
+    if (!fb || !m_isGL) return;
 
     // If a readback is already pending, we must finish it first
     if (m_pboFence) {
@@ -939,7 +960,7 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
 }
 
 bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
-    if (!m_pboFence || !rdram) return false;
+    if (!m_pboFence || !rdram || !m_isGL) return false;
 
     GLsync fence = static_cast<GLsync>(m_pboFence);
 
@@ -998,7 +1019,7 @@ void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst,
                                    int32_t srcX, int32_t srcY,
                                    int32_t dstX, int32_t dstY,
                                    int32_t w, int32_t h) {
-    if (!src || !dst || w <= 0 || h <= 0) return;
+    if (!src || !dst || w <= 0 || h <= 0 || !m_isGL) return;
 
     // Scale coordinates
     int32_t sx = srcX * static_cast<int32_t>(m_resScale);
@@ -1112,6 +1133,7 @@ GPUFramebuffer* FramebufferManager::GetDisplayFramebuffer() {
 }
 
 void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeight, bool skipVIFilter) {
+    if (!m_isGL) return;
     GPUFramebuffer* displayFB = GetDisplayFramebuffer();
 
     // If VI_ORIGIN doesn't match any FBO (e.g., early boot frames before VI is set),
@@ -1195,7 +1217,7 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
 }
 
 void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
-    if (!fb || !m_viFilterProgram) return;
+    if (!m_isGL || !fb || !m_viFilterProgram) return;
 
     // Reuse cached temp FBO/texture (avoid per-frame GPU alloc on Intel)
     if (m_tmpWidth != fb->scaledWidth || m_tmpHeight != fb->scaledHeight) {
@@ -1252,7 +1274,7 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
 }
 
 void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
-    if (!fb || !m_gammaProgram || std::abs(gamma - 1.0f) < 0.001f) return;
+    if (!m_isGL || !fb || !m_gammaProgram || std::abs(gamma - 1.0f) < 0.001f) return;
 
     // Apply to the texture that will actually be displayed.
     // BlitToScreen reads presentationTex when available, so gamma must

@@ -804,6 +804,7 @@ DetectionResult MicrocodeRegistry::DetectByHeuristic(
     // Count references to known opcode patterns
     int gbi1Score = 0;
     int gbi2Score = 0;
+    int s2dexScore = 0;
     
     for (uint32_t i = 0; i + 4 <= imemSize; i += 4) {
         // Read big-endian word (RSP is big-endian)
@@ -814,15 +815,31 @@ DetectionResult MicrocodeRegistry::DetectByHeuristic(
         
         // Look for GBI1-style constants (opcode << 24 shifted comparisons)
         uint32_t hi = (word >> 24) & 0xFF;
-        if (hi == 0x04) gbi1Score += 2;  // G_VTX in GBI1
+        if (hi == 0x04) gbi1Score += 2;  // G_VTX in GBI1 (also G_SELECT_DL in S2DEX2)
         if (hi == 0x01 && (word & 0x00F00000)) gbi2Score += 2; // G_VTX in GBI2
-        if (hi == 0xBF) gbi1Score += 2;  // G_TRI1 in GBI1
+        if (hi == 0xBF) gbi1Score += 2;  // G_TRI1 in GBI1 (also G_OBJ_RENDERMODE S2DEX2)
         if (hi == 0x05) gbi2Score += 2;  // G_TRI1 in GBI2
         if (hi == 0xB1) gbi1Score += 1;  // G_TRI2 in GBI1
         if (hi == 0x06) gbi2Score += 1;  // G_TRI2 in GBI2
+        // S2DEX2-specific sprite opcodes (GBI2 base with sprite command set)
+        if (hi == 0xBE) s2dexScore += 3; // G_OBJ_RECTANGLE (S2DEX2 only)
+        if (hi == 0xBD) s2dexScore += 3; // G_OBJ_LOADTXTR (S2DEX2 only)
+        if (hi == 0xBC) s2dexScore += 3; // G_OBJ_SPRITE (S2DEX2 only)
+        if (hi == 0xBB) s2dexScore += 2; // G_OBJ_SCALEBG (S2DEX2 only)
+        if (hi == 0xBA) s2dexScore += 2; // G_OBJ_MOVEMEM (S2DEX2)
+        if (hi == 0xB0) s2dexScore += 2; // G_SELECT_DL (S2DEX1) / G_OBJ_LDTX_RECT (S2DEX2)
     }
     
-    if (gbi1Score > gbi2Score && gbi1Score > 10) {
+    if (s2dexScore > 5) {
+        result.type = MicrocodeType::S2DEX2;  // S2DEX2 pattern detected
+        result.method = DetectionMethod::Heuristic;
+        result.confidence = 0.6f;
+        result.matchDetails = "Heuristic: S2DEX2 sprite pattern (score " + std::to_string(s2dexScore) + ")";
+        ++m_heuristicHits;
+        
+        NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
+                "Microcode heuristic: S2DEX2 (sprite), score {}", s2dexScore);
+    } else if (gbi1Score > gbi2Score && gbi1Score > 10) {
         result.type = MicrocodeType::F3DEX;  // Default GBI1 guess
         result.method = DetectionMethod::Heuristic;
         result.confidence = 0.4f;

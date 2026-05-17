@@ -24,7 +24,8 @@ namespace Nova64 { namespace Video { namespace VK {
 void GlslangInitProcess();
 void GlslangFinalizeProcess();
 
-enum class ShaderStage : uint8_t { Vertex, Fragment, Geometry, Compute };
+enum class ShaderStage : uint8_t { Vertex, Fragment, Geometry, Compute,
+                                   RayGen, RayMiss, RayClosestHit };
 
 /// Compile a GLSL source string of `stage` to SPIR-V. Returns empty on failure
 /// (errors are logged via Logger). `debugName` is used purely for log messages.
@@ -63,6 +64,11 @@ public:
     VkShaderModule CS() const { return m_cs; }
     bool HasGeometry() const { return m_gs != VK_NULL_HANDLE; }
     bool IsCompute()   const { return m_cs != VK_NULL_HANDLE; }
+
+    // Diagnostic: filled by VKShaderCompiler so pipeline creation logs can
+    // show human-readable features/mux without a ShaderManager lookup.
+    uint64_t debugFeatures = 0;
+    uint64_t debugMux      = 0;
 
 private:
     bool CreateModule(const std::vector<uint32_t>& spirv, VkShaderModule& outMod);

@@ -6,6 +6,7 @@
 // NovaGraphics - Shader Manager Implementation
 
 #include "ShaderManager.hpp"
+#include "../Common/Logger.hpp"
 #include <glad/gl.h>
 #include <chrono>
 #include <algorithm>
@@ -685,16 +686,23 @@ void ShaderManager::ClearCache() {
 
 bool ShaderManager::SaveCache(const std::string& path) {
     bool srcOk = m_cache.SaveToDisk(path);
-    // Also save binary cache for instant reload next launch
-    std::string binPath = path + ".bin";
-    bool binOk = m_cache.SaveBinaryCache(binPath);
+    // Binary cache uses GL_ARB_get_program_binary — only valid on OpenGL path.
+    // Calling glGetIntegerv without an active GL context (Vulkan) causes a crash.
+    bool binOk = false;
+    if (m_api == BackendAPI::OpenGL) {
+        std::string binPath = path + ".bin";
+        binOk = m_cache.SaveBinaryCache(binPath);
+    }
     return srcOk || binOk;
 }
 
 bool ShaderManager::LoadCache(const std::string& path) {
     // 1. Try binary cache first — pre-compiled GPU programs load in microseconds
-    std::string binPath = path + ".bin";
-    m_cache.LoadBinaryCache(binPath);
+    // Binary cache uses glProgramBinary — only available on OpenGL.
+    if (m_api == BackendAPI::OpenGL) {
+        std::string binPath = path + ".bin";
+        m_cache.LoadBinaryCache(binPath);
+    }
 
     // 2. Load source cache — fills entries not covered by binary cache
     //    (LoadFromDisk will skip entries already loaded from binary)
@@ -803,6 +811,12 @@ const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {
     auto endTime = std::chrono::high_resolution_clock::now();
     compiled.compileTimeMs = static_cast<uint32_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
+
+    // Diagnostic: log each new shader compilation (WARN so it shows in release logs).
+    NOVA_WARN(::Nova64::Video::LogSubsystem::Core,
+              "ShaderManager: compiled shader features={:#018x} mux={:#018x} "
+              "fragLen={} cpuMs={}",
+              key.features, key.mux, fragSrc.size(), compiled.compileTimeMs);
 
     if (compiled.valid) {
         compiled.key = key;

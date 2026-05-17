@@ -477,6 +477,7 @@ private:
     std::string GetVersionDirective() const;
     std::string GetCommonUniforms() const;
     std::string GetTextureUniforms() const;
+    std::string GetTextureUniformsVK() const; // Vulkan: textures at binding 1+
     std::string GetVertexInputs() const;
     std::string GetVertexOutputs() const;
     std::string GetFragmentInputs() const;

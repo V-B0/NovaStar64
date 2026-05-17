@@ -322,7 +322,7 @@ void VKTextureImpl::UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t
                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    EndOneShotAndWait(m_ctx->device, m_ctx->transientPool, m_ctx->transferQueue, cmd);
+    EndOneShotAndWait(*m_ctx, cmd);
     DestroyBufferStorage(*m_ctx, staging);
 }
 
@@ -353,12 +353,30 @@ void VKTextureImpl::GenerateMipmaps() {
     b.subresourceRange.levelCount = 1;
 
     for (uint32_t i = 1; i < m_mipLevels; ++i) {
-        // Transition mip i-1 → TRANSFER_SRC
+        // Transition mip i-1 to TRANSFER_SRC.
+        // First iteration: mip 0 is in SHADER_READ_ONLY_OPTIMAL (after upload).
+        // Later iterations: mip i-1 was just blitted into, so it is in TRANSFER_DST_OPTIMAL.
         b.subresourceRange.baseMipLevel = i - 1;
-        b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        b.oldLayout     = (i == 1) ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                   : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        b.newLayout     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        b.srcAccessMask = (i == 1) ? VK_ACCESS_SHADER_READ_BIT
+                                   : VK_ACCESS_TRANSFER_WRITE_BIT;
         b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+                             (i == 1) ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                                      : VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &b);
+
+        // Transition mip i to TRANSFER_DST so we can blit into it.
+        // UploadSubRegion transitions ALL mip levels to SHADER_READ_ONLY_OPTIMAL,
+        // so mips 1..n-1 are in SHADER_READ_ONLY even though they have no data yet.
+        b.subresourceRange.baseMipLevel = i;
+        b.oldLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b.newLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              0, 0, nullptr, 0, nullptr, 1, &b);
@@ -381,7 +399,8 @@ void VKTextureImpl::GenerateMipmaps() {
                        m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &blit, VK_FILTER_LINEAR);
 
-        // Transition mip i-1 → SHADER_READ_ONLY
+        // Transition mip i-1 back to SHADER_READ_ONLY.
+        b.subresourceRange.baseMipLevel = i - 1;
         b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -393,7 +412,7 @@ void VKTextureImpl::GenerateMipmaps() {
         mipH = nextH;
     }
 
-    // Transition last mip → SHADER_READ_ONLY (it was left in TRANSFER_DST by Upload)
+    // Transition the last mip from TRANSFER_DST (just blitted into) to SHADER_READ_ONLY.
     b.subresourceRange.baseMipLevel = m_mipLevels - 1;
     b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -403,7 +422,7 @@ void VKTextureImpl::GenerateMipmaps() {
                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &b);
 
-    EndOneShotAndWait(m_ctx->device, m_ctx->transientPool, m_ctx->transferQueue, cmd);
+    EndOneShotAndWait(*m_ctx, cmd);
     m_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 

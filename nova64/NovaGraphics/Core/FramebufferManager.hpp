@@ -259,6 +259,11 @@ public:
     void SetResolutionScale(uint32_t scale) { m_resScale = scale; }
     uint32_t GetResolutionScale() const { return m_resScale; }
 
+    /// When false, all GL FBO/texture operations are skipped (Vulkan/D3D path).
+    /// Must be called before Init().
+    void SetIsGL(bool v) { m_isGL = v; }
+    bool IsGL() const { return m_isGL; }
+
     /// Set MSAA sample count (1 = disabled, 2/4/8 = multisample)
     void SetMSAASamples(uint32_t samples) { m_msaaSamples = samples; }
     uint32_t GetMSAASamples() const { return m_msaaSamples; }
@@ -333,6 +338,7 @@ private:
     const uint8_t* m_rdram = nullptr;        // Stored RDRAM pointer for CopyToGPU in UpdateVI
     Stats m_stats{};
     bool m_initialized = false;
+    bool m_isGL = true;     // false when Vulkan/D3D backend — skips all GL FBO/texture ops
 
     // Blit shader resources
     uint32_t m_blitVAO = 0;

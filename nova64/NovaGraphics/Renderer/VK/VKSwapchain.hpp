@@ -47,6 +47,7 @@ public:
 
 private:
     bool CreateRenderPass(VkDevice device);
+    bool CreateDepthBuffer(VkPhysicalDevice physical, VkDevice device);
     bool CreateFramebuffers(VkDevice device);
 
     VkSwapchainKHR           m_swapchain = VK_NULL_HANDLE;
@@ -56,6 +57,12 @@ private:
     std::vector<VkImageView> m_imageViews;
     VkRenderPass               m_renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_framebuffers;
+
+    // Per-swapchain depth buffer (one image shared by all framebuffers).
+    VkFormat       m_depthFormat = VK_FORMAT_UNDEFINED;
+    VkImage        m_depthImage  = VK_NULL_HANDLE;
+    VkDeviceMemory m_depthMemory = VK_NULL_HANDLE;
+    VkImageView    m_depthView   = VK_NULL_HANDLE;
 };
 
 }}} // namespace Nova64::Video::VK

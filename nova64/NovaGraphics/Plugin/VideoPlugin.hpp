@@ -16,6 +16,8 @@
 #include "../Renderer/Renderer.hpp"
 #include "../Renderer/ShaderManager.hpp"
 #include "../Renderer/PostProcessing.hpp"
+#include "../MLE/MLEDirector.hpp"
+#include "../RT/RTSceneManager.hpp"
 #include "../Texture/TextureCache.hpp"
 #include "../Microcode/MicrocodeDispatcher.hpp"
 #include "../Window/WindowManager.hpp"
@@ -221,6 +223,8 @@ private:
 
     // Subsystems
     std::unique_ptr<RDPProcessor>  m_rdpProcessor;
+    MLEDirector                    m_mleDirector;
+    RT::RTSceneManager             m_rtScene;
     std::unique_ptr<WindowManager> m_window;          // owned window (null when external)
     WindowManager*                 m_externalWindow = nullptr; // non-owning; set before Init
     std::unique_ptr<IRenderer>     m_renderer;
@@ -264,6 +268,7 @@ private:
     bool                    m_hleEverRendered = false;      // Latched once HLE renders
     uint32_t                m_framesWithoutHLE = 0;          // Consecutive VI frames without DL
     bool                    m_swapPending = false;           // Deferred swap: glFlush done, swap deferred to next frame
+    bool                    m_vkFrameBegun = false;          // Vulkan: BeginFrame called during ProcessDList this VI period
 
     // Scratch buffer for ProcessRDPList big-endian → native conversion
     std::vector<uint32_t>   m_rdpCmdScratch;

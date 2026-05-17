@@ -381,6 +381,14 @@ void GLRenderer::SetColorWriteMask(bool r, bool g, bool b, bool a) {
                 b ? GL_TRUE : GL_FALSE, a ? GL_TRUE : GL_FALSE);
 }
 
+void GLRenderer::DisableRasterizerColorOutput() {
+    glDrawBuffer(GL_NONE);
+}
+
+void GLRenderer::RestoreRasterizerColorOutput() {
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+}
+
 void GLRenderer::ImageMemoryBarrier() {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
 }

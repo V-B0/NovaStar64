@@ -138,6 +138,11 @@ inline void F3DHandler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w
     uint8_t index   = static_cast<uint8_t>((w0 >> 16) & 0xFF);
     uint32_t address = w1;
     MoveMemGBI1(ctx, index, 0, address);
+    // GLideN64: RSP.PC[RSP.PCi] += 24 after G_MV_MATRIX_1 (ForceMatrix).
+    // gSPForceMatrix emits 4 DL commands total; skip the 3 continuation
+    // commands so they are not misinterpreted as real opcodes.
+    if (index == MoveMem::G_MV_MATRIX_1)
+        ctx.pc += 24;
 }
 
 inline void F3DHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -360,7 +365,11 @@ inline void F3DHandler::Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint
     ctx.state->otherModeH |= OTHERMODE_TEXTPERSP; // texturePersp (bit 19)
 
     float z = 0.0f;
-    float ww = 1.0f;
+    // w=0 keeps position[3]==0 so DrawTriangle's culling check (w>eps)
+    // is skipped. GLideN64 uses drawScreenSpaceTriangle() which bypasses
+    // culling entirely. With w=1, flipped sprites (flipX/flipY) reverse
+    // vertex winding and are wrongly rejected by G_CULL_BACK.
+    float ww = 0.0f;
 
     float scaleX = 1.0f, scaleY = 1.0f;
     uint8_t flipX = 0, flipY = 0;

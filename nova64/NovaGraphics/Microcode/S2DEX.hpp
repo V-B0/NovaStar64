@@ -143,7 +143,23 @@ protected:
     bool m_objMatrixValid = false;
     uint32_t m_lastObjTextureSource = 0;
     uint16_t m_lastObjTextureTmem = 0;
-    
+    uint32_t m_objRendermode = 0;  // gSP.objRendermode equivalent (GLideN64)
+
+    // G_SELECT_DL two-command state (mirrors GLideN64 gSP.selectDL).
+    // 0xE1 (G_RDPHALF_0) sets this up; G_SELECT_DL (0xB0 / S2DEX2: 0x04)
+    // reads it, assembles the full address, and conditionally jumps.
+    struct SelectDLState {
+        uint32_t addr = 0;  // low-16 bits of the segmented DL address
+        uint8_t  sid  = 0;  // status register index (0-3, direct array index)
+        uint32_t flag = 0;  // desired status bit pattern
+    };
+    SelectDLState m_selectDL;
+
+    // NOTE: S2DEX status registers live in DListContext::s2dexStatusRegs,
+    // NOT here — they survive G_LOAD_UCODE microcode switches within a task,
+    // and are reset to 0 at the start of each RSP task in
+    // MicrocodeDispatcher::ProcessGraphicsTask.
+
     // ─── Command Handlers ────────────────────────────────────────────
     void Cmd_BG_1CYC(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_BG_COPY(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -224,14 +240,26 @@ inline void S2DEXHandler::Initialize(const MicrocodeInfo& info) {
     m_objMatrix.BaseScaleY = 0x0400;
     m_lastObjTextureSource = 0;
     m_lastObjTextureTmem = 0;
+    m_objRendermode = 0;
+    m_selectDL = {};
+    // s2dexStatusRegs live in DListContext and are reset here
+    // because S2DEX DMEM is overwritten on G_LOAD_UCODE.
     ResetStats();
 }
 
 inline void S2DEXHandler::OnFrameBegin(DListContext& ctx) {
-    (void)ctx;
     m_objMatrixValid = false;
     m_lastObjTextureSource = 0;
     m_lastObjTextureTmem = 0;
+    
+    // Status registers live in DMEM. A G_LOAD_UCODE switch to S2DEX
+    // reloads DMEM, effectively zeroing these registers. If we don't
+    // zero them here, SELECT_DL will erroneously skip needed sub-displaylists
+    // (due to stale flags), causing game freezes in OoT/MM.
+    ctx.s2dexStatusRegs[0] = 0;
+    ctx.s2dexStatusRegs[1] = 0;
+    ctx.s2dexStatusRegs[2] = 0;
+    ctx.s2dexStatusRegs[3] = 0;
 }
 
 inline bool S2DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -267,6 +295,26 @@ inline bool S2DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     case 0xDE: { // G_DL
         bool branch = ((w0 >> 16) & 0xFF) == 1;
         DisplayList(ctx, w1, branch);
+        break;
+    }
+
+    // 0xE1 = G_RDPHALF_1.  In S2DEX1, when the *next* command is G_SELECT_DL
+    // (0xB0), this serves as the setup half: it carries the low-16 bits of
+    // the DL address, the status-register index, and the comparison flag.
+    // Only store the setup state in that case; otherwise forward to the RDP.
+    case 0xE1: {
+        bool nextIsSelectDL = false;
+        if (ctx.pc + 8 <= ctx.rdramSize) {
+            nextIsSelectDL = ((ctx.ReadWord(ctx.pc) >> 24) & 0xFF)
+                             == S2DEXCmd::G_SELECT_DL; // 0xB0
+        }
+        if (nextIsSelectDL) {
+            m_selectDL.addr = w0 & 0x0000FFFFu;    // low 16 bits of DL addr
+            m_selectDL.sid  = (w0 >> 18) & 0xFFu;  // status register index — bits [25:18] per GLideN64
+            m_selectDL.flag = w1;                   // desired flag value
+        } else {
+            HandleRDPCommand(ctx, w0, w1);
+        }
         break;
     }
     
@@ -322,14 +370,43 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case S2DEXCmd::V2::G_OBJ_RECTANGLE_R: Cmd_OBJ_RECTANGLE_R(ctx, w0, w1); break; // 0xDA
     case 0xDB: MoveWord(ctx, (w0>>16)&0xFF, w0&0xFFFF, w1); break;
     case S2DEXCmd::V2::G_OBJ_MOVEMEM:     Cmd_OBJ_MOVEMEM(ctx, w0, w1); break;     // 0xDC
-    case 0xDD: LoadUcode(ctx, w1, m_rdpHalf1); return !ctx.halted;
+    case 0xDD: LoadUcode(ctx, w1, m_rdpHalf1, (w0 & 0xFFFF) + 1); return !ctx.halted;
     case 0xDE: {
         bool branch = ((w0 >> 16) & 0xFF) == 1;
         DisplayList(ctx, w1, branch);
         break;
     }
     case 0xDF: EndDisplayList(ctx); return !ctx.halted;
+    // 0xE1 = G_RDPHALF_1 in F3DEX2/S2DEX2 — stores the data half for
+    // G_LOAD_UCODE (used by 0xDD) and for texrect lower-right coords.
+    // NOT the SELECT_DL preamble (that's 0xE4, see below).
     case 0xE1: m_rdpHalf1 = w1; break;
+    // 0xE4 = G_RDPHALF_0 in S2DEX2 (GLideN64: S2DEX2_RDPHALF_0 = 0xE4).
+    // In F3DEX2 this opcode is G_TEXRECT, but S2DEX2 repurposes it:
+    // when followed by G_SELECT_DL (0x04) it is the SELECT_DL preamble
+    // (stores low-16 addr bits, sid, flag); when followed by G_RDPHALF_1
+    // (0xE1) it starts a texrect sequence.
+    case 0xE4: {
+        bool nextIsSelectDL = false;
+        uint32_t nextWord = 0;
+        if (ctx.pc + 8 <= ctx.rdramSize) {
+            nextWord = ctx.ReadWord(ctx.pc);
+            nextIsSelectDL = ((nextWord >> 24) & 0xFF) == S2DEXCmd::V2::G_SELECT_DL; // 0x04
+        }
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+            "S2DEX2 0xE4: w0=0x{:08X} w1=0x{:08X} nextOp=0x{:02X} nextIsSelectDL={}",
+            w0, w1, (nextWord >> 24) & 0xFF, nextIsSelectDL);
+        if (nextIsSelectDL) {
+            m_selectDL.addr = w0 & 0x0000FFFFu;
+            m_selectDL.sid  = (w0 >> 18) & 0xFFu;  // bits [25:18] per GLideN64 — sid is a 2-bit index
+            m_selectDL.flag = w1;
+        } else {
+            // Texrect upper-left half (followed by 0xE1 lower-right + 0xF1 tile).
+            // Delegate to base RDP handler so texrects still work.
+            HandleRDPCommand(ctx, w0, w1);
+        }
+        break;
+    }
     // F3DEX2/S2DEX2 swaps the opcodes: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
     case 0xE2: {
         uint32_t len = (w0 & 0xFF) + 1;
@@ -397,7 +474,7 @@ inline void S2DEXHandler::Cmd_OBJ_RECTANGLE_R(DListContext& ctx, uint32_t w0, ui
 }
 
 inline void S2DEXHandler::Cmd_OBJ_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint16_t subType = w0 & 0xFFFF;
+    uint8_t subType = (w0 >> 16) & 0xFF;
     
     switch (subType) {
     case 0: { // S2DEX_MV_MATRIX — full 24-byte ObjMtx
@@ -428,14 +505,12 @@ inline void S2DEXHandler::Cmd_OBJ_MOVEMEM(DListContext& ctx, uint32_t w0, uint32
 }
 
 inline void S2DEXHandler::Cmd_OBJ_RENDERMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // OBJ_RENDERMODE sets the RDP cycle type for sprite rendering.
-    // w1 contains otherModeH-like flags; bits 52-53 (shifted) select cycle type.
-    if (!ctx.state) return;
-    (void)w0;
-    // The S2DEX render mode maps directly to otherModeH cycle type bits
-    // Mask in only the cycle type field (bits 20-21 of otherModeH)
-    uint32_t cycleTypeBits = w1 & 0x00300000u;
-    ctx.state->otherModeH = (ctx.state->otherModeH & ~0x00300000u) | cycleTypeBits;
+    // Store the S2DEX object render mode flags (mirrors GLideN64: gSP.objRendermode = w1).
+    // Do NOT modify otherModeH — the render mode bits are S2DEX-specific flags
+    // (G_OBJRM_BILERP, G_OBJRM_SHRINKSIZE_*, etc.) and are not otherModeH values.
+    // RenderBgSprite / RenderObjSprite set cycle type explicitly when needed.
+    (void)ctx; (void)w0;
+    m_objRendermode = w1;
 }
 
 inline void S2DEXHandler::Cmd_OBJ_LOADTXTR(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -459,9 +534,62 @@ inline void S2DEXHandler::Cmd_OBJ_LDTX_RECT(DListContext& ctx, uint32_t w0, uint
 }
 
 inline void S2DEXHandler::Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Select DL based on a flag — used for LOD selection
-    (void)w0;
-    DisplayList(ctx, w1, false);
+    // Two-command G_SELECT_DL protocol.
+    //
+    // Command 1 — G_RDPHALF_0 (0xE1/0xE4), handled by ProcessCommand before us:
+    //   m_selectDL.addr  = w0[15:0]   low 16 bits of the segmented DL address
+    //   m_selectDL.sid   = w0[25:18]  status register index
+    //   m_selectDL.flag  = w1         desired bit pattern
+    //
+    // Command 2 — G_SELECT_DL (this function):
+    //   w0[15:0]  = high 16 bits of the segmented DL address
+    //   w0[23:16] = 0 → call (G_DL_PUSH), non-zero → branch (G_DL_NOPUSH)
+    //   w1        = status mask
+    //
+    // Status-register guard (intra-task deduplication):
+    //   DListContext::s2dexStatusRegs is reset to 0 at the start of every RSP
+    //   task (in MicrocodeDispatcher::ProcessGraphicsTask).  Within a task the
+    //   check prevents the same SELECT_DL from running more than once, breaking
+    //   any DL cycles that the unconditional approach would loop forever on and
+    //   flood the GPU with draws (triggering Intel Iris Xe TDR).
+    //   Across tasks the status is always fresh, so each RSP task's SELECT_DL
+    //   calls execute once — animated DLs update every VI frame.
+
+    m_selectDL.addr |= (w0 & 0x0000FFFFu) << 16;
+
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
+        "S2DEX SELECT_DL: addr=0x{:08X} sid={} flag=0x{:08X} mask=0x{:08X}",
+        m_selectDL.addr, m_selectDL.sid, m_selectDL.flag, w1);
+
+    const uint8_t  sid  = m_selectDL.sid & 3;
+    const uint32_t flag = m_selectDL.flag;
+    const uint32_t mask = w1;
+    uint32_t& statusReg = ctx.s2dexStatusRegs[sid];
+
+    if ((statusReg & mask) == flag) {
+        // This SELECT_DL has already executed with this flag within the current
+        // RSP task — skip to prevent DL cycles and redundant draws.
+        m_selectDL = {};
+        return;
+    }
+    // Update status so a second call with the same flag is skipped.
+    statusReg = (statusReg & ~mask) | (flag & mask);
+
+    // Validate resolved address before jumping.
+    uint32_t resolvedAddr = ctx.ResolveAddress(m_selectDL.addr);
+    if (resolvedAddr + 8 > ctx.rdramSize) {
+        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
+            "S2DEX SELECT_DL target out of range — skipping: "
+            "segAddr=0x{:08X} resolved=0x{:08X}",
+            m_selectDL.addr, resolvedAddr);
+        m_selectDL = {};
+        return;
+    }
+
+    bool branch = ((w0 >> 16) & 0xFF) != 0; // G_DL_NOPUSH = branch
+    DisplayList(ctx, m_selectDL.addr, branch);
+
+    m_selectDL = {};
 }
 
 // ─── RDRAM Read Helpers ─────────────────────────────────────────────────
@@ -489,13 +617,13 @@ inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjB
     bg.frameH     = ctx.ReadHalf(address + 0x0C);
     bg.frameY     = static_cast<int16_t>(ctx.ReadHalf(address + 0x0E));
     bg.imageAddr  = ctx.ReadWord(address + 0x10);
-    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x14));
-    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x15));
-    bg.imageLoad  = ctx.ReadHalf(address + 0x16);
-    bg.imageFlip  = (ctx.ReadHalf(address + 0x18) & 0x01) != 0;
-    bg.imagePal   = ctx.ReadHalf(address + 0x1A);
-    bg.scaleH     = ctx.ReadHalf(address + 0x1C);
-    bg.scaleW     = ctx.ReadHalf(address + 0x1E);
+    bg.imagePal   = ctx.ReadHalf(address + 0x14);
+    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x16));
+    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x17));
+    bg.imageLoad  = ctx.ReadHalf(address + 0x18);
+    bg.imageFlip  = (ctx.ReadHalf(address + 0x1A) & 0x01) != 0;
+    bg.scaleW     = ctx.ReadHalf(address + 0x1C);
+    bg.scaleH     = ctx.ReadHalf(address + 0x1E);
     bg.imageYorig = static_cast<int32_t>(ctx.ReadWord(address + 0x20));
     
     return true;
@@ -505,21 +633,25 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
     address = ctx.ResolveAddress(address);
     if (address + 24 > ctx.rdramSize) return false;
     
-    // N64 uObjSprite_t layout (24 bytes, big-endian):
-    //   0x00: scaleW (u16), objX (s16)
-    //   0x04: paddingX (u16), imageW (u16)
-    //   0x08: scaleH (u16), objY (s16)
-    //   0x0C: paddingY (u16), imageH (u16)
+    // N64 uObjSprite_t layout (24 bytes, big-endian) — N64 SDK / GLideN64 confirmed:
+    //   0x00: objX   (s16, s10.2 screen coordinate)
+    //   0x02: scaleW (u16, u5.10 horizontal scale factor)
+    //   0x04: imageW (u16, u10.2 texture width in pixels)
+    //   0x06: paddingX (s16, unused)
+    //   0x08: objY   (s16, s10.2 screen coordinate)
+    //   0x0A: scaleH (u16, u5.10 vertical scale factor)
+    //   0x0C: imageH (u16, u10.2 texture height in pixels)
+    //   0x0E: paddingY (s16, unused)
     //   0x10: imageAdrs (u16), imageStride (u16)
     //   0x14: imageFlags (u8), imagePal (u8), imageSiz (u8), imageFmt (u8)
-    obj.scaleW      = ctx.ReadHalf(address + 0x00);
-    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x02));
-    // skip paddingX at 0x04
-    obj.imageW      = ctx.ReadHalf(address + 0x06);
-    obj.scaleH      = ctx.ReadHalf(address + 0x08);
-    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x0A));
-    // skip paddingY at 0x0C
-    obj.imageH      = ctx.ReadHalf(address + 0x0E);
+    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x00));
+    obj.scaleW      = ctx.ReadHalf(address + 0x02);
+    obj.imageW      = ctx.ReadHalf(address + 0x04);
+    // skip paddingX at 0x06
+    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x08));
+    obj.scaleH      = ctx.ReadHalf(address + 0x0A);
+    obj.imageH      = ctx.ReadHalf(address + 0x0C);
+    // skip paddingY at 0x0E
     obj.imageAdrs   = ctx.ReadHalf(address + 0x10);
     obj.imageStride = ctx.ReadHalf(address + 0x12);
     obj.imageFlags  = ctx.ReadByte(address + 0x14);
@@ -641,6 +773,8 @@ inline void S2DEXHandler::RenderBgSprite(DListContext& ctx, const ObjBgSprite& b
         int loadTexels = (stripBytes / 2) - 1; // Convert bytes to 16-bit RGBA words - 1
         if (loadTexels < 0) loadTexels = 0;
         ctx.rdpProcessor->ExecuteLoadBlock(7, 0, 0, loadTexels, 0);
+        // Mirror the tmemSourceAddress update that HandleLoadBlock would perform.
+        ctx.state->tmemSourceAddress[0] = stripAddr;
         
         // Configure render tile (tile 0) with this strip's dimensions
         auto& renderTile = ctx.state->tiles[0];
@@ -767,13 +901,18 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
     float dsDx = (scaleW > 0.0f) ? (1.0f / scaleW) : 1.0f;
     float dtDy = (scaleH > 0.0f) ? (1.0f / scaleH) : 1.0f;
 
+    bool flipS = (obj.imageFlags & 0x01) != 0;
+    bool flipT = (obj.imageFlags & 0x10) != 0;
+
     DecodedRectangle rect{};
     rect.x0 = x;  rect.y0 = y;
     rect.x1 = x + screenW;  rect.y1 = y + screenH;
-    rect.s = 0.0f;  rect.t = 0.0f;
-    rect.dsDx = dsDx;  rect.dtDy = dtDy;
+    rect.s = flipS ? w : 0.0f;
+    rect.t = flipT ? h : 0.0f;
+    rect.dsDx = flipS ? -dsDx : dsDx;  
+    rect.dtDy = flipT ? -dtDy : dtDy;
     rect.tileIndex = 0;
-    rect.flipped = (obj.imageFlags & 0x01) != 0;
+    rect.flipped = false;
 
     // DIAG: log first 50 sprite renders + 1-in-200 sampling thereafter, capped
     // at 600 lines. MM HUD likely doesn't go through this path (uses F3DZEX
@@ -819,7 +958,11 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
     case 0x1033: { // G_OBJLT_TXTRBLOCK
         uint16_t tsize = ctx.ReadHalf(address + 0x08);
         uint16_t tmem  = ctx.ReadHalf(address + 0x0A);
+        // 0x0C: sid (byte offset, divide by 4 for array index — GLideN64 convention)
+        uint16_t sid   = ctx.ReadHalf(address + 0x0C);
         uint16_t tline = ctx.ReadHalf(address + 0x0E);
+        uint32_t flag  = ctx.ReadWord(address + 0x10);
+        uint32_t mask  = ctx.ReadWord(address + 0x14);
         
         // SetTextureImage: RGBA 16b, width=1 (N64 SDK: gDPSetTextureImage(RGBA, SIZ_16b, 1, image))
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
@@ -842,12 +985,22 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         lt.shiftS = 0; lt.shiftT = 0;
         
         ctx.rdpProcessor->ExecuteLoadBlock(loadTile, 0, 0, tsize, tline);
+        // Mirror the tmemSourceAddress update that HandleLoadBlock would perform,
+        // since we call ExecuteLoadBlock directly (bypassing HandleLoadBlock).
+        ctx.state->tmemSourceAddress[tmem & 0x1FF] = ctx.state->textureImage.address;
+        
+        // Update S2DEX status register (sid is a byte offset 0/4/8/12; >>2 = array index 0-3).
+        { uint8_t idx = (sid >> 2) & 3;
+          ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }
     case 0x1034: { // G_OBJLT_TXTRTILE
         uint16_t twidth  = ctx.ReadHalf(address + 0x08);
         uint16_t tmem    = ctx.ReadHalf(address + 0x0A);
+        uint16_t sid     = ctx.ReadHalf(address + 0x0C);
         uint16_t theight = ctx.ReadHalf(address + 0x0E);
+        uint32_t flag    = ctx.ReadWord(address + 0x10);
+        uint32_t mask    = ctx.ReadWord(address + 0x14);
         
         // SetTextureImage: RGBA 16b, width = twidth+1
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
@@ -871,11 +1024,19 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         
         ctx.rdpProcessor->ExecuteLoadTile(loadTile, 0.0f, 0.0f,
             static_cast<float>(twidth), static_cast<float>(theight));
+        // Mirror the tmemSourceAddress update that HandleLoadTile would perform.
+        ctx.state->tmemSourceAddress[tmem & 0x1FF] = ctx.state->textureImage.address;
+        
+        { uint8_t idx = (sid >> 2) & 3;
+          ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }
     case 0x0030: { // G_OBJLT_TLUT (GLideN64 uses 0x00000030)
         uint16_t pnum  = ctx.ReadHalf(address + 0x08);
         uint16_t phead = ctx.ReadHalf(address + 0x0A);
+        uint16_t sid   = ctx.ReadHalf(address + 0x0C);
+        uint32_t flag  = ctx.ReadWord(address + 0x10);
+        uint32_t mask  = ctx.ReadWord(address + 0x14);
         
         // SetTextureImage: RGBA 16b, width = 1
         ctx.state->textureImage.address = resolvedImage & 0x00FFFFFF;
@@ -883,12 +1044,18 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         ctx.state->textureImage.size    = ImageSize::Bpp16;
         ctx.state->textureImage.width   = 1;
         
-        // SetTile for load: 4b format, tmem = phead
+        // SetTile for load: 4b format, tmem = phead + 256.
+        // phead is a palette-entry index (0-255), not an absolute TMEM QW address.
+        // The palette region starts at QW 256 (byte 2048), so the actual TMEM slot
+        // is phead + 256.  GLideN64 reference: gSP.cpp G_OBJLT_TLUT case:
+        //   u32 tmem = lt->phead + 256;
+        // Without +256, tmemAddr < 256 triggers the early-return guard in
+        // ExecuteLoadTLUT and the TLUT is silently never loaded.
         auto& lt = ctx.state->tiles[loadTile];
         lt.format   = 0; // RGBA
         lt.size     = 0; // 4b
         lt.line     = 0;
-        lt.tmemAddr = phead;
+        lt.tmemAddr = phead + 256;
         lt.palette  = 0;
         lt.clampS = 0; lt.clampT = 0;
         lt.maskS = 0; lt.maskT = 0;
@@ -897,6 +1064,9 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         // LoadTLUT: count = pnum + 1 (pnum is count-1 per N64 SDK)
         // N64 SDK: gDPLoadTLUT(G_TX_LOADTILE, pnum) → DecodeLoadTLUT adds +1
         ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum + 1);
+        
+        { uint8_t idx = (sid >> 2) & 3;
+          ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }
     default:

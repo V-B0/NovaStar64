@@ -329,8 +329,7 @@ inline void F3DEX2Handler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_
 
 inline void F3DEX2Handler::Cmd_G_LOAD_UCODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t textSize = (w0 & 0xFFFF) + 1;
-    (void)textSize;
-    LoadUcode(ctx, w1, m_rdpHalf1);
+    LoadUcode(ctx, w1, m_rdpHalf1, textSize);
 }
 
 inline void F3DEX2Handler::Cmd_G_DL(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -393,9 +392,9 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0x04: // G_BRANCH_W — F3DZEX2 uses W-based LOD culling (not Z like F3DEX2)
     {
         // GLideN64 reference (F3DZEX2_Branch_W):
-        //   vtx = _SHIFTR(w0, 1, 7)  — bits [7:1]
-        //   wval = w1 (full 32-bit integer)
-        uint32_t vtxIndex = (w0 >> 1) & 0x7F;
+          //   vtx = _SHIFTR(w0, 1, 11)
+          //   wval = w1 (full 32-bit integer)
+          uint32_t vtxIndex = (w0 & 0xFFF) / 2;
         BranchW(ctx, vtxIndex, w1, m_rdpHalf1);
         return !ctx.halted;
     }

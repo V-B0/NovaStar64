@@ -30,3 +30,7 @@ nova64/build/nova64.dir/
 *.z64
 *.log
 *.ini
+*.bin
+*.bmp
+*.json
+

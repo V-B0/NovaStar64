@@ -10,6 +10,8 @@
 #include "../Common/Logger.hpp"
 #include "../Debug/ImGuiDebugUI.hpp"
 #include "../Renderer/GL/GLShaderCompiler.hpp"
+#include "../Renderer/VK/VKShaderCompiler.hpp"
+#include "../Renderer/VK/VKCommon.hpp"
 #include "../Core/FramebufferManager.hpp"
 #include "../Core/DepthBuffer.hpp"
 
@@ -159,14 +161,26 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         m_textureCache->Initialize(m_renderer.get(), tcConfig);
     }
 
-    // Create shader manager with GL compiler
+    // Create shader manager — use a Vulkan-aware compiler on the VK path,
+    // and the GL compiler on the OpenGL path.
     m_shaderManager = std::make_unique<Shader::ShaderManager>();
     {
-        m_shaderManager->Initialize(Shader::BackendAPI::OpenGL);
-        // Inject the OpenGL shader compiler
-        auto glCompiler = std::make_unique<GL::GLShaderCompiler>();
-        glCompiler->Initialize(Shader::BackendAPI::OpenGL);
-        m_shaderManager->SetCompiler(std::move(glCompiler));
+        const bool isVulkan = (m_renderer->GetBackendType() == BackendType::Vulkan);
+        const Shader::BackendAPI shaderApi =
+            isVulkan ? Shader::BackendAPI::Vulkan : Shader::BackendAPI::OpenGL;
+        m_shaderManager->Initialize(shaderApi);
+
+        if (isVulkan) {
+            // VKShaderCompiler: compiles GLSL → SPIR-V, writes uniforms directly
+            // into the VKBackend's per-frame scratch UBO via GetMappedUBOPtr().
+            auto vkCompiler = std::make_unique<VK::VKShaderCompiler>(m_renderer.get());
+            vkCompiler->Initialize(shaderApi);
+            m_shaderManager->SetCompiler(std::move(vkCompiler));
+        } else {
+            auto glCompiler = std::make_unique<GL::GLShaderCompiler>();
+            glCompiler->Initialize(shaderApi);
+            m_shaderManager->SetCompiler(std::move(glCompiler));
+        }
         std::filesystem::create_directories("ShaderCache");
         m_shaderManager->LoadCache("ShaderCache/NovaGraphics_shadercache.bin");
     }
@@ -177,6 +191,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
                                m_renderer.get(),
                                m_textureCache.get(),
                                m_shaderManager.get());
+    m_rdpProcessor->SetMLEDirector(&m_mleDirector);
 
     // Wire SyncFull → DP interrupt. When a display list contains RDPFULLSYNC, the
     // N64 CPU expects the DP interrupt to fire at that point (not after the whole
@@ -205,10 +220,12 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Initialize depth buffer manager (N64-accurate depth compare)
     g_depthManager.Init();
-    g_depthManager.InitZLUT();
+    if (g_fbManager.IsGL()) {
+        g_depthManager.InitZLUT();
+    }
 
-    // Initialize post-processing pipeline
-    {
+    // Initialize post-processing pipeline (GL-only)
+    if (g_fbManager.IsGL()) {
         m_postProcess = std::make_unique<PostProcessingPipeline>();
         int32_t w = 640, h = 480;
         if (auto* win = GetActiveWindow()) win->GetDrawableSize(w, h);
@@ -217,8 +234,8 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         LOG_INFO("Post-processing pipeline initialized ({}x{})", w, h);
     }
 
-    // Create VI blit resources (fullscreen triangle + simple texture blit shader)
-    {
+    // Create VI blit resources (GL-only: fullscreen triangle + texture blit shader)
+    if (g_fbManager.IsGL()) {
         // Compile blit shader
         static const char* kBlitVS = R"(#version 460 core
 layout(location = 0) out vec2 v_texCoord;
@@ -294,9 +311,11 @@ void main() {
     m_status = PluginStatus::Initialized;
     LOG_INFO("NovaGraphics initialized successfully");
 
-    // Initialize ImGui debug UI with the SDL window and GL context
-    if (auto* activeWin = GetActiveWindow()) {
-        g_imguiDebugUI.Init(activeWin->GetSDLWindow(), activeWin->GetGLContext());
+    // Initialize ImGui debug UI (GL-only; Vulkan path uses no ImGui for now)
+    if (g_fbManager.IsGL()) {
+        if (auto* activeWin = GetActiveWindow()) {
+            g_imguiDebugUI.Init(activeWin->GetSDLWindow(), activeWin->GetGLContext());
+        }
     }
 
     return true;
@@ -351,17 +370,21 @@ void VideoPlugin::Shutdown() {
         m_textureCache.reset();
     }
 
-    // Destroy VI blit resources
+    // Destroy VI blit resources (GL-only)
     m_viTexture.reset();
-    if (m_viBlitProgram) { glDeleteProgram(m_viBlitProgram); m_viBlitProgram = 0; }
-    if (m_viBlitVAO) { glDeleteVertexArrays(1, &m_viBlitVAO); m_viBlitVAO = 0; }
+    if (g_fbManager.IsGL()) {
+        if (m_viBlitProgram) { glDeleteProgram(m_viBlitProgram); m_viBlitProgram = 0; }
+        if (m_viBlitVAO) { glDeleteVertexArrays(1, &m_viBlitVAO); m_viBlitVAO = 0; }
+    }
 
     // Shut down depth buffer manager
     g_depthManager.Shutdown();
 
-    // Destroy post-processing intermediate FBO
-    if (m_ppFBO) { glDeleteFramebuffers(1, &m_ppFBO); m_ppFBO = 0; }
-    if (m_ppTex) { glDeleteTextures(1, &m_ppTex); m_ppTex = 0; }
+    // Destroy post-processing intermediate FBO (GL-only)
+    if (g_fbManager.IsGL()) {
+        if (m_ppFBO) { glDeleteFramebuffers(1, &m_ppFBO); m_ppFBO = 0; }
+        if (m_ppTex) { glDeleteTextures(1, &m_ppTex); m_ppTex = 0; }
+    }
     m_ppWidth = 0; m_ppHeight = 0;
 
     DestroyDisplayRenderer();
@@ -457,14 +480,29 @@ void VideoPlugin::ProcessDList() {
         uint32_t ucodeDataSize = readDMEM_native(0xFDC);              // UcodeDataSize
         uint32_t dlAddr        = taskDataPtr;
 
-        // Notify the renderer of the window size so GetWidth()/GetHeight() are up to date.
+        // Notify the renderer of the window size BEFORE BeginFrame so that any
+        // swapchain recreation triggered by OnResize happens before the render
+        // pass command buffer is opened.  (Swapchain recreation mid-frame would
+        // leave the open command buffer referencing destroyed framebuffers.)
         // Do NOT call glViewport here — OnSetColorImage (emitted by the DL) binds the correct
         // game FBO and sets glViewport to the FBO dimensions (320×240). Forcing 640×480 here
         // would map NDC 0..1 to window coords 320..640, clipping the right half of every draw.
         int32_t winW = 640, winH = 480;
         if (auto* w = GetActiveWindow()) w->GetDrawableSize(winW, winH);
         m_renderer->OnResize(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
-        glDisable(GL_SCISSOR_TEST);
+
+        // On Vulkan, begin the frame here (before any draw calls).
+        // BeginFrame acquires a swapchain image and opens the render pass so
+        // that FlushBatch draw calls are recorded into the command buffer.
+        // Multiple display lists per VI period are safe: the flag prevents
+        // a second BeginFrame call while the frame is already open.
+        if (!g_fbManager.IsGL() && !m_vkFrameBegun) {
+            m_renderer->BeginFrame();
+            m_vkFrameBegun = true;
+        }
+        if (g_fbManager.IsGL()) {
+            glDisable(GL_SCISSOR_TEST);
+        }
 
         // Reset RDP state for this display list. Each display list should start with
         // clean state (fill color, blend mode, depth test flags, etc.), not inherit from the
@@ -473,12 +511,31 @@ void VideoPlugin::ProcessDList() {
             m_rdpProcessor->Reset(false);  // warm reset: fresh RDP state, keep frame stats
         }
 
+        // RT scene extraction — begin frame and wire consumer into dispatcher context
+        m_rtScene.NewFrame();
+        m_dispatcher->SetGeometryConsumer(&m_rtScene);
+
         m_dispatcher->ProcessGraphicsTask(
             taskDataPtr, ucodeAddr, ucodeSize,
             ucodeDataAddr, ucodeDataSize, dlAddr);
 
+        // Detach consumer before batch flush (consumer already has all triangles)
+        m_dispatcher->SetGeometryConsumer(nullptr);
+
         // After the display list, flush any remaining RDP batch
         m_rdpProcessor->FlushBatch();
+
+        // Dispatch hardware ray tracing if the backend supports it and the
+        // scene accumulated geometry this frame.
+        if (m_renderer && m_rtScene.GetTriangleCount() > 0) {
+            m_renderer->ExecuteRayTracing(
+                &m_rtScene,
+                static_cast<uint32_t>(winW),
+                static_cast<uint32_t>(winH));
+        }
+
+        // Log RT scene stats if debug logging is enabled
+        m_rtScene.DebugLogIfEnabled();
 
         // Signal that HLE content was rendered — UpdateScreen will
         // present it instead of (or composited with) the VI framebuffer.
@@ -575,6 +632,14 @@ void VideoPlugin::UpdateScreen() {
             swapEnd - swapStart).count();
         m_swapPending = false;
     }
+
+    // Capture and reset the Vulkan frame-begun flag.  ProcessDList sets this
+    // when it calls BeginFrame before recording draw commands.  UpdateScreen
+    // checks it to know whether to call EndFrame+Present (frame in-flight) or
+    // BeginFrame+EndFrame+Present (no draw calls this VI period, clear only).
+    const bool hadVkFrameBegun = m_vkFrameBegun;
+    m_vkFrameBegun = false;
+
     markStage(tSwap);
 
     m_frameCount++;
@@ -630,11 +695,13 @@ void VideoPlugin::UpdateScreen() {
         m_framesWithoutHLE = 0;
     } else if (m_hleEverRendered) {
         // No display list this frame while latched — count consecutive misses.
-        // After several frames without DLs, the game has likely transitioned
-        // to a SW-rendered screen or scene reset.  Un-latch so the VI RDRAM
-        // blit can take over (e.g. OoT attract-mode loop, file select).
+        // GL: unlatch after 3 frames so the VI RDRAM blit path can take over.
+        // Vulkan: no VI RDRAM blit is implemented; unlatching falls back to a
+        // black clear frame which is worse than persisting the last HLE frame.
+        // Keep the latch on Vulkan to avoid the black-screen regression.
         m_framesWithoutHLE++;
-        if (m_framesWithoutHLE >= 3) {
+        const int kUnlatchThreshold = g_fbManager.IsGL() ? 3 : 60;
+        if (m_framesWithoutHLE >= kUnlatchThreshold) {
             m_hleEverRendered = false;
         }
     }
@@ -664,11 +731,35 @@ void VideoPlugin::UpdateScreen() {
         // re-presenting the last HLE frame, otherwise the user sees the
         // previous menu colour persisting through the transition.
         if (viType == 0) {
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
+            if (g_fbManager.IsGL()) {
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+            } else {
+                // Vulkan: VI_TYPE=0 means game is blanking the screen (transition/fade).
+                // Only present the clear if this frame actually had draw calls;
+                // otherwise, skip the present to avoid a black flash on intermediate
+                // VI interrupts (N64 renders at 30 fps, VI fires at 60 fps).
+                if (hadVkFrameBegun) {
+                    m_renderer->EndFrame();
+                    m_renderer->Present();
+                }
+            }
             didRender = true;
         } else {
-            g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
+            if (g_fbManager.IsGL()) {
+                g_fbManager.BlitToScreen(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH), true);
+            } else {
+                // Vulkan: draw calls were recorded into the command buffer opened
+                // in ProcessDList.  End the frame and show the swapchain image.
+                // If no ProcessDList was called this VI period (hadVkFrameBegun==false),
+                // skip presenting — the previous frame's image stays visible.
+                // Presenting a blank clear frame here was causing 30 Hz flickering:
+                // every other VI interrupt showed black instead of the rendered scene.
+                if (hadVkFrameBegun) {
+                    m_renderer->EndFrame();
+                    m_renderer->Present();
+                }
+            }
             didRender = true;
         }
     } else if (useVIBlit && m_viWidth != 0) {
@@ -679,7 +770,7 @@ void VideoPlugin::UpdateScreen() {
 
 
 
-        if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0) {
+        if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0 && g_fbManager.IsGL()) {
             m_renderer->BeginFrame();
 
             // Set viewport/scissor AFTER BeginFrame (which may reset them)
@@ -694,12 +785,29 @@ void VideoPlugin::UpdateScreen() {
             BlitVIFramebuffer(viType, m_viOrigin & 0x00FFFFFF, m_viWidth, outHeight);
             m_renderer->EndFrame();
             didRender = true;
+        } else if (!g_fbManager.IsGL() && m_viWidth > 0 && outHeight > 0) {
+            // Vulkan: no VI RDRAM blit implemented yet — present a clear frame
+            // so the swapchain advances and the game loop is not stalled.
+            if (!hadVkFrameBegun) m_renderer->BeginFrame();
+            m_renderer->EndFrame();
+            m_renderer->Present();
+            didRender = true;
         }
     }
 
     if (!didRender) {
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        if (g_fbManager.IsGL()) {
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        } else {
+            // Vulkan: no HLE frame was rendered and no VI blit path fired.
+            // Only present if ProcessDList opened a frame this interrupt;
+            // otherwise leave the swapchain image unchanged (no flicker).
+            if (hadVkFrameBegun) {
+                m_renderer->EndFrame();
+                m_renderer->Present();
+            }
+        }
     }
     markStage(tCompose);
 
@@ -710,7 +818,8 @@ void VideoPlugin::UpdateScreen() {
     // Both render paths (VI blit and HLE BlitToScreen) output to the default
     // framebuffer. If post-processing has enabled effects, capture the default
     // FB into an intermediate texture, then run the effect chain back to FB 0.
-    if (didRender && m_postProcess && m_postProcess->HasEnabledEffects()) {
+    // GL-only: PostProcessingPipeline is not initialized on Vulkan.
+    if (didRender && m_postProcess && m_postProcess->HasEnabledEffects() && g_fbManager.IsGL()) {
         int32_t ppW = 640, ppH = 480;
         if (auto* ppWin = GetActiveWindow()) ppWin->GetDrawableSize(ppW, ppH);
 
@@ -748,17 +857,19 @@ void VideoPlugin::UpdateScreen() {
 
     // Force default-framebuffer alpha to 1.0 so the Windows DWM compositor
     // never makes the window see-through (it reads the backbuffer alpha).
-    glDisable(GL_SCISSOR_TEST);
-    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    if (g_fbManager.IsGL()) {
+        glDisable(GL_SCISSOR_TEST);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    }
     markStage(tAlpha);
 
     // Deferred swap: submit all GPU work now so the GPU can finish while
     // the CPU continues emulating.  The actual SwapBuffers is deferred to
     // the start of the next UpdateScreen call.
-    glFlush();
+    if (g_fbManager.IsGL()) { glFlush(); }
     m_swapPending = true;
     markStage(tFlush);
 
@@ -855,8 +966,12 @@ void VideoPlugin::ShowCFB() {
     BlitVIFramebuffer(viType, m_viOrigin & 0x00FFFFFF, m_viWidth, outHeight);
     m_renderer->EndFrame();
 
-    if (auto* win = GetActiveWindow()) {
-        win->SwapBuffers();
+    if (g_fbManager.IsGL()) {
+        if (auto* win = GetActiveWindow()) {
+            win->SwapBuffers();
+        }
+    } else {
+        m_renderer->Present();
     }
 
     LOG_DEBUG("ShowCFB: displayed origin=0x{:06X} {}x{}", m_viOrigin, m_viWidth, outHeight);
@@ -1046,6 +1161,7 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
                                    m_renderer.get(),
                                    m_textureCache.get(),
                                    m_shaderManager.get());
+        m_rdpProcessor->SetMLEDirector(&m_mleDirector);
     }
     if (m_dispatcher && m_rdpProcessor) {
         m_dispatcher->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize,
@@ -1228,21 +1344,13 @@ bool VideoPlugin::CreateDisplayRenderer() {
     // Use requested backend from configuration if available
     int cfgBackend = m_config.backendType;
     if (cfgBackend == 1) {
-        // The Vulkan backend is currently a Stage-1 (clear-only) skeleton —
-        // the IRenderer surface for textures, shaders, draw submission and
-        // framebuffer integration with the RDP pipeline is not implemented
-        // yet, so any actual rendering call after init crashes.  Until the
-        // backend reaches feature parity, refuse to switch and fall back to
-        // OpenGL so the emulator stays usable when the user toggles it in
-        // the config.
-        LOG_WARN("Vulkan backend is not feature-complete yet (clear-only). "
-                 "Falling back to OpenGL.");
-        backend = BackendType::OpenGL46;
+        backend = BackendType::Vulkan;
     } else if (cfgBackend == 2) {
         // D3D11 not completely enabled on external window context yet for now
         // backend = BackendType::D3D11; 
     }
 
+    g_fbManager.SetIsGL(backend == BackendType::OpenGL46);
     m_renderer = Nova64::Video::CreateRenderer(backend);
     if (!m_renderer) {
         LOG_ERROR("Failed to create {} renderer", GetBackendName(backend));

@@ -1,19 +1,13 @@
 /**
  * @file VKBackend.hpp
- * @brief Vulkan 1.2 Backend (stub).
+ * @brief Vulkan 1.2 Backend.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics — Vulkan Backend (compile-only stub)
+// NovaGraphics — Vulkan 1.2 Backend
 //
-// This is a scaffolding stub. None of the rendering methods do any work yet;
-// they log a one-time warning and return safe defaults so callers do not
-// crash. `IsVulkanAvailable()` returns false until a real implementation
-// is wired up, so `DetectBestBackend()` continues to pick GL/D3D11.
-//
-// To begin implementing: pull in the Vulkan SDK (link `Vulkan::Vulkan` from
-// `find_package(Vulkan)`), replace the stubs in VKBackend.cpp with real
-// vkCreateInstance / vkCreateDevice / swapchain / cmd-buffer code, and
-// flip IsVulkanAvailable() to do a real `vkEnumerateInstanceVersion` probe.
+// Full Vulkan IRenderer implementation with swapchain, render pass,
+// per-frame descriptor pools, dynamic pipeline cache, UBO-backed uniforms,
+// combined image samplers (11 texture units), and SPIR-V shader compilation.
 
 #pragma once
 

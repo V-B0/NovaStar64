@@ -9,6 +9,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 #include "DepthBuffer.hpp"
+#include "FramebufferManager.hpp"
 #include "../Common/Logger.hpp"
 
 #include <glad/gl.h>
@@ -283,22 +284,30 @@ void GPUDepthBufferManager::Init() {
 }
 
 void GPUDepthBufferManager::Shutdown() {
-    for (int i = 0; i < m_bufferCount; ++i) {
-        DestroyGPUResources(m_buffers[i]);
+    // Only destroy GL resources if using OpenGL backend.
+    // Vulkan backend doesn't have GL textures/FBOs, so skipping GL deletes prevents
+    // access violations from glDeleteTextures/glDeleteFramebuffers without GL context.
+    if (g_fbManager.IsGL()) {
+        for (int i = 0; i < m_bufferCount; ++i) {
+            DestroyGPUResources(m_buffers[i]);
+        }
+        if (m_zLutTex) {
+            glDeleteTextures(1, &m_zLutTex);
+            m_zLutTex = 0;
+            m_zLutInitialized = false;
+        }
     }
     m_bufferCount = 0;
     m_current = nullptr;
-    if (m_zLutTex) {
-        glDeleteTextures(1, &m_zLutTex);
-        m_zLutTex = 0;
-        m_zLutInitialized = false;
-    }
     LOG_INFO("GPUDepthBufferManager shut down");
 }
 
 void GPUDepthBufferManager::Reset() {
-    for (int i = 0; i < m_bufferCount; ++i) {
-        DestroyGPUResources(m_buffers[i]);
+    // Only destroy GL resources if using OpenGL backend
+    if (g_fbManager.IsGL()) {
+        for (int i = 0; i < m_bufferCount; ++i) {
+            DestroyGPUResources(m_buffers[i]);
+        }
     }
     m_bufferCount = 0;
     m_current = nullptr;
@@ -405,6 +414,7 @@ GPUDepthBuffer* GPUDepthBufferManager::FindByAddress(uint32_t address) const {
 }
 
 void GPUDepthBufferManager::CreateGPUResources(GPUDepthBuffer& buf) {
+    if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
     if (buf.width == 0 || buf.height == 0) return;
 
     // Create depth texture using DSA
@@ -591,6 +601,7 @@ bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, floa
 // ═══════════════════════════════════════════════════════════════
 
 void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t resScale) {
+    if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
     if (buf.glZImageTex != 0) return;  // Already initialized
     if (buf.width == 0 || buf.height == 0) return;
 
@@ -627,6 +638,7 @@ void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t
 }
 
 void GPUDepthBufferManager::ClearDepthImageTextures(GPUDepthBuffer& buf) {
+    if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
     if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
 
     // Clear Z-image to 1.0 (normalized max depth) and delta-Z to 0.

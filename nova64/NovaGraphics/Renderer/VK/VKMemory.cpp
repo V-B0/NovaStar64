@@ -3,6 +3,7 @@
  */
 // SPDX-License-Identifier: MIT
 #include "VKMemory.hpp"
+#include <chrono>
 
 namespace Nova64 { namespace Video { namespace VK {
 
@@ -41,24 +42,36 @@ VkCommandBuffer BeginOneShot(VkDevice device, VkCommandPool pool) {
     return cmd;
 }
 
-void EndOneShotAndWait(VkDevice device, VkCommandPool pool,
-                       VkQueue queue, VkCommandBuffer cmd) {
+void EndOneShotAndWait(const VKContext& ctx, VkCommandBuffer cmd) {
     if (!cmd) return;
+    // Fast-path: device is already dead — just release the command buffer.
+    if (ctx.deviceLost.load(std::memory_order_relaxed)) {
+        vkFreeCommandBuffers(ctx.device, ctx.transientPool, 1, &cmd);
+        return;
+    }
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         Logger::Error("VK: EndOneShot vkEndCommandBuffer failed");
-        vkFreeCommandBuffers(device, pool, 1, &cmd);
+        vkFreeCommandBuffers(ctx.device, ctx.transientPool, 1, &cmd);
         return;
     }
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
     si.pCommandBuffers    = &cmd;
-    VkResult r = vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE);
+    VkResult r = vkQueueSubmit(ctx.transferQueue, 1, &si, VK_NULL_HANDLE);
     if (r != VK_SUCCESS) {
         Logger::Error("VK: EndOneShot vkQueueSubmit failed: {}", VkResultToString(r));
+        if (r == VK_ERROR_DEVICE_LOST)
+            ctx.deviceLost.store(true, std::memory_order_relaxed);
     } else {
-        vkQueueWaitIdle(queue);
+        auto t0 = std::chrono::steady_clock::now();
+        vkQueueWaitIdle(ctx.transferQueue);
+        auto dtMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0).count());
+        if (dtMs > 50) {
+            Logger::Warn("VK: EndOneShot vkQueueWaitIdle took {}ms", dtMs);
+        }
     }
-    vkFreeCommandBuffers(device, pool, 1, &cmd);
+    vkFreeCommandBuffers(ctx.device, ctx.transientPool, 1, &cmd);
 }
 
 }}} // namespace Nova64::Video::VK

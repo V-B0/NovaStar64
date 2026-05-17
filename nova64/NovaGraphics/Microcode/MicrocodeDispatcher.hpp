@@ -78,7 +78,13 @@ public:
     MicrocodeType GetCurrentType() const;
     const MicrocodeInfo& GetCurrentInfo() const;
     GBIHandler* GetCurrentHandler() const { return m_activeHandler; }
-    
+
+    /// Set the RT scene geometry consumer on the shared DListContext.
+    /// Pass nullptr to detach.
+    void SetGeometryConsumer(RT::ISceneGeometryConsumer* consumer) {
+        m_context.geometryConsumer = consumer;
+    }
+
     // ─── Handler Cache ───────────────────────────────────────────────
     
     /// Get or create a handler for the given microcode type
