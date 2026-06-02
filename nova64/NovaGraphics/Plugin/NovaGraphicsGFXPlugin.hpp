@@ -44,6 +44,7 @@ public:
     bool InitializeDisplay(void* hwnd, const ::Plugins::RenderSettings& settings) override;
     void ResizeDisplay(uint32_t width, uint32_t height) override;
     void ProcessDList(uint32_t start, uint32_t end) override;
+    void ProcessDListShadow(uint32_t start, uint32_t end) override;
     void ProcessRDPCommand(uint64_t cmd) override;
     void UpdateRDPStatus() override;
     void UpdateScreen() override;

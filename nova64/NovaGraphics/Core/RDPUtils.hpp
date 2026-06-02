@@ -307,13 +307,13 @@ inline uint32_t ReadTMEMTexel32(const uint8_t* tmem, uint32_t addr) {
 /// Look up a CI4 color from the palette area of TMEM
 inline uint16_t LookupTLUT_CI4(const uint8_t* tmem, uint8_t index, uint8_t palette) {
     // TLUT for CI4: 16 entries per palette, stored at TMEM offset 0x800 + palette * 0x80
-    uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(palette) * 0x80 + static_cast<uint32_t>(index) * 4;
+    uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(palette) * 0x80 + static_cast<uint32_t>(index) * 8;
     return ReadTMEMTexel16(tmem, addr);
 }
 
 /// Look up a CI8 color from the palette area of TMEM
 inline uint16_t LookupTLUT_CI8(const uint8_t* tmem, uint8_t index) {
-    uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(index) * 4;
+    uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(index) * 8;
     return ReadTMEMTexel16(tmem, addr);
 }
 

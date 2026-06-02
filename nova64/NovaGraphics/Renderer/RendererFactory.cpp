@@ -27,7 +27,6 @@ namespace Nova64 { namespace Video {
 static const char* const kBackendNames[] = {
     "None",
     "OpenGL 4.6",
-    "Direct3D 11",
     "Software",
     "Vulkan 1.1"
 };
@@ -44,21 +43,10 @@ const char* GetBackendName(BackendType type) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 namespace GL { bool IsOpenGL46Available(); }
-#ifdef _WIN32
-namespace D3D { bool IsD3D11Available(); }
-#endif
 namespace VK { bool IsVulkanAvailable(); }
 
 BackendType DetectBestBackend() {
-#ifdef _WIN32
-    // On Windows, prefer D3D11 if available.
-    if (D3D::IsD3D11Available())
-        return BackendType::D3D11;
-#endif
-    // Vulkan now has a real implementation across the entire IRenderer surface.
-    // Prefer it over OpenGL when available (modern, lower driver overhead, and
-    // it's the only backend with first-class compute + render-target support in
-    // the staged build).
+    // Prefer Vulkan when available (modern, lower driver overhead).
     if (VK::IsVulkanAvailable())
         return BackendType::Vulkan;
     return BackendType::OpenGL46;
@@ -69,9 +57,6 @@ BackendType DetectBestBackend() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 namespace GL { std::unique_ptr<IRenderer> CreateOpenGLRenderer(); }
-#ifdef _WIN32
-namespace D3D { std::unique_ptr<IRenderer> CreateD3D11Renderer(); }
-#endif
 namespace VK { std::unique_ptr<IRenderer> CreateVulkanRenderer(); }
 
 std::unique_ptr<IRenderer> CreateRenderer(BackendType type) {
@@ -79,16 +64,11 @@ std::unique_ptr<IRenderer> CreateRenderer(BackendType type) {
     case BackendType::OpenGL46:
         return GL::CreateOpenGLRenderer();
 
-#ifdef _WIN32
-    case BackendType::D3D11:
-        return D3D::CreateD3D11Renderer();
-#endif
-
     case BackendType::Vulkan:
         return VK::CreateVulkanRenderer();
 
     case BackendType::Software:
-        return nullptr;  // Software renderer removed — use OpenGL or D3D11
+        return nullptr;  // Software renderer removed
 
     default:
         return nullptr;

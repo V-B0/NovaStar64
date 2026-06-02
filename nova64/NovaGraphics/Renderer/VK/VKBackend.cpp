@@ -48,6 +48,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -55,6 +56,17 @@
 #include <vector>
 
 namespace Nova64 { namespace Video { namespace VK {
+
+static bool ForensicEnabled() {
+    static const bool enabled = []() {
+#pragma warning(push)
+#pragma warning(disable: 4996)
+        const char* v = std::getenv("NOVA64_FORENSIC");
+#pragma warning(pop)
+        return v && v[0] != 0;
+    }();
+    return enabled;
+}
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  DynPipelineKey â€” shader + blend factors + depth state
@@ -140,6 +152,7 @@ constexpr uint32_t kFramesInFlight = 2;
 struct PerFrame {
     VkCommandBuffer cmd            = VK_NULL_HANDLE;
     VkSemaphore     imageAvailable = VK_NULL_HANDLE;
+    VkSemaphore     midFrameDone   = VK_NULL_HANDLE;
     VkSemaphore     renderFinished = VK_NULL_HANDLE;
     VkFence         inFlightFence  = VK_NULL_HANDLE;
 };
@@ -216,7 +229,7 @@ public:
 
         // â”€â”€ swapchain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (!m_swapchain.Create(m_instance.GetPhysical(), m_device.Get(), m_surface,
-                                gfxFam, presFam, m_width, m_height, /*vsync=*/true)) {
+                                gfxFam, presFam, m_width, m_height, /*vsync=*/false)) {
             Cleanup();
             return false;
         }
@@ -257,7 +270,18 @@ public:
                 if (sz > 0) {
                     cacheData.resize(static_cast<size_t>(sz));
                     cacheFile.read(reinterpret_cast<char*>(cacheData.data()), sz);
-                    Logger::Info("VulkanRenderer: loaded pipeline cache ({} bytes)", static_cast<size_t>(sz));
+                    // ifstream::read does not set failbit on partial binary reads;
+                    // verify gcount() matches and discard a truncated payload so
+                    // vkCreatePipelineCache builds an empty cache rather than load
+                    // corrupt data.
+                    if (cacheFile.gcount() != sz) {
+                        Logger::Warn("VulkanRenderer: pipeline cache truncated ({} of {} bytes) - discarding",
+                                     static_cast<size_t>(cacheFile.gcount()),
+                                     static_cast<size_t>(sz));
+                        cacheData.clear();
+                    } else {
+                        Logger::Info("VulkanRenderer: loaded pipeline cache ({} bytes)", static_cast<size_t>(sz));
+                    }
                 }
             }
             VkPipelineCacheCreateInfo pcci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
@@ -390,8 +414,15 @@ public:
 
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(f.cmd, &bi);
+        VkResult bcb = vkBeginCommandBuffer(f.cmd, &bi);
+        if (bcb != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: vkBeginCommandBuffer failed: {}",
+                          VkResultToString(bcb));
+            m_skipPresent = true;
+            return;
+        }
         m_skipPresent = false;
+        m_midFrameReadbackDone = false;
 
         // Reset per-frame descriptor pool (frees all sets allocated last time
         // this frame index was active).
@@ -416,6 +447,9 @@ public:
         m_lastDepthWrite = -1;
         m_lastDepthFunc  = -1;
 
+        // Reset per-frame GPU stats so each frame gets an accurate count.
+        m_stats.Reset();
+
         // Begin the swapchain render pass (or pending custom RT) with
         // LOAD_OP_CLEAR using the latest m_clearColor. Draws happen between
         // Begin/EndFrame.
@@ -434,17 +468,29 @@ public:
         }
         vkEndCommandBuffer(f.cmd);
 
+        // VK draw call diagnostic: log per-frame GPU draw count (first 120 frames, then every 60).
+        {
+            static uint32_t s_vkFrame = 0;
+            ++s_vkFrame;
+            if (s_vkFrame <= 120 || (s_vkFrame % 60) == 0) {
+                Logger::Info("VKEndFrame[{}]: drawCalls={} tris={} pipeBinds={}",
+                             s_vkFrame, m_stats.drawCalls, m_stats.triangles, m_stats.pipelineBinds);
+            }
+        }
+
         // 4. Submit
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        VkSemaphore waitSem = m_midFrameReadbackDone ? f.midFrameDone : f.imageAvailable;
         si.waitSemaphoreCount   = 1;
-        si.pWaitSemaphores      = &f.imageAvailable;
+        si.pWaitSemaphores      = &waitSem;
         si.pWaitDstStageMask    = &waitStage;
         si.commandBufferCount   = 1;
         si.pCommandBuffers      = &f.cmd;
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores    = &f.renderFinished;
         VkResult sr = vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, f.inFlightFence);
+        m_midFrameReadbackDone = false;
         if (sr != VK_SUCCESS) {
             Logger::Error("VulkanRenderer: vkQueueSubmit failed: {}", VkResultToString(sr));
             if (sr == VK_ERROR_DEVICE_LOST)
@@ -619,6 +665,11 @@ public:
     void BindTexture(uint32_t unit, ITexture* tex) override {
         if (unit >= kVKMaxTexturesPerDraw) return;
         m_curTextures[unit] = static_cast<VKTextureImpl*>(tex);
+        if (ForensicEnabled()) {
+            auto* vktex = static_cast<VKTextureImpl*>(tex);
+            Logger::Info("[FORENSIC] BIND unit={} view={}",
+                         unit, static_cast<void*>(vktex ? vktex->GetView() : VK_NULL_HANDLE));
+        }
     }
     void BindShader(IShaderProgram* shader) override {
         VKShaderProgramImpl* newShader = static_cast<VKShaderProgramImpl*>(shader);
@@ -840,15 +891,32 @@ public:
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
-        // Submit and wait synchronously.
+        
         vkEndCommandBuffer(f.cmd);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.commandBufferCount = 1;
         si.pCommandBuffers    = &f.cmd;
         VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VkFence fence = VK_NULL_HANDLE;
-        vkCreateFence(m_device.Get(), &fci, nullptr, &fence);
-        vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, fence);
+        VkResult fr = vkCreateFence(m_device.Get(), &fci, nullptr, &fence);
+        if (fr != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::ReadPixels: vkCreateFence failed: {}",
+                          VkResultToString(fr));
+            DestroyBufferStorage(m_ctx, staging);
+            m_skipPresent = true;
+            return;
+        }
+        VkResult qr = vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, fence);
+        if (qr != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::ReadPixels: vkQueueSubmit failed: {}",
+                          VkResultToString(qr));
+            vkDestroyFence(m_device.Get(), fence, nullptr);
+            DestroyBufferStorage(m_ctx, staging);
+            if (qr == VK_ERROR_DEVICE_LOST)
+                m_ctx.deviceLost.store(true, std::memory_order_relaxed);
+            m_skipPresent = true;
+            return;
+        }
         vkWaitForFences(m_device.Get(), 1, &fence, VK_TRUE, UINT64_MAX);
         vkDestroyFence(m_device.Get(), fence, nullptr);
 
@@ -860,10 +928,335 @@ public:
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkResetCommandBuffer(f.cmd, 0);
-        vkBeginCommandBuffer(f.cmd, &bi);
-        m_skipPresent = true; // command buffer already submitted â€” skip EndFrame submit
+        VkResult rbb = vkBeginCommandBuffer(f.cmd, &bi);
+        if (rbb != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::ReadPixels: restart vkBeginCommandBuffer failed: {}",
+                          VkResultToString(rbb));
+            m_skipPresent = true;
+            return;
+        }
+        m_skipPresent = true; 
 
         if (wasActive) BeginPass(m_currentRT);
+    }
+
+    // GPU-side blit: copy the current swapchain image into dst using vkCmdCopyImage
+    // recorded directly into the in-flight command buffer.  No CPU readback, no
+    // staging buffer, no synchronous submit, no m_skipPresent side-effect.
+    void BlitToTexture(ITexture* dst) override {
+        if (!dst || !m_initialized) return;
+        PerFrame& f = m_frames[m_currentFrame];
+
+        
+        bool wasActive = m_passActive;
+        if (wasActive) { vkCmdEndRenderPass(f.cmd); m_passActive = false; }
+
+        VkImage  srcImage = m_swapchain.GetImage(m_currentImage);
+        VkImage  dstImage = reinterpret_cast<VkImage>(dst->GetNativeHandle());
+        if (!srcImage || !dstImage) { if (wasActive) BeginPass(m_currentRT); return; }
+        uint32_t w = std::min(dst->GetWidth(),  m_swapchain.GetExtent().width);
+        uint32_t h = std::min(dst->GetHeight(), m_swapchain.GetExtent().height);
+
+        // Render-pass finalLayout leaves swapchain in PRESENT_SRC_KHR.
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        // UNDEFINED as oldLayout = "discard previous contents" - valid per spec,
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        // Use vkCmdBlitImage rather than vkCmdCopyImage so the BGRA8 swapchain
+        // can be sampled from an RGBA8 snapshot texture; Blit performs the
+        // channel-order conversion automatically, whereas Copy requires the
+        // two images to be format-compatible (Vulkan spec 11.6).
+        VkImageBlit region{};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = region.srcSubresource;
+        region.srcOffsets[0]  = { 0, 0, 0 };
+        region.srcOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        region.dstOffsets[0]  = { 0, 0, 0 };
+        region.dstOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        vkCmdBlitImage(f.cmd,
+                       srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &region, VK_FILTER_NEAREST);
+
+        // Leave snapshot in SHADER_READ_ONLY so FlushBatch can bind it directly.
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        // Restore swapchain to PRESENT_SRC_KHR; BeginPass uses initialLayout=UNDEFINED
+        // so re-entry is safe from any actual layout.
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        0,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+
+        // Resume the render pass - inventory draws continue in the same cmd buffer.
+        // EndFrame will submit everything normally (m_skipPresent is NOT set).
+        if (wasActive) BeginPass(m_currentRT);
+    }
+
+    // GPU-side snapshot without clearing: copy the swapchain into dst, then
+    // restart the render pass with LOAD_OP_LOAD to preserve existing content.
+    // Use this when a mid-frame SetColorImage switches away from a rendered FB
+    // and we want to keep drawing on top of it afterwards.
+    void SnapshotToTexture(ITexture* dst) override {
+        if (!dst || !m_initialized) return;
+        PerFrame& f = m_frames[m_currentFrame];
+
+        bool wasActive = m_passActive;
+        if (wasActive) { vkCmdEndRenderPass(f.cmd); m_passActive = false; }
+
+        VkImage srcImage = m_swapchain.GetImage(m_currentImage);
+        VkImage dstImage = reinterpret_cast<VkImage>(dst->GetNativeHandle());
+        if (!srcImage || !dstImage) { if (wasActive) BeginPassLoad(); return; }
+        uint32_t w = std::min(dst->GetWidth(),  m_swapchain.GetExtent().width);
+        uint32_t h = std::min(dst->GetHeight(), m_swapchain.GetExtent().height);
+
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        // See BlitToTexture for rationale on vkCmdBlitImage vs vkCmdCopyImage.
+        VkImageBlit region{};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = region.srcSubresource;
+        region.srcOffsets[0]  = { 0, 0, 0 };
+        region.srcOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        region.dstOffsets[0]  = { 0, 0, 0 };
+        region.dstOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        vkCmdBlitImage(f.cmd,
+                       srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &region, VK_FILTER_NEAREST);
+
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        // Restore swapchain to PRESENT_SRC_KHR -- required by the load render
+        // pass (initialLayout = PRESENT_SRC_KHR).
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        0,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+
+        // Resume rendering without clearing -- keeps previously drawn content.
+        if (wasActive) BeginPassLoad();
+    }
+
+    void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW, uint32_t fbH,
+                                bool isRGBA16, uint8_t* rdram) override {
+        if (!m_initialized || !rdram || fbW == 0 || fbH == 0 || m_skipPresent ||
+            m_midFrameReadbackDone) {
+            return;
+        }
+
+        PerFrame& f = m_frames[m_currentFrame];
+        bool wasActive = m_passActive;
+        if (wasActive) {
+            vkCmdEndRenderPass(f.cmd);
+            m_passActive = false;
+        }
+
+        VkImage srcImage = m_swapchain.GetImage(m_currentImage);
+        if (!srcImage) {
+            if (wasActive) BeginPassLoad();
+            return;
+        }
+
+        const VkExtent2D extent = m_swapchain.GetExtent();
+        const VkDeviceSize stagingSize =
+            static_cast<VkDeviceSize>(extent.width) * extent.height * 4;
+
+        VKBufferStorage staging{};
+        if (!CreateBufferStorage(m_ctx, stagingSize,
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 staging)) {
+            Logger::Error("VulkanRenderer::CopyFramebufferToRDRAM: staging alloc failed");
+            if (wasActive) BeginPassLoad();
+            return;
+        }
+
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {extent.width, extent.height, 1};
+        vkCmdCopyImageToBuffer(f.cmd, srcImage,
+                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               staging.buffer, 1, &region);
+
+        TransitionImage(f.cmd, srcImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_ACCESS_MEMORY_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+        vkEndCommandBuffer(f.cmd);
+
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.waitSemaphoreCount = 1;
+        si.pWaitSemaphores = &f.imageAvailable;
+        si.pWaitDstStageMask = &waitStage;
+        si.signalSemaphoreCount = 1;
+        si.pSignalSemaphores = &f.midFrameDone;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &f.cmd;
+
+        VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence readbackFence = VK_NULL_HANDLE;
+        if (vkCreateFence(m_device.Get(), &fci, nullptr, &readbackFence) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::CopyFramebufferToRDRAM: fence create failed");
+            DestroyBufferStorage(m_ctx, staging);
+            if (wasActive) {
+                VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+                bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                vkResetCommandBuffer(f.cmd, 0);
+                VkResult rb = vkBeginCommandBuffer(f.cmd, &bi);
+                if (rb != VK_SUCCESS) {
+                    Logger::Error("VulkanRenderer::CopyFramebufferToRDRAM: recovery vkBeginCommandBuffer failed: {}",
+                                  VkResultToString(rb));
+                    m_skipPresent = true;
+                    return;
+                }
+                BeginPassLoad();
+            }
+            return;
+        }
+
+        VkResult sr = vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, readbackFence);
+        if (sr != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::CopyFramebufferToRDRAM: submit failed: {}",
+                          VkResultToString(sr));
+            vkDestroyFence(m_device.Get(), readbackFence, nullptr);
+            DestroyBufferStorage(m_ctx, staging);
+            if (sr == VK_ERROR_DEVICE_LOST) {
+                m_ctx.deviceLost.store(true, std::memory_order_relaxed);
+            }
+            return;
+        }
+
+        vkWaitForFences(m_device.Get(), 1, &readbackFence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(m_device.Get(), readbackFence, nullptr);
+
+        const uint8_t* pixels = static_cast<const uint8_t*>(staging.mapped);
+        const uint32_t pixelCount = fbW * fbH;
+        uint32_t scaleX = (fbW > 0) ? (extent.width / fbW) : 1;
+        uint32_t scaleY = (fbH > 0) ? (extent.height / fbH) : 1;
+        if (scaleX == 0) scaleX = 1;
+        if (scaleY == 0) scaleY = 1;
+
+        if (isRGBA16) {
+            uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + fbAddress);
+            for (uint32_t i = 0; i < pixelCount; ++i) {
+                uint32_t fy = i / fbW;
+                uint32_t fx = i % fbW;
+                uint32_t sx = std::min(fx * scaleX, extent.width - 1);
+                uint32_t sy = std::min(fy * scaleY, extent.height - 1);
+                uint32_t off = (sy * extent.width + sx) * 4;
+                uint8_t b = pixels[off + 0];
+                uint8_t g = pixels[off + 1];
+                uint8_t r = pixels[off + 2];
+                uint8_t a = pixels[off + 3];
+                uint16_t rgba16 = static_cast<uint16_t>(((r >> 3) << 11) |
+                                                        ((g >> 3) << 6) |
+                                                        ((b >> 3) << 1) |
+                                                        (a >> 7));
+                dst[i ^ 1] = rgba16;
+            }
+        } else {
+            uint32_t* dst = reinterpret_cast<uint32_t*>(rdram + fbAddress);
+            for (uint32_t i = 0; i < pixelCount; ++i) {
+                uint32_t fy = i / fbW;
+                uint32_t fx = i % fbW;
+                uint32_t sx = std::min(fx * scaleX, extent.width - 1);
+                uint32_t sy = std::min(fy * scaleY, extent.height - 1);
+                uint32_t off = (sy * extent.width + sx) * 4;
+                uint8_t b = pixels[off + 0];
+                uint8_t g = pixels[off + 1];
+                uint8_t r = pixels[off + 2];
+                uint8_t a = pixels[off + 3];
+                dst[i] = (static_cast<uint32_t>(r) << 24) |
+                         (static_cast<uint32_t>(g) << 16) |
+                         (static_cast<uint32_t>(b) << 8) |
+                         static_cast<uint32_t>(a);
+            }
+        }
+
+        DestroyBufferStorage(m_ctx, staging);
+
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkResetCommandBuffer(f.cmd, 0);
+        VkResult rrb = vkBeginCommandBuffer(f.cmd, &bi);
+        if (rrb != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer::CopyFramebufferToRDRAM: restart vkBeginCommandBuffer failed: {}",
+                          VkResultToString(rrb));
+            m_midFrameReadbackDone = false;
+            m_skipPresent = true;
+            return;
+        }
+
+        m_midFrameReadbackDone = true;
+
+        if (wasActive) BeginPassLoad();
     }
 
     // â”€â”€â”€ Debug â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -945,6 +1338,7 @@ private:
         for (uint32_t i = 0; i < kFramesInFlight; ++i) {
             VK_CHECK(vkAllocateCommandBuffers(m_device.Get(), &cai, &m_frames[i].cmd));
             VK_CHECK(vkCreateSemaphore(m_device.Get(), &sci, nullptr, &m_frames[i].imageAvailable));
+            VK_CHECK(vkCreateSemaphore(m_device.Get(), &sci, nullptr, &m_frames[i].midFrameDone));
             VK_CHECK(vkCreateSemaphore(m_device.Get(), &sci, nullptr, &m_frames[i].renderFinished));
             VK_CHECK(vkCreateFence(m_device.Get(), &fci, nullptr, &m_frames[i].inFlightFence));
         }
@@ -971,6 +1365,10 @@ private:
             if (m_frames[i].renderFinished) {
                 vkDestroySemaphore(dev, m_frames[i].renderFinished, nullptr);
                 m_frames[i].renderFinished = VK_NULL_HANDLE;
+            }
+            if (m_frames[i].midFrameDone) {
+                vkDestroySemaphore(dev, m_frames[i].midFrameDone, nullptr);
+                m_frames[i].midFrameDone = VK_NULL_HANDLE;
             }
             if (m_frames[i].inFlightFence) {
                 vkDestroyFence(dev, m_frames[i].inFlightFence, nullptr);
@@ -1043,6 +1441,12 @@ private:
 
     void RecreateSwapchain() {
         if (m_width == 0 || m_height == 0) return;
+        // Drain all in-flight frames before destroying the old swapchain.
+        // Without this, in-flight command buffers can still reference the old
+        // swapchain images / VkRenderPass after Recreate() destroys them, which
+        // manifests as crashes or validation errors on scene<->menu transitions
+        // (where SetColorImage format changes can trigger a recreate mid-stream).
+        vkDeviceWaitIdle(m_device.Get());
         m_swapchain.Recreate(m_instance.GetPhysical(), m_device.Get(), m_surface,
                              m_device.GetGraphicsFamily(), m_device.GetPresentFamily(),
                              m_width, m_height, /*vsync=*/true);
@@ -1196,8 +1600,28 @@ private:
                     if (vkGetPipelineCacheData(m_device.Get(), m_pipelineCache, &cacheSize, nullptr) == VK_SUCCESS && cacheSize > 0) {
                         std::vector<uint8_t> cacheData(cacheSize);
                         if (vkGetPipelineCacheData(m_device.Get(), m_pipelineCache, &cacheSize, cacheData.data()) == VK_SUCCESS) {
+                            // Ensure ShaderCache/ exists - silent ofstream open failure
+                            // would otherwise mean the cache never persists across runs.
+                            std::error_code ec;
+                            std::filesystem::create_directories("ShaderCache", ec);
                             std::ofstream f("ShaderCache/vk_pipeline_cache.bin", std::ios::binary | std::ios::trunc);
-                            if (f) f.write(reinterpret_cast<const char*>(cacheData.data()), static_cast<std::streamsize>(cacheSize));
+                            if (f) {
+                                f.write(reinterpret_cast<const char*>(cacheData.data()),
+                                        static_cast<std::streamsize>(cacheSize));
+                                if (!f.good()) {
+                                    static bool s_warnedWrite = false;
+                                    if (!s_warnedWrite) {
+                                        Logger::Warn("VulkanRenderer: pipeline cache write failed (ofstream bad)");
+                                        s_warnedWrite = true;
+                                    }
+                                }
+                            } else {
+                                static bool s_warnedOpen = false;
+                                if (!s_warnedOpen) {
+                                    Logger::Warn("VulkanRenderer: pipeline cache open-for-write failed");
+                                    s_warnedOpen = true;
+                                }
+                            }
                         }
                     }
                 }
@@ -1355,6 +1779,21 @@ private:
 
     // Begin a render pass on either the swapchain (rt==nullptr) or a custom
     // render target. Sets default full-extent dynamic viewport+scissor.
+    // Restart the swapchain render pass with LOAD_OP_LOAD (preserve content).
+    // Called by SnapshotToTexture after the GPU copy.
+    void BeginPassLoad() {
+        PerFrame& f = m_frames[m_currentFrame];
+        VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        rpbi.renderPass      = m_swapchain.GetRenderPassLoad();
+        rpbi.framebuffer     = m_swapchain.GetFramebuffer(m_currentImage);
+        rpbi.renderArea      = { {0,0}, m_swapchain.GetExtent() };
+        rpbi.clearValueCount = 0;
+        rpbi.pClearValues    = nullptr;
+        vkCmdBeginRenderPass(f.cmd, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+        m_passActive = true;
+        m_currentRT  = nullptr;
+    }
+
     void BeginPass(VKRenderTargetImpl* rt) {
         PerFrame& f = m_frames[m_currentFrame];
         VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -1466,6 +1905,7 @@ private:
     uint32_t      m_currentFrame = 0;
     uint32_t      m_currentImage = 0;
     bool          m_skipPresent  = false;
+    bool          m_midFrameReadbackDone = false;
     bool          m_initialized  = false;
     bool          m_passActive   = false;
 

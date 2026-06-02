@@ -20,8 +20,10 @@
 
 namespace Nova64::RSP {
 
+#ifdef NOVA_RSP_RECOMPILER
 // Module-level recompiler memory (code buffers, jump tables)
 static RecompilerMemory s_RecompMem;
+#endif
 
 // Persistent HLE context — survives across DoRspCycles calls for audio continuity
 static std::unique_ptr<HLE::CHle> s_HleContext;
@@ -84,11 +86,13 @@ void RspRomOpened()
     // Create persistent HLE context (initializes audio output device, ucode state)
     s_HleContext = std::make_unique<HLE::CHle>(RSPSystem);
 
+#ifdef NOVA_RSP_RECOMPILER
     // Allocate recompiler code buffers if using recompiler
     if (CRSPSettings::CPUMethod() == RSPCpuMethod::RecompilerTasks)
     {
         AllocateRSPMemory(s_RecompMem);
     }
+#endif
 }
 
 // ──────────────────────────────────────────────
@@ -103,8 +107,10 @@ void RspRomClosed()
     // Destroy HLE context (shuts down WASAPI audio, flushes buffers)
     s_HleContext.reset();
 
+#ifdef NOVA_RSP_RECOMPILER
     // Free recompiler buffers
     FreeRSPMemory(s_RecompMem);
+#endif
 }
 
 // ──────────────────────────────────────────────
@@ -114,7 +120,9 @@ void RspRomClosed()
 void FreeRSP()
 {
     s_HleContext.reset();
+#ifdef NOVA_RSP_RECOMPILER
     FreeRSPMemory(s_RecompMem);
+#endif
     g_RSPDebugger = nullptr;
 }
 
@@ -129,34 +137,44 @@ uint32_t DoRspCycles(uint32_t cycles)
     const auto method = CRSPSettings::CPUMethod();
     const uint8_t* dmem = RSPSystem.DMEM();
     const uint32_t taskType = dmem ? *reinterpret_cast<const uint32_t*>(dmem + 0xFC0) : 0;
-    // Log::infof("RSPTRACE DoRspCycles enter cycles=0x%08X method=%u task=%u",
-    //           cycles, static_cast<uint32_t>(method), taskType);
+    // Throttled diagnostic: first 10 calls, then 1-in-1024. Quiet by default.
+    static uint32_t s_trace = 0;
+    ++s_trace;
+    const bool trace = (s_trace <= 10) || ((s_trace & 0x3FF) == 0);
+    if (trace) {
+        Log::infof("RSPTRACE DoRspCycles cycles=0x%X method=%u task=%u graphicsHle=%d",
+            cycles, static_cast<uint32_t>(method), taskType,
+            CRSPSettings::IsGraphicsHle() ? 1 : 0);
+    }
 
     // Try HLE dispatch first (fast path for known microcode tasks)
     if (method != RSPCpuMethod::Interpreter)
     {
-        // Log::info("RSPTRACE HLE execute enter");
         const bool hleHandled = s_HleContext && s_HleContext->Execute();
-        // Log::infof("RSPTRACE HLE execute exit handled=%d", hleHandled ? 1 : 0);
         if (hleHandled)
             return cycles;
     }
 
+#ifdef NOVA_RSP_RECOMPILER
     // Recompiler path (task-based JIT)
+    // NOTE: under MLE/LLE the recompiler buffer is intentionally not allocated
+    // by RspRomOpened (because CPUMethod was still HLE at ROM-open time, and
+    // the video plugin flipped it to RecompilerTasks afterwards). That's by
+    // design — the RSP recompiler hangs on F3D microcode (Phase 2 work).
+    // The call below harmlessly returns false when Code==nullptr, causing the
+    // interpreter fallback to handle graphics tasks instead.
     if (method == RSPCpuMethod::RecompilerTasks)
     {
-        // Log::info("RSPTRACE RSP recompiler enter");
         const bool recompiled = RSPSystem.RunRecompiledTask(s_RecompMem);
-        // Log::infof("RSPTRACE RSP recompiler exit handled=%d", recompiled ? 1 : 0);
         if (recompiled)
             return cycles;
     }
+#endif
 
-    // Interpreter fallback — run until RSP halts (BREAK instruction)
-    // Pass -1 as targetPC to disable the PC breakpoint (0 would break immediately at the start)
-    // Log::info("RSPTRACE interpreter fallback enter");
+    // Interpreter fallback — run until RSP halts (BREAK instruction).
+    // Under LLE this is the path that executes graphics microcode; it currently
+    // does not advance F3D far enough to emit RDP commands (Phase 2 work).
     RSPSystem.ExecuteOps(cycles, static_cast<uint32_t>(-1));
-    // Log::info("RSPTRACE interpreter fallback exit");
     return 0;
 }
 

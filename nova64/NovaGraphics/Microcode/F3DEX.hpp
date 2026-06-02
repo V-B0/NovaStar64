@@ -22,6 +22,7 @@ public:
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3DEX; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
+    int GetVertexCacheSize() const override { return 32; } // F3DEX has a 32-vertex cache
     const char* GetName() const override { return "F3DEX"; }
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
@@ -94,13 +95,14 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;
     case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;
     
-    default:
-        ++ctx.consecutiveUnknownOpcodes;
-        if (ctx.consecutiveUnknownOpcodes <= 4) {
+    default: {
+        static int s_unknownLogCount = 0;
+        if (++s_unknownLogCount <= 4) {
             NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
                     "F3DEX: Unknown opcode 0x{:02X}", opcode);
         }
         break;
+    }
     }
     
     return !ctx.halted;
@@ -171,13 +173,11 @@ inline void F3DEXHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1
 }
 
 inline void F3DEXHandler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Line rendering — draw as degenerate triangle for now
-    (void)w0;
-    int v0 = ((w1 >> 16) & 0xFF) / 2;
-    int v1 = ((w1 >> 8) & 0xFF) / 2;
-    // For line rendering, we'd need a special draw path
-    // Approximate with a very thin triangle
-    DrawTriangle(ctx, v0, v1, v0);
+    // G_LINE3D: line rendering is not implemented. The prior degenerate-triangle
+    // approach (DrawTriangle(ctx, v0, v1, v0)) is silently discarded by the
+    // v0==v2 guard in DrawTriangle, so it was a no-op. Skip until a proper
+    // line-draw path (thin-quad or rasterizer line) is added.
+    (void)ctx; (void)w0; (void)w1;
 }
 
 inline void F3DEXHandler::Cmd_G_MODIFYVTX(DListContext& ctx, uint32_t w0, uint32_t w1) {

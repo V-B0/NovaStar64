@@ -24,6 +24,7 @@ public:
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3DPD; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
+    int GetVertexCacheSize() const override { return 80; } // PD handles extended vertex buffer size up to 80
     const char* GetName() const override { return "F3DPD (Perfect Dark)"; }
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
@@ -231,10 +232,12 @@ inline void F3DPDHandler::Cmd_G_TRI4_PD(DListContext& ctx, uint32_t w0, uint32_t
         DrawTriangle(ctx, v3, v4, v5);
     }
     
-    // For 3-4 triangles, need to read additional words
+    // For 3-4 triangles, need to read additional words (1 full GBI command)
     if (numTris >= 3) {
         uint32_t w2 = ctx.ReadWord(ctx.pc);
-        ctx.AdvancePC(1);
+        uint32_t w3 = ctx.ReadWord(ctx.pc + 4);
+        ctx.AdvancePC(2); // Always advance by 8 bytes to maintain GBI alignment
+        
         int v6 = ((w2 >> 16) & 0xFF) / 2;
         int v7 = ((w2 >> 8) & 0xFF) / 2;
         int v8 = (w2 & 0xFF) / 2;
@@ -242,8 +245,6 @@ inline void F3DPDHandler::Cmd_G_TRI4_PD(DListContext& ctx, uint32_t w0, uint32_t
         
         if (numTris >= 4) {
             int v9  = ((w2 >> 24) & 0xFF) / 2;  // High byte encodes 4th tri start
-            uint32_t w3 = ctx.ReadWord(ctx.pc);
-            ctx.AdvancePC(1);
             int v10 = ((w3 >> 16) & 0xFF) / 2;
             int v11 = ((w3 >> 8) & 0xFF) / 2;
             DrawTriangle(ctx, v9, v10, v11);

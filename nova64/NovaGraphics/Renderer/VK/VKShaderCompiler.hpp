@@ -112,6 +112,7 @@ namespace N64UBOOff {
     constexpr int uTextureDetail       = 600;
     constexpr int uMaxTile             = 604;
     constexpr int uDebugOutput         = 608;
+    constexpr int uTexCvgAlpha         = 612;  // uIntBits3.y: when 1, multiply combined.a by texel0.a
 } // namespace N64UBOOff
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -153,6 +153,7 @@ public:
     /// Find or create GPU framebuffer for the given N64 address
     GPUFramebuffer* FindOrCreate(const FramebufferDesc& desc);
     GPUFramebuffer* FindByAddress(uint32_t address);
+    GPUFramebuffer* FindContaining(uint32_t address);
     GPUFramebuffer* GetCurrentColor() { return m_currentColor; }
     GPUFramebuffer* GetCurrentDepth() { return m_currentDepth; }
     uint32_t GetFBCount() const { return m_fbCount; }

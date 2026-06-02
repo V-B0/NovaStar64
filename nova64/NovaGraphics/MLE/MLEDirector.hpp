@@ -136,7 +136,10 @@ private:
     // ─── Debug logging ────────────────────────────────────────────────────
     void LogIfEnabled(MLELevel level, const char* reason) const {
         static const bool kEnabled = []() {
+#pragma warning(push)
+#pragma warning(disable: 4996)
             const char* v = std::getenv("MLE_DIRECTOR_DEBUG");
+#pragma warning(pop)
             return v && v[0] != '0';
         }();
         if (!kEnabled) return;

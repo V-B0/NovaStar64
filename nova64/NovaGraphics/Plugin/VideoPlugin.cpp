@@ -16,6 +16,7 @@
 #include "../Core/DepthBuffer.hpp"
 
 #include "../../common/log.hpp"
+#include "../../NovaRSP/Settings/RspSettings.hpp"
 
 #include <glad/gl.h>
 #include <chrono>
@@ -85,6 +86,8 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     if (!g_logger.IsEnabled(LogLevel::Info, LogSubsystem::Core)) {
         LoggerConfig logCfg;
         logCfg.consoleOutput = true;
+#pragma warning(push)
+#pragma warning(disable: 4996)
         const char* videoLogPath = std::getenv("NOVA64_VIDEO_LOG");
         logCfg.fileOutput    = videoLogPath && videoLogPath[0] != '\0';
         if (logCfg.fileOutput) logCfg.logFilePath = videoLogPath;
@@ -93,6 +96,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         if (std::getenv("NOVA64_MM_RDP_TRACE")) {
             logCfg.subsystemLevels[static_cast<size_t>(LogSubsystem::RDP)] = LogLevel::Info;
         }
+#pragma warning(pop)
         g_logger.Init(logCfg);
     }
 
@@ -104,6 +108,34 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // Load configuration
     m_config.LoadDefaults();
     m_config.LoadFromFile("NovaGraphics.ini");
+
+    // ── MLE pivot: propagate renderingMode to RSP settings ───────────
+    // HLE  : graphics microcode handlers own rendering (legacy default).
+    // LLE  : RSP recompiler executes graphics ucode; RDPProcessor consumes
+    //        the raw RDP FIFO produced by the RSP.
+    // Auto : audio HLE, graphics LLE.
+    //
+    // Must run before any RSP task is dispatched. CRSPSettings::SetRomOpen
+    // (called later from N64SYS startup) will trigger RefreshSettings which
+    // re-reads SuperNova64.ini — if that file exists and defines GraphicsHLE
+    // it will override us. That's intentional: explicit per-emu config wins.
+    {
+        const RenderingMode mode = m_config.renderingMode;
+        const bool wantGfxHle = (mode == RenderingMode::HLE);
+        Nova64::RSP::CRSPSettings::SetGraphicsHle(wantGfxHle);
+        Nova64::RSP::CRSPSettings::SetAudioHle(true); // keep audio HLE always
+        if (!wantGfxHle) {
+            // LLE: keep method=RecompilerTasks so DoRspCycles still tries HLE
+            // first (which keeps audio HLE working). The RSP recompiler buffer
+            // is intentionally NOT allocated for LLE — RunRecompiledTask sees
+            // a null Code pointer and harmlessly returns false, letting the
+            // RSP interpreter handle graphics microcode.
+            Nova64::RSP::CRSPSettings::SetCPUMethod(
+                Nova64::RSP::RSPCpuMethod::RecompilerTasks);
+        }
+        LOG_INFO("MLE: renderingMode={} → graphicsHle={}",
+                 static_cast<int>(mode), wantGfxHle ? "true" : "false");
+    }
 
     // Apply CLI overrides (set by NovaGraphicsGFXPlugin before Initialize)
     if (m_pendingResScale > 0) {
@@ -424,6 +456,50 @@ void VideoPlugin::Reset() {
 //  Per-Frame Operations
 // ═══════════════════════════════════════════════════════════════
 
+void VideoPlugin::ProcessDListShadow() {
+    // Shadow HLE: run the GBI display list in geometry-only mode so the RT
+    // layer can collect world-space triangles while LLE is active.
+    // No GL/Vulkan context needed; no RDP commands are submitted.
+    if (m_status != PluginStatus::Running && m_status != PluginStatus::Initialized) return;
+    if (!m_sysInfo.dmem || !m_dispatcher) return;
+
+    // Skip the entire shadow pass when nothing would consume its output:
+    //   - Widescreen write-back only does work when aspectRatio=Widescreen16_9
+    //   - RT geometry only matters when the backend actually supports raytracing
+    // Running shadow HLE unconditionally doubles the GBI T&L cost for no gain.
+    const bool needsWidescreen = (m_config.aspectRatio == AspectRatio::Widescreen16_9);
+    const bool needsRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+    if (!needsWidescreen && !needsRT) return;
+
+    auto readDMEM = [&](uint32_t absOff) -> uint32_t {
+        return *reinterpret_cast<const uint32_t*>(m_sysInfo.dmem + absOff);
+    };
+
+    uint32_t taskDataPtr   = readDMEM(0xFF0) & 0x00FFFFFF;
+    uint32_t ucodeAddr     = readDMEM(0xFD0) & 0x00FFFFFF;
+    uint32_t ucodeSize     = readDMEM(0xFD4);
+    uint32_t ucodeDataAddr = readDMEM(0xFD8) & 0x00FFFFFF;
+    uint32_t ucodeDataSize = readDMEM(0xFDC);
+
+    if (taskDataPtr >= m_sysInfo.rdramSize) return;
+
+    // Start a new RT scene on the first shadow task of this VI period.
+    // Subsequent tasks in the same frame accumulate into the same scene.
+    // ProcessRDPList will not call NewFrame again thanks to m_shadowSceneInitialized.
+    if (!m_shadowSceneInitialized) {
+        m_rtScene.NewFrame();
+        m_shadowSceneInitialized = true;
+    }
+
+    m_dispatcher->RunShadow(taskDataPtr,
+                            ucodeAddr, ucodeSize,
+                            ucodeDataAddr, ucodeDataSize,
+                            taskDataPtr,
+                            &m_rtScene,
+                            (m_config.aspectRatio == AspectRatio::Widescreen16_9)
+                                ? m_sysInfo.rdram : nullptr);
+}
+
 void VideoPlugin::ProcessDList() {
     if (m_status != PluginStatus::Running && m_status != PluginStatus::Initialized) return;
 
@@ -511,9 +587,15 @@ void VideoPlugin::ProcessDList() {
             m_rdpProcessor->Reset(false);  // warm reset: fresh RDP state, keep frame stats
         }
 
-        // RT scene extraction — begin frame and wire consumer into dispatcher context
-        m_rtScene.NewFrame();
-        m_dispatcher->SetGeometryConsumer(&m_rtScene);
+        // RT scene extraction — only collect geometry when the backend actually
+        // supports ray tracing.  On Intel Iris Xe (and any other non-RT GPU)
+        // supportsRayTracing is false, so skipping this saves the per-triangle
+        // SubmitTriangles() call overhead on every frame.
+        const bool needsRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+        if (needsRT) {
+            m_rtScene.NewFrame();
+            m_dispatcher->SetGeometryConsumer(&m_rtScene);
+        }
 
         m_dispatcher->ProcessGraphicsTask(
             taskDataPtr, ucodeAddr, ucodeSize,
@@ -527,7 +609,7 @@ void VideoPlugin::ProcessDList() {
 
         // Dispatch hardware ray tracing if the backend supports it and the
         // scene accumulated geometry this frame.
-        if (m_renderer && m_rtScene.GetTriangleCount() > 0) {
+        if (needsRT && m_rtScene.GetTriangleCount() > 0) {
             m_renderer->ExecuteRayTracing(
                 &m_rtScene,
                 static_cast<uint32_t>(winW),
@@ -535,7 +617,7 @@ void VideoPlugin::ProcessDList() {
         }
 
         // Log RT scene stats if debug logging is enabled
-        m_rtScene.DebugLogIfEnabled();
+        if (needsRT) m_rtScene.DebugLogIfEnabled();
 
         // Signal that HLE content was rendered — UpdateScreen will
         // present it instead of (or composited with) the VI framebuffer.
@@ -556,11 +638,57 @@ void VideoPlugin::ProcessRDPList() {
     uint32_t startAddr   = *m_sysInfo.dpcCurrentReg & 0x00FFFFFF;
     uint32_t endAddr     = *m_sysInfo.dpcEndReg & 0x00FFFFFF;
 
-    if (endAddr <= startAddr) return;
-    if (endAddr > m_sysInfo.rdramSize) return;
+    // ── LLE diagnostic: trace first 4 ProcessRDPList invocations ──
+    static uint32_t s_traceCount = 0;
+    const bool trace = (++s_traceCount <= 4);
+    if (trace) {
+        Log::infof("VPLLE[%u] ProcessRDPList enter dpcStart=0x%06X dpcEnd=0x%06X status=%d rdram=%p",
+                   s_traceCount, startAddr, endAddr,
+                   static_cast<int>(m_status.load()), m_sysInfo.rdram);
+    }
+
+    if (endAddr <= startAddr) {
+        if (trace) Log::infof("VPLLE[%u] skipped: endAddr<=startAddr", s_traceCount);
+        return;
+    }
+    if (endAddr > m_sysInfo.rdramSize) {
+        if (trace) Log::infof("VPLLE[%u] skipped: endAddr 0x%06X > rdramSize 0x%X",
+                              s_traceCount, endAddr, m_sysInfo.rdramSize);
+        return;
+    }
 
     std::lock_guard<std::mutex> lock(m_glMutex);
     if (auto* win = GetActiveWindow()) win->MakeContextCurrent();
+
+    // ── LLE frame open (no ProcessDList path) ───────────────────
+    // Under LLE, F3D microcode runs on the RSP interpreter and emits raw RDP
+    // commands directly to RDRAM. ProcessDList is never invoked, so the
+    // Vulkan frame would never be opened and nothing would present.
+    // Open the frame here, mirroring ProcessDList's preamble. On Vulkan, the
+    // first ProcessRDPList of the VI period opens the swapchain frame; on GL
+    // the default FBO is always available.
+    if (!m_vkFrameBegun) {
+        int32_t winW = 640, winH = 480;
+        if (auto* w = GetActiveWindow()) w->GetDrawableSize(winW, winH);
+        m_renderer->OnResize(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
+        if (!g_fbManager.IsGL()) {
+            m_renderer->BeginFrame();
+            m_vkFrameBegun = true;
+        }
+        // NOTE: Do NOT call RDPProcessor::Reset(false) here. RDPState::Reset
+        // clears otherModeL/H, combiner, tiles, scissor etc. regardless of the
+        // `cold` flag, so a per-frame warm reset would wipe persistent RDP
+        // state that the N64 hardware keeps between display lists. Under LLE
+        // the RSP/RDP state must persist exactly like real hardware --
+        // otherwise the first triangles of each frame run with depthtest=0,
+        // tile=0, combiner=0 and visibly break depth/textures.
+        // Shadow HLE already called NewFrame for the RT scene if it ran first;
+        // only call it here if shadow HLE was not active (pure LLE with no RT).
+        if (!m_shadowSceneInitialized) {
+            m_rtScene.NewFrame();
+        }
+        m_dispatcher->SetGeometryConsumer(&m_rtScene);
+    }
 
     // Read the RDRAM buffer as native 32-bit words (PJ64-style: RDRAM stores
     // words in host LE order, so a native uint32_t read gives the correct N64 value).
@@ -574,6 +702,12 @@ void VideoPlugin::ProcessRDPList() {
 
     m_rdpProcessor->ProcessCommandBuffer(m_rdpCmdScratch.data(), wordCount);
     m_frameStats.rdpCommandCount += static_cast<uint32_t>(wordCount / 2);
+    if (trace) {
+        Log::infof("VPLLE[%u] ProcessCommandBuffer done: words=%d firstWord=0x%08X rdpCount=%u",
+                   s_traceCount, wordCount,
+                   wordCount > 0 ? m_rdpCmdScratch[0] : 0u,
+                   m_frameStats.rdpCommandCount);
+    }
 
     // Update DPC current register
     *m_sysInfo.dpcCurrentReg = endAddr;
@@ -611,7 +745,7 @@ void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
 void VideoPlugin::UpdateScreen() {
     auto start = std::chrono::high_resolution_clock::now();
     auto stage = start;
-    double tSwap=0, tVI=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
+    double tSwap=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
     auto markStage = [&](double& slot){ auto now = std::chrono::high_resolution_clock::now();
         slot += std::chrono::duration<double, std::milli>(now - stage).count(); stage = now; };
     std::lock_guard<std::mutex> lock(m_glMutex);
@@ -639,6 +773,29 @@ void VideoPlugin::UpdateScreen() {
     // BeginFrame+EndFrame+Present (no draw calls this VI period, clear only).
     const bool hadVkFrameBegun = m_vkFrameBegun;
     m_vkFrameBegun = false;
+    // Reset shadow HLE scene flag so the next VI period starts fresh.
+    const bool hadShadowScene = m_shadowSceneInitialized;
+    m_shadowSceneInitialized = false;
+
+    // LLE: when ProcessRDPList opened a frame, it has been recording RDP
+    // draws into the batched renderer. Flush any pending primitives and run
+    // end-of-frame book-keeping before EndFrame/Present below.
+    if (hadVkFrameBegun && m_rdpProcessor) {
+        m_rdpProcessor->FlushBatch();
+        m_rdpProcessor->OnFrameEnd();
+        m_hleRenderedThisFrame = true;
+        if (m_dispatcher) m_dispatcher->SetGeometryConsumer(nullptr);
+        // RT: dispatch ray tracing if shadow HLE captured geometry this frame.
+        const bool canRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+        if (canRT && hadShadowScene && m_rtScene.GetTriangleCount() > 0) {
+            int32_t winW = 640, winH = 480;
+            if (win) win->GetDrawableSize(winW, winH);
+            m_renderer->ExecuteRayTracing(
+                &m_rtScene,
+                static_cast<uint32_t>(winW),
+                static_cast<uint32_t>(winH));
+        }
+    }
 
     markStage(tSwap);
 
@@ -700,7 +857,7 @@ void VideoPlugin::UpdateScreen() {
         // black clear frame which is worse than persisting the last HLE frame.
         // Keep the latch on Vulkan to avoid the black-screen regression.
         m_framesWithoutHLE++;
-        const int kUnlatchThreshold = g_fbManager.IsGL() ? 3 : 60;
+        const uint32_t kUnlatchThreshold = g_fbManager.IsGL() ? 3 : 60;
         if (m_framesWithoutHLE >= kUnlatchThreshold) {
             m_hleEverRendered = false;
         }
@@ -1271,7 +1428,10 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
 
     // Write as TGA (always available, no external deps)
     // TGA header
+#pragma warning(push)
+#pragma warning(disable: 4996)
     FILE* fp = fopen(path.c_str(), "wb");
+#pragma warning(pop)
     if (!fp) {
         LOG_ERROR("Screenshot failed — cannot open {}", path);
         return;
@@ -1345,9 +1505,6 @@ bool VideoPlugin::CreateDisplayRenderer() {
     int cfgBackend = m_config.backendType;
     if (cfgBackend == 1) {
         backend = BackendType::Vulkan;
-    } else if (cfgBackend == 2) {
-        // D3D11 not completely enabled on external window context yet for now
-        // backend = BackendType::D3D11; 
     }
 
     g_fbManager.SetIsGL(backend == BackendType::OpenGL46);

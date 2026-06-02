@@ -71,6 +71,23 @@ enum class PostFilter : uint8_t {
     Sharpen,
 };
 
+// ──────────────────────────────────────────────────────────────
+//  Rendering mode (MLE pivot)
+//
+//  HLE  — Graphics microcode runs in NovaGraphics/Microcode handlers.
+//         Display lists are intercepted at GBI level. Default for now.
+//  LLE  — RSP recompiler executes the actual graphics microcode and emits
+//         RDP commands consumed by RDPProcessor::ProcessCommandBuffer.
+//         HLE handlers remain as shadow taps for widescreen / texture-pack /
+//         RT world-space recovery (see MLEDirector).
+//  Auto — Audio HLE + Graphics LLE (use LLE for visuals, keep HLE for audio).
+// ──────────────────────────────────────────────────────────────
+enum class RenderingMode : uint8_t {
+    HLE  = 0,
+    LLE  = 1,
+    Auto = 2,
+};
+
 // ══════════════════════════════════════════════════════════════
 //  PluginConfig
 // ══════════════════════════════════════════════════════════════
@@ -125,6 +142,9 @@ struct PluginConfig {
     // ── Depth buffer ──────────────────────────────────────────
     bool     depthCompare        = true;
     bool     n64DepthCompare     = false;   // Software N64-accurate depth compare
+
+    // ── Emulation level (MLE pivot) ──────────────────────────
+    RenderingMode renderingMode  = RenderingMode::LLE;
 
     // ── Aspect ratio ──────────────────────────────────────────
     AspectRatio aspectRatio      = AspectRatio::Native4_3;

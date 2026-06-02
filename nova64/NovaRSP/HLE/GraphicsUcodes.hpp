@@ -358,115 +358,11 @@ namespace CycleType {
 }
 
 // ──────────────────────────────────────────────
-// Graphics Microcode CRC Database
-// CRC values from GLideN64, Mupen64Plus, and Project64
+// NOTE: The graphics microcode CRC database was removed from this
+// RSP-layer header. The single canonical CRC database lives in:
+//   NovaGraphics/Microcode/MicrocodeRegistry.cpp  (MicrocodeRegistry::InitializeDatabase)
+// All graphics ucode detection goes through MicrocodeDispatcher → MicrocodeRegistry.
 // ──────────────────────────────────────────────
-struct GfxMicrocodeEntry {
-    uint32_t        ucode_crc;
-    uint32_t        ucode_data_crc;  // 0 = don't check
-    GfxUcodeType    type;
-    std::string_view name;
-};
-
-inline constexpr GfxMicrocodeEntry kGfxMicrocodeDatabase[] = {
-    // ── F3D (original Fast3D) ──
-    { 0xBC45382E, 0, GfxUcodeType::F3D,     "Fast3D (SM64)" },
-    { 0x47F74D2B, 0, GfxUcodeType::F3D,     "Fast3D (alternate)" },
-
-    // ── F3DEX (GBI 1.x extended) ──
-    { 0x5D1D6F72, 0, GfxUcodeType::F3DEX,   "F3DEX 1.21 (Yoshi)" },
-    { 0x1A62DC2F, 0, GfxUcodeType::F3DEX,   "F3DEX 1.21 (standard)" },
-    { 0xDA51CCDB, 0, GfxUcodeType::F3DEX,   "F3DEX 1.23 (standard)" },
-    { 0x97414797, 0, GfxUcodeType::F3DEX,   "F3DEX 1.23 (Zelda MM)" },
-    { 0x25CD0965, 0, GfxUcodeType::F3DEX,   "F3DEX 1.23 (OOT Debug)" },
-    { 0xCB8C9B6C, 0, GfxUcodeType::F3DEX,   "F3DEX (Jet Force)" },
-    { 0x91A40802, 0, GfxUcodeType::F3DEX,   "F3DEX 1.0" },
-
-    // ── F3DEX2 (GBI 2.0) ── 
-    { 0x22099872, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.04H (MK64)" },
-    { 0x86B1593E, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.04H (standard)" },
-    { 0x2B291027, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.04H (alt)" },
-    { 0xB4577B9C, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.07 (Zelda OOT)" },
-    { 0x1412F2A6, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.07 (alt)" },
-    { 0x2B5A89C2, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (Banjo)" },
-    { 0xDE7D67D4, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (Zelda MM)" },
-    { 0x3003A5D1, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (DK64)" },
-    { 0xD536B388, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (Paper Mario)" },
-    { 0x1A1E1920, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (Kirby64)" },
-    { 0x0C8E5EC6, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.08 (Animal Forest)" },
-    { 0xC46DBD86, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.04 (generic)" },
-    { 0xBAD725A4, 0, GfxUcodeType::F3DEX2,  "F3DEX2 2.05 (generic)" },
-
-    // ── F3DEX2 CBFD (Conker) ──
-    { 0x5B5D36E3, 0, GfxUcodeType::F3DEX2_CBFD, "F3DEX2 CBFD (Conker)" },
-
-    // ── F3DEX2 PD (Perfect Dark) ──
-    { 0x5D3099F1, 0, GfxUcodeType::F3DEX2_PD, "F3DEX2 PD" },
-
-    // ── F3DPD (Perfect Dark F3D) ──
-    { 0x05165579, 0, GfxUcodeType::F3DPD,   "F3DPD (Perfect Dark)" },
-
-    // ── F3DDKR (Diddy Kong Racing) ──
-    { 0x07C3C4A2, 0, GfxUcodeType::F3DDKR,  "F3DDKR (Diddy Kong)" },
-
-    // ── F3DSWSE (Shadows of the Empire) ──
-    { 0x167E028B, 0, GfxUcodeType::F3DSWSE, "F3DSWSE (Shadows)" },
-
-    // ── F3DTEXA ──
-    { 0x4165E1FD, 0, GfxUcodeType::F3DTEXA, "F3DTEXA" },
-
-    // ── S2DEX (Sprite 2D) ──
-    { 0xEC94C05E, 0, GfxUcodeType::S2DEX,   "S2DEX 1.06 (Yoshi)" },
-    { 0x9DF31081, 0, GfxUcodeType::S2DEX,   "S2DEX 1.05" },
-    { 0x13CD7658, 0, GfxUcodeType::S2DEX,   "S2DEX 1.03" },
-
-    // ── S2DEX2 ──
-    { 0xB4CD7858, 0, GfxUcodeType::S2DEX2,  "S2DEX2 2.05" },
-    { 0xA3CDD17E, 0, GfxUcodeType::S2DEX2,  "S2DEX2 2.04" },
-
-    // ── L3DEX ──
-    { 0x6A834BFA, 0, GfxUcodeType::L3DEX,   "L3DEX 1.23" },
-
-    // ── L3DEX2 ──
-    { 0x994C8AFC, 0, GfxUcodeType::L3DEX2,  "L3DEX2 2.08" },
-
-    // ── ZSort ──
-    { 0xF10DB2C5, 0, GfxUcodeType::ZSort,   "ZSort (WDC)" },
-
-    // ── Turbo3D ──
-    { 0x9A4178E0, 0, GfxUcodeType::Turbo3D, "Turbo3D (Extreme-G)" },
-};
-
-inline constexpr size_t kGfxMicrocodeCount = sizeof(kGfxMicrocodeDatabase) / sizeof(kGfxMicrocodeDatabase[0]);
-
-// ──────────────────────────────────────────────
-// Lookup function for graphics microcodes
-// ──────────────────────────────────────────────
-[[nodiscard]] inline const GfxMicrocodeEntry* FindGfxMicrocode(uint32_t crc) noexcept
-{
-    for (size_t i = 0; i < kGfxMicrocodeCount; ++i)
-    {
-        if (kGfxMicrocodeDatabase[i].ucode_crc == crc)
-            return &kGfxMicrocodeDatabase[i];
-    }
-    return nullptr;
-}
-
-[[nodiscard]] inline const GfxMicrocodeEntry* FindGfxMicrocode(uint32_t crc, uint32_t data_crc) noexcept
-{
-    const GfxMicrocodeEntry* fallback = nullptr;
-    for (size_t i = 0; i < kGfxMicrocodeCount; ++i)
-    {
-        if (kGfxMicrocodeDatabase[i].ucode_crc == crc)
-        {
-            if (kGfxMicrocodeDatabase[i].ucode_data_crc == 0)
-                fallback = &kGfxMicrocodeDatabase[i];
-            else if (kGfxMicrocodeDatabase[i].ucode_data_crc == data_crc)
-                return &kGfxMicrocodeDatabase[i];
-        }
-    }
-    return fallback;
-}
 
 // ──────────────────────────────────────────────
 // Helper: is this a GBI2 microcode?

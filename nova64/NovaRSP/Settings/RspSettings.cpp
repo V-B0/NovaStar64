@@ -33,6 +33,9 @@ bool         CRSPSettings::s_ShowErrors        = false;
 bool         CRSPSettings::s_BreakOnStart      = false;
 bool         CRSPSettings::s_LogRDP            = false;
 bool         CRSPSettings::s_IndividualBlock   = false;
+bool         CRSPSettings::s_UserGraphicsHleSet = false;
+bool         CRSPSettings::s_UserAudioHleSet    = false;
+bool         CRSPSettings::s_UserCPUMethodSet   = false;
 
 // ──────────────────────────────────────────────
 // Initialize default settings
@@ -40,9 +43,11 @@ bool         CRSPSettings::s_IndividualBlock   = false;
 
 void CRSPSettings::InitializeRspSetting()
 {
-    s_CPUMethod        = RSPCpuMethod::HighLevelEmulation;
-    s_GraphicsHle      = true;
-    s_AudioHle         = true;
+    // Respect sticky user overrides set before this point (e.g. video plugin
+    // applied NovaGraphics.ini renderingMode before MainSYS called us).
+    if (!s_UserCPUMethodSet)   s_CPUMethod   = RSPCpuMethod::HighLevelEmulation;
+    if (!s_UserGraphicsHleSet) s_GraphicsHle = true;
+    if (!s_UserAudioHleSet)    s_AudioHle    = true;
     s_Profiling        = false;
     s_LogAsmCode       = false;
     s_SyncCPU          = false;
@@ -172,24 +177,48 @@ void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2)
 
     if (overrides->graphicsHle.has_value())
     {
-        s_GraphicsHle = overrides->graphicsHle.value();
-        std::fprintf(stderr, "RSP:   GraphicsHLE = %s\n", s_GraphicsHle ? "true" : "false");
+        if (s_UserGraphicsHleSet)
+        {
+            std::fprintf(stderr, "RSP:   GraphicsHLE override IGNORED (user set %s)\n",
+                s_GraphicsHle ? "true" : "false");
+        }
+        else
+        {
+            s_GraphicsHle = overrides->graphicsHle.value();
+            std::fprintf(stderr, "RSP:   GraphicsHLE = %s\n", s_GraphicsHle ? "true" : "false");
+        }
     }
     if (overrides->audioHle.has_value())
     {
-        s_AudioHle = overrides->audioHle.value();
-        std::fprintf(stderr, "RSP:   AudioHLE = %s\n", s_AudioHle ? "true" : "false");
+        if (s_UserAudioHleSet)
+        {
+            std::fprintf(stderr, "RSP:   AudioHLE override IGNORED (user set %s)\n",
+                s_AudioHle ? "true" : "false");
+        }
+        else
+        {
+            s_AudioHle = overrides->audioHle.value();
+            std::fprintf(stderr, "RSP:   AudioHLE = %s\n", s_AudioHle ? "true" : "false");
+        }
     }
     if (overrides->cpuMethod.has_value())
     {
-        switch (overrides->cpuMethod.value())
+        if (s_UserCPUMethodSet)
         {
-        case 0:  s_CPUMethod = RSPCpuMethod::Interpreter;        break;
-        case 2:  s_CPUMethod = RSPCpuMethod::RecompilerTasks;    break;
-        case 3:  s_CPUMethod = RSPCpuMethod::HighLevelEmulation; break;
-        default: break;
+            std::fprintf(stderr, "RSP:   CPUMethod override IGNORED (user set %u)\n",
+                static_cast<uint32_t>(s_CPUMethod));
         }
-        std::fprintf(stderr, "RSP:   CPUMethod = %u\n", static_cast<uint32_t>(s_CPUMethod));
+        else
+        {
+            switch (overrides->cpuMethod.value())
+            {
+            case 0:  s_CPUMethod = RSPCpuMethod::Interpreter;        break;
+            case 2:  s_CPUMethod = RSPCpuMethod::RecompilerTasks;    break;
+            case 3:  s_CPUMethod = RSPCpuMethod::HighLevelEmulation; break;
+            default: break;
+            }
+            std::fprintf(stderr, "RSP:   CPUMethod = %u\n", static_cast<uint32_t>(s_CPUMethod));
+        }
     }
 }
 

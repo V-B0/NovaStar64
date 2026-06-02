@@ -43,10 +43,14 @@ public:
     /// A simple single-color-attachment render pass matching the swapchain format.
     /// Pipelines must be created against this (or a compatible) render pass.
     VkRenderPass   GetRenderPass()             const { return m_renderPass; }
+    /// Like GetRenderPass() but uses LOAD_OP_LOAD — preserves existing content.
+    /// Compatible with the same framebuffers (same format/sample count).
+    VkRenderPass   GetRenderPassLoad()         const { return m_renderPassLoad; }
     VkFramebuffer  GetFramebuffer(uint32_t i)  const { return m_framebuffers[i]; }
 
 private:
     bool CreateRenderPass(VkDevice device);
+    bool CreateRenderPassLoad(VkDevice device);
     bool CreateDepthBuffer(VkPhysicalDevice physical, VkDevice device);
     bool CreateFramebuffers(VkDevice device);
 
@@ -55,7 +59,8 @@ private:
     VkExtent2D               m_extent    = {0, 0};
     std::vector<VkImage>     m_images;
     std::vector<VkImageView> m_imageViews;
-    VkRenderPass               m_renderPass = VK_NULL_HANDLE;
+    VkRenderPass               m_renderPass     = VK_NULL_HANDLE;
+    VkRenderPass               m_renderPassLoad = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_framebuffers;
 
     // Per-swapchain depth buffer (one image shared by all framebuffers).

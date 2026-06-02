@@ -37,14 +37,11 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
             ctx.pc, ctx.rdram ? "valid" : "NULL", ctx.rdramSize);
     
     // Limit commands per RSP task.  Real N64 DLs have at most a few thousand
-    // commands; 50 000 is generous for any legitimate list while limiting the
-    // GPU draw count from runaway loops to ~20× less than the old 1 000 000
-    // cap.  This prevents Intel Iris Xe GPU TDR caused by a single looping
-    // RSP task flooding the Vulkan command buffer with draws.
-    // 2000 commands per RSP task is the TDR-safe ceiling on Intel Iris Xe with
-    // draw-skip mitigation. Balances rendering quality against GPU ISA compile time.
-    // (2000 = no TDR; 3000 = TDR at ~38s; 5000 = TDR at ~27s)
-    static constexpr int MAX_COMMANDS_PER_FRAME = 1000000;
+    // Per-task command cap. 50,000 is generous for any real display list while
+    // keeping runaway-loop damage bounded. TDR measurements on Intel Iris Xe:
+    //   2,000 = safe   3,000 = TDR at ~38s   5,000 = TDR at ~27s
+    // 50,000 gives headroom for complex scenes without hitting the TDR ceiling.
+    static constexpr int MAX_COMMANDS_PER_FRAME = 50000;
     int commandCount = 0;
 
     // Track whether this is the very first DL executed in this session.
@@ -537,6 +534,24 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
                 // frustum and cause far objects to cull incorrectly.
                 if (fabsf(P.m[3][3]) > 0.5f) {
                     P.m[3][0] /= geo.widescreenScale;
+                }
+
+                // Write-back: patch the projection matrix in RDRAM so the RSP
+                // interpreter (LLE path) reads the widescreened values and
+                // produces matching clip-space coordinates.  Only runs during
+                // shadow HLE (rdramRW != null).  The dedup set prevents
+                // re-patching the same address within a single RSP task.
+                if (ctx.rdramRW && ctx.shadowPatchedAddresses.find(address) == ctx.shadowPatchedAddresses.end()) {
+                    ctx.shadowPatchedAddresses.insert(address);
+                    for (int wi = 0; wi < 4; ++wi) {
+                        for (int wj = 0; wj < 4; ++wj) {
+                            int idx = wi * 4 + wj;
+                            // Convert float back to s15.16 fixed-point
+                            int32_t fixed = static_cast<int32_t>(P.m[wi][wj] * 65536.0f);
+                            ctx.WriteHalf(address +      idx * 2, static_cast<uint16_t>(static_cast<int16_t>(fixed >> 16)));
+                            ctx.WriteHalf(address + 32 + idx * 2, static_cast<uint16_t>(fixed & 0xFFFF));
+                        }
+                    }
                 }
             }
         } else {
@@ -1070,14 +1085,26 @@ static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling 
 // ═══════════════════════════════════════════════════════════════════════════
 
 void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
-    if (!ctx.state || !ctx.rdpProcessor) { return; }
+    // rdpProcessor may be null in shadow HLE mode (RT geometry extraction only).
+    // In that case we skip all RDP draw calls but still feed geometryConsumer.
+    if (!ctx.state) { return; }
     
     {
     auto& geo = ctx.state->geometry;
-    int maxVtx = VERTEX_BUFFER_SIZE;
+    int maxVtx = GetVertexCacheSize();
     
     // Validate indices
     if (v0 >= maxVtx || v1 >= maxVtx || v2 >= maxVtx) {
+        return;
+    }
+
+    // Degenerate-vertex guard (matches GLideN64 gSPTriangle and RT64
+    // RSP::drawIndexedTri): two equal indices = zero-area triangle that
+    // would emit a sliver after perspective divide.  N64 RDP would also
+    // reject these via subpixel coverage but our float pipeline rounds
+    // them into visible 1-pixel lines.  Suspected cause of Bug A
+    // (SM64 tree extra triangle near Bob-omb trees).
+    if (v0 == v1 || v1 == v2 || v0 == v2) {
         return;
     }
     
@@ -1085,7 +1112,7 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // NDC-space cross products lose precision for nearly edge-on polygons.
     if (!DEBUG_DISABLE_TRI_REJECT &&
         (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) &&
-        !ctx.rdpProcessor->IsDebugDisableCulling()) {
+        (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling())) {
         const auto& tv0 = geo.vertexBuffer[v0];
         const auto& tv1 = geo.vertexBuffer[v1];
         const auto& tv2 = geo.vertexBuffer[v2];
@@ -1156,7 +1183,9 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // accept via orFlags == 0).
     if (orFlags == 0) {
         // Trivial accept - fully inside frustum, send directly
-        ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
+        if (ctx.rdpProcessor) {
+            ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
+        }
         ++m_trianglesProcessed;
     } else {
         // Needs clipping - convert to ClipVertex, run Sutherland-Hodgman
@@ -1222,7 +1251,7 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             // passes through unchecked when the camera clips through
             // objects during cutscenes, covering the camera view.
             bool doCull = (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) != 0
-                       && !ctx.rdpProcessor->IsDebugDisableCulling();
+                       && (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling());
 
             for (int i = 1; i + 1 < poly.vertexCount; ++i) {
                 RenderBatch::Vertex rv0 = toRenderVert(poly.vertices[0]);
@@ -1238,10 +1267,12 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                     if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) continue;
                 }
 
-                ctx.rdpProcessor->DrawTriangleRaw(
-                    rv0, rv1, rv2,
-                    geo.geometryMode,
-                    geo.texture.tileIndex);
+                if (ctx.rdpProcessor) {
+                    ctx.rdpProcessor->DrawTriangleRaw(
+                        rv0, rv1, rv2,
+                        geo.geometryMode,
+                        geo.texture.tileIndex);
+                }
             }
             m_trianglesProcessed += (poly.vertexCount - 2);
         }

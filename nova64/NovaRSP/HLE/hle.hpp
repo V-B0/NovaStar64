@@ -31,6 +31,7 @@ public:
 
     // ── Memory access ──
     [[nodiscard]] uint8_t* dram()  { return m_dram; }
+    [[nodiscard]] uint32_t dram_size() const { return m_dram_size; }
     [[nodiscard]] uint8_t* dmem()  { return m_dmem; }
     [[nodiscard]] uint8_t* imem()  { return m_imem; }
 
@@ -65,8 +66,11 @@ public:
     void FeedAudioDevice();
 
     // ── Plugin callbacks ──
-    void CallProcessDList()  { if (m_ProcessDList != nullptr) m_ProcessDList(); }
-    void CallProcessRdpList() { if (m_ProcessRdpList != nullptr) m_ProcessRdpList(); }
+    void CallProcessDList()        { if (m_ProcessDList != nullptr)       m_ProcessDList(); }
+    void CallProcessRdpList()       { if (m_ProcessRdpList != nullptr)     m_ProcessRdpList(); }
+    // Shadow HLE: run GBI display list in geometry-only mode (no RDP output)
+    // for RT world-space vertex extraction while LLE is active.
+    void CallProcessDListShadow()   { if (m_ProcessDListShadow != nullptr) m_ProcessDListShadow(); }
 
     // ── SP Hardware Register Access (for HLE mem.hpp) ──
     [[nodiscard]] uint32_t*& sp_mem_addr()  { return m_sp_mem_addr; }
@@ -94,6 +98,7 @@ private:
 
     // Memory pointers
     uint8_t*& m_dram;
+    uint32_t m_dram_size;
     uint8_t*& m_dmem;
     uint8_t*& m_imem;
 
@@ -125,6 +130,7 @@ private:
     void (*&m_CheckInterrupts)();
     void (*&m_ProcessDList)();
     void (*&m_ProcessRdpList)();
+    void (*&m_ProcessDListShadow)(); // Shadow HLE for RT geometry under LLE
 
     // Audio HLE state
     uint8_t     m_alist_buffer[0x1000]{};

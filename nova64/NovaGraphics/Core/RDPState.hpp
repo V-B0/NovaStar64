@@ -11,8 +11,6 @@
 
 #include "N64Types.hpp"
 #include "N64Math.hpp"
-#include "TileManager.hpp"
-#include "ScissorManager.hpp"
 #include "../Common/BitUtils.hpp"
 
 #include <cstdint>
@@ -22,6 +20,111 @@
 #include <functional>
 
 namespace Nova64::Video {
+
+// ──────────────────────────────────────────────────────────────
+//  Single RDP tile descriptor (mirrors hardware state)
+// ──────────────────────────────────────────────────────────────
+struct TileDescriptor {
+    // From SetTile command
+    uint8_t  format  = 0;   // 0=RGBA, 1=YUV, 2=CI, 3=IA, 4=I
+    uint8_t  size    = 0;   // 0=4bit, 1=8bit, 2=16bit, 3=32bit
+    uint16_t line    = 0;   // Stride in 64-bit words
+    uint16_t tmemAddr = 0;  // TMEM address (0-511, in 64-bit words)
+    uint8_t  palette = 0;   // Palette index (CI4 only, 0-15)
+
+    // Clamp/Mirror/Mask for S and T
+    uint8_t  clampS  = 0;   // 0=wrap, 1=mirror, 2=clamp
+    uint8_t  maskS   = 0;   // Mask bits (0=no mask)
+    uint8_t  shiftS  = 0;   // Shift (0-15)
+    uint8_t  clampT  = 0;
+    uint8_t  maskT   = 0;
+    uint8_t  shiftT  = 0;
+
+    // From SetTileSize command (10.2 fixed point)
+    int32_t  sl = 0;  // S low (upper-left)
+    int32_t  tl = 0;  // T low (upper-left)
+    int32_t  sh = 0;  // S high (lower-right)
+    int32_t  th = 0;  // T high (lower-right)
+
+    // Convenience
+    float GetSL() const { return sl / 4.0f; }
+    float GetTL() const { return tl / 4.0f; }
+    float GetSH() const { return sh / 4.0f; }
+    float GetTH() const { return th / 4.0f; }
+
+    int GetWidth() const { return ((sh - sl) >> 2) + 1; }
+    int GetHeight() const { return ((th - tl) >> 2) + 1; }
+
+    int GetBitsPerPixel() const {
+        static const int bpp[] = { 4, 8, 16, 32 };
+        return bpp[size & 3];
+    }
+
+    int GetBytesPerRow() const { return line * 8; } // line is in 64-bit words
+    int GetTMEMSizeBytes() const { return GetBytesPerRow() * GetHeight(); }
+
+    uint16_t GetTMEMWordAddr() const { return tmemAddr; }
+    uint32_t GetTMEMByteAddr() const { return static_cast<uint32_t>(tmemAddr) * 8; }
+
+    bool IsCI() const { return format == 2; }
+    bool IsIA() const { return format == 3; }
+    bool IsI() const { return format == 4; }
+    bool IsRGBA() const { return format == 0; }
+    bool IsYUV() const { return format == 1; }
+
+    bool IsMirrored_S() const { return (clampS & 1) != 0; }
+    bool IsClamped_S() const { return (clampS & 2) != 0; }
+    bool IsMirrored_T() const { return (clampT & 1) != 0; }
+    bool IsClamped_T() const { return (clampT & 2) != 0; }
+
+    bool operator==(const TileDescriptor& o) const {
+        return format == o.format && size == o.size && line == o.line &&
+               tmemAddr == o.tmemAddr && palette == o.palette &&
+               clampS == o.clampS && maskS == o.maskS && shiftS == o.shiftS &&
+               clampT == o.clampT && maskT == o.maskT && shiftT == o.shiftT &&
+               sl == o.sl && tl == o.tl && sh == o.sh && th == o.th;
+    }
+    bool operator!=(const TileDescriptor& o) const { return !(*this == o); }
+};
+
+// ──────────────────────────────────────────────────────────────
+//  Scissor rectangle (11.2 fixed-point as stored by RDP)
+// ──────────────────────────────────────────────────────────────
+struct ScissorRect {
+    int32_t xh = 0; // Upper-left X (11.2 fixed)
+    int32_t yh = 0; // Upper-left Y (11.2 fixed)
+    int32_t xl = 0; // Lower-right X (11.2 fixed)
+    int32_t yl = 0; // Lower-right Y (11.2 fixed)
+    uint8_t mode = 0; // 0 = Even/odd, 1 = BusyBit
+
+    float GetXhF() const { return xh / 4.0f; }
+    float GetYhF() const { return yh / 4.0f; }
+    float GetXlF() const { return xl / 4.0f; }
+    float GetYlF() const { return yl / 4.0f; }
+
+    float GetWidthF() const { return (xl - xh) / 4.0f; }
+    float GetHeightF() const { return (yl - yh) / 4.0f; }
+
+    int GetLeft() const   { return xh >> 2; }
+    int GetTop() const    { return yh >> 2; }
+    int GetRight() const  { return (xl + 3) >> 2; }
+    int GetBottom() const { return (yl + 3) >> 2; }
+    int GetPixelWidth() const  { return GetRight() - GetLeft(); }
+    int GetPixelHeight() const { return GetBottom() - GetTop(); }
+
+    bool IsValid() const { return xl > xh && yl > yh; }
+    bool Contains(int x, int y) const {
+        return x >= GetLeft() && x < GetRight() && y >= GetTop() && y < GetBottom();
+    }
+    bool ContainsF(float x, float y) const {
+        return x >= GetXhF() && x < GetXlF() && y >= GetYhF() && y < GetYlF();
+    }
+
+    bool operator==(const ScissorRect& o) const {
+        return xh == o.xh && yh == o.yh && xl == o.xl && yl == o.yl && mode == o.mode;
+    }
+    bool operator!=(const ScissorRect& o) const { return !(*this == o); }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  State Change Flags (for incremental GPU updates)
@@ -436,14 +539,20 @@ struct RDPState {
         
         tmem.Reset(cold);
         
-        fillColor = {};
-        fillColorRaw = 0;
-        fogColor = {};
-        blendColor = {};
-        primColor = {};
-        envColor = {};
-        primLODFrac = 0;
-        primLODMin = 0;
+        // On real N64 hardware, color registers persist across RSP task
+        // boundaries (there is no hardware reset between display lists).
+        // Only clear them on a cold reset so that inherited env/prim/fog/blend
+        // colors work correctly for games that rely on state carrying over.
+        if (cold) {
+            fillColor = {};
+            fillColorRaw = 0;
+            fogColor = {};
+            blendColor = {};
+            primColor = {};
+            envColor = {};
+            primLODFrac = 0;
+            primLODMin = 0;
+        }
         
         scissor = { 0, 0, 320, 240, 2 };
         primDepth = 0;

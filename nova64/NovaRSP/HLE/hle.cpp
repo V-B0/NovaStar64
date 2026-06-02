@@ -4,7 +4,6 @@
  */
 
 #include "hle.hpp"
-#include "HleTask.hpp"
 #include "TaskDispatcher.hpp"
 #include "AudioOutput.hpp"
 #include "../CPU/RspSystem.hpp"
@@ -23,7 +22,7 @@ namespace Nova64::RSP::HLE {
 // ──────────────────────────────────────────────
 
 CHle::CHle(CRSPSystem& system)
-    : m_dram(system.m_RDRAM)
+    : m_dram(system.m_RDRAM), m_dram_size(system.m_RdramSize)
     , m_dmem(system.m_DMEM)
     , m_imem(system.m_IMEM)
     , m_mi_intr(system.m_MI_INTR_REG)
@@ -47,6 +46,7 @@ CHle::CHle(CRSPSystem& system)
     , m_CheckInterrupts(system.CheckInterrupts)
     , m_ProcessDList(system.ProcessDList)
     , m_ProcessRdpList(system.ProcessRdpList)
+    , m_ProcessDListShadow(system.ProcessDListShadow)
 {
     m_AudioHle    = CRSPSettings::IsAudioHle();
     m_GraphicsHle = CRSPSettings::IsGraphicsHle();
@@ -230,6 +230,12 @@ bool CHle::normal_task_dispatching()
     switch (type)
     {
     case 1: // Video (GFX) task
+        if (!m_GraphicsHle)
+        {
+            // LLE mode: bail out so DoRspCycles falls through to the RSP
+            // recompiler/interpreter which executes the real ucode.
+            return false;
+        }
         if (m_ProcessDList != nullptr)
         {
             WarnMessage("RSP HLE: Gfx task reached type-based fallback — forwarding to plugin");
@@ -297,6 +303,12 @@ void CHle::FeedAudioDevice()
 bool CHle::Execute()
 {
     const auto start_time = std::chrono::steady_clock::now();
+
+    // Refresh HLE enable flags from CRSPSettings every dispatch. The plugin
+    // can flip these (renderingMode in NovaGraphics.ini) after CHle was
+    // constructed in RspRomOpened(), so a cached snapshot would be stale.
+    m_AudioHle    = CRSPSettings::IsAudioHle();
+    m_GraphicsHle = CRSPSettings::IsGraphicsHle();
 
     uint32_t taskType = 0;
     if (m_dmem) taskType = *u32(m_dmem, TaskOffset::Type);

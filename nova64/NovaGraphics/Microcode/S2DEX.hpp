@@ -132,6 +132,7 @@ public:
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
     void OnFrameBegin(DListContext& ctx) override;
+    void OnUcodeSwitch(DListContext& ctx) override;
     
 protected:
     MicrocodeType m_type = MicrocodeType::S2DEX;
@@ -260,6 +261,15 @@ inline void S2DEXHandler::OnFrameBegin(DListContext& ctx) {
     ctx.s2dexStatusRegs[1] = 0;
     ctx.s2dexStatusRegs[2] = 0;
     ctx.s2dexStatusRegs[3] = 0;
+}
+
+inline void S2DEXHandler::OnUcodeSwitch(DListContext& ctx) {
+    // Mid-task G_LOAD_UCODE switch into S2DEX.  On real hardware G_LOAD_UCODE
+    // reloads DMEM from RDRAM (CPU wrote zeros there before task start), so
+    // status registers are effectively zeroed on every switch — same as task
+    // start.  Not zeroing them here causes SELECT_DL to skip sub-displaylists
+    // it thinks already ran, freezing boot-logo and other animations.
+    OnFrameBegin(ctx);
 }
 
 inline bool S2DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -561,10 +571,10 @@ inline void S2DEXHandler::Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t
         "S2DEX SELECT_DL: addr=0x{:08X} sid={} flag=0x{:08X} mask=0x{:08X}",
         m_selectDL.addr, m_selectDL.sid, m_selectDL.flag, w1);
 
-    const uint8_t  sid  = m_selectDL.sid & 3;
+    const uint8_t  sid  = m_selectDL.sid;
     const uint32_t flag = m_selectDL.flag;
     const uint32_t mask = w1;
-    uint32_t& statusReg = ctx.s2dexStatusRegs[sid];
+    uint32_t& statusReg = ctx.s2dexStatusRegs[sid >> 2];
 
     if ((statusReg & mask) == flag) {
         // This SELECT_DL has already executed with this flag within the current
@@ -889,7 +899,12 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
         ctx.state->textureImage.width = static_cast<uint16_t>(texW);
         ctx.state->textureImage.format = static_cast<ImageFormat>(obj.imageFmt);
         ctx.state->textureImage.size   = static_cast<ImageSize>(obj.imageSiz);
-        if (m_lastObjTextureSource != 0) {
+        // Prefer the per-TMEM-slot source address set by LoadSpriteTexture;
+        // fall back to a delta from the last bulk load only when that's unavailable.
+        uint32_t tmemSource = ctx.state->tmemSourceAddress[obj.imageAdrs & 0x1FF];
+        if (tmemSource != 0) {
+            ctx.state->tileLoadAddress[0] = tmemSource;
+        } else if (m_lastObjTextureSource != 0) {
             uint32_t tmemDelta = (obj.imageAdrs >= m_lastObjTextureTmem)
                 ? static_cast<uint32_t>(obj.imageAdrs - m_lastObjTextureTmem)
                 : 0u;
@@ -990,7 +1005,7 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         ctx.state->tmemSourceAddress[tmem & 0x1FF] = ctx.state->textureImage.address;
         
         // Update S2DEX status register (sid is a byte offset 0/4/8/12; >>2 = array index 0-3).
-        { uint8_t idx = (sid >> 2) & 3;
+        { uint8_t idx = (sid >> 2) & 0xFF;
           ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }
@@ -1027,7 +1042,7 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         // Mirror the tmemSourceAddress update that HandleLoadTile would perform.
         ctx.state->tmemSourceAddress[tmem & 0x1FF] = ctx.state->textureImage.address;
         
-        { uint8_t idx = (sid >> 2) & 3;
+        { uint8_t idx = (sid >> 2) & 0xFF;
           ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }
@@ -1065,7 +1080,7 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         // N64 SDK: gDPLoadTLUT(G_TX_LOADTILE, pnum) → DecodeLoadTLUT adds +1
         ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum + 1);
         
-        { uint8_t idx = (sid >> 2) & 3;
+        { uint8_t idx = (sid >> 2) & 0xFF;
           ctx.s2dexStatusRegs[idx] = (ctx.s2dexStatusRegs[idx] & ~mask) | (flag & mask); }
         break;
     }

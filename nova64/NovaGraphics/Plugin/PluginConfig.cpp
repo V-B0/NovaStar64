@@ -95,6 +95,15 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
         if (key == "aspectRatio")        { aspectRatio = static_cast<AspectRatio>(std::stoi(val)); return true; }
         if (key == "stretchFactor")      { stretchFactor = std::stof(val); return true; }
 
+        // Emulation level (MLE pivot)
+        if (key == "renderingMode") {
+            int v = std::stoi(val);
+            if (v < 0) v = 0;
+            if (v > 2) v = 2;
+            renderingMode = static_cast<RenderingMode>(v);
+            return true;
+        }
+
         // Post
         if (key == "postFilter")         { postFilter = static_cast<PostFilter>(std::stoi(val)); return true; }
         if (key == "gamma")              { gamma = std::stof(val); return true; }
@@ -260,6 +269,7 @@ bool PluginConfig::SaveToFile(const std::string& path) const {
     file << "sharpenStrength = " << sharpenStrength << "\n\n";
 
     file << "[Rendering]\n";
+    file << "renderingMode = " << static_cast<int>(renderingMode) << "  # 0=HLE, 1=LLE, 2=Auto\n";
     file << "ditheringEnabled = " << (ditheringEnabled ? "1" : "0") << "\n";
     file << "ditheringPattern = " << ditheringPattern << "\n";
     file << "fogEnabled = " << (fogEnabled ? "1" : "0") << "\n";

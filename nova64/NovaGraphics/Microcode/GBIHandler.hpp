@@ -28,6 +28,7 @@ class MicrocodeDispatcher;
 
 struct DListContext {
     const uint8_t*  rdram = nullptr;        // Main RDRAM (8MB)
+    uint8_t*        rdramRW = nullptr;      // Writable RDRAM alias (null except during shadow runs)
     uint32_t        rdramSize = 0;
     RDPState*       state = nullptr;        // Current graphics state
     RDPProcessor*   rdpProcessor = nullptr; // RDP command processor
@@ -36,8 +37,7 @@ struct DListContext {
     // Display list execution state
     uint32_t        pc = 0;                 // Current program counter (RDRAM address)
     bool            halted = false;         // True when EndDL reached
-    int             consecutiveUnknownOpcodes = 0; // Runaway DL detection
-    
+
     // Display list stack (DL call nesting)
     static constexpr int MAX_DL_STACK = 18;
     struct DLStackEntry {
@@ -58,9 +58,7 @@ struct DListContext {
     // S2DEX status registers — gSP.status[] equivalent (GLideN64).
     // Must persist across G_LOAD_UCODE microcode switches: OOT/MM switch
     // F3DEX2 <-> S2DEX2 every frame, which calls S2DEXHandler::Initialize()
-    // and would zero them if stored there.  Only indices 0-3 are used
-    // (uObjTxtr sid field is a byte offset 0/4/8/12; >>2 gives 0-3).
-    uint32_t s2dexStatusRegs[4] = {};
+    uint32_t s2dexStatusRegs[256] = {};
 
     // Branch source tracking for DL loop detection (intra-task scope).
     // Cleared at the start of each RSP task in MicrocodeDispatcher.
@@ -69,6 +67,13 @@ struct DListContext {
     // in the same task, it is a cycle — execution is halted rather than
     // looping indefinitely.
     std::unordered_set<uint32_t> dlBranchVisited;
+
+    // Shadow-mode widescreen write-back dedup set.
+    // Tracks RDRAM addresses that have already been patched this task so the
+    // same matrix block is not patched twice if the game re-issues the same
+    // G_MTX command (e.g., via a DL call that loops through sub-meshes).
+    // Cleared at the start of each shadow task in MicrocodeDispatcher::RunShadow().
+    std::unordered_set<uint32_t> shadowPatchedAddresses;
 
     // ─── Helper Methods ──────────────────────────────────────────────
     
@@ -106,6 +111,15 @@ struct DListContext {
         if (addr + count > rdramSize) return false;
         std::memcpy(dst, rdram + addr, count);
         return true;
+    }
+
+    /// Write a 16-bit halfword to writable RDRAM (word-swapped storage: XOR addr with 2).
+    /// No-op when rdramRW is null (normal / non-shadow mode).
+    void WriteHalf(uint32_t addr, uint16_t val) {
+        if (!rdramRW) return;
+        addr &= 0x00FFFFFF;
+        if (addr + 2 > rdramSize) return;
+        *reinterpret_cast<uint16_t*>(rdramRW + (addr ^ 2)) = val;
     }
     
     /// Resolve a segmented address using current segment table.
@@ -166,6 +180,9 @@ public:
     /// Get the GBI version
     virtual GBIVersion GetGBIVersion() const = 0;
     
+    /// Get the maximum number of vertices supported by this microcode's cache
+    virtual int GetVertexCacheSize() const { return VERTEX_BUFFER_SIZE; }
+    
     /// Get human-readable name
     virtual const char* GetName() const = 0;
     
@@ -195,6 +212,14 @@ public:
      * Called after finishing a frame's display list processing.
      */
     virtual void OnFrameEnd(DListContext& ctx) { (void)ctx; }
+
+    /**
+     * Called when a mid-task G_LOAD_UCODE switches to this handler.
+     * Unlike OnFrameBegin, this must NOT reset per-task state (e.g. S2DEX
+     * status registers) that should persist across microcode switches within
+     * the same RSP task.
+     */
+    virtual void OnUcodeSwitch(DListContext& ctx) { (void)ctx; }
     
     // ─── Common GBI Commands (shared across all microcodes) ──────────
     // These implement RDP commands (0xC0-0xFF) which are identical

@@ -120,6 +120,18 @@ static void RSP_ProcessRdpList()
         if (gfx) { gfx->UpdateRDPStatus(); }
     }
 }
+
+static void RSP_ProcessDListShadow()
+{
+    // Called by shadow HLE when LLE is active.
+    // Runs the GBI display list in geometry-only mode (no RDP output)
+    // so the RT layer can harvest world-space triangles for ray tracing.
+    if (g_System && g_System->GetPluginManager())
+    {
+        auto* gfx = g_System->GetPluginManager()->GetGraphicsPlugin();
+        if (gfx) { gfx->ProcessDListShadow(0, 0); }
+    }
+}
 N64Rom* g_DDRom = nullptr;
 N64Disk* g_Disk = nullptr;
 
@@ -1195,6 +1207,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         rspInfo.CheckInterrupts = RSP_CheckInterrupts;
         rspInfo.ProcessDList    = RSP_ProcessDList;
         rspInfo.ProcessRdpList  = RSP_ProcessRdpList;
+        rspInfo.ProcessDListShadow = RSP_ProcessDListShadow;
 
         // Initialize RSP: bind pointers + build dispatch tables
         Nova64::RSP::InitializeRSP(rspInfo);

@@ -64,6 +64,28 @@ public:
                           uint32_t dataAddr, uint32_t dataSize);
     
     /**
+     * Run the display list in shadow mode: extract RT world-space geometry
+     * without submitting any RDP commands.  Safe to call concurrently with
+     * the LLE RSP interpreter because rdpProcessor is nulled out internally.
+     *
+     * @param taskDataAddr   RDRAM address of task data (for ucode detection)
+     * @param ucodeAddr      RDRAM address of microcode text (IMEM)
+     * @param ucodeSize      Size of microcode text
+     * @param ucodeDataAddr  RDRAM address of microcode data (DMEM)
+     * @param ucodeDataSize  Size of microcode data
+     * @param dlAddr         RDRAM address of display list start
+     * @param consumer       RT geometry consumer to receive triangles
+     * @param rdramRW        Writable RDRAM pointer for widescreen matrix write-back.
+     *                       Pass nullptr (default) when write-back is not needed.
+     */
+    void RunShadow(uint32_t taskDataAddr,
+                   uint32_t ucodeAddr, uint32_t ucodeSize,
+                   uint32_t ucodeDataAddr, uint32_t ucodeDataSize,
+                   uint32_t dlAddr,
+                   RT::ISceneGeometryConsumer* consumer,
+                   uint8_t* rdramRW = nullptr);
+
+    /**
      * Called at end of frame — flush pending work, update stats.
      */
     void OnFrameEnd();
@@ -129,6 +151,10 @@ private:
     
     // Execution context (reused per frame)
     DListContext m_context;
+    
+    // Isolated RDPState used during RunShadow() so the shadow HLE run
+    // cannot corrupt the live LLE RDPState.
+    RDPState m_shadowState;
     
     // Statistics
     DispatcherStats m_stats;

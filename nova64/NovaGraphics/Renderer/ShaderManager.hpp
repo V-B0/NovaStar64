@@ -262,6 +262,9 @@ struct ShaderUniforms {
     // Combiner debug output mode
     int debugOutput       = -1; // int: 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
 
+    // Texture-alpha coverage mask (RGBA16 sprites): multiply combined.a by texel0.a
+    int texCvgAlpha       = -1; // int: 0=off, 1=on
+
     void Reset() {
         *this = ShaderUniforms();
     }
@@ -554,6 +557,7 @@ public:
     void SetFogUsage(int fogUsage);
     void SetScreenSpaceTriangle(int screenSpace);
     void SetDebugOutput(int mode);
+    void SetTexCvgAlpha(int v);
 
     // Built-in shader programs
     const CompiledShader* GetDepthOnlyShader();

@@ -21,14 +21,15 @@ namespace Nova64::RSP {
 class RSPRegisterHandlerPlugin;
 struct RecompilerMemory;
 
+#ifdef NOVA_RSP_RECOMPILER
 namespace Recompiler {
 class CRSPRecompiler;
 class CRSPRecompilerOps;
 class RspCodeBlock;
 }
+#endif
 
 namespace HLE {
-class CHleTask;
 class CHle;
 }
 
@@ -63,6 +64,7 @@ struct RSP_INFO {
     void (*CheckInterrupts)();
     void (*ProcessDList)();
     void (*ProcessRdpList)();
+    void (*ProcessDListShadow)();  // Optional: shadow HLE for RT geometry under LLE
 };
 
 // ──────────────────────────────────────────────
@@ -71,10 +73,11 @@ struct RSP_INFO {
 // ──────────────────────────────────────────────
 class CRSPSystem {
     friend class RSPOp;
+#ifdef NOVA_RSP_RECOMPILER
     friend class Recompiler::CRSPRecompilerOps;
     friend class Recompiler::CRSPRecompiler;
     friend class Recompiler::RspCodeBlock;
-    friend class HLE::CHleTask;
+#endif
     friend class CRDPLog;
     friend class RSPRegisterHandler;
     friend class RSPRegisterHandlerPlugin;
@@ -94,10 +97,12 @@ public:
     // Execution
     void ExecuteOps(uint32_t cycles, uint32_t targetPC);
 
+#ifdef NOVA_RSP_RECOMPILER
     // Recompiler execution (task-based JIT)
     // Compiles and runs the RSP block at current SP_PC.
     // Returns true if execution succeeded, false if fallback needed.
     bool RunRecompiledTask(RecompilerMemory& mem);
+#endif
 
     // Sync CPU support (for debugging / verification)
     void SetupSyncCPU();
@@ -140,7 +145,9 @@ private:
     CRSPSystem* m_BaseSystem{nullptr};
 
     // Core components
+#ifdef NOVA_RSP_RECOMPILER
     std::unique_ptr<Recompiler::CRSPRecompiler> m_Recompiler;
+#endif
     std::unique_ptr<RSPRegisterHandlerPlugin> m_RSPRegisterHandler;
     CRSPRegisters m_Reg;
     RSPOp         m_Op;
@@ -182,6 +189,7 @@ private:
     void (*CheckInterrupts)(){nullptr};
     void (*ProcessDList)(){nullptr};
     void (*ProcessRdpList)(){nullptr};
+    void (*ProcessDListShadow)(){nullptr};  // Shadow HLE for RT geometry under LLE
 
     // Profiling counters
     uint64_t m_ProfileOpsExecuted{0};

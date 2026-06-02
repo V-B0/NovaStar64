@@ -10,7 +10,24 @@
 
 #include "GBIHandler.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace Nova64::Video {
+
+// Diagnostic gate for F3D vertex-index sanity checking.
+// Enable by setting environment variable NOVA_F3D_VTRACE=1 before launch.
+// Logs to stderr when a decoded vertex index >= 16 (F3D cache size).
+inline bool F3DVTraceEnabled() {
+    static const bool enabled = []() {
+#pragma warning(push)
+#pragma warning(disable: 4996)
+        const char* v = std::getenv("NOVA_F3D_VTRACE");
+#pragma warning(pop)
+        return v && v[0] != '\0' && v[0] != '0';
+    }();
+    return enabled;
+}
 
 class F3DHandler : public GBIHandler {
 public:
@@ -20,6 +37,7 @@ public:
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3D; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
+    int GetVertexCacheSize() const override { return 16; } // F3D has a 16-vertex cache
     const char* GetName() const override { return "Fast3D"; }
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
@@ -164,6 +182,16 @@ inline void F3DHandler::Cmd_G_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) 
     int v0 = static_cast<int>(((w1 >> 16) & 0xFF) / 10);
     int v1 = static_cast<int>(((w1 >> 8)  & 0xFF) / 10);
     int v2 = static_cast<int>(( w1        & 0xFF) / 10);
+    if (F3DVTraceEnabled() && (v0 >= 16 || v1 >= 16 || v2 >= 16)) {
+        std::fprintf(stderr,
+            "[F3D-VTRACE] G_TRI1 OOB w1=0x%08X raw=(%u,%u,%u) decoded=(%d,%d,%d)\n",
+            w1, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF, v0, v1, v2);
+    }
+    if (F3DVTraceEnabled() && (v0 == v1 || v1 == v2 || v2 == v0)) {
+        std::fprintf(stderr,
+            "[F3D-VTRACE] G_TRI1 DEGEN w1=0x%08X decoded=(%d,%d,%d)\n",
+            w1, v0, v1, v2);
+    }
     DrawTriangle(ctx, v0, v1, v2);
 }
 
@@ -176,6 +204,22 @@ inline void F3DHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) 
     int v1 = static_cast<int>(((w1 >> 16) & 0xFF) / 10);
     int v2 = static_cast<int>(((w1 >> 8)  & 0xFF) / 10);
     int v3 = static_cast<int>(( w1        & 0xFF) / 10);
+    if (F3DVTraceEnabled() && (v0 >= 16 || v1 >= 16 || v2 >= 16 || v3 >= 16)) {
+        std::fprintf(stderr,
+            "[F3D-VTRACE] G_QUAD OOB w1=0x%08X raw=(%u,%u,%u,%u) decoded=(%d,%d,%d,%d)\n",
+            w1, (w1 >> 24) & 0xFF, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF,
+            v0, v1, v2, v3);
+    }
+    // Degenerate detection on either decomposed triangle (v0,v1,v2) + (v0,v2,v3).
+    if (F3DVTraceEnabled()) {
+        bool degen1 = (v0 == v1 || v1 == v2 || v2 == v0);
+        bool degen2 = (v0 == v2 || v2 == v3 || v3 == v0);
+        if (degen1 || degen2) {
+            std::fprintf(stderr,
+                "[F3D-VTRACE] G_QUAD DEGEN w1=0x%08X decoded=(%d,%d,%d,%d) tri1=%d tri2=%d\n",
+                w1, v0, v1, v2, v3, (int)degen1, (int)degen2);
+        }
+    }
     DrawTriangle2(ctx, v0, v1, v2, v0, v2, v3);
 }
 

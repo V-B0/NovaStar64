@@ -690,6 +690,17 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address) {
     return best;
 }
 
+GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
+    address &= 0x7FFFFF;
+    for (uint32_t i = 0; i < m_fbCount; ++i) {
+        auto& fb = m_framebuffers[i];
+        if (address >= fb.desc.address && address < fb.desc.EndAddress()) {
+            return &m_framebuffers[i];
+        }
+    }
+    return nullptr;
+}
+
 void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
     // Remove framebuffers not used for 60+ frames
     uint32_t writeIdx = 0;

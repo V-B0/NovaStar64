@@ -80,6 +80,17 @@ public:
      * @param end End address in RDRAM
      */
     virtual void ProcessDList(uint32_t start, uint32_t end) = 0;
+
+    /**
+     * @brief Shadow HLE: run the GBI display list in geometry-only mode.
+     *        Called under LLE so the RT layer can harvest world-space triangles
+     *        without affecting the live RDP state.
+     * @param start Start address (unused, task struct is read from DMEM)
+     * @param end   End address (unused)
+     */
+    virtual void ProcessDListShadow(uint32_t start, uint32_t end) {
+        (void)start; (void)end; // Default: no-op (RT not supported by this plugin)
+    }
     
     /**
      * @brief Process single RDP command

@@ -173,7 +173,7 @@ std::string ShaderGenerator::GetCommonUniforms() const {
             "    ivec4 uIntBits0;\n"          //  [560] x=frameCount y=zMode z=useTexCoordBounds w=texPersp
             "    ivec4 uIntBits1;\n"          //  [576] x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
             "    ivec4 uIntBits2;\n"          //  [592] x=fogUsage y=sst z=texDetail w=maxTile
-            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput yzw=0
+            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput y=texCvgAlpha zw=0
             "} uN64;\n"
             // Aliases mapping original uniform names → UBO fields
             "#define uMVPMatrix           uN64.uMVPMatrix\n"
@@ -230,7 +230,8 @@ std::string ShaderGenerator::GetCommonUniforms() const {
             "#define uScreenSpaceTriangle uN64.uIntBits2.y\n"
             "#define uTextureDetail       uN64.uIntBits2.z\n"
             "#define uMaxTile             uN64.uIntBits2.w\n"
-            "#define uDebugOutput         uN64.uIntBits3.x\n";
+            "#define uDebugOutput         uN64.uIntBits3.x\n"
+            "#define uTexCvgAlpha         uN64.uIntBits3.y\n";
     }
     return
         "uniform mat4  uMVPMatrix;\n"
@@ -1769,6 +1770,10 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         frag += GenerateCombinerCode(key.mux, f);
         frag += GenerateAlphaTestCode(f);                // N64: alpha compare before blender
         frag += GenerateCoverageCode(f);                 // Coverage modifies alpha AFTER test
+        // Texture-alpha coverage: for RGBA16 sprites the A bit masks per-pixel visibility.
+        // When uTexCvgAlpha is set, discard transparent texture pixels so that
+        // background pixels (A=0 in RGBA16) don't overdraw the framebuffer.
+        frag += "    if (uTexCvgAlpha != 0 && texel0.a < 0.5) discard;\n";
         frag += GenerateDitherCode(f, key.otherModeH);   // N64: dither combiner output before blender
         std::string blenderCode0 = GenerateBlenderCode(key.blenderBits, key.otherModeL, f);
         bool mleDepthInterlock0 = (f & SF_MLE_BLENDER) &&

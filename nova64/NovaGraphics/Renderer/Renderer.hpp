@@ -42,7 +42,6 @@ namespace RT { class RTSceneManager; }
 enum class BackendType : uint8_t {
     None = 0,
     OpenGL46,       // OpenGL 4.6 Core Profile + DSA
-    D3D11,          // Direct3D 11 (Windows)
     Software,       // Software fallback (debug only)
     Vulkan,         // Vulkan 1.2+
     Count
@@ -674,6 +673,23 @@ public:
     // ─── Readback ──────────────────────────────────────────────
     virtual void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                              TextureFormat format, void* outData) = 0;
+
+    // GPU-side copy of the current swapchain frame into dst texture.
+    // Records vkCmdCopyImage into the in-flight command buffer; no CPU sync,
+    // no m_skipPresent side-effect. Default no-op for non-Vulkan backends.
+    virtual void BlitToTexture(ITexture* dst) { (void)dst; }
+    /// Like BlitToTexture but restarts the render pass with LOAD_OP_LOAD instead
+    /// of LOAD_OP_CLEAR, preserving existing swapchain content.
+    virtual void SnapshotToTexture(ITexture* dst) { (void)dst; }
+    virtual void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW,
+                                        uint32_t fbH, bool isRGBA16,
+                                        uint8_t* rdram) {
+        (void)fbAddress;
+        (void)fbW;
+        (void)fbH;
+        (void)isRGBA16;
+        (void)rdram;
+    }
 
     // ─── Debug ─────────────────────────────────────────────────
     virtual void PushDebugGroup(const char* name) = 0;

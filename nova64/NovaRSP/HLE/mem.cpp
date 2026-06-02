@@ -22,43 +22,43 @@ static constexpr uint32_t DRAM_MASK = 0x007FFFFF;
 // host-native array, with byte swapping
 // ──────────────────────────────────────────────
 
-void load_u8(uint8_t* dst, const uint8_t* buffer, unsigned address, size_t count)
+void load_u8(uint8_t* dst, const uint8_t* buffer, unsigned address, size_t count, unsigned mask)
 {
     for (size_t i = 0; i < count; i++)
     {
-        dst[i] = *u8(buffer, address + static_cast<unsigned>(i));
+        dst[i] = *u8(buffer, (address + static_cast<unsigned>(i)) & mask);
     }
 }
 
-void load_u16(uint16_t* dst, const uint8_t* buffer, unsigned address, size_t count)
+void load_u16(uint16_t* dst, const uint8_t* buffer, unsigned address, size_t count, unsigned mask)
 {
     for (size_t i = 0; i < count; i++)
     {
-        dst[i] = *u16(buffer, address + static_cast<unsigned>(i * 2));
+        dst[i] = *u16(buffer, (address + static_cast<unsigned>(i * 2)) & mask);
     }
 }
 
-void load_u32(uint32_t* dst, const uint8_t* buffer, unsigned address, size_t count)
+void load_u32(uint32_t* dst, const uint8_t* buffer, unsigned address, size_t count, unsigned mask)
 {
     for (size_t i = 0; i < count; i++)
     {
-        dst[i] = *u32(buffer, address + static_cast<unsigned>(i * 4));
+        dst[i] = *u32(buffer, (address + static_cast<unsigned>(i * 4)) & mask);
     }
 }
 
-void store_u16(uint8_t* buffer, unsigned address, const uint16_t* src, size_t count)
+void store_u16(uint8_t* buffer, unsigned address, const uint16_t* src, size_t count, unsigned mask)
 {
     for (size_t i = 0; i < count; i++)
     {
-        *u16(buffer, address + static_cast<unsigned>(i * 2)) = src[i];
+        *u16(buffer, (address + static_cast<unsigned>(i * 2)) & mask) = src[i];
     }
 }
 
-void store_u32(uint8_t* buffer, unsigned address, const uint32_t* src, size_t count)
+void store_u32(uint8_t* buffer, unsigned address, const uint32_t* src, size_t count, unsigned mask)
 {
     for (size_t i = 0; i < count; i++)
     {
-        *u32(buffer, address + static_cast<unsigned>(i * 4)) = src[i];
+        *u32(buffer, (address + static_cast<unsigned>(i * 4)) & mask) = src[i];
     }
 }
 
@@ -73,7 +73,7 @@ uint32_t* dmem_u32(CHle* hle, uint16_t address)
 
 void dmem_store_u32(CHle* hle, const uint32_t* src, uint16_t address, size_t count)
 {
-    store_u32(hle->dmem(), address & 0xFFC, src, count);
+    store_u32(hle->dmem(), address & 0xFFC, src, count, 0xFFF);
 }
 
 // ──────────────────────────────────────────────
@@ -97,27 +97,27 @@ uint32_t* dram_u32(CHle* hle, uint32_t address)
 
 void dram_load_u8(CHle* hle, uint8_t* dst, uint32_t address, size_t count)
 {
-    load_u8(dst, hle->dram(), address & DRAM_MASK, count);
+    load_u8(dst, hle->dram(), address & DRAM_MASK, count, DRAM_MASK);
 }
 
 void dram_load_u16(CHle* hle, uint16_t* dst, uint32_t address, size_t count)
 {
-    load_u16(dst, hle->dram(), (address & DRAM_MASK) & ~1u, count);
+    load_u16(dst, hle->dram(), (address & DRAM_MASK) & ~1u, count, DRAM_MASK);
 }
 
 void dram_load_u32(CHle* hle, uint32_t* dst, uint32_t address, size_t count)
 {
-    load_u32(dst, hle->dram(), (address & DRAM_MASK) & ~3u, count);
+    load_u32(dst, hle->dram(), (address & DRAM_MASK) & ~3u, count, DRAM_MASK);
 }
 
 void dram_store_u16(CHle* hle, const uint16_t* src, uint32_t address, size_t count)
 {
-    store_u16(hle->dram(), (address & DRAM_MASK) & ~1u, src, count);
+    store_u16(hle->dram(), (address & DRAM_MASK) & ~1u, src, count, DRAM_MASK);
 }
 
 void dram_store_u32(CHle* hle, const uint32_t* src, uint32_t address, size_t count)
 {
-    store_u32(hle->dram(), (address & DRAM_MASK) & ~3u, src, count);
+    store_u32(hle->dram(), (address & DRAM_MASK) & ~3u, src, count, DRAM_MASK);
 }
 
 } // namespace Nova64::RSP::HLE

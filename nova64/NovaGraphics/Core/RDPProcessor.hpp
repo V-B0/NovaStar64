@@ -385,8 +385,16 @@ private:
     // as a source texture, the GL path can directly sample the GL FBO color texture.
     // In the Vulkan path there is no per-N64-FB texture — all rendering goes to the
     // swapchain — so we snapshot the swapchain via ReadPixels and keep it here.
-    std::unique_ptr<ITexture> m_vkFBSnapshot;     // Last swapchain snapshot for FB-as-tex
-    uint32_t                  m_vkFBSnapshotAddr = 0; // N64 RDRAM address it was taken from
+    //
+    // Ping-pong pair: with kFramesInFlight=2 the GPU may still be sampling the
+    // previously-bound snapshot when the CPU records a new capture.  Writing into
+    // the same VkImage would race.  We alternate between two slots: each new
+    // capture flips the index FIRST then writes, so the previously-bound slot
+    // remains untouched until its frame's fence is signalled.
+    static constexpr uint32_t kVkFBSnapshotSlots = 2;
+    std::array<std::unique_ptr<ITexture>, kVkFBSnapshotSlots> m_vkFBSnapshots;
+    std::array<uint32_t, kVkFBSnapshotSlots> m_vkFBSnapshotAddrs{};
+    uint32_t m_vkFBSnapshotIdx = 0;
     
     // MLE heuristic router (optional — set via SetMLEDirector)
     MLEDirector* m_mleDirector = nullptr;

@@ -50,6 +50,29 @@ public:
     static void SetRomOpen(bool opened);
     static void ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2);
 
+    // ── MLE pivot mutators ──
+    // Driven by the video plugin from NovaGraphics.ini renderingMode key.
+    // Must be called before DoRspCycles processes the first task.
+    // These set a *sticky user override* that suppresses the matching
+    // field of per-game CRC overrides in ApplyPerGameOverrides.
+    static void SetGraphicsHle(bool enabled) {
+        s_GraphicsHle = enabled;
+        s_UserGraphicsHleSet = true;
+    }
+    static void SetAudioHle(bool enabled) {
+        s_AudioHle = enabled;
+        s_UserAudioHleSet = true;
+    }
+    static void SetCPUMethod(RSPCpuMethod m) {
+        s_CPUMethod = m;
+        s_UserCPUMethodSet = true;
+    }
+
+    // Predicates consumed by ApplyPerGameOverrides.
+    [[nodiscard]] static bool UserGraphicsHleSet() { return s_UserGraphicsHleSet; }
+    [[nodiscard]] static bool UserAudioHleSet()    { return s_UserAudioHleSet; }
+    [[nodiscard]] static bool UserCPUMethodSet()   { return s_UserCPUMethodSet; }
+
 private:
     static bool         s_DebuggingEnabled;
     static bool         s_RomOpen;
@@ -65,6 +88,10 @@ private:
     static bool         s_BreakOnStart;
     static bool         s_LogRDP;
     static bool         s_IndividualBlock;
+    // MLE pivot sticky-user-override flags
+    static bool         s_UserGraphicsHleSet;
+    static bool         s_UserAudioHleSet;
+    static bool         s_UserCPUMethodSet;
 };
 
 } // namespace Nova64::RSP

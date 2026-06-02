@@ -160,6 +160,54 @@ void MicrocodeDispatcher::ProcessGraphicsTask(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Shadow HLE (RT geometry extraction, no RDP output)
+// ═══════════════════════════════════════════════════════════════════════════
+
+void MicrocodeDispatcher::RunShadow(
+    uint32_t taskDataAddr,
+    uint32_t ucodeAddr, uint32_t ucodeSize,
+    uint32_t ucodeDataAddr, uint32_t ucodeDataSize,
+    uint32_t dlAddr,
+    RT::ISceneGeometryConsumer* consumer,
+    uint8_t* rdramRW)
+{
+    if (!consumer) return;
+
+    // Stash live context fields that shadow mode must override
+    RDPProcessor* savedRdp      = m_context.rdpProcessor;
+    RDPState*     savedState    = m_context.state;
+    auto*         savedConsumer = m_context.geometryConsumer;
+    uint8_t*      savedRdramRW  = m_context.rdramRW;
+
+    // Reset isolated shadow state so each frame starts clean
+    m_shadowState.Reset();
+    // Propagate widescreen scale so shadow-mode vertices transform with the
+    // same projection as the HLE fast path (needed for correct RT geometry).
+    m_shadowState.geometry.widescreenScale =
+        savedState ? savedState->geometry.widescreenScale : 1.0f;
+
+    // Clear per-task dedup set so the same matrix address can be patched each frame
+    m_context.shadowPatchedAddresses.clear();
+
+    // Override: suppress RDP draw calls, redirect consumer, use shadow state
+    m_context.rdpProcessor    = nullptr;
+    m_context.state           = &m_shadowState;
+    m_context.geometryConsumer = consumer;
+    m_context.rdramRW         = rdramRW;
+
+    ProcessGraphicsTask(taskDataAddr,
+                        ucodeAddr, ucodeSize,
+                        ucodeDataAddr, ucodeDataSize,
+                        dlAddr);
+
+    // Restore
+    m_context.rdpProcessor    = savedRdp;
+    m_context.state           = savedState;
+    m_context.geometryConsumer = savedConsumer;
+    m_context.rdramRW         = savedRdramRW;
+}
+
 void MicrocodeDispatcher::ProcessDisplayList(MicrocodeType type, uint32_t dlAddr) {
     MicrocodeInfo info = m_registry.GetInfo(type);
     ActivateHandler(type, info);
@@ -241,9 +289,9 @@ void MicrocodeDispatcher::HandleUcodeSwitch(
     m_context.microcodeInfo = newInfo;
     
     if (m_activeHandler) {
-        m_activeHandler->OnFrameBegin(m_context);
+        m_activeHandler->OnUcodeSwitch(m_context);
     }
-    
+
     ++m_stats.microcodesSwitched;
 }
 

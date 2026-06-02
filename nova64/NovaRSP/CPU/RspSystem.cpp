@@ -13,6 +13,7 @@
 #include "../RSPDebugger.hpp"
 #include "../Settings/RspSettings.hpp"
 #include "../Recompiler/RspRecompilerCPU.hpp"
+#include "../../common/log.hpp"
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -91,6 +92,7 @@ void CRSPSystem::Reset(RSP_INFO& info)
         CheckInterrupts    = info.CheckInterrupts;
         ProcessDList       = info.ProcessDList;
         ProcessRdpList     = info.ProcessRdpList;
+        ProcessDListShadow = info.ProcessDListShadow;
 
         m_RdramSize = info.RdramSize;
         if (m_RdramSize == 0)
@@ -112,13 +114,16 @@ void CRSPSystem::Reset(RSP_INFO& info)
 void CRSPSystem::RomClosed()
 {
     // Per-game cleanup
+#ifdef NOVA_RSP_RECOMPILER
     m_Recompiler.reset();
+#endif
 }
 
 // ──────────────────────────────────────────────
 // Recompiler Execution
 // ──────────────────────────────────────────────
 
+#ifdef NOVA_RSP_RECOMPILER
 bool CRSPSystem::RunRecompiledTask(RecompilerMemory& mem)
 {
 #if defined(__amd64__) || defined(_M_X64)
@@ -157,6 +162,7 @@ bool CRSPSystem::RunRecompiledTask(RecompilerMemory& mem)
     return false;
 #endif
 }
+#endif // NOVA_RSP_RECOMPILER
 
 // ──────────────────────────────────────────────
 // Main Execution Loop (Interpreter)
@@ -172,6 +178,30 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC)
 
     uint32_t& gprR0 = m_Reg.m_GPR[0].UW;
     uint32_t& pc    = *m_SP_PC_REG;
+
+    // ── LLE diagnostic: trace first 4 graphics-task interpreter runs ──
+    // Detects where F3D microcode stalls/halts before reaching MTC0→DPC_END.
+    static uint32_t s_lleTraceCount = 0;
+    const uint32_t taskType = m_DMEM
+        ? *reinterpret_cast<const uint32_t*>(m_DMEM + 0xFC0) : 0xFFFFFFFF;
+    const bool lleTrace =
+        (taskType == 1) &&                            // graphics task
+        !CRSPSettings::IsGraphicsHle() &&             // LLE mode
+        (s_lleTraceCount < 4);
+    const uint32_t entryPc = pc;
+    uint64_t insnCount = 0;
+    uint32_t lastUnknownPc = 0xFFFFFFFFu;
+    uint32_t unknownCount = 0;
+    if (lleTrace) {
+        ++s_lleTraceCount;
+        Log::infof("RSPLLE[%u] ENTER pc=0x%03X cycles=0x%X SP_STATUS=0x%08X "
+                   "DPC_START=0x%06X DPC_END=0x%06X DPC_CURR=0x%06X",
+                   s_lleTraceCount, entryPc & 0xFFC, cycles,
+                   m_SP_STATUS_REG ? *m_SP_STATUS_REG : 0,
+                   m_DPC_START_REG ? *m_DPC_START_REG : 0,
+                   m_DPC_END_REG   ? *m_DPC_END_REG   : 0,
+                   m_DPC_CURRENT_REG ? *m_DPC_CURRENT_REG : 0);
+    }
 
     while (RSP_Running && cycles > 0)
     {
@@ -189,7 +219,21 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC)
         // Fetch instruction from IMEM
         m_OpCode.Value = *reinterpret_cast<uint32_t*>(m_IMEM + (pc & 0xFFC));
 
-
+        // LLE diag: detect undefined opcodes (unknown primary op or vector reserved)
+        if (lleTrace) {
+            const uint32_t op = m_OpCode.op;
+            // Primary opcodes that route to UnknownOpcode (after Init_RSP_Opcode):
+            // we can't easily tell from here, but raw op==0 with funct outside Jump_Special
+            // would also be unknown. Cheap heuristic: a fetched word of 0x00000000 is NOP.
+            if (m_OpCode.Value == 0xFFFFFFFFu || op >= 64) {
+                if (unknownCount < 4) {
+                    Log::infof("RSPLLE[%u] suspicious-op pc=0x%03X word=0x%08X",
+                               s_lleTraceCount, pc & 0xFFC, m_OpCode.Value);
+                }
+                lastUnknownPc = pc & 0xFFC;
+                ++unknownCount;
+            }
+        }
 
         // Dispatch through primary opcode table
         (m_Op.*(m_Op.Jump_Opcode[m_OpCode.op]))();
@@ -201,6 +245,19 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC)
         if (cycles != static_cast<uint32_t>(-1))
         {
             --cycles;
+        }
+
+        if (lleTrace) ++insnCount;
+        // Bail out for runaway interpreter (prevents the host hang we saw under
+        // LLE smoke testing). Pure safety net; should never trip under healthy
+        // F3D microcode which halts via BREAK within thousands of cycles.
+        if (insnCount > 5'000'000ull) {
+            Log::warningf("RSPLLE[%u] runaway interpreter at pc=0x%03X insn=%llu — forcing halt",
+                       s_lleTraceCount, pc & 0xFFC,
+                       static_cast<unsigned long long>(insnCount));
+            *m_SP_STATUS_REG |= SPStatus::Halt | SPStatus::Broke;
+            RSP_Running = 0;
+            break;
         }
 
         // Pipeline state machine
@@ -227,6 +284,17 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC)
             RSP_Running = 0;
             break;
         }
+    }
+
+    if (lleTrace) {
+        Log::infof("RSPLLE[%u] EXIT  pc=0x%03X insn=%llu unknownOps=%u "
+                   "SP_STATUS=0x%08X DPC_END=0x%06X RSP_Running=%d cycles_left=0x%X",
+                   s_lleTraceCount, pc & 0xFFC,
+                   static_cast<unsigned long long>(insnCount), unknownCount,
+                   m_SP_STATUS_REG ? *m_SP_STATUS_REG : 0,
+                   m_DPC_END_REG   ? *m_DPC_END_REG   : 0,
+                   RSP_Running, cycles);
+        (void)lastUnknownPc;
     }
 }
 

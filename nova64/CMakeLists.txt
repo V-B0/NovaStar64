@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+﻿cmake_minimum_required(VERSION 3.10)
 project(nova64)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -35,7 +35,7 @@ else()
     message(STATUS "AsmJit failed to integrate - recompiler will be stubbed")
 endif()
 
-# ── SDL2 ──
+# â”€â”€ SDL2 â”€â”€
 find_package(SDL2 QUIET)
 if(NOT SDL2_FOUND)
     message(STATUS "SDL2 not found via find_package - trying FetchContent")
@@ -55,13 +55,13 @@ else()
     set(SDL2_LIBRARIES SDL2::SDL2 SDL2::SDL2main)
 endif()
 
-# ── glad (OpenGL 4.6 loader - pre-generated) ──
+# â”€â”€ glad (OpenGL 4.6 loader - pre-generated) â”€â”€
 set(GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/glad")
 add_library(glad_gl46 STATIC "${GLAD_DIR}/src/gl.c")
 target_include_directories(glad_gl46 PUBLIC "${GLAD_DIR}/include")
 message(STATUS "glad OpenGL 4.6 loader integrated (pre-generated)")
 
-# ── stb (stb_image for PNG hi-res texture loading) ──
+# â”€â”€ stb (stb_image for PNG hi-res texture loading) â”€â”€
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
@@ -71,7 +71,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 message(STATUS "stb fetched for stb_image PNG decoding: ${stb_SOURCE_DIR}")
 
-# ── Vulkan (headers + volk dynamic loader) ──
+# â”€â”€ Vulkan (headers + volk dynamic loader) â”€â”€
 # volk dlopens vulkan-1.dll at runtime; no SDK install required.
 # We fetch sources for both repos but build volk.c manually as a small
 # static library so we can fully control include directories without
@@ -90,7 +90,7 @@ FetchContent_Declare(
     GIT_TAG        1.3.270
     EXCLUDE_FROM_ALL
 )
-# Populate (download) but do NOT add volk's CMakeLists — we build volk.c ourselves.
+# Populate (download) but do NOT add volk's CMakeLists â€” we build volk.c ourselves.
 FetchContent_GetProperties(volk)
 if(NOT volk_POPULATED)
     FetchContent_Populate(volk)
@@ -107,7 +107,7 @@ if(WIN32)
 endif()
 message(STATUS "Vulkan integrated via volk (no SDK install required)")
 
-# ── glslang (GLSL → SPIR-V compiler for the Vulkan backend) ──
+# â”€â”€ glslang (GLSL â†’ SPIR-V compiler for the Vulkan backend) â”€â”€
 # Disable everything we don't need to keep the dep light.
 set(ENABLE_OPT OFF CACHE BOOL "" FORCE)                 # SPIRV-Tools optimizer
 set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
@@ -123,9 +123,9 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(glslang)
-message(STATUS "glslang integrated for runtime GLSL→SPIRV compilation")
+message(STATUS "glslang integrated for runtime GLSLâ†’SPIRV compilation")
 
-# ── ImGui (immediate-mode GUI for debug panels) ──
+# â”€â”€ ImGui (immediate-mode GUI for debug panels) â”€â”€
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -246,25 +246,10 @@ set(SOURCES
     NovaRSP/HLE/arithmetics.cpp
     NovaRSP/HLE/audio.cpp
     NovaRSP/HLE/AudioOutput.cpp
-    NovaRSP/HLE/GfxProcessor.cpp
     NovaRSP/HLE/hle.cpp
-    NovaRSP/HLE/HleTask.cpp
     NovaRSP/HLE/mem.cpp
     NovaRSP/HLE/TaskDispatcher.cpp
     NovaRSP/HLE/ucodes.cpp
-
-    # NovaRSP - RSP plugin (recompiler)
-    NovaRSP/Recompiler/RspAssembler.cpp
-    NovaRSP/Recompiler/RspCodeBlock.cpp
-    NovaRSP/Recompiler/RspProfiling.cpp
-    NovaRSP/Recompiler/RspRecompilerCPU.cpp
-    NovaRSP/Recompiler/RspRecompilerOps.cpp
-    NovaRSP/Recompiler/RspRegState.cpp
-
-    # NovaRSP - RSP plugin (x64 recompiler backend)
-    NovaRSP/Recompiler/x64/x64RspOps.cpp
-    NovaRSP/Recompiler/x64/x64RspRegInfo.cpp
-    NovaRSP/Recompiler/x64/x64RspVectorGen.cpp
 
     # NovaRSP - RSP plugin (settings / misc)
     NovaRSP/Settings/RspSettings.cpp
@@ -276,10 +261,6 @@ set(SOURCES
 
     # NovaAudio - Built-in audio plugin
     NovaAudio/NovaAudioPlugin.cpp
-
-    # NovaGraphics - Graphics plugin (Capture)
-    NovaGraphics/Capture/FrameCapture.cpp
-    NovaGraphics/Capture/VideoEncoder.cpp
 
     # NovaGraphics - Graphics plugin (Common)
     NovaGraphics/Common/BitUtils.cpp
@@ -298,57 +279,23 @@ set(SOURCES
     NovaGraphics/Compat/GamePatches.cpp
 
     # NovaGraphics - Graphics plugin (Core)
-    NovaGraphics/Core/BlenderUnit.cpp
-    NovaGraphics/Core/BlendState.cpp
-    NovaGraphics/Core/ColorCombiner.cpp
-    NovaGraphics/Core/CommandBuffer.cpp
-    NovaGraphics/Core/CoverageCalculator.cpp
-    NovaGraphics/Core/DebugVisualization.cpp
     NovaGraphics/Core/DepthBuffer.cpp
-    NovaGraphics/Core/DepthBufferManager.cpp
-    NovaGraphics/Core/DisplayListProcessor.cpp
-    NovaGraphics/Core/FogComputer.cpp
-    NovaGraphics/Core/FrameAnalyzer.cpp
     NovaGraphics/Core/FramebufferManager.cpp
-    NovaGraphics/Core/GPUProfiler.cpp
-    NovaGraphics/Core/LineRenderer.cpp
     NovaGraphics/Core/N64Math.cpp
     NovaGraphics/Core/N64Memory.cpp
-    NovaGraphics/Core/PipelineState.cpp
     NovaGraphics/Core/RDPCommand.cpp
     NovaGraphics/Core/RDPLogger.cpp
     NovaGraphics/Core/RDPProcessor.cpp
-    NovaGraphics/Core/ScissorManager.cpp
-    NovaGraphics/Core/SpriteRenderer.cpp
-    NovaGraphics/Core/TileManager.cpp
-    NovaGraphics/Core/TMEMController.cpp
-    NovaGraphics/Core/TriangleRasterizer.cpp
-    NovaGraphics/Core/VertexProcessor.cpp
-    NovaGraphics/Core/ZBufferEngine.cpp
+    NovaGraphics/Core/RDPProcessor_State.cpp
+    NovaGraphics/Core/RDPProcessor_Texture.cpp
+    NovaGraphics/Core/RDPProcessor_Draw.cpp
+    NovaGraphics/Core/RDPProcessor_Batch.cpp
 
-    # NovaGraphics - Graphics plugin (Debug)
-    NovaGraphics/Debug/CommandCapture.cpp
-    NovaGraphics/Debug/CommandLogger.cpp
-    NovaGraphics/Debug/DebugOverlay.cpp
+    # NovaGraphics - Graphics plugin (Debug â€” ImGuiDebugUI only; rest removed as dead)
     NovaGraphics/Debug/ImGuiDebugUI.cpp
-    NovaGraphics/Debug/PerformanceMetrics.cpp
-    NovaGraphics/Debug/PerformanceProfiler.cpp
-    NovaGraphics/Debug/Profiler.cpp
-    NovaGraphics/Debug/TextDrawer.cpp
-    NovaGraphics/Debug/DebugDump.cpp
-    NovaGraphics/Debug/DisplayLoadProgress.cpp
-
-    # NovaGraphics - Graphics plugin (Math)
-    NovaGraphics/Math/BoundingVolume.cpp
-    NovaGraphics/Math/FixedPoint.cpp
-    NovaGraphics/Math/Lighting.cpp
-    NovaGraphics/Math/Matrix4x4.cpp
-    NovaGraphics/Math/Quaternion.cpp
-    NovaGraphics/Math/Transform.cpp
 
     # NovaGraphics - Graphics plugin (Microcode)
     NovaGraphics/Microcode/GBIHandler.cpp
-    NovaGraphics/Microcode/MicrocodeAnalyzer.cpp
     NovaGraphics/Microcode/MicrocodeDispatcher.cpp
     NovaGraphics/Microcode/MicrocodeRegistry.cpp
 
@@ -358,32 +305,14 @@ set(SOURCES
     NovaGraphics/Plugin/VideoPlugin.cpp
 
     # NovaGraphics - Graphics plugin (Renderer)
-    NovaGraphics/Renderer/BatchOptimizer.cpp
-    NovaGraphics/Renderer/BuiltinShaders.cpp
-    NovaGraphics/Renderer/GL/GLContext.cpp
-    NovaGraphics/Renderer/GL/GLDebugger.cpp
-    NovaGraphics/Renderer/GL/GLFramebuffer.cpp
-    NovaGraphics/Renderer/GL/GLPipeline.cpp
     NovaGraphics/Renderer/GL/GLShaderCompiler.cpp
     NovaGraphics/Renderer/GL/GLShaderProgram.cpp
-    NovaGraphics/Renderer/GL/GLStateManager.cpp
-    NovaGraphics/Renderer/GL/GLTexture.cpp
-    NovaGraphics/Renderer/GL/ThreadedGLQueue.cpp
     NovaGraphics/Renderer/GLBackend.cpp
     NovaGraphics/Renderer/GLRenderer.cpp
     NovaGraphics/Renderer/PostProcessing.cpp
     NovaGraphics/Renderer/RendererFactory.cpp
-    NovaGraphics/Renderer/RenderQueue.cpp
-    NovaGraphics/Renderer/ResourcePool.cpp
-    NovaGraphics/Renderer/ShaderCache.cpp
     NovaGraphics/Renderer/ShaderGenerator.cpp
     NovaGraphics/Renderer/ShaderManager.cpp
-    NovaGraphics/Renderer/StateTracker.cpp
-
-    # NovaGraphics - Graphics plugin (Renderer/D3D - Windows only)
-    NovaGraphics/Renderer/D3D/D3DBackend.cpp
-    NovaGraphics/Renderer/D3D/D3DDevice.cpp
-    NovaGraphics/Renderer/D3D/D3DTexture.cpp
 
     # NovaGraphics - Graphics plugin (Renderer/VK - real impl via volk loader)
     NovaGraphics/Renderer/VK/VKBackend.cpp
@@ -400,28 +329,14 @@ set(SOURCES
     NovaGraphics/Renderer/VK/VKRTPipeline.cpp
     NovaGraphics/Renderer/VK/VKShaderCompiler.cpp
 
-    # SoftwareRenderer removed — dead code, replaced by OpenGL/D3D backends
-
     # NovaGraphics - Graphics plugin (Texture)
     NovaGraphics/Texture/stb_image_impl.cpp
     NovaGraphics/Texture/HiResTextures.cpp
     NovaGraphics/Texture/TextureCache.cpp
     NovaGraphics/Texture/TextureConverter.cpp
     NovaGraphics/Texture/TextureDecoder.cpp
-    NovaGraphics/Texture/TextureFilter.cpp
     NovaGraphics/Texture/TextureFormat.cpp
-    NovaGraphics/Texture/TextureUpscale.cpp
-    # PaletteTexture.cpp — dead code, never referenced
-    # NovaGraphics/Texture/PaletteTexture.cpp
-    NovaGraphics/Texture/ZlutTexture.cpp
-    # TexLoad.cpp — dead code, dispatch table unreferenced (loads handled by RDPProcessor)
-    # NovaGraphics/Texture/TexLoad.cpp
     NovaGraphics/Texture/TexConv.cpp
-    NovaGraphics/Texture/TextureDumper.cpp
-
-    # NovaGraphics - Graphics plugin (Validation)
-    NovaGraphics/Validation/ValidationLayer.cpp
-    NovaGraphics/Validation/ErrorHandler.cpp
 
     # NovaGraphics - Graphics plugin (Window)
     NovaGraphics/Window/DisplayConfig.cpp
@@ -431,6 +346,22 @@ set(SOURCES
 
     main.cpp
 )
+
+# RSP JIT recompiler (Phase 2 â€” unfinished for F3D microcode; OFF by default)
+option(NOVA_RSP_RECOMPILER "Enable RSP JIT recompiler (Phase 2 work)" OFF)
+if(NOVA_RSP_RECOMPILER)
+    list(APPEND SOURCES
+        NovaRSP/Recompiler/RspAssembler.cpp
+        NovaRSP/Recompiler/RspCodeBlock.cpp
+        NovaRSP/Recompiler/RspProfiling.cpp
+        NovaRSP/Recompiler/RspRecompilerCPU.cpp
+        NovaRSP/Recompiler/RspRecompilerOps.cpp
+        NovaRSP/Recompiler/RspRegState.cpp
+        NovaRSP/Recompiler/x64/x64RspOps.cpp
+        NovaRSP/Recompiler/x64/x64RspRegInfo.cpp
+        NovaRSP/Recompiler/x64/x64RspVectorGen.cpp
+    )
+endif()
 
 # Add header files
 set(HEADERS   
@@ -536,14 +467,16 @@ if(WIN32)
     target_compile_definitions(nova64 PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 endif()
 
-# glslang (runtime GLSL→SPIR-V compiler for the Vulkan backend)
+# glslang (runtime GLSLâ†’SPIR-V compiler for the Vulkan backend)
 target_link_libraries(nova64 PRIVATE glslang SPIRV glslang-default-resource-limits)
+
+if(NOVA_RSP_RECOMPILER)
+    target_compile_definitions(nova64 PRIVATE NOVA_RSP_RECOMPILER)
+endif()
 
 # WASAPI audio output (Windows)
 if(WIN32)
     target_link_libraries(nova64 PRIVATE ole32 uuid)
-    # D3D11 backend dependencies
-    target_link_libraries(nova64 PRIVATE d3d11 dxgi d3dcompiler dxguid)
 endif()
 
 # Compiler flags
@@ -558,8 +491,8 @@ if(MSVC)
     target_link_options(nova64 PRIVATE 
         $<$<CONFIG:Release>:/LTCG /OPT:REF /OPT:ICF /DEBUG /OPT:REF>
     )
-    # Increase stack size to 8 MB — the synchronous RSP HLE call chain from
-    # inside interpreter SW → SP handler → DoRspCycles → HLE → GFX plugin
+    # Increase stack size to 8 MB â€” the synchronous RSP HLE call chain from
+    # inside interpreter SW â†’ SP handler â†’ DoRspCycles â†’ HLE â†’ GFX plugin
     # can exceed the default 1 MB stack in Debug builds.
     target_link_options(nova64 PRIVATE /STACK:8388608)
 else()

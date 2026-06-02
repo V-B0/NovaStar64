@@ -19,7 +19,7 @@
 #pragma once
 
 #include "GBIHandler.hpp"
-#include <set>
+#include <atomic>
 
 namespace Nova64::Video {
 
@@ -31,6 +31,7 @@ public:
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return m_type; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI2; }
+    int GetVertexCacheSize() const override { return 32; } // F3DEX2 standard vertex cache is 32
     const char* GetName() const override { return m_name; }
     
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
@@ -182,11 +183,27 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         if (opcode >= 0xE0) {
             HandleRDPCommand(ctx, w0, w1);
         } else {
-            // Warn once per unique opcode to avoid spam (e.g. F3DEX
-            // opcodes 0x09/0x0B that appear during mid-frame microcode
-            // switches and are harmless to skip).
-            static std::set<uint8_t> warnedOpcodes;
-            if (warnedOpcodes.insert(opcode).second) {
+            // Warn once per unique opcode without a mutex on the hot path.
+            // A 256-bit bitset (one bit per opcode) is lock-free: test-and-set
+            // with a relaxed CAS is cheaper than std::mutex + std::set insertion.
+            static std::atomic<uint32_t> warnedLo{0}, warnedHi{0},
+                                          warnedLo2{0}, warnedHi2{0};
+            const uint8_t slot = opcode >> 5;   // 0-7
+            const uint32_t bit  = 1u << (opcode & 31u);
+            std::atomic<uint32_t>* buckets[8] = {
+                &warnedLo, &warnedHi, &warnedLo2, &warnedHi2,
+                &warnedLo, &warnedHi, &warnedLo2, &warnedHi2 // opcode <=255, 8 buckets
+            };
+            // Use the correct 32-bit bucket for this opcode
+            std::atomic<uint32_t>* bkt;
+            switch (slot) {
+            case 0: bkt = &warnedLo;  break;
+            case 1: bkt = &warnedHi;  break;
+            case 2: bkt = &warnedLo2; break;
+            default: bkt = &warnedHi2; break;
+            }
+            const uint32_t prev = bkt->fetch_or(bit, std::memory_order_relaxed);
+            if (!(prev & bit)) {
                 NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
                         "F3DEX2: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
             }
@@ -254,22 +271,25 @@ inline void F3DEX2Handler::Cmd_G_TRI2(DListContext& ctx, uint32_t w0, uint32_t w
 }
 
 inline void F3DEX2Handler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // GBI2 G_QUAD packs 4 vertices: v0/v1/v2 in w0, v3 in w1[23:16].
+    // w1[15:8] and w1[7:0] are padding duplicates of v2 and v3 (packet
+    // alignment bytes, not independent vertices — see GLideN64 F3DEX2_1Qd).
+    // Decomposition: (v0,v1,v2) + (v0,v2,v3) — shared edge v0-v2.
     int v0 = ((w0 >> 16) & 0xFF) / 2;
     int v1 = ((w0 >> 8) & 0xFF) / 2;
     int v2 = (w0 & 0xFF) / 2;
     int v3 = ((w1 >> 16) & 0xFF) / 2;
-    (void)(w1 & 0xFFFF); // v4,v5 unused for quad = 2 tris
-    int v4 = ((w1 >> 8) & 0xFF) / 2;
-    int v5 = (w1 & 0xFF) / 2;
+    (void)w1; // lower 16 bits are padding duplicates
     DrawTriangle(ctx, v0, v1, v2);
-    DrawTriangle(ctx, v3, v4, v5);
+    DrawTriangle(ctx, v0, v2, v3);
 }
 
 inline void F3DEX2Handler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    int v0 = ((w0 >> 16) & 0xFF) / 2;
-    int v1 = ((w0 >> 8) & 0xFF) / 2;
-    (void)w1;
-    DrawTriangle(ctx, v0, v1, v0); // Degenerate triangle
+    // G_LINE3D is not a renderable primitive in HLE — the N64 line rasterizer
+    // uses a proprietary microcode path with no triangle equivalent.
+    // Prior code emitted DrawTriangle(v0,v1,v0) which is silently culled by
+    // the v0==v2 degenerate guard; making it an explicit no-op is cleaner.
+    (void)ctx; (void)w0; (void)w1;
 }
 
 inline void F3DEX2Handler::Cmd_G_DMA_IO(DListContext& ctx, uint32_t w0, uint32_t w1) {

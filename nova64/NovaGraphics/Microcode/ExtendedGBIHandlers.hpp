@@ -235,9 +235,19 @@ private:
         for (const auto& obj : m_zObjects) {
             uint32_t addr = ctx.ResolveAddress(obj.rdramAddr);
             if (addr + 8 <= ctx.rdramSize) {
+                uint32_t savedPc = ctx.pc;
+                int savedDepth = ctx.dlStackDepth;
                 bool savedHalted = ctx.halted;
+                
+                // Hide outer stack so ENDDL nicely halts inner execution
+                ctx.dlStackDepth = 0;
                 ctx.halted = false;
+                
                 ExecuteDisplayList(ctx, addr);
+                
+                // Restore outer context state
+                ctx.pc = savedPc;
+                ctx.dlStackDepth = savedDepth;
                 ctx.halted = savedHalted;
             }
         }
@@ -378,7 +388,7 @@ private:
         case 0x80: {
             // Viewport — delegate to GBI1 MOVEMEM which handles viewport
             uint8_t size = static_cast<uint8_t>(((w0 >> 19) & 0x1F) * 8);
-            MoveMemGBI1(ctx, type, size, w1);
+            MoveMemGBI1(ctx, static_cast<uint8_t>(type), size, w1);
             break;
         }
         case 0x08: {
@@ -1608,6 +1618,7 @@ private:
 
             uint16_t invw_val = static_cast<uint16_t>(
                 CalcInvW(static_cast<int>(w * m_boss.invwFactor)) * 65536.0f);
+            (void)invw_val;
 
             float invw = (w <= 0.0f) ? m_boss.invwFactor : (1.0f / w);
             float xClamp = std::max(-m_boss.invwFactor, std::min(x * invw, m_boss.invwFactor));
@@ -1618,7 +1629,9 @@ private:
 
             int fog = static_cast<int>(w * Fixed2Float(geo.fogMultiplier, 16) + geo.fogOffset);
             fog = std::max(-128, std::min(127, fog));
+            // fog value could be used here.
             uint8_t fogVal = m_boss.fogTable[fog + 128];
+            (void)fogVal;
 
             uint8_t cc = 0;
             if (x >= w)  cc |= 0x10;
@@ -1714,8 +1727,6 @@ private:
         objAddr &= 0x00FFFFFF;
         if (objAddr + 16 > ctx.rdramSize) return 0;
 
-        const uint8_t* base = ctx.rdram + objAddr;
-
         // First 4 words: next pointer, then 3 RDP command words
         uint32_t w1 = ctx.ReadWord(objAddr + 4);
         if (w1 != m_boss.rdpCmds[0]) {
@@ -1756,8 +1767,7 @@ private:
 
     void Cmd_Lighting(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
-        auto& geo = ctx.state->geometry;
-
+        
         uint32_t num = 1 + ((w1 >> 24) & 0xFF);
         uint32_t nsrs = w0 & 0xFFF;
         uint32_t tdest = (w1 & 0xFFF) >> 1;

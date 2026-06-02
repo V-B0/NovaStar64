@@ -92,8 +92,10 @@ bool VKSwapchain::Create(VkPhysicalDevice physical,
     sci.imageExtent      = m_extent;
     sci.imageArrayLayers = 1;
     // TRANSFER_DST so we can vkCmdClearColorImage in Stage 1.
+    // TRANSFER_SRC so we can vkCmdCopyImage FROM the swapchain (BlitToTexture / ReadPixels).
     // COLOR_ATTACHMENT will be added in later stages.
     sci.imageUsage       = VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                         | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
                          | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     uint32_t qIndices[2] = { graphicsFamily, presentFamily };
@@ -133,6 +135,7 @@ bool VKSwapchain::Create(VkPhysicalDevice physical,
 
     if (!CreateDepthBuffer(physical, device)) return false;
     if (!CreateRenderPass(device)) return false;
+    if (!CreateRenderPassLoad(device)) return false;
     if (!CreateFramebuffers(device)) return false;
 
     Logger::Info("VKSwapchain: created {}x{}, format={}, presentMode={}, images={}",
@@ -151,6 +154,10 @@ void VKSwapchain::Destroy(VkDevice device) {
     if (m_renderPass) {
         vkDestroyRenderPass(device, m_renderPass, nullptr);
         m_renderPass = VK_NULL_HANDLE;
+    }
+    if (m_renderPassLoad) {
+        vkDestroyRenderPass(device, m_renderPassLoad, nullptr);
+        m_renderPassLoad = VK_NULL_HANDLE;
     }
     // Depth buffer (must outlive framebuffers).
     if (m_depthView)   { vkDestroyImageView(device, m_depthView,   nullptr); m_depthView   = VK_NULL_HANDLE; }
@@ -304,6 +311,66 @@ bool VKSwapchain::CreateRenderPass(VkDevice device) {
     rpi.dependencyCount = 1;
     rpi.pDependencies   = &dep;
     VK_CHECK(vkCreateRenderPass(device, &rpi, nullptr, &m_renderPass));
+    return true;
+}
+
+bool VKSwapchain::CreateRenderPassLoad(VkDevice device) {
+    // Same as CreateRenderPass but LOAD_OP_LOAD for color and depth — preserves
+    // existing swapchain content.  Used when resuming the render pass after a
+    // mid-frame GPU snapshot (SnapshotToTexture) without clearing the screen.
+    VkAttachmentDescription attachments[2]{};
+
+    attachments[0].format         = m_format;
+    attachments[0].samples        = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[0].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout  = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachments[0].finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    attachments[1].format         = m_depthFormat;
+    attachments[1].samples        = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout  = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    attachments[1].finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{};
+    colorRef.attachment = 0;
+    colorRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 1;
+    depthRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription sub{};
+    sub.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sub.colorAttachmentCount    = 1;
+    sub.pColorAttachments       = &colorRef;
+    sub.pDepthStencilAttachment = &depthRef;
+
+    VkSubpassDependency dep{};
+    dep.srcSubpass    = VK_SUBPASS_EXTERNAL;
+    dep.dstSubpass    = 0;
+    dep.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                      | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dep.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                      | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dep.srcAccessMask = 0;
+    dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                      | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    rpi.attachmentCount = 2;
+    rpi.pAttachments    = attachments;
+    rpi.subpassCount    = 1;
+    rpi.pSubpasses      = &sub;
+    rpi.dependencyCount = 1;
+    rpi.pDependencies   = &dep;
+    VK_CHECK(vkCreateRenderPass(device, &rpi, nullptr, &m_renderPassLoad));
     return true;
 }
 

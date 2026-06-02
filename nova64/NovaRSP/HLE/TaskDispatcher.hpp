@@ -7,7 +7,6 @@
 #include "HleTypes.hpp"
 #include "MicrocodeRegistry.hpp"
 #include "GraphicsUcodes.hpp"
-#include "GfxProcessor.hpp"
 #include "Crc32.hpp"
 #include "mem.hpp"
 #include <cstdint>
@@ -80,9 +79,6 @@ private:
 
     // Last-used cache for fast path
     MicrocodeCache m_Cache;
-
-    // Graphics processor
-    GfxProcessor m_GfxProcessor;
 
     // Stats
     uint32_t m_TasksDispatched{0};

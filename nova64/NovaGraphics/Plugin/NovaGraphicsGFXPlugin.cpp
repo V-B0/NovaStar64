@@ -291,6 +291,13 @@ void NovaGraphicsGFXPlugin::ProcessDList(uint32_t /*start*/, uint32_t /*end*/)
     m_videoPlugin.ProcessDList();
 }
 
+void NovaGraphicsGFXPlugin::ProcessDListShadow(uint32_t /*start*/, uint32_t /*end*/)
+{
+    if (!m_initialized) return;
+
+    m_videoPlugin.ProcessDListShadow();
+}
+
 void NovaGraphicsGFXPlugin::ProcessRDPCommand(uint64_t cmd)
 {
     if (!m_initialized) return;
@@ -316,8 +323,8 @@ void NovaGraphicsGFXPlugin::UpdateScreen()
     // Log DL count for SM64 troubleshooting
     const auto& stats = m_videoPlugin.GetFrameStats();
     if ((stats.viInterrupts % 60) == 0) {
-        Log::infof("NovaGraphics: Last frame DLs: %u | Total VIs: %u | HLE Rendered: %s", 
-                   stats.dlistCount, stats.viInterrupts, m_videoPlugin.GetRDPProcessor() ? "YES" : "NO");
+        Log::infof("NovaGraphics: Last frame DLs: %u | RDPcmds: %u | Total VIs: %u | HLE Rendered: %s", 
+                   stats.dlistCount, stats.rdpCommandCount, stats.viInterrupts, m_videoPlugin.GetRDPProcessor() ? "YES" : "NO");
     }
 
     // Compute stats every second

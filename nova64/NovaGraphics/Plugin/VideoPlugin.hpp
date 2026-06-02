@@ -141,6 +141,7 @@ public:
 
     // ── Per-frame operations ─────────────────────────────────────
     void ProcessDList();
+    void ProcessDListShadow(); ///< Shadow HLE: geometry-only run for RT under LLE
     void ProcessRDPList();
     void UpdateScreen();
     void ShowCFB();
@@ -269,6 +270,7 @@ private:
     uint32_t                m_framesWithoutHLE = 0;          // Consecutive VI frames without DL
     bool                    m_swapPending = false;           // Deferred swap: glFlush done, swap deferred to next frame
     bool                    m_vkFrameBegun = false;          // Vulkan: BeginFrame called during ProcessDList this VI period
+    bool                    m_shadowSceneInitialized = false; // Shadow HLE: m_rtScene.NewFrame() already called this VI period
 
     // Scratch buffer for ProcessRDPList big-endian → native conversion
     std::vector<uint32_t>   m_rdpCmdScratch;

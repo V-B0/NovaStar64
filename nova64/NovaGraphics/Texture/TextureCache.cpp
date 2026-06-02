@@ -22,6 +22,17 @@
 
 namespace Nova64 { namespace Video { namespace Tex {
 
+static bool ForensicEnabled() {
+    static const bool enabled = []() {
+#pragma warning(push)
+#pragma warning(disable: 4996)
+        const char* v = std::getenv("NOVA64_FORENSIC");
+#pragma warning(pop)
+        return v && v[0] != '\0' && v[0] != '0';
+    }();
+    return enabled;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ALPHA BLEEDING
 //  Many N64 textures use alpha=0 to mark transparent texels but leave the RGB
@@ -133,6 +144,10 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     if (it != m_cache.end()) {
         // Cache hit — update LRU
         m_stats.hits++;
+        if (ForensicEnabled())
+            Logger::Info("[FORENSIC] CACHE HIT  crc=0x{:016X} fmt={} size={} pal={} w={} h={}",
+                         key.crc, static_cast<int>(key.format), static_cast<int>(key.size),
+                         key.palette, key.width, key.height);
         auto& entry = it->second;
         entry.texture.lastUsedFrame = m_frameCounter;
         entry.texture.useCount++;
@@ -147,6 +162,10 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     // Cache miss — decode and upload
     m_stats.misses++;
+    if (ForensicEnabled())
+        Logger::Info("[FORENSIC] CACHE MISS crc=0x{:016X} fmt={} size={} pal={} w={} h={}",
+                     key.crc, static_cast<int>(key.format), static_cast<int>(key.size),
+                     key.palette, key.width, key.height);
 
     // Ensure we have room
     while (m_stats.currentEntries >= m_config.maxEntries ||
@@ -491,27 +510,28 @@ void TextureCache::EvictStale(uint64_t currentFrame) {
     // Evict textures not used in the last 300 frames (~5 seconds)
     const uint64_t staleThreshold = 300;
 
-    auto it = m_lruList.rbegin();
-    while (it != m_lruList.rend()) {
-        auto cacheIt = m_cache.find(*it);
+    while (!m_lruList.empty()) {
+        TextureKey oldest = m_lruList.back();
+        auto cacheIt = m_cache.find(oldest);
         if (cacheIt != m_cache.end()) {
             if (currentFrame - cacheIt->second.texture.lastUsedFrame > staleThreshold) {
                 m_stats.currentBytes -= cacheIt->second.texture.sizeBytes;
                 m_stats.currentEntries--;
                 m_stats.evictions++;
-                auto toErase = std::next(it).base();
-                // Defer GPU resource destruction (same as EvictLRU).
                 Zombie z;
                 z.gpuTex = std::move(cacheIt->second.texture.gpuTexture);
                 z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
                 m_zombies.push_back(std::move(z));
                 m_cache.erase(cacheIt);
-                m_lruList.erase(toErase);
-                it = m_lruList.rbegin(); // Reset after modification
-                continue;
+                m_lruList.pop_back();
+            } else {
+                // Since this is an LRU list, if the oldest is not stale, no newer item is.
+                break;
             }
+        } else {
+            // Cleanup dangling entry
+            m_lruList.pop_back();
         }
-        ++it;
     }
 }
 

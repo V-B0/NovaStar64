@@ -196,7 +196,11 @@ bool CTaskDispatcher::DispatchVideoTask(CHle* hle, const TaskInfo& task)
 {
     if (!hle->GraphicsHle())
     {
-        hle->VerboseMessage("RSP HLE: GraphicsHle disabled, skipping DispatchVideoTask");
+        // Shadow HLE tap: run the display list in geometry-only mode (no RDP
+        // output) so the RT layer can harvest world-space triangles even while
+        // LLE is active.  Returns false so the RSP interpreter still runs.
+        hle->CallProcessDListShadow();
+        hle->VerboseMessage("RSP HLE: LLE active — shadow RT tap triggered");
         return false;
     }
 
@@ -223,7 +227,9 @@ static UcodeHandler IdentifyAudioBySignature(CHle* hle, uint32_t ucodeData)
         return nullptr;
 
     auto rd32 = [&](uint32_t addr) -> uint32_t {
-        return *reinterpret_cast<const uint32_t*>(hle->dram() + (addr & 0x7FFFFF));
+        uint32_t masked = addr & 0x7FFFFF;
+        if (masked + 3 >= hle->dram_size()) return 0;
+        return *reinterpret_cast<const uint32_t*>(hle->dram() + masked);
     };
 
     if (rd32(ucodeData) == 0x00000001) {
@@ -361,6 +367,10 @@ const MicrocodeEntry* CTaskDispatcher::TrySumBytesFallback(CHle* hle, const Task
 
     const uint32_t masked_addr = task.Ucode & 0x7FFFFF;
     const uint32_t sum_size = std::min(task.UcodeSize, 0xF80u) >> 1;
+
+    // Bounds-check before reading: masked_addr + sum_size must be within 8 MB DRAM
+    if (sum_size == 0 || masked_addr + sum_size > 0x800000u) return nullptr;
+
     const uint8_t* ucode_bytes = hle->dram() + masked_addr;
 
     uint32_t sum = 0;
