@@ -20,6 +20,8 @@ Gliden64/
 Saves/
 ShaderCache/
 nova64/build/nova64.dir/
+dump
+nova64/dump
 
 *.pdb
 *.obj
@@ -33,4 +35,6 @@ nova64/build/nova64.dir/
 *.bin
 *.bmp
 *.json
+*.md
+
 
