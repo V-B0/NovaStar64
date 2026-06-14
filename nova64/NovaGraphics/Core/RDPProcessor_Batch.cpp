@@ -1,4 +1,4 @@
-﻿#include "RDPProcessor_Private.hpp"
+#include "RDPProcessor_Private.hpp"
 void RDPProcessor::FlushBatch() {
     if (m_batch.drawCalls.empty()) return;
     if (!m_renderer) {
@@ -235,12 +235,12 @@ void RDPProcessor::FlushBatch() {
     // Z: clip_z = 2*z_norm - 1, so window_depth = z_norm ? [0,1] (full precision).
     // Near z_norm=0 � depth=0, Far z_norm=1 � depth=1.0 (= clear value).
     // GL_LEQUAL: near objects (depth � 0) correctly overwrite far objects (depth � 1).
-    // Column-major for OpenGL: ortho(left=0, right=n64W, top=0, bottom=n64H)
+    // Column-major for OpenGL/Vulkan: ortho(left=0, right=n64W, top=0, bottom=n64H)
     float ortho[16] = {
          2.0f/n64W, 0,          0,   0,
          0,        -2.0f/n64H,  0,   0,
-         0,         0,           2,   0,
-        -1.0f,      1.0f,       -1,   1
+         0,         0,           1,   0,
+        -1.0f,      1.0f,        0,   1
     };
 
     // Diagnostic: one-shot log of ortho matrix and n64 dims.

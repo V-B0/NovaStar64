@@ -84,6 +84,7 @@ struct WindowConfig {
 
     // Backend selection
     int32_t backendType = 0;       // 0 = OpenGL, 1 = Vulkan
+    bool headless = false;         // If true, do not create a visible window
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -102,8 +103,14 @@ public:
     /// Initialize SDL and create window with OpenGL context
     bool Initialize(const WindowConfig& config);
 
+    /// Create a WindowManager that WRAPS an already-existing SDL_Window and GL context.
+    /// The returned instance does NOT own the window or context — it will not
+    /// destroy them on Shutdown(). Used by the launcher to share its window with VideoPlugin.
+    static WindowManager* WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx);
+
     /// Destroy window and clean up
     void Shutdown();
+
 
     /// Check if initialized
     bool IsInitialized() const { return m_window != nullptr; }
@@ -216,6 +223,8 @@ private:
     bool m_hasFocus = true;
     bool m_minimized = false;
     bool m_shouldClose = false;
+    bool m_isExternal = false; // if true, Shutdown() does not destroy window/context
+
 
     // Pending window events
     std::vector<WindowEventData> m_pendingEvents;

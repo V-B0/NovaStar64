@@ -443,6 +443,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
 }
 
 void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo) {
+    if (v0 == v1 || v1 == v2 || v2 == v0) return;
     if (m_batch.IsFull()) FlushBatch();
 
     auto makeVert = [&](int idx) -> RenderBatch::Vertex {

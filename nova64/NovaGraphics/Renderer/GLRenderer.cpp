@@ -59,12 +59,11 @@ bool GLRenderer::Initialize(void* windowHandle, uint32_t width, uint32_t height)
     glDepthFunc(GL_LEQUAL);
     glEnable(GL_SCISSOR_TEST);
 
-    // Use the standard OpenGL [-1,1] NDC depth convention.
-    // Our ortho matrix computes clip_z = -z_norm where z_norm ∈ [0,1] (normalized screen z).
-    // That maps clip_z to [-1,0] which is fully inside the [-1,1] visible range.
-    // GL_ZERO_TO_ONE would require 0 ≤ clip_z ≤ 1, but our clip_z ≤ 0 → everything clipped.
+    // Use the [0,1] NDC depth convention to match Vulkan and N64 natively.
+    // Our ortho matrix computes clip_z = z_norm where z_norm ∈ [0,1] (normalized screen z).
+    // That maps clip_z to [0,1] which is fully inside the [0,1] visible range.
     if (GLAD_GL_ARB_clip_control || major > 4 || (major == 4 && minor >= 5)) {
-        glClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+        glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
     }
 
     // Disable backface culling initially (N64 manages its own culling)

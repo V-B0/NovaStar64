@@ -98,7 +98,9 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
     }
 
     // ── Create window ────────────────────────────────────────────────────
-    uint32_t flags = SDL_WINDOW_SHOWN;
+    // SDL_WINDOW_SHOWN and SDL_WINDOW_HIDDEN are mutually exclusive.
+    // Start with 0 and add the correct visibility flag explicitly.
+    uint32_t flags = config.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
     if (config.backendType == 0) {
         flags |= SDL_WINDOW_OPENGL;
     } else if (config.backendType == 1) {
@@ -106,14 +108,13 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
     }
 
     if (config.resizable) flags |= SDL_WINDOW_RESIZABLE;
-    // Force HighDPI off until UI layer is fixed for Windows scaling virtualization
-    // if (config.highDPI) flags |= SDL_WINDOW_ALLOW_HIGHDPI;
     if (config.fullscreen) {
         flags |= config.borderless ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_FULLSCREEN;
     }
     if (config.borderless && !config.fullscreen) {
         flags |= SDL_WINDOW_BORDERLESS;
     }
+
 
     int posX = config.posX >= 0 ? config.posX : SDL_WINDOWPOS_CENTERED;
     int posY = config.posY >= 0 ? config.posY : SDL_WINDOWPOS_CENTERED;
@@ -235,15 +236,32 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
 }
 
 void WindowManager::Shutdown() {
-    if (m_glContext) {
-        SDL_GL_DeleteContext(m_glContext);
-        m_glContext = nullptr;
+    if (!m_isExternal) {
+        // Only destroy resources we own
+        if (m_glContext) {
+            SDL_GL_DeleteContext(m_glContext);
+            m_glContext = nullptr;
+        }
+        if (m_window) {
+            SDL_DestroyWindow(m_window);
+            m_window = nullptr;
+        }
+        SDL_Quit();
     }
-    if (m_window) {
-        SDL_DestroyWindow(m_window);
-        m_window = nullptr;
-    }
-    SDL_Quit();
+    // For external windows, just null out our pointers (don't destroy)
+    m_glContext = nullptr;
+    m_window    = nullptr;
+}
+
+
+// static
+WindowManager* WindowManager::WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx) {
+    if (!sdlWindow) return nullptr;
+    auto* wm = new WindowManager();
+    wm->m_window     = sdlWindow;
+    wm->m_glContext  = glCtx;
+    wm->m_isExternal = true;  // do NOT destroy on Shutdown
+    return wm;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

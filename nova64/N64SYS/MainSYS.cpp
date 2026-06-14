@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file MainSYS.cpp
  * @brief Core N64 system emulation: initialization, ROM loading, CPU dispatch, and frame pacing.
  */
@@ -35,6 +35,8 @@
 #include "../NovaRSP/CPU/RspSystem.hpp"
 #include "../NovaGraphics/Window/WindowManager.hpp"
 #include "../NovaGraphics/Plugin/NovaGraphicsGFXPlugin.hpp"
+#include "../NovaGraphics/Plugin/FrameCallback.hpp"
+
 #include "../common/IniFile.hpp"
 
 #include <cstring>
@@ -66,6 +68,8 @@ int CN64System::s_WindowWidth = 1280;
 int CN64System::s_WindowHeight = 960;
 int CN64System::s_InternalResScale = 0;
 int CN64System::s_FullscreenMode = 0; // Default: windowed
+bool CN64System::s_HeadlessMode = false;
+std::string CN64System::s_PipeName = "";
 
 // ──────────────────────────────────────────────
 // RSP callback wrappers (static functions matching RSP_INFO signatures)
@@ -536,18 +540,35 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
         
         g_BaseSystem->DumpRegisters();
 
-        // If window was initialized, run in interactive mode; otherwise headless
-        if (g_BaseSystem->m_WindowManager && g_BaseSystem->m_WindowManager->IsInitialized())
+        // If window was initialized AND we are NOT in embedded mode, run the
+        // interactive event loop (polls SDL window events, exits when window closes).
+        // In embedded mode the launcher owns the event loop, so we just start the
+        // CPU thread and return immediately — the launcher will call CloseSystem().
+        if (g_BaseSystem->m_WindowManager &&
+            g_BaseSystem->m_WindowManager->IsInitialized() &&
+            !Nova64::Video::g_embeddedMode.load(std::memory_order_relaxed))
         {
             LOG_DEBUG("Running in interactive mode (window available)");
             g_BaseSystem->RunInteractiveLoop();
         }
         else
         {
-            LOG_DEBUG("Starting emulation in headless mode (blocking on current thread)");
-            // Run CPU on current thread (blocks until emulation ends or frame limit reached)
-            g_BaseSystem->StartEmulation(false);
+            LOG_DEBUG("Starting emulation (headless or embedded mode)");
+            // Run CPU on background thread; this call returns immediately.
+            // The launcher is responsible for calling CloseSystem() when done.
+            g_BaseSystem->StartEmulation(true);
+            // Block this thread (RunFileImage) until emulation finishes or
+            // CloseSystem() is called from the launcher thread.
+            while (g_BaseSystem && g_BaseSystem->IsEmulationRunning()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            // Wait for CPU thread to actually finish
+            if (g_BaseSystem) {
+                g_BaseSystem->CloseCpu();
+            }
         }
+
+
     }
     else
     {
@@ -1235,11 +1256,11 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         windowConfig.glMajor = 4;
         windowConfig.glMinor = 6;
         
-        // Read backendType from NovaGraphics.ini
+        // Read backendType from settings/NovaGraphics.ini
         int32_t backendType = 0; // Default to OpenGL
-        CPath iniPath(std::string("NovaGraphics.ini"));
+        CPath iniPath(std::string("settings/NovaGraphics.ini"));
         if (iniPath.Exists()) {
-            CIniFile ini("NovaGraphics.ini");
+            CIniFile ini("settings/NovaGraphics.ini");
             // VideoPlugin uses "Backend" section
             backendType = ini.GetNumber("Backend", "backendType", 0);
         }
@@ -1255,6 +1276,8 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         }
         // else s_FullscreenMode == 0: windowed (default config values)
         
+        windowConfig.headless = s_HeadlessMode;
+
         if (m_WindowManager->Initialize(windowConfig)) {
             Log::info("Graphics window initialized successfully");
         } else {

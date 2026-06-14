@@ -8,10 +8,12 @@
 #include "N64SYS/MainSYS.hpp"
 #include "N64SYS/N64Rom.hpp"
 #include "N64SYS/SysGlobals.hpp"
+#include "UI/NovaLauncher.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <filesystem>
 
 static void PrintUsage(const char* programName)
 {
@@ -28,6 +30,8 @@ static void PrintUsage(const char* programName)
     std::printf("  --fullscreen     Run in exclusive fullscreen mode\n");
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
     std::printf("  --interpreter    Force interpreter mode (slower, but better for debugging)\n");
+    std::printf("  --headless       Run without opening a window (useful with --pipe)\n");
+    std::printf("  --pipe <name>    Connect to a named pipe for IPC commands/framebuffer\n");
 }
 
 int main(int argc, char* argv[])
@@ -122,6 +126,16 @@ int main(int argc, char* argv[])
             CN64System::s_UseInterpreter = true;
             Log::info("Interpreter mode forced via CLI");
         }
+        else if (std::strcmp(argv[i], "--headless") == 0)
+        {
+            CN64System::s_HeadlessMode = true;
+            Log::info("Headless mode enabled");
+        }
+        else if (std::strcmp(argv[i], "--pipe") == 0 && i + 1 < argc)
+        {
+            CN64System::s_PipeName = argv[++i];
+            Log::infof("IPC Pipe name set to: %s", CN64System::s_PipeName.c_str());
+        }
         else if (argv[i][0] != '-')
         {
             romPath = argv[i];
@@ -136,8 +150,41 @@ int main(int argc, char* argv[])
 
     Log::info("SuperNova64 initialized successfully");
 
+    if (romPath.empty() && !CN64System::s_HeadlessMode)
+    {
+        Log::info("No ROM specified. Launching Nova UI...");
+        NovaUI::NovaLauncher launcher;
+        launcher.Run();
+        // The launcher manages all emulator instances as child processes.
+        // When it exits, we're done.
+        Log::info("Launcher closed. SuperNova64 exiting.");
+        Logging::stop_logging();
+        return 0;
+    }
+
     if (!romPath.empty())
     {
+        std::filesystem::path sourcePath(romPath);
+        std::filesystem::path romsDir("roms");
+        if (!std::filesystem::exists(romsDir)) {
+            std::filesystem::create_directory(romsDir);
+        }
+        
+        std::filesystem::path destPath = romsDir / sourcePath.filename();
+        
+        std::error_code ec;
+        if (!std::filesystem::exists(sourcePath) || !std::filesystem::equivalent(sourcePath.parent_path(), std::filesystem::absolute(romsDir), ec)) {
+            if (std::filesystem::exists(sourcePath)) {
+                Log::infof("Copying ROM to roms directory: %s", destPath.string().c_str());
+                std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) {
+                    Log::errorf("Failed to copy ROM: %s", ec.message().c_str());
+                } else {
+                    romPath = destPath.string();
+                }
+            }
+        }
+        
         Log::infof("Loading ROM: %s", romPath.c_str());
         CN64System::s_TargetFPS = targetFPS;
         CN64System::s_WindowWidth = windowWidth;
@@ -152,10 +199,6 @@ int main(int argc, char* argv[])
         }
         // RunFileImage runs the CPU on the current thread (blocking).
         // When it returns, emulation has ended.
-    }
-    else
-    {
-        Log::info("No ROM specified. Use --help for usage information.");
     }
 
     // Cleanup

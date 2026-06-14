@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.10)
 project(nova64)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -151,6 +151,73 @@ elseif(TARGET SDL2::SDL2)
     target_link_libraries(imgui PRIVATE SDL2::SDL2)
 endif()
 message(STATUS "ImGui integrated for debug UI panels")
+
+# ─── ImGui Node Editor ───
+FetchContent_Declare(
+    imgui_node_editor
+    GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
+    GIT_TAG        master
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(imgui_node_editor)
+set(IMGUI_NODE_EDITOR_DIR "${imgui_node_editor_SOURCE_DIR}")
+add_library(imgui_node_editor STATIC
+    "${IMGUI_NODE_EDITOR_DIR}/imgui_node_editor.cpp"
+    "${IMGUI_NODE_EDITOR_DIR}/imgui_node_editor_api.cpp"
+    "${IMGUI_NODE_EDITOR_DIR}/imgui_canvas.cpp"
+    "${IMGUI_NODE_EDITOR_DIR}/crude_json.cpp"
+)
+target_include_directories(imgui_node_editor PUBLIC "${IMGUI_NODE_EDITOR_DIR}")
+target_link_libraries(imgui_node_editor PUBLIC imgui)
+message(STATUS "ImGui Node Editor integrated for Playground UI")
+
+# ─── nlohmann/json ───
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
+message(STATUS "nlohmann/json integrated")
+
+# ─── rcheevos (RetroAchievements) ───
+FetchContent_Declare(
+    rcheevos
+    GIT_REPOSITORY https://github.com/RetroAchievements/rcheevos.git
+    GIT_TAG        v11.5.0
+)
+FetchContent_GetProperties(rcheevos)
+if(NOT rcheevos_POPULATED)
+    FetchContent_Populate(rcheevos)
+    file(GLOB_RECURSE RCHEEVOS_SOURCES "${rcheevos_SOURCE_DIR}/src/*.c")
+    # Exclude libretro frontend integration which requires libretro.h
+    list(FILTER RCHEEVOS_SOURCES EXCLUDE REGEX "rc_libretro\\.c$")
+    add_library(rcheevos STATIC ${RCHEEVOS_SOURCES})
+    target_include_directories(rcheevos PUBLIC "${rcheevos_SOURCE_DIR}/include")
+    target_compile_definitions(rcheevos PUBLIC RC_DISABLE_LUA)
+endif()
+message(STATUS "rcheevos integrated")
+
+# ─── Lua 5.4 ───
+FetchContent_Declare(
+    lua
+    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+    URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
+    EXCLUDE_FROM_ALL
+)
+FetchContent_GetProperties(lua)
+if(NOT lua_POPULATED)
+    FetchContent_Populate(lua)
+endif()
+file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/src/*.c")
+# Exclude Lua interpreter and compiler executables
+list(FILTER LUA_SOURCES EXCLUDE REGEX "(lua|luac)\.c$")
+add_library(lua54 STATIC ${LUA_SOURCES})
+target_include_directories(lua54 PUBLIC "${lua_SOURCE_DIR}/src")
+if(WIN32)
+    target_compile_definitions(lua54 PRIVATE LUA_USE_WINDOWS)
+endif()
+message(STATUS "Lua 5.4 integrated")
 
 # Add all source files
 set(SOURCES
@@ -434,6 +501,18 @@ target_include_directories(softfloat PUBLIC
     "${SOFTFLOAT_DIR}/source/8086-SSE"
 )
 
+  # Append UI Launcher
+  list(APPEND SOURCES UI/NovaLauncher.cpp)
+  list(APPEND SOURCES UI/HexEditor.cpp)
+
+  # FrameCallback
+  list(APPEND SOURCES NovaGraphics/Plugin/FrameCallback.cpp)
+
+  # SaveState
+  list(APPEND SOURCES N64SYS/SaveState.cpp)
+
+  # NovaLua scripting
+  list(APPEND SOURCES NovaLua/LuaEngine.cpp)
 # Create main executable
 add_executable(nova64 ${SOURCES} ${HEADERS})
 
@@ -444,6 +523,7 @@ target_include_directories(nova64 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/NovaGraphics
     ${SDL2_INCLUDE_DIRS}
     ${stb_SOURCE_DIR}
+    ${lua_SOURCE_DIR}/src
 )
 
 # Link AsmJit if available
@@ -455,7 +535,7 @@ endif()
 target_link_libraries(nova64 PRIVATE softfloat)
 
 # NovaVideo dependencies: SDL2, glad, OpenGL
-target_link_libraries(nova64 PRIVATE ${SDL2_LIBRARIES} glad_gl46 imgui)
+target_link_libraries(nova64 PRIVATE ${SDL2_LIBRARIES} glad_gl46 imgui imgui_node_editor nlohmann_json::nlohmann_json rcheevos lua54)
 find_package(OpenGL REQUIRED)
 target_link_libraries(nova64 PRIVATE OpenGL::GL)
 

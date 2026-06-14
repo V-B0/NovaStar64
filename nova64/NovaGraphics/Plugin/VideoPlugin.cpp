@@ -7,6 +7,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 #include "VideoPlugin.hpp"
+#include "FrameCallback.hpp"
 #include "../Common/Logger.hpp"
 #include "../Debug/ImGuiDebugUI.hpp"
 #include "../Renderer/GL/GLShaderCompiler.hpp"
@@ -19,6 +20,7 @@
 #include "../../NovaRSP/Settings/RspSettings.hpp"
 
 #include <glad/gl.h>
+#include <SDL.h>
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
@@ -26,6 +28,7 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
+#include <thread>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -107,7 +110,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Load configuration
     m_config.LoadDefaults();
-    m_config.LoadFromFile("NovaGraphics.ini");
+    m_config.LoadFromFile("settings/NovaGraphics.ini");
 
     // ── MLE pivot: propagate renderingMode to RSP settings ───────────
     // HLE  : graphics microcode handlers own rendering (legacy default).
@@ -149,6 +152,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     GameDatabase::Instance().Init();
     GameDatabase::Instance().LoadCustomProfiles("NovaGraphics_games.ini");
 
+    // In embedded mode, use the launcher's SDL window/GL context directly.
+    // This MUST happen before the CreateDisplayWindow() check below so that
+    // VideoPlugin skips its own window creation entirely.
+    if (g_embeddedMode.load(std::memory_order_relaxed) && g_launcherWindowManager) {
+        LOG_INFO("Embedded mode: using launcher WindowManager (no separate SDL2 window)");
+        m_externalWindow = g_launcherWindowManager;
+    }
+
     // Create window (unless an external window was provided)
     if (m_externalWindow) {
         LOG_INFO("Using external window (skipping internal window creation)");
@@ -159,6 +170,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
             return false;
         }
     }
+
 
     // Create renderer
     if (!CreateDisplayRenderer()) {
@@ -372,7 +384,7 @@ void VideoPlugin::Shutdown() {
     g_imguiDebugUI.Shutdown();
 
     // Save config
-    m_config.SaveToFile("NovaGraphics.ini");
+    m_config.SaveToFile("settings/NovaGraphics.ini");
 
     // Shut down subsystems in reverse order
 
@@ -1030,6 +1042,38 @@ void VideoPlugin::UpdateScreen() {
     m_swapPending = true;
     markStage(tFlush);
 
+    // ── Embedded-launcher frame readback ─────────────────────────
+    // In embedded mode we do a CPU readback (glReadPixels) into g_framePixels.
+    // The launcher's GL thread then uploads those pixels to its own texture.
+    // This is safe because both threads use *different* GL contexts — we cannot
+    // share texture handles across contexts without explicit context sharing.
+    if (g_embeddedMode.load(std::memory_order_relaxed) && g_fbManager.IsGL()) {
+        int32_t cbW = 640, cbH = 480;
+        if (win) win->GetDrawableSize(cbW, cbH);
+        if (cbW > 0 && cbH > 0) {
+            // Read from the default (window) framebuffer that was just flushed.
+            // Bind FBO 0 (the window surface) so glReadPixels sees the finished frame.
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            {
+                std::lock_guard<std::mutex> lk(g_frameMutex);
+                g_framePixels.resize(cbW * cbH * 4);
+                glReadPixels(0, 0, cbW, cbH, GL_RGBA, GL_UNSIGNED_BYTE, g_framePixels.data());
+                g_frameW.store(cbW, std::memory_order_relaxed);
+                g_frameH.store(cbH, std::memory_order_relaxed);
+                g_frameReady.store(true, std::memory_order_release);
+            }
+        }
+        if (g_frameCallback) g_frameCallback();
+    }
+
+    // ── Pause spin-wait ─────────────────────────────────────────
+    // When the launcher ESC pause menu is open, stall the emulator CPU thread
+    // here so the game freezes cleanly. The launcher render loop continues
+    // on its own thread unaffected. We yield in 4ms slices to stay responsive.
+    while (g_emuPaused.load(std::memory_order_relaxed)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(4));
+    }
+
     // ── HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ───────────
     // Majora's Mask (and other games) sample the previous frame from RDRAM
     // (e.g. for the pause menu blurred background, motion blur, etc.). When
@@ -1367,7 +1411,7 @@ void VideoPlugin::RomClosed() {
 
 void VideoPlugin::ApplyConfig(const PluginConfig& config) {
     m_config = config;
-    m_config.SaveToFile("NovaGraphics.ini");
+    m_config.SaveToFile("settings/NovaGraphics.ini");
 
     // Live-apply settings that can change at runtime
     // Resolution changes require renderer recreation
@@ -1377,7 +1421,7 @@ void VideoPlugin::ApplyConfig(const PluginConfig& config) {
 
 void VideoPlugin::OpenConfigDialog() {
     // Ensure the config file exists with current settings
-    const std::string configPath = "NovaGraphics.ini";
+    const std::string configPath = "settings/NovaGraphics.ini";
     m_config.SaveToFile(configPath);
     LOG_INFO("Opening configuration file: {}", configPath);
 
@@ -1488,6 +1532,13 @@ bool VideoPlugin::CreateDisplayWindow() {
     wc.height    = m_config.windowHeight;
     wc.title     = "SuperNova64 - NovaGraphics";
     wc.resizable = true;
+
+    // In embedded mode the launcher owns the visible window.
+    // Create the GL context as a hidden window from the start so the
+    // VideoPlugin window never appears or steals SDL keyboard focus.
+    if (g_embeddedMode.load(std::memory_order_relaxed)) {
+        wc.headless = true;
+    }
 
     if (!m_window->Initialize(wc)) {
         LOG_ERROR("WindowManager init failed");
