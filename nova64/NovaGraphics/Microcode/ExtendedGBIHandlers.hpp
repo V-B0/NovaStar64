@@ -676,14 +676,20 @@ private:
     }
 
     void Cmd_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        // Emit as two triangles: (v0,v1,v2) and (v0,v2,v3)
+        // gSP1Quadrangle encoding (F5/StarWars is F3DEX2-derived): w0 holds the
+        // first triangle (v0,v1,v2); w1 holds the ENTIRE second triangle
+        // (v0,v2,v3), not just v3 in isolation. Matches the fixed
+        // F3DEX2Handler::Cmd_G_QUAD -- this handler had the same missing-half
+        // -of-every-quad bug (root cause of "shattered glass" skies/backgrounds)
+        // independently, since it decodes QUAD itself instead of delegating.
         int v0 = ((w0 >> 16) & 0xFF) / 2;
         int v1 = ((w0 >> 8)  & 0xFF) / 2;
         int v2 = ( w0        & 0xFF) / 2;
         int v3 = ((w1 >> 16) & 0xFF) / 2;
+        int v4 = ((w1 >> 8)  & 0xFF) / 2;
+        int v5 = ( w1        & 0xFF) / 2;
 
-        DrawTriangle(ctx, v0, v1, v2);
-        DrawTriangle(ctx, v0, v2, v3);
+        DrawTriangle2(ctx, v0, v1, v2, v3, v4, v5);
         m_trianglesProcessed += 2;
     }
 

@@ -48,6 +48,10 @@ public:
     VkRenderPass   GetRenderPassLoad()         const { return m_renderPassLoad; }
     VkFramebuffer  GetFramebuffer(uint32_t i)  const { return m_framebuffers[i]; }
 
+    /// Depth buffer access for the RT composite's raster-depth comparison.
+    VkImage        GetDepthImage()  const { return m_depthImage; }
+    VkFormat       GetDepthFormat() const { return m_depthFormat; }
+
 private:
     bool CreateRenderPass(VkDevice device);
     bool CreateRenderPassLoad(VkDevice device);

@@ -8,9 +8,16 @@
  *        Batch/flush     → RDPProcessor_Batch.cpp
  */
 #include "RDPProcessor_Private.hpp"
+#include <cstdlib>
 
 RDPProcessor::RDPProcessor() {
     m_stats.Reset();
+    // Headless debug hook: NOVA64_DEBUG_OUTPUT_MODE lets diagnostics select
+    // the shader's built-in debug-output modes (1=texel0, 2=shade, 3=prim,
+    // 4=env, 5=UV, 6=depth, 7=alpha) without needing the interactive ImGui UI.
+    if (const char* v = std::getenv("NOVA64_DEBUG_OUTPUT_MODE")) {
+        SetDebugOutputMode(std::atoi(v));
+    }
 }
 
 RDPProcessor::~RDPProcessor() {

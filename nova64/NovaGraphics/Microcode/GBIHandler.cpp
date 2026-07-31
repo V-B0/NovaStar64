@@ -16,6 +16,7 @@
 #include <cstring>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <atomic>
 
@@ -242,6 +243,16 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
             if (clipX < -wg) tv.clipFlags |= CLIP_NEGX;
             if (tv.position[1] > +wg) tv.clipFlags |= CLIP_POSY;
             if (tv.position[1] < -wg) tv.clipFlags |= CLIP_NEGY;
+            // Far plane: the renderer CLAMPS z to 0.99999 instead of GPU depth-
+            // clamping, so triangles ENTIRELY beyond the far plane rasterized as
+            // visible ghosts at max depth (the "tree wedge": distant cliff tris
+            // at ndc z≈1.04 drawn as brown wedges mid-screen). Flag z > w so the
+            // AND-rejection below discards fully-beyond-far triangles, exactly
+            // like real RSP far clipping. Uses the TRUE far plane (w, not the
+            // clipRatio guard band) with a small epsilon so geometry tuned to
+            // sit exactly at far (sky walls) survives. Straddling triangles
+            // still render with clamped z, preserving NoN-friendly behavior.
+            if (tv.position[2] > w * 1.005f) tv.clipFlags |= CLIP_POSZ;
         }
 
         // --- Eye-space normal (shared by lighting and texGen) ---
@@ -421,10 +432,13 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         count = VERTEX_BUFFER_SIZE - startIndex;
         if (count <= 0) return;
     }
-    
+
+    ++geo.vertexLoadCounter;
+
     for (int i = 0; i < count; ++i) {
         uint32_t vtxAddr = address + i * 16; // N64Vertex is 16 bytes
         if (vtxAddr + 16 > ctx.rdramSize) break;
+        geo.vertexGeneration[startIndex + i] = geo.vertexLoadCounter;
         
         // Read N64 vertex using word-swapped RDRAM addressing
         int16_t x = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 0));
@@ -916,7 +930,7 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
                 }
             }
             geo.combinedDirty = false; // Prevent UpdateCombinedMatrix from overwriting
-            
+
             // Widescreen hack
             if (geo.widescreenScale != 1.0f) {
                 geo.combinedMatrix.m[0][0] /= geo.widescreenScale;
@@ -1095,6 +1109,11 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     
     // Validate indices
     if (v0 >= maxVtx || v1 >= maxVtx || v2 >= maxVtx) {
+        static const bool s_rejDbg0 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+        if (s_rejDbg0)
+            std::fprintf(stderr, "[REJ] idxrange idx=(%d,%d,%d) max=%d cmb=0x%llX\n",
+                         v0, v1, v2, maxVtx,
+                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
         return;
     }
 
@@ -1105,9 +1124,259 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // them into visible 1-pixel lines.  Suspected cause of Bug A
     // (SM64 tree extra triangle near Bob-omb trees).
     if (v0 == v1 || v1 == v2 || v0 == v2) {
+        static const bool s_rejDbg1 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+        if (s_rejDbg1)
+            std::fprintf(stderr, "[REJ] degenerate idx=(%d,%d,%d) cmb=0x%llX\n",
+                         v0, v1, v2,
+                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
         return;
     }
-    
+
+    // Bug A diagnostic (NOVA64_TRI_DUMP=min,max): unconditionally dump every
+    // triangle's NDC position, vertex color, geometry mode, and vertex-cache
+    // generation stamps within an absolute frame range, for offline grepping
+    // by color/position. Mechanism-specific hypotheses tested so far
+    // (degenerate index, clip-epsilon mismatch, stale-slot generation gap)
+    // all came back clean, so this dumps raw data instead of guessing again.
+    {
+        static const long dumpMin = []() -> long {
+            const char* v = std::getenv("NOVA64_TRI_DUMP");
+            if (!v) return -1L;
+            return std::strtol(v, nullptr, 10);
+        }();
+        static const long dumpMax = []() -> long {
+            const char* v = std::getenv("NOVA64_TRI_DUMP");
+            if (!v) return -1L;
+            const char* comma = std::strchr(v, ',');
+            return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
+        }();
+        static std::atomic<long> dumpLinesLeft{500000};
+        const long present = g_presentIndex.load(std::memory_order_relaxed);
+        // Heartbeat: when dumping is armed, periodically report what present
+        // (VI) index DrawTriangle actually observes, to verify correlation.
+        if (dumpMin >= 0) {
+            static std::atomic<long> hb{0};
+            long h = hb.fetch_add(1, std::memory_order_relaxed);
+            if ((h % 100000) == 0)
+                std::fprintf(stderr, "[TRI-HB] call=%ld present(VI)=%ld\n", h, present);
+        }
+        // Cutout-billboard trap (NOVA64_TRI_TEXEDGE=min,max): logs ONLY
+        // TEX_EDGE (CVG_X_ALPHA) triangles — trees/sprites — with positions
+        // AND texture coords, to catch the "squished duplicate tree texture"
+        // triangle without needing the autoplayer to frame a tree.
+        {
+            static const long teMin = []() -> long {
+                const char* v = std::getenv("NOVA64_TRI_TEXEDGE");
+                return v ? std::strtol(v, nullptr, 10) : -1L;
+            }();
+            static const long teMax = []() -> long {
+                const char* v = std::getenv("NOVA64_TRI_TEXEDGE");
+                if (!v) return -1L;
+                const char* comma = std::strchr(v, ',');
+                return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
+            }();
+            if (teMin >= 0 && present >= teMin && present <= teMax &&
+                (ctx.state->otherModeL & 0x1000) != 0) {
+                const auto& a = geo.vertexBuffer[v0];
+                const auto& b = geo.vertexBuffer[v1];
+                const auto& c = geo.vertexBuffer[v2];
+                auto nd = [](const TransformedVertex& tv, int ax) -> float {
+                    float w = tv.position[3];
+                    return (std::fabs(w) < 1e-8f) ? 0.0f : tv.position[ax] / w;
+                };
+                const auto& tile = ctx.state->tiles[geo.texture.tileIndex & 7];
+                std::fprintf(stderr,
+                    "[TEXEDGE] p=%ld dl=%llu idx=(%d,%d,%d) gm=0x%X oml=0x%X cmb=0x%llX "
+                    "p0=(%.3f,%.3f,%.3f) p1=(%.3f,%.3f,%.3f) p2=(%.3f,%.3f,%.3f) "
+                    "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
+                    "tile=%u cmS=%u mS=%u cmT=%u mT=%u sz=(%.0f,%.0f)\n",
+                    present, static_cast<unsigned long long>(geo.frameSeq), v0, v1, v2,
+                    geo.geometryMode, ctx.state->otherModeL,
+                    static_cast<unsigned long long>(ctx.state->combineModeRaw),
+                    nd(a,0), nd(a,1), nd(a,2), nd(b,0), nd(b,1), nd(b,2), nd(c,0), nd(c,1), nd(c,2),
+                    a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1],
+                    c.texCoord[0], c.texCoord[1],
+                    static_cast<unsigned>(geo.texture.tileIndex),
+                    static_cast<unsigned>(tile.clampS), static_cast<unsigned>(tile.maskS),
+                    static_cast<unsigned>(tile.clampT), static_cast<unsigned>(tile.maskT),
+                    static_cast<float>(tile.GetWidth()), static_cast<float>(tile.GetHeight()));
+            }
+        }
+        if (dumpMin >= 0 && dumpMax >= dumpMin &&
+            present >= dumpMin && present <= dumpMax &&
+            dumpLinesLeft.fetch_sub(1, std::memory_order_relaxed) > 0) {
+            const auto& a = geo.vertexBuffer[v0];
+            const auto& b = geo.vertexBuffer[v1];
+            const auto& c = geo.vertexBuffer[v2];
+            auto ndcOf = [](const TransformedVertex& tv, int axis) -> float {
+                float w = tv.position[3];
+                if (std::fabs(w) < 1e-8f) return 0.0f;
+                return tv.position[axis] / w;
+            };
+            const auto& dumpTile = ctx.state->tiles[geo.texture.tileIndex & 7];
+            std::fprintf(stderr,
+                "[TRI-DUMP] present=%ld dl=%llu idx=(%d,%d,%d) gen=(%u,%u,%u) curGen=%u geomMode=0x%X "
+                "oml=0x%X omh=0x%X cmb=0x%llX prim=(%u,%u,%u,%u) env=(%u,%u,%u,%u) tex0en=%d tile0=%u "
+                "ndc0=(%.3f,%.3f,%.3f) ndc1=(%.3f,%.3f,%.3f) ndc2=(%.3f,%.3f,%.3f) "
+                "col0=(%.2f,%.2f,%.2f,%.2f) col1=(%.2f,%.2f,%.2f,%.2f) col2=(%.2f,%.2f,%.2f,%.2f) "
+                "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
+                "tileFmt=%u tileSz=%u tileWH=(%.0f,%.0f) tmem=%u line=%u pal=%u\n",
+                present, static_cast<unsigned long long>(geo.frameSeq), v0, v1, v2,
+                geo.vertexGeneration[v0], geo.vertexGeneration[v1], geo.vertexGeneration[v2],
+                geo.vertexLoadCounter, geo.geometryMode,
+                ctx.state->otherModeL, ctx.state->otherModeH,
+                static_cast<unsigned long long>(ctx.state->combineModeRaw),
+                ctx.state->primColor.r, ctx.state->primColor.g, ctx.state->primColor.b, ctx.state->primColor.a,
+                ctx.state->envColor.r, ctx.state->envColor.g, ctx.state->envColor.b, ctx.state->envColor.a,
+                geo.texture.enabled ? 1 : 0, geo.texture.tileIndex,
+                ndcOf(a, 0), ndcOf(a, 1), ndcOf(a, 2),
+                ndcOf(b, 0), ndcOf(b, 1), ndcOf(b, 2),
+                ndcOf(c, 0), ndcOf(c, 1), ndcOf(c, 2),
+                a.color[0], a.color[1], a.color[2], a.color[3],
+                b.color[0], b.color[1], b.color[2], b.color[3],
+                c.color[0], c.color[1], c.color[2], c.color[3],
+                a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1], c.texCoord[0], c.texCoord[1],
+                static_cast<unsigned>(dumpTile.format), static_cast<unsigned>(dumpTile.size),
+                static_cast<float>(dumpTile.GetWidth()), static_cast<float>(dumpTile.GetHeight()),
+                dumpTile.tmemAddr, dumpTile.line, static_cast<unsigned>(dumpTile.palette));
+        }
+
+        // Screen-coverage dump (NOVA64_TRI_BIGTEX=1): fires on ANY textured
+        // triangle whose NDC bounding box spans more than half the screen on
+        // either axis, regardless of VI timing. Avoids needing to guess which
+        // VI range a specific on-screen moment (e.g. a large close-up surface
+        // like the moon) falls into -- big textured triangles are rare enough
+        // in normal gameplay that a small independent budget won't starve.
+        {
+            static const bool bigTexEnabled = std::getenv("NOVA64_TRI_BIGTEX") != nullptr;
+            static std::atomic<long> bigTexLinesLeft{2000000};
+            if (bigTexEnabled && geo.texture.enabled &&
+                bigTexLinesLeft.load(std::memory_order_relaxed) > 0) {
+                const auto& a = geo.vertexBuffer[v0];
+                const auto& b = geo.vertexBuffer[v1];
+                const auto& c = geo.vertexBuffer[v2];
+                auto ndcOf = [](const TransformedVertex& tv, int axis) -> float {
+                    float w = tv.position[3];
+                    if (std::fabs(w) < 1e-8f) return 0.0f;
+                    return tv.position[axis] / w;
+                };
+                float xs[3] = {ndcOf(a,0), ndcOf(b,0), ndcOf(c,0)};
+                float ys[3] = {ndcOf(a,1), ndcOf(b,1), ndcOf(c,1)};
+                float xspan = std::max({xs[0],xs[1],xs[2]}) - std::min({xs[0],xs[1],xs[2]});
+                float yspan = std::max({ys[0],ys[1],ys[2]}) - std::min({ys[0],ys[1],ys[2]});
+                if ((xspan > 1.0f || yspan > 1.0f) &&
+                    bigTexLinesLeft.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                    const auto& tile = ctx.state->tiles[geo.texture.tileIndex & 7];
+                    std::fprintf(stderr,
+                        "[TRI-BIGTEX] present=%ld idx=(%d,%d,%d) xspan=%.3f yspan=%.3f "
+                        "ndc0=(%.3f,%.3f) ndc1=(%.3f,%.3f) ndc2=(%.3f,%.3f) "
+                        "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
+                        "tile0=%u tileFmt=%u tileSz=%u tileWH=(%.0f,%.0f) tileSLTL=(%.1f,%.1f) tileSHTH=(%.1f,%.1f) tmem=%u line=%u pal=%u "
+                        "clampS=%u maskS=%u shiftS=%u clampT=%u maskT=%u shiftT=%u texEn=%d scaleST=(%u,%u) scaleFloat=(%.4f,%.4f) addr=0x%06X "
+                        "lit=%d geomMode=0x%X numLights=%d col0=(%.2f,%.2f,%.2f,%.2f) col1=(%.2f,%.2f,%.2f,%.2f) col2=(%.2f,%.2f,%.2f,%.2f)\n",
+                        present, v0, v1, v2, xspan, yspan,
+                        xs[0], ys[0], xs[1], ys[1], xs[2], ys[2],
+                        a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1], c.texCoord[0], c.texCoord[1],
+                        static_cast<unsigned>(geo.texture.tileIndex),
+                        static_cast<unsigned>(tile.format), static_cast<unsigned>(tile.size),
+                        static_cast<float>(tile.GetWidth()), static_cast<float>(tile.GetHeight()),
+                        tile.GetSL(), tile.GetTL(), tile.GetSH(), tile.GetTH(),
+                        tile.tmemAddr, tile.line, static_cast<unsigned>(tile.palette),
+                        static_cast<unsigned>(tile.clampS), static_cast<unsigned>(tile.maskS), static_cast<unsigned>(tile.shiftS),
+                        static_cast<unsigned>(tile.clampT), static_cast<unsigned>(tile.maskT), static_cast<unsigned>(tile.shiftT),
+                        geo.texture.enabled ? 1 : 0,
+                        static_cast<unsigned>(geo.texture.scaleS), static_cast<unsigned>(geo.texture.scaleT),
+                        geo.texture.GetScaleSFloat(), geo.texture.GetScaleTFloat(),
+                        ctx.state->textureImage.address & 0x7FFFFFu,
+                        (geo.geometryMode & G_LIGHTING) ? 1 : 0, geo.geometryMode, geo.numLights,
+                        a.color[0], a.color[1], a.color[2], a.color[3],
+                        b.color[0], b.color[1], b.color[2], b.color[3],
+                        c.color[0], c.color[1], c.color[2], c.color[3]);
+
+                    // Dump the RAW TMEM content for this exact triangle's tile,
+                    // decoded right here from ctx.state->rdp.tmem (the same buffer
+                    // the RDP actually samples), bypassing TextureCache entirely.
+                    // TextureCache decodes lazily at flush time and its cache key
+                    // is address-based, which is ambiguous here: dynamic actor
+                    // RDRAM gets reused for unrelated textures across scenes, so
+                    // dumping "whatever's at 0x723740 right now" from a separate
+                    // pass can catch the wrong occupant. This decodes the bytes
+                    // this specific triangle is actually using, at the moment it
+                    // uses them.
+                    static const bool s_dumpTmem = std::getenv("NOVA64_DUMP_TMEM_BIG") != nullptr;
+                    static int s_tmemDumpCount = 0;
+                    // TEMP (moon investigation): narrow to 128x128 CI4 tiles only,
+                    // so the shared 8000-dump budget isn't exhausted by the far
+                    // more common small repeating-stripe/skybox big triangles
+                    // before the moon's own (much rarer) triangles appear.
+                    bool isMoonCandidate = (tile.GetWidth() == 128 && tile.GetHeight() == 128);
+                    if (s_dumpTmem && isMoonCandidate && s_tmemDumpCount < 8000) {
+                        const auto& t = tile;
+                        int tw = std::max(1, t.GetWidth());
+                        int th = std::max(1, t.GetHeight());
+                        const uint8_t* tmemBase = ctx.state->tmem.data;
+                        uint32_t tileByteOff = static_cast<uint32_t>(t.tmemAddr) * 8u;
+                        uint32_t lineBytes = static_cast<uint32_t>(t.line) * 8u;
+                        char path[256];
+                        std::snprintf(path, sizeof(path), "/tmp/tmemdump_%06X_fmt%u_sz%u_%dx%d_%d.ppm",
+                                      ctx.state->textureImage.address & 0x7FFFFFu,
+                                      static_cast<unsigned>(t.format), static_cast<unsigned>(t.size),
+                                      tw, th, s_tmemDumpCount);
+                        FILE* f = std::fopen(path, "wb");
+                        if (f) {
+                            std::fprintf(f, "P6\n%d %d\n255\n", tw, th);
+                            for (int y = 0; y < th; ++y) {
+                                for (int x = 0; x < tw; ++x) {
+                                    uint8_t r = 0, g = 0, b = 0;
+                                    if (t.format == 4 && t.size == 0) { // I4
+                                        uint32_t off = (tileByteOff + y * lineBytes + x / 2) & 0xFFF;
+                                        uint8_t byte = tmemBase[off];
+                                        uint8_t nib = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
+                                        r = g = b = static_cast<uint8_t>(nib * 17);
+                                    } else if (t.format == 4 && t.size == 1) { // I8
+                                        uint32_t off = (tileByteOff + y * lineBytes + x) & 0xFFF;
+                                        r = g = b = tmemBase[off];
+                                    } else if (t.format == 2 && t.size == 1) { // CI8
+                                        uint32_t off = (tileByteOff + y * lineBytes + x) & 0xFFF;
+                                        uint8_t idx = tmemBase[off];
+                                        uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(idx) * 8;
+                                        uint16_t color = (static_cast<uint16_t>(tmemBase[addr]) << 8) | tmemBase[addr + 1];
+                                        r = static_cast<uint8_t>(((color >> 11) & 0x1F) * 255 / 31);
+                                        g = static_cast<uint8_t>(((color >> 6) & 0x1F) * 255 / 31);
+                                        b = static_cast<uint8_t>(((color >> 1) & 0x1F) * 255 / 31);
+                                    } else if (t.format == 2 && t.size == 0) { // CI4
+                                        uint32_t off = (tileByteOff + y * lineBytes + x / 2) & 0xFFF;
+                                        uint8_t byte = tmemBase[off];
+                                        uint8_t idx = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
+                                        // Matches TextureCache::DecodeCI4: sub-palette selected by
+                                        // tile.palette, 16 entries * 8-byte stride each.
+                                        uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(t.palette) * 0x80 +
+                                                        static_cast<uint32_t>(idx) * 8;
+                                        uint16_t color = (static_cast<uint16_t>(tmemBase[addr]) << 8) | tmemBase[addr + 1];
+                                        r = static_cast<uint8_t>(((color >> 11) & 0x1F) * 255 / 31);
+                                        g = static_cast<uint8_t>(((color >> 6) & 0x1F) * 255 / 31);
+                                        b = static_cast<uint8_t>(((color >> 1) & 0x1F) * 255 / 31);
+                                    } else if (t.format == 0 && t.size == 2) { // RGBA16
+                                        uint32_t off = (tileByteOff + y * lineBytes + x * 2) & 0xFFF;
+                                        uint16_t color = (static_cast<uint16_t>(tmemBase[off]) << 8) | tmemBase[off + 1];
+                                        r = static_cast<uint8_t>(((color >> 11) & 0x1F) * 255 / 31);
+                                        g = static_cast<uint8_t>(((color >> 6) & 0x1F) * 255 / 31);
+                                        b = static_cast<uint8_t>(((color >> 1) & 0x1F) * 255 / 31);
+                                    }
+                                    uint8_t rgb[3] = { r, g, b };
+                                    std::fwrite(rgb, 1, 3, f);
+                                }
+                            }
+                            std::fclose(f);
+                            std::fprintf(stderr, "[TMEM-DUMP] wrote %s\n", path);
+                            ++s_tmemDumpCount;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Backface culling in screen space (like GLideN64) for numerical stability.
     // NDC-space cross products lose precision for nearly edge-on polygons.
     if (!DEBUG_DISABLE_TRI_REJECT &&
@@ -1149,26 +1418,62 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             // scaleY is negative (Y-flip), so the cross product sign is
             // flipped compared to NDC.  CULL_BACK rejects CCW screen-space
             // triangles (cross > 0), CULL_FRONT rejects CW (cross < 0).
+            static const bool s_rejDbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
             if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
+                if (s_rejDbg)
+                    std::fprintf(stderr, "[REJ] cullback idx=(%d,%d,%d) cross=%.3f cmb=0x%llX\n",
+                                 v0, v1, v2, cross,
+                                 (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                 return;
             }
             if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
+                if (s_rejDbg)
+                    std::fprintf(stderr, "[REJ] cullfront idx=(%d,%d,%d) cross=%.3f cmb=0x%llX\n",
+                                 v0, v1, v2, cross,
+                                 (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                 return;
             }
         }
     }
-    
+
     // Clip rejection / clipping
     {
     const auto& tv0c = geo.vertexBuffer[v0];
     const auto& tv1c = geo.vertexBuffer[v1];
     const auto& tv2c = geo.vertexBuffer[v2];
-    
+
     uint32_t orFlags = tv0c.clipFlags | tv1c.clipFlags | tv2c.clipFlags;
-    
-    // Trivial rejection: all verts on the same side of a plane
-    if (!DEBUG_DISABLE_TRI_REJECT && (tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags)) {
-        return;
+
+    // Trivial rejection: all verts on the same side of a plane.
+    //
+    // VALIDITY GUARD: the per-vertex X/Y flags are computed as clip-space
+    // comparisons against ±w·clipRatio. For a vertex BEHIND the camera
+    // (w < 0.01, CLIP_W set) those bounds are negative/degenerate and the
+    // comparisons fire spuriously (e.g. a vertex projecting to mid-screen
+    // carries CLIP_POSY). A triangle that straddles the camera plane can
+    // then share a spurious X/Y bit with a legitimately-flagged front
+    // vertex and get AND-rejected even though its near-clipped portion is
+    // fully visible — this exactly produced the missing Zelda skybox
+    // cells (black "shattered glass" wedges): the sky dome's overhead
+    // triangles straddle w=0 and were dropped instead of clipped.
+    // Real RSP behavior: trivial same-side rejection only applies when
+    // all three w are positive; straddling triangles are CLIPPED.
+    // So: allow AND-rejection on CLIP_W itself (all three behind camera
+    // = genuinely invisible), but when any vertex is behind the camera,
+    // ignore the X/Y bits and send the triangle to the clipper below.
+    if (!DEBUG_DISABLE_TRI_REJECT) {
+        uint32_t andFlags = tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags;
+        bool anyBehind = (orFlags & CLIP_W) != 0;
+        bool reject = (andFlags & CLIP_W) != 0 ||     // all behind camera
+                      (!anyBehind && andFlags != 0);   // valid same-side out
+        if (reject) {
+            static const bool s_rejDbg2 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+            if (s_rejDbg2)
+                std::fprintf(stderr, "[REJ] andflags idx=(%d,%d,%d) flags=(0x%X,0x%X,0x%X) cmb=0x%llX\n",
+                             v0, v1, v2, tv0c.clipFlags, tv1c.clipFlags, tv2c.clipFlags,
+                             (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
+            return;
+        }
     }
     
     // Skipping X/Y software clipping (only running W-near via the
@@ -1181,8 +1486,20 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // Re-enabling the full 5-plane Sutherland-Hodgman clipper fixes
     // this without measurable perf cost (most triangles still trivial-
     // accept via orFlags == 0).
-    if (orFlags == 0) {
-        // Trivial accept - fully inside frustum, send directly
+    // Software clipping is only REQUIRED when a vertex sits behind the
+    // camera plane (CLIP_W): the perspective divide is invalid there and
+    // the GPU cannot rasterize the triangle meaningfully. Triangles that
+    // merely overhang the X/Y frustum edges (flags without CLIP_W) are
+    // safe to hand to the GPU whole — the rasterizer clips/scissors them
+    // exactly, which is what real hardware effectively does within the
+    // RSP guard band, and what GLideN64 does. Routing them through the
+    // software clipper both diverges from hardware (extra seams) and, in
+    // this codebase, produced visibly wrong output for the Zelda skybox
+    // (clip-path draws rasterized black — the "shattered glass" cells
+    // whose quads cross the screen edge).
+    bool needsClip = (orFlags & CLIP_W) != 0;
+    if (!needsClip) {
+        // Direct draw — GPU handles any partial off-screen coverage.
         if (ctx.rdpProcessor) {
             ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
         }
@@ -1202,7 +1519,23 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         
         ClippedPolygon poly;
         int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly, geo.clipRatio);
-        
+
+        {
+            static const bool s_clipDbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+            if (s_clipDbg) {
+                std::fprintf(stderr,
+                    "[CLIP] idx=(%d,%d,%d) flags=(0x%X,0x%X,0x%X) triOut=%d nVtx=%d "
+                    "in_w=(%.4f,%.4f,%.4f) in_z=(%.4f,%.4f,%.4f) in_x=(%.3f,%.3f,%.3f) in_y=(%.3f,%.3f,%.3f) cmb=0x%llX\n",
+                    v0, v1, v2, tv0c.clipFlags, tv1c.clipFlags, tv2c.clipFlags,
+                    triCount, poly.vertexCount,
+                    tv0c.position[3], tv1c.position[3], tv2c.position[3],
+                    tv0c.position[2], tv1c.position[2], tv2c.position[2],
+                    tv0c.position[0], tv1c.position[0], tv2c.position[0],
+                    tv0c.position[1], tv1c.position[1], tv2c.position[1],
+                    (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
+            }
+        }
+
         if (triCount > 0 && poly.vertexCount >= 3) {
             // Fan-triangulate clipped polygon (vertex 0 is the hub)
             bool clipTextPersp = (ctx.state->otherModeH & 0x00080000u) != 0; // OTHERMODE_TEXTPERSP
@@ -1263,8 +1596,21 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                                 - (rv2.x - rv0.x) * (rv1.y - rv0.y);
                     // scaleY is negative → screen-space winding is flipped.
                     // CULL_BACK rejects CCW (cross > 0), CULL_FRONT rejects CW (cross < 0).
-                    if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) continue;
-                    if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) continue;
+                    static const bool s_rejDbg3 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+                    if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
+                        if (s_rejDbg3)
+                            std::fprintf(stderr, "[REJ] postclip-cullback idx=(%d,%d,%d) fan=%d cross=%.3f v0=(%.1f,%.1f) v1=(%.1f,%.1f) v2=(%.1f,%.1f) cmb=0x%llX\n",
+                                         v0, v1, v2, i, cross, rv0.x, rv0.y, rv1.x, rv1.y, rv2.x, rv2.y,
+                                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
+                        continue;
+                    }
+                    if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
+                        if (s_rejDbg3)
+                            std::fprintf(stderr, "[REJ] postclip-cullfront idx=(%d,%d,%d) fan=%d cross=%.3f v0=(%.1f,%.1f) v1=(%.1f,%.1f) v2=(%.1f,%.1f) cmb=0x%llX\n",
+                                         v0, v1, v2, i, cross, rv0.x, rv0.y, rv1.x, rv1.y, rv2.x, rv2.y,
+                                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
+                        continue;
+                    }
                 }
 
                 if (ctx.rdpProcessor) {
@@ -1283,16 +1629,43 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // Done AFTER culling (so backfacing triangles are skipped) but uses the
     // original v0/v1/v2 positions rather than clipped sub-triangles, which is
     // correct for BVH construction (ray tracing handles off-screen geometry fine).
-    if (ctx.geometryConsumer) {
+    //
+    // ONLY WORLD GEOMETRY: triangles drawn under an ORTHO projection (HUD,
+    // menu text, title-screen logo, letterbox bars, fades) live in a different
+    // coordinate space. Submitting them planted invisible ghost planes in the
+    // eye-space BVH that primary rays hit before the real scene — the source
+    // of quarter-screen ghost terms and cutscene characters "covered in
+    // shadow". It also kept their per-object lights out of the sun average.
+    const bool rtPerspective =
+        std::fabs(ctx.state->geometry.projectionStack[
+                      ctx.state->geometry.projectionStackDepth].m[2][3]) > 1e-4f;
+    if (ctx.geometryConsumer && rtPerspective) {
         const auto& vb = ctx.state->geometry.vertexBuffer;
         RT::SceneTriangle st{};
-        auto fillV = [](RT::SceneVertex& sv, const TransformedVertex& tv) {
+        // Smooth EYE-space normals for RT (object normal × MV upper-3x3, same
+        // frame as worldPos). Only meaningful when lighting is on — unlit
+        // vertices store packed colors where normals would be, so submit zeros
+        // and let the shader fall back to the flat geometric normal.
+        const bool rtLit = (ctx.state->geometry.geometryMode & G_LIGHTING) != 0;
+        const auto& rtMv = ctx.state->geometry.modelViewStack[
+                               ctx.state->geometry.modelViewStackDepth];
+        auto fillV = [&](RT::SceneVertex& sv, const TransformedVertex& tv) {
             sv.worldPos[0] = tv.worldPos[0];
             sv.worldPos[1] = tv.worldPos[1];
             sv.worldPos[2] = tv.worldPos[2];
-            sv.normal[0]   = tv.normal[0];
-            sv.normal[1]   = tv.normal[1];
-            sv.normal[2]   = tv.normal[2];
+            sv.normal[0] = sv.normal[1] = sv.normal[2] = 0.0f;
+            if (rtLit) {
+                float nx = tv.normal[0], ny = tv.normal[1], nz = tv.normal[2];
+                float ex = nx*rtMv.m[0][0] + ny*rtMv.m[1][0] + nz*rtMv.m[2][0];
+                float ey = nx*rtMv.m[0][1] + ny*rtMv.m[1][1] + nz*rtMv.m[2][1];
+                float ez = nx*rtMv.m[0][2] + ny*rtMv.m[1][2] + nz*rtMv.m[2][2];
+                float len = std::sqrt(ex*ex + ey*ey + ez*ez);
+                if (len > 1e-4f) {
+                    sv.normal[0] = ex / len;
+                    sv.normal[1] = ey / len;
+                    sv.normal[2] = ez / len;
+                }
+            }
             sv.uv[0]       = tv.texCoord[0];
             sv.uv[1]       = tv.texCoord[1];
             sv.color[0]    = tv.color[0];
@@ -1307,9 +1680,58 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         st.geometryMode  = ctx.state->geometry.geometryMode;
         st.otherModeH    = ctx.state->otherModeH;
         st.otherModeL    = ctx.state->otherModeL;
-        // ALPHA_CVG_SEL (bit 6 of otherModeL) → translucent geometry
-        st.isTranslucent = (ctx.state->otherModeL & 0x40) != 0;
+        // Alpha material classification for RT (the BVH has no texture alpha):
+        //   CUTOUT (CVG_X_ALPHA 0x1000, TEX_EDGE billboards/sprites) — must be
+        //     INVISIBLE to primary rays: any special treatment of the quad
+        //     draws a visible seam around the sprite, because the transparent
+        //     regions show the background, which the composite relights.
+        //   TRANSLUCENT — blended surfaces: FORCE_BL (0x4000) with ZMODE_XLU
+        //     (0x0800) *or* ZMODE_DECAL (0x0C00). Decal mode covers the round
+        //     drop-shadow blobs and ground decals — XLU-only missed them, so
+        //     they rendered as opaque RT geometry (outlined quads). Large ones
+        //     become water in RTBVH; small ones become ray-invisible decals.
+        const uint32_t oml   = ctx.state->otherModeL;
+        const uint32_t zmode = oml & 0x0C00;
+        st.isCutout      = (oml & 0x1000) != 0;
+        st.isTranslucent = !st.isCutout && (oml & 0x4000) != 0
+                        && (zmode == 0x0800 || zmode == 0x0C00);
         ctx.geometryConsumer->SubmitTriangle(st);
+
+        // Capture the active EYE->CLIP projection for compute-RT primary rays.
+        // Only perspective projections (z contributes to clip-w, m[2][3]!=0) —
+        // skips the HUD/2D ortho matrices. Last perspective one wins (the world).
+        const auto& P = ctx.state->geometry.projectionStack[
+                            ctx.state->geometry.projectionStackDepth];
+        if (std::fabs(P.m[2][3]) > 1e-4f) {
+            float pj[16];
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c) pj[r * 4 + c] = P.m[r][c];
+            ctx.geometryConsumer->SetCamera(pj);
+            // The matching viewport: RT primary rays must invert the SAME
+            // screen mapping the raster uses, or on non-fullscreen viewports
+            // (title screen, letterboxed cutscenes) the RT terms appear
+            // scaled/offset against the raster (ghost images, misplaced
+            // shadows). Units are N64 framebuffer pixels (320×240-class).
+            const auto& vp = ctx.state->geometry.viewport;
+            float vpn[4] = { vp.scaleX, vp.transX, vp.scaleY, vp.transY };
+            ctx.geometryConsumer->SetViewport(vpn);
+        }
+
+        // Capture the primary directional light for RT shadows.
+        //
+        // N64 light directions are stored in EYE (camera) space: the RSP dots
+        // them directly against the eye-space vertex normal (see the lighting
+        // loop above, `tnx*dir + tny*dir + tnz*dir`, where tnx/y/z = normal ×
+        // MV upper-3x3). That is why SM64's lighting "follows the camera". The
+        // compute BVH is also eye-space (worldPos = objPos × MV), so the light
+        // direction is submitted verbatim — no extra matrix transform. (A prior
+        // MV multiply here double-transformed it and pointed shadows the wrong
+        // way.) Direction is unit-length from the light-load path; the shader
+        // renormalizes defensively.
+        if (ctx.state->geometry.numLights > 0) {
+            const auto& L0 = ctx.state->geometry.lights[0];
+            ctx.geometryConsumer->SetLight(L0.direction, L0.color);
+        }
     }
 
     } // end geo scope
@@ -1349,9 +1771,15 @@ void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
         const uint32_t srcAddr = ctx.pc - 8; // address of the G_DL opcode
         if (!ctx.dlBranchVisited.insert(srcAddr).second) {
             NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "DisplayList: branch loop detected at G_DL src=0x{:08X} target=0x{:08X} — halting task",
+                "DisplayList: branch loop detected at G_DL src=0x{:08X} target=0x{:08X}",
                 srcAddr, address);
-            ctx.halted = true;
+            // Genuine within-run branch cycle.  Don't discard the rest of the
+            // frame: if we're inside a called sub-DL, return to the caller and
+            // keep rendering (HUD, overlays, later objects).  Only halt the task
+            // when the cycle is at the top level (nothing to return to).
+            if (!ctx.PopDL()) {
+                ctx.halted = true;
+            }
             return;
         }
         ctx.pc = address;

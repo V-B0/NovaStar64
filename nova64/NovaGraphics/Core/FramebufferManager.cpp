@@ -6,7 +6,6 @@
 #include "FramebufferManager.hpp"
 #include <cstdio>
 #include "../Common/Logger.hpp"
-#include "../Common/Platform.hpp"
 #include "../../common/log.hpp"
 
 #include <glad/gl.h>
@@ -472,6 +471,22 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     desc.address = address & 0x7FFFFF;  // Mask to RDRAM range
     desc.width   = width;
 
+    static const bool s_fbDumpTrace = std::getenv("NOVA64_FBDUMP") != nullptr;
+    bool s_ocShouldLog = false;
+    {
+        static uint32_t s_ocLogCount = 0;
+        if (s_fbDumpTrace && desc.address >= 0x380000 && desc.address <= 0x3B0000) {
+            ++s_ocLogCount;
+            // Log every call for the first 200, then every 50th, to see the
+            // whole session without flooding stderr.
+            s_ocShouldLog = (s_ocLogCount <= 200) || (s_ocLogCount % 50 == 0);
+            if (s_ocShouldLog) {
+                std::fprintf(stderr, "[ONSETCOLORIMAGE] #%u addr=0x%06X width=%u size=%u frame=%llu\n",
+                             s_ocLogCount, desc.address, width, size, static_cast<unsigned long long>(m_frameCounter));
+            }
+        }
+    }
+
     // Height priority:
     // 1. Current scissor hint (set by the most recent G_SETSCISSOR in this DL)
     // 2. The height we already know for this address from a previous DL
@@ -496,6 +511,14 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     desc.type    = FBType::Color;
 
     GPUFramebuffer* fb = FindOrCreate(desc);
+    if (s_ocShouldLog) {
+        std::fprintf(stderr, "  -> FindOrCreate result: %s type=%d addr=0x%06X %ux%u fbCount=%u\n",
+                     fb ? "OK" : "NULL",
+                     fb ? static_cast<int>(fb->desc.type) : -1,
+                     fb ? fb->desc.address : 0u,
+                     fb ? fb->desc.width : 0u, fb ? fb->desc.height : 0u,
+                     m_fbCount);
+    }
     if (fb) {
         m_currentColor = fb;
         fb->lastUsedFrame = m_frameCounter;
@@ -665,29 +688,56 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
     return &fb;
 }
 
-GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address) {
+GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType preferType) {
     address &= 0x7FFFFF;
-    // First pass: exact address match (fastest, highest priority)
+    // First pass: exact address match. Games routinely repurpose an RDRAM
+    // region for a different role later (e.g. MM's pause menu reuses the
+    // Z-buffer's address as a scratch color buffer for its world-snapshot
+    // once the 3D pass is done) -- when that happens, two entries can share
+    // the same address with different types. A plain first-match scan would
+    // return whichever got created first (usually the long-lived Depth
+    // entry from normal 3D rendering), never the newer Color one the caller
+    // actually wants, silently breaking the color-framebuffer-as-texture
+    // path. Prefer preferType; only fall back to the first hit if no entry
+    // of that type exists at this address.
+    GPUFramebuffer* firstHit = nullptr;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (m_framebuffers[i].desc.address == address) {
-            return &m_framebuffers[i];
+            if (m_framebuffers[i].desc.type == preferType)
+                return &m_framebuffers[i];
+            if (!firstHit)
+                firstHit = &m_framebuffers[i];
         }
     }
+    if (firstHit) return firstHit;
     // Second pass: tile-offset read — address falls inside a FB's memory footprint
     // with row-alignment (offset is a multiple of stride, i.e. a whole-row offset).
-    // Prefer the most recently used FB when multiple overlap.
-    GPUFramebuffer* best = nullptr;
+    // Prefer the most recently used FB when multiple overlap -- but same-type
+    // matches first. Without this, a row-offset lookup into a Color scratch
+    // buffer that overlaps an always-touched Depth buffer's range (the same
+    // Z-buffer-reused-as-color-scratch pattern the first pass above guards
+    // against) would pick the Depth entry just because it's refreshed every
+    // frame and so is always "more recent" than the Color entry, which is
+    // only touched when the pause menu's snapshot sequence runs. That silently
+    // breaks the same color-framebuffer-as-texture read-back for every
+    // non-base-address strip of a multi-row LoadTile mosaic (only the exact
+    // base address hit the first pass above; every other row strip lands here).
+    GPUFramebuffer* bestOfType = nullptr;
+    GPUFramebuffer* bestAny = nullptr;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         auto& fb = m_framebuffers[i];
         if (address > fb.desc.address && address < fb.desc.EndAddress()) {
             uint32_t offset = address - fb.desc.address;
             if (fb.desc.stride > 0 && (offset % fb.desc.stride) == 0) {
-                if (!best || fb.lastUsedFrame > best->lastUsedFrame)
-                    best = &fb;
+                if (!bestAny || fb.lastUsedFrame > bestAny->lastUsedFrame)
+                    bestAny = &fb;
+                if (fb.desc.type == preferType &&
+                    (!bestOfType || fb.lastUsedFrame > bestOfType->lastUsedFrame))
+                    bestOfType = &fb;
             }
         }
     }
-    return best;
+    return bestOfType ? bestOfType : bestAny;
 }
 
 GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
@@ -702,15 +752,68 @@ GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
 }
 
 void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
-    // Remove framebuffers not used for 60+ frames
+    // Remove framebuffers not used for kStaleFrameThreshold+ frames -- UNLESS
+    // another entry at the SAME address is still fresh (see below).
+    //
+    // This only runs when m_fbCount hits kMaxFramebuffers (32), which happens
+    // during busy scenes (intro/area-transition sequences spawn many scratch
+    // FBs in quick succession). A short window is too aggressive for a real,
+    // still-valid pattern: MM's pause menu sets a scratch Color FB once early
+    // on (e.g. during the Deku transformation cutscene), then doesn't touch
+    // it again as a color target until the player opens the pause menu --
+    // potentially many minutes later, arbitrarily long after any fixed frame
+    // threshold -- and reads it back via LoadTile for the blurred
+    // world-snapshot mosaic. Meanwhile a Depth FB at the SAME address (the
+    // actual Z-buffer, refreshed every frame) stays fresh and survives any
+    // fixed-threshold eviction pass in between. Once the Color entry is
+    // purged, FindByAddress's exact-address match has only the Depth entry
+    // left to return, which CanAliasFramebuffer correctly rejects (wrong
+    // FBType), so the readback falls through to raw (never-written) RDRAM --
+    // a solid black mosaic, i.e. the asymmetric black pause-menu panel bug.
+    // No fixed threshold is safe here: a long session can leave an arbitrary
+    // gap between the one-time setup and the eventual read-back. Evicting
+    // this entry never even reclaims the address anyway -- its Depth twin
+    // still holds it -- so the fix is to skip eviction for any entry whose
+    // address still has a live (non-stale) sibling of a different type,
+    // regardless of its own age. Truly abandoned addresses (no live sibling)
+    // still age out normally, so worst-case memory stays bounded by the
+    // 32-FB cap as before.
+    static constexpr uint64_t kStaleFrameThreshold = 600;
+    auto isStale = [&](const GPUFramebuffer& fb) {
+        return currentFrame - fb.lastUsedFrame >= kStaleFrameThreshold;
+    };
+    auto hasFreshSibling = [&](const GPUFramebuffer& fb) {
+        for (uint32_t j = 0; j < m_fbCount; ++j) {
+            const auto& other = m_framebuffers[j];
+            if (&other != &fb && other.desc.address == fb.desc.address && !isStale(other))
+                return true;
+        }
+        return false;
+    };
+    static const bool s_evictTrace = std::getenv("NOVA64_EVICT_TRACE") != nullptr;
+    if (s_evictTrace) {
+        std::fprintf(stderr, "[EVICT] called at frame=%llu, fbCount=%u\n",
+                     static_cast<unsigned long long>(currentFrame), m_fbCount);
+        for (uint32_t i = 0; i < m_fbCount; ++i) {
+            auto& fb = m_framebuffers[i];
+            std::fprintf(stderr, "  [%u] addr=0x%06X type=%d lastUsed=%llu stale=%d freshSibling=%d\n",
+                         i, fb.desc.address, static_cast<int>(fb.desc.type),
+                         static_cast<unsigned long long>(fb.lastUsedFrame),
+                         isStale(fb), hasFreshSibling(fb));
+        }
+    }
     uint32_t writeIdx = 0;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
-        if (currentFrame - m_framebuffers[i].lastUsedFrame < 60) {
+        if (!isStale(m_framebuffers[i]) || hasFreshSibling(m_framebuffers[i])) {
             if (writeIdx != i) {
                 m_framebuffers[writeIdx] = m_framebuffers[i];
             }
             writeIdx++;
         } else {
+            if (s_evictTrace) {
+                std::fprintf(stderr, "  EVICTING [%u] addr=0x%06X type=%d\n",
+                             i, m_framebuffers[i].desc.address, static_cast<int>(m_framebuffers[i].desc.type));
+            }
             DestroyGPUFramebuffer(m_framebuffers[i]);
         }
     }

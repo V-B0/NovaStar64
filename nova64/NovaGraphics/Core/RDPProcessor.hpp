@@ -84,6 +84,20 @@ struct DrawCall {
     uint32_t textureImageAddr;   // RDRAM address for tile0 at draw time
     uint32_t textureImageAddr1;  // RDRAM address for tile1 (2-cycle mode)
 
+    // Vulkan FB-snapshot ring slot resolved AT ENQUEUE TIME (not flush time).
+    // Multiple ring slots can share the same RDRAM address (e.g. MM's pause
+    // menu issues several SetColorImage switches to the SAME physical FB
+    // within one frame -- a full world redraw, then smaller UI-only overlay
+    // passes onto that same target), so an address-only lookup at flush time
+    // is ambiguous: it can't tell which of several same-address generations
+    // this specific draw call actually intended to sample. Resolving here,
+    // synchronously in DL-execution order, captures whichever slot was the
+    // CURRENT snapshot for that address at the moment this draw was issued --
+    // exactly what the RDP would have read on real hardware. -1 = unresolved
+    // (flush time falls back to the address search for non-FB textures).
+    int32_t snapshotSlot0;
+    int32_t snapshotSlot1;
+
     // Color state snapshot — needed for correct per-draw-call uniforms
     RDPColor primColor;
     RDPColor envColor;
@@ -386,12 +400,19 @@ private:
     // In the Vulkan path there is no per-N64-FB texture — all rendering goes to the
     // swapchain — so we snapshot the swapchain via ReadPixels and keep it here.
     //
-    // Ping-pong pair: with kFramesInFlight=2 the GPU may still be sampling the
-    // previously-bound snapshot when the CPU records a new capture.  Writing into
-    // the same VkImage would race.  We alternate between two slots: each new
-    // capture flips the index FIRST then writes, so the previously-bound slot
-    // remains untouched until its frame's fence is signalled.
-    static constexpr uint32_t kVkFBSnapshotSlots = 2;
+    // Ring buffer, not just a double-buffer: two independent concerns share it.
+    // (1) With kFramesInFlight=2 the GPU may still be sampling the previously-
+    // bound snapshot when the CPU records a new capture, so writing into the
+    // same VkImage would race -- each new capture flips the index FIRST then
+    // writes, leaving the previously-bound slot untouched until its frame's
+    // fence is signalled. (2) Multi-panel UI (MM's pause menu) can need SEVERAL
+    // distinct FB addresses (world background + more than one peek panel)
+    // alive at once, each looked up later by address match (see
+    // RDPProcessor_Batch.cpp). Two slots is exactly enough for (1) but not (2):
+    // a third concurrently-needed address gets evicted by round-robin before
+    // its panel ever samples it, going black. Sized to 4 to give (2) headroom
+    // without giving up the race safety from (1).
+    static constexpr uint32_t kVkFBSnapshotSlots = 4;
     std::array<std::unique_ptr<ITexture>, kVkFBSnapshotSlots> m_vkFBSnapshots;
     std::array<uint32_t, kVkFBSnapshotSlots> m_vkFBSnapshotAddrs{};
     uint32_t m_vkFBSnapshotIdx = 0;

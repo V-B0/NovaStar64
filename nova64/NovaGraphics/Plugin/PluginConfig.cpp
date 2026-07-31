@@ -104,6 +104,9 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
             return true;
         }
 
+        // Compute ray tracing (MoltenVK hybrid: shadows/lighting/reflections).
+        if (key == "rayTracing")         { rayTracing = (val == "1" || val == "true"); return true; }
+
         // Post
         if (key == "postFilter")         { postFilter = static_cast<PostFilter>(std::stoi(val)); return true; }
         if (key == "gamma")              { gamma = std::stof(val); return true; }

@@ -39,7 +39,8 @@ struct SceneTriangle {
     uint32_t geometryMode;      // N64 geometry mode flags at submission time
     uint32_t otherModeH;        // RDP otherMode high word (for RT material decisions)
     uint32_t otherModeL;        // RDP otherMode low word
-    bool     isTranslucent;     // True when CVG_TIMES_ALPHA or ALPHA_CVG_SEL set
+    bool     isTranslucent;     // Blended translucent surface (water/glass)
+    bool     isCutout;          // Texture-alpha cutout (billboards/sprites)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,25 @@ public:
     virtual void SubmitTriangles(const SceneTriangle* tris, uint32_t count) = 0;
 
     void SubmitTriangle(const SceneTriangle& tri) { SubmitTriangles(&tri, 1); }
+
+    /// Optional: report the active EYE->CLIP projection matrix (row-major,
+    /// N64 row-vector convention) when a perspective triangle is submitted.
+    /// The compute ray tracer uses its inverse to generate primary rays.
+    /// Default no-op so non-RT consumers are unaffected.
+    virtual void SetCamera(const float proj[16]) { (void)proj; }
+
+    /// Optional: report the active N64 viewport {scaleX, transX, scaleY, transY}
+    /// (N64 framebuffer units, scaleY negative = y-flip). Title screens and
+    /// cutscenes render with non-fullscreen/letterboxed viewports; the ray
+    /// tracer must map window pixels through the SAME viewport or its terms
+    /// land offset/scaled relative to the raster. Default no-op.
+    virtual void SetViewport(const float vp[4]) { (void)vp; }
+
+    /// Optional: report the primary directional light (eye-space direction and
+    /// rgb color) used for RT shadows/lighting. Default no-op.
+    virtual void SetLight(const float dir[3], const float color[3]) {
+        (void)dir; (void)color;
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

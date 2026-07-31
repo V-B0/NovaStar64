@@ -237,6 +237,7 @@ private:
 class VideoInterfaceHandler final : public MemoryHandler {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_interlacing = true;
         bool enable_vi_interrupt = true;
         bool enable_frame_limiter = true;
@@ -266,7 +267,7 @@ public:
         CN64System& system,
         Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~VideoInterfaceHandler() override;

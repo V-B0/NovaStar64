@@ -103,7 +103,11 @@ struct PluginConfig {
     int      targetFPS           = 0;       // 0 = VI rate (60/50)
 
     // ── Rendering backend ─────────────────────────────────────
+#ifdef __APPLE__
+    int      backendType         = 1;      // macOS: Vulkan via MoltenVK (GL caps at 4.1; renderer needs 4.6)
+#else
     int      backendType         = 0;      // 0=GL, 1=VK, 2=D3D11
+#endif
 
     // ── Anti-aliasing ─────────────────────────────────────────
     AAMode   antiAliasing        = AAMode::None;
@@ -145,6 +149,9 @@ struct PluginConfig {
 
     // ── Emulation level (MLE pivot) ──────────────────────────
     RenderingMode renderingMode  = RenderingMode::LLE;
+
+    // ── Compute ray tracing (MoltenVK hybrid shadows/lighting/reflections) ──
+    bool rayTracing              = false;
 
     // ── Aspect ratio ──────────────────────────────────────────
     AspectRatio aspectRatio      = AspectRatio::Native4_3;

@@ -40,6 +40,7 @@
 #include "../common/IniFile.hpp"
 
 #include <cstring>
+#include <cstdlib>
 #include <memory>
 #include <ctime>
 #include <chrono>
@@ -1572,8 +1573,14 @@ void CN64System::RefreshScreen()
     auto afterAudio = std::chrono::steady_clock::now();
     accAudioMs += std::chrono::duration<double, std::milli>(afterAudio - afterRender).count();
 
-    // Frame rate limiter: pace CPU execution to real time
-    if (m_TargetFPS > 0)
+    // Frame rate limiter: pace CPU execution to real time.
+    // NOVA64_TURBO=1 disables pacing entirely so headless diagnostic runs reach
+    // late game state quickly instead of in real time.
+    static const bool s_turbo = []() {
+        const char* v = std::getenv("NOVA64_TURBO");
+        return v && v[0] != '\0' && v[0] != '0';
+    }();
+    if (m_TargetFPS > 0 && !s_turbo)
     {
         using clock = std::chrono::steady_clock;
         using namespace std::chrono;
@@ -2004,5 +2011,13 @@ void CN64System::DumpRegisters()
     Log::info("──────────────────────────────────────────────");
 }
 
+// Default execution mode.  The dynamic recompiler currently has a native
+// backend only for x86-64 (and x86).  On AArch64/other hosts the recompiler
+// backend is still being brought up, so default to the always-correct
+// interpreter there.  This can be overridden at runtime via SetUseInterpreter().
+#if defined(__amd64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 bool CN64System::s_UseInterpreter = false;
+#else
+bool CN64System::s_UseInterpreter = true;
+#endif
 

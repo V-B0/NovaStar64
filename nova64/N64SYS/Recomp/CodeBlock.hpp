@@ -152,6 +152,7 @@ class CodeBlock : public asmjit::ErrorHandler {
 public:
     // Configuration
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_profiling = true;
         bool enable_logging = false;
         bool enable_optimizations = true;
@@ -161,7 +162,7 @@ public:
     };
     
     // Construction/Destruction
-    CodeBlock(N64System& system, uint32_t entry_address, const Config& config = {},
+    CodeBlock(N64System& system, uint32_t entry_address, const Config& config = Config(),
               asmjit::JitRuntime* shared_runtime = nullptr);
     ~CodeBlock() noexcept;
     
@@ -183,13 +184,14 @@ public:
     };
     
     struct CompileOptions {
+            CompileOptions() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool aggressive_optimizations = false;
         bool link_blocks = true;
         bool generate_debug_info = false;
         size_t optimization_level = 2;  // 0=none, 1=basic, 2=aggressive
     };
     
-    CompileResult compile(const CompileOptions& options = {});
+    CompileResult compile(const CompileOptions& options = CompileOptions());
     std::optional<uintptr_t> finalize(RecompilationMemory& memory);
     
     // Block properties
@@ -366,7 +368,7 @@ private:
         const std::vector<uint8_t>& generated_code() const noexcept { return generated_code_; }
         
     private:
-        asmjit::x86::Assembler assembler_;
+        Recomp::Assembler assembler_;
         const AnalysisResult& analysis_;
         const Config& config_;
         std::unordered_map<uint32_t, asmjit::Label> labels_;
@@ -383,8 +385,8 @@ private:
         };
         std::array<RegisterState, 16> register_states_;
         
-        asmjit::x86::Gp allocate_register(uint8_t mips_reg);
-        void free_register(asmjit::x86::Gp reg);
+        Recomp::Gp allocate_register(uint8_t mips_reg);
+        void free_register(Recomp::Gp reg);
         void spill_dirty_registers();
     };
     
@@ -456,6 +458,7 @@ private:
 class CodeBlockCache {
 public:
     struct Config {
+        Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         size_t max_blocks = 1024;
         size_t max_total_size = 64 * 1024 * 1024;  // 64MB
         float hot_threshold = 0.1f;  // 10% of cache can be hot
@@ -463,7 +466,7 @@ public:
         bool enable_prefetch = true;
     };
     
-    explicit CodeBlockCache(const Config& config = {});
+    explicit CodeBlockCache(const Config& config = Config());
     ~CodeBlockCache();
     
     // Block management

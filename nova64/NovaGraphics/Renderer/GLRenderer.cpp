@@ -8,7 +8,6 @@
 
 #include "GLBackend.hpp"
 #include "../Common/Logger.hpp"
-#include "../Common/Platform.hpp"
 #include "../../common/log.hpp"
 
 #include <glad/gl.h>

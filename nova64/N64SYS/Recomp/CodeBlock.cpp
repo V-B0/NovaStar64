@@ -26,7 +26,7 @@
 #elif defined(__i386__) || defined(_M_IX86)
 #include "x86/x86RecompilerOps.hpp"
 #elif defined(__aarch64__) || defined(_M_ARM64)
-#include "Arm/ArmRecompilerOps.hpp"
+#include "Arm64/arm64RecompilerOps.hpp"
 #endif
 
 #include <cstring>
@@ -1014,8 +1014,11 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
 
     ops.BindPendingBranchLikelyLabel();
 
+    // For fall-through (non-branch) blocks the interpreter callbacks do not
+    // advance the program counter, so point the dispatcher at the next block.
+    // (Branch/jump blocks already had their PC set by the branch callback.)
     if (analysis.branches.empty()) {
-        ops.EmitPCUpdate();
+        ops.EmitSetPC(end_address_ + 4);
     }
 
     ops.ExitCodeBlock();
@@ -1052,18 +1055,23 @@ CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code,
 
 bool CodeBlock::CodeGenerator::generate_prologue()
 {
-    // Standard x64 function prologue
+    // Legacy/stub code generator.  The live recompiler path uses the
+    // architecture-specific *RecompilerOps backends; this nested helper only
+    // emits a host prologue on x86 and is a no-op elsewhere.
+#if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
     assembler_.push(asmjit::x86::rbp);
     assembler_.mov(asmjit::x86::rbp, asmjit::x86::rsp);
+#endif
     return true;
 }
 
 bool CodeBlock::CodeGenerator::generate_epilogue()
 {
-    // Standard x64 function epilogue
+#if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
     assembler_.mov(asmjit::x86::rsp, asmjit::x86::rbp);
     assembler_.pop(asmjit::x86::rbp);
     assembler_.ret();
+#endif
     return true;
 }
 
@@ -1097,12 +1105,12 @@ bool CodeBlock::CodeGenerator::generate_exception_handler()
     return true;
 }
 
-asmjit::x86::Gp CodeBlock::CodeGenerator::allocate_register(uint8_t /*mips_reg*/)
+Recomp::Gp CodeBlock::CodeGenerator::allocate_register(uint8_t /*mips_reg*/)
 {
-    return asmjit::x86::rax; // Placeholder
+    return Recomp::Gp{}; // Placeholder (legacy stub path; arch-neutral)
 }
 
-void CodeBlock::CodeGenerator::free_register(asmjit::x86::Gp /*reg*/)
+void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/)
 {
 }
 

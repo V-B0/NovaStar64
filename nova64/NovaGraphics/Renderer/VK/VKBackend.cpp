@@ -38,8 +38,11 @@
 #include "VKPipeline.hpp"
 #include "VKRenderTarget.hpp"
 #include "VKRTPipeline.hpp"
+#include "VKComputeRaytracer.hpp"
 #include "../../RT/RTSceneManager.hpp"
+#include "../../RT/RTBVH.hpp"
 #include "../../Common/Logger.hpp"
+#include "../../Texture/ImageWrite.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
@@ -47,6 +50,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -156,6 +160,36 @@ struct PerFrame {
     VkSemaphore     renderFinished = VK_NULL_HANDLE;
     VkFence         inFlightFence  = VK_NULL_HANDLE;
 };
+
+// General 4x4 inverse (row-major in/out). Used to derive the compute-RT
+// inverse projection for primary-ray generation. Returns identity on a
+// singular matrix.
+static void Invert4x4(const float m[16], float out[16]) {
+    float inv[16];
+    inv[0]  =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+    inv[4]  = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+    inv[8]  =  m[4]*m[9]*m[15]  - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+    inv[12] = -m[4]*m[9]*m[14]  + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+    inv[1]  = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+    inv[5]  =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+    inv[9]  = -m[0]*m[9]*m[15]  + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+    inv[13] =  m[0]*m[9]*m[14]  - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+    inv[2]  =  m[1]*m[6]*m[15]  - m[1]*m[7]*m[14]  - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7]  - m[13]*m[3]*m[6];
+    inv[6]  = -m[0]*m[6]*m[15]  + m[0]*m[7]*m[14]  + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7]  + m[12]*m[3]*m[6];
+    inv[10] =  m[0]*m[5]*m[15]  - m[0]*m[7]*m[13]  - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7]  - m[12]*m[3]*m[5];
+    inv[14] = -m[0]*m[5]*m[14]  + m[0]*m[6]*m[13]  + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6]  + m[12]*m[2]*m[5];
+    inv[3]  = -m[1]*m[6]*m[11]  + m[1]*m[7]*m[10]  + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7]   + m[9]*m[3]*m[6];
+    inv[7]  =  m[0]*m[6]*m[11]  - m[0]*m[7]*m[10]  - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7]   - m[8]*m[3]*m[6];
+    inv[11] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
+    inv[15] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
+    float det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+    if (det > -1e-12f && det < 1e-12f) {
+        for (int i = 0; i < 16; ++i) out[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+        return;
+    }
+    det = 1.0f / det;
+    for (int i = 0; i < 16; ++i) out[i] = inv[i] * det;
+}
 
 class VulkanRenderer final : public IRenderer {
 public:
@@ -331,6 +365,7 @@ public:
     void Shutdown() override {
         if (!m_initialized && !m_device.Get()) return;
         if (m_device.Get()) m_device.WaitIdle();
+        DestroyCanvas();
         DestroyTransient();
         DestroyFrameResources();
         m_swapchain.Destroy(m_device.Get());
@@ -422,7 +457,10 @@ public:
             return;
         }
         m_skipPresent = false;
+        m_frameRecording = true;
         m_midFrameReadbackDone = false;
+        m_frameReadbackCount = 0;
+        m_activeCanvasDirty = false;
 
         // Reset per-frame descriptor pool (frees all sets allocated last time
         // this frame index was active).
@@ -450,11 +488,121 @@ public:
         // Reset per-frame GPU stats so each frame gets an accurate count.
         m_stats.Reset();
 
-        // Begin the swapchain render pass (or pending custom RT) with
-        // LOAD_OP_CLEAR using the latest m_clearColor. Draws happen between
-        // Begin/EndFrame.
-        BeginPass(m_pendingRT);
+        // Begin the swapchain render pass (or pending custom RT). When the
+        // active N64 buffer's persistent canvas holds accumulated content,
+        // blit it into the freshly acquired image and resume with the LOAD
+        // pass so content carries across swapchain image rotation (see
+        // m_canvases docs). Otherwise fall back to the clearing pass.
+        m_frameOnSwapchain = (m_pendingRT == nullptr);
+        bool resumedFromCanvas = false;
+        if (!m_pendingRT && m_canvasPreserve) {
+            CanvasSlot* c = EnsureCanvas(m_activeCanvasAddr);
+            if (c && c->valid) {
+                VkImage swapImg = m_swapchain.GetImage(m_currentImage);
+                VkExtent2D ext  = m_swapchain.GetExtent();
+                LoadCanvasToSwapchain(f.cmd, *c, swapImg, VK_IMAGE_LAYOUT_UNDEFINED);
+                BeginPassLoad();
+                // Depth must NOT carry across frames — clear it inside the pass.
+                {
+                    VkClearAttachment ca{};
+                    ca.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                    ca.clearValue.depthStencil = { 1.0f, 0u };
+                    VkClearRect cr{};
+                    cr.rect.extent    = ext;
+                    cr.layerCount     = 1;
+                    vkCmdClearAttachments(f.cmd, 1, &ca, 1, &cr);
+                }
+                // BeginPassLoad doesn't set viewport/scissor (BeginPass does);
+                // set the same Y-flipped full-extent defaults here.
+                float vpW = static_cast<float>(ext.width);
+                float vpH = static_cast<float>(ext.height);
+                m_vpFBOW = vpW;
+                m_vpFBOH = vpH;
+                VkViewport vp{};
+                vp.width    = vpW;
+                vp.height   = -vpH;
+                vp.y        = vpH;
+                vp.minDepth = 0.0f; vp.maxDepth = 1.0f;
+                vkCmdSetViewport(f.cmd, 0, 1, &vp);
+                VkRect2D sc{ {0, 0}, ext };
+                vkCmdSetScissor(f.cmd, 0, 1, &sc);
+                resumedFromCanvas = true;
+            }
+        }
+        if (!resumedFromCanvas) {
+            BeginPass(m_pendingRT);
+        }
         m_pendingRT = nullptr;
+    }
+
+    // N64 SetColorImage handler notification: the game switched its render
+    // target buffer.  Save the swapchain (holding the OLD buffer's content)
+    // into the old canvas, load the NEW buffer's canvas, and resume the
+    // pass — full per-buffer isolation on a single swapchain image.
+    // Outside a frame (command buffer closed) just latch the new address;
+    // the next BeginFrame restores the right canvas.
+    void SetActiveCanvas(uint32_t n64Addr) override {
+        n64Addr &= 0x7FFFFF;
+        if (n64Addr == m_activeCanvasAddr) return;
+
+        if (!m_initialized || !m_frameRecording || m_skipPresent ||
+            !m_frameOnSwapchain || !m_canvasPreserve ||
+            m_ctx.deviceLost.load(std::memory_order_relaxed)) {
+            m_activeCanvasAddr = n64Addr;
+            return;
+        }
+        PerFrame& f = m_frames[m_currentFrame];
+
+        bool wasActive = m_passActive;
+        if (wasActive) { vkCmdEndRenderPass(f.cmd); m_passActive = false; }
+
+        VkImage swapImg = m_swapchain.GetImage(m_currentImage);
+        CanvasSlot* oldC = EnsureCanvas(m_activeCanvasAddr);
+        // Only persist the outgoing buffer if something was actually DRAWN to
+        // it while it was active. A buffer that was merely bound must keep the
+        // content it already had.
+        //
+        // Without this, MM's every-frame Z-clear (it briefly switches the color
+        // image to the Z-buffer address 0x383AC0, issues a fill, and switches
+        // straight back -- visible as a switch pair per frame in CANVAS_DBG)
+        // destroyed the pause-menu world snapshot stored in that address's
+        // canvas: on switching TO it we intentionally skip LoadCanvasToSwapchain
+        // when the canvas is invalid (keeping stale pixels rather than flashing
+        // black, see below), so the swapchain still held the LIVE menu frame --
+        // and this save then wrote that live frame into canvas[0x383AC0] and
+        // marked it valid. The pause background consequently animated along with
+        // the page-turn instead of showing the frozen world snapshot. (Resizing
+        // the window "fixed" the bouncing precisely because swapchain recreation
+        // drops all canvases, breaking the feedback loop -- a long-standing
+        // clue in this investigation that only makes sense with this mechanism.)
+        if (swapImg && oldC && m_activeCanvasDirty) {
+            SaveSwapchainToCanvas(f.cmd, swapImg, *oldC);
+        }
+        CanvasSlot* newC = EnsureCanvas(n64Addr);
+        if (swapImg && newC && newC->valid) {
+            LoadCanvasToSwapchain(f.cmd, *newC, swapImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        }
+        // If the new canvas has no content yet, keep the swapchain as-is: the
+        // game fully repaints new buffers before displaying them, and stale
+        // pixels are preferable to a hard black flash mid-frame.
+
+        static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
+        if (s_cvDbg) {
+            std::fprintf(stderr, "[CANVAS] switch 0x%06X -> 0x%06X (saveOld=%d loadNew=%d newValid=%d)\n",
+                         m_activeCanvasAddr, n64Addr,
+                         oldC != nullptr, newC != nullptr, newC ? (int)newC->valid : -1);
+        }
+
+        m_activeCanvasAddr  = n64Addr;
+        m_activeCanvasDirty = false;   // nothing drawn to the new target yet
+        if (wasActive) BeginPassLoad();
+    }
+
+    // VI origin update from the video plugin: which N64 buffer is display-
+    // ready. EndFrame presents this buffer's canvas instead of the one still
+    // being drawn.
+    void SetPresentOrigin(uint32_t n64Addr) override {
+        m_presentOriginAddr = n64Addr & 0x7FFFFF;
     }
 
     void EndFrame() override {
@@ -466,6 +614,91 @@ public:
             vkCmdEndRenderPass(f.cmd);
             m_passActive = false;
         }
+
+        // Compute-RT hybrid composite: now that all raster is done and the pass
+        // is closed (swapchain in PRESENT_SRC_KHR), the ray tracer reads the
+        // textured frame, applies shadows/effects, and blits the result back.
+        if (m_rtComposePending && m_computeRT && m_computeRT->Ready()) {
+            VkImage    sc  = m_swapchain.GetImage(m_currentImage);
+            VkExtent2D ext = m_swapchain.GetExtent();
+            m_rtUBO.dims[0] = ext.width;
+            m_rtUBO.dims[1] = ext.height;
+
+            // The composite samples the raster depth buffer (billboard/decal
+            // suppression). Transition depth → shader-read for the compute
+            // passes, back to attachment layout afterwards.
+            VkImage  depthImg = m_swapchain.GetDepthImage();
+            VkFormat depthFmt = m_swapchain.GetDepthFormat();
+            VkImageAspectFlags depthAspects = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (depthFmt == VK_FORMAT_D24_UNORM_S8_UINT ||
+                depthFmt == VK_FORMAT_D32_SFLOAT_S8_UINT)
+                depthAspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            auto depthBarrier = [&](VkImageLayout oldL, VkImageLayout newL,
+                                    VkAccessFlags srcA, VkAccessFlags dstA,
+                                    VkPipelineStageFlags srcS, VkPipelineStageFlags dstS) {
+                VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+                b.oldLayout = oldL; b.newLayout = newL;
+                b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                b.image = depthImg;
+                b.subresourceRange = {depthAspects, 0, 1, 0, 1};
+                b.srcAccessMask = srcA; b.dstAccessMask = dstA;
+                vkCmdPipelineBarrier(f.cmd, srcS, dstS, 0, 0, nullptr, 0, nullptr, 1, &b);
+            };
+            depthBarrier(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                         VK_ACCESS_SHADER_READ_BIT,
+                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+            m_computeRT->RenderHybrid(m_ctx, f.cmd, m_currentFrame, m_rtBVH, m_rtUBO,
+                                      sc, ext.width, ext.height, depthImg, depthFmt);
+
+            depthBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                         VK_ACCESS_SHADER_READ_BIT,
+                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+        }
+        m_rtComposePending = false;
+
+        // Persist the frame's rendering into the ACTIVE buffer's canvas, then
+        // put the DISPLAY-READY buffer's canvas (VI origin) on the swapchain
+        // for presentation. The game flips VI origin only to buffers it has
+        // finished drawing, so the presented image is always a complete
+        // frame — never the half-drawn buffer the DL is still working on.
+        // The swapchain image is still application-owned here — reading it
+        // pre-present is legal, unlike reading an already-presented image.
+        // Guard on m_currentRT: if the frame ended inside a custom render
+        // target pass, the swapchain image is not in PRESENT_SRC layout.
+        if (m_frameOnSwapchain && m_currentRT == nullptr && m_canvasPreserve) {
+            VkImage    swapImg = m_swapchain.GetImage(m_currentImage);
+            VkExtent2D ext     = m_swapchain.GetExtent();
+            CanvasSlot* active = EnsureCanvas(m_activeCanvasAddr);
+            if (swapImg && active && m_activeCanvasDirty &&
+                ext.width == m_canvasW && ext.height == m_canvasH) {
+                SaveSwapchainToCanvas(f.cmd, swapImg, *active);
+                CanvasSlot* presentC = FindCanvasForOrigin(m_presentOriginAddr);
+                if (presentC && presentC != active && presentC->valid) {
+                    LoadCanvasToSwapchain(f.cmd, *presentC, swapImg,
+                                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                }
+                static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
+                if (s_cvDbg) {
+                    uint32_t presentAddr = 0xFFFFFF;
+                    for (auto& [a, c] : m_canvases) if (&c == presentC) presentAddr = a;
+                    std::fprintf(stderr, "[CANVAS] endframe active=0x%06X origin=0x%06X -> present=0x%06X (valid=%d self=%d)\n",
+                                 m_activeCanvasAddr, m_presentOriginAddr, presentAddr,
+                                 presentC ? (int)presentC->valid : -1,
+                                 presentC == active);
+                }
+            }
+        }
+
+        m_frameRecording = false;
         vkEndCommandBuffer(f.cmd);
 
         // VK draw call diagnostic: log per-frame GPU draw count (first 120 frames, then every 60).
@@ -479,7 +712,11 @@ public:
         }
 
         // 4. Submit
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // TRANSFER is included because the canvas copy-forward in BeginFrame
+        // writes the acquired image at the transfer stage — the acquire
+        // semaphore must gate that write, not just color-attachment output.
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         VkSemaphore waitSem = m_midFrameReadbackDone ? f.midFrameDone : f.imageAvailable;
         si.waitSemaphoreCount   = 1;
@@ -498,6 +735,123 @@ public:
         }
     }
 
+    // Headless framebuffer capture for debugging. When NOVA64_SHOT_FRAME lists
+    // the current present index (comma-separated), copy the just-rendered
+    // swapchain image to <NOVA64_SHOT_PATH>_<n>.png. Fully env-gated: a normal
+    // run (no env var) does nothing. Self-verifying — a coherent PNG proves the
+    // capture path works regardless of what the game drew.
+    void MaybeCaptureFrame() {
+        static bool s_parsed = false;
+        static std::vector<long> s_targets;
+        static std::string s_basePath;
+        static long s_presentCount = 0;
+        static long s_every = 0;        // NOVA64_SHOT_EVERY: capture every Nth present
+        static long s_everyStart = 0;   // NOVA64_SHOT_START: first present to begin "every"
+        if (!s_parsed) {
+            s_parsed = true;
+            if (const char* env = std::getenv("NOVA64_SHOT_FRAME")) {
+                const char* p = env;
+                while (*p) { char* e = nullptr; long v = std::strtol(p, &e, 10);
+                    if (e == p) break; s_targets.push_back(v); p = (*e == ',') ? e + 1 : e; }
+            }
+            if (const char* ev = std::getenv("NOVA64_SHOT_EVERY")) s_every = std::strtol(ev, nullptr, 10);
+            if (const char* st = std::getenv("NOVA64_SHOT_START")) s_everyStart = std::strtol(st, nullptr, 10);
+            const char* path = std::getenv("NOVA64_SHOT_PATH");
+            s_basePath = path ? path : "/tmp/nova64_shot";
+        }
+        // n is the VI frame index, published by VideoPlugin::UpdateScreen. The
+        // raw swapchain present counter is decoupled from VI rate in HLE, so we
+        // key capture off VI count for a consistent cross-mode timeline.
+        const long n = g_presentIndex.load(std::memory_order_relaxed);
+        static long s_lastCaptured = -1;
+        static long s_nextThreshold = -1;
+        (void)s_presentCount;
+        if (n == s_lastCaptured) return; // one capture per VI index
+        bool hit = false;
+        for (long t : s_targets) if (t == n) { hit = true; break; }
+        // "every" mode: presents are sparse in HLE, so capture on the FIRST
+        // present at-or-after each threshold rather than requiring an exact
+        // modulo match (which would almost never coincide with a present).
+        if (s_every > 0 && n >= s_everyStart) {
+            if (s_nextThreshold < 0) s_nextThreshold = s_everyStart;
+            if (n >= s_nextThreshold) {
+                hit = true;
+                s_nextThreshold = n + s_every;
+            }
+        }
+        if (!hit) return;
+        s_lastCaptured = n;
+        CaptureSwapchainToPNG((s_basePath + "_" + std::to_string(n) + ".png").c_str());
+    }
+
+    void CaptureSwapchainToPNG(const char* path) {
+        vkQueueWaitIdle(m_device.GetGraphicsQueue()); // debug-only: ensure render done
+        VkExtent2D ext = m_swapchain.GetExtent();
+        const uint32_t w = ext.width, h = ext.height;
+        if (w == 0 || h == 0) return;
+        const VkDeviceSize sz = static_cast<VkDeviceSize>(w) * h * 4;
+        VKBufferStorage staging{};
+        if (!CreateBufferStorage(m_ctx, sz, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                staging))
+            return;
+        VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ai.commandPool = m_transientPool;
+        ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ai.commandBufferCount = 1;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(m_device.Get(), &ai, &cb) != VK_SUCCESS) {
+            DestroyBufferStorage(m_ctx, staging); return;
+        }
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cb, &bi);
+        VkImage img = m_swapchain.GetImage(m_currentImage);
+        TransitionImage(cb, img, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_MEMORY_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferImageCopy region{};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent = { w, h, 1 };
+        vkCmdCopyImageToBuffer(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               staging.buffer, 1, &region);
+        TransitionImage(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        vkEndCommandBuffer(cb);
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.commandBufferCount = 1; si.pCommandBuffers = &cb;
+        VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence fence = VK_NULL_HANDLE;
+        vkCreateFence(m_device.Get(), &fci, nullptr, &fence);
+        vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, fence);
+        vkWaitForFences(m_device.Get(), 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(m_device.Get(), fence, nullptr);
+        vkFreeCommandBuffers(m_device.Get(), m_transientPool, 1, &cb);
+
+        // Swapchain images are typically BGRA8 — swizzle to RGBA for the PNG and
+        // force opaque alpha (the presented image's alpha is irrelevant).
+        const VkFormat fmt = m_swapchain.GetFormat();
+        const bool bgra = (fmt == VK_FORMAT_B8G8R8A8_UNORM || fmt == VK_FORMAT_B8G8R8A8_SRGB);
+        std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4);
+        const uint8_t* src = static_cast<const uint8_t*>(staging.mapped);
+        for (size_t i = 0; i < static_cast<size_t>(w) * h; ++i) {
+            const uint8_t c0 = src[i*4+0], c1 = src[i*4+1], c2 = src[i*4+2];
+            if (bgra) { rgba[i*4+0]=c2; rgba[i*4+1]=c1; rgba[i*4+2]=c0; }
+            else      { rgba[i*4+0]=c0; rgba[i*4+1]=c1; rgba[i*4+2]=c2; }
+            rgba[i*4+3] = 255;
+        }
+        DestroyBufferStorage(m_ctx, staging);
+        if (Nova::WritePNG(path, static_cast<int>(w), static_cast<int>(h), 4,
+                           rgba.data(), static_cast<int>(w) * 4))
+            Logger::Info("[SHOT] wrote {} ({}x{})", path, w, h);
+        else
+            Logger::Error("[SHOT] WritePNG failed for {}", path);
+    }
+
     void Present() override {
         if (!m_initialized || m_skipPresent) {
             m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
@@ -507,6 +861,7 @@ public:
             m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
             return;
         }
+        MaybeCaptureFrame();
         PerFrame& f = m_frames[m_currentFrame];
         VkSwapchainKHR sc = m_swapchain.Get();
 
@@ -749,6 +1104,7 @@ public:
     }
     void DrawArrays(PrimitiveType, uint32_t first, uint32_t count) override {
         if (!PrepareDraw()) return;
+        m_activeCanvasDirty = true;
         vkCmdDraw(m_frames[m_currentFrame].cmd, count, 1, first, 0);
         ++m_stats.drawCalls;
         m_stats.triangles += count / 3;
@@ -756,6 +1112,7 @@ public:
     void DrawIndexed(PrimitiveType, uint32_t indexCount, IndexType type, uint32_t offset) override {
         if (!PrepareDraw()) return;
         if (m_curIB == VK_NULL_HANDLE) return;
+        m_activeCanvasDirty = true;
         VkIndexType it = (type == IndexType::UInt16) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
         // Re-bind in case the cached state's index type differs from this call.
         vkCmdBindIndexBuffer(m_frames[m_currentFrame].cmd, m_curIB, 0, it);
@@ -814,24 +1171,180 @@ public:
     }
     void ExecuteRayTracing(RT::RTSceneManager* scene,
                            uint32_t w, uint32_t h) override {
-        if (!m_initialized || !m_device.SupportsRayTracing()) return;
+        if (!m_initialized) return;
         if (!scene || scene->GetTriangleCount() == 0 || w == 0 || h == 0) return;
 
-        PerFrame& f = m_frames[m_currentFrame];
-        // Build BLAS + TLAS from this frame's accumulated triangles.
-        // BuildAS records commands into the current command buffer; the geometry
-        // is available to TraceRays in the same submission.
-        if (!scene->BuildAS(m_ctx, f.cmd)) {
-            Logger::Warn("VulkanRenderer::ExecuteRayTracing: BuildAS failed");
+        // ── Hardware RT path (Vulkan KHR ray tracing pipeline) ──────────────
+        if (m_device.SupportsRayTracing()) {
+            PerFrame& f = m_frames[m_currentFrame];
+            if (!scene->BuildAS(m_ctx, f.cmd)) {
+                Logger::Warn("VulkanRenderer::ExecuteRayTracing: BuildAS failed");
+                return;
+            }
+            void* tlas = scene->GetTLAS();
+            if (!tlas) return;
+            void* outputView = reinterpret_cast<void*>(
+                m_swapchain.GetImageView(m_currentImage));
+            DispatchRayTracing(tlas, outputView, w, h);
             return;
         }
-        void* tlas = scene->GetTLAS();
-        if (!tlas) return;
 
-        // Use the current swapchain image view as the RT output surface.
-        void* outputView = reinterpret_cast<void*>(
-            m_swapchain.GetImageView(m_currentImage));
-        DispatchRayTracing(tlas, outputView, w, h);
+        // ── Compute RT path (MoltenVK: no hardware AS / RT pipeline) ────────
+        // CPU-only here: build the BVH and prepare the UBO. The GPU dispatch +
+        // hybrid composite happen in EndFrame (so RT reads the finished raster).
+        if (!scene->HasCamera()) return;          // need the world perspective
+        if (!m_computeRT) {
+            m_computeRT = std::make_unique<VKComputeRaytracer>();
+            if (!m_computeRT->Build(m_ctx)) { m_computeRT.reset(); return; }
+        }
+        m_rtBVH.Build(scene->GetFrameData());
+        if (m_rtBVH.Empty()) return;
+
+        // Scene-size gate, effectively OFF by default (user wants RT on menus
+        // too). Kept env-tunable as an escape hatch for games whose menus
+        // misbehave: NOVA64_RT_MIN_TRIS / NOVA64_RT_MIN_DIAG.
+        static const uint32_t s_rtMinTris = []() {
+            const char* v = std::getenv("NOVA64_RT_MIN_TRIS");
+            return (v && v[0]) ? static_cast<uint32_t>(std::atoi(v)) : 32u;
+        }();
+        static const float s_rtMinDiag = []() {
+            const char* v = std::getenv("NOVA64_RT_MIN_DIAG");
+            return (v && v[0]) ? static_cast<float>(std::atof(v)) : 0.0f;
+        }();
+        float rtSceneDiag = 0.0f;
+        {
+            const auto& root = m_rtBVH.Nodes()[0];
+            float dx = root.aabbMax[0] - root.aabbMin[0];
+            float dy = root.aabbMax[1] - root.aabbMin[1];
+            float dz = root.aabbMax[2] - root.aabbMin[2];
+            float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
+            rtSceneDiag = diag;
+            if (m_rtBVH.TriangleCount() < s_rtMinTris || diag < s_rtMinDiag) {
+                static int s_skipLog = 0;
+                if ((s_skipLog++ % 60) == 0)
+                    Logger::Info("RT-skip: tris={} diag={:.0f} (min {} / {:.0f})",
+                                 m_rtBVH.TriangleCount(), diag, s_rtMinTris, s_rtMinDiag);
+                return;
+            }
+        }
+
+        m_rtUBO = RTUBOData{};
+        Invert4x4(scene->Projection(), m_rtUBO.invProj);
+        // Forward projection too (raster-depth prediction in the composite).
+        // Row-major copy — the row-vector→GLSL-column transpose falls out,
+        // same convention as invProj.
+        std::memcpy(m_rtUBO.proj, scene->Projection(), 16 * sizeof(float));
+        m_rtUBO.misc[0] = rtSceneDiag;   // composite: eye-pos reconstruction scale
+        {
+            const float* vp = scene->Viewport();
+            for (int i = 0; i < 4; ++i) m_rtUBO.viewport[i] = vp[i];
+        }
+        if (scene->HasLight()) {
+            const float* d = scene->LightDir();
+            // lightDir.w = the sun's angular size (tangent), RT64's pointRadius
+            // analogue for a directional light: the trace shader jitters shadow
+            // rays across a cone of this radius for soft penumbras. 0 disables.
+            static const float s_rtSunSize = []() {
+                const char* v = std::getenv("NOVA64_RT_SUN");
+                return (v && v[0]) ? static_cast<float>(std::atof(v)) : 0.05f;
+            }();
+            m_rtUBO.lightDir[0] = d[0]; m_rtUBO.lightDir[1] = d[1]; m_rtUBO.lightDir[2] = d[2];
+            m_rtUBO.lightDir[3] = s_rtSunSize;
+            // Sun color is WHITE. N64 light colors are per-object MATERIAL
+            // colors (SM64 bakes object tints into them) — averaging them
+            // tinted the whole scene (user saw everything red). Scene color
+            // belongs to the albedo; the sun stays neutral, like RT64's.
+            m_rtUBO.lightColor[0] = 1.0f;
+            m_rtUBO.lightColor[1] = 1.0f;
+            m_rtUBO.lightColor[2] = 1.0f;
+        }
+        // lightColor.w = frame counter — rotates the shadow sampling pattern each
+        // frame so the temporal accumulator converges (RT64's frameCount).
+        static uint32_t s_rtFrameCounter = 0;
+        m_rtUBO.lightColor[3] = static_cast<float>(s_rtFrameCounter++ & 0xFFFF);
+        // NOVA64_RT_DEBUG: 1 = normals + grid overlay, 2 = lighting-term-only
+        // view (spatial alignment check for the RT term vs the raster).
+        static const int s_rtDebug = []() {
+            const char* v = std::getenv("NOVA64_RT_DEBUG");
+            return (v && v[0]) ? std::atoi(v) : 0;
+        }();
+        // Denoise/shadow tuning (UBO ambient slot; see RTComputeShaders.hpp):
+        // x = blur radius (px), y = normal edge power, z = depth edge threshold
+        // (normalized eye depth), w = shadow strength (0 = black, 1 = none).
+        auto envf = [](const char* n, float def) {
+            const char* v = std::getenv(n);
+            return (v && v[0]) ? static_cast<float>(std::atof(v)) : def;
+        };
+        static const float s_rtBlur    = envf("NOVA64_RT_BLUR",    3.0f);
+        static const float s_rtEdgeN   = envf("NOVA64_RT_EDGE_N", 32.0f);
+        static const float s_rtEdgeD   = envf("NOVA64_RT_EDGE_D",  0.02f);
+        static const float s_rtShadow  = envf("NOVA64_RT_SHADOW",  0.5f);
+        static const float s_rtExpose  = envf("NOVA64_RT_EXPOSURE", 1.15f);
+        m_rtUBO.ambient[0] = s_rtBlur;
+        m_rtUBO.ambient[1] = s_rtEdgeN;
+        m_rtUBO.ambient[2] = s_rtEdgeD;
+        m_rtUBO.ambient[3] = s_rtShadow;
+
+        // Camera-motion detection for the temporal denoiser. Geometry is
+        // eye-space, so ANY camera move shifts the whole scene — the BVH root
+        // AABB center is a free, robust motion signal. Same-pixel depth/normal
+        // validation can't catch a flat floor sliding under the camera (the
+        // "shadows swim while moving" complaint), so while the scene moves we
+        // cut the history cap hard and lean on the spatial filter instead.
+        {
+            const auto& root = m_rtBVH.Nodes()[0];
+            float cx = 0.5f * (root.aabbMin[0] + root.aabbMax[0]);
+            float cy = 0.5f * (root.aabbMin[1] + root.aabbMax[1]);
+            float cz = 0.5f * (root.aabbMin[2] + root.aabbMax[2]);
+            float dx = root.aabbMax[0] - root.aabbMin[0];
+            float dy = root.aabbMax[1] - root.aabbMin[1];
+            float dz = root.aabbMax[2] - root.aabbMin[2];
+            float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
+            static float s_prevC[3] = {0, 0, 0};
+            static bool  s_prevValid = false;
+            float motion = 0.0f;
+            if (s_prevValid && diag > 1e-3f) {
+                float mx = cx - s_prevC[0], my = cy - s_prevC[1], mz = cz - s_prevC[2];
+                motion = std::sqrt(mx*mx + my*my + mz*mz) / diag;
+            }
+            s_prevC[0] = cx; s_prevC[1] = cy; s_prevC[2] = cz;
+            s_prevValid = true;
+            // Fast motion (title-head pop, camera whips) → no history at all;
+            // even a 4-frame trail is visible on fast movers.
+            float histCap = (motion > 1e-2f) ? 1.0f
+                          : (motion > 3e-3f) ? 4.0f
+                          : (motion > 5e-4f) ? 12.0f : 32.0f;
+            m_rtUBO.extra[0] = histCap / 64.0f;
+        }
+        m_rtUBO.extra[1] = s_rtExpose;
+        // Reflections ON by default, material-gated to metal (env-mapped) and
+        // water (translucent up-facing) in the trace shader. NOVA64_RT_REFL=0
+        // disables them.
+        static const bool s_rtRefl = []() {
+            const char* v = std::getenv("NOVA64_RT_REFL");
+            return !(v && v[0] == '0');
+        }();
+        m_rtUBO.dims[2] = m_rtBVH.NodeCount();
+        m_rtUBO.dims[3] = RT_F_SHADOWS | RT_F_LIGHTING
+                        | (s_rtRefl       ? RT_F_REFLECTIONS : 0u)
+                        | (s_rtDebug == 1 ? RT_F_DEBUG       : 0u)
+                        | (s_rtDebug == 2 ? RT_F_DEBUG_TERM  : 0u);
+        m_rtComposePending = true;
+
+        {
+            static int s_rtLog = 0;
+            if (s_rtLog < 600 && (s_rtLog < 6 || (s_rtLog % 60) == 0)) {
+                const auto& root = m_rtBVH.Nodes()[0];
+                Logger::Info("RT[{}]: tris={} nodes={} rootAABB=({:.0f},{:.0f},{:.0f})..({:.0f},{:.0f},{:.0f}) "
+                             "light=({:.2f},{:.2f},{:.2f}) sun={}",
+                             s_rtLog, m_rtBVH.TriangleCount(), m_rtBVH.NodeCount(),
+                             root.aabbMin[0], root.aabbMin[1], root.aabbMin[2],
+                             root.aabbMax[0], root.aabbMax[1], root.aabbMax[2],
+                             m_rtUBO.lightDir[0], m_rtUBO.lightDir[1], m_rtUBO.lightDir[2],
+                             m_rtUBO.lightDir[3]);
+            }
+            ++s_rtLog;
+        }
     }
 
     void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
@@ -1019,6 +1532,80 @@ public:
     // restart the render pass with LOAD_OP_LOAD to preserve existing content.
     // Use this when a mid-frame SetColorImage switches away from a rendered FB
     // and we want to keep drawing on top of it afterwards.
+    void InvalidateCanvas() override {
+        for (auto& [addr, c] : m_canvases) c.valid = false;
+    }
+
+    // Sample a specific N64 buffer's persistent canvas as a texture. See the
+    // rationale on IRenderer::BlitCanvasToTexture -- this is our equivalent of
+    // GLideN64's always-available per-FrameBuffer color texture.
+    bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) override {
+        if (!dst || !m_initialized || !m_canvasPreserve) return false;
+        const uint32_t addr = n64Addr & 0x7FFFFF;
+
+        // Only use an ALREADY-SAVED canvas. Do not EnsureCanvas() here: creating
+        // one on demand would hand back an uninitialised image (garbage), and
+        // the currently-active buffer's freshest content lives in the swapchain,
+        // not its canvas -- callers should keep using the snapshot path for that.
+        //
+        // Match by CONTAINMENT, not exact key (via FindCanvasForOrigin: exact,
+        // else nearest canvas at or below the address within 1 MB). Canvases are
+        // keyed by the SetColorImage address, but the FramebufferManager
+        // registers entries at related-but-different addresses -- most commonly
+        // base+0x280, since the VI origin sits a few rows into the buffer. An
+        // exact-key lookup missed those every time (measured: blit attempted 40x,
+        // succeeded 0x, all for 0x000280 while the canvas was keyed 0x000000).
+        CanvasSlot* c = FindCanvasForOrigin(addr);
+        if (!c || !c->valid || !c->img) return false;
+
+        VkImage dstImage = reinterpret_cast<VkImage>(dst->GetNativeHandle());
+        if (!dstImage) return false;
+
+        PerFrame& f = m_frames[m_currentFrame];
+        bool wasActive = m_passActive;
+        if (wasActive) { vkCmdEndRenderPass(f.cmd); m_passActive = false; }
+
+        const VkExtent2D ext = m_swapchain.GetExtent();
+        uint32_t w = std::min(dst->GetWidth(),  ext.width);
+        uint32_t h = std::min(dst->GetHeight(), ext.height);
+
+        // A saved canvas rests in TRANSFER_SRC_OPTIMAL (SaveSwapchainToCanvas'
+        // final transition), so it needs no transition here and is left as-is.
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_UNDEFINED,   // discard previous contents
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        // Blit (not Copy): canvases carry the swapchain's format (typically
+        // BGRA8) while snapshot textures are RGBA8 -- Blit converts, Copy
+        // would require format compatibility.
+        VkImageBlit region{};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = region.srcSubresource;
+        region.srcOffsets[0]  = { 0, 0, 0 };
+        region.srcOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        region.dstOffsets[0]  = { 0, 0, 0 };
+        region.dstOffsets[1]  = { static_cast<int32_t>(w), static_cast<int32_t>(h), 1 };
+        vkCmdBlitImage(f.cmd,
+                       c->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       dstImage,       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &region, VK_FILTER_NEAREST);
+
+        // Leave in SHADER_READ_ONLY so the caller can bind it immediately.
+        TransitionImage(f.cmd, dstImage,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        if (wasActive) BeginPassLoad();
+        return true;
+    }
+
     void SnapshotToTexture(ITexture* dst) override {
         if (!dst || !m_initialized) return;
         PerFrame& f = m_frames[m_currentFrame];
@@ -1085,10 +1672,35 @@ public:
 
     void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW, uint32_t fbH,
                                 bool isRGBA16, uint8_t* rdram) override {
-        if (!m_initialized || !rdram || fbW == 0 || fbH == 0 || m_skipPresent ||
-            m_midFrameReadbackDone) {
+        if (!m_initialized || !rdram || fbW == 0 || fbH == 0 || m_skipPresent) {
             return;
         }
+        // ── Per-address readback budget (was: ONE readback per whole frame) ──
+        // The old guard was a single global `m_midFrameReadbackDone` bool, so
+        // the FIRST GPU->RDRAM copy in a frame consumed the only allowance and
+        // every later one silently no-oped. OoT/MM already perform an unrelated
+        // CfB/AA-resolve copy-back read every single frame, so by the time the
+        // pause menu issued its ~20 LoadTile strip reads there was no allowance
+        // left -- the strips read never-written RDRAM (black panel). This is the
+        // same starvation shape as the gpuModified/needsInventorySnapshot flags,
+        // but a hard structural cap that no flag fix could route around.
+        //
+        // Two changes make lifting it both correct and cheap:
+        //  1. Dedup by ADDRESS. One copy writes the buffer's ENTIRE image, so
+        //     all 20 strips of one buffer are served by a single copy; repeats
+        //     for the same address are genuinely redundant and still skipped.
+        //  2. Chain the semaphore (see the submit below). The readback waits on
+        //     f.imageAvailable and signals f.midFrameDone; a binary semaphore
+        //     can only satisfy one wait, which is the real reason the cap
+        //     existed. Later readbacks in the same frame must instead wait on
+        //     f.midFrameDone -- exactly the substitution EndFrame already makes.
+        const uint32_t reqAddr = fbAddress & 0x7FFFFF;
+        for (uint32_t i = 0; i < m_frameReadbackCount; ++i) {
+            if (m_frameReadbackAddrs[i] == reqAddr) return;
+        }
+        // Hard ceiling as a runaway guard: each readback is a full submit +
+        // fence wait, so an unforeseen access pattern must not stall the frame.
+        if (m_frameReadbackCount >= kMaxFrameReadbacks) return;
 
         PerFrame& f = m_frames[m_currentFrame];
         bool wasActive = m_passActive;
@@ -1097,8 +1709,57 @@ public:
             m_passActive = false;
         }
 
-        VkImage srcImage = m_swapchain.GetImage(m_currentImage);
+        // Choose the SOURCE image by the requested N64 buffer address, not the
+        // swapchain unconditionally. The swapchain only ever holds the CURRENTLY
+        // ACTIVE canvas; a different N64 buffer's content lives in its own saved
+        // canvas image (see m_canvases / SetActiveCanvas). MM's pause menu draws
+        // its blurred world snapshot into one buffer (e.g. 0x383AC0), then
+        // switches the active buffer to the UI/display buffer BEFORE issuing the
+        // LoadTile mosaic that reads the snapshot back. Reading the swapchain at
+        // that point copies the UI buffer (black in the item-grid region) into
+        // RDRAM instead of the world snapshot -- the asymmetric black pause-menu
+        // panel bug. When the requested address is a valid, non-active saved
+        // canvas, read THAT canvas image (already in TRANSFER_SRC_OPTIMAL after
+        // SaveSwapchainToCanvas, so no layout transition is needed for it).
+        // reqAddr computed above (readback budget check).
+        VkImage srcImage    = VK_NULL_HANDLE;
+        bool    srcIsCanvas = false;
+        const bool wantActive = (reqAddr == m_activeCanvasAddr) || !m_canvasPreserve;
+        if (!wantActive) {
+            // Match by CONTAINMENT, not exact key: canvases are keyed by the
+            // SetColorImage address while the FramebufferManager registers
+            // entries at related addresses (commonly base+0x280 — the VI origin
+            // sits a few rows into the buffer). An exact find() missed those.
+            CanvasSlot* c = FindCanvasForOrigin(reqAddr);
+            if (c && c->valid && c->img) {
+                srcImage    = c->img;   // already resting in TRANSFER_SRC_OPTIMAL
+                srcIsCanvas = true;
+            }
+        } else {
+            srcImage = m_swapchain.GetImage(m_currentImage);
+        }
+        {
+            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
+            static uint32_t s_rcN = 0;
+            if (s_dbg && ++s_rcN <= 60) {
+                CanvasSlot* dbgC = FindCanvasForOrigin(reqAddr);
+                std::fprintf(stderr,
+                    "[RDRAMCOPY] addr=0x%06X active=0x%06X wantActive=%d canvas=%d valid=%d -> %s\n",
+                    reqAddr, m_activeCanvasAddr, wantActive ? 1 : 0,
+                    dbgC != nullptr, (dbgC && dbgC->valid) ? 1 : 0,
+                    srcImage ? "COPYING" : "ABORT(no source)");
+            }
+        }
         if (!srcImage) {
+            // Deliberately DO NOT fall back to the swapchain for a non-active
+            // buffer. The swapchain holds the CURRENTLY RENDERING frame, so
+            // substituting it writes live content into a different buffer's
+            // RDRAM. For MM's pause menu that means the frozen world snapshot
+            // gets overwritten with the in-progress menu frame every time the
+            // budget allows a copy -- the background then animates along with
+            // the page-turn instead of standing still. Copying nothing leaves
+            // the previous (correct) contents intact, which is strictly better
+            // than copying knowingly-wrong pixels.
             if (wasActive) BeginPassLoad();
             return;
         }
@@ -1118,13 +1779,17 @@ public:
             return;
         }
 
-        TransitionImage(f.cmd, srcImage,
-                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_ACCESS_TRANSFER_READ_BIT,
-                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        // Only the swapchain needs a layout round-trip; a saved canvas is
+        // already in TRANSFER_SRC_OPTIMAL and stays there (its resting layout).
+        if (!srcIsCanvas) {
+            TransitionImage(f.cmd, srcImage,
+                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                            VK_ACCESS_TRANSFER_READ_BIT,
+                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT);
+        }
 
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -1140,20 +1805,28 @@ public:
                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                staging.buffer, 1, &region);
 
-        TransitionImage(f.cmd, srcImage,
-                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        VK_ACCESS_TRANSFER_READ_BIT,
-                        VK_ACCESS_MEMORY_READ_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        if (!srcIsCanvas) {
+            TransitionImage(f.cmd, srcImage,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                            VK_ACCESS_TRANSFER_READ_BIT,
+                            VK_ACCESS_MEMORY_READ_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        }
 
         vkEndCommandBuffer(f.cmd);
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        // First readback of the frame consumes f.imageAvailable; any subsequent
+        // one must wait on f.midFrameDone instead, because a binary semaphore
+        // satisfies exactly one wait. Waiting midFrameDone and re-signalling it
+        // keeps a valid chain (and EndFrame makes the same substitution when
+        // choosing its own wait semaphore).
+        VkSemaphore rbWaitSem = m_midFrameReadbackDone ? f.midFrameDone : f.imageAvailable;
         si.waitSemaphoreCount = 1;
-        si.pWaitSemaphores = &f.imageAvailable;
+        si.pWaitSemaphores = &rbWaitSem;
         si.pWaitDstStageMask = &waitStage;
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &f.midFrameDone;
@@ -1255,6 +1928,8 @@ public:
         }
 
         m_midFrameReadbackDone = true;
+        if (m_frameReadbackCount < kMaxFrameReadbacks)
+            m_frameReadbackAddrs[m_frameReadbackCount++] = reqAddr;
 
         if (wasActive) BeginPassLoad();
     }
@@ -1447,6 +2122,9 @@ private:
         // manifests as crashes or validation errors on scene<->menu transitions
         // (where SetColorImage format changes can trigger a recreate mid-stream).
         vkDeviceWaitIdle(m_device.Get());
+        // Extent/format may change — drop the persistent canvas; EnsureCanvas
+        // recreates it (empty) on the next BeginFrame.
+        DestroyCanvas();
         m_swapchain.Recreate(m_instance.GetPhysical(), m_device.Get(), m_surface,
                              m_device.GetGraphicsFamily(), m_device.GetPresentFamily(),
                              m_width, m_height, /*vsync=*/true);
@@ -1777,6 +2455,181 @@ private:
         return ds;
     }
 
+    // ── Persistent canvas helpers (see member docs at m_canvases) ────────
+    struct CanvasSlot {
+        VkImage        img   = VK_NULL_HANDLE;
+        VkDeviceMemory mem   = VK_NULL_HANDLE;
+        bool           valid = false;   // holds meaningful content
+        uint64_t       lastUse = 0;     // for LRU eviction
+    };
+
+    void DestroyCanvas() {
+        for (auto& [addr, c] : m_canvases) {
+            if (c.img) vkDestroyImage(m_device.Get(), c.img, nullptr);
+            if (c.mem) vkFreeMemory(m_device.Get(), c.mem, nullptr);
+        }
+        m_canvases.clear();
+        m_canvasW = m_canvasH = 0;
+    }
+
+    // Get or lazily create the canvas for an N64 buffer address. Returns
+    // nullptr on allocation failure or before the swapchain exists. All
+    // canvases share the swapchain's dimensions; a resize drops them all
+    // (DestroyCanvas is called from RecreateSwapchain).
+    CanvasSlot* EnsureCanvas(uint32_t addr) {
+        VkExtent2D ext = m_swapchain.GetExtent();
+        if (ext.width == 0 || ext.height == 0) return nullptr;
+        m_canvasW = ext.width;
+        m_canvasH = ext.height;
+
+        auto it = m_canvases.find(addr);
+        if (it != m_canvases.end()) {
+            it->second.lastUse = ++m_canvasUseCounter;
+            return &it->second;
+        }
+
+        // LRU-evict when at capacity (games recycle a handful of buffers;
+        // stale addresses from scene changes would otherwise accumulate).
+        if (m_canvases.size() >= kMaxCanvases) {
+            auto lru = m_canvases.begin();
+            for (auto i = m_canvases.begin(); i != m_canvases.end(); ++i)
+                if (i->second.lastUse < lru->second.lastUse) lru = i;
+            if (lru->second.img) vkDestroyImage(m_device.Get(), lru->second.img, nullptr);
+            if (lru->second.mem) vkFreeMemory(m_device.Get(), lru->second.mem, nullptr);
+            m_canvases.erase(lru);
+        }
+
+        CanvasSlot c{};
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType     = VK_IMAGE_TYPE_2D;
+        ici.format        = m_swapchain.GetFormat();
+        ici.extent        = { ext.width, ext.height, 1 };
+        ici.mipLevels     = 1;
+        ici.arrayLayers   = 1;
+        ici.samples       = VK_SAMPLE_COUNT_1_BIT;
+        ici.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        ici.usage         = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        ici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(m_device.Get(), &ici, nullptr, &c.img) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: canvas image creation failed (addr=0x{:06X})", addr);
+            return nullptr;
+        }
+        VkMemoryRequirements mr{};
+        vkGetImageMemoryRequirements(m_device.Get(), c.img, &mr);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize  = mr.size;
+        mai.memoryTypeIndex = FindMemoryType(m_ctx.physical, mr.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (mai.memoryTypeIndex == UINT32_MAX ||
+            vkAllocateMemory(m_device.Get(), &mai, nullptr, &c.mem) != VK_SUCCESS ||
+            vkBindImageMemory(m_device.Get(), c.img, c.mem, 0) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: canvas memory allocation failed (addr=0x{:06X})", addr);
+            if (c.mem) vkFreeMemory(m_device.Get(), c.mem, nullptr);
+            vkDestroyImage(m_device.Get(), c.img, nullptr);
+            return nullptr;
+        }
+        c.valid   = false;
+        c.lastUse = ++m_canvasUseCounter;
+        auto [ins, ok] = m_canvases.emplace(addr, c);
+        Logger::Info("VulkanRenderer: canvas created for fb 0x{:06X} ({}x{}, {} total)",
+                     addr, m_canvasW, m_canvasH, m_canvases.size());
+        return &ins->second;
+    }
+
+    // Find the canvas that covers a VI origin address. The origin usually
+    // equals a SetColorImage address but can be offset into the buffer
+    // (scanline offsets, interlace fields), so fall back to the nearest
+    // canvas that starts at or below the origin within a 1 MB window.
+    CanvasSlot* FindCanvasForOrigin(uint32_t origin) {
+        auto it = m_canvases.find(origin);
+        if (it != m_canvases.end()) return &it->second;
+        CanvasSlot* best = nullptr;
+        uint32_t bestDelta = 0x100000; // 1 MB — larger than any 640x480x4 fb
+        for (auto& [addr, c] : m_canvases) {
+            if (addr <= origin && origin - addr < bestDelta) {
+                bestDelta = origin - addr;
+                best = &c;
+            }
+        }
+        return best;
+    }
+
+    // Record a full-extent blit between two canvas/swapchain images.
+    // Layout handling is caller's responsibility via the transition helpers.
+    void BlitFull(VkCommandBuffer cmd, VkImage src, VkImage dst) {
+        VkImageBlit region{};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = region.srcSubresource;
+        region.srcOffsets[1]  = { static_cast<int32_t>(m_canvasW),
+                                  static_cast<int32_t>(m_canvasH), 1 };
+        region.dstOffsets[1]  = region.srcOffsets[1];
+        vkCmdBlitImage(cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &region, VK_FILTER_NEAREST);
+    }
+
+    // Save the current swapchain content into a canvas (swapchain must be in
+    // PRESENT_SRC — i.e. outside a render pass). Leaves canvas TRANSFER_SRC,
+    // swapchain back in PRESENT_SRC.
+    void SaveSwapchainToCanvas(VkCommandBuffer cmd, VkImage swapImg, CanvasSlot& c) {
+        TransitionImage(cmd, swapImg,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        TransitionImage(cmd, c.img,
+                        VK_IMAGE_LAYOUT_UNDEFINED, // full overwrite
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        BlitFull(cmd, swapImg, c.img);
+        TransitionImage(cmd, c.img,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        TransitionImage(cmd, swapImg,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT, 0,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        c.valid = true;
+    }
+
+    // Load a canvas into the swapchain image (canvas must be TRANSFER_SRC —
+    // it always is after SaveSwapchainToCanvas). Swapchain may be in any
+    // layout (UNDEFINED discard is fine — full overwrite); leaves it
+    // PRESENT_SRC so the LOAD render pass can begin.
+    void LoadCanvasToSwapchain(VkCommandBuffer cmd, CanvasSlot& c, VkImage swapImg,
+                               VkImageLayout swapOldLayout) {
+        TransitionImage(cmd, swapImg,
+                        swapOldLayout,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        swapOldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                            ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        swapOldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                            ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                            : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+        BlitFull(cmd, c.img, swapImg);
+        TransitionImage(cmd, swapImg,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    }
+
     // Begin a render pass on either the swapchain (rt==nullptr) or a custom
     // render target. Sets default full-extent dynamic viewport+scissor.
     // Restart the swapchain render pass with LOAD_OP_LOAD (preserve content).
@@ -1905,7 +2758,17 @@ private:
     uint32_t      m_currentFrame = 0;
     uint32_t      m_currentImage = 0;
     bool          m_skipPresent  = false;
+    // Has anything been DRAWN to the currently-active canvas since it became
+    // active? Gates SaveSwapchainToCanvas so merely binding a buffer cannot
+    // overwrite its stored content with the live frame.
+    bool          m_activeCanvasDirty = false;
     bool          m_midFrameReadbackDone = false;
+    // GPU->RDRAM readbacks already performed this frame, keyed by N64 buffer
+    // address. Replaces a single global "one readback per frame" bool that
+    // starved MM's pause-menu strip reads (see CopyFramebufferToRDRAM).
+    static constexpr uint32_t kMaxFrameReadbacks = 4;
+    uint32_t      m_frameReadbackAddrs[kMaxFrameReadbacks] = {};
+    uint32_t      m_frameReadbackCount = 0;
     bool          m_initialized  = false;
     bool          m_passActive   = false;
 
@@ -1952,6 +2815,35 @@ private:
     float         m_vpFBOW = 320.0f;
     float         m_vpFBOH = 240.0f;
 
+    // ── Persistent per-N64-buffer canvases ──────────────────────────────
+    // The swapchain rotates between 2-3 images; without carry-over, each
+    // presented image only contains the draw calls recorded since ITS OWN
+    // BeginFrame — a fraction of the game's draw stream that starts at an
+    // arbitrary point mid-display-list.  Games that render across VI
+    // boundaries or alternate between multiple color buffers (double/triple
+    // buffering — e.g. Majora's Mask file select) presented as a shattered
+    // interleave of partial frames with black (clear-color) holes where the
+    // current slice hadn't drawn yet.  GL never had this bug because its
+    // per-FB FBOs persist and BlitToScreen presents completed content.
+    //
+    // Fix: keep one persistent canvas image PER N64 COLOR BUFFER (keyed by
+    // the SetColorImage RDRAM address).  Draws accumulate on the canvas of
+    // the buffer they target; SetColorImage swaps canvases mid-frame; at
+    // present time the canvas belonging to the VI origin register (the
+    // buffer the game says is display-ready) is shown — never the buffer
+    // still being drawn.  This is real double-buffer isolation at swapchain
+    // resolution, and it also keeps Z-buffer clear fills (SetColorImage to
+    // the depth address) off the visible output entirely.
+    static constexpr size_t kMaxCanvases = 6;
+    std::unordered_map<uint32_t, CanvasSlot> m_canvases; // key: N64 fb address
+    uint32_t       m_activeCanvasAddr = 0;   // buffer the game is drawing into
+    uint32_t       m_presentOriginAddr = 0;  // VI origin (display-ready buffer)
+    uint64_t       m_canvasUseCounter = 0;
+    uint32_t       m_canvasW = 0, m_canvasH = 0; // common canvas dimensions
+    bool           m_canvasPreserve = true;   // copy-forward enabled
+    bool           m_frameOnSwapchain = false; // current frame targets the swapchain pass
+    bool           m_frameRecording = false;   // command buffer open (BeginFrame..EndFrame)
+
     // Image RW bindings (used by MLE blender / compute passes).
     struct ImageBinding { VkImageView view = VK_NULL_HANDLE; ImageBindFormat fmt = {}; };
     static constexpr uint32_t kVKMaxImageBindings = 8;
@@ -1980,6 +2872,15 @@ private:
 
     // â”€â”€ RT (optional, activated when device supports RT extensions) â”€â”€â”€â”€â”€â”€
     std::unique_ptr<VKRTPipeline> m_rtPipeline;
+
+    // â”€â”€ Compute ray tracer (MoltenVK / no-hardware-RT fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    std::unique_ptr<VKComputeRaytracer> m_computeRT;
+    RT::RTBVH                           m_rtBVH;
+    // Deferred hybrid composite: BVH/UBO are prepared mid-display-list, but the
+    // compute dispatch + swapchain composite happen at EndFrame (after all
+    // raster), so the RT reads the finished textured frame and is not discarded.
+    bool                                m_rtComposePending = false;
+    RTUBOData                           m_rtUBO{};
 
     static constexpr const char* kRTRgenSrc = R"GLSL(
 // n64rt.rgen

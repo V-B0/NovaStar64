@@ -297,6 +297,12 @@ set(SOURCES
     N64SYS/Recomp/x64-86/x64RecompilerOps.cpp
     N64SYS/Recomp/x64-86/x64ops.cpp
     N64SYS/Recomp/x64-86/x64RegInfo.cpp
+    # AArch64 (Apple Silicon / ARM64) recompiler backend.  Like the x64-86
+    # sources above, these are listed unconditionally and self-gate with
+    # `#if defined(__aarch64__) || defined(_M_ARM64)`, so they compile to empty
+    # translation units on non-ARM64 hosts.
+    N64SYS/Recomp/Arm64/arm64ops.cpp
+    N64SYS/Recomp/Arm64/arm64RecompilerOps.cpp
 
     # NovaRSP - RSP plugin (CPU core)
     NovaRSP/CPU/RspClamp.cpp
@@ -332,10 +338,8 @@ set(SOURCES
     # NovaGraphics - Graphics plugin (Common)
     NovaGraphics/Common/BitUtils.cpp
     NovaGraphics/Common/ClipMath.cpp
-    NovaGraphics/Common/ColorSpace.cpp
     NovaGraphics/Common/Logger.cpp
     NovaGraphics/Common/Memory.cpp
-    NovaGraphics/Common/Platform.cpp
     NovaGraphics/Common/SIMDMath.cpp
     NovaGraphics/Common/VectorMath.cpp
     NovaGraphics/Common/VideoConfig.cpp
@@ -394,16 +398,14 @@ set(SOURCES
     NovaGraphics/Renderer/VK/VKRenderTarget.cpp
     NovaGraphics/Renderer/VK/VKAccelStruct.cpp
     NovaGraphics/Renderer/VK/VKRTPipeline.cpp
+    NovaGraphics/Renderer/VK/VKComputeRaytracer.cpp
+    NovaGraphics/RT/RTBVH.cpp
     NovaGraphics/Renderer/VK/VKShaderCompiler.cpp
 
     # NovaGraphics - Graphics plugin (Texture)
     NovaGraphics/Texture/stb_image_impl.cpp
     NovaGraphics/Texture/HiResTextures.cpp
     NovaGraphics/Texture/TextureCache.cpp
-    NovaGraphics/Texture/TextureConverter.cpp
-    NovaGraphics/Texture/TextureDecoder.cpp
-    NovaGraphics/Texture/TextureFormat.cpp
-    NovaGraphics/Texture/TexConv.cpp
 
     # NovaGraphics - Graphics plugin (Window)
     NovaGraphics/Window/DisplayConfig.cpp
@@ -470,28 +472,23 @@ file(GLOB SOFTFLOAT_SOURCES
 # The *M variant internal functions (softfloat_roundPackMToF128M, etc.) are
 # not defined in FAST_INT64 builds, causing compile errors.
 file(GLOB SOFTFLOAT_EXCLUDE_M
-    "${SOFTFLOAT_DIR}/source/extF80M_*.c"
-    "${SOFTFLOAT_DIR}/source/f128M_*.c"
-    "${SOFTFLOAT_DIR}/source/*_to_extF80M.c"
-    "${SOFTFLOAT_DIR}/source/*_to_f128M.c"
-    "${SOFTFLOAT_DIR}/source/s_addExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_addF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_invalidExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_invalidF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_isNaNF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_mulAddF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_normExtF80SigM.c"
-    "${SOFTFLOAT_DIR}/source/s_normRoundPackMToExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_normRoundPackMToF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_normSubnormalF128SigM.c"
-    "${SOFTFLOAT_DIR}/source/s_roundPackMToExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_roundPackMToF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_shiftNormSigF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_tryPropagateNaNExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_tryPropagateNaNF128M.c"
-    "${SOFTFLOAT_DIR}/source/s_compareNonnormExtF80M.c"
-    "${SOFTFLOAT_DIR}/source/s_compare128M.c"
-    "${SOFTFLOAT_DIR}/source/s_compare96M.c"
+    # All multi-word (M-variant) primitives and 128-bit/extF80 ops live in files
+    # ending in "M.c".  Under SOFTFLOAT_FAST_INT64 these use the native-64-bit
+    # struct path instead, and the *M internal primitives are not even declared,
+    # so every "*M.c" must be excluded.  (The N64 FPU only needs f32/f64.)
+    "${SOFTFLOAT_DIR}/source/*M.c"
+    # The 8086-SSE specialization also ships M-variant (multi-word) NaN helpers
+    # that reference internal *M primitives which are not declared under
+    # SOFTFLOAT_FAST_INT64.  Exclude them too (f128/extF80 are unused by the
+    # N64 FPU, which only needs f32/f64).
+    "${SOFTFLOAT_DIR}/source/8086-SSE/extF80M_isSignalingNaN.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/f128M_isSignalingNaN.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_commonNaNToExtF80M.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_commonNaNToF128M.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_extF80MToCommonNaN.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_f128MToCommonNaN.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_propagateNaNExtF80M.c"
+    "${SOFTFLOAT_DIR}/source/8086-SSE/s_propagateNaNF128M.c"
 )
 list(REMOVE_ITEM SOFTFLOAT_SOURCES ${SOFTFLOAT_EXCLUDE_M})
 add_library(softfloat STATIC ${SOFTFLOAT_SOURCES})
@@ -557,6 +554,17 @@ endif()
 # WASAPI audio output (Windows)
 if(WIN32)
     target_link_libraries(nova64 PRIVATE ole32 uuid)
+endif()
+
+# macOS: ship MoltenVK (Vulkan-on-Metal) next to the binary. macOS has no system
+# Vulkan loader and its OpenGL caps at 4.1 (the renderer needs 4.6), so Vulkan via
+# MoltenVK is the only working backend. main.cpp preloads this dylib at startup.
+if(APPLE)
+    add_custom_command(TARGET nova64 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/MoltenVK/libMoltenVK.dylib"
+            "$<TARGET_FILE_DIR:nova64>/libMoltenVK.dylib"
+        COMMENT "Copying libMoltenVK.dylib next to nova64")
 endif()
 
 # Compiler flags

@@ -48,6 +48,7 @@ namespace ROM {
 class RomMemoryHandler final : public MemoryHandler {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         ROM::AccessType access_type = ROM::AccessType::READ_ONLY;
         ROM::MirrorMode mirror_mode = ROM::MirrorMode::NONE;
         bool enable_write_logging = false;
@@ -60,7 +61,7 @@ public:
         CN64System& system,
         CRegisters& registers,
         N64::Rom::N64Rom& rom,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~RomMemoryHandler() noexcept override;

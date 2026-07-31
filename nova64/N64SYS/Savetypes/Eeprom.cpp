@@ -227,7 +227,11 @@ void CEeprom::HandleRTCReadCommand(uint8_t* Command)
         std::time_t currentTime = std::time(nullptr);
         std::tm localTime;
         
+#ifdef _WIN32
         if (localtime_s(&localTime, &currentTime) == 0)
+#else
+        if (localtime_r(&currentTime, &localTime) != nullptr)
+#endif
         {
             Command[4] = IntToBCD(localTime.tm_sec);
             Command[5] = IntToBCD(localTime.tm_min);

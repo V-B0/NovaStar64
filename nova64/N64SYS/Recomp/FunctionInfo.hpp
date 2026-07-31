@@ -327,6 +327,7 @@ class CompiledFunction {
 public:
     // Configuration
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_profiling = true;
         bool enable_inlining = true;
         bool enable_specialization = true;
@@ -338,7 +339,7 @@ public:
     // Construction/Destruction
     CompiledFunction(Recompiler& recompiler, 
                     uint32_t entry_pc,
-                    const Config& config = {});
+                    const Config& config = Config());
     
     ~CompiledFunction();
     
@@ -360,6 +361,7 @@ public:
     };
     
     struct CompileOptions {
+            CompileOptions() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         OptimizationLevel optimization = OptimizationLevel::Aggressive;
         bool inline_functions = true;
         bool specialize = false;
@@ -378,8 +380,8 @@ public:
         std::vector<uint32_t> linked_functions;
     };
 
-    CompileResult compile(const CompileOptions& options = {});
-    bool recompile(const CompileOptions& options = {});
+    CompileResult compile(const CompileOptions& options = CompileOptions());
+    bool recompile(const CompileOptions& options = CompileOptions());
     
     // Execution
     void execute(CpuRegisters& registers, MipsMemory& memory, void* context = nullptr);
@@ -520,6 +522,7 @@ private:
 class FunctionManager {
 public:
     struct Config {
+        Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         size_t max_functions = 4096;
         size_t max_total_size = 128 * 1024 * 1024;  // 128MB
         float hot_function_threshold = 0.1f;  // 10% can be hot
@@ -528,12 +531,12 @@ public:
         bool enable_lazy_compilation = true;
     };
     
-    FunctionManager(Recompiler& recompiler, const Config& config = {});
+    FunctionManager(Recompiler& recompiler, const Config& config = Config());
     ~FunctionManager();
     
     // Function management
     CompiledFunction* get_or_compile(uint32_t entry_pc, 
-                                    const CompiledFunction::CompileOptions& options = {});
+                                    const CompiledFunction::CompileOptions& options = CompiledFunction::CompileOptions());
     CompiledFunction* get(uint32_t entry_pc) const;
     CompiledFunction* get_by_id(FunctionId id) const;
     

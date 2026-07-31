@@ -1136,8 +1136,14 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         // at sample time.  Use 1.0 (full tile) as the upper bound, matching
         // GLideN64's tileWidth/texWidth approach.  For mirror+mask, extend
         // the range to 2.0 to cover the full mirror period.
-        code += "      float clampHi0x = (uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? 2.0 : 1.0;\n";
-        code += "      float clampHi0y = (uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? 2.0 : 1.0;\n";
+        // Clamp bound sits HALF A TEXEL INSIDE the edge: clamping to exactly
+        // 1.0 (one-past-the-last-texel) and then applying the mask wrap below
+        // aliased the clamped edge back to texel 0 (mod(size, size) == 0) —
+        // over-wide billboards (SM64 trees span 2x their texture and rely on
+        // clamp) showed a wrapped copy instead of the transparent edge.
+        code += "      vec2 inset0 = 0.5 / max(uTexSize0, vec2(1.0));\n";
+        code += "      float clampHi0x = ((uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? 2.0 : 1.0) - inset0.x;\n";
+        code += "      float clampHi0y = ((uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? 2.0 : 1.0) - inset0.y;\n";
         code += "      if (uTexClamp0.x > 0.0) uv0.x = clamp(uv0.x, 0.0, clampHi0x);\n";
         code += "      if (uTexClamp0.y > 0.0) uv0.y = clamp(uv0.y, 0.0, clampHi0y);\n";
         // Step 2: MIRROR then WRAP (only when mask > 0)
@@ -1185,9 +1191,9 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         } else if (features & SF_TEXTURE_3POINT)
             code += "    vec4 texel0 = n64Filter3Point(uTexture0, uv0, uTexSize0, uGPUScale0);\n";
         else if (features & SF_TEXTURE_BILINEAR)
-            code += "    vec4 texel0 = texture(uTexture0, uv0 * uGPUScale0);\n"; // GL bilinear
+            code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, 0.0);\n"; // GL bilinear, level 0 only
         else
-            code += "    vec4 texel0 = texture(uTexture0, uv0 * uGPUScale0);\n";
+            code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, 0.0);\n";
         // FB monochrome/fixedAlpha for tile 0 — when texture comes from a framebuffer
         code += "    if (uFbMonochrome0 == 1) texel0 = vec4(texel0.r);\n";
         code += "    else if (uFbMonochrome0 == 2) texel0.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel0.rgb));\n";
@@ -1223,8 +1229,9 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "      vec2 maskBits1 = uTexMask1;\n";
             code += "      vec2 maskSize1 = pow(vec2(2.0), maskBits1);\n";
             // Step 1: CLAMP — tile boundary (same logic as tile 0)
-            code += "      float clampHi1x = (uTexClamp1.z > 0.0 && maskBits1.x > 0.0) ? 2.0 : 1.0;\n";
-            code += "      float clampHi1y = (uTexClamp1.w > 0.0 && maskBits1.y > 0.0) ? 2.0 : 1.0;\n";
+            code += "      vec2 inset1 = 0.5 / max(uTexSize1, vec2(1.0));\n";
+            code += "      float clampHi1x = ((uTexClamp1.z > 0.0 && maskBits1.x > 0.0) ? 2.0 : 1.0) - inset1.x;\n";
+            code += "      float clampHi1y = ((uTexClamp1.w > 0.0 && maskBits1.y > 0.0) ? 2.0 : 1.0) - inset1.y;\n";
             code += "      if (uTexClamp1.x > 0.0) uv1.x = clamp(uv1.x, 0.0, clampHi1x);\n";
             code += "      if (uTexClamp1.y > 0.0) uv1.y = clamp(uv1.y, 0.0, clampHi1y);\n";
             // Step 2: MIRROR then WRAP
@@ -1252,7 +1259,7 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             if (features & SF_TEXTURE_3POINT)
                 code += "    vec4 texel1 = n64Filter3Point(uTexture1, uv1, uTexSize1, uGPUScale1);\n";
             else
-                code += "    vec4 texel1 = texture(uTexture1, uv1 * uGPUScale1);\n";
+                code += "    vec4 texel1 = textureLod(uTexture1, uv1 * uGPUScale1, 0.0);\n";
             // FB monochrome/fixedAlpha for tile 1
             code += "    if (uFbMonochrome1 == 1) texel1 = vec4(texel1.r);\n";
             code += "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
@@ -1272,10 +1279,10 @@ vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
     vec2 fracPart = fract(texelPos);
     vec2 baseUV = ((floor(texelPos) + 0.5) / texSize) * gpuScale;
     vec2 step = (1.0 / texSize) * gpuScale;
-    vec4 c00 = texture(tex, baseUV);
-    vec4 c10 = texture(tex, baseUV + vec2(step.x, 0.0));
-    vec4 c01 = texture(tex, baseUV + vec2(0.0, step.y));
-    vec4 c11 = texture(tex, baseUV + step);
+    vec4 c00 = textureLod(tex, baseUV, 0.0);
+    vec4 c10 = textureLod(tex, baseUV + vec2(step.x, 0.0), 0.0);
+    vec4 c01 = textureLod(tex, baseUV + vec2(0.0, step.y), 0.0);
+    vec4 c11 = textureLod(tex, baseUV + step, 0.0);
 
     // Pre-multiply RGB by alpha to prevent color bleeding at edges
     c00.rgb *= c00.a;

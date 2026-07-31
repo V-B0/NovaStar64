@@ -295,6 +295,7 @@ class ExitInfo {
 public:
     // Configuration for exit tracking
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_profiling = true;
         bool enable_branch_prediction = true;
         bool enable_exception_tracking = true;
@@ -304,7 +305,7 @@ public:
     };
     
     // Construction/Destruction
-    ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config = {});
+    ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config = Config());
     ~ExitInfo();
     
     // Non-copyable, movable

@@ -172,6 +172,21 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     }
 
 
+    // Guard against a missing OpenGL context before touching any GL entry point.
+    // In embedded mode the emulator runs on a background thread, and macOS/Cocoa
+    // refuses to create an NSWindow + GL context off the main thread — so window
+    // init fails and there is no current context here.  Calling into the renderer
+    // (glGetIntegerv) at that point segfaults and takes the whole process — and
+    // the embedding launcher — down.  Fail the plugin cleanly instead.
+    const bool usingGL = (m_config.backendType != 1); // 0/default = OpenGL, 1 = Vulkan
+    if (usingGL && SDL_GL_GetCurrentContext() == nullptr) {
+        LOG_ERROR("VideoPlugin: no current GL context (cannot create a GL window off the "
+                  "main thread on macOS in embedded mode) — disabling video instead of crashing.");
+        DestroyDisplayWindow();
+        m_status = PluginStatus::Error;
+        return false;
+    }
+
     // Create renderer
     if (!CreateDisplayRenderer()) {
         LOG_ERROR("Failed to create renderer");
@@ -194,7 +209,13 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         if (!m_renderer->Initialize(windowHandle,
                                      static_cast<uint32_t>(winW),
                                      static_cast<uint32_t>(winH))) {
-            LOG_WARN("Renderer Initialize() failed — continuing with reduced state");
+            // Abort instead of limping on: downstream init (RDPProcessor →
+            // CreateTexture) dereferences the renderer's device context and
+            // SEGFAULTS on a half-initialized renderer (seen with LLE mode in
+            // headless runs where no GL window exists).
+            LOG_ERROR("Renderer Initialize() failed — aborting video plugin init");
+            m_renderer.reset();
+            return false;
         }
     }
 
@@ -603,7 +624,26 @@ void VideoPlugin::ProcessDList() {
         // supports ray tracing.  On Intel Iris Xe (and any other non-RT GPU)
         // supportsRayTracing is false, so skipping this saves the per-triangle
         // SubmitTriangles() call overhead on every frame.
-        const bool needsRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+        // Compute-RT path: MoltenVK can't do hardware RT, so NOVA64_RT=1 enables
+        // the compute ray tracer (CPU BVH + compute traversal) which the backend
+        // runs in ExecuteRayTracing. Either path needs the same scene extraction.
+        static const bool s_computeRTEnv = []() {
+            const char* v = std::getenv("NOVA64_RT");
+            return v && v[0] && v[0] != '0';
+        }();
+        const bool computeRT = s_computeRTEnv || m_config.rayTracing;
+        const bool hwRT    = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+        const bool needsRT = m_renderer && (hwRT || computeRT);
+        // One-time confirmation so it's obvious whether RT is active.
+        {
+            static bool s_logged = false;
+            if (!s_logged) {
+                s_logged = true;
+                LOG_INFO("Compute ray tracing: {} (env={}, ini={}, hwRT={})",
+                         needsRT ? "ENABLED" : "disabled",
+                         s_computeRTEnv, m_config.rayTracing, hwRT);
+            }
+        }
         if (needsRT) {
             m_rtScene.NewFrame();
             m_dispatcher->SetGeometryConsumer(&m_rtScene);
@@ -733,6 +773,7 @@ void VideoPlugin::ProcessRDPList() {
 }
 
 void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
+    if (!m_renderer) return; // video disabled (no GL context)
     if (!m_rdpProcessor) return;
 
     // Dispatch to RDP processor
@@ -755,6 +796,10 @@ void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
 }
 
 void VideoPlugin::UpdateScreen() {
+    // Video disabled (no renderer/GL context — e.g. embedded mode on macOS where
+    // the window can't be created on the emulator's background thread).  Skip all
+    // GL work instead of crashing in glClearColor/etc.
+    if (!m_renderer) return;
     auto start = std::chrono::high_resolution_clock::now();
     auto stage = start;
     double tSwap=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
@@ -813,6 +858,11 @@ void VideoPlugin::UpdateScreen() {
 
     m_frameCount++;
     m_frameStats.viInterrupts++;
+    // Diagnostics: publish the authoritative per-VI frame index so the headless
+    // screenshot capture (VKBackend) can key off it. The Vulkan present counter
+    // is decoupled from VI rate in HLE, so VI count is the consistent timeline.
+    g_presentIndex.store(static_cast<long>(m_frameStats.viInterrupts),
+                         std::memory_order_relaxed);
 
     // Read VI registers
     UpdateVIRegisters();
@@ -894,6 +944,11 @@ void VideoPlugin::UpdateScreen() {
         int32_t winW = 640, winH = 480;
         if (win) win->GetDrawableSize(winW, winH);
 
+        // Vulkan per-buffer canvases: present the buffer VI says is display-
+        // ready, not the one the display list is still drawing into.
+        if (m_renderer && m_viOrigin != 0)
+            m_renderer->SetPresentOrigin(m_viOrigin & 0x00FFFFFF);
+
         // VI_STATUS bottom 2 bits = colour depth: 0 = blank.
         // When the game intentionally blanks the screen (transitions,
         // fades, white flashes) we must clear to black instead of
@@ -908,6 +963,9 @@ void VideoPlugin::UpdateScreen() {
                 // Only present the clear if this frame actually had draw calls;
                 // otherwise, skip the present to avoid a black flash on intermediate
                 // VI interrupts (N64 renders at 30 fps, VI fires at 60 fps).
+                // Also drop the frame-carry canvas so the blank doesn't resurrect
+                // the previous frame's content on the next BeginFrame.
+                m_renderer->InvalidateCanvas();
                 if (hadVkFrameBegun) {
                     m_renderer->EndFrame();
                     m_renderer->Present();
@@ -1141,6 +1199,7 @@ void VideoPlugin::UpdateScreen() {
 }
 
 void VideoPlugin::ShowCFB() {
+    if (!m_renderer) return; // video disabled (no GL context) — don't touch GL
     // Color Frame Buffer display — used when the CPU writes directly to the frame buffer
     // without going through the RDP (e.g., for menus, 2D graphics).
     if (!m_sysInfo.rdram || !m_sysInfo.viOriginReg) return;

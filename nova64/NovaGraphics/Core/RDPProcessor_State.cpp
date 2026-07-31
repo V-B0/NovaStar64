@@ -14,6 +14,13 @@ void RDPProcessor::HandleSetTile(const uint32_t* words) {
     m_decoder.DecodeSetTile(words, m_state.rdp.tiles[tileIdx]);
     m_state.rdp.MarkDirty(RDPDirtyFlag::Tiles);
     m_stats.stateChanges++;
+    MM_RDP_TRACE("SetTile tile={} fmt={} size={} line={} tmem={} pal={}",
+                 tileIdx,
+                 static_cast<int>(m_state.rdp.tiles[tileIdx].format),
+                 static_cast<int>(m_state.rdp.tiles[tileIdx].size),
+                 m_state.rdp.tiles[tileIdx].line,
+                 m_state.rdp.tiles[tileIdx].tmemAddr,
+                 static_cast<int>(m_state.rdp.tiles[tileIdx].palette));
 }
 
 void RDPProcessor::HandleSetTileSize(const uint32_t* words) {
@@ -49,9 +56,15 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
     // N64 games render a background to FB-A, then switch to FB-B for the overlay (e.g. MM
     // inventory).  By the time a subsequent LoadTile reads from FB-A, the swapchain already
     // holds FB-B content.  Snapshotting here — at switch time — captures the correct content.
+    //
+    // Gate on needsInventorySnapshot, NOT gpuModified: LoadBlock/LoadTile's FB-as-texture
+    // sync path (RDPProcessor_Texture.cpp) also clears gpuModified for its own purpose (e.g.
+    // OoT/MM's every-frame CfB/AA-resolve copy-back reads the color image as a texture before
+    // the player ever opens a menu). If that path runs first, gpuModified is already false by
+    // the time this fires, so the inventory background was never captured -- a black image.
     if (!g_fbManager.IsGL() && m_renderer) {
         GPUFramebuffer* prevFB = g_fbManager.GetCurrentColor();
-        if (prevFB && prevFB->gpuModified) {
+        if (prevFB && prevFB->needsInventorySnapshot) {
             const uint32_t snapW = m_renderer->GetWidth();
             const uint32_t snapH = m_renderer->GetHeight();
             if (snapW > 0 && snapH > 0) {
@@ -75,7 +88,18 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
                 if (slot) {
                     m_renderer->SnapshotToTexture(slot.get());
                     m_vkFBSnapshotAddrs[m_vkFBSnapshotIdx] = prevFB->desc.address & 0x7FFFFF;
-                    prevFB->gpuModified = false;
+                    prevFB->needsInventorySnapshot = false;
+                    static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
+                    if (s_snapTrace) {
+                        std::fprintf(stderr,
+                            "[SNAPSHOT-CI] slot=%u fbAddr=0x%06X fbSize=%ux%u drawCalls=%u triangles=%u frame=%llu\n",
+                            m_vkFBSnapshotIdx, prevFB->desc.address & 0x7FFFFF,
+                            prevFB->desc.width, prevFB->desc.height,
+                            prevFB->drawCallsSinceSwitch, prevFB->trianglesSinceSwitch,
+                            static_cast<unsigned long long>(m_state.frameCount));
+                    }
+                    prevFB->drawCallsSinceSwitch = 0;
+                    prevFB->trianglesSinceSwitch = 0;
                 }
             }
         }
@@ -100,6 +124,12 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
 
     m_state.rdp.MarkDirty(RDPDirtyFlag::ColorImage);
     m_stats.stateChanges++;
+
+    // Vulkan per-buffer canvas isolation: tell the backend which N64 color
+    // buffer subsequent draws target so it can swap persistent canvases.
+    // (GL default no-op — the FB manager binds a real FBO below instead.)
+    if (m_renderer)
+        m_renderer->SetActiveCanvas(m_state.rdp.colorImage.address & 0x7FFFFF);
 
     g_fbManager.OnSetColorImage(m_state.rdp.colorImage.address,
                                 m_state.rdp.colorImage.width,
@@ -193,8 +223,7 @@ void RDPProcessor::HandleSetPrimColor(const uint32_t* words) {
 void RDPProcessor::HandleSetEnvColor(const uint32_t* words) {
     m_decoder.DecodeSetEnvColor(words, m_state.rdp.envColor);
     m_state.rdp.MarkDirty(RDPDirtyFlag::EnvColor);
-    NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
-        "[ENV-COLOR] r={} g={} b={} a={}",
+    MM_RDP_TRACE("[ENV-COLOR] r={} g={} b={} a={}",
         m_state.rdp.envColor.r, m_state.rdp.envColor.g,
         m_state.rdp.envColor.b, m_state.rdp.envColor.a);
 }

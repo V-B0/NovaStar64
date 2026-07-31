@@ -64,6 +64,7 @@ private:
     void Cmd_G_RDPHALF_CONT(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1);
+    void Cmd_G_TRI4(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -106,6 +107,7 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
     case 0x09: Cmd_G_SPRITE2D_BASE(ctx, w0, w1); break; // G_SPRITE2D_BASE
 
     // High opcodes (0xB1 .. 0xBF) — F3D-style high-end commands
+    case 0xB1: Cmd_G_TRI4(ctx, w0, w1); break;         // G_TRI4 (Fast3D)
     case 0xB2: Cmd_G_RDPHALF_CONT(ctx, w0, w1); break; // G_RDPHALF_CONT
     case 0xB3: Cmd_G_RDPHALF_2(ctx, w0, w1); break;    // G_RDPHALF_2
     case 0xB4: Cmd_G_RDPHALF_1(ctx, w0, w1); break;    // G_RDPHALF_1
@@ -221,6 +223,23 @@ inline void F3DHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) 
         }
     }
     DrawTriangle2(ctx, v0, v1, v2, v0, v2, v3);
+}
+
+inline void F3DHandler::Cmd_G_TRI4(DListContext& ctx, uint32_t w0, uint32_t w1) {
+    // Fast3D G_TRI4 (0xB1): four triangles per command, RAW nibble indices
+    // (0-15, NOT the ×10 encoding of TRI1/QUAD). SDK gbi.h gsSP1Triangle4:
+    //   w0 nibbles 0/4/8/12  = x0..x3  (first vertex of each triangle)
+    //   w1 nibbles 0/4,8/12,16/20,24/28 = y0,z0, y1,z1, y2,z2, y3,z3
+    // Unused slots are (0,0,0) — DrawTriangle's degenerate guard skips them.
+    // This opcode previously fell into "unknown" and its triangles were
+    // silently dropped (SM64 uses TRI4 for small quads/particles).
+    for (int i = 0; i < 4; ++i) {
+        int x = static_cast<int>((w0 >> (4 * i))     & 0xF);
+        int y = static_cast<int>((w1 >> (8 * i))     & 0xF);
+        int z = static_cast<int>((w1 >> (8 * i + 4)) & 0xF);
+        if (x == y && y == z) continue;   // unused slot
+        DrawTriangle(ctx, x, y, z);
+    }
 }
 
 inline void F3DHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {

@@ -20,6 +20,8 @@
 #include "../../common/log.hpp"
 
 #include <cstring>
+#include <cstdlib>
+#include <cmath>
 #include <array>
 
 namespace Plugins {
@@ -271,6 +273,101 @@ public:
         {
             BUTTONS buttons{};
             m_fnGetKeys(static_cast<int32_t>(controller), &buttons);
+
+            // Debug-only scripted input (NOVA64_AUTOINPUT): drive controller 0
+            // through SM64's menus into gameplay so headless capture can reach
+            // in-game screens (HUD) without a human. Overrides real input for
+            // controller 0 only. Counter advances per poll; windows are generous
+            // to tolerate unknown poll rates. Start taps only early (avoids the
+            // in-game pause), then A taps to select a file and advance.
+            // Debug-only scripted input (NOVA64_AUTOINPUT_MM): MM-specific
+            // diagnostic script. Unlike NOVA64_AUTOINPUT (generic SM64-style
+            // menu masher), this deliberately walks forward, opens the pause
+            // menu, cycles pages with R, and dwells on each page for a long
+            // window so a screenshot capture can reliably land on it —
+            // written to directly inspect the pause-menu inventory-panel bug
+            // without needing a human to navigate there interactively.
+            static const bool s_autoInputMM = (std::getenv("NOVA64_AUTOINPUT_MM") != nullptr);
+            if (s_autoInputMM && controller == 0) {
+                static unsigned long s_c = 0;
+                const unsigned long t = s_c++;
+                uint32_t v = 0;
+                int8_t ax = 0, ay = 0;
+                if (t < 1200) {
+                    // Shorter window than NOVA64_AUTOINPUT: an existing
+                    // FlashRAM save (saves/ZELDA MAJORA'S MASK.fla) means we
+                    // only need to clear the N64 logo / title Start prompt /
+                    // file-select A-confirm, not survive MM's long forced
+                    // intro cutscene (no save = new game = Deku transform
+                    // sequence etc).
+                    if ((t % 100) < 8)       v |= (1u << 28); // Start
+                    else if ((t % 40) < 8)   v |= (1u << 31); // A
+                } else {
+                    // Repeating cycle: walk forward, open pause, cycle pages
+                    // with R, dwell, close pause, repeat. Long dwell windows
+                    // tolerate an unknown poll-to-frame ratio.
+                    const unsigned long local = (t - 1200) % 3000;
+                    if (local < 400) {
+                        ay = 80; // walk forward
+                        if ((local % 40) < 8) v |= (1u << 31); // A: clear dialogue/prompts
+                    } else if (local < 420) {
+                        v |= (1u << 28); // Start: open pause
+                    } else if (local < 900) {
+                        // dwell on first page
+                    } else if (local < 920) {
+                        v |= (1u << 20); // R: cycle page
+                    } else if (local < 1400) {
+                        // dwell on second page
+                    } else if (local < 1420) {
+                        v |= (1u << 20); // R: cycle page again
+                    } else if (local < 1900) {
+                        // dwell on third page
+                    } else if (local < 1920) {
+                        v |= (1u << 28); // Start: close pause
+                    }
+                    // else: idle until cycle repeats
+                }
+                v = (v & 0xFFFF0000u)
+                  | (static_cast<uint32_t>(static_cast<uint8_t>(ax)) << 8)
+                  | static_cast<uint32_t>(static_cast<uint8_t>(ay));
+                buttons.Value = v;
+            }
+            static const bool s_autoInput = (std::getenv("NOVA64_AUTOINPUT") != nullptr);
+            if (s_autoInput && !s_autoInputMM && controller == 0) {
+                static unsigned long s_c = 0;
+                const unsigned long t = s_c++;
+                uint32_t v = 0;
+                int8_t ax = 0, ay = 0;
+                if (t >= 300 && t < 2400) {
+                    // Start pulses over a WIDE window: boot timing varies run to
+                    // run (a fixed 300..900 window sometimes missed the title
+                    // entirely and the script never advanced). If gameplay is
+                    // reached early the occasional pulse briefly toggles pause —
+                    // acceptable for a diagnostics harness. A-taps interleaved
+                    // to clear the file-select once it appears.
+                    if ((t % 120) < 8)       v |= (1u << 28); // Start
+                    else if ((t % 60) < 8)   v |= (1u << 31); // A
+                } else if (t >= 2400) {
+                    // Slow circular stick sweep: covers every direction over time so a
+                    // file-select cursor or Mario's walk heading eventually lines up
+                    // with a target without needing exact menu-layout knowledge. A
+                    // taps select a file / jump over small ledges while wandering.
+                    const double ang = static_cast<double>(t) * 0.02;
+                    ax = static_cast<int8_t>(80.0 * std::cos(ang));
+                    ay = static_cast<int8_t>(80.0 * std::sin(ang));
+                    if ((t % 30) < 10) v |= (1u << 31); // A
+                    // Keep pulsing Start forever: the poll counter races far
+                    // ahead of the boot sequence (polls ≫ frames), so any
+                    // finite Start window can elapse before the title screen
+                    // even accepts input. In-game cost: an occasional pause
+                    // toggle — the world still renders, fine for diagnostics.
+                    if ((t % 600) < 8) v |= (1u << 28); // Start
+                }
+                v = (v & 0xFFFF0000u)
+                  | (static_cast<uint32_t>(static_cast<uint8_t>(ax)) << 8)
+                  | static_cast<uint32_t>(static_cast<uint8_t>(ay));
+                buttons.Value = v;
+            }
             // Decode N64 button bitmask
             state.ButtonA     = (buttons.Value & (1 << 31)) != 0;
             state.ButtonB     = (buttons.Value & (1 << 30)) != 0;

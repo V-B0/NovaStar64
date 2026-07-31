@@ -37,14 +37,15 @@ enum ClipFlag : uint32_t {
 
 // ─── Clip Planes ─────────────────────────────────────────────────────────────
 enum ClipPlane : int {
-    PLANE_NEAR   = 0,  // z >= -w  (or z >= 0 for N64 near plane convention)
-    PLANE_FAR    = 1,  // z <= w
-    PLANE_LEFT   = 2,  // x >= -w
-    PLANE_RIGHT  = 3,  // x <= w
-    PLANE_BOTTOM = 4,  // y >= -w
-    PLANE_TOP    = 5,  // y <= w
-    PLANE_W_NEAR = 6,  // w >= epsilon (behind-camera guard plane)
-    PLANE_COUNT  = 7
+    PLANE_NEAR     = 0,  // z >= -w  (GL near plane convention)
+    PLANE_FAR      = 1,  // z <= w
+    PLANE_LEFT     = 2,  // x >= -w
+    PLANE_RIGHT    = 3,  // x <= w
+    PLANE_BOTTOM   = 4,  // y >= -w
+    PLANE_TOP      = 5,  // y <= w
+    PLANE_W_NEAR   = 6,  // w >= epsilon (behind-camera guard plane)
+    PLANE_NEAR_N64 = 7,  // z >= 0 (N64 NoN near plane — F3DEX2_NoN/F3DZEX)
+    PLANE_COUNT    = 8
 };
 
 // ─── Clipped Vertex (full interpolation data) ────────────────────────────────

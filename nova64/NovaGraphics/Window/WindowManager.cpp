@@ -128,7 +128,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
 
     if (!m_window) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
-        SDL_Quit();
+        SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
         return false;
     }
 
@@ -181,7 +181,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
                 std::cerr << "Fallback GL 4.3 context also failed: " << SDL_GetError() << std::endl;
                 SDL_DestroyWindow(m_window);
                 m_window = nullptr;
-                SDL_Quit();
+                SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
                 return false;
             }
         }
@@ -197,7 +197,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
             m_glContext = nullptr;
             SDL_DestroyWindow(m_window);
             m_window = nullptr;
-            SDL_Quit();
+            SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
             return false;
         }
 
@@ -246,7 +246,12 @@ void WindowManager::Shutdown() {
             SDL_DestroyWindow(m_window);
             m_window = nullptr;
         }
-        SDL_Quit();
+        // Ref-counted teardown: in embedded mode the launcher also initialised
+        // SDL video, so a full SDL_Quit() here would tear down the launcher's
+        // window/event system and break it.  SDL_QuitSubSystem only releases
+        // this WindowManager's reference; SDL stays alive while the launcher
+        // still holds its own.
+        SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     }
     // For external windows, just null out our pointers (don't destroy)
     m_glContext = nullptr;
@@ -434,6 +439,11 @@ void* WindowManager::GetNativeHandle() const {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 bool WindowManager::ProcessEvents() {
+    // Debug-only: when NOVA64_IGNORE_QUIT is set, ignore window-close / SDL_QUIT
+    // so automated/headless capture runs aren't terminated by a spurious close
+    // before reaching later game states. Normal runs are unaffected.
+    static const bool s_ignoreQuit = std::getenv("NOVA64_IGNORE_QUIT") != nullptr;
+
     m_pendingEvents.clear();
     SDL_Event event;
 
@@ -471,7 +481,7 @@ bool WindowManager::ProcessEvents() {
 
         HandleSDLEvent(&event);
 
-        if (event.type == SDL_QUIT) {
+        if (event.type == SDL_QUIT && !s_ignoreQuit) {
             m_shouldClose = true;
         }
     }
@@ -524,10 +534,12 @@ void WindowManager::HandleSDLEvent(const void* sdlEventPtr) {
                 data.param2 = event.window.data2;
                 break;
 
-            case SDL_WINDOWEVENT_CLOSE:
+            case SDL_WINDOWEVENT_CLOSE: {
                 data.type = WindowEvent::Closed;
-                m_shouldClose = true;
+                static const bool s_ignoreQuit = std::getenv("NOVA64_IGNORE_QUIT") != nullptr;
+                if (!s_ignoreQuit) m_shouldClose = true;
                 break;
+            }
 
             case SDL_WINDOWEVENT_EXPOSED:
                 data.type = WindowEvent::Exposed;

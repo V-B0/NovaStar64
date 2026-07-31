@@ -72,7 +72,18 @@ void RDPProcessor::HandleLoadTLUT(const uint32_t* words) {
     if (!m_batch.drawCalls.empty()) FlushBatch();
     int tile, count;
     m_decoder.DecodeLoadTLUT(words, tile, count);
-    const auto& tileRef = m_state.rdp.tiles[tile];
+    // Real hardware / GLideN64 gDPLoadTLUT: G_LOADTLUT's w0 carries no uls/ult
+    // fields at all (w0 is the bare opcode) -- the command implicitly performs
+    // gDPSetTileSize(tile, 0, 0, count-1, 0), OVERWRITING this tile's sl/tl/sh/th
+    // registers. Must mirror that side effect: otherwise ExecuteLoadTLUT's address
+    // math falls through to whatever sl/tl a PRIOR SetTileSize/LoadTile/LoadBlock
+    // left on this tile index (typically tile 7, reused across loads), producing
+    // a garbage source address and palette noise.
+    auto& tileRef = m_state.rdp.tiles[tile];
+    tileRef.sl = 0;
+    tileRef.tl = 0;
+    tileRef.sh = static_cast<int32_t>((count - 1) << 2);
+    tileRef.th = 0;
     MM_RDP_TRACE("LoadTLUT tile={} count={} tex=0x{:06X} texFmt={} texSize={} texWidth={} tmem={} sl={} tl={} pal={}",
                  tile,
                  count,
@@ -231,6 +242,17 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                     // Mark as clean so subsequent LoadBlocks in this and future frames
                     // don't retrigger BlitToTexture until the FB is rendered to again.
                     srcFB->gpuModified = false;
+                    static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
+                    if (s_snapTrace) {
+                        std::fprintf(stderr,
+                            "[SNAPSHOT-LB] slot=%u fbAddr=0x%06X fbSize=%ux%u drawCalls=%u triangles=%u frame=%llu\n",
+                            m_vkFBSnapshotIdx, srcFB->desc.address & 0x7FFFFF,
+                            srcFB->desc.width, srcFB->desc.height,
+                            srcFB->drawCallsSinceSwitch, srcFB->trianglesSinceSwitch,
+                            static_cast<unsigned long long>(m_state.frameCount));
+                    }
+                    srcFB->drawCallsSinceSwitch = 0;
+                    srcFB->trianglesSinceSwitch = 0;
                 }
             }
         }
@@ -250,6 +272,20 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
         else if (w32 & 7) w32 = (w32 & ~7u) + 8;
         uint32_t maxIdx = m_rdramSize >> 2;
 
+        // The GLideN64-derived w32 formula (<<2 scaling) inflates the loop
+        // bound to 4x the true dword count for a plain, unpadded 32-bit block
+        // (e.g. lrs=1023,dxt=128,line=0 for a standalone 32x32 icon -- the
+        // exact pattern the SDK's gDPLoadTextureBlock macro emits). Since the
+        // dxt/t addressing wraps TMEM writes at 1024 entries (&0x3ff), running
+        // the full inflated range rewrites every entry 4 times, and the LAST
+        // (4th) pass -- reading 12-16KB past the true image -- is what
+        // survives, producing noise from whatever unrelated data follows the
+        // icon in RDRAM. The true source-dword count never depends on the
+        // <<2 scaling (padding only changes where in TMEM data lands, not how
+        // many real texels get read), so bound reads to it directly.
+        uint32_t trueDwords = ((static_cast<uint32_t>(texels) - uls + 1) & 0xFFFu);
+        uint32_t readLimit = std::min(w32, trueDwords);
+
         if (dxt != 0) {
             uint32_t j = 0, t = 0, oldt = 0;
             for (uint32_t i = 0; i < w32; i += 2) {
@@ -257,6 +293,7 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                 t = ((j >> 11) & 1) ? 3 : 1;
                 if (t != oldt) i += line32;
                 if (i >= w32) break;
+                if (i >= readLimit) break;
                 if (srcAddr + i + 1 < maxIdx) {
                     uint32_t ptr = ((tb + i) ^ t) & 0x3ff;
                     uint32_t c = src[srcAddr + i];
@@ -270,7 +307,7 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                 j += dxt;
             }
         } else {
-            for (uint32_t i = 0; i < w32 && (srcAddr + i) < maxIdx; i++) {
+            for (uint32_t i = 0; i < readLimit && (srcAddr + i) < maxIdx; i++) {
                 uint32_t ptr = ((tb + i) ^ 1) & 0x3ff;
                 uint32_t c = src[srcAddr + i];
                 tmem16[ptr] = static_cast<uint16_t>(c >> 16);
@@ -379,7 +416,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     }
     bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
     GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
-    MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} gpuModified={}",
+    MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} fbType={} fbW={} fbH={} gpuModified={} fbCount={}",
                  tile,
                  address & 0x7FFFFF,
                  width,
@@ -392,8 +429,43 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
                  rawSrcFB != nullptr,
                  canAliasSrcFB,
                  rawSrcFB ? rawSrcFB->desc.address : 0u,
-                 rawSrcFB ? rawSrcFB->gpuModified : false);
-    if (srcFB && srcFB->gpuModified) {
+                 rawSrcFB ? static_cast<int>(rawSrcFB->desc.type) : -1,
+                 rawSrcFB ? rawSrcFB->desc.width : 0u,
+                 rawSrcFB ? rawSrcFB->desc.height : 0u,
+                 rawSrcFB ? rawSrcFB->gpuModified : false,
+                 g_fbManager.GetFBCount());
+    if ((address & 0x7FFFFF) >= 0x380000 && (address & 0x7FFFFF) <= 0x3B0000) {
+        static const bool s_fbDumpTrace = std::getenv("NOVA64_FBDUMP") != nullptr;
+        static uint32_t s_fbDumpCount = 0;
+        if (s_fbDumpTrace && s_fbDumpCount < 400) {
+            ++s_fbDumpCount;
+            // Report the SPECIFIC question that matters for the inventory-panel
+            // bug: was a framebuffer entry found at all for this read (not just
+            // "found but rejected for aliasing" like the old miss-only version)?
+            // If rawSrcFB is null here, the whole RDRAM-sync block below never
+            // runs regardless of any gpuModified/needsRdramResync flag state.
+            std::fprintf(stderr, "[FBDUMP] addr=0x%06X found=%d alias=%d fbAddr=0x%06X type=%d %ux%u gpuModified=%d needsRdramResync=%d\n",
+                         address & 0x7FFFFF, rawSrcFB != nullptr, canAliasSrcFB,
+                         rawSrcFB ? rawSrcFB->desc.address : 0u,
+                         rawSrcFB ? static_cast<int>(rawSrcFB->desc.type) : -1,
+                         rawSrcFB ? rawSrcFB->desc.width : 0u,
+                         rawSrcFB ? rawSrcFB->desc.height : 0u,
+                         rawSrcFB ? rawSrcFB->gpuModified : false,
+                         rawSrcFB ? rawSrcFB->needsRdramResync : false);
+            if (!rawSrcFB || !canAliasSrcFB) {
+                std::fprintf(stderr, "  registry (%u entries):\n", g_fbManager.GetFBCount());
+                for (uint32_t i = 0; i < g_fbManager.GetFBCount(); ++i) {
+                    GPUFramebuffer* fb = g_fbManager.GetFB(i);
+                    if (!fb) continue;
+                    std::fprintf(stderr, "  [%u] addr=0x%06X type=%d %ux%u gpuModified=%d lastUsedFrame=%llu\n",
+                                 i, fb->desc.address, static_cast<int>(fb->desc.type),
+                                 fb->desc.width, fb->desc.height, fb->gpuModified,
+                                 static_cast<unsigned long long>(fb->lastUsedFrame));
+                }
+            }
+        }
+    }
+    if (srcFB && (srcFB->gpuModified || srcFB->needsRdramResync)) {
         MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
                      address & 0x7FFFFF,
                      srcFB->desc.address,
@@ -401,12 +473,14 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
                      srcFB->desc.height,
                      srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
+        srcFB->needsRdramResync = false;
     }
-    if (!g_fbManager.IsGL() && rawSrcFB && rawSrcFB->gpuModified && m_renderer) {
+    if (!g_fbManager.IsGL() && rawSrcFB && (rawSrcFB->gpuModified || rawSrcFB->needsRdramResync) && m_renderer) {
         const auto& d = rawSrcFB->desc;
         m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
                                             d.format == FBFormat::RGBA16, m_rdram);
         rawSrcFB->gpuModified = false;
+        rawSrcFB->needsRdramResync = false;
     }
 
     uint32_t tmemWordAddr = tileDesc.tmemAddr; // 64-bit word address
@@ -437,10 +511,12 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         totalBytes = width * height * 4;
     } else {
     // Non-RGBA32: UnswapCopyWrap per row + DWordInterleave on odd rows
-    uint32_t qwpr = rowBytes >> 3; // qwords per row
+    // (matches GLideN64 gDPLoadTile: qwpr = bpr >> 3, i.e. the row's own
+    // aligned byte count, NOT the tile's full `line` stride)
     uint32_t tmAddr = tmemWordAddr; // in 64-bit word units
     uint32_t srcLineBpl = texImg.width * srcBpp / 8; // source bytes per line
     uint32_t curAddr = address;
+    uint32_t qwpr = rowBytes >> 3;
 
     for (int y = 0; y < height && curAddr < m_rdramSize; y++) {
         uint32_t copyLen = rowBytes;
@@ -505,7 +581,6 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
                  texImg.width);
 
     uint16_t* tmem16 = reinterpret_cast<uint16_t*>(m_state.rdp.tmem.data);
-    uint32_t destIdx = tileDesc.tmemAddr << 2; // in u16 units
 
     // Byte-swap a 16-bit value (matches GLideN64's swapword)
     auto swapword = [](uint16_t v) -> uint16_t {
@@ -573,23 +648,82 @@ void RDPProcessor::HandleSyncFull() {
     // even with a signaled fence (driver bug). Doing this every SyncFull tanks
     // FPS to ~47. Throttling to every Nth call keeps the bulk of frames at native
     // pace; mid-frame CPU reads of stale FB data are uncommon and tolerated.
+    //
+    // The throttle is GL-ONLY and must stay that way. Its justification above is
+    // a specific GL/Intel driver problem; Vulkan's readback is an entirely
+    // different mechanism (submit + fence, no glMapBufferRange) and is already
+    // deduped per-address-per-frame by the backend's readback budget, so it
+    // cannot run away. Throttling it would be actively WRONG: the CPU-side
+    // PreRender framebuffer capture that produces MM's pause background happens
+    // on ONE specific frame -- the moment the player opens the menu -- so a
+    // 1-in-8 sampling misses the only frame that matters 7 times out of 8, and
+    // the capture reads stale/zero RDRAM exactly as if no readback existed.
     static uint64_t s_rbCounter = 0;
     constexpr uint64_t kRdpReadbackInterval = 8;
-    if (sceneDraws >= 1 && m_rdram && (s_rbCounter++ % kRdpReadbackInterval) == 0) {
+    const bool readbackDue = !g_fbManager.IsGL()
+                           || ((s_rbCounter++ % kRdpReadbackInterval) == 0);
+    if (sceneDraws >= 1 && m_rdram && readbackDue) {
         // Complete any previous async readback first
         if (g_fbManager.IsReadbackPending())
             g_fbManager.FinishAsyncReadback(m_rdram);
 
         GPUFramebuffer* colorFB = g_fbManager.GetCurrentColor();
-        if (colorFB && colorFB->desc.address != 0)
-            g_fbManager.BeginAsyncReadback(colorFB);
+        if (colorFB && colorFB->desc.address != 0) {
+            if (g_fbManager.IsGL()) {
+                g_fbManager.BeginAsyncReadback(colorFB);
+            } else if (m_renderer) {
+                // ── Vulkan: the CFB→RDRAM readback that never existed ──
+                // BeginAsyncReadback (and CopyFromGPU) both start with
+                // `if (!m_isGL) return;` -- the whole "copy rendered pixels back
+                // so the CPU sees real data" feature was GL-only, a silent no-op
+                // on this backend. That is not a plumbing detail: OoT/MM build
+                // the pause-menu background on the CPU (the decomp's PreRender_*
+                // routines read the color framebuffer OUT OF RDRAM, blur it, and
+                // write the result to the prerender buffer). With RDRAM never
+                // receiving the rendered frame, that code read zeros, blurred
+                // zeros and wrote zeros -- so the inventory panel was black no
+                // matter how the later read-back of the prerender buffer was
+                // fixed. GLideN64 calls this framebuffer emulation feature
+                // `copyToRDRAM`, and it is exactly why that option exists and is
+                // required for OoT/MM's pause screen.
+                //
+                // Done here (SyncFull) rather than at VI/present time because
+                // the frame is still recording: CopyFramebufferToRDRAM needs a
+                // live command buffer. It is synchronous (submit + fence wait),
+                // hence the existing kRdpReadbackInterval throttle above, and it
+                // is additionally deduped per address per frame by the backend's
+                // readback budget.
+                const auto& d = colorFB->desc;
+                m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
+                                                   d.format == FBFormat::RGBA16,
+                                                   m_rdram);
+                // Also sync the DISPLAY buffer when it differs from the current
+                // render target. MM double-buffers (0x000500 / 0x7DA800) and the
+                // CPU capture reads the frame the player is actually looking at,
+                // which is the VI-origin buffer -- not necessarily whichever
+                // buffer the display list happened to end on. Instrumentation
+                // showed only 0x000500 was ever being written back, so a capture
+                // taken while the other buffer was on screen read empty RDRAM.
+                // The backend dedupes per address per frame, so this adds at most
+                // one extra copy and none at all for single-buffered scenes.
+                GPUFramebuffer* displayFB = g_fbManager.GetDisplayFramebuffer();
+                if (displayFB && displayFB != colorFB &&
+                    displayFB->desc.address != 0 &&
+                    displayFB->desc.address != d.address) {
+                    const auto& dd = displayFB->desc;
+                    m_renderer->CopyFramebufferToRDRAM(dd.address, dd.width, dd.height,
+                                                       dd.format == FBFormat::RGBA16,
+                                                       m_rdram);
+                }
+            }
+        }
 
         // Depth readback is synchronous and expensive; only do it for
         // games that actually read depth from RDRAM (e.g., Perfect Dark).
         if (g_fbManager.m_fbHacks.pdDepthOncePerFrame) {
             if (m_state.rdp.zbufferImage.address != 0) {
                 GPUFramebuffer* depthFB = g_fbManager.FindByAddress(
-                    m_state.rdp.zbufferImage.address);
+                    m_state.rdp.zbufferImage.address, FBType::Depth);
                 if (depthFB && depthFB->depthTex)
                     g_fbManager.CopyDepthFromGPU(depthFB, m_rdram);
             }

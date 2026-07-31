@@ -678,9 +678,46 @@ public:
     // Records vkCmdCopyImage into the in-flight command buffer; no CPU sync,
     // no m_skipPresent side-effect. Default no-op for non-Vulkan backends.
     virtual void BlitToTexture(ITexture* dst) { (void)dst; }
+    /// Drop the persistent frame-carry canvases (Vulkan backends): the next
+    /// frame starts from a cleared image instead of the accumulated screen
+    /// content. Called when the game blanks the display (VI_TYPE=0) so
+    /// transitions fade to black rather than freezing on the last frame.
+    /// Default no-op for backends without swapchain image rotation (GL's
+    /// per-FB FBOs persist natively).
+    virtual void InvalidateCanvas() {}
+    /// Notify the backend that the N64 game switched its render target color
+    /// buffer (SetColorImage). Vulkan backends keep one persistent canvas per
+    /// buffer address and swap them here so double/triple-buffered games get
+    /// real buffer isolation on the single swapchain image. GL no-op (FBOs).
+    virtual void SetActiveCanvas(uint32_t n64Addr) { (void)n64Addr; }
+    /// Tell the backend which N64 buffer address the VI is displaying (the
+    /// display-ready buffer). Vulkan presents THAT buffer's canvas rather
+    /// than the one still being drawn. GL no-op.
+    virtual void SetPresentOrigin(uint32_t n64Addr) { (void)n64Addr; }
     /// Like BlitToTexture but restarts the render pass with LOAD_OP_LOAD instead
     /// of LOAD_OP_CLEAR, preserving existing swapchain content.
     virtual void SnapshotToTexture(ITexture* dst) { (void)dst; }
+    /// GPU-side copy of the PERSISTENT CANVAS for a specific N64 buffer address
+    /// into dst, so that buffer can be sampled as a texture even when it is not
+    /// the currently-active render target.
+    ///
+    /// This is the direct analogue of GLideN64's per-FrameBuffer `m_pTexture`:
+    /// there, EVERY tracked framebuffer permanently owns a sampleable color
+    /// texture, so a framebuffer-as-texture read (MM's pause-menu background,
+    /// lens of truth, minimaps...) can always bind the real rendered content.
+    /// On this Vulkan backend `FramebufferManager::GetSampleableTexture()`
+    /// returns 0 unconditionally (there are no per-N64-FB GL textures), so the
+    /// only sources were the swapchain-snapshot ring slots, which are captured
+    /// at a few specific EVENTS (SetColorImage switch-away, LoadBlock). Any
+    /// read whose source buffer was not snapshotted at exactly the right moment
+    /// fell through to decoding raw RDRAM -- which for a GPU-rendered buffer
+    /// holds stale/uniform garbage, the black inventory panel.
+    /// The per-address canvases already maintained for buffer isolation ARE the
+    /// persistent per-FB images we were missing; this exposes them as a texture
+    /// source. Returns false when no valid canvas exists for that address.
+    virtual bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) {
+        (void)n64Addr; (void)dst; return false;
+    }
     virtual void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW,
                                         uint32_t fbH, bool isRGBA16,
                                         uint8_t* rdram) {

@@ -10,6 +10,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <sstream>
@@ -29,6 +30,9 @@
 namespace Nova64::Video {
 
 Logger g_logger;
+
+// Diagnostics-only present index (declared in Logger.hpp).
+std::atomic<long> g_presentIndex{0};
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Static Name/Color Tables
@@ -93,6 +97,14 @@ bool Logger::Init(const LoggerConfig& config) {
 
     m_config = config;
     m_startTime = std::chrono::steady_clock::now();
+
+    // Diagnostics: NOVA64_LOG_LEVEL=0..6 overrides the global level so heavy
+    // per-draw INFO spam can be silenced for fast headless capture runs.
+    // (Off=0, Fatal=1, Error=2, Warning=3, Info=4, Debug=5, Trace=6)
+    if (const char* lvl = std::getenv("NOVA64_LOG_LEVEL")) {
+        int v = std::atoi(lvl);
+        if (v >= 0 && v <= 6) m_config.globalLevel = static_cast<LogLevel>(v);
+    }
 
     // Enable ANSI escape codes on Windows
 #ifdef _WIN32

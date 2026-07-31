@@ -21,3 +21,27 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+// ── stb_image_write: headless framebuffer PNG capture (NOVA64_SHOT_*) ──
+// STBI_NO_STDIO above only gates the *read* side; stbi_write_png (stdio) stays
+// available.  Exposed via Nova::WritePNG so GPU backends don't pull in stb.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4244 4100 4456)
+#endif
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+#include "ImageWrite.hpp"
+
+namespace Nova {
+bool WritePNG(const char* path, int w, int h, int comp,
+              const void* data, int strideBytes) {
+    if (!path || !data || w <= 0 || h <= 0) return false;
+    if (strideBytes <= 0) strideBytes = w * comp;
+    return stbi_write_png(path, w, h, comp, data, strideBytes) != 0;
+}
+} // namespace Nova

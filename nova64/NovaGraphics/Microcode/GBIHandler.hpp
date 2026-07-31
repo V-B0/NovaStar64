@@ -139,14 +139,22 @@ struct DListContext {
     bool PushDL(uint32_t returnAddr, bool isBranch) {
         if (dlStackDepth >= MAX_DL_STACK) return false;
         dlStack[dlStackDepth++] = { returnAddr, isBranch };
+        // A CALL begins a new branch run.  The branch-cycle guard (dlBranchVisited)
+        // must only catch a gsSPBranchList loop that is uninterrupted by a
+        // call/return; otherwise a sub-DL that legitimately contains a branch and
+        // is *called* more than once (inventory item lists, repeated objects)
+        // would be misdetected as a cycle and halt the whole task.
+        dlBranchVisited.clear();
         return true;
     }
-    
+
     /// Pop DL from call stack (returns false if stack empty)
     bool PopDL() {
         if (dlStackDepth <= 0) return false;
         --dlStackDepth;
         pc = dlStack[dlStackDepth].returnAddr;
+        // A RETURN also ends the current branch run (see PushDL).
+        dlBranchVisited.clear();
         return true;
     }
     

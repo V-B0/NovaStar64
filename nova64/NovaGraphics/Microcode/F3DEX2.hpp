@@ -267,21 +267,39 @@ inline void F3DEX2Handler::Cmd_G_TRI2(DListContext& ctx, uint32_t w0, uint32_t w
     int v3 = ((w1 >> 16) & 0xFF) / 2;
     int v4 = ((w1 >> 8) & 0xFF) / 2;
     int v5 = (w1 & 0xFF) / 2;
+    {
+        static const bool s_tri2Dbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
+        static int s_tri2Left = 60;
+        if (s_tri2Dbg && s_tri2Left > 0 && (v3 == v5 || v3 == v4 || v4 == v5)) {
+            --s_tri2Left;
+            std::fprintf(stderr, "[TRI2RAW] w0=0x%08X w1=0x%08X -> t1=(%d,%d,%d) t2=(%d,%d,%d)\n",
+                         w0, w1, v0, v1, v2, v3, v4, v5);
+        }
+    }
     DrawTriangle2(ctx, v0, v1, v2, v3, v4, v5);
 }
 
 inline void F3DEX2Handler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // GBI2 G_QUAD packs 4 vertices: v0/v1/v2 in w0, v3 in w1[23:16].
-    // w1[15:8] and w1[7:0] are padding duplicates of v2 and v3 (packet
-    // alignment bytes, not independent vertices — see GLideN64 F3DEX2_1Qd).
-    // Decomposition: (v0,v1,v2) + (v0,v2,v3) — shared edge v0-v2.
+    // GBI2 G_QUAD carries TWO full triangles, exactly like G_TRI2:
+    //   w0 = [07][v00*2][v01*2][v02*2]      first  triangle
+    //   w1 = [00][v10*2][v11*2][v12*2]      second triangle
+    // gSP1Quadrangle(v0,v1,v2,v3) emits w1 = (v0*2)<<16|(v2*2)<<8|(v3*2):
+    // the QUAD'S FOURTH VERTEX IS w1's LOW BYTE. The previous decode took
+    // w1[23:16] as "v3" — but that byte holds the DUPLICATED v0 of the
+    // shared edge — and dismissed the real low byte as padding. Every
+    // quad's second half decoded as the degenerate (v0, v2, v0) and was
+    // silently dropped, deleting half of every gSP1Quadrangle mesh: the
+    // OoT/MM skyboxes and pre-rendered background meshes rendered as
+    // alternating drawn/missing right triangles — the "shattered glass"
+    // pattern. (GLideN64's F3DEX2_Quad likewise feeds both words through
+    // the same two-triangle path as F3DEX2_Tri2.)
     int v0 = ((w0 >> 16) & 0xFF) / 2;
     int v1 = ((w0 >> 8) & 0xFF) / 2;
     int v2 = (w0 & 0xFF) / 2;
     int v3 = ((w1 >> 16) & 0xFF) / 2;
-    (void)w1; // lower 16 bits are padding duplicates
-    DrawTriangle(ctx, v0, v1, v2);
-    DrawTriangle(ctx, v0, v2, v3);
+    int v4 = ((w1 >> 8) & 0xFF) / 2;
+    int v5 = (w1 & 0xFF) / 2;
+    DrawTriangle2(ctx, v0, v1, v2, v3, v4, v5);
 }
 
 inline void F3DEX2Handler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -389,7 +407,17 @@ inline void F3DEX2Handler::Cmd_G_RDPHALF_2(DListContext& ctx, uint32_t w0, uint3
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)ctx; (void)w0; (void)w1;
-    // Reserved for game-specific extensions
+    // Reserved for game-specific extensions.  GLideN64's real F3DEX2_Special_1
+    // is NOT a no-op: it's gSPCombineMatrices (explicit projection*modelview
+    // recombine) when the detected ucode string has combineMatrices=true, or
+    // gSPDlistCount (jump to a sub-DL, auto-return after exactly N commands
+    // via a per-command counter checked in the main RSP loop) when false --
+    // which is the case for F3DZEX (Zelda OoT/MM).  Confirmed via a live
+    // 12000-frame MM capture (title through early gameplay, ~15M RDP commands)
+    // that this ROM never issues opcode 0xD5 at all in that content, so this
+    // stays a no-op rather than adding an unconfirmed, architecturally
+    // nontrivial (auto-return-after-N-commands) feature no observed content
+    // exercises. Revisit if a specific missing-content symptom ever points here.
 }
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_2(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -418,7 +446,7 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         BranchW(ctx, vtxIndex, w1, m_rdpHalf1);
         return !ctx.halted;
     }
-    case 0xD3: // G_SPECIAL_ZelDA — point lighting for torch/fire effects
+    case 0xD3: // G_SPECIAL_ZelDA (G_SPECIAL_3 slot)
         Cmd_G_SPECIAL_ZelDA(ctx, w0, w1);
         return !ctx.halted;
     default:
@@ -428,8 +456,11 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
 }
 
 inline void F3DZEXHandler::Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Zelda point-light extension
-    // Used for torch/fire effects in OoT and MM
+    // Opcode 0xD3 = G_SPECIAL_3 slot. Verified against GLideN64's real
+    // F3DEX2_Special_3: it's a genuine no-op there too (not a torch/fire
+    // point-light extension as an earlier version of this comment claimed --
+    // no such mechanism exists in GLideN64's F3DZEX/F3DEX2 handling of this
+    // opcode). Kept as a no-op to match.
     (void)ctx; (void)w0; (void)w1;
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3DZEX: Zelda special command");
 }

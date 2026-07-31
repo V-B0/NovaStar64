@@ -16,6 +16,7 @@
 #include <array>
 #include <string>
 #include <math.h>
+#include <cmath>   // std::isnan (replaces MSVC _isnan)
 #include <cstdlib>
 
 // Softfloat library for IEEE 754 compliant FPU emulation
@@ -2471,7 +2472,7 @@ void R4300iInterpreter::COP1_S_CMP()
     float Temp1 = *(float *)m_FPR_UW[ft()];
 
     bool less, equal, unorded;
-    if (_isnan(Temp0) || _isnan(Temp1))
+    if (std::isnan(Temp0) || std::isnan(Temp1))
     {
         less = false;
         equal = false;
@@ -2727,7 +2728,7 @@ void R4300iInterpreter::COP1_D_CMP()
     Temp1.DW = *(int64_t *)m_FPR_UDW[ft()];
 
     bool less, equal, unorded;
-    if (_isnan(Temp0.D) || _isnan(Temp1.D))
+    if (std::isnan(Temp0.D) || std::isnan(Temp1.D))
     {
         less = false;
         equal = false;

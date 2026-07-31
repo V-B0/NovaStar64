@@ -16,6 +16,7 @@ class UncachedRom final :
 {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool saves_read_only = false;
         bool enable_dma_logging = false;
         bool enable_save_auto_detect = true;
@@ -26,7 +27,7 @@ public:
         CN64System& system,
         CRegisters& registers,
         Nova64::MipsMemoryVM& mmu,
-        const Config& config = {});
+        const Config& config = Config());
     ~UncachedRom() override = default;
     
     // MemoryHandler interface

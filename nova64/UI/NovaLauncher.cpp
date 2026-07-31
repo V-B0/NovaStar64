@@ -26,7 +26,104 @@
 #include "../N64SYS/MainSYS.hpp"
 #include "../NovaGraphics/Plugin/FrameCallback.hpp"
 
+#ifndef _WIN32
+#include <unistd.h>
+#include <spawn.h>
+#include <signal.h>
+#include <sys/wait.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+extern char** environ;
+#endif
+
+#include <cstdio>   // popen/pclose for the native file picker
+
 namespace ed = ax::NodeEditor;
+
+namespace {
+
+// ── Native "open ROM" file picker ───────────────────────────────────────────
+// Returns the chosen ROM path, or "" if the user cancelled.  Uses the OS-native
+// dialog so it feels like a real Mac app (no in-app path typing required).
+inline std::string PickRomFileNative() {
+#if defined(__APPLE__)
+    // AppleScript drives the native NSOpenPanel.  On cancel, osascript writes an
+    // error to stderr (discarded) and prints nothing to stdout.
+    // NOTE: no `of type {...}` filter — macOS matches that against UTIs, and the
+    // bare extensions z64/n64/v64 have no registered UTI, so the ROMs would be
+    // greyed out.  Allow any file and let the user pick the ROM.
+    const char* cmd =
+        "osascript -e 'POSIX path of (choose file with prompt \"Select an N64 ROM\")'"
+        " 2>/dev/null";
+    FILE* pipe = ::popen(cmd, "r");
+    if (!pipe) return {};
+    std::string out;
+    char buf[4096];
+    while (std::fgets(buf, sizeof(buf), pipe)) out += buf;
+    ::pclose(pipe);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+    return out;
+#elif defined(__linux__)
+    FILE* pipe = ::popen(
+        "zenity --file-selection --title='Select an N64 ROM' 2>/dev/null", "r");
+    if (!pipe) return {};
+    std::string out;
+    char buf[4096];
+    while (std::fgets(buf, sizeof(buf), pipe)) out += buf;
+    ::pclose(pipe);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+    return out;
+#else
+    return {};
+#endif
+}
+
+// ── Borderless-window drag region ───────────────────────────────────────────
+// The launcher is a borderless window, so it has no native title bar to grab.
+// Treat the middle of the 40px top navbar as a drag handle, leaving the left
+// (File menu) and right (min/max/close buttons) interactive.
+extern "C" SDL_HitTestResult SDLCALL LauncherHitTest(SDL_Window* win,
+                                                     const SDL_Point* area,
+                                                     void* /*data*/) {
+    int w = 0, h = 0;
+    SDL_GetWindowSize(win, &w, &h);
+    constexpr int kNavbarH      = 40;
+    constexpr int kLeftReserve  = 80;   // File menu
+    constexpr int kRightReserve = 110;  // min / max / close buttons
+    if (area->y >= 0 && area->y < kNavbarH &&
+        area->x > kLeftReserve && area->x < (w - kRightReserve)) {
+        return SDL_HITTEST_DRAGGABLE;
+    }
+    return SDL_HITTEST_NORMAL;
+}
+#ifdef _WIN32
+inline bool EmuProcValid(const NovaUI::EmuInstance& e) { return e.pi.hProcess != nullptr; }
+#else
+// Absolute path to this executable, used to re-launch ourselves per ROM.
+inline std::string SelfExePath() {
+    char buf[4096] = {};
+#if defined(__APPLE__)
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return {};
+    return std::string(buf);
+#else
+    ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return {};
+    buf[n] = '\0';
+    return std::string(buf);
+#endif
+}
+inline bool EmuProcValid(const NovaUI::EmuInstance& e) { return e.pid > 0; }
+inline void EmuKill(NovaUI::EmuInstance& e) {
+    if (e.pid > 0) {
+        ::kill(static_cast<pid_t>(e.pid), SIGTERM);
+        ::waitpid(static_cast<pid_t>(e.pid), nullptr, 0);
+        e.pid = -1;
+    }
+}
+#endif
+} // namespace
 
 // ── Editor context (for Simulator tab) ───────────────────────────────────────
 static ed::EditorContext* g_Context = nullptr;
@@ -134,10 +231,14 @@ NovaUI::NovaLauncher::NovaLauncher()
 NovaUI::NovaLauncher::~NovaLauncher() {
     StopEmbedded();
     for (auto& inst : m_instances) {
-        if (inst.running && inst.pi.hProcess) {
+        if (inst.running && EmuProcValid(inst)) {
+#ifdef _WIN32
             TerminateProcess(inst.pi.hProcess, 0);
             CloseHandle(inst.pi.hProcess);
             CloseHandle(inst.pi.hThread);
+#else
+            EmuKill(inst);
+#endif
         }
     }
 }
@@ -192,8 +293,7 @@ void NovaUI::NovaLauncher::LaunchEmbedded(const std::string& romPath) {
         m_lua.OnFrame();
     };
 
-    // Set embedded mode flag BEFORE starting the thread so VideoPlugin
-    // hides its own window and starts doing CPU readback instead.
+    // Set embedded mode flag BEFORE starting the thread.
     Nova64::Video::g_embeddedMode.store(true);
     Nova64::Video::g_emuPaused.store(false);
     Nova64::Video::g_speedMultiplier.store(1.0f);
@@ -530,9 +630,21 @@ void NovaUI::NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
 // ============================================================
 void NovaUI::NovaLauncher::LaunchEmulator(const SimNode& node) {
     if (node.cartPath[0] == '\0') return;
+    const std::string name = (node.cartName[0] != '\0') ? node.cartName
+                                                         : std::filesystem::path(node.cartPath).filename().string();
+    LaunchProcess(node.cartPath, name);
+}
+
+// Copy the ROM into roms/ and re-launch this executable with it as a child
+// process so the game gets its own window. The child runs the emulator on its
+// main thread, which is required for window/surface creation (the in-launcher
+// "embedded" path runs on a background thread and cannot create a window on
+// macOS). The child inherits our environment and preloads MoltenVK itself.
+void NovaUI::NovaLauncher::LaunchProcess(const std::string& romPath, const std::string& romName) {
+    if (romPath.empty()) return;
 
     namespace fs = std::filesystem;
-    fs::path srcPath(node.cartPath);
+    fs::path srcPath(romPath);
     fs::create_directories("roms");
     fs::path destPath = fs::path("roms") / srcPath.filename();
     if (fs::exists(srcPath)) {
@@ -541,9 +653,12 @@ void NovaUI::NovaLauncher::LaunchEmulator(const SimNode& node) {
         if (!ec) srcPath = destPath;
     }
 
+    std::string romStr = srcPath.string();
+    const std::string name = !romName.empty() ? romName : srcPath.filename().string();
+
+#ifdef _WIN32
     wchar_t exePathW[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
-    std::string romStr = srcPath.string();
     std::wstring cmdLine = std::wstring(exePathW) + L" \"" +
                            std::wstring(romStr.begin(), romStr.end()) + L"\"";
     std::vector<wchar_t> cmdBuf(cmdLine.begin(), cmdLine.end());
@@ -553,17 +668,36 @@ void NovaUI::NovaLauncher::LaunchEmulator(const SimNode& node) {
     PROCESS_INFORMATION pi{};
     if (CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
         EmuInstance inst;
-        inst.romName = (node.cartName[0] != '\0') ? node.cartName : srcPath.filename().string();
+        inst.romName = name;
         inst.romPath = romStr;
         inst.pi      = pi;
         inst.running = true;
         m_instances.push_back(std::move(inst));
     }
+#else
+    // POSIX: re-launch this executable with the ROM path as an argument.
+    std::string exePath = SelfExePath();
+    if (!exePath.empty()) {
+        char* argv[] = { const_cast<char*>(exePath.c_str()),
+                         const_cast<char*>(romStr.c_str()),
+                         nullptr };
+        pid_t childPid = -1;
+        if (posix_spawn(&childPid, exePath.c_str(), nullptr, nullptr, argv, environ) == 0) {
+            EmuInstance inst;
+            inst.romName = name;
+            inst.romPath = romStr;
+            inst.pid     = static_cast<long>(childPid);
+            inst.running = true;
+            m_instances.push_back(std::move(inst));
+        }
+    }
+#endif
 }
 
 void NovaUI::NovaLauncher::PollInstances() {
     for (auto& inst : m_instances) {
         if (!inst.running) continue;
+#ifdef _WIN32
         DWORD exitCode = STILL_ACTIVE;
         if (GetExitCodeProcess(inst.pi.hProcess, &exitCode) && exitCode != STILL_ACTIVE) {
             inst.running = false;
@@ -571,9 +705,19 @@ void NovaUI::NovaLauncher::PollInstances() {
             CloseHandle(inst.pi.hThread);
             inst.pi.hProcess = nullptr;
         }
+#else
+        if (inst.pid > 0) {
+            int status = 0;
+            pid_t r = ::waitpid(static_cast<pid_t>(inst.pid), &status, WNOHANG);
+            if (r == static_cast<pid_t>(inst.pid) || r == -1) {
+                inst.running = false;
+                inst.pid = -1;
+            }
+        }
+#endif
     }
     m_instances.erase(std::remove_if(m_instances.begin(), m_instances.end(),
-        [](const EmuInstance& e){ return !e.running && e.pi.hProcess == nullptr; }),
+        [](const EmuInstance& e){ return !e.running && !EmuProcValid(e); }),
         m_instances.end());
 }
 
@@ -591,6 +735,10 @@ std::string NovaUI::NovaLauncher::Run() {
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS);
     if (!window) { SDL_Quit(); return ""; }
+
+    // Borderless window has no native title bar — make the top navbar a drag
+    // handle so the window can be moved.
+    SDL_SetWindowHitTest(window, LauncherHitTest, nullptr);
 
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, glContext);
@@ -638,6 +786,25 @@ std::string NovaUI::NovaLauncher::Run() {
                 event.window.event == SDL_WINDOWEVENT_CLOSE &&
                 event.window.windowID == SDL_GetWindowID(window)) {
                 m_shouldExit = true;
+            }
+
+            // Drag-and-drop a ROM onto the window: add it to the library and
+            // boot it immediately.
+            if (event.type == SDL_DROPFILE && event.drop.file) {
+                std::string dropped(event.drop.file);
+                SDL_free(event.drop.file);
+                if (!dropped.empty()) {
+                    std::string nm = std::filesystem::path(dropped).stem().string();
+                    // De-dup: only add to the library if not already present.
+                    bool known = false;
+                    for (auto& r : m_library) if (r.path == dropped) { known = true; break; }
+                    if (!known) m_library.push_back({dropped, nm, "", ""});
+#ifdef __APPLE__
+                    LaunchProcess(dropped, nm);   // separate window; renders via Vulkan/MoltenVK
+#else
+                    if (!m_emuRunning.load()) LaunchEmbedded(dropped);
+#endif
+                }
             }
 
             // ESC: toggle pause menu (only when game running embedded)
@@ -696,9 +863,13 @@ std::string NovaUI::NovaLauncher::Run() {
     // Cleanup
     StopEmbedded();
     for (auto& inst : m_instances) {
-        if (inst.running && inst.pi.hProcess) {
+        if (inst.running && EmuProcValid(inst)) {
+#ifdef _WIN32
             TerminateProcess(inst.pi.hProcess, 0);
             CloseHandle(inst.pi.hProcess); CloseHandle(inst.pi.hThread);
+#else
+            EmuKill(inst);
+#endif
         }
     }
     if (m_gameTex) { glDeleteTextures(1, &m_gameTex); m_gameTex = 0; }
@@ -851,9 +1022,14 @@ void NovaUI::NovaLauncher::RenderInstancesPanel() {
             ImGui::SameLine(ImGui::GetWindowWidth() - 90);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f,0.1f,0.1f,1.0f));
             if (ImGui::Button("Force Stop", ImVec2(80,0))) {
+#ifdef _WIN32
                 TerminateProcess(inst.pi.hProcess, 1);
                 CloseHandle(inst.pi.hProcess); CloseHandle(inst.pi.hThread);
-                inst.pi.hProcess = nullptr; inst.running = false;
+                inst.pi.hProcess = nullptr;
+#else
+                EmuKill(inst);
+#endif
+                inst.running = false;
             }
             ImGui::PopStyleColor();
         }
@@ -884,10 +1060,20 @@ void NovaUI::NovaLauncher::RenderGamesTab() {
         ImGui::TextWrapped("%s", rom.name.c_str());
         ImGui::TextDisabled("%s", rom.path.c_str());
 
+#ifdef __APPLE__
+        // macOS: the GL renderer needs 4.6 (macOS caps at 4.1), so the game
+        // renders via Vulkan/MoltenVK in its own window (a background thread
+        // cannot create the window/surface — embedded-in-launcher needs the
+        // offscreen-Vulkan path which is not wired yet).
+        if (ImGui::Button("Play", ImVec2(-1,0))) {
+            LaunchProcess(rom.path, rom.name);
+        }
+#else
         // Launch embedded (default, non-simulator)
         if (ImGui::Button("Play (Embedded)", ImVec2(-1,0))) {
             LaunchEmbedded(rom.path);
         }
+#endif
 
         if (ImGui::BeginPopupContextWindow("GameContext")) {
             if (ImGui::MenuItem("Edit ROM")) {
@@ -909,6 +1095,19 @@ void NovaUI::NovaLauncher::RenderGamesTab() {
     if (m_showAddModal) ImGui::OpenPopup("Add New ROM");
     if (ImGui::BeginPopupModal("Add New ROM", &m_showAddModal, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::InputText("ROM Path", m_editBoxArtBuffer, sizeof(m_editBoxArtBuffer));
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...")) {
+            std::string picked = PickRomFileNative();
+            if (!picked.empty()) {
+                std::strncpy(m_editBoxArtBuffer, picked.c_str(), sizeof(m_editBoxArtBuffer) - 1);
+                m_editBoxArtBuffer[sizeof(m_editBoxArtBuffer) - 1] = '\0';
+                if (m_editNameBuffer[0] == '\0') {
+                    std::string nm = std::filesystem::path(picked).stem().string();
+                    std::strncpy(m_editNameBuffer, nm.c_str(), sizeof(m_editNameBuffer) - 1);
+                    m_editNameBuffer[sizeof(m_editNameBuffer) - 1] = '\0';
+                }
+            }
+        }
         ImGui::InputText("Name",     m_editNameBuffer,   sizeof(m_editNameBuffer));
         ImGui::InputTextMultiline("Notes", m_editNotesBuffer, sizeof(m_editNotesBuffer), ImVec2(300,100));
         if (ImGui::Button("Add Game", ImVec2(120,0))) {

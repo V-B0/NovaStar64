@@ -316,7 +316,8 @@ using Error = asmjit::Error;
     using Gp = asmjit::a64::Gp;       // General purpose register
     using Vec = asmjit::a64::Vec;     // Vector register
     using Mem = asmjit::a64::Mem;     // Memory operand
-    using Condition = asmjit::a64::Condition;
+    using CondCode = asmjit::arm::CondCode;   // Condition code enum (shared a32/a64)
+    using Condition = asmjit::arm::CondCode;  // Legacy alias
 #elif defined(NOVA64_ARCH_ARM32)
     using Assembler = asmjit::arm::Assembler;
     using Compiler = asmjit::arm::Compiler;

@@ -229,7 +229,13 @@ bool VKPipelineImpl::Build(const VKContext& ctx,
                    ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
     rs.lineWidth   = 1.0f;
     rs.depthClampEnable        = desc.rasterizer.depthClipEnabled ? VK_FALSE : VK_TRUE;
-    rs.depthBiasEnable         = desc.rasterizer.depthBias != 0.0f ? VK_TRUE : VK_FALSE;
+    // ALWAYS TRUE: depth-bias VALUES are dynamic (VK_DYNAMIC_STATE_DEPTH_BIAS,
+    // set per draw by SetRasterizerState) but the ENABLE is baked into the
+    // pipeline. Deriving it from the creation-time bias (typically 0) made
+    // every dynamic vkCmdSetDepthBias a silent no-op — ZMODE_DECAL surfaces
+    // (door stars, ground decals) never got their offset and Z-fought their
+    // base surface in every game. Non-decal draws set bias (0,0) dynamically.
+    rs.depthBiasEnable         = VK_TRUE;
     rs.depthBiasConstantFactor = desc.rasterizer.depthBias;
     rs.depthBiasSlopeFactor    = desc.rasterizer.depthBiasSlope;
 

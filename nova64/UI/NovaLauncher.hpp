@@ -87,6 +87,9 @@ struct EmuInstance {
     std::string romPath;
 #ifdef _WIN32
     PROCESS_INFORMATION pi{};
+#else
+    // POSIX child process id (-1 when none / reaped).
+    long pid = -1;
 #endif
     bool running = true;
 };
@@ -154,6 +157,10 @@ private:
 
     // ---- Simulator / Child process ----
     void LaunchEmulator(const SimNode& node);
+    // Launch a ROM as a separate child process (own window). On macOS this is
+    // the path that actually renders: the child owns its main thread, so the
+    // Vulkan/MoltenVK window/surface can be created (a background thread cannot).
+    void LaunchProcess(const std::string& romPath, const std::string& romName);
     void PollInstances();
 
     // ---- Simulator helpers ----

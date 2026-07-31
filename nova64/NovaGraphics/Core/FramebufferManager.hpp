@@ -51,8 +51,23 @@ struct FramebufferDesc {
     }
 
     bool operator==(const FramebufferDesc& other) const {
+        // MUST include type: N64 games routinely repurpose one RDRAM region
+        // for different roles at different times -- most commonly, MM's
+        // pause menu reuses the Z-buffer's address as a scratch Color target
+        // for its blurred world-snapshot mosaic once the 3D pass is done.
+        // The Depth FB and the later Color FB at that address share the same
+        // address/width/height/format (both RGBA16), so without comparing
+        // type here, FindOrCreate's exact-match branch treated them as "the
+        // same" framebuffer and returned the pre-existing Depth entry for
+        // every OnSetColorImage(sameAddr) call -- a separate Color-typed
+        // entry was never created at all. The later LoadTile read-back then
+        // found only the Depth entry, which CanAliasFramebuffer correctly
+        // rejects (wrong FBType), so the mosaic tiles fell through to raw
+        // (never-written) RDRAM -- solid black. This is the asymmetric
+        // black pause-menu panel bug.
         return address == other.address && width == other.width &&
-               height == other.height && format == other.format;
+               height == other.height && format == other.format &&
+               type == other.type;
     }
 };
 
@@ -81,6 +96,27 @@ struct GPUFramebuffer {
     bool     needsCopy   = false;   // Needs CPU→GPU copy-back
     bool     isAux       = false;
     bool     gpuModified = false;   // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
+    // Separate from gpuModified: LoadBlock/LoadTile's FB-as-texture sync path
+    // (RDPProcessor_Texture.cpp) also gates on and clears gpuModified for its
+    // own purpose (e.g. every-frame CfB/AA-resolve copy-back reads). If that
+    // path runs first in a frame, it silently starves HandleSetColorImage's
+    // pre-switch inventory-background snapshot, which never fires because it
+    // shares the same flag. This flag is set alongside gpuModified but is
+    // only ever cleared by the inventory-snapshot consumer, so the two never
+    // steal from each other.
+    bool     needsInventorySnapshot = false;
+    // Same problem, third victim: ExecuteLoadTile/ExecuteLoadBlock's own
+    // RDRAM-sync trigger (CopyFromGPU / CopyFramebufferToRDRAM) ALSO gates on
+    // and clears the plain gpuModified flag -- so it too can be starved by an
+    // unrelated earlier read of the SAME address (e.g. MM's routine per-frame
+    // Z-buffer-clear-via-color-pipeline trick reuses 0x383AC0, the same
+    // address as the pause-menu scratch snapshot, for an unrelated purpose
+    // every single frame). Dedicated flag, set alongside the other two, only
+    // ever cleared by ExecuteLoadTile/ExecuteLoadBlock's own RDRAM sync, so
+    // it can't be pre-consumed by anything else touching this address.
+    bool     needsRdramResync = false;
+    uint32_t drawCallsSinceSwitch = 0;   // DIAGNOSTIC: FlushBatch calls since this FB was last snapshotted/switched
+    uint32_t trianglesSinceSwitch = 0;   // DIAGNOSTIC: triangle count in those draw calls
     uint64_t lastUsedFrame = 0;
     uint64_t lastColorClearedFrame = 0;  // Last frame the color buffer was cleared (for overscan)
     FramebufferDesc desc;
@@ -152,7 +188,14 @@ public:
 
     /// Find or create GPU framebuffer for the given N64 address
     GPUFramebuffer* FindOrCreate(const FramebufferDesc& desc);
-    GPUFramebuffer* FindByAddress(uint32_t address);
+    /// Find a framebuffer registered at `address`. Games routinely repurpose
+    /// an RDRAM region (e.g. reusing the depth buffer's address as a scratch
+    /// color buffer once a frame's 3D pass is done -- MM's pause-menu world
+    /// snapshot does exactly this), so more than one entry can share the same
+    /// address with different `type`s. Prefer `preferType` when that happens;
+    /// default Color since nearly every caller wants a framebuffer to sample
+    /// as a texture, never raw depth data.
+    GPUFramebuffer* FindByAddress(uint32_t address, FBType preferType = FBType::Color);
     GPUFramebuffer* FindContaining(uint32_t address);
     GPUFramebuffer* GetCurrentColor() { return m_currentColor; }
     GPUFramebuffer* GetCurrentDepth() { return m_currentDepth; }

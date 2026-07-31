@@ -28,6 +28,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <TargetConditionals.h>
+#endif
 
 namespace Nova64::Recompiler {
 
@@ -190,20 +194,41 @@ std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> CRecompMemory::AllocateBuffe
     );
     
     #else
-    // Use mmap for executable memory on Unix-like systems
+    // Use mmap for executable memory on Unix-like systems.
+    //
+    // Apple Silicon (and Intel Macs, more loosely) enforce hardware W^X:
+    // requesting PROT_EXEC|PROT_WRITE together via a plain anonymous mmap is
+    // rejected outright with EPERM ("Permission denied") unless the mapping
+    // is created with MAP_JIT. Even with MAP_JIT, the page is only writable
+    // OR executable at any instant per-thread — pthread_jit_write_protect_np()
+    // toggles which side is active, so callers must disable write-protection
+    // before emitting code into this buffer and re-enable it before jumping
+    // into the generated code (done at the write/execute call sites, not here).
+    #if defined(__APPLE__)
+    int mmapFlags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT;
+    #else
+    int mmapFlags = MAP_PRIVATE | MAP_ANONYMOUS;
+    #endif
     void* memory = mmap(
         nullptr,
         size,
         PROT_READ | PROT_WRITE | PROT_EXEC,
-        MAP_PRIVATE | MAP_ANONYMOUS,
+        mmapFlags,
         -1,
         0
     );
-    
+
     if (memory == MAP_FAILED) {
         Log::errorf("RecompilerMemory: mmap failed: %s", strerror(errno));
         return nullptr;
     }
+
+    #if defined(__APPLE__)
+    // Start in writable mode (execute-protected) so the recompiler can emit
+    // code immediately after allocation without an extra call at every
+    // call site that happens to write into a freshly grown buffer.
+    pthread_jit_write_protect_np(0);
+    #endif
     
     Log::debugf("RecompilerMemory: Allocated executable memory at %p (%u bytes)", 
                 memory, size);

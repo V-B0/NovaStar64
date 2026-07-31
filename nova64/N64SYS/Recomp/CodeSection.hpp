@@ -203,6 +203,7 @@ class CodeSection {
 public:
     // Configuration
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_profiling = true;
         bool enable_optimizations = true;
         bool enable_inlining = false;
@@ -216,7 +217,7 @@ public:
                 uint32_t entry_pc, 
                 SectionId id,
                 bool allow_linking = true,
-                const Config& config = {});
+                const Config& config = Config());
     
     ~CodeSection() noexcept;
     
@@ -391,7 +392,7 @@ private:
         size_t generated_bytes() const { return generated_bytes_; }
         
     private:
-        asmjit::x86::Assembler* assembler_;
+        Recomp::Assembler* assembler_;
         const AnalysisResult& analysis_;
         const RegisterEntryState& entry_state_;
         std::unordered_map<uint32_t, asmjit::Label> labels_;

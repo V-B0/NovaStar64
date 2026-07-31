@@ -22,6 +22,12 @@
 
 namespace Nova64::Video {
 
+// Diagnostics-only: monotonic swapchain present index, incremented once per
+// presented frame by the VK backend. Lets the triangle dump (in GBIHandler)
+// and the headless screenshot capture (in VKBackend) key off the SAME frame
+// number, so a dumped triangle set can be correlated to a captured image.
+extern std::atomic<long> g_presentIndex;
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Log Levels & Subsystems
 // ═══════════════════════════════════════════════════════════════════════════

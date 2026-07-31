@@ -10,15 +10,19 @@
 #include "HiResTextures.hpp"
 #include "../Common/BitUtils.hpp"
 #include "../Common/Logger.hpp"
-#include "../Common/ColorSpace.hpp"
 #include "../../common/log.hpp"
 
 #include <cstring>
+#include <cstdlib>
+#include <cstdio>
 #include <algorithm>
 #include <cassert>
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 
 namespace Nova64 { namespace Video { namespace Tex {
 
@@ -96,6 +100,11 @@ TextureCache::~TextureCache() { Shutdown(); }
 bool TextureCache::Initialize(IRenderer* renderer, const TextureCacheConfig& config) {
     m_renderer = renderer;
     m_config = config;
+    // TEMP DIAGNOSTIC: force-disable mipmaps to test whether automatic GPU
+    // mip-level selection on minified 2D TEXRECT draws (which real N64
+    // hardware never does -- TEXRECT is always point/bilinear-sampled at
+    // mip 0, no LOD) is the source of the small-HUD-icon speckle corruption.
+    if (std::getenv("NOVA64_NO_MIPMAPS")) m_config.enableMipmaps = false;
     m_frameCounter = 0;
     m_stats = {};
     m_cache.reserve(config.maxEntries);
@@ -211,6 +220,93 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     if (pixels.empty()) return nullptr;
 
+    {
+        static const bool s_texDbg = std::getenv("NOVA64_TEXDBG") != nullptr;
+        if (s_texDbg) {
+            size_t nonZero = 0, opaque = 0;
+            for (uint32_t px : pixels) {
+                if (px != 0) ++nonZero;
+                if (px & 0xFF000000u) ++opaque;
+            }
+            std::fprintf(stderr,
+                "[TEXDBG] decode addr=0x%06X fmt=%d size=%d w=%u h=%u line=%u tmem=%u pal=%u tlut=%u crc=0x%016llX fromTMEM=%d nonZero=%zu/%zu opaque=%zu\n",
+                key.address & 0x7FFFFF, static_cast<int>(key.format), static_cast<int>(key.size),
+                key.width, key.height, key.line, key.tmemOffset, key.palette, key.tlutType,
+                static_cast<unsigned long long>(key.crc), tmem ? 1 : 0,
+                nonZero, pixels.size(), opaque);
+        }
+    }
+
+    // TEMP DIAGNOSTIC (NOVA64_DUMP_RGBA32=1): dump the raw CPU-decoded RGBA8
+    // pixels for every 32x32 RGBA32-format texture decode to a PPM file, to see
+    // directly whether corruption already exists right after decode (a CPU-side
+    // addressing bug in DecodeRGBA32_TMEM) or only appears later (GPU upload/
+    // sampling). RGBA32 is a rare format for small icons -- capping the count
+    // keeps this affordable to leave enabled for a full play session.
+    {
+        static const bool s_dumpRGBA32 = std::getenv("NOVA64_DUMP_RGBA32") != nullptr;
+        if (s_dumpRGBA32 && key.format == Tex::N64TexFormat::RGBA &&
+            key.size == Tex::N64TexSize::Bits32 && key.width == 32 && key.height == 32) {
+            static int s_dumpCount = 0;
+            if (s_dumpCount < 30) {
+                uint32_t dumpAddr = key.address & 0x7FFFFF;
+                char path[256];
+                std::snprintf(path, sizeof(path), "/tmp/dump_%06X_%d.ppm", dumpAddr, s_dumpCount++);
+                FILE* f = std::fopen(path, "wb");
+                if (f) {
+                    std::fprintf(f, "P6\n%u %u\n255\n", key.width, key.height);
+                    for (uint32_t px : pixels) {
+                        uint8_t rgb[3] = { static_cast<uint8_t>(px & 0xFF),
+                                            static_cast<uint8_t>((px >> 8) & 0xFF),
+                                            static_cast<uint8_t>((px >> 16) & 0xFF) };
+                        std::fwrite(rgb, 1, 3, f);
+                    }
+                    std::fclose(f);
+                    std::fprintf(stderr, "[DUMP] wrote %s (fmt=%d size=%d w=%u h=%u line=%u crc=0x%016llX)\n",
+                                 path, static_cast<int>(key.format), static_cast<int>(key.size),
+                                 key.width, key.height, key.line,
+                                 static_cast<unsigned long long>(key.crc));
+                }
+            }
+        }
+    }
+
+    // TEMP DIAGNOSTIC (NOVA64_DUMP_MOON=1): dump every decode whose RDRAM
+    // address falls in the MM moon face-texture range (0x031D00-0x039D00) to
+    // a PPM, to check whether crater detail is actually present in the
+    // CPU-decoded pixels (a TMEM/palette-staleness bug) or only lost later
+    // in sampling (a UV/tile bug) -- the tile/UV/scale math for these five
+    // textures was already verified correct via NOVA64_TRI_BIGTEX, so this
+    // narrows down whether the remaining "smooth wedge" symptom is upstream
+    // (decode) or downstream (sample) of this point.
+    {
+        static const bool s_dumpMoon = std::getenv("NOVA64_DUMP_MOON") != nullptr;
+        uint32_t moonAddr = key.address & 0x7FFFFF;
+        if (s_dumpMoon && ((moonAddr >= 0x383000 && moonAddr <= 0x3A9000) ||
+                           (moonAddr >= 0x5F4000 && moonAddr <= 0x64A000))) {
+            static int s_dumpCount = 0;
+            if (s_dumpCount < 300) {
+                char path[256];
+                std::snprintf(path, sizeof(path), "/tmp/moontex_%06X_%d.ppm", moonAddr, s_dumpCount++);
+                FILE* f = std::fopen(path, "wb");
+                if (f) {
+                    std::fprintf(f, "P6\n%u %u\n255\n", key.width, key.height);
+                    for (uint32_t px : pixels) {
+                        uint8_t rgb[3] = { static_cast<uint8_t>(px & 0xFF),
+                                            static_cast<uint8_t>((px >> 8) & 0xFF),
+                                            static_cast<uint8_t>((px >> 16) & 0xFF) };
+                        std::fwrite(rgb, 1, 3, f);
+                    }
+                    std::fclose(f);
+                    std::fprintf(stderr, "[DUMP-MOON] wrote %s (fmt=%d size=%d w=%u h=%u pal=%u tlut=%u crc=0x%016llX)\n",
+                                 path, static_cast<int>(key.format), static_cast<int>(key.size),
+                                 key.width, key.height, key.palette, key.tlutType,
+                                 static_cast<unsigned long long>(key.crc));
+                }
+            }
+        }
+    }
+
     // Eliminate the white-halo / alpha-edge bleed produced by GPU bilinear
     // filtering on N64 textures with undefined RGB at alpha=0 texels.
     BleedAlphaEdges(pixels.data(), key.width, key.height);
@@ -231,7 +327,8 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     desc.height = gpuHeight;
     desc.format = TextureFormat::RGBA8;
     desc.usage = BufferUsage::Dynamic;
-    desc.mipLevels = m_config.enableMipmaps ? 4 : 1;
+    desc.mipLevels = m_config.enableMipmaps
+        ? std::min<uint32_t>(4, MaxMipLevels(gpuWidth, gpuHeight)) : 1;
 
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return nullptr;
@@ -269,13 +366,21 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     // Wrap modes from N64 tile
     // cms/cmt bits: bit0=mirror, bit1=clamp
-    auto translateWrap = [](uint8_t mode) -> TextureWrap {
+    // When the tile has a mask (maskS/maskT > 0) the fragment shader performs
+    // ALL wrap/mirror/clamp in texel space, so the GPU sampler must be
+    // CLAMP_TO_EDGE to avoid re-wrapping the already-resolved UVs (matches the
+    // OpenGL path's getGLWrapMode). Without this the Vulkan sampler used
+    // REPEAT/MIRRORED_REPEAT on masked tiles and re-wrapped edge UVs into the
+    // opposite edge / transparent-black border — the MM file-select black
+    // shard mosaic on the MoltenVK backend.
+    auto translateWrap = [](uint8_t mode, uint8_t mask) -> TextureWrap {
+        if (mask > 0)   return TextureWrap::ClampToEdge;
         if (mode & 0x2) return TextureWrap::ClampToEdge;
         if (mode & 0x1) return TextureWrap::MirroredRepeat;
         return TextureWrap::Repeat;
     };
-    samplerDesc.wrapS = translateWrap(key.cms);
-    samplerDesc.wrapT = translateWrap(key.cmt);
+    samplerDesc.wrapS = translateWrap(key.cms, key.maskS);
+    samplerDesc.wrapT = translateWrap(key.cmt, key.maskT);
     samplerDesc.maxAnisotropy = m_config.anisotropicLevel;
     samplerDesc.lodBias = m_config.lodBias;
 
@@ -345,15 +450,17 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     }
     if (pixels.empty()) return nullptr;
 
-    // Determine actual mip level count: base + mipCount additional levels
-    int totalLevels = 1 + std::min(mipCount, 7);
-
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;
     if (m_config.enableMipmaps) {
         gpuWidth = NextPow2(key.width);
         gpuHeight = NextPow2(key.height);
     }
+
+    // Determine actual mip level count: base + mipCount additional levels,
+    // clamped to what the (post-pow2) base dimensions can actually support.
+    int totalLevels = 1 + std::min(mipCount, 7);
+    totalLevels = std::min<uint32_t>(totalLevels, MaxMipLevels(gpuWidth, gpuHeight));
 
     TextureDesc desc;
     desc.width = gpuWidth;
@@ -429,13 +536,14 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         samplerDesc.minFilter = SamplerFilter::NearestMipNearest;
         samplerDesc.magFilter = SamplerFilter::Nearest;
     }
-    auto translateWrap = [](uint8_t mode) -> TextureWrap {
+    auto translateWrap = [](uint8_t mode, uint8_t mask) -> TextureWrap {
+        if (mask > 0)   return TextureWrap::ClampToEdge;  // shader handles wrap
         if (mode & 0x2) return TextureWrap::ClampToEdge;
         if (mode & 0x1) return TextureWrap::MirroredRepeat;
         return TextureWrap::Repeat;
     };
-    samplerDesc.wrapS = translateWrap(key.cms);
-    samplerDesc.wrapT = translateWrap(key.cmt);
+    samplerDesc.wrapS = translateWrap(key.cms, key.maskS);
+    samplerDesc.wrapT = translateWrap(key.cmt, key.maskT);
     samplerDesc.maxAnisotropy = m_config.anisotropicLevel;
     samplerDesc.lodBias = m_config.lodBias;
     gpuTex->SetSampler(samplerDesc);
@@ -599,7 +707,10 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
     }
 
     // When data points to the full TMEM base, offset to this tile's start.
-    // key.tmemOffset is the tile's tmemAddr (in 64-bit words).
+    // key.tmemOffset is the tile's tmemAddr (in 64-bit words). The tile's
+    // sl/tl crop origin is NOT applied here: the shader already subtracts it
+    // via uTexOffset0 (tileCoord = tc*scale - GetSL()), so shifting the decode
+    // by sl too would double-count it and sample past the loaded data.
     const uint8_t* tileData = data + (static_cast<uint32_t>(key.tmemOffset) * 8);
 
     // TMEM row wrapping: N64 hardware wraps TMEM addresses at bank
@@ -614,7 +725,26 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
         wrapMaskQW = hasTLUT ? 0xFF : 0x1FF;
     }
 
-    switch (key.format) {
+    // Real N64 hardware: when a TLUT mode is active (otherModeH.textureLUT !=
+    // G_TT_NONE) and the tile is 4-bit or 8-bit, the RDP ALWAYS decodes the
+    // texel data as color-indexed with a palette lookup, regardless of the
+    // tile's own format field. Confirmed against two independent authoritative
+    // sources: angrylion-rdp-plus's cycle-accurate tile derivatives compute a
+    // *different* effective format ("tlutswitch") whenever TLUT is enabled,
+    // and GLideN64's texture-load dispatch table routes every non-YUV format
+    // through the CI decoder at 4/8-bit once a TLUT mode is active (its own
+    // comment: "Banjo-Kazooie uses this, doesn't make sense, but it works").
+    // Tiles whose format field already says CI were unaffected by this gap
+    // (decoding CI either way); tiles set up with some other format while
+    // TLUT is active decoded as raw RGBA/IA/I -- misreading palette-index
+    // bytes as pixel data -- which reads as noise/garbage.
+    N64TexFormat effectiveFormat = key.format;
+    if (key.tlutType != 0 && key.format != N64TexFormat::YUV &&
+        (key.size == N64TexSize::Bits4 || key.size == N64TexSize::Bits8)) {
+        effectiveFormat = N64TexFormat::CI;
+    }
+
+    switch (effectiveFormat) {
         case N64TexFormat::RGBA:
             if (key.size == N64TexSize::Bits16)
                 DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
@@ -966,6 +1096,14 @@ uint32_t TextureCache::NextPow2(uint32_t v) {
     return v;
 }
 
+uint32_t TextureCache::MaxMipLevels(uint32_t w, uint32_t h) {
+    uint32_t dim = std::max(w, h);
+    if (dim == 0) return 1;
+    uint32_t levels = 1;
+    while (dim > 1) { dim >>= 1; levels++; }
+    return levels;
+}
+
 bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key) {
     if (!m_config.enableHiResTextures || m_config.hiResTexturePath.empty())
         return false;
@@ -1026,7 +1164,8 @@ bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key)
     desc.height = hiH;
     desc.format = TextureFormat::RGBA8;
     desc.usage = BufferUsage::Static;
-    desc.mipLevels = m_config.enableMipmaps ? 4 : 1;
+    desc.mipLevels = m_config.enableMipmaps
+        ? std::min<uint32_t>(4, MaxMipLevels(hiW, hiH)) : 1;
 
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return false;

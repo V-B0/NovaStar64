@@ -9,7 +9,6 @@
 
 #include "GLBackend.hpp"
 #include "../Common/Logger.hpp"
-#include "../Common/Platform.hpp"
 
 #include <glad/gl.h>
 #include <cstring>

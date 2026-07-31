@@ -15,6 +15,31 @@
 #include <string>
 #include <filesystem>
 
+#ifdef __APPLE__
+#include <dlfcn.h>
+#include <mach-o/dyld.h>
+
+// macOS has no system Vulkan loader. The Vulkan backend reaches Vulkan through
+// MoltenVK (Vulkan-on-Metal), which volk loads via dlopen("libMoltenVK.dylib").
+// We ship libMoltenVK.dylib next to the executable; preload it by absolute path
+// here (RTLD_GLOBAL) so volk's later bare-name dlopen resolves to this image —
+// no DYLD_LIBRARY_PATH needed. Harmless if the dylib is absent (GL/other paths).
+static void PreloadMoltenVK()
+{
+    char exePath[4096];
+    uint32_t sz = sizeof(exePath);
+    if (_NSGetExecutablePath(exePath, &sz) != 0) return;
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
+    std::filesystem::path dylib = dir / "libMoltenVK.dylib";
+    if (std::filesystem::exists(dylib, ec)) {
+        if (!dlopen(dylib.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
+            Log::infof("PreloadMoltenVK: dlopen failed: %s", dlerror());
+        }
+    }
+}
+#endif
+
 static void PrintUsage(const char* programName)
 {
     std::printf("SuperNova64 - Nintendo 64 Emulator\n");
@@ -30,6 +55,7 @@ static void PrintUsage(const char* programName)
     std::printf("  --fullscreen     Run in exclusive fullscreen mode\n");
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
     std::printf("  --interpreter    Force interpreter mode (slower, but better for debugging)\n");
+    std::printf("  --recompiler     Force the dynamic recompiler (JIT) instead of the interpreter\n");
     std::printf("  --headless       Run without opening a window (useful with --pipe)\n");
     std::printf("  --pipe <name>    Connect to a named pipe for IPC commands/framebuffer\n");
 }
@@ -41,6 +67,10 @@ int main(int argc, char* argv[])
     LoggingConfig::enable_console_output(true);
 
     Log::info("SuperNova64 starting...");
+
+#ifdef __APPLE__
+    PreloadMoltenVK();
+#endif
 
     std::string romPath;
     std::string configPath;
@@ -125,6 +155,11 @@ int main(int argc, char* argv[])
         {
             CN64System::s_UseInterpreter = true;
             Log::info("Interpreter mode forced via CLI");
+        }
+        else if (std::strcmp(argv[i], "--recompiler") == 0)
+        {
+            CN64System::s_UseInterpreter = false;
+            Log::info("Dynamic recompiler forced via CLI");
         }
         else if (std::strcmp(argv[i], "--headless") == 0)
         {

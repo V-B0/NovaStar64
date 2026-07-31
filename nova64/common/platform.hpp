@@ -130,6 +130,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <cmath>
+#include <cstdio>   // FILE, for fopen_s shim below
 
 #define stricmp strcasecmp
 #define _stricmp strcasecmp

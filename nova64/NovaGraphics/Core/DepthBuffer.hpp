@@ -9,7 +9,6 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
-#include "../Common/Platform.hpp"
 #include "N64Types.hpp"
 #include <cstdint>
 #include <array>

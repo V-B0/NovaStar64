@@ -1,4 +1,6 @@
 #include "RDPProcessor_Private.hpp"
+#include <cstdlib>
+#include <cstdio>
 void RDPProcessor::FlushBatch() {
     if (m_batch.drawCalls.empty()) return;
     if (!m_renderer) {
@@ -34,8 +36,31 @@ void RDPProcessor::FlushBatch() {
 
     // Mark the current render-target framebuffer as GPU-modified so that
     // subsequent LoadBlock/LoadTile calls know to sync GPU→RDRAM.
-    if (auto* curFB = g_fbManager.GetCurrentColor())
+    if (auto* curFB = g_fbManager.GetCurrentColor()) {
+        // Which buffer is receiving draws, and how many? gpuModified==0 on the
+        // prerender buffer proved no batch ever flushed while it was current.
+        {
+            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
+            const uint32_t a = curFB->desc.address & 0x7FFFFF;
+            if (s_dbg && a >= 0x380000 && a <= 0x3B0000) {
+                std::fprintf(stderr, "[FLUSHTO] addr=0x%06X drawCalls=%zu\n",
+                             a, m_batch.drawCalls.size());
+            }
+        }
         curFB->gpuModified = true;
+        curFB->needsInventorySnapshot = true;
+        curFB->needsRdramResync = true;
+        // DIAGNOSTIC (NOVA64_SNAPSHOT_TRACE=1): tally draw activity per FB so
+        // the pause-menu snapshot capture points can log how much was
+        // actually rendered before the snapshot fired -- distinguishes "FB
+        // was fully rendered but the snapshot mechanism is broken" from "FB
+        // was snapshotted before the world/background geometry was drawn".
+        curFB->drawCallsSinceSwitch += static_cast<uint32_t>(m_batch.drawCalls.size());
+        for (const DrawCall& dc : m_batch.drawCalls) {
+            if (dc.type == DrawCall::Type::Triangle)
+                curFB->trianglesSinceSwitch += static_cast<uint32_t>(dc.vertexCount / 3);
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     //  1. Upload vertex data to a dynamic VBO
@@ -286,6 +311,69 @@ void RDPProcessor::FlushBatch() {
             else if (call.type == DrawCall::Type::FillRect) s_ds.fillCount++;
             uint64_t key = call.combineMode ^ ((uint64_t)call.textureHash0 << 1);
             s_ds.comboCount[key]++;
+        }
+
+        // Draw-call screen-bbox dump (NOVA64_DRAWBOX=viMin,viMax): correlate a
+        // visible artifact's pixel position with the exact draw call + state
+        // that painted it. One line per DrawCall at flush time.
+        {
+            static const long boxMin = []() -> long {
+                const char* v = std::getenv("NOVA64_DRAWBOX");
+                return v ? std::strtol(v, nullptr, 10) : -1L;
+            }();
+            static const long boxMax = []() -> long {
+                const char* v = std::getenv("NOVA64_DRAWBOX");
+                if (!v) return -1L;
+                const char* comma = std::strchr(v, ',');
+                return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
+            }();
+            const long presentNow = g_presentIndex.load(std::memory_order_relaxed);
+            if (boxMin >= 0 && presentNow >= boxMin && presentNow <= boxMax &&
+                call.vertexCount > 0 &&
+                static_cast<size_t>(call.vertexStart + call.vertexCount) <= m_batch.vertices.size()) {
+                float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+                for (int vi = 0; vi < call.vertexCount; ++vi) {
+                    const auto& v = m_batch.vertices[call.vertexStart + vi];
+                    minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+                    minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
+                }
+                const auto& v0 = m_batch.vertices[call.vertexStart];
+                const auto& vA = m_batch.vertices[call.vertexStart + std::min(1, call.vertexCount - 1)];
+                const auto& vB = m_batch.vertices[call.vertexStart + std::min(2, call.vertexCount - 1)];
+                auto* curFBDbg = g_fbManager.GetCurrentColor();
+                std::fprintf(stderr,
+                    "[DRAWBOX] vi=%ld type=%d nVtx=%d bbox=(%.0f,%.0f)-(%.0f,%.0f) cmb=0x%llX omL=0x%X omH=0x%X "
+                    "hash0=0x%llX addr0=0x%06X crc0=0x%016llX prim=(%u,%u,%u,%u) env=(%u,%u,%u,%u) "
+                    "v0col=(%.2f,%.2f,%.2f,%.2f) tile0fmt=%u tile0sz=%u tile0wh=(%d,%d) "
+                    "colorImg=0x%06X zImg=0x%06X curFB=0x%06X "
+                    "sltl=(%.2f,%.2f) cm=(%u,%u) mask=(%u,%u) shift=(%u,%u) scroll=(%.2f,%.2f) "
+                    "st0=(%.3f,%.3f,w%.4f) st1=(%.3f,%.3f,w%.4f) st2=(%.3f,%.3f,w%.4f) "
+                    "p0=(%.1f,%.1f) p1=(%.1f,%.1f) p2=(%.1f,%.1f)\n",
+                    presentNow, static_cast<int>(call.type), call.vertexCount,
+                    minX, minY, maxX, maxY,
+                    static_cast<unsigned long long>(call.combineMode),
+                    call.otherModeL, call.otherModeH,
+                    static_cast<unsigned long long>(call.textureHash0),
+                    call.textureImageAddr & 0x7FFFFF,
+                    static_cast<unsigned long long>(call.snapshotCrc0),
+                    call.primColor.r, call.primColor.g, call.primColor.b, call.primColor.a,
+                    call.envColor.r, call.envColor.g, call.envColor.b, call.envColor.a,
+                    v0.r, v0.g, v0.b, v0.a,
+                    static_cast<unsigned>(call.tileDesc0.format), static_cast<unsigned>(call.tileDesc0.size),
+                    call.tileDesc0.GetWidth(), call.tileDesc0.GetHeight(),
+                    m_state.rdp.colorImage.address & 0x7FFFFF,
+                    m_state.rdp.zbufferImage.address & 0x7FFFFF,
+                    curFBDbg ? (curFBDbg->desc.address & 0x7FFFFF) : 0xFFFFFFu,
+                    call.tileDesc0.GetSL(), call.tileDesc0.GetTL(),
+                    static_cast<unsigned>(call.tileDesc0.clampS), static_cast<unsigned>(call.tileDesc0.clampT),
+                    static_cast<unsigned>(call.tileDesc0.maskS), static_cast<unsigned>(call.tileDesc0.maskT),
+                    static_cast<unsigned>(call.tileDesc0.shiftS), static_cast<unsigned>(call.tileDesc0.shiftT),
+                    call.scrollS0, call.scrollT0,
+                    v0.s, v0.t, v0.perspW,
+                    vA.s, vA.t, vA.perspW,
+                    vB.s, vB.t, vB.perspW,
+                    v0.x, v0.y, vA.x, vA.y, vB.x, vB.y);
+            }
         }
 
         // --- Build CombinerKey for shader lookup ---
@@ -642,21 +730,26 @@ void RDPProcessor::FlushBatch() {
                     return static_cast<float>(1 << (16 - shift));
                 };
 
-                // N64 hardware: the tile's shiftS/shiftT only applies to triangle
-                // texture coordinates (from the RSP vertex pipeline).  TextureRect
-                // S/T values go directly to the texture lookup � no tile shift.
+                // Real RDP hardware runs texture rectangles through the same
+                // per-pixel span/texture pipeline as triangles (TEXRECT is just a
+                // synthesized rectangular span, not a distinct pixel path) -- the
+                // tile's shiftS/shiftT applies uniformly to any texture lookup
+                // through that tile, not just RSP-vertex-driven triangle coords.
+                // Games rely on this: a small HUD icon is commonly drawn by
+                // TEXRECT-sampling a larger shared texture through a tile whose
+                // SETTILE set a nonzero shift, letting the RDP pre-compress the
+                // coordinate instead of shipping a separate small texture. Treating
+                // rects as shift=0 always (the previous behavior) left that
+                // compression un-applied, so the rect sampled a texel range far
+                // wider than intended -- aliasing into sparse noise-like dots for
+                // any icon actually relying on tile shift to minify.
                 bool isRect = (call.type == DrawCall::Type::TextureRect ||
                                call.type == DrawCall::Type::FillRect);
                 float scale0[2], scale1[2];
-                if (isRect) {
-                    scale0[0] = scale0[1] = 1.0f;
-                    scale1[0] = scale1[1] = 1.0f;
-                } else {
-                    scale0[0] = getShiftScale(call.tileDesc0.shiftS);
-                    scale0[1] = getShiftScale(call.tileDesc0.shiftT);
-                    scale1[0] = getShiftScale(call.tileDesc1.shiftS);
-                    scale1[1] = getShiftScale(call.tileDesc1.shiftT);
-                }
+                scale0[0] = getShiftScale(call.tileDesc0.shiftS);
+                scale0[1] = getShiftScale(call.tileDesc0.shiftT);
+                scale1[0] = getShiftScale(call.tileDesc1.shiftS);
+                scale1[1] = getShiftScale(call.tileDesc1.shiftT);
                 float size0[2]  = { 1.0f, 1.0f };
                 float size1[2]  = { 1.0f, 1.0f };
 
@@ -680,13 +773,20 @@ void RDPProcessor::FlushBatch() {
                 // Tile diagnostic: log first 15 triangle draw calls with texture,
                 // and also log any draw call with vertices in the copyright region (x=[265,286], y=[42,62])
                 {
+                    // Gated behind NOVA64_COPY_DEBUG: the copyright-region branch
+                    // logs EVERY center-screen triangle, which floods stderr
+                    // (100MB+) and throttles headless runs via disk I/O.
+                    static const bool s_copyDbg = []() {
+                        const char* v = std::getenv("NOVA64_COPY_DEBUG");
+                        return v && v[0] != '\0' && v[0] != '0';
+                    }();
                     static uint32_t s_tileLog = 0;
                     bool inCopyrightRegion = false;
-                    if (!isRect && call.vertexCount > 0) {
+                    if (s_copyDbg && !isRect && call.vertexCount > 0) {
                         const auto& v0 = m_batch.vertices[call.vertexStart];
                         inCopyrightRegion = (v0.x >= 100.f && v0.x <= 320.f && v0.y >= 40.f && v0.y <= 240.f);
                     }
-                    if (!isRect && (s_tileLog < 15 || inCopyrightRegion)) {
+                    if (s_copyDbg && !isRect && (s_tileLog < 15 || inCopyrightRegion)) {
                         if (s_tileLog < 15) ++s_tileLog;
                         float sl0 = call.tileDesc0.GetSL();
                         float tl0 = call.tileDesc0.GetTL();
@@ -714,6 +814,37 @@ void RDPProcessor::FlushBatch() {
                 }
             }
 
+            // Tree-billboard uniform diagnostic (NOVA64_TREE_DBG=1): dumps the
+            // exact sampler state for 32×64 TEX_EDGE draws (the SM64 tree
+            // signature) — proves whether clamp/size/scale reach the shader.
+            {
+                static const bool s_treeDbg = []() {
+                    const char* v = std::getenv("NOVA64_TREE_DBG");
+                    return v && v[0] != '\0' && v[0] != '0';
+                }();
+                static int s_treeDbgLeft = 40;
+                if (s_treeDbg && s_treeDbgLeft > 0 &&
+                    call.tileDesc0.GetWidth() == 32 && call.tileDesc0.GetHeight() == 64 &&
+                    (call.otherModeL & 0x1000) != 0) {
+                    --s_treeDbgLeft;
+                    uint8_t dbgTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
+                    int dbgW = 0, dbgH = 0;
+                    CalcTileSize(call.tileDesc0, dbgTlut, dbgW, dbgH);
+                    std::fprintf(stderr,
+                        "[TREEDBG] type=%d clampS=%u clampT=%u maskS=%u maskT=%u "
+                        "calcSize=(%d,%d) sl=%.1f tl=%.1f hash=0x%llX vtx=%d\n",
+                        static_cast<int>(call.type),
+                        static_cast<unsigned>(call.tileDesc0.clampS),
+                        static_cast<unsigned>(call.tileDesc0.clampT),
+                        static_cast<unsigned>(call.tileDesc0.maskS),
+                        static_cast<unsigned>(call.tileDesc0.maskT),
+                        dbgW, dbgH,
+                        call.tileDesc0.GetSL(), call.tileDesc0.GetTL(),
+                        static_cast<unsigned long long>(call.textureHash0),
+                        call.vertexCount);
+                }
+            }
+
             // Set tile offset, clamp, mirror, mask uniforms
             {
                 float offset0[2] = { call.tileDesc0.GetSL() + call.scrollS0, call.tileDesc0.GetTL() + call.scrollT0 };
@@ -734,6 +865,34 @@ void RDPProcessor::FlushBatch() {
                 float mask0[2] = { static_cast<float>(call.tileDesc0.maskS), static_cast<float>(call.tileDesc0.maskT) };
                 float mask1[2] = { static_cast<float>(call.tileDesc1.maskS), static_cast<float>(call.tileDesc1.maskT) };
                 m_shaderManager->SetTextureTileParams(offset0, offset1, clamp0, clamp1, mask0, mask1);
+
+                // Bind-time uniform forensics (NOVA64_BINDDBG=1): dumps the exact
+                // per-draw texture uniforms for small CI textures (skybox cells)
+                // so a black-vs-correct cell can be diffed at the GPU boundary.
+                static const bool s_bindDbg = std::getenv("NOVA64_BINDDBG") != nullptr;
+                if (s_bindDbg && call.tileDesc0.format == 2 &&
+                    call.tileDesc0.GetWidth() == 32) {
+                    int bdW = 0, bdH = 0;
+                    uint8_t bdTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
+                    CalcTileSize(call.tileDesc0, bdTlut, bdW, bdH);
+                    std::fprintf(stderr,
+                        "[BINDDBG] cmb=0x%llX crc=0x%016llX off0=(%.2f,%.2f) clamp0=(%.0f,%.0f,%.0f,%.0f) "
+                        "mask0=(%.0f,%.0f) shift0=(%u,%u) calcSize=(%d,%d) tcBounds=%d "
+                        "tex1hash=0x%llX off1=(%.2f,%.2f) tile1sltl=(%.2f,%.2f) tile1wh=(%d,%d)\n",
+                        static_cast<unsigned long long>(call.combineMode),
+                        static_cast<unsigned long long>(call.snapshotCrc0),
+                        offset0[0], offset0[1],
+                        clamp0[0], clamp0[1], clamp0[2], clamp0[3],
+                        mask0[0], mask0[1],
+                        static_cast<unsigned>(call.tileDesc0.shiftS),
+                        static_cast<unsigned>(call.tileDesc0.shiftT),
+                        bdW, bdH,
+                        call.useTexCoordBounds ? 1 : 0,
+                        static_cast<unsigned long long>(call.textureHash1),
+                        offset1[0], offset1[1],
+                        call.tileDesc1.GetSL(), call.tileDesc1.GetTL(),
+                        call.tileDesc1.GetWidth(), call.tileDesc1.GetHeight());
+                }
             }
 
             // Set texture coordinate bounds for TextureRect bilinear bleed prevention
@@ -797,9 +956,17 @@ void RDPProcessor::FlushBatch() {
             {
                 uint32_t alphaCompMode = call.otherModeL & 0x03;
                 if (cycleType == 2) {
-                    // COPY mode: N64 hardware tests texel alpha > blendColor.alpha.
-                    // Add half-LSB to convert strict ">" to shader's "<" test.
-                    m_shaderManager->SetAlphaRef(call.blendColor.a / 255.0f + 0.5f / 255.0f);
+                    // COPY mode: N64 hardware KEEPS texels with alpha >= blend
+                    // alpha (not strict ">"). The old "+half-LSB" here turned
+                    // the test into ">": SM64's HUD text DLs set blendColor
+                    // alpha = 255, so fully-opaque glyph texels (alpha == 1.0)
+                    // failed 1.0 < 1.002 and the ENTIRE HUD was discarded.
+                    // ref = blend.a exactly gives >= semantics in the shader's
+                    // "alpha < ref → discard" test. blend.a == 0 keeps a tiny
+                    // epsilon so zero-alpha texels still cut out (hardware
+                    // keeps them, but games rely on transparent copy texels).
+                    float ra = call.blendColor.a / 255.0f;
+                    m_shaderManager->SetAlphaRef(ra > 0.0f ? ra : (0.5f / 255.0f));
                 } else if (alphaCompMode & 1) {
                     // Threshold (1) or dither (3) � set blendColor.a as reference
                     m_shaderManager->SetAlphaRef(call.blendColor.a / 255.0f);
@@ -876,22 +1043,28 @@ void RDPProcessor::FlushBatch() {
                 blend.srcAlpha = BlendFactor::One;
                 blend.dstAlpha = BlendFactor::Src1Alpha;
 
-                // Special case from GLideN64: when B (not M) references
-                // memColor.a, the shader approximates it as 1.0 but the
-                // real factor should multiply by dst alpha.  Adjust the
-                // GL blend accordingly.
-                if (forceBlend) {
-                    if (mF != 1 && bF == 1) {
-                        // M is NOT memColor, B IS memColor.a � src needs DST_ALPHA
-                        blend.srcColor = BlendFactor::DstAlpha;
-                        blend.srcAlpha = BlendFactor::DstAlpha;
-                    }
-                    if (mF == 1 && bF == 1) {
-                        // Both M=memColor and B=memColor.a � dst also gets DST_ALPHA
-                        blend.dstColor = BlendFactor::DstAlpha;
-                        blend.dstAlpha = BlendFactor::DstAlpha;
-                    }
-                }
+                // NOTE: bF==1 (B references memColor.a, i.e. N64 "coverage")
+                // is already fully resolved INSIDE the shader as a constant
+                // 1.0 approximation (see ShaderGenerator.cpp's emitFinalCycleDS
+                // — bB is baked into srcContrib/dstFactor, i.e. fragColor.rgb
+                // or fragColor1, before GL blending ever runs).  A prior
+                // version of this code additionally multiplied the GL blend
+                // factor by real GL DstAlpha here, reasoning it needed to
+                // "supply the real memColor.a".  That reasoning was wrong:
+                // per GLideN64 (glsl_CombinerProgramBuilderCommon.cpp's
+                // ShaderCoverage/uCoverageImage), N64 "coverage" is a
+                // dedicated per-pixel sub-triangle sample count, tracked in
+                // its own buffer (this project's own MLE-blender path does
+                // the same via uCoverageImage) — it is NOT the framebuffer's
+                // literal stored color alpha.  Once the canvas architecture
+                // made framebuffer alpha persist correctly across draws
+                // within a frame, that extra multiply started reading real
+                // (and often 0, e.g. many sky texels' decoded alpha) values
+                // instead of an incidental ~1.0, silently killing/zeroing
+                // the blend on exactly the full-screen translucent-overlay
+                // draws that triggered it — the residual "sky ghosting/
+                // streaking" symptom.  Removed; the shader-side bB=1.0
+                // approximation is already complete on its own.
 
                 // P==M � result is always P regardless of blend factors
                 if (pF == mF) {
@@ -1104,14 +1277,23 @@ void RDPProcessor::FlushBatch() {
             // compare via Z-image imageLoad; GL depth func stays ALWAYS.
         }
 
-        // Polygon offset: match GLideN64 — only DECAL mode uses polygon
-        // offset to lift decals above the base surface.  OPA/INTER/XLU
-        // should NOT use polygon offset (it causes z-fighting and ground
-        // plane instability).
+        // Polygon offset: match GLideN64's _updateDepthCompare() — the
+        // POLYGON_OFFSET_FILL toggle only lives inside GLideN64's non-N64-
+        // accurate branch (config.frameBufferEmulation.N64DepthCompare ==
+        // dcDisable).  When the accurate Z-image compare is active, GLideN64
+        // disables GL depth test/write entirely and never touches polygon
+        // offset — decal "closeness" is instead handled purely by the
+        // shader's bNearer/bFarther tolerance window (see
+        // GenerateDepthCompareCode's zMode==3 branch).  Applying a GL bias
+        // here while SF_N64_DEPTH_COMPARE is active would perturb
+        // gl_FragCoord.z, which our shader reads back as curZ for that same
+        // window test — pushing decals outside [bufZ-dzMin, bufZ+dzMin] and
+        // causing them to intermittently fail depth (flicker).  So only
+        // apply the GL-side offset on the fallback (non-accurate) path.
         {
             RasterizerState rast{};
             rast.cullMode = CullMode::None;
-            if (zMode == 3) {  // DECAL
+            if (zMode == 3 && !(features & Shader::SF_N64_DEPTH_COMPARE)) {  // DECAL
                 rast.depthBias = -3.0f;
                 rast.depthBiasSlope = -3.0f;
             }
@@ -1286,12 +1468,27 @@ void RDPProcessor::FlushBatch() {
                                                     call.mipLevelCount > 0 ? call.mipTiles : nullptr,
                                                     call.mipLevelCount,
                                                     call.snapshotCrc0);
+
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rawRTFB0 = g_fbManager.FindByAddress(key0.address);
+                // Mirror ExecuteLoadTile's fallback (RDPProcessor_Texture.cpp):
+                // FindByAddress's range pass additionally demands STRIDE
+                // ALIGNMENT, so a read landing inside a known buffer at a
+                // non-row-aligned offset returns null here even though the
+                // buffer plainly contains that address. ExecuteLoadTile
+                // compensates with FindContaining (a pure range search, like
+                // GLideN64's findBuffer) but this draw-side lookup never did --
+                // so the sync path could resolve the framebuffer while the draw
+                // that consumes it could not, and the draw silently fell through
+                // to decoding raw RDRAM. Measured with NOVA64_CANVASTEX_DBG:
+                // rawRTFB0 was null on every single sample, which is what made
+                // every framebuffer-dependent fix in this area dead code.
+                if (!g_fbManager.IsGL() && !rawRTFB0)
+                    rawRTFB0 = g_fbManager.FindContaining(key0.address);
                 bool aliasRTFB0 = CanAliasFramebuffer(rawRTFB0, key0.address, IsRGBAFramebufferFormat(key0));
                 GPUFramebuffer* rtFB0 = aliasRTFB0 ? rawRTFB0 : nullptr;
 
-                MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} line={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
+                MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} line={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X} shiftS={} shiftT={}",
                              static_cast<int>(call.type),
                              key0.address & 0x7FFFFF,
                              static_cast<int>(key0.format),
@@ -1307,7 +1504,9 @@ void RDPProcessor::FlushBatch() {
                              aliasRTFB0,
                              rawRTFB0 ? rawRTFB0->desc.address : 0u,
                              m_state.rdp.colorImage.address & 0x7FFFFF,
-                             m_state.rdp.zbufferImage.address & 0x7FFFFF);
+                             m_state.rdp.zbufferImage.address & 0x7FFFFF,
+                             static_cast<int>(key0.shiftS),
+                             static_cast<int>(key0.shiftT));
 
                 // ── CfB copy-back detection ──────────────────────────────
                 // Some N64 games (OoT, MM) copy an AA-processed framebuffer
@@ -1344,7 +1543,17 @@ void RDPProcessor::FlushBatch() {
                         }
                     }
                     if (nearFB) {
-                        MM_RDP_TRACE("SkipTex0CfBCopy addr=0x{:06X} drawType={} fmt={} size={}",
+                        {
+                            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
+                            static uint32_t s_skips = 0;
+                            if (s_dbg && ++s_skips <= 40) {
+                                std::fprintf(stderr, "[CFBSKIP] dropping TextureRect texAddr=0x%06X into curColor=0x%06X\n",
+                                             key0.address & 0x7FFFFF,
+                                             m_state.rdp.colorImage.address & 0x7FFFFF);
+                            }
+                        }
+                        MM_RDP_TRACE("SkipTex0CfBCopy present={} addr=0x{:06X} drawType={} fmt={} size={}",
+                                     g_presentIndex.load(std::memory_order_relaxed),
                                      key0.address & 0x7FFFFF,
                                      static_cast<int>(call.type),
                                      static_cast<int>(key0.format),
@@ -1362,11 +1571,38 @@ void RDPProcessor::FlushBatch() {
                 bool useVKSnapshot0 = false;
                 ITexture* vkSnapshotTex0 = nullptr;
                 if (fbTex0 == 0 && !g_fbManager.IsGL()) {
-                    // Ping-pong: read whichever slot was most recently written.
-                    const uint32_t snapIdx = m_vkFBSnapshotIdx;
-                    ITexture* snapTex = m_vkFBSnapshots[snapIdx].get();
-                    const uint32_t snapAddr = m_vkFBSnapshotAddrs[snapIdx];
-                    if (snapTex) {
+                    // Primary path: use the ring slot resolved at ENQUEUE time
+                    // (call.snapshotSlot0, set in PopulateTextureInfo). MM's pause
+                    // menu issues several SetColorImage switches to the SAME
+                    // physical framebuffer address within a single frame (a full
+                    // world redraw, then 1-2 much smaller UI-only overlay passes
+                    // onto that same target) -- multiple ring slots end up holding
+                    // the SAME address but very different content generations.
+                    // Re-resolving by address at FLUSH time is ambiguous: it can't
+                    // tell which same-address generation this draw call actually
+                    // intended (a panel could bind a near-empty UI-only capture
+                    // instead of the full world snapshot it needed -- the
+                    // asymmetric black-pane bug). The enqueue-time slot was
+                    // captured synchronously in DL-execution order, i.e. from
+                    // whatever was ACTUALLY live at that address at the moment
+                    // this draw was issued, exactly like real hardware would read.
+                    if (call.snapshotSlot0 >= 0) {
+                        ITexture* snapTex = m_vkFBSnapshots[static_cast<uint32_t>(call.snapshotSlot0)].get();
+                        if (snapTex && (rtFB0 || rawRTFB0)) {
+                            fbTex0 = 1;
+                            useVKSnapshot0 = true;
+                            vkSnapshotTex0 = snapTex;
+                            if (!rtFB0) rtFB0 = rawRTFB0;
+                        }
+                    }
+                    // Fallback: address search (covers cases PopulateTextureInfo
+                    // could not resolve, e.g. a snapshot captured mid-batch after
+                    // this draw call was already enqueued but before flush).
+                    for (uint32_t k = 0; k < kVkFBSnapshotSlots && fbTex0 == 0; ++k) {
+                        uint32_t s = (m_vkFBSnapshotIdx + kVkFBSnapshotSlots - k) % kVkFBSnapshotSlots;
+                        ITexture* snapTex = m_vkFBSnapshots[s].get();
+                        if (!snapTex) continue;
+                        const uint32_t snapAddr = m_vkFBSnapshotAddrs[s];
                         // Compare against the resolved FB's BASE address, not key0.address.
                         // ExecuteLoadTile overrides tmemSourceAddress with an offset
                         // (base + tl*stride + uls*bpp/2) so range-based FindByAddress works,
@@ -1390,6 +1626,78 @@ void RDPProcessor::FlushBatch() {
                             rtFB0 = rawRTFB0;  // needed so gpuScale0 uses FB dimensions below
                         }
                     }
+
+                    // Last resort — the fix for the black pause-menu panel.
+                    // GLideN64 gives EVERY tracked framebuffer a permanent
+                    // sampleable color texture (FrameBuffer::m_pTexture), so a
+                    // framebuffer-as-texture read can always bind real rendered
+                    // content. Here GetSampleableTexture() is 0 on Vulkan, and
+                    // the snapshot ring above only captures at a few discrete
+                    // EVENTS (SetColorImage switch-away, LoadBlock) -- so a read
+                    // of a buffer that wasn't snapshotted at exactly the right
+                    // moment fell through to m_textureCache->GetTexture() below,
+                    // decoding raw RDRAM. For a buffer the GPU rendered (and
+                    // that RDRAM therefore never received) that decodes stale
+                    // uniform garbage: the black panel. The backend already
+                    // keeps a persistent canvas image per N64 buffer address for
+                    // buffer isolation -- those ARE the per-FB textures we were
+                    // missing, so pull this buffer's canvas into a ring slot and
+                    // bind it rather than decoding RDRAM.
+                    if (fbTex0 == 0 && m_renderer) {
+                        GPUFramebuffer* canvasFB = rtFB0 ? rtFB0 : rawRTFB0;
+                        const uint32_t snapW = m_renderer->GetWidth();
+                        const uint32_t snapH = m_renderer->GetHeight();
+                        // REACHABILITY CHECK (NOVA64_CANVASTEX_DBG=1): is this
+                        // code path even entered, and if so does the blit
+                        // succeed? Answers "my fix changed nothing" =
+                        // "wrong fix" vs "code never runs".
+                        {
+                            static const bool s_dbg = std::getenv("NOVA64_CANVASTEX_DBG") != nullptr;
+                            static uint32_t s_n = 0;
+                            if (s_dbg && ++s_n <= 40) {
+                                std::fprintf(stderr,
+                                    "[CANVASTEX] enter#%u canvasFB=%d addr=0x%06X rtFB0=%d rawRTFB0=%d key0addr=0x%06X %ux%u\n",
+                                    s_n, canvasFB != nullptr,
+                                    canvasFB ? (canvasFB->desc.address & 0x7FFFFF) : 0u,
+                                    rtFB0 != nullptr, rawRTFB0 != nullptr,
+                                    key0.address & 0x7FFFFF, snapW, snapH);
+                            }
+                        }
+                        if (canvasFB && snapW > 0 && snapH > 0) {
+                            const uint32_t canvasAddr = canvasFB->desc.address & 0x7FFFFF;
+                            // Advance first so an in-flight frame's bound slot is
+                            // not overwritten (same discipline as the capture sites).
+                            m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
+                            auto& slot = m_vkFBSnapshots[m_vkFBSnapshotIdx];
+                            if (!slot || slot->GetWidth() != snapW || slot->GetHeight() != snapH) {
+                                TextureDesc snapDesc{};
+                                snapDesc.width     = snapW;
+                                snapDesc.height    = snapH;
+                                snapDesc.format    = TextureFormat::RGBA8;
+                                snapDesc.usage     = BufferUsage::Dynamic;
+                                snapDesc.mipLevels = 1;
+                                slot = m_renderer->CreateTexture(snapDesc);
+                            }
+                            const bool blitOK = slot && m_renderer->BlitCanvasToTexture(canvasAddr, slot.get());
+                            {
+                                static const bool s_dbg = std::getenv("NOVA64_CANVASTEX_DBG") != nullptr;
+                                static uint32_t s_m = 0;
+                                if (s_dbg && ++s_m <= 40) {
+                                    std::fprintf(stderr, "[CANVASTEX]   blit addr=0x%06X slot=%u ok=%d\n",
+                                                 canvasAddr, m_vkFBSnapshotIdx, blitOK ? 1 : 0);
+                                }
+                            }
+                            if (blitOK) {
+                                m_vkFBSnapshotAddrs[m_vkFBSnapshotIdx] = canvasAddr;
+                                fbTex0 = 1;
+                                useVKSnapshot0 = true;
+                                vkSnapshotTex0 = slot.get();
+                                if (!rtFB0) rtFB0 = rawRTFB0;
+                                MM_RDP_TRACE("CanvasAsTex0 addr=0x{:06X} slot={}",
+                                             canvasAddr, m_vkFBSnapshotIdx);
+                            }
+                        }
+                    }
                 }
 
                 if (fbTex0 != 0) {
@@ -1411,7 +1719,8 @@ void RDPProcessor::FlushBatch() {
                     } else if (call.tileDesc0.size == 2 && call.tileDesc0.format == 3) {
                         fbMono0 = 2; // IA16 luminance
                     }
-                    MM_RDP_TRACE("UseFBTex0 addr=0x{:06X} fbTex={} fbAddr=0x{:06X} fbSize={}x{} gpuScale={:.4f},{:.4f} mono={} alpha={}",
+                    MM_RDP_TRACE("UseFBTex0 present={} addr=0x{:06X} fbTex={} fbAddr=0x{:06X} fbSize={}x{} gpuScale={:.4f},{:.4f} mono={} alpha={}",
+                                 g_presentIndex.load(std::memory_order_relaxed),
                                  key0.address & 0x7FFFFF,
                                  fbTex0,
                                  rtFB0->desc.address,
@@ -1454,7 +1763,8 @@ void RDPProcessor::FlushBatch() {
                         }
                         gpuScale0[0] = cached0->scaleS;
                         gpuScale0[1] = cached0->scaleT;
-                        MM_RDP_TRACE("UseCachedTex0 addr=0x{:06X} scale={:.4f},{:.4f} mipCount={} texFilter={}",
+                        MM_RDP_TRACE("UseCachedTex0 present={} addr=0x{:06X} scale={:.4f},{:.4f} mipCount={} texFilter={}",
+                                     g_presentIndex.load(std::memory_order_relaxed),
                                      key0.address & 0x7FFFFF,
                                      gpuScale0[0],
                                      gpuScale0[1],
@@ -1465,7 +1775,8 @@ void RDPProcessor::FlushBatch() {
                         m_renderer->BindTexture(0, m_debugWhiteTexture.get());
                         gpuScale0[0] = 1.0f;
                         gpuScale0[1] = 1.0f;
-                        MM_RDP_TRACE("FallbackWhiteTex0 addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
+                        MM_RDP_TRACE("FallbackWhiteTex0 present={} addr=0x{:06X} fmt={} size={} w={} h={} crc=0x{:016X}",
+                                     g_presentIndex.load(std::memory_order_relaxed),
                                      key0.address & 0x7FFFFF,
                                      static_cast<int>(key0.format),
                                      static_cast<int>(key0.size),
@@ -1483,6 +1794,9 @@ void RDPProcessor::FlushBatch() {
                                                     nullptr, 0, call.snapshotCrc1);
             if (key1.width > 0 && key1.height > 0) {
                 GPUFramebuffer* rawRTFB1 = g_fbManager.FindByAddress(key1.address);
+                // Same stride-alignment fallback as tex0 above.
+                if (!g_fbManager.IsGL() && !rawRTFB1)
+                    rawRTFB1 = g_fbManager.FindContaining(key1.address);
                 bool aliasRTFB1 = CanAliasFramebuffer(rawRTFB1, key1.address, IsRGBAFramebufferFormat(key1));
                 GPUFramebuffer* rtFB1 = aliasRTFB1 ? rawRTFB1 : nullptr;
                 MM_RDP_TRACE("BindTex1 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
@@ -1503,10 +1817,53 @@ void RDPProcessor::FlushBatch() {
                              m_state.rdp.zbufferImage.address & 0x7FFFFF);
                 uint32_t fbTex1 = rtFB1 ? g_fbManager.GetSampleableTexture(
                     rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
+
+                // Vulkan: mirror the tex0 swapchain-snapshot fallback (see above).
+                // Without this, a 2-cycle combiner draw that reads a framebuffer
+                // address through texture unit 1 (e.g. UI overlays that blend a
+                // world snapshot on tex0 with an icon/mask on tex1, or vice versa)
+                // fell straight through to m_textureCache->GetTexture() below, which
+                // decodes raw RDRAM/TMEM bytes for an address the GPU renders to but
+                // never writes back to RDRAM on the Vulkan path — garbage/noise.
+                bool useVKSnapshot1 = false;
+                ITexture* vkSnapshotTex1 = nullptr;
+                if (fbTex1 == 0 && !g_fbManager.IsGL()) {
+                    // Primary path: enqueue-time resolved slot -- see the tex0 note above.
+                    if (call.snapshotSlot1 >= 0) {
+                        ITexture* snapTex = m_vkFBSnapshots[static_cast<uint32_t>(call.snapshotSlot1)].get();
+                        if (snapTex && (rtFB1 || rawRTFB1)) {
+                            fbTex1 = 1;
+                            useVKSnapshot1 = true;
+                            vkSnapshotTex1 = snapTex;
+                            if (!rtFB1) rtFB1 = rawRTFB1;
+                        }
+                    }
+                    // Fallback: address search, most-recently-captured first.
+                    for (uint32_t k = 0; k < kVkFBSnapshotSlots && fbTex1 == 0; ++k) {
+                        uint32_t s = (m_vkFBSnapshotIdx + kVkFBSnapshotSlots - k) % kVkFBSnapshotSlots;
+                        ITexture* snapTex = m_vkFBSnapshots[s].get();
+                        if (!snapTex) continue;
+                        const uint32_t snapAddr = m_vkFBSnapshotAddrs[s];
+                        if (rtFB1 && snapAddr == (rtFB1->desc.address & 0x7FFFFF)) {
+                            fbTex1 = 1;
+                            useVKSnapshot1 = true;
+                            vkSnapshotTex1 = snapTex;
+                        } else if (!rtFB1 && rawRTFB1 &&
+                                   snapAddr == (rawRTFB1->desc.address & 0x7FFFFF)) {
+                            fbTex1 = 1;
+                            useVKSnapshot1 = true;
+                            vkSnapshotTex1 = snapTex;
+                            rtFB1 = rawRTFB1;
+                        }
+                    }
+                }
+
                 if (fbTex1 != 0) {
                     if (g_fbManager.IsGL()) {
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, fbTex1);
+                    } else if (useVKSnapshot1 && vkSnapshotTex1) {
+                        m_renderer->BindTexture(1, vkSnapshotTex1);
                     }
                     // Set UV scale based on FB dimensions so texcoords map correctly
                     gpuScale1[0] = 1.0f / static_cast<float>(rtFB1->desc.width);

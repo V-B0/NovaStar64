@@ -153,6 +153,12 @@ bool MarkAndCheckFirst(uint32_t pAddr)
     return true;
 }
 
+// Set from SW_Memory/etc each call (idempotent) so WatchStore can dump the
+// instruction word at the writing PC for NOVA_WATCH_DUMP_INSN diagnostics,
+// without threading an extra parameter through every store-instruction path.
+uint8_t* g_watchRdramPtr = nullptr;
+uint32_t g_watchRdramSize = 0;
+
 inline void WatchStore(uint32_t pAddr, unsigned size, uint64_t value, uint64_t pc)
 {
     const WatchConfig& cfg = GetWatchConfig();
@@ -169,6 +175,21 @@ inline void WatchStore(uint32_t pAddr, unsigned size, uint64_t value, uint64_t p
                  size == 1 ? 'B' : size == 2 ? 'H' : size == 4 ? 'W' : 'D',
                  pAddr,
                  static_cast<unsigned long long>(value));
+
+    static const bool s_dumpInsn = std::getenv("NOVA_WATCH_DUMP_INSN") != nullptr;
+    if (s_dumpInsn && g_watchRdramPtr) {
+        uint32_t pcPhys = static_cast<uint32_t>(pc) & 0x1FFFFFFF;
+        if (pcPhys + 24 <= g_watchRdramSize && pcPhys >= 20) {
+            std::fprintf(cfg.out, "[NOVA_WATCH]   insn context @0x%08X:", pcPhys);
+            for (int32_t off = -20; off <= 20; off += 4) {
+                uint32_t a = pcPhys + static_cast<uint32_t>(off);
+                uint32_t word = *reinterpret_cast<const uint32_t*>(g_watchRdramPtr + a);
+                std::fprintf(cfg.out, "%s0x%08X", off == 0 ? " [" : " ", word);
+                if (off == 0) std::fprintf(cfg.out, "]");
+            }
+            std::fprintf(cfg.out, "\n");
+        }
+    }
     std::fflush(cfg.out);
 }
 
@@ -988,6 +1009,8 @@ bool MipsMemoryVM::SW_Memory(uint64_t vAddr, uint32_t value)
     uint8_t* memoryPtr = reinterpret_cast<uint8_t*>(m_MemoryWriteMap[vAddr32 >> 12]);
     if (memoryPtr != reinterpret_cast<uint8_t*>(-1))
     {
+        g_watchRdramPtr = m_RDRAM;
+        g_watchRdramSize = m_AllocatedRdramSize;
         WatchStore(vAddr32 & 0x1FFFFFFF, 4, value,
                    m_System.GetRegisters()->m_PROGRAM_COUNTER);
         *reinterpret_cast<uint32_t*>(memoryPtr + vAddr32) = value;

@@ -9,7 +9,6 @@
 #include "Renderer.hpp"
 // Software/SoftwareRenderer.hpp removed — dead code
 #include "../Common/Logger.hpp"
-#include "../Common/Platform.hpp"
 
 #include <cstring>
 #include <algorithm>

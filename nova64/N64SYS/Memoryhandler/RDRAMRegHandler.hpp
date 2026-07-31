@@ -147,6 +147,7 @@ private:
 class RDRAMRegistersHandler final : public MemoryHandler {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         size_t device_count = 4;  
         bool enable_expansion_pak = true;
         bool enable_debug_logging = false;
@@ -155,7 +156,7 @@ public:
     
     explicit RDRAMRegistersHandler(
         CRegisters& registers,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~RDRAMRegistersHandler() override = default;

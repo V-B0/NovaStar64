@@ -608,15 +608,24 @@ inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjB
     address = ctx.ResolveAddress(address);
     if (address + 40 > ctx.rdramSize) return false;
     
-    // N64 uObjScaleBg_t struct layout (40 bytes, big-endian):
+    // N64 uObjScaleBg_t struct layout (40 bytes, big-endian) — verified
+    // against GLideN64's src/uCodes/S2DEX.cpp `struct uObjScaleBg` (which
+    // matches the real SDK header field-for-field). The previous version of
+    // this decode had every field from imageSiz onward shifted/paired wrong
+    // (imagePal read from imageSiz+imageFmt's bytes, format/size read from
+    // imageLoad's bytes, load read from flip's bytes, flip read from imagePal's
+    // low bit, and scaleW/scaleH swapped) -- every S2DEX background would
+    // decode the wrong pixel format/size/palette/flip/scale.
     //   0x00: imageW (u16), imageX (u16)
     //   0x04: frameW (u16), frameX (s16)
     //   0x08: imageH (u16), imageY (u16)
     //   0x0C: frameH (u16), frameY (s16)
     //   0x10: imagePtr (u32)
-    //   0x14: imageSiz (u8), imageFmt (u8), imageLoad (u16)
-    //   0x18: imageFlip (u16), imagePal (u16)
-    //   0x1C: scaleH (u16), scaleW (u16)
+    //   0x14: imageSiz (u8), 0x15: imageFmt (u8)
+    //   0x16: imageLoad (u16)
+    //   0x18: imageFlip (u16)
+    //   0x1A: imagePal (u16)
+    //   0x1C: scaleH (u16), 0x1E: scaleW (u16)
     //   0x20: imageYorig (s32)
     bg.imageW     = ctx.ReadHalf(address + 0x00);
     bg.imageX     = ctx.ReadHalf(address + 0x02);
@@ -627,13 +636,13 @@ inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjB
     bg.frameH     = ctx.ReadHalf(address + 0x0C);
     bg.frameY     = static_cast<int16_t>(ctx.ReadHalf(address + 0x0E));
     bg.imageAddr  = ctx.ReadWord(address + 0x10);
-    bg.imagePal   = ctx.ReadHalf(address + 0x14);
-    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x16));
-    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x17));
-    bg.imageLoad  = ctx.ReadHalf(address + 0x18);
-    bg.imageFlip  = (ctx.ReadHalf(address + 0x1A) & 0x01) != 0;
-    bg.scaleW     = ctx.ReadHalf(address + 0x1C);
-    bg.scaleH     = ctx.ReadHalf(address + 0x1E);
+    bg.imageSize  = static_cast<ImageSize>(ctx.ReadByte(address + 0x14));
+    bg.imageFormat= static_cast<ImageFormat>(ctx.ReadByte(address + 0x15));
+    bg.imageLoad  = ctx.ReadHalf(address + 0x16);
+    bg.imageFlip  = (ctx.ReadHalf(address + 0x18) & 0x01) != 0;
+    bg.imagePal   = ctx.ReadHalf(address + 0x1A);
+    bg.scaleH     = ctx.ReadHalf(address + 0x1C);
+    bg.scaleW     = ctx.ReadHalf(address + 0x1E);
     bg.imageYorig = static_cast<int32_t>(ctx.ReadWord(address + 0x20));
     
     return true;
@@ -643,25 +652,32 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
     address = ctx.ResolveAddress(address);
     if (address + 24 > ctx.rdramSize) return false;
     
-    // N64 uObjSprite_t layout (24 bytes, big-endian) — N64 SDK / GLideN64 confirmed:
-    //   0x00: objX   (s16, s10.2 screen coordinate)
-    //   0x02: scaleW (u16, u5.10 horizontal scale factor)
-    //   0x04: imageW (u16, u10.2 texture width in pixels)
-    //   0x06: paddingX (s16, unused)
-    //   0x08: objY   (s16, s10.2 screen coordinate)
-    //   0x0A: scaleH (u16, u5.10 vertical scale factor)
-    //   0x0C: imageH (u16, u10.2 texture height in pixels)
-    //   0x0E: paddingY (s16, unused)
+    // N64 uObjSprite_t layout (24 bytes, big-endian) — verified against
+    // GLideN64's src/uCodes/S2DEX.cpp `struct uObjSprite` (matches the real
+    // SDK header). The previous version of this decode had scaleW/objX
+    // swapped, scaleH/objY swapped, and imageW/imageH each read from the
+    // adjacent UNUSED padding field instead of their real slot -- meaning
+    // texture width/height were always read as 0 (real imageW/imageH are at
+    // 0x06/0x0E, not 0x04/0x0C), and screen position was read from the scale
+    // fields. Every S2DEX sprite draw would be broken by this.
+    //   0x00: scaleW (u16, u5.10 horizontal scale factor)
+    //   0x02: objX   (s16, s10.2 screen coordinate)
+    //   0x04: paddingX (u16, unused)
+    //   0x06: imageW (u16, u10.5 texture width)
+    //   0x08: scaleH (u16, u5.10 vertical scale factor)
+    //   0x0A: objY   (s16, s10.2 screen coordinate)
+    //   0x0C: paddingY (u16, unused)
+    //   0x0E: imageH (u16, u10.5 texture height)
     //   0x10: imageAdrs (u16), imageStride (u16)
     //   0x14: imageFlags (u8), imagePal (u8), imageSiz (u8), imageFmt (u8)
-    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x00));
-    obj.scaleW      = ctx.ReadHalf(address + 0x02);
-    obj.imageW      = ctx.ReadHalf(address + 0x04);
-    // skip paddingX at 0x06
-    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x08));
-    obj.scaleH      = ctx.ReadHalf(address + 0x0A);
-    obj.imageH      = ctx.ReadHalf(address + 0x0C);
-    // skip paddingY at 0x0E
+    obj.scaleW      = ctx.ReadHalf(address + 0x00);
+    obj.objX        = static_cast<int16_t>(ctx.ReadHalf(address + 0x02));
+    // skip paddingX at 0x04
+    obj.imageW      = ctx.ReadHalf(address + 0x06);
+    obj.scaleH      = ctx.ReadHalf(address + 0x08);
+    obj.objY        = static_cast<int16_t>(ctx.ReadHalf(address + 0x0A));
+    // skip paddingY at 0x0C
+    obj.imageH      = ctx.ReadHalf(address + 0x0E);
     obj.imageAdrs   = ctx.ReadHalf(address + 0x10);
     obj.imageStride = ctx.ReadHalf(address + 0x12);
     obj.imageFlags  = ctx.ReadByte(address + 0x14);
@@ -675,18 +691,23 @@ inline bool S2DEXHandler::ReadObjSprite(DListContext& ctx, uint32_t address, Obj
 inline bool S2DEXHandler::ReadObjMatrix(DListContext& ctx, uint32_t address, ObjMatrix& mtx) {
     if (address + 24 > ctx.rdramSize) return false;
     
-    // N64 uObjMtx layout (24 bytes):
+    // N64 uObjMtx layout (24 bytes) — verified against GLideN64's
+    // src/uCodes/S2DEX.cpp `struct uObjMtx`: "s16 Y, X;" then
+    // "u16 BaseScaleY; u16 BaseScaleX;" -- Y comes before X, and BaseScaleY
+    // before BaseScaleX. The previous version had both pairs swapped, which
+    // would transpose rotated/scaled sprite positions and apply each axis's
+    // base scale to the wrong axis.
     //   0x00: A (s15.16), 0x04: B, 0x08: C, 0x0C: D
-    //   0x10: X (s10.2), 0x12: Y (s10.2)
-    //   0x14: BaseScaleX (u5.10), 0x16: BaseScaleY (u5.10)
+    //   0x10: Y (s10.2), 0x12: X (s10.2)
+    //   0x14: BaseScaleY (u5.10), 0x16: BaseScaleX (u5.10)
     mtx.A = static_cast<int32_t>(ctx.ReadWord(address + 0x00));
     mtx.B = static_cast<int32_t>(ctx.ReadWord(address + 0x04));
     mtx.C = static_cast<int32_t>(ctx.ReadWord(address + 0x08));
     mtx.D = static_cast<int32_t>(ctx.ReadWord(address + 0x0C));
-    mtx.X = static_cast<int16_t>(ctx.ReadHalf(address + 0x10));
-    mtx.Y = static_cast<int16_t>(ctx.ReadHalf(address + 0x12));
-    mtx.BaseScaleX = ctx.ReadHalf(address + 0x14);
-    mtx.BaseScaleY = ctx.ReadHalf(address + 0x16);
+    mtx.Y = static_cast<int16_t>(ctx.ReadHalf(address + 0x10));
+    mtx.X = static_cast<int16_t>(ctx.ReadHalf(address + 0x12));
+    mtx.BaseScaleY = ctx.ReadHalf(address + 0x14);
+    mtx.BaseScaleX = ctx.ReadHalf(address + 0x16);
     
     return true;
 }
@@ -1075,7 +1096,13 @@ inline void S2DEXHandler::LoadSpriteTexture(DListContext& ctx, uint32_t address)
         lt.clampS = 0; lt.clampT = 0;
         lt.maskS = 0; lt.maskT = 0;
         lt.shiftS = 0; lt.shiftT = 0;
-        
+        // Real G_LOADTLUT carries no uls/ult in its own command word (always 0)
+        // -- this path calls ExecuteLoadTLUT directly, bypassing HandleLoadTLUT's
+        // reset, so sl/tl must be zeroed here too or ExecuteLoadTLUT's address
+        // math reads whatever a prior SetTileSize/LoadTile/LoadBlock left on
+        // this tile (typically tile 7, reused across every load).
+        lt.sl = 0; lt.tl = 0;
+
         // LoadTLUT: count = pnum + 1 (pnum is count-1 per N64 SDK)
         // N64 SDK: gDPLoadTLUT(G_TX_LOADTILE, pnum) → DecodeLoadTLUT adds +1
         ctx.rdpProcessor->ExecuteLoadTLUT(loadTile, pnum + 1);

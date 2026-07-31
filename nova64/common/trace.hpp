@@ -159,8 +159,13 @@ public:
         std::string archivePattern = "{name}.{index}.log";
     };
     
-    explicit FileTraceSink(std::string_view filename, 
-                          const Options& options = {});
+    explicit FileTraceSink(std::string_view filename,
+                          const Options& options);
+    // Delegating overload: a default argument of `= {}` here would require the
+    // Options NSDMIs to be evaluated at class scope, which Clang rejects.
+    // Constructing Options{} in a member-initializer is well-formed instead.
+    explicit FileTraceSink(std::string_view filename)
+        : FileTraceSink(filename, Options{}) {}
     ~FileTraceSink() override;
     
     // Non-copyable, movable
@@ -216,8 +221,11 @@ public:
         bool showLocation = false;
     };
     
-    explicit ConsoleTraceSink(const Options& options = {});
-    
+    explicit ConsoleTraceSink(const Options& options);
+    // See FileTraceSink: delegating overload avoids evaluating Options NSDMIs
+    // in a class-scope default argument (rejected by Clang).
+    ConsoleTraceSink() : ConsoleTraceSink(Options{}) {}
+
     void Write(const LogEntry& entry) override;
     void Flush() override;
     

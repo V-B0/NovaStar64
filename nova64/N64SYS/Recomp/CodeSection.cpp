@@ -1493,8 +1493,8 @@ bool CodeSection::generate_code(const AnalysisResult& analysis)
         }
     }
 
-    // Create assembler
-    asmjit::x86::Assembler assembler(code_holder_.get());
+    // Create assembler (arch-neutral alias: x86 or a64 depending on host)
+    Recomp::Assembler assembler(code_holder_.get());
 
     // Bind entry label
     entry_label_ = assembler.new_label();

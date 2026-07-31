@@ -186,9 +186,10 @@ void* CThread::ThreadWrapper(CThread* pThis)
         // 32-bit architectures: direct cast
         result = reinterpret_cast<void*>(pThis->m_StartAddress(pThis->m_lpThreadParameter));
 #else
-        // 64-bit architectures: cast through uint64_t to avoid warnings
+        // 64-bit architectures: the start routine returns void*; round-trip
+        // through uintptr_t (static_cast from void* to an integer is ill-formed).
         result = reinterpret_cast<void*>(
-            static_cast<uint64_t>(pThis->m_StartAddress(pThis->m_lpThreadParameter))
+            reinterpret_cast<uintptr_t>(pThis->m_StartAddress(pThis->m_lpThreadParameter))
         );
 #endif
     }
@@ -340,14 +341,16 @@ uint32_t CThread::GetCurrentThreadId()
 #ifdef _WIN32
     // Windows: Use GetCurrentThreadId API
     return ::GetCurrentThreadId();
-#elif defined(SYS_gettid) || defined(__NR_gettid)
-    // Linux: Use syscall to get thread ID (GLIBC doesn't wrap this)
-    return static_cast<uint32_t>(syscall(__NR_gettid));
 #elif defined(__APPLE__)
-    // macOS: Use pthread_threadid_np
+    // macOS: pthread_t is opaque; use pthread_threadid_np.  (Checked before the
+    // Linux branch because macOS's <sys/syscall.h> defines SYS_gettid without
+    // providing __NR_gettid.)
     uint64_t tid;
     pthread_threadid_np(nullptr, &tid);
     return static_cast<uint32_t>(tid);
+#elif defined(__linux__) && defined(SYS_gettid)
+    // Linux: Use syscall to get thread ID (GLIBC doesn't always wrap this)
+    return static_cast<uint32_t>(syscall(SYS_gettid));
 #else
     // Fallback: Use pthread_self (returns pthread_t, not ideal but works)
     // Note: pthread_t might not be an integer type on all platforms

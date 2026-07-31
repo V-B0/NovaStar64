@@ -256,6 +256,9 @@ private:
     /// Get the next power of 2 >= value
     static uint32_t NextPow2(uint32_t v);
 
+    /// Largest valid mip chain length for a w x h base level (1x1 -> 1, 8x8 -> 4, ...)
+    static uint32_t MaxMipLevels(uint32_t w, uint32_t h);
+
     /// LRU eviction — remove least recently used texture
     void EvictLRU();
 

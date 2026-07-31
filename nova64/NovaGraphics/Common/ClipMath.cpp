@@ -137,11 +137,24 @@ static float PlaneDistance(const Vec4f& pos, ClipPlane plane, float clipRatio = 
         case PLANE_RIGHT:  return wg - x;       // x <= w*ratio
         case PLANE_BOTTOM: return y + wg;       // y >= -w*ratio
         case PLANE_TOP:    return wg - y;       // y <= w*ratio
-        // GLideN64 clips against the actual camera plane (w = 0), then
-        // clamps the resulting vertex w to 0.01 below to avoid divide-by-zero.
-        // This preserves all geometry that's even barely in front of the
-        // camera while still keeping 1/W finite for perspective math.
-        case PLANE_W_NEAR: return w;           // w >= 0
+        // Clip against w = 0.01 DIRECTLY (not w = 0 with a post-clamp): the
+        // old scheme interpolated the intersection vertex's xyz to the w=0
+        // crossing and then forced w to 0.01, leaving xyz ~100× too large for
+        // the stored w. The perspective divide blew the vertex across the
+        // screen (bounded only by the X/Y guard band), rasterizing a sliver
+        // with squished interpolated texcoords — the "duplicate squished tree
+        // texture" wedge, emitted whenever a billboard crossed the camera
+        // plane. Clipping at 0.01 keeps xyz consistent with the final w.
+        case PLANE_W_NEAR: return w - 0.01f;   // w >= 0.01
+        // N64 NoN near plane: z >= 0 in clip space. For standard N64
+        // projections, z_clip = 0 is the game's actual near plane and every
+        // vertex with z > 0 also has w >= w(near) > 0 — so clipping here
+        // (instead of at the w=0.01 camera plane) never produces the
+        // pathological z/w explosion that the camera-plane cut creates for
+        // far-plane-hugging geometry (Zelda skyboxes: z/w ≈ 0.5 at the
+        // original vertices, z/w ≈ 50 at a w=0.01 cut, which the far-plane
+        // pass then deleted entirely — the missing sky cells).
+        case PLANE_NEAR_N64: return z;         // z >= 0
         default:           return 0.0f;
     }
 }
@@ -205,9 +218,19 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
 
 int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
                  ClippedPolygon& result, float clipRatio) {
-    // Early trivial rejection
+    // Early trivial rejection.
+    // X/Y/Z same-side rejection is only valid when all three vertices have
+    // w > 0: for a vertex behind the camera the ±w·ratio bounds are
+    // negative and its X/Y flags fire spuriously, so a camera-plane-
+    // straddling triangle (whose near-clipped part may be fully on screen —
+    // the Zelda skybox's overhead cells) would share a spurious bit with a
+    // genuinely-flagged front vertex and be dropped instead of clipped.
+    // Only CLIP_W itself (all three behind the camera) is an unconditional
+    // reject; otherwise fall through and let the W-near plane pass sort it
+    // out geometrically.
     uint32_t andFlags = v0.clipFlags & v1.clipFlags & v2.clipFlags;
-    if (andFlags != 0) {
+    bool anyBehind = ((v0.clipFlags | v1.clipFlags | v2.clipFlags) & CLIP_W) != 0;
+    if ((andFlags & CLIP_W) != 0 || (!anyBehind && andFlags != 0)) {
         result.vertexCount = 0;
         return 0;
     }
@@ -232,17 +255,30 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
     ClipVertex* output = bufB;
 
     // Only clip against planes that are needed.
-    // W (behind-camera guard) is clipped first to ensure all subsequent
-    // operations have valid w > 0 for perspective divide.
-    // Z planes (near/far) are omitted — the GPU handles depth clipping
-    // (GL_DEPTH_CLAMP for NoN microcodes).
+    // NEAR_N64 (z >= 0) runs FIRST for camera-plane-straddling triangles:
+    // cutting at the game's real near plane keeps w >= w(near) on every
+    // produced vertex, so z/w stays sane. The previous order (W_NEAR at
+    // w = 0.01 only) cut far-plane-hugging geometry at the camera plane,
+    // where the interpolated vertex kept z ≈ 0.5-0.8 but w collapsed to
+    // 0.01 → z/w ≈ 50 → the subsequent FAR pass deleted the entire
+    // polygon. That silently discarded every Zelda skybox cell whose
+    // triangle straddled w = 0 (the dome arcs overhead through the camera
+    // plane) — the black "shattered glass" sky. W_NEAR stays as a residual
+    // guard (no-op once z >= 0 clipping has run).
+    // FAR is CLIPPED: the renderer clamps beyond-far z to 0.99999 instead of
+    // GPU depth-clamping, so a triangle STRADDLING the far plane (long fence/
+    // ribbon geometry sweeping behind the camera) kept its beyond-far part,
+    // which rasterized as a giant sliver visible against the sky-cleared
+    // depth buffer — the brown "tree wedge" on the castle grounds. Real RSP
+    // clipping cuts at far; so do we. (Fully-beyond-far triangles are already
+    // trivially rejected via CLIP_POSZ in GBIHandler.)
     static const ClipPlane planes[] = {
-        PLANE_W_NEAR, PLANE_LEFT, PLANE_RIGHT, PLANE_BOTTOM, PLANE_TOP
+        PLANE_NEAR_N64, PLANE_W_NEAR, PLANE_FAR, PLANE_LEFT, PLANE_RIGHT, PLANE_BOTTOM, PLANE_TOP
     };
     static const uint32_t planeFlags[] = {
-        CLIP_W, CLIP_NEGX, CLIP_POSX, CLIP_NEGY, CLIP_POSY
+        CLIP_W, CLIP_W, CLIP_POSZ, CLIP_NEGX, CLIP_POSX, CLIP_NEGY, CLIP_POSY
     };
-    static const int NUM_CLIP_PLANES = 5;
+    static const int NUM_CLIP_PLANES = 7;
 
     for (int p = 0; p < NUM_CLIP_PLANES; p++) {
         // Skip if no vertex crosses this plane

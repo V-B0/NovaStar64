@@ -80,6 +80,7 @@ class PifRamHandler final : public MemoryHandler
 {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool saves_read_only = false;
         bool enable_debug_logging = false;
         bool enable_cic_emulation = true;
@@ -93,7 +94,7 @@ public:
         Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
         CEeprom& Eeprom,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~PifRamHandler() noexcept override;

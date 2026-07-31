@@ -24,6 +24,7 @@
 #include <memory>
 #include <unordered_map>
 #include <cstdint>
+#include <cmath>
 
 namespace Nova64::Video::RT {
 
@@ -39,10 +40,43 @@ public:
     // ─── ISceneGeometryConsumer ──────────────────────────────────────
     void NewFrame() override {
         m_frame.Reset();
+        m_hasCamera = false;
+        m_lightFinalized = false;
+        m_dirAccum[0] = m_dirAccum[1] = m_dirAccum[2] = 0.0f;
+        m_colAccum[0] = m_colAccum[1] = m_colAccum[2] = 0.0f;
+        m_lightSamples = 0;
     }
 
     void SubmitTriangles(const SceneTriangle* tris, uint32_t count) override {
         m_frame.triangles.insert(m_frame.triangles.end(), tris, tris + count);
+    }
+
+    /// Capture the perspective projection used for the 3D scene (last one wins,
+    /// which is the main world camera). Stored row-major (N64 row-vector form).
+    void SetCamera(const float proj[16]) override {
+        for (int i = 0; i < 16; ++i) m_proj[i] = proj[i];
+        m_hasCamera = true;
+    }
+
+    /// Capture the matching N64 viewport {scaleX, transX, scaleY, transY}.
+    void SetViewport(const float vp[4]) override {
+        for (int i = 0; i < 4; ++i) m_viewport[i] = vp[i];
+    }
+
+    /// Accumulate the primary directional light (eye-space dir + rgb color).
+    ///
+    /// Called once per submitted triangle. N64 games (SM64 especially) give
+    /// EVERY OBJECT its own light — direction AND color (object material colors
+    /// are baked into light colors). Taking the last call verbatim made the RT
+    /// sun flicker red/yellow/green and point wherever the last-drawn object's
+    /// light pointed (whole characters wrongly self-shadowed). Instead we
+    /// average over all calls — the level terrain dominates by triangle count —
+    /// and temporally smooth the result when it's queried.
+    void SetLight(const float dir[3], const float color[3]) override {
+        m_dirAccum[0] += dir[0]; m_dirAccum[1] += dir[1]; m_dirAccum[2] += dir[2];
+        m_colAccum[0] += color[0]; m_colAccum[1] += color[1]; m_colAccum[2] += color[2];
+        ++m_lightSamples;
+        m_hasLight = true;
     }
 
     // ─── Accessors ───────────────────────────────────────────────────
@@ -52,6 +86,18 @@ public:
 
     /// Direct access to the accumulated frame data (for CPU-side debug/export).
     const SceneFrameData& GetFrameData() const { return m_frame; }
+
+    /// Camera projection (row-major) captured this frame; false if none seen.
+    bool        HasCamera()      const { return m_hasCamera; }
+    const float* Projection()    const { return m_proj; }
+    /// N64 viewport {scaleX, transX, scaleY, transY} (fullscreen default).
+    const float* Viewport()      const { return m_viewport; }
+
+    /// Primary directional light for this frame (eye-space): the accumulated
+    /// average of all per-object lights, temporally smoothed across frames.
+    bool         HasLight()    const { return m_hasLight; }
+    const float* LightDir()    const { FinalizeLight(); return m_lightDir; }
+    const float* LightColor()  const { FinalizeLight(); return m_lightColor; }
 
     // ─── Acceleration Structure Build ────────────────────────────────
 
@@ -100,6 +146,57 @@ public:
 
 private:
     SceneFrameData m_frame;
+
+    // Compute-RT camera capture (row-major eye->clip projection).
+    float m_proj[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    bool  m_hasCamera = false;
+    // N64 viewport (fullscreen 320×240 default; scaleY negative = y-flip).
+    float m_viewport[4] = {160.0f, 160.0f, -120.0f, 120.0f};
+
+    // Compute-RT light: per-frame accumulators + smoothed output (eye-space).
+    float m_dirAccum[3] = {0.0f, 0.0f, 0.0f};
+    float m_colAccum[3] = {0.0f, 0.0f, 0.0f};
+    uint32_t m_lightSamples = 0;
+    bool  m_hasLight = false;
+    mutable bool  m_lightFinalized = false;
+    mutable bool  m_lightEverSet   = false;
+    mutable float m_lightDir[3]   = {0.0f, 1.0f, 0.0f};
+    mutable float m_lightColor[3] = {1.0f, 1.0f, 1.0f};
+
+    /// Turn this frame's accumulated per-object lights into one stable sun:
+    /// average (terrain dominates by triangle count), bias the color halfway
+    /// to white (object-material tints average out but never fully), and lerp
+    /// against last frame's value so residual draw-order variation can't
+    /// flicker. Idempotent per frame.
+    void FinalizeLight() const {
+        if (m_lightFinalized || m_lightSamples == 0) return;
+        m_lightFinalized = true;
+
+        float inv = 1.0f / static_cast<float>(m_lightSamples);
+        float d[3] = {m_dirAccum[0]*inv, m_dirAccum[1]*inv, m_dirAccum[2]*inv};
+        float len = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        // Opposing per-object lights can cancel out; keep last frame's sun then.
+        if (len < 0.05f) return;
+        d[0] /= len; d[1] /= len; d[2] /= len;
+
+        float c[3] = {m_colAccum[0]*inv, m_colAccum[1]*inv, m_colAccum[2]*inv};
+        for (int i = 0; i < 3; ++i) c[i] = 0.5f * c[i] + 0.5f;   // bias to white
+
+        if (!m_lightEverSet) {
+            m_lightEverSet = true;
+            for (int i = 0; i < 3; ++i) { m_lightDir[i] = d[i]; m_lightColor[i] = c[i]; }
+            return;
+        }
+        constexpr float kSmooth = 0.25f;   // per-frame blend toward the new value
+        float sm[3];
+        for (int i = 0; i < 3; ++i)
+            sm[i] = m_lightDir[i] + (d[i] - m_lightDir[i]) * kSmooth;
+        float smLen = std::sqrt(sm[0]*sm[0] + sm[1]*sm[1] + sm[2]*sm[2]);
+        if (smLen > 1e-4f)
+            for (int i = 0; i < 3; ++i) m_lightDir[i] = sm[i] / smLen;
+        for (int i = 0; i < 3; ++i)
+            m_lightColor[i] += (c[i] - m_lightColor[i]) * kSmooth;
+    }
 
     // Acceleration structures rebuilt each frame.
     // BLASes are grouped by materialHash to minimize AS count.

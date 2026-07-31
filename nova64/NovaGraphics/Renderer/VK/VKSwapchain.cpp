@@ -271,7 +271,10 @@ bool VKSwapchain::CreateRenderPass(VkDevice device) {
     attachments[1].format         = m_depthFormat;
     attachments[1].samples        = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // STORE (not DONT_CARE): the RT composite samples this depth buffer after
+    // the pass for billboard suppression; on tile-based GPUs (Apple) DONT_CARE
+    // really discards the contents.
+    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[1].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -332,7 +335,7 @@ bool VKSwapchain::CreateRenderPassLoad(VkDevice device) {
     attachments[1].format         = m_depthFormat;
     attachments[1].samples        = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;   // see above
     attachments[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[1].initialLayout  = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;

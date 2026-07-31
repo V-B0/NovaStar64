@@ -57,8 +57,11 @@ Shader::CompiledShader VKShaderCompiler::Compile(
     static_cast<VKShaderProgramImpl*>(impl.get())->debugFeatures = key.features;
     static_cast<VKShaderProgramImpl*>(impl.get())->debugMux      = key.mux;
 
-    // Use the pointer value as the opaque handle.
-    Shader::ShaderHandle h = reinterpret_cast<Shader::ShaderHandle>(impl.get());
+    // Use the (truncated) pointer value as the opaque handle.  ShaderHandle is
+    // 32-bit, so go through uintptr_t and truncate explicitly (a direct
+    // pointer->uint32_t reinterpret_cast is ill-formed on 64-bit hosts).
+    Shader::ShaderHandle h =
+        static_cast<Shader::ShaderHandle>(reinterpret_cast<uintptr_t>(impl.get()));
     result.handle = h;
     result.valid  = true;
     m_programs[h] = std::move(impl);

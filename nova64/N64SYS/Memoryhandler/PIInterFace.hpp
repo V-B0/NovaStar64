@@ -89,6 +89,7 @@ namespace PI {
     class PeripheralInterfaceHandler : public MemoryHandler {
     public:
         struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
             bool allow_unaligned_dma = true;
             bool allow_rom_writes = false;
             bool randomize_interrupts = true;
@@ -100,7 +101,7 @@ namespace PI {
         CRegisters& registers,
         CEeprom& eeprom,
         UncachedRom& domain2_handler,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~PeripheralInterfaceHandler() override;

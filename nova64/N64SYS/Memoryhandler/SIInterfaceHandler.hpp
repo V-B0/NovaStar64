@@ -118,6 +118,7 @@ private:
 class SerialInterfaceHandler final : public MemoryHandler {
 public:
     struct Config {
+            Config() noexcept {}  // explicit ctor: avoids Clang NSDMI-in-default-arg error
         bool enable_dma_logging = false;
         bool emulate_dma_timing = true;
         bool enable_interrupt_debug = false;
@@ -142,7 +143,7 @@ public:
         Nova64::MipsMemoryVM& mmu,
         CRegisters& registers,
         PifRamHandler& pif_handler,
-        const Config& config = {}
+        const Config& config = Config()
     );
     
     ~SerialInterfaceHandler() override;

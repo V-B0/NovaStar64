@@ -85,6 +85,13 @@ struct DecodedRectangle {
     float dsDx, dtDy;           // Texture slopes
     uint8_t tileIndex;
     bool    flipped;            // TextureRectFlip swaps S/T increments
+    // Texture-sampling bounds edges: normally == x0/y0/x1/y1, but COPY mode
+    // expands the DRAWN rect to 4-pixel blocks — sampling must still be
+    // clamped to the original rect's texel range or up to 3 garbage texel
+    // columns/rows appear on each side (HUD glyph fringes). Set by
+    // HandleTextureRect before block expansion.
+    float boundX0 = -1.0f, boundY0 = -1.0f;   // <0 = use x0/y0
+    float boundX1 = -1.0f, boundY1 = -1.0f;   // <0 = use x1/y1
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -14,7 +14,27 @@
 #include <pthread.h>
 #include <cerrno>
 #include <ctime>
+#include <cstdint>
 #endif
+
+namespace {
+// Portable 32-bit thread identifier.
+//   - Windows: GetCurrentThreadId()
+//   - Apple:   pthread_t is an opaque pointer, so pthread_self() cannot be
+//              cast to an integer; use pthread_threadid_np() instead.
+//   - Other POSIX: pthread_t is an integral type.
+inline uint32_t CurrentThreadId32() noexcept {
+#ifdef _WIN32
+    return static_cast<uint32_t>(GetCurrentThreadId());
+#elif defined(__APPLE__)
+    uint64_t tid = 0;
+    pthread_threadid_np(nullptr, &tid);
+    return static_cast<uint32_t>(tid);
+#else
+    return static_cast<uint32_t>(pthread_self());
+#endif
+}
+} // namespace
 
 // ============================================================
 // RecursiveMutex
@@ -58,13 +78,7 @@ void RecursiveMutex::Lock()
 #else
     pthread_mutex_lock(static_cast<pthread_mutex_t*>(m_mutex));
 #endif
-    m_ownerThreadId.store(
-#ifdef _WIN32
-        GetCurrentThreadId(),
-#else
-        static_cast<uint32_t>(pthread_self()),
-#endif
-        std::memory_order_relaxed);
+    m_ownerThreadId.store(CurrentThreadId32(), std::memory_order_relaxed);
     m_recursionCount.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -77,13 +91,7 @@ bool RecursiveMutex::TryLock()
     acquired = pthread_mutex_trylock(static_cast<pthread_mutex_t*>(m_mutex)) == 0;
 #endif
     if (acquired) {
-        m_ownerThreadId.store(
-#ifdef _WIN32
-            GetCurrentThreadId(),
-#else
-            static_cast<uint32_t>(pthread_self()),
-#endif
-            std::memory_order_relaxed);
+        m_ownerThreadId.store(CurrentThreadId32(), std::memory_order_relaxed);
         m_recursionCount.fetch_add(1, std::memory_order_relaxed);
     }
     return acquired;
@@ -110,6 +118,27 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
         Sleep(1);
     }
     return TryLock(); // one last attempt
+#elif defined(__APPLE__)
+    // macOS does not provide pthread_mutex_timedlock(); spin-poll with short
+    // sleeps until the deadline, matching the Windows fallback above.
+    struct timespec sleepReq { 0, 1000000L }; // 1 ms
+    const uint64_t deadlineNs = static_cast<uint64_t>(timeoutMs) * 1000000ULL;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    for (;;) {
+        if (TryLock()) {
+            return true;
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        uint64_t elapsedNs =
+            (static_cast<uint64_t>(now.tv_sec - start.tv_sec) * 1000000000ULL) +
+            static_cast<uint64_t>(now.tv_nsec - start.tv_nsec);
+        if (elapsedNs >= deadlineNs) {
+            return false;
+        }
+        nanosleep(&sleepReq, nullptr);
+    }
 #else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -121,8 +150,7 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
     }
     int rc = pthread_mutex_timedlock(static_cast<pthread_mutex_t*>(m_mutex), &ts);
     if (rc == 0) {
-        m_ownerThreadId.store(static_cast<uint32_t>(pthread_self()),
-                              std::memory_order_relaxed);
+        m_ownerThreadId.store(CurrentThreadId32(), std::memory_order_relaxed);
         m_recursionCount.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
