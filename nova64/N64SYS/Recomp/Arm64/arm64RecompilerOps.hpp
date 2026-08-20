@@ -2,8 +2,8 @@
  * @file arm64RecompilerOps.hpp
  * @brief AArch64 recompiler operations - MIPS R4300i to ARM64 translation
  *
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  *
  * Declared as Nova64::Recompiler::Arm::ArmRecompilerOps to satisfy the forward
  * and friend declarations the engine already ships (MIPSY/Vmem.hpp,

@@ -1,10 +1,10 @@
 /**
  * @file RSPTypes.hpp
  * @brief RSP Core Types.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Core Types - Modernized from Project64's RspTypes.h
-// C++20 rewrite with SIMD-friendly alignment and type safety
 
 #pragma once
 #include <cstdint>

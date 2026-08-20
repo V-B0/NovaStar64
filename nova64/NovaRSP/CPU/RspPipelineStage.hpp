@@ -1,10 +1,10 @@
 /**
  * @file RspPipelineStage.hpp
  * @brief RSP Pipeline Stages.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Pipeline Stages - Modernized from Project64's RspPipelineStage.h
-// C++20 enum class with descriptive naming
 
 #pragma once
 #include <cstdint>

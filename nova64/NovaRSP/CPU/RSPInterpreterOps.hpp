@@ -1,10 +1,10 @@
 /**
  * @file RSPInterpreterOps.hpp
  * @brief RSP Interpreter Operations.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Interpreter Operations - Modernized from Project64's RSPInterpreterOps.h
-// C++20 with function pointer dispatch tables and clean member references
 
 #pragma once
 #include "RSPOpcode.hpp"

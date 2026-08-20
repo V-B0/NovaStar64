@@ -269,7 +269,12 @@ struct TMEMState {
 //  Vertex Buffer State (RSP vertex cache)
 // ═══════════════════════════════════════════════════════════════════════════
 
-constexpr int VERTEX_BUFFER_SIZE = 80;  // F3DEX2 supports up to 80 vertices
+// GLideN64 parity (GraphicsDrawer.h: VERTBUFF_SIZE = 256, VERTBUFF_MASK = 255).
+// Power-of-two so vertex indices can be MASKED rather than range-rejected --
+// see the note at DrawTriangle's index handling. 80 was both too small for
+// ucodes with a larger cache and not maskable.
+constexpr int VERTEX_BUFFER_SIZE = 256;
+constexpr int VERTEX_BUFFER_MASK = VERTEX_BUFFER_SIZE - 1;
 
 struct VertexBufferState {
     TransformedVertex vertices[VERTEX_BUFFER_SIZE];
@@ -483,6 +488,24 @@ struct RDPState {
     // between the main texture load and the draw call.
     static constexpr int TMEM_WORDS = 512;
     uint32_t tmemSourceAddress[TMEM_WORDS] = {0};
+
+    // ── Per-TMEM-slot LOAD INFO (mirrors GLideN64's gDP.loadInfo[]) ──
+    // Records HOW the data in each TMEM slot got there. GLideN64's
+    // _calcTileSizes() (Textures.cpp) has two entirely different size
+    // derivations selected by this: a LOADTYPE_TILE branch that sizes the
+    // texture from the region actually LOADED (loadWidth/loadHeight/texWidth,
+    // rescaled when the load size differs from the tile size), and the
+    // mask/clamp branch used otherwise. We previously implemented only the
+    // mask/clamp branch, so any LoadTile whose loaded region disagrees with the
+    // tile's mask-derived extent produced wrong texture dimensions -- and since
+    // width/height drive scaleS/scaleT, wrong dimensions map the texture across
+    // the wrong UV range, i.e. visible stretching/squashing.
+    enum : uint8_t { LOADTYPE_BLOCK = 0, LOADTYPE_TILE = 1 };
+    uint8_t  tmemLoadType[TMEM_WORDS]  = {0};
+    uint16_t tmemLoadWidth[TMEM_WORDS] = {0};   // texels actually loaded per row
+    uint16_t tmemLoadHeight[TMEM_WORDS]= {0};   // rows actually loaded
+    uint16_t tmemLoadTexWidth[TMEM_WORDS] = {0}; // SetTextureImage width
+    uint8_t  tmemLoadSize[TMEM_WORDS]  = {0};   // SetTextureImage pixel size
     
     // ── Scissor ──
     ScissorRect scissor;
@@ -585,6 +608,11 @@ struct RDPState {
         if (cold) {
             std::memset(tileLoadAddress, 0, sizeof(tileLoadAddress));
             std::memset(tmemSourceAddress, 0, sizeof(tmemSourceAddress));
+            std::memset(tmemLoadType, 0, sizeof(tmemLoadType));
+            std::memset(tmemLoadWidth, 0, sizeof(tmemLoadWidth));
+            std::memset(tmemLoadHeight, 0, sizeof(tmemLoadHeight));
+            std::memset(tmemLoadTexWidth, 0, sizeof(tmemLoadTexWidth));
+            std::memset(tmemLoadSize, 0, sizeof(tmemLoadSize));
         }
         std::memset(scrollS, 0, sizeof(scrollS));
         std::memset(scrollT, 0, sizeof(scrollT));

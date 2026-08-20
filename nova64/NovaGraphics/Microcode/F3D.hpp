@@ -485,6 +485,17 @@ inline void F3DHandler::Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint
             v.r = 1.0f; v.g = 1.0f; v.b = 1.0f; v.a = 1.0f;
             v.screenX = vx; v.screenY = vy; v.screenZ = z;
             v.invW = 1.0f; v.clipFlags = 0; v.reject = false;
+            // vx/vy/z above are already final screen-space values (frameX/Y +
+            // imageW/H, built directly from the uSprite struct), not clip-space
+            // coordinates meant to go through the viewport transform. Without
+            // these flags, RDPProcessor::DrawTriangle's makeVert() (which
+            // checks modifiedXY/modifiedZ exactly like gSPModifyVertex
+            // XYSCREEN/ZSCREEN does) falls through to its default branch and
+            // re-applies geo.viewport.scale/transX|Y to values that were
+            // already in screen pixels, producing garbage on-screen positions
+            // for every sprite drawn through this path.
+            v.modifiedXY = true;
+            v.modifiedZ = true;
             geo.vertexLoaded[idx] = true;
         };
         SetVtx(0, ulx, uly, uls, ult);

@@ -4,7 +4,7 @@
  *
  * Nova64 N64 Emulator - Based on Project64 architecture
  * Ported from Project64's CCodeBlock implementation, adapted to
- * SuperNova64's class hierarchy and naming conventions.
+ * NovaStar64's class hierarchy and naming conventions.
  */
 
 #include "CodeBlock.hpp"

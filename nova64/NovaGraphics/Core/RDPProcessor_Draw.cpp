@@ -1222,9 +1222,26 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
 
     // Use mask/clamp-aware tile size instead of raw tile rectangle
     int calcW, calcH;
-    CalcTileSize(tile, tlutType, calcW, calcH);
+    // Supply this tile's TMEM load record so LoadTile-sourced textures use the
+    // GLideN64 LOADTYPE_TILE sizing branch rather than mask/clamp derivation.
+    TileLoadInfo li;
+    {
+        const uint32_t slot = tile.tmemAddr & 0x1FF;
+        li.isTileLoad = (m_state.rdp.tmemLoadType[slot] == RDPState::LOADTYPE_TILE);
+        li.width      = m_state.rdp.tmemLoadWidth[slot];
+        li.height     = m_state.rdp.tmemLoadHeight[slot];
+        li.texWidth   = m_state.rdp.tmemLoadTexWidth[slot];
+        li.size       = m_state.rdp.tmemLoadSize[slot];
+    }
+    int clampW = 0, clampH = 0;
+    const int cycType = static_cast<int>((m_state.rdp.otherModeH >> 20) & 0x03);
+    CalcTileSize(tile, tlutType, calcW, calcH, &li, cycType, &clampW, &clampH);
     key.width   = static_cast<uint16_t>(calcW);
     key.height  = static_cast<uint16_t>(calcH);
+    // Only meaningful when strictly smaller than the sampled extent; otherwise
+    // leave 0 so DecodeTexture skips the edge-replication pass entirely.
+    key.clampWidth  = (clampW > 0 && clampW < calcW) ? static_cast<uint16_t>(clampW) : 0;
+    key.clampHeight = (clampH > 0 && clampH < calcH) ? static_cast<uint16_t>(clampH) : 0;
     key.format  = static_cast<Tex::N64TexFormat>(tile.format);
     key.size    = static_cast<Tex::N64TexSize>(tile.size);
     key.cms     = tile.clampS;

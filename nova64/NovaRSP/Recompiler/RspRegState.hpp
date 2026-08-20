@@ -1,10 +1,10 @@
 /**
  * @file RspRegState.hpp
  * @brief RSP Register State Tracking.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Register State Tracking - Modernized from Project64's RspRegState.h
-// x64 recompiler register allocation and constant propagation
 
 #pragma once
 #include <cstdint>

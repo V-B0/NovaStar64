@@ -1,11 +1,10 @@
 /**
  * @file GraphicsUcodes.hpp
  * @brief Graphics Microcode Definitions.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// Graphics Microcode Definitions
-// F3DEX/F3DEX2 command opcodes, geometry modes, and microcode CRC database
-// Based on Project64 RSP HLE + GLideN64 microcode database
 
 #pragma once
 #include <cstdint>

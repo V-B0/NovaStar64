@@ -1,10 +1,10 @@
 /**
  * @file RSPInfo.hpp
  * @brief RSP Info / Initialization.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Info / Initialization - Modernized from Project64's RSPInfo.h
-// C++20 with proper lifecycle management
 
 #pragma once
 #include "CPU/RspSystem.hpp"

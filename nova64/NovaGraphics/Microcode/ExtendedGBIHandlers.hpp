@@ -451,11 +451,19 @@ private:
             TransformedVertex& tv = geo.vertexBuffer[idx];
             float in[4] = { tv.position[0], tv.position[1], tv.position[2], 1.0f };
             float out[4];
-            for (int r = 0; r < 4; ++r) {
-                out[r] = geo.combinedMatrix.m[r][0] * in[0] +
-                         geo.combinedMatrix.m[r][1] * in[1] +
-                         geo.combinedMatrix.m[r][2] * in[2] +
-                         geo.combinedMatrix.m[r][3] * in[3];
+            // Row-vector convention (v_clip = v * combinedMatrix), matching
+            // every other transform in this codebase (GBIHandler::
+            // TransformVertexBatch, RDPState's matrix multiplies) and how
+            // combinedMatrix is actually populated by the shared LoadMatrix()
+            // this handler's own Cmd_MTX delegates to. This loop previously
+            // indexed as out[r] = M[r][c]*in[c] -- the opposite (column-
+            // vector, M*v) convention -- which transposes the transform and
+            // produces wrong vertex positions for any DKR-microcode content.
+            for (int c = 0; c < 4; ++c) {
+                out[c] = in[0] * geo.combinedMatrix.m[0][c] +
+                         in[1] * geo.combinedMatrix.m[1][c] +
+                         in[2] * geo.combinedMatrix.m[2][c] +
+                         in[3] * geo.combinedMatrix.m[3][c];
             }
             tv.position[0] = out[0];
             tv.position[1] = out[1];
@@ -647,14 +655,19 @@ private:
             tv.texCoord1[0] = 0.0f;
             tv.texCoord1[1] = 0.0f;
 
-            // Transform through combined MVP
+            // Transform through combined MVP. Row-vector convention (v *
+            // combinedMatrix) -- same fix and rationale as DKRGBIHandler::
+            // TransformVertices above: the previous out[r]=M[r][c]*in[c]
+            // indexing was the transposed (column-vector) convention,
+            // inconsistent with how combinedMatrix is populated everywhere
+            // else in this codebase.
             float in[4] = { x, y, z, 1.0f };
             float out[4];
-            for (int r = 0; r < 4; ++r) {
-                out[r] = geo.combinedMatrix.m[r][0] * in[0] +
-                         geo.combinedMatrix.m[r][1] * in[1] +
-                         geo.combinedMatrix.m[r][2] * in[2] +
-                         geo.combinedMatrix.m[r][3] * in[3];
+            for (int c = 0; c < 4; ++c) {
+                out[c] = in[0] * geo.combinedMatrix.m[0][c] +
+                         in[1] * geo.combinedMatrix.m[1][c] +
+                         in[2] * geo.combinedMatrix.m[2][c] +
+                         in[3] * geo.combinedMatrix.m[3][c];
             }
             tv.position[0] = out[0];
             tv.position[1] = out[1];

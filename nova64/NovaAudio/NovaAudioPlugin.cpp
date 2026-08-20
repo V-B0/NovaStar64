@@ -43,7 +43,7 @@ NovaAudioPlugin::~NovaAudioPlugin()
     info.Type                = ::Plugins::PluginType::Audio;
     info.Version             = 0x0100; // 1.0
     info.Name                = "NovaAudio";
-    info.Author              = "SuperNova64 Team";
+    info.Author              = "NovaStar64 Team";
     info.Description         = "Built-in audio plugin with WASAPI output";
     info.SupportsThreading   = false;
     info.SupportsStateSync   = false;

@@ -1,10 +1,10 @@
 /**
  * @file RspRegState.cpp
  * @brief RSP Register State Tracking Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Register State Tracking Implementation
-// XMM register allocation, GPR constant propagation, flag zero tracking
 
 #include "RspRegState.hpp"
 

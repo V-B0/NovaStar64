@@ -6,6 +6,7 @@
 #include "FramebufferManager.hpp"
 #include <cstdio>
 #include "../Common/Logger.hpp"
+#include "../Renderer/Renderer.hpp"   
 #include "../../common/log.hpp"
 
 #include <glad/gl.h>
@@ -165,7 +166,6 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
 
     GLuint viFS = compileShader(GL_FRAGMENT_SHADER, viFilterFS);
     m_viFilterProgram = glCreateProgram();
-    // Recompile VS for the VI filter program (the blit VS was already deleted)
     vs = compileShader(GL_VERTEX_SHADER, blitVS);
     glAttachShader(m_viFilterProgram, vs);
     glAttachShader(m_viFilterProgram, viFS);
@@ -195,7 +195,7 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
     glLinkProgram(m_gammaProgram);
     glDeleteShader(vs);
     glDeleteShader(gFS);
-    } // end if (m_isGL)
+    } 
 
     m_initialized = true;
     NOVA_LOG_INFO("FramebufferManager initialized (scale={}x)", m_resScale);
@@ -231,7 +231,7 @@ void FramebufferManager::Shutdown() {
     m_pboSize = 0;
     if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
     if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
-    } // if (m_isGL)
+    } 
 
     m_currentColor = nullptr;
     m_currentDepth = nullptr;
@@ -261,9 +261,6 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     fb.msaaSamples  = m_msaaSamples;
     if (!m_isGL) return;
 
-    // Intel Iris Xe workaround: flush pending GL operations before creating
-    // new FBO objects to avoid lazy driver state issues.
-    // Use glFlush instead of glFinish to avoid a full CPU-GPU sync stall.
     {
         static int gpuIsIntel = -1;
         if (gpuIsIntel < 0) {
@@ -273,7 +270,7 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         if (gpuIsIntel) glFlush();
     }
 
-    // Unbind all texture units to avoid Intel driver internal aliasing
+    
     for (int i = 0; i < 8; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -323,8 +320,7 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         glNamedFramebufferTexture(fb.fbo, GL_DEPTH_STENCIL_ATTACHMENT, fb.depthTex, 0);
     }
 
-    // Create R8UI coverage image for MLE shader blender (not an FBO attachment —
-    // accessed via imageLoad/imageStore in the fragment shader).
+    
     glCreateTextures(GL_TEXTURE_2D, 1, &fb.coverageTex);
     glTextureStorage2D(fb.coverageTex, 1, GL_R8UI, fb.scaledWidth, fb.scaledHeight);
     glTextureParameteri(fb.coverageTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -333,26 +329,22 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     const GLuint zeroCvg = 0;
     glClearTexImage(fb.coverageTex, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zeroCvg);
 
-    // Set backend-native image handles (GL: texture name → uint64_t)
+    
     fb.colorImageHandle    = static_cast<uint64_t>(fb.colorTex);
     fb.coverageImageHandle = static_cast<uint64_t>(fb.coverageTex);
 
-    // Verify completeness
+    
     GLenum status = glCheckNamedFramebufferStatus(fb.fbo, GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         NOVA_LOG_ERROR("FBO incomplete (status=0x{:X}) for addr 0x{:08X} {}x{}",
                        status, fb.desc.address, fb.scaledWidth, fb.scaledHeight);
     } else {
-        // On Intel/AMD drivers the depth texture is zero-initialized (0.0 = near plane).
-        // GL_LEQUAL depth test: fragment window_z (~0.5 for z_ndc=0) <= 0.0 → FAILS.
-        // Clear depth to 1.0f (far plane) so all first-frame geometry passes.
+        
         const GLfloat depthOne = 1.0f;
         const GLint   stencilZero = 0;
         glClearNamedFramebufferfi(fb.fbo, GL_DEPTH_STENCIL, 0, depthOne, stencilZero);
 
-        // Clear color buffer with alpha=0 so that the blender's memColor read
-        // sees zero coverage for untouched pixels (matches real N64 behaviour
-        // where mem_cvg=0 before any geometry is drawn).
+        
         const GLfloat blackZeroAlpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         glClearNamedFramebufferfv(fb.fbo, GL_COLOR, 0, blackZeroAlpha);
     }
@@ -361,8 +353,7 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
 }
 
 void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
-    // Drop any stale async-readback FB pointer so FinishAsyncReadback
-    // doesn't dereference freed memory.
+  
     if (m_pboFB == &fb) m_pboFB = nullptr;
     if (!m_isGL) return;
     if (fb.resolvedFbo) { glDeleteFramebuffers(1, &fb.resolvedFbo); fb.resolvedFbo = 0; }
@@ -384,9 +375,6 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
     if (!m_isGL || !fb || fb->colorTex == 0) return 0;
 
     if (fb->msaaSamples > 1) {
-        // colorTex is GL_TEXTURE_2D_MULTISAMPLE — can't bind as regular sampler2D.
-        // Resolve the MSAA FB to resolvedTex (a plain GL_TEXTURE_2D) and return that.
-        // resolvedFbo/resolvedTex were created in CreateGPUFramebuffer for MSAA FBs.
         if (fb->resolvedFbo != 0) {
             glBlitNamedFramebuffer(fb->fbo, fb->resolvedFbo,
                                    0, 0, (GLint)fb->scaledWidth, (GLint)fb->scaledHeight,
@@ -394,12 +382,11 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
                                    GL_COLOR_BUFFER_BIT, GL_NEAREST);
             return fb->resolvedTex;
         }
-        return 0; // Should not happen — resolvedFbo always created with MSAA FBs
+        return 0; 
     }
 
     if (isSelfTexture) {
-        // Sampling from the same FB we're currently rendering into is undefined.
-        // Copy the current color content into a snapshot texture first.
+       
         if (fb->snapshotTex == 0) {
             glCreateTextures(GL_TEXTURE_2D, 1, &fb->snapshotTex);
             glTextureStorage2D(fb->snapshotTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
@@ -449,9 +436,7 @@ void FramebufferManager::SnapshotForPresentation() {
         glTextureParameteri(m_currentColor->presentationTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    // Ensure all pending draws have completed before copying.
-    // GL_SHADER_IMAGE_ACCESS_BARRIER_BIT is needed for MLE blender imageStore
-    // writes; GL_FRAMEBUFFER_BARRIER_BIT for regular FBO attachment writes.
+   
     glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT |
                     GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
@@ -487,10 +472,6 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         }
     }
 
-    // Height priority:
-    // 1. Current scissor hint (set by the most recent G_SETSCISSOR in this DL)
-    // 2. The height we already know for this address from a previous DL
-    // 3. Safe fallback of 240
     uint32_t height = 240;
     if (m_scissorHeight > 0) {
         height = m_scissorHeight;
@@ -505,9 +486,23 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         }
     }
     desc.height  = height;
-    desc.format  = (size == 4) ? FBFormat::RGBA32 : FBFormat::RGBA16;
-    desc.size    = size;
-    desc.stride  = width * size;
+    // `size` is the RAW RDP size ENCODING (0=4bpp,1=8bpp,2=16bpp,3=32bpp,
+    // see ImageSize in N64Types.hpp), not bytes-per-pixel -- the caller
+    // (RDPProcessor_State.cpp's HandleSetColorImage) passes
+    // static_cast<uint32_t>(colorImage.size) straight through. Comparing it
+    // to 4 to detect 32-bit color images was always false (the real 32-bit
+    // encoding is 3), so every color image was treated as RGBA16 regardless
+    // of its actual format, and `stride = width * size` used the encoding
+    // (3) instead of real bytes-per-pixel (4) for genuine 32-bit
+    // framebuffers -- understriding them by 25% (wrong ByteSize/EndAddress,
+    // wrong overlap detection, wrong readback bounds). Convert to real
+    // bytes-per-pixel first. RGBA16 games (the overwhelming majority) were
+    // unaffected since encoding 2 happens to equal 2 bytes.
+    uint32_t bytesPerPixel = static_cast<uint32_t>(GetBitsPerPixel(static_cast<ImageSize>(size & 3))) / 8;
+    if (bytesPerPixel == 0) bytesPerPixel = 2;  // 4bpp isn't a valid color-image size; default safely
+    desc.format  = (bytesPerPixel == 4) ? FBFormat::RGBA32 : FBFormat::RGBA16;
+    desc.size    = bytesPerPixel;
+    desc.stride  = width * bytesPerPixel;
     desc.type    = FBType::Color;
 
     GPUFramebuffer* fb = FindOrCreate(desc);
@@ -528,19 +523,6 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
             glScissor(0, 0, fb->scaledWidth, fb->scaledHeight);
         }
 
-        // Clear color to black on first activation each frame.
-        // N64 games only render within the scissor rect, so pixels outside
-        // it (overscan edges) retain stale data and appear as a colored
-        // strip at the top/right of the screen or a single pixel row during
-        // scene transitions.  Clearing once per frame fixes all three.
-        //
-        // IMPORTANT: Do NOT clear when gpuModified is already set.
-        // OoT/MM render the world scene to a framebuffer, then immediately
-        // open the inventory which re-activates the same color image address.
-        // That re-activation must NOT clear the world render, because the
-        // inventory background texture IS the world render (read back via
-        // SetTextureImage + LoadBlock on the same address).  Clearing it
-        // here turns the inventory background black.
         const uint32_t viOrigin = m_viConfig.origin & 0x7FFFFF;
         if (fb->lastColorClearedFrame < m_frameCounter &&
             !fb->gpuModified &&
@@ -555,24 +537,12 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
             fb->lastColorClearedFrame = m_frameCounter;
         }
 
-        // When a depth image has been set (SetDepthImage called before this
-        // SetColorImage — the usual N64 display list order), clear the depth
-        // attachment on the NEW color FBO.  Without this, double-buffered
-        // games (alternating color addresses like OoT) never get their depth
-        // cleared: OnSetDepthImage clears the OLD FBO, not the new one.
-        // The flag ensures we only clear once per SetDepthImage call, so that
-        // multiple SetColorImage switches within one frame don't wipe depth
-        // that was written by earlier rendering passes.
         if (m_depthClearPending) {
             if (m_isGL && fb->fbo != 0)
                 glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
             m_depthClearPending = false;
         }
 
-        // Clear stale coverage data when switching color framebuffers.
-        // Without this, double-buffered games (e.g. OoT alternating FB-A/FB-B)
-        // retain coverage from 2 frames ago — the MLE blender reads stale
-        // coverage at triangle edges, producing visible wireframe outlines.
         if (m_isGL && fb->coverageTex) {
             const GLuint zero = 0;
             glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER,
@@ -597,13 +567,10 @@ void FramebufferManager::OnSetDepthImage(uint32_t address) {
         fb->lastUsedFrame = m_frameCounter;
     }
 
-    // Mark depth clear as pending — the actual clear happens in OnSetColorImage
-    // on whichever FBO becomes current next.  This handles double-buffered games
-    // where SetDepthImage fires before SetColorImage switches to the new buffer.
+   
     m_depthClearPending = true;
 
-    // Also clear the GL depth attachment on the current color FBO (if already bound).
-    // This handles single-buffered games where the same FBO stays current.
+  
     if (m_isGL && m_currentColor && m_currentColor->fbo != 0) {
         glClearNamedFramebufferfi(m_currentColor->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
@@ -618,9 +585,7 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
         }
     }
 
-    // Height-scissor reuse: same address+type+width+format, existing FB is tall enough.
-    // Games (e.g. SM64) often reduce the scissor height each frame without reallocating;
-    // reusing a larger buffer avoids "Max framebuffers reached" spam.
+   
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         auto& fb = m_framebuffers[i];
         if (fb.desc.address == desc.address &&
@@ -690,16 +655,6 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
 
 GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType preferType) {
     address &= 0x7FFFFF;
-    // First pass: exact address match. Games routinely repurpose an RDRAM
-    // region for a different role later (e.g. MM's pause menu reuses the
-    // Z-buffer's address as a scratch color buffer for its world-snapshot
-    // once the 3D pass is done) -- when that happens, two entries can share
-    // the same address with different types. A plain first-match scan would
-    // return whichever got created first (usually the long-lived Depth
-    // entry from normal 3D rendering), never the newer Color one the caller
-    // actually wants, silently breaking the color-framebuffer-as-texture
-    // path. Prefer preferType; only fall back to the first hit if no entry
-    // of that type exists at this address.
     GPUFramebuffer* firstHit = nullptr;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (m_framebuffers[i].desc.address == address) {
@@ -710,18 +665,6 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType prefe
         }
     }
     if (firstHit) return firstHit;
-    // Second pass: tile-offset read — address falls inside a FB's memory footprint
-    // with row-alignment (offset is a multiple of stride, i.e. a whole-row offset).
-    // Prefer the most recently used FB when multiple overlap -- but same-type
-    // matches first. Without this, a row-offset lookup into a Color scratch
-    // buffer that overlaps an always-touched Depth buffer's range (the same
-    // Z-buffer-reused-as-color-scratch pattern the first pass above guards
-    // against) would pick the Depth entry just because it's refreshed every
-    // frame and so is always "more recent" than the Color entry, which is
-    // only touched when the pause menu's snapshot sequence runs. That silently
-    // breaks the same color-framebuffer-as-texture read-back for every
-    // non-base-address strip of a multi-row LoadTile mosaic (only the exact
-    // base address hit the first pass above; every other row strip lands here).
     GPUFramebuffer* bestOfType = nullptr;
     GPUFramebuffer* bestAny = nullptr;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
@@ -752,32 +695,6 @@ GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
 }
 
 void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
-    // Remove framebuffers not used for kStaleFrameThreshold+ frames -- UNLESS
-    // another entry at the SAME address is still fresh (see below).
-    //
-    // This only runs when m_fbCount hits kMaxFramebuffers (32), which happens
-    // during busy scenes (intro/area-transition sequences spawn many scratch
-    // FBs in quick succession). A short window is too aggressive for a real,
-    // still-valid pattern: MM's pause menu sets a scratch Color FB once early
-    // on (e.g. during the Deku transformation cutscene), then doesn't touch
-    // it again as a color target until the player opens the pause menu --
-    // potentially many minutes later, arbitrarily long after any fixed frame
-    // threshold -- and reads it back via LoadTile for the blurred
-    // world-snapshot mosaic. Meanwhile a Depth FB at the SAME address (the
-    // actual Z-buffer, refreshed every frame) stays fresh and survives any
-    // fixed-threshold eviction pass in between. Once the Color entry is
-    // purged, FindByAddress's exact-address match has only the Depth entry
-    // left to return, which CanAliasFramebuffer correctly rejects (wrong
-    // FBType), so the readback falls through to raw (never-written) RDRAM --
-    // a solid black mosaic, i.e. the asymmetric black pause-menu panel bug.
-    // No fixed threshold is safe here: a long session can leave an arbitrary
-    // gap between the one-time setup and the eventual read-back. Evicting
-    // this entry never even reclaims the address anyway -- its Depth twin
-    // still holds it -- so the fix is to skip eviction for any entry whose
-    // address still has a live (non-stale) sibling of a different type,
-    // regardless of its own age. Truly abandoned addresses (no live sibling)
-    // still age out normally, so worst-case memory stays bounded by the
-    // 32-FB cap as before.
     static constexpr uint64_t kStaleFrameThreshold = 600;
     auto isStale = [&](const GPUFramebuffer& fb) {
         return currentFrame - fb.lastUsedFrame >= kStaleFrameThreshold;
@@ -823,6 +740,37 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
 // ═══════════════════════════════════════════════════════════════
 //  GPU ↔ CPU Sync
 // ═══════════════════════════════════════════════════════════════
+
+bool FramebufferManager::CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram,
+                                          IRenderer* renderer) {
+    if (!fb || !rdram || !renderer || m_isGL) return false;
+
+    const uint32_t addr = fb->desc.address;
+    const uint32_t w = fb->width;
+    const uint32_t h = fb->height;
+    if (w == 0 || h == 0) return false;
+    const uint32_t pixelCount = w * h;
+
+    // Guard the RDRAM read: desc dimensions come from game state, so a bogus
+    // width/height must not walk off the end of the 8 MB map.
+    const uint32_t bytesPerPixel = (fb->desc.format == FBFormat::RGBA32) ? 4u : 2u;
+    if (static_cast<uint64_t>(addr) +
+        static_cast<uint64_t>(pixelCount) * bytesPerPixel > 0x800000ull)
+        return false;
+
+    std::vector<uint32_t> rgba8(pixelCount);
+    if (fb->desc.format == FBFormat::RGBA16) {
+        const uint16_t* src = reinterpret_cast<const uint16_t*>(rdram + addr);
+        ConvertRGBA16ToRGBA8(src, reinterpret_cast<uint8_t*>(rgba8.data()), pixelCount);
+    } else if (fb->desc.format == FBFormat::RGBA32) {
+        const uint32_t* src = reinterpret_cast<const uint32_t*>(rdram + addr);
+        ConvertRGBA32ToRGBA8(src, reinterpret_cast<uint8_t*>(rgba8.data()), pixelCount);
+    } else {
+        return false;
+    }
+
+    return renderer->UploadPixelsToCanvas(addr, w, h, rgba8.data());
+}
 
 void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
     if (!fb || !rdram || !m_isGL) return;

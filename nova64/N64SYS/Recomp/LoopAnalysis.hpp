@@ -2,8 +2,8 @@
  * @file LoopAnalysis.hpp
  * @brief Loop analysis for register optimization in dynamic recompilation
  * 
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  * 
  * This class performs data flow analysis on loops to determine which registers
  * can be kept in host registers across loop iterations, enabling significant

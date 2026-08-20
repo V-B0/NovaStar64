@@ -1,5 +1,5 @@
 // ============================================================
-// NovaLauncher.cpp — SuperNova64 UI Launcher
+// NovaLauncher.cpp — NovaStar64 UI Launcher
 // Full rewrite with embedded emulator, pause menu, save states,
 // input remapping, speed/rewind, Lua scripting, hex editor.
 // ============================================================
@@ -731,7 +731,7 @@ std::string NovaUI::NovaLauncher::Run() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
-    SDL_Window* window = SDL_CreateWindow("SuperNova64 - Boot Menu",
+    SDL_Window* window = SDL_CreateWindow("NovaStar64 - Boot Menu",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS);
     if (!window) { SDL_Quit(); return ""; }
@@ -963,7 +963,7 @@ void NovaUI::NovaLauncher::RenderUI(SDL_Window* window) {
 // Sidebar
 // ============================================================
 void NovaUI::NovaLauncher::RenderSidebar() {
-    ImGui::TextDisabled("SUPERNOVA 64");
+    ImGui::TextDisabled("NOVASTAR64");
     ImGui::Spacing(); ImGui::Spacing();
 
     const char* tabs[] = {"Home Menu","Games","Settings","Scripts","Hex Editor","Achievements","Simulator"};
@@ -980,7 +980,7 @@ void NovaUI::NovaLauncher::RenderSidebar() {
 // ============================================================
 void NovaUI::NovaLauncher::RenderHomeTab() {
     ImGui::SetWindowFontScale(1.5f);
-    ImGui::Text("SuperNova64 Dash Center");
+    ImGui::Text("NovaStar64 Dash Center");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Text("Welcome to your retro low-level desktop subsystem development module.");
     ImGui::Separator(); ImGui::Spacing();
@@ -1079,9 +1079,9 @@ void NovaUI::NovaLauncher::RenderGamesTab() {
             if (ImGui::MenuItem("Edit ROM")) {
                 m_showEditModal    = true;
                 m_editingRomIndex  = (int)i;
-                strncpy(m_editNameBuffer,   rom.name.c_str(),       sizeof(m_editNameBuffer)-1);
-                strncpy(m_editBoxArtBuffer, rom.boxArtPath.c_str(), sizeof(m_editBoxArtBuffer)-1);
-                strncpy(m_editNotesBuffer,  rom.notes.c_str(),      sizeof(m_editNotesBuffer)-1);
+                strncpy(m_editNameBuffer,   rom.name.c_str(), sizeof(m_editNameBuffer)-1);
+                strncpy(m_editBoxArtBuffer, rom.path.c_str(), sizeof(m_editBoxArtBuffer)-1);
+                strncpy(m_editNotesBuffer,  rom.notes.c_str(), sizeof(m_editNotesBuffer)-1);
             }
             if (ImGui::MenuItem("Delete ROM")) { m_library.erase(m_library.begin() + i); ImGui::EndPopup(); ImGui::EndChild(); ImGui::PopID(); break; }
             ImGui::EndPopup();
@@ -1122,7 +1122,18 @@ void NovaUI::NovaLauncher::RenderGamesTab() {
     if (ImGui::BeginPopupModal("Edit ROM", &m_showEditModal, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::InputText("ROM Path", m_editBoxArtBuffer, sizeof(m_editBoxArtBuffer));
         ImGui::InputText("Name",     m_editNameBuffer,   sizeof(m_editNameBuffer));
-        if (ImGui::Button("Save")) { m_showEditModal = false; }
+        ImGui::InputTextMultiline("Notes", m_editNotesBuffer, sizeof(m_editNotesBuffer), ImVec2(300,100));
+        if (ImGui::Button("Save")) {
+            if (m_editingRomIndex >= 0 && m_editingRomIndex < (int)m_library.size()) {
+                auto& rom = m_library[m_editingRomIndex];
+                rom.path  = m_editBoxArtBuffer;
+                rom.name  = m_editNameBuffer;
+                rom.notes = m_editNotesBuffer;
+            }
+            m_showEditModal = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120,0))) m_showEditModal = false;
         ImGui::EndPopup();
     }
 }

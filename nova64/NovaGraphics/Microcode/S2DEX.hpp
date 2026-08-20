@@ -574,7 +574,26 @@ inline void S2DEXHandler::Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t
     const uint8_t  sid  = m_selectDL.sid;
     const uint32_t flag = m_selectDL.flag;
     const uint32_t mask = w1;
-    uint32_t& statusReg = ctx.s2dexStatusRegs[sid >> 2];
+
+    // sid here is S2DEX_RDPHalf_0's raw _SHIFTR(w0,18,8) field, which real
+    // hardware/GLideN64 (S2DEX.cpp S2DEX_Select_DL) uses DIRECTLY as the
+    // gSP.status[] index (validated < 4) -- unlike gSPSetStatus/MW_GENSTAT
+    // and the OBJLT_TXTRSPRITE/TXTRTILE sid fields elsewhere in this file,
+    // which really are byte offsets (0/4/8/12) needing >>2. This previously
+    // used the same >>2 shift here too, which for the only valid real sid
+    // values (0-3) collapses ALL FOUR status registers onto
+    // s2dexStatusRegs[0] -- so two independent SELECT_DL sequences using
+    // different sid values (e.g. selecting between different equipped-item
+    // icon variants) would alias and corrupt each other's dedup state,
+    // causing a DL to wrongly re-run (visible as stacked/duplicated icon
+    // geometry) or wrongly get skipped.
+    if (sid >= 4) {
+        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
+            "S2DEX SELECT_DL: invalid sid {} (must be < 4)", sid);
+        m_selectDL = {};
+        return;
+    }
+    uint32_t& statusReg = ctx.s2dexStatusRegs[sid];
 
     if ((statusReg & mask) == flag) {
         // This SELECT_DL has already executed with this flag within the current

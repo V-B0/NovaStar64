@@ -1,6 +1,6 @@
 /**
  * @file NovaGraphicsGFXPlugin.hpp
- * @brief Adapter bridging SuperNova64's GFXPlugin interface to NovaGraphics's VideoPlugin
+ * @brief Adapter bridging NovaStar64's GFXPlugin interface to NovaGraphics's VideoPlugin
  *
  * This class implements the Plugins::GFXPlugin abstract interface required by
  * the emulator core, and delegates all calls to the internal Nova64::Video::VideoPlugin

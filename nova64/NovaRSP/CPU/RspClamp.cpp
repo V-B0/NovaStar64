@@ -1,13 +1,10 @@
 /**
  * @file RspClamp.cpp
  * @brief RSP Clamp Utilities - Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Clamp Utilities - Implementation
-// All core functions are inline constexpr in the header.
-// This TU exists for:
-//  1. Explicit template instantiation (future SIMD paths).
-//  2. Static assertions validating clamp behaviors at compile time.
 
 #include "RspClamp.hpp"
 #include <cassert>

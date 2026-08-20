@@ -63,7 +63,7 @@ struct DisplayMode {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 struct WindowConfig {
-    std::string title = "SuperNova64 - NovaGraphics";
+    std::string title = "NovaStar64 - NovaGraphics";
     int32_t width = 640;
     int32_t height = 480;
     int32_t posX = -1;          // -1 = centered

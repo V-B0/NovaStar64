@@ -1,13 +1,10 @@
 /**
  * @file x64RspRegInfo.hpp
  * @brief x64 RSP Register Info.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// x64 RSP Register Info
-// Defines the x86-64 register mapping for RSP recompiler:
-//   - Which x64 GPRs hold RSP state pointers
-//   - XMM register allocation for RSP vector registers
-//   - Calling convention helpers for Windows x64 ABI
 
 #pragma once
 

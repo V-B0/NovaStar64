@@ -160,6 +160,38 @@ bool CTaskDispatcher::DispatchTask(CHle* hle)
     hle->VerboseMessage("RSP HLE: DispatchTask #%u type=%u ucode=0x%08X data=0x%08X dataptr=0x%08X",
         m_TasksDispatched, type, task.Ucode, task.UcodeData, task.DataPtr);
 
+    // ── Reference parity: identify SPECIALIZED tasks by ucode checksum BEFORE
+    // trusting the type field ────────────────────────────────────────────────
+    // mupen64plus-rsp-hle's task_detection() calls try_normal_task_detection()
+    // for EVERY task, ahead of any type-based routing, precisely because the
+    // type word is unreliable -- its own table says so in as many words:
+    //     case 0x278:   StoreVe12: found in Zelda Ocarina of Time
+    //                              [misleading task->type == 4]
+    //     case 0x212ee: GFX: Twintris [misleading task->type == 0]
+    // Our dispatcher did the reverse: it switched on `type` first, and only
+    // reached the checksum detector (TrySumBytesFallback, inside
+    // IdentifyMicrocode) for type 2 and type 4. A type==1 task was handed
+    // straight to DispatchVideoTask without ever identifying its microcode, so
+    // a specialized non-display-list routine wearing type==1 was fed to the
+    // display-list processor: it would be consumed, emit no draws, and leave
+    // its target buffer untouched -- which is exactly the measured signature of
+    // the black pause-menu panel (color image set to the buffer, zero draws
+    // ever flushed to it, contents all zero).
+    if (task.Ucode != 0 && task.UcodeSize > 0 && hle->dram() != nullptr)
+    {
+        if (const MicrocodeEntry* special = TrySumBytesFallback(hle, task))
+        {
+            if (special->handler != nullptr)
+            {
+                hle->VerboseMessage("RSP HLE: Specialized task '%.*s' matched by checksum (declared type=%u)",
+                    static_cast<int>(special->name.size()), special->name.data(), type);
+                special->handler(hle);
+                hle->rsp_break(0);
+                return true;
+            }
+        }
+    }
+
     switch (type)
     {
     case 1: // Video task

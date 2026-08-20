@@ -1,10 +1,10 @@
 /**
  * @file RSPDebugger.hpp
  * @brief RSP Debugger Interface.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Debugger Interface - Modernized from Project64's RSPDebugger.h
-// C++20 abstract interface for RSP debugging integration
 
 #pragma once
 #include <cstdint>

@@ -1,10 +1,10 @@
 /**
  * @file RspProfiling.hpp
  * @brief RSP Profiling.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Profiling - Modernized from Project64's RspProfiling.h
-// C++20 timer infrastructure for RSP performance analysis
 
 #pragma once
 #include <cstdint>

@@ -115,6 +115,14 @@ struct GPUFramebuffer {
     // ever cleared by ExecuteLoadTile/ExecuteLoadBlock's own RDRAM sync, so
     // it can't be pre-consumed by anything else touching this address.
     bool     needsRdramResync = false;
+    // Sticky: has the RDP EVER rendered into this buffer? `gpuModified` is
+    // cleared by the RDRAM read-back, so it cannot answer "is the GPU the
+    // author of this buffer's contents". Gating the CPU->GPU upload on this
+    // instead prevents re-uploading an N64-resolution RDRAM copy over a
+    // GPU-rendered frame (which would throw away the internal-resolution
+    // detail); the upload then only fires for buffers the RDP never drew,
+    // i.e. genuinely CPU-authored ones.
+    bool     everGpuRendered = false;
     uint32_t drawCallsSinceSwitch = 0;   // DIAGNOSTIC: FlushBatch calls since this FB was last snapshotted/switched
     uint32_t trianglesSinceSwitch = 0;   // DIAGNOSTIC: triangle count in those draw calls
     uint64_t lastUsedFrame = 0;
@@ -206,6 +214,12 @@ public:
     // ── GPU ↔ CPU Sync ──
     /// Copy N64 RDRAM data into GPU color buffer
     void CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram);
+    /// Vulkan counterpart of CopyToGPU: converts the N64 framebuffer at this
+    /// entry's address from RDRAM into RGBA8 and hands it to the backend for
+    /// upload into that address's canvas. CopyToGPU itself is GL-only
+    /// (`if (!m_isGL) return;`), which left the whole CPU->GPU direction absent
+    /// on Vulkan. Returns false if unavailable.
+    bool CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram, class IRenderer* renderer);
 
     /// Read GPU color buffer back to N64 RDRAM (synchronous — stalls GPU)
     void CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram);

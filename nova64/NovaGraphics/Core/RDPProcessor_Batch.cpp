@@ -50,6 +50,7 @@ void RDPProcessor::FlushBatch() {
         curFB->gpuModified = true;
         curFB->needsInventorySnapshot = true;
         curFB->needsRdramResync = true;
+        curFB->everGpuRendered = true;   // sticky; see the field's comment
         // DIAGNOSTIC (NOVA64_SNAPSHOT_TRACE=1): tally draw activity per FB so
         // the pause-menu snapshot capture points can log how much was
         // actually rendered before the snapshot fired -- distinguishes "FB
@@ -430,6 +431,39 @@ void RDPProcessor::FlushBatch() {
             if (zPrim) features |= Shader::SF_DEPTH_SOURCE_PRIM;
         }
 
+        // Pre-compute whether the MLE blender will be selected for this draw
+        // (mirrors the "Framebuffer read & blender memColor strategy" block
+        // further down) so the N64 Z-image depth-compare gate immediately
+        // below can correctly avoid combining the two on Intel hardware.
+        // This must run first: SF_MLE_BLENDER isn't set into `features`
+        // until that later block runs, so checking `features &
+        // SF_MLE_BLENDER` at this point was always false -- silently
+        // turning the intended Intel-only workaround into unscoped dead
+        // code that never actually fired on ANY platform (including
+        // Intel, where the real driver bug it describes still lives).
+        bool willUseMleBlender = false;
+        {
+            uint32_t preBlenderBits = call.otherModeL & 0xFFFF0000;
+            bool preImageRead = (call.otherModeL & 0x40) != 0;
+            if (preImageRead && preBlenderBits != 0) {
+                int p1 = (preBlenderBits >> 30) & 0x3;
+                int m1 = (preBlenderBits >> 22) & 0x3;
+                int b1 = (preBlenderBits >> 18) & 0x3;
+                bool preNeedsMem = (p1 == 1 || m1 == 1 || b1 == 1);
+                if (cycleType == 1) {
+                    int p2 = (preBlenderBits >> 28) & 0x3;
+                    int m2 = (preBlenderBits >> 20) & 0x3;
+                    int b2 = (preBlenderBits >> 16) & 0x3;
+                    preNeedsMem = preNeedsMem || (p2 == 1 || m2 == 1 || b2 == 1);
+                }
+                int preCvgDst = (call.otherModeL >> 8) & 0x03;
+                if (preCvgDst != 2) preNeedsMem = true;
+                willUseMleBlender = (preNeedsMem || batchNeedsMleBlender) && !DISABLE_MLE_BLENDER &&
+                    m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
+                    !m_renderer->GetCapabilities().isIntelGPU;
+            }
+        }
+
         // N64-accurate Z-image depth compare: enable when Z_CMP is set,
         // the depth buffer manager has a current Z-image texture pair,
         // and the GPU supports fragment shader interlock for imageLoad/imageStore.
@@ -451,7 +485,7 @@ void RDPProcessor::FlushBatch() {
             (call.otherModeL & 0x0010) && g_depthManager.GetCurrent() &&
             g_depthManager.GetCurrent()->glZImageTex != 0 &&
             m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
-            !(features & Shader::SF_MLE_BLENDER) &&
+            !(m_renderer->GetCapabilities().isIntelGPU && willUseMleBlender) &&
             !(m_renderer->GetCapabilities().isIntelGPU && (features & Shader::SF_DUAL_SOURCE_BLEND))) {
             features |= Shader::SF_DEPTH_COMPARE;
             features |= Shader::SF_N64_DEPTH_COMPARE;
@@ -1230,20 +1264,21 @@ void RDPProcessor::FlushBatch() {
                     break;
             }
         }
-        // Coverage destination bits (otherModeL [9:8]) refine depth write behaviour:
-        //   CVG_DST_SAVE (3): preserve existing depth regardless of Z_UPD flag.
-        //   ZMODE_TRANSPARENT (2) without FORCE_BL: game controls draw order via sorting;
-        //   depth buffer writes would produce incorrect overdraw for alpha surfaces.
-        {
-            uint32_t cvgDst = (call.otherModeL >> 8) & 0x03;
-            if (cvgDst == 3) {
-                depth.depthWriteEnabled = false;
-            }
-            bool forceBlend = ((call.otherModeL >> 14) & 1) != 0;
-            if (zMode == 2 && !forceBlend) {
-                depth.depthWriteEnabled = false;
-            }
-        }
+        // NOTE: a prior heuristic here forced depth writes off for
+        // CVG_DST_SAVE (cvgDst==3) and for ZMODE_XLU without FORCE_BL,
+        // reasoning "games sort transparent draws themselves". Checked
+        // both real-hardware-authoritative sources this pass:
+        //   - GLideN64 GraphicsDrawer.cpp::_updateDepthUpdate():
+        //     `gfxContext.enableDepthWrite(gDP.otherMode.depthUpdate != 0)`
+        //     — gated ONLY by the Z_UPD bit, no zMode/cvgDst involvement.
+        //   - angrylion-rdp-plus rasterizer.c: `if (wen) { fbwrite(...);
+        //     if (other_modes.z_update_en) z_store(...); }` — same: only
+        //     Z_UPD (ANDed with the pixel actually passing z_compare+blend).
+        // Neither reference special-cases zMode or cvg_dst for the WRITE
+        // decision (zMode only picks the compare function/bias; cvg_dst
+        // only affects how coverage is combined). The heuristic silently
+        // broke inter-transparent-surface depth ordering — removed;
+        // depth.depthWriteEnabled already reflects Z_UPD via SF_DEPTH_WRITE.
 
         // --- 1.2 Override Depth for Rectangles ---
         // N64 rectangles have no vertex Z; they only participate in depth
@@ -1353,8 +1388,31 @@ void RDPProcessor::FlushBatch() {
             // This lets both 3D content and fullscreen effects (fades,
             // transitions) fill the expanded viewport area. Letterbox bar
             // skipping and inward scaling are handled in Handle*Rect().
+            //
+            // Gated to only apply when the game's OWN scissor already covers
+            // most of the screen height. widescreenScale is a single global
+            // (set once from the user's aspect-ratio config, applied to every
+            // draw call regardless of content -- see VideoPlugin.cpp), so
+            // this expansion previously fired unconditionally even for small,
+            // narrow scissor rects a game sets to isolate one screen region
+            // from another -- e.g. MM/OoT's pause-menu inventory grid, where
+            // each item slot's small 3D rotating-icon draw gets its own tight
+            // scissor rect. Blowing that open to the full screen height
+            // removes the vertical isolation between grid rows: geometry that
+            // real hardware's scissor would hard-clip to one slot (e.g. an
+            // animating icon model momentarily extending past its intended
+            // bounding box) is no longer clipped, letting it bleed into a
+            // neighboring row -- a plausible mechanism for the observed
+            // "stacked/duplicated icon" artifact. Only expand when the
+            // original scissor already covers most of the frame vertically,
+            // matching the documented intent (full-screen 3D content and
+            // fullscreen fade/transition effects) without touching small,
+            // deliberately-isolated regions.
             float wsScale = m_state.rdp.geometry.widescreenScale;
-            if (wsScale != 1.0f) {
+            constexpr float kWidescreenExpandMinCoverage = 0.6f;
+            bool scissorAlreadyMostlyFull =
+                n64H > 0.0f && (static_cast<float>(n64sh) >= kWidescreenExpandMinCoverage * n64H);
+            if (wsScale != 1.0f && scissorAlreadyMostlyFull) {
                 n64sy = 0;
                 n64sh = static_cast<int>(n64H);
             }
@@ -1587,8 +1645,30 @@ void RDPProcessor::FlushBatch() {
                     // whatever was ACTUALLY live at that address at the moment
                     // this draw was issued, exactly like real hardware would read.
                     if (call.snapshotSlot0 >= 0) {
-                        ITexture* snapTex = m_vkFBSnapshots[static_cast<uint32_t>(call.snapshotSlot0)].get();
-                        if (snapTex && (rtFB0 || rawRTFB0)) {
+                        const uint32_t slot0 = static_cast<uint32_t>(call.snapshotSlot0);
+                        ITexture* snapTex = m_vkFBSnapshots[slot0].get();
+                        // Re-validate the slot still holds the address it was resolved for
+                        // in PopulateTextureInfo. Between this draw call's enqueue and this
+                        // flush, other capture sites (SetColorImage switch-away in
+                        // HandleSetColorImage, the LoadBlock CopyFromGPU-snapshot in
+                        // RDPProcessor_Texture.cpp, or the last-resort canvas fallback
+                        // below) can ping-pong m_vkFBSnapshotIdx back onto this SAME slot
+                        // number and overwrite it with an unrelated framebuffer's content
+                        // (e.g. a later 3D-model render target reusing the ring). Trusting
+                        // a stale index here let that overwritten content silently replace
+                        // the intended source (the OoT/MM pause-menu background snapshot
+                        // getting clobbered by the Link-doll render).
+                        if (snapTex && m_vkFBSnapshotAddrs[slot0] != (key0.address & 0x7FFFFF)) {
+                            static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
+                            if (s_snapTrace) {
+                                std::fprintf(stderr,
+                                    "[SNAPSHOT-STALE] slot=%u expectedAddr=0x%06X actualAddr=0x%06X -- "
+                                    "stale ring slot caught and rejected\n",
+                                    slot0, key0.address & 0x7FFFFF, m_vkFBSnapshotAddrs[slot0]);
+                            }
+                        }
+                        if (snapTex && m_vkFBSnapshotAddrs[slot0] == (key0.address & 0x7FFFFF) &&
+                            (rtFB0 || rawRTFB0)) {
                             fbTex0 = 1;
                             useVKSnapshot0 = true;
                             vkSnapshotTex0 = snapTex;
@@ -1647,22 +1727,6 @@ void RDPProcessor::FlushBatch() {
                         GPUFramebuffer* canvasFB = rtFB0 ? rtFB0 : rawRTFB0;
                         const uint32_t snapW = m_renderer->GetWidth();
                         const uint32_t snapH = m_renderer->GetHeight();
-                        // REACHABILITY CHECK (NOVA64_CANVASTEX_DBG=1): is this
-                        // code path even entered, and if so does the blit
-                        // succeed? Answers "my fix changed nothing" =
-                        // "wrong fix" vs "code never runs".
-                        {
-                            static const bool s_dbg = std::getenv("NOVA64_CANVASTEX_DBG") != nullptr;
-                            static uint32_t s_n = 0;
-                            if (s_dbg && ++s_n <= 40) {
-                                std::fprintf(stderr,
-                                    "[CANVASTEX] enter#%u canvasFB=%d addr=0x%06X rtFB0=%d rawRTFB0=%d key0addr=0x%06X %ux%u\n",
-                                    s_n, canvasFB != nullptr,
-                                    canvasFB ? (canvasFB->desc.address & 0x7FFFFF) : 0u,
-                                    rtFB0 != nullptr, rawRTFB0 != nullptr,
-                                    key0.address & 0x7FFFFF, snapW, snapH);
-                            }
-                        }
                         if (canvasFB && snapW > 0 && snapH > 0) {
                             const uint32_t canvasAddr = canvasFB->desc.address & 0x7FFFFF;
                             // Advance first so an in-flight frame's bound slot is
@@ -1679,14 +1743,6 @@ void RDPProcessor::FlushBatch() {
                                 slot = m_renderer->CreateTexture(snapDesc);
                             }
                             const bool blitOK = slot && m_renderer->BlitCanvasToTexture(canvasAddr, slot.get());
-                            {
-                                static const bool s_dbg = std::getenv("NOVA64_CANVASTEX_DBG") != nullptr;
-                                static uint32_t s_m = 0;
-                                if (s_dbg && ++s_m <= 40) {
-                                    std::fprintf(stderr, "[CANVASTEX]   blit addr=0x%06X slot=%u ok=%d\n",
-                                                 canvasAddr, m_vkFBSnapshotIdx, blitOK ? 1 : 0);
-                                }
-                            }
                             if (blitOK) {
                                 m_vkFBSnapshotAddrs[m_vkFBSnapshotIdx] = canvasAddr;
                                 fbTex0 = 1;
@@ -1830,8 +1886,12 @@ void RDPProcessor::FlushBatch() {
                 if (fbTex1 == 0 && !g_fbManager.IsGL()) {
                     // Primary path: enqueue-time resolved slot -- see the tex0 note above.
                     if (call.snapshotSlot1 >= 0) {
-                        ITexture* snapTex = m_vkFBSnapshots[static_cast<uint32_t>(call.snapshotSlot1)].get();
-                        if (snapTex && (rtFB1 || rawRTFB1)) {
+                        const uint32_t slot1 = static_cast<uint32_t>(call.snapshotSlot1);
+                        ITexture* snapTex = m_vkFBSnapshots[slot1].get();
+                        // Re-validate against the address it was resolved for -- see the
+                        // matching comment on the tex0 primary path above.
+                        if (snapTex && m_vkFBSnapshotAddrs[slot1] == (key1.address & 0x7FFFFF) &&
+                            (rtFB1 || rawRTFB1)) {
                             fbTex1 = 1;
                             useVKSnapshot1 = true;
                             vkSnapshotTex1 = snapTex;
@@ -1854,6 +1914,56 @@ void RDPProcessor::FlushBatch() {
                             useVKSnapshot1 = true;
                             vkSnapshotTex1 = snapTex;
                             rtFB1 = rawRTFB1;
+                        }
+                    }
+
+                    // Last resort — mirrors tex0's canvas-blit fallback (the
+                    // fix for the black pause-menu panel) above. Tex1 never
+                    // had this: only the two ring-based paths, which depend
+                    // on the 4-slot snapshot ring (m_vkFBSnapshots) still
+                    // holding this address's entry. MM/OoT's pause-menu
+                    // world-snapshot background is read through tex1 (a
+                    // 2-cycle combiner blending it with a darkening tint),
+                    // and the ring churns fast -- the routine double-buffer
+                    // and Z-buffer-reuse-as-color-target captures alone
+                    // consume 2+ new ring slots per frame -- so a one-time
+                    // background capture falls out of the ring within a
+                    // frame or two. Without this fallback, every read after
+                    // that point had nowhere left to go but raw, never-
+                    // synced RDRAM. Confirmed via a live capture: reads
+                    // succeeded via the ring for exactly the first two
+                    // frames, then failed on every following frame with no
+                    // recovery, even though the framebuffer itself remained
+                    // correctly resolvable (rtFB1 non-null) the whole time --
+                    // the persistent canvas this reads from survives ring
+                    // churn entirely, unlike the ring itself.
+                    if (fbTex1 == 0 && m_renderer) {
+                        GPUFramebuffer* canvasFB1 = rtFB1 ? rtFB1 : rawRTFB1;
+                        const uint32_t snapW = m_renderer->GetWidth();
+                        const uint32_t snapH = m_renderer->GetHeight();
+                        if (canvasFB1 && snapW > 0 && snapH > 0) {
+                            const uint32_t canvasAddr1 = canvasFB1->desc.address & 0x7FFFFF;
+                            m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
+                            auto& slot1 = m_vkFBSnapshots[m_vkFBSnapshotIdx];
+                            if (!slot1 || slot1->GetWidth() != snapW || slot1->GetHeight() != snapH) {
+                                TextureDesc snapDesc1{};
+                                snapDesc1.width     = snapW;
+                                snapDesc1.height    = snapH;
+                                snapDesc1.format    = TextureFormat::RGBA8;
+                                snapDesc1.usage     = BufferUsage::Dynamic;
+                                snapDesc1.mipLevels = 1;
+                                slot1 = m_renderer->CreateTexture(snapDesc1);
+                            }
+                            const bool blitOK1 = slot1 && m_renderer->BlitCanvasToTexture(canvasAddr1, slot1.get());
+                            if (blitOK1) {
+                                m_vkFBSnapshotAddrs[m_vkFBSnapshotIdx] = canvasAddr1;
+                                fbTex1 = 1;
+                                useVKSnapshot1 = true;
+                                vkSnapshotTex1 = slot1.get();
+                                if (!rtFB1) rtFB1 = rawRTFB1;
+                                MM_RDP_TRACE("CanvasAsTex1 addr=0x{:06X} slot={}",
+                                             canvasAddr1, m_vkFBSnapshotIdx);
+                            }
                         }
                     }
                 }

@@ -1,10 +1,10 @@
 /**
  * @file arithmetics.hpp
  * @brief RSP HLE Audio Arithmetics.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP HLE Audio Arithmetics - Modernized from Project64's arithmetics.h
-// C++20 constexpr helper functions
 
 #pragma once
 #include <cstdint>

@@ -2,8 +2,8 @@
  * @file x64ops.cpp
  * @brief x64 assembler operations implementation
  *
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  *
  * Implementation of the CX64Ops class which wraps AsmJit for x64 code generation.
  * AsmJit v1.21 uses snake_case API (is_valid, new_label, set_logger, etc.)

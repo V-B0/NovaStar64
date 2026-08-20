@@ -1,13 +1,10 @@
 /**
  * @file GameDB.hpp
  * @brief RSP Per-Game Settings Database.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Per-Game Settings Database
-// Maps ROM CRC pairs to per-game RSP setting overrides
-//
-// N64 ROM header offsets: CRC1 @ 0x10 (4 bytes BE), CRC2 @ 0x14 (4 bytes BE)
-// Each entry overrides specific RSP settings for known problematic games.
 
 #pragma once
 #include <cstdint>

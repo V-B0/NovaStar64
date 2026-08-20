@@ -1,15 +1,10 @@
 /**
  * @file x64RspOps.cpp
  * @brief x64 RSP Operations Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// x64 RSP Operations Implementation
-// Raw x64/SSE2 instruction encoding for RSP JIT recompiler
-//
-// This file implements low-level x64 instruction emission.
-// Each method encodes the exact binary representation of
-// an x64 instruction into a code buffer, with optional
-// logging of the disassembly.
 
 #include "x64RspOps.hpp"
 

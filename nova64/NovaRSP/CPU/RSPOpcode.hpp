@@ -1,10 +1,10 @@
 /**
  * @file RSPOpcode.hpp
  * @brief RSP Opcode Encoding.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Opcode Encoding - Modernized from Project64's RSPOpcode.h
-// C++20 rewrite with strongly-typed enums and constexpr decode helpers
 
 #pragma once
 #include <cstdint>

@@ -1,11 +1,10 @@
 /**
  * @file arithmetics.cpp
  * @brief RSP HLE Audio Arithmetics.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP HLE Audio Arithmetics - Compilation unit
-// All functions are inline constexpr in the header; this unit
-// ensures ODR compliance and provides compile-time verification.
 
 #include "arithmetics.hpp"
 #include <type_traits>

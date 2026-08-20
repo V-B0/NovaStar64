@@ -109,12 +109,14 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
 }
 
 inline void F3DEXHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // F3DEX: count = ((w0 >> 10) & 0x3F), v0 = ((w0 >> 17) & 0x7F)
-    // GLideN64 ref: gSPVertex(w1, _SHIFTR(w0,10,6), _SHIFTR(w0,17,7) - _SHIFTR(w0,10,6))
+    // F3DEX1 (GBI1): count = (w0>>10)&0x3F, v0 = (w0>>17)&0x7F is the vertex
+    // buffer's DIRECT start index -- unlike F3DEX2/GBI2 (see F3DEX2.hpp's
+    // Cmd_G_VTX), whose same-position field encodes the END index and must
+    // be reduced by count. Verified against GLideN64's actual F3DEX_Vtx:
+    // gSPVertex(w1, _SHIFTR(w0,10,6), _SHIFTR(w0,17,7)) -- no subtraction.
     int count = (w0 >> 10) & 0x3F;
-    int startIndex = ((w0 >> 17) & 0x7F) - count;
-    if (startIndex < 0) startIndex = 0;
-    
+    int startIndex = (w0 >> 17) & 0x7F;
+
     LoadVertices(ctx, w1, count, startIndex);
 }
 
@@ -194,8 +196,12 @@ inline void F3DEXHandler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_
 }
 
 inline void F3DEXHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    uint32_t start = ((w0 & 0xFFF) / 2);
-    uint32_t end = ((w1 & 0xFFF) / 2);
+    // GLideN64 F3DEX_CullDL (shared by F3DEX1 and F3DEX2): gSPCullDisplayList(
+    // _SHIFTR(w0,1,15), _SHIFTR(w1,1,15)) -- 15-bit fields, i.e. mask 0xFFFF
+    // (16 bits) then halve, matching F3DEX2.hpp's own Cmd_G_CULLDL. The prior
+    // 0xFFF (12-bit) mask here dropped the top 4 bits of both indices.
+    uint32_t start = ((w0 & 0xFFFF) / 2);
+    uint32_t end = ((w1 & 0xFFFF) / 2);
     CullDisplayList(ctx, start, end);
 }
 

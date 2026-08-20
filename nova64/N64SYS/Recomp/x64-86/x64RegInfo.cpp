@@ -2,8 +2,8 @@
  * @file x64RegInfo.cpp
  * @brief x64 register information and allocation implementation
  *
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  *
  * Implementation of CX64RegInfo for managing MIPS-to-x64 register mappings.
  */

@@ -1,10 +1,10 @@
 /**
  * @file x64RspOps.hpp
  * @brief x64 RSP Operations - Platform-specific x64/SSE2 instruction emission.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// x64 RSP Operations - Platform-specific x64/SSE2 instruction emission
-// Provides typed wrappers around raw x64 encoding for RSP JIT compilation
 
 #pragma once
 #if defined(__amd64__) || defined(_M_X64)

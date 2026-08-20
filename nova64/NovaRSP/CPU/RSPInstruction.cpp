@@ -1,11 +1,10 @@
 /**
  * @file RSPInstruction.cpp
  * @brief RSP Instruction Analysis Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Instruction Analysis Implementation
-// Modernized from Project64's RSPInstruction-x64.cpp
-// C++20 with std::snprintf, constexpr helpers, and clean namespace usage
 
 #include "RSPInstruction.hpp"
 #include "RspMemory.hpp"

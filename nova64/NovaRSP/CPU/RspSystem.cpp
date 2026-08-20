@@ -1,10 +1,10 @@
 /**
  * @file RspSystem.cpp
  * @brief RSP System Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP System Implementation
-// Central RSP subsystem: lifecycle, execution loop, sync CPU
 
 #include "RspSystem.hpp"
 #include "RSPCpu.hpp"

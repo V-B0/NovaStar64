@@ -2,8 +2,8 @@
  * @file JumpInfo.hpp
  * @brief Jump/branch information for code sections in the dynamic recompiler
  * 
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  * 
  * This structure holds information about branch and jump targets during
  * dynamic recompilation, including both static (PC-based) and runtime

@@ -1,10 +1,10 @@
 /**
  * @file RSPRegisters.hpp
  * @brief RSP Registers.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Registers - Modernized from Project64's RSPRegisters.h
-// C++20 with proper encapsulation, constexpr status bits
 
 #pragma once
 #include "RspTypes.hpp"

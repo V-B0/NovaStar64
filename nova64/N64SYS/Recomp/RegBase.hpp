@@ -2,8 +2,8 @@
  * @file RegBase.hpp
  * @brief Base register state management for the recompiler
  * 
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  * 
  * This class tracks the state of MIPS registers during dynamic recompilation,
  * enabling optimizations like constant propagation and register mapping.

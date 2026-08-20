@@ -1,10 +1,10 @@
 /**
  * @file RspSettings.hpp
  * @brief RSP Settings.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Settings - Modernized from Project64's RspSettings.h
-// C++20 with thread-safe settings and enum class CPU method
 
 #pragma once
 #include <cstdint>

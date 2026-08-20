@@ -1,10 +1,10 @@
 /**
  * @file ucodes.hpp
  * @brief RSP HLE Audio Ucodes.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP HLE Audio Ucodes - Modernized from Project64's ucodes.h
-// C++20 with structured microcode definitions
 
 #pragma once
 #include <cstdint>

@@ -1,10 +1,10 @@
 /**
  * @file RSPCpu.cpp
  * @brief RSP CPU - Build tables, DoRspCycles dispatch.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP CPU - Build tables, DoRspCycles dispatch
-// Based on Project64's RSPCpu.cpp, modernized for C++20
 
 #include "RSPCpu.hpp"
 #include "RspSystem.hpp"

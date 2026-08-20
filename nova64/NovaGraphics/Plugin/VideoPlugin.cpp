@@ -120,7 +120,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     //
     // Must run before any RSP task is dispatched. CRSPSettings::SetRomOpen
     // (called later from N64SYS startup) will trigger RefreshSettings which
-    // re-reads SuperNova64.ini — if that file exists and defines GraphicsHLE
+    // re-reads NovaStar64.ini — if that file exists and defines GraphicsHLE
     // it will override us. That's intentional: explicit per-emu config wins.
     {
         const RenderingMode mode = m_config.renderingMode;
@@ -889,6 +889,25 @@ void VideoPlugin::UpdateScreen() {
         uint32_t baseH  = m_sysInfo.isPAL ? 288u : 240u;
         viCfg.height    = (yscale > 0) ? (baseH * yscale) / 1024u : baseH;
         g_fbManager.UpdateVI(viCfg);
+
+        // ── CPU->GPU framebuffer upload (Vulkan) ──
+        // UpdateVI's own upload path calls FramebufferManager::CopyToGPU, which
+        // is GL-only, so on Vulkan a buffer the CPU composed in RDRAM never
+        // reached the GPU and displayed as nothing. Mirror it here for the
+        // display buffer whenever the RDP has NOT rendered into it this frame
+        // (gpuModified false) -- that is exactly the "content came from the CPU,
+        // not from us" case, and it avoids stomping GPU-rendered frames.
+        if (m_renderer && !g_fbManager.IsGL() && m_sysInfo.rdram &&
+            m_config.fbWriteAccess) {
+            if (auto* viFB = g_fbManager.GetDisplayFramebuffer()) {
+                // Sticky check, NOT gpuModified: the read-back clears
+                // gpuModified, so using it would let a later frame upload an
+                // N64-resolution RDRAM copy over a GPU-rendered frame and
+                // discard the internal-resolution detail.
+                if (!viFB->everGpuRendered)
+                    g_fbManager.CopyToGPUVulkan(viFB, m_sysInfo.rdram, m_renderer.get());
+            }
+        }
     }
 
     // Determine output dimensions from VI registers
@@ -1589,7 +1608,7 @@ bool VideoPlugin::CreateDisplayWindow() {
     WindowConfig wc;
     wc.width     = m_config.windowWidth;
     wc.height    = m_config.windowHeight;
-    wc.title     = "SuperNova64 - NovaGraphics";
+    wc.title     = "NovaStar64 - NovaGraphics";
     wc.resizable = true;
 
     // In embedded mode the launcher owns the visible window.

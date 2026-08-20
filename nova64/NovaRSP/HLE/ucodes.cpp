@@ -1,10 +1,10 @@
 /**
  * @file ucodes.cpp
  * @brief RSP HLE Microcode Dispatchers.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP HLE Microcode Dispatchers
-// CIC x105 boot ucode, audio list processors, MP3, Musyx, JPEG
 
 #include "ucodes.hpp"
 #include "alist.hpp"
@@ -31,7 +31,7 @@ void cicx105_ucode(CHle* hle)
     uint8_t* dram = hle->dram();
     if (imem == nullptr || dram == nullptr) return;
 
-    // SuperNova64 stores RDRAM/IMEM with the same byte-swap convention as
+    // NovaStar64 stores RDRAM/IMEM with the same byte-swap convention as
     // Mupen (XOR_S8=3 on LE host => native 32-bit word order). For copies
     // whose source/destination addresses and length are 4-byte aligned, a
     // raw memcpy preserves the N64-visible byte sequence correctly.

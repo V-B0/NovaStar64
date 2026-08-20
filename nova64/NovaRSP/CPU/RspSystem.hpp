@@ -1,10 +1,10 @@
 /**
  * @file RspSystem.hpp
  * @brief RSP System.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP System - Modernized from Project64's RspSystem.h
-// C++20 central RSP subsystem tying together CPU, recompiler, and HLE
 
 #pragma once
 #include "RSPInterpreterOps.hpp"

@@ -2,8 +2,8 @@
  * @file arm64RegInfo.hpp
  * @brief AArch64 register information / state management for the recompiler
  *
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  *
  * AArch64 counterpart of CX64RegInfo, declared as Nova64::Recompiler::Arm::ArmRegInfo
  * to match the forward declarations and friend declarations the rest of the

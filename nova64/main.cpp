@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief SuperNova64 - Nintendo 64 Emulator Entry Point
+ * @brief NovaStar64 - Nintendo 64 Emulator Entry Point
  */
 
 #include "common/log.hpp"
@@ -42,7 +42,7 @@ static void PreloadMoltenVK()
 
 static void PrintUsage(const char* programName)
 {
-    std::printf("SuperNova64 - Nintendo 64 Emulator\n");
+    std::printf("NovaStar64 - Nintendo 64 Emulator\n");
     std::printf("Usage: %s [options] [rom_file]\n\n", programName);
     std::printf("Options:\n");
     std::printf("  --help, -h       Show this help message\n");
@@ -66,7 +66,7 @@ int main(int argc, char* argv[])
     LoggingConfig::set_min_level(Logging::Level::Info);
     LoggingConfig::enable_console_output(true);
 
-    Log::info("SuperNova64 starting...");
+    Log::info("NovaStar64 starting...");
 
 #ifdef __APPLE__
     PreloadMoltenVK();
@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    Log::info("SuperNova64 initialized successfully");
+    Log::info("NovaStar64 initialized successfully");
 
     if (romPath.empty() && !CN64System::s_HeadlessMode)
     {
@@ -192,7 +192,7 @@ int main(int argc, char* argv[])
         launcher.Run();
         // The launcher manages all emulator instances as child processes.
         // When it exits, we're done.
-        Log::info("Launcher closed. SuperNova64 exiting.");
+        Log::info("Launcher closed. NovaStar64 exiting.");
         Logging::stop_logging();
         return 0;
     }
@@ -237,7 +237,7 @@ int main(int argc, char* argv[])
     }
 
     // Cleanup
-    Log::info("SuperNova64 shutting down...");
+    Log::info("NovaStar64 shutting down...");
     CN64System::CloseSystem();
     Logging::stop_logging();
 

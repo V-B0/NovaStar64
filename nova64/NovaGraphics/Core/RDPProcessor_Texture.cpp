@@ -30,6 +30,9 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
     // Also index by TMEM slot: the render tile (tile 0) and loading tile (tile 7)
     // share the same tmemAddr, so this bridges them in PopulateTextureInfo.
     m_state.rdp.tmemSourceAddress[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = m_state.rdp.textureImage.address;
+    // Clear any stale LOADTYPE_TILE record for this slot: a block load must not
+    // inherit a previous tile load's dimensions.
+    m_state.rdp.tmemLoadType[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = RDPState::LOADTYPE_BLOCK;
     ExecuteLoadBlock(tile, uls, ult, texels, dxt);
 }
 
@@ -65,6 +68,9 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     // Also index by TMEM slot: connects loading tile to render tile via shared tmemAddr.
     m_state.rdp.tmemSourceAddress[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = m_state.rdp.textureImage.address;
+    // Clear any stale LOADTYPE_TILE record for this slot: a block load must not
+    // inherit a previous tile load's dimensions.
+    m_state.rdp.tmemLoadType[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = RDPState::LOADTYPE_BLOCK;
     ExecuteLoadTile(tile, sl, tl, sh, th);
 }
 
@@ -409,6 +415,16 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     // source FB via FindByAddress.  For tiles with tl > 0, the computed address lands
     // inside the FB's range while the base address (0x000000 for MM startup) does not.
     m_state.rdp.tmemSourceAddress[tileDesc.tmemAddr & 0x1FF] = address;
+    // Record load info for GLideN64-parity tile sizing (see RDPState's
+    // tmemLoad* comment and CalcTileSize's LOADTYPE_TILE branch).
+    {
+        const uint32_t slot = tileDesc.tmemAddr & 0x1FF;
+        m_state.rdp.tmemLoadType[slot]     = RDPState::LOADTYPE_TILE;
+        m_state.rdp.tmemLoadWidth[slot]    = static_cast<uint16_t>(width);
+        m_state.rdp.tmemLoadHeight[slot]   = static_cast<uint16_t>(height);
+        m_state.rdp.tmemLoadTexWidth[slot] = static_cast<uint16_t>(texImg.width);
+        m_state.rdp.tmemLoadSize[slot]     = static_cast<uint8_t>(texImg.size);
+    }
 
     GPUFramebuffer* rawSrcFB = g_fbManager.FindByAddress(address);
     if (!g_fbManager.IsGL() && !rawSrcFB) {
@@ -473,7 +489,20 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
                      srcFB->desc.height,
                      srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
-        srcFB->needsRdramResync = false;
+        // CopyFromGPU is a GL-only no-op (FramebufferManager.cpp: `if (...||
+        // !m_isGL) return;`). Clearing needsRdramResync unconditionally here
+        // -- as this did previously -- told the Vulkan-specific sync block
+        // below that this address's RDRAM copy was already handled when
+        // nothing actually happened. If gpuModified had ALSO already been
+        // consumed by an earlier LoadTile/LoadBlock this frame (very common:
+        // several reads compete for the same buffer's flags per frame), the
+        // real Vulkan copy's own condition (gpuModified || needsRdramResync)
+        // then evaluated false and silently never ran -- RDRAM permanently
+        // stuck with whatever pixels (often blank/uninitialized) it held
+        // from this buffer's last ACTUAL sync, no matter how much real
+        // content the GPU went on to render. Only clear the flag when the
+        // call could have actually done something.
+        if (g_fbManager.IsGL()) srcFB->needsRdramResync = false;
     }
     if (!g_fbManager.IsGL() && rawSrcFB && (rawSrcFB->gpuModified || rawSrcFB->needsRdramResync) && m_renderer) {
         const auto& d = rawSrcFB->desc;
@@ -756,12 +785,19 @@ void RDPProcessor::HandleSyncFull() {
     // which we intercept in HandleFillRect.  However, if a game skips that
     // clear (or if our detection missed it), stale depth from the previous
     // frame can cause 2D HUD elements to be hidden behind 3D geometry.
-    // Clear the GL depth buffer at frame boundaries as a safety net.
+    // Clear the depth buffer at frame boundaries as a safety net.
+    //
+    // Mirrors the two branches already used for the *detected* clear path
+    // in RDPProcessor_Draw.cpp (search "Vulkan: clear the active swapchain
+    // depth attachment") -- this defensive fallback only ever had the GL
+    // branch, so on Vulkan a missed detection had no safety net at all.
     if (g_fbManager.IsGL()) {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->fbo) {
             glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
         }
+    } else if (m_renderer) {
+        m_renderer->ClearDepthBuffer(1.0f);
     }
 }
 

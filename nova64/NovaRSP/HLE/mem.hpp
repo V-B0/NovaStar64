@@ -1,10 +1,10 @@
 /**
  * @file mem.hpp
  * @brief RSP HLE Memory Access.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP HLE Memory Access - Modernized from Project64's mem.h
-// C++20 with safe inline DRAM/DMEM accessors, no macros
 
 #pragma once
 #include <cassert>

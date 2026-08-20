@@ -1,6 +1,6 @@
 /**
  * @file LuaEngine.hpp
- * @brief Lua 5.4 scripting engine for SuperNova64 modding.
+ * @brief Lua 5.4 scripting engine for NovaStar64 modding.
  *
  * Exposed Lua API:
  *   mem.read8(addr)  mem.read16(addr)  mem.read32(addr)
@@ -28,7 +28,7 @@ public:
     LuaEngine();
     ~LuaEngine();
 
-    /// (Re)initialize the Lua state and register the SuperNova64 API.
+    /// (Re)initialize the Lua state and register the NovaStar64 API.
     bool Init(uint8_t* rdram, size_t rdramSize);
 
     /// Shutdown and release Lua state.

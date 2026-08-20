@@ -1,10 +1,10 @@
 /**
  * @file RSPCpu.hpp
  * @brief RSP CPU Interface.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP CPU Interface - Modernized from Project64's RSPCpu.h
-// C++20 with proper element broadcast tables
 
 #pragma once
 #include "RSPOpcode.hpp"

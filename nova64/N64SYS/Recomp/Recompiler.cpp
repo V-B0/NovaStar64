@@ -2,8 +2,8 @@
  * @file Recompiler.cpp
  * @brief Implementation of the main dynamic recompiler
  * 
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  * 
  * This is the main recompiler engine that translates MIPS R4300i code
  * to native x86/x64 code at runtime for improved performance.

@@ -1,6 +1,6 @@
 /**
  * @file NovaAudioPlugin.hpp
- * @brief Adapter bridging SuperNova64's AudioPlugin interface to the AI hardware emulation
+ * @brief Adapter bridging NovaStar64's AudioPlugin interface to the AI hardware emulation
  *
  * This class implements the Plugins::AudioPlugin abstract interface required by
  * the emulator core, and delegates to the AudioInterfaceHandler for DMA/output.

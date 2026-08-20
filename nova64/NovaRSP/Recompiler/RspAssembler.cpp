@@ -1,10 +1,10 @@
 /**
  * @file RspAssembler.cpp
  * @brief RSP Assembler Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Assembler Implementation
-// x64 code emitter wrapper with logging and symbol management
 
 #include "RspAssembler.hpp"
 

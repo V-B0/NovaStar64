@@ -1,10 +1,10 @@
 /**
  * @file RspSettings.cpp
  * @brief RSP Settings Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Settings Implementation
-// Thread-safe settings singleton with static members
 
 #include "RspSettings.hpp"
 #include "GameDB.hpp"
@@ -71,7 +71,7 @@ void CRSPSettings::RefreshSettings()
     // Attempt to read RSP settings from config file
     static const char* kSection = "RSP";
 
-    std::filesystem::path configPath = std::filesystem::current_path() / "SuperNova64.ini";
+    std::filesystem::path configPath = std::filesystem::current_path() / "NovaStar64.ini";
 
     if (std::filesystem::exists(configPath))
     {

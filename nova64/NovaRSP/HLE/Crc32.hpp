@@ -1,10 +1,10 @@
 /**
  * @file Crc32.hpp
  * @brief CRC32 utility for microcode identification.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// CRC32 utility for microcode identification
-// Standard CRC32 (ISO 3309 / ITU-T V.42) with lookup table
 
 #pragma once
 #include <cstdint>

@@ -1,21 +1,10 @@
 /**
  * @file x64RspVectorGen.cpp
  * @brief x64 RSP Vector Generator Implementation.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// x64 RSP Vector Generator Implementation
-// SSE2/SSSE3 code generation for all RSP vector opcodes
-//
-// Each Emit*() method generates a sequence of x86-64 SIMD instructions
-// that faithfully implement the RSP vector unit behavior. The RSP
-// operates on 8 lanes of 16-bit elements packed into 128-bit vectors,
-// which maps naturally to SSE2's packed word operations.
-//
-// Key RSP vector concepts:
-// - 32 vector registers (VR[0..31]), each 128 bits = 8 x int16
-// - 48-bit accumulator per lane (3 x 16-bit: high, middle, low)
-// - 5 flag registers: VCOL, VCOH, VCCL, VCCH, VCE
-// - Element field (e) selects broadcast/scalar element from vt
 
 #include "x64RspVectorGen.hpp"
 

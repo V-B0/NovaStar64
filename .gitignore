@@ -14,7 +14,6 @@ CMakeUserPresets.json
 
 # Build directories
 build/
-SuperNova/nova64/build/
 .vs/
 Gliden64/
 Saves/
@@ -35,6 +34,5 @@ nova64/dump
 *.bin
 *.bmp
 *.json
-*.md
 
 

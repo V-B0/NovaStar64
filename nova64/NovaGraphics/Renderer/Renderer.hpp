@@ -718,6 +718,22 @@ public:
     virtual bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) {
         (void)n64Addr; (void)dst; return false;
     }
+    /// Upload CPU-side RGBA8 pixels into the persistent canvas for an N64 buffer
+    /// address, scaling from N64 resolution up to canvas resolution.
+    ///
+    /// This is the CPU->GPU direction of framebuffer emulation — GLideN64's
+    /// `RDRAMtoColorBuffer` / `config.frameBufferEmulation.copyFromRDRAM`.
+    /// `FramebufferManager::CopyToGPU` implements it for GL but opens with
+    /// `if (!m_isGL) return;`, so on Vulkan the whole feature was absent: a
+    /// frame the game composes with the CPU in RDRAM (FMV//movie playback,
+    /// CPU-composited screens, any buffer the VI points at that the RDP never
+    /// rendered) had no GPU content and displayed as nothing.
+    /// `pixels` is tightly packed RGBA8, `w*h` entries. Returns false if the
+    /// backend has no canvas machinery.
+    virtual bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h,
+                                      const uint32_t* pixels) {
+        (void)n64Addr; (void)w; (void)h; (void)pixels; return false;
+    }
     virtual void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW,
                                         uint32_t fbH, bool isRGBA16,
                                         uint8_t* rdram) {

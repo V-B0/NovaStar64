@@ -2,8 +2,8 @@
  * @file x64RecompilerOps.hpp
  * @brief x64 recompiler operations - MIPS to x64 translation
  * 
- * Nova64 N64 Emulator - Based on Project64 architecture
- * Original Project64 code licensed under GPL-2.0
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  * 
  * This class implements the translation of MIPS R4300i instructions to x64
  * native code. It handles instruction decoding, register allocation,

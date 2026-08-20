@@ -1,10 +1,10 @@
 /**
  * @file RspMemory.hpp
  * @brief RSP Memory.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Memory - Modernized from Project64's RspMemory.h
-// C++20 with bounds-safe IMEM/DMEM access
 
 #pragma once
 #include "RspTypes.hpp"

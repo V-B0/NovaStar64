@@ -933,11 +933,33 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
             ss << "        combined.rgb = clamp(srcContrib, 0.0, 1.0);\n";
             ss << "        fragColor1 = vec4(clamp(dstFactor, 0.0, 1.0));\n";
         } else {
-            // !forceBlend: full-coverage pixels bypass the blender on real N64
-            // hardware and output the combiner color directly. P is never
-            // evaluated, so P=memColor is irrelevant — output combined.rgb
-            // (the combiner result) regardless of P source.
-            ss << "        fragColor1 = vec4(0.0);\n";
+            // !forceBlend: full-coverage pixels bypass the blend formula on
+            // real N64 hardware and output P directly -- but P is still
+            // whichever source the selector points to (CC/Mem/Blend/Fog),
+            // NOT necessarily the raw combiner result. This branch used to
+            // leave combined.rgb untouched (== the combiner's own output),
+            // which only happens to be correct when P selects CC (0). Any
+            // draw with P=Blend/Fog (a common pattern for blender-driven
+            // fog/glow effects, e.g. P=Fog,M=Mem,B=1-A with FORCE_BL clear
+            // -- the usual case for opaque terrain) would silently render
+            // the pre-blend combiner color instead of the actual selected
+            // P color on every fully-covered pixel. The MLE blender's own
+            // equivalent branch (`combined.rgb = clamp(bP, ...)`, a few
+            // lines above) already gets this right -- match it here since
+            // this dual-source path is the one that actually runs today
+            // (MLE_BLENDER never activates on Vulkan; see nova64-graphics-
+            // audit-pass1 pass 16).  P=memColor (bP==vec3(0) via
+            // pmColorSelDS) is excluded from dual-source by hardware blend
+            // instead, matching the forceBlend branch's p_is_mem handling.
+            if (p_is_mem) {
+                // P=memColor: output the existing framebuffer content
+                // unchanged (out = dst). combined.rgb contributes nothing.
+                ss << "        combined.rgb = vec3(0.0);\n";
+                ss << "        fragColor1 = vec4(1.0);\n";
+            } else {
+                ss << "        combined.rgb = clamp(bP, 0.0, 1.0);\n";
+                ss << "        fragColor1 = vec4(0.0);\n";
+            }
         }
     };
 

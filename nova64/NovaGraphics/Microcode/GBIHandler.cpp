@@ -192,7 +192,7 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
     bool needEyeNormal = lighting || texGen;
 
     for (int i = 0; i < count; ++i) {
-        TransformedVertex& tv = geo.vertexBuffer[startIndex + i];
+        TransformedVertex& tv = geo.vertexBuffer[(startIndex + i) & VERTEX_BUFFER_MASK];
 
         // --- World-space position: ModelView * object-pos (RT intercept) ---
         // Computed BEFORE applying projection so the RT pipeline has true 3D
@@ -425,20 +425,22 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
     address = ctx.ResolveAddress(address);
     auto& geo = ctx.state->geometry;
     
-    if (startIndex + count > VERTEX_BUFFER_SIZE) {
-        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-                "Vertex load overflow: start={}, count={}, max={}",
-                startIndex, count, VERTEX_BUFFER_SIZE);
-        count = VERTEX_BUFFER_SIZE - startIndex;
-        if (count <= 0) return;
-    }
+    // Wrap rather than truncate: the destination slot is masked per-vertex
+    // below, matching the reference's masked vertex file. Truncating here
+    // silently discarded the tail of a load whose start index sat high in the
+    // buffer, leaving stale vertices in those slots for later triangles to
+    // reference.
+    if (startIndex < 0) return;
+    if (count <= 0) return;
+    if (count > VERTEX_BUFFER_SIZE) count = VERTEX_BUFFER_SIZE;
 
     ++geo.vertexLoadCounter;
 
     for (int i = 0; i < count; ++i) {
         uint32_t vtxAddr = address + i * 16; // N64Vertex is 16 bytes
         if (vtxAddr + 16 > ctx.rdramSize) break;
-        geo.vertexGeneration[startIndex + i] = geo.vertexLoadCounter;
+        const int dstIdx = (startIndex + i) & VERTEX_BUFFER_MASK;
+        geo.vertexGeneration[dstIdx] = geo.vertexLoadCounter;
         
         // Read N64 vertex using word-swapped RDRAM addressing
         int16_t x = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 0));
@@ -454,8 +456,8 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         uint8_t cn2 = ctx.ReadByte(vtxAddr + 14); // B or NZ
         uint8_t cn3 = ctx.ReadByte(vtxAddr + 15); // A
         
-        // Fill transformed vertex
-        TransformedVertex& tv = geo.vertexBuffer[startIndex + i];
+        // Fill transformed vertex (masked slot -- see LoadVertices' wrap note)
+        TransformedVertex& tv = geo.vertexBuffer[dstIdx];
         tv.position[0] = static_cast<float>(x);
         tv.position[1] = static_cast<float>(y);
         tv.position[2] = static_cast<float>(z);
@@ -1105,17 +1107,20 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     
     {
     auto& geo = ctx.state->geometry;
-    int maxVtx = GetVertexCacheSize();
-    
-    // Validate indices
-    if (v0 >= maxVtx || v1 >= maxVtx || v2 >= maxVtx) {
-        static const bool s_rejDbg0 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
-        if (s_rejDbg0)
-            std::fprintf(stderr, "[REJ] idxrange idx=(%d,%d,%d) max=%d cmb=0x%llX\n",
-                         v0, v1, v2, maxVtx,
-                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
-        return;
-    }
+    // ── Vertex index handling: MASK, never drop (GLideN64 parity) ──
+    // GLideN64 resolves every index through
+    //     SPVertex & getVertex(u32 _v) { return triangles.vertices[_v & VERTBUFF_MASK]; }
+    // (GraphicsDrawer.h, VERTBUFF_SIZE 256) -- it has no per-ucode "cache size"
+    // rejection at all. We previously discarded any triangle with an index >=
+    // GetVertexCacheSize() (32 for F3DEX2/F3DZEX) while LoadVertices was happy
+    // to fill slots well past that, so vertices loaded above the cache size were
+    // unreachable and every triangle referencing them vanished silently --
+    // missing geometry with no diagnostic. Masking matches the reference and the
+    // hardware's wrap-around register file.
+    if (v0 < 0 || v1 < 0 || v2 < 0) return;
+    v0 &= VERTEX_BUFFER_MASK;
+    v1 &= VERTEX_BUFFER_MASK;
+    v2 &= VERTEX_BUFFER_MASK;
 
     // Degenerate-vertex guard (matches GLideN64 gSPTriangle and RT64
     // RSP::drawIndexedTri): two equal indices = zero-area triangle that
@@ -1805,21 +1810,27 @@ void GBIHandler::EndDisplayList(DListContext& ctx) {
 void GBIHandler::PopMatrix(DListContext& ctx, uint32_t param) {
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
-    
-    // param interpretation varies by GBI version
-    // GBI1: param = number of matrices to pop (in 64-byte units)
-    // GBI2: param = 0x40 for modelview
-    int count = (param >> 6);
-    if (count < 1) count = 1;
-    
-    for (int i = 0; i < count; ++i) {
-        if (geo.modelViewStackDepth > 0) {
-            --geo.modelViewStackDepth;
-        }
+
+    // GBI2: count = w1 >> 6 (GLideN64 F3DEX2.cpp: gSPPopMatrixN(0, w1 >> 6)).
+    // Real semantics (gSP.cpp gSPPopMatrixN) are all-or-nothing, NOT
+    // clamp-to-1-and-pop-what-you-can:
+    //   if (modelViewi > num - 1) modelViewi -= num;   // num==0 never pops
+    //                                                    // (unsigned num-1 underflow)
+    //   else /* reject: leave stack untouched */
+    // Previously this clamped count<1 to 1 (so a genuine count==0 command
+    // erroneously popped a matrix that should have stayed) and popped
+    // one-at-a-time up to whatever depth was available instead of rejecting
+    // the whole pop when the requested count exceeded the stack depth. Both
+    // diverge from hardware and can leave a later limb draw using its
+    // grandparent's transform instead of its parent's -- a plausible source
+    // of a displaced/duplicated-looking sub-mesh (e.g. a face feature drawn
+    // at the wrong bone transform).
+    int count = static_cast<int>(param >> 6);
+    if (count > 0 && geo.modelViewStackDepth >= count) {
+        geo.modelViewStackDepth -= count;
+        geo.combinedDirty = true;
+        ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
     }
-    
-    geo.combinedDirty = true;
-    ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

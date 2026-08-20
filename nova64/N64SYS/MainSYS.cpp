@@ -1248,7 +1248,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     if (!m_WindowManager) {
         m_WindowManager = std::make_unique<Nova64::Video::WindowManager>();
         Nova64::Video::WindowConfig windowConfig;
-        windowConfig.title = "SuperNova64 - Emulator";
+        windowConfig.title = "NovaStar64 - Emulator";
         windowConfig.width = s_WindowWidth;
         windowConfig.height = s_WindowHeight;
         windowConfig.posX = -1;  // center

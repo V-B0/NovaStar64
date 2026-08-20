@@ -102,9 +102,55 @@ static bool ForensicEnabled() {
 
 // Compute the effective texture dimensions for a tile, accounting for
 // mask/clamp settings.
-static void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH) {
+// LoadInfo for one TMEM slot, mirroring GLideN64's gDP.loadInfo[] entry.
+// Passing nullptr keeps the historical mask/clamp-only behaviour.
+struct TileLoadInfo {
+    bool     isTileLoad = false;
+    uint16_t width      = 0;   // texels actually loaded per row
+    uint16_t height     = 0;   // rows actually loaded
+    uint16_t texWidth   = 0;   // SetTextureImage width
+    uint8_t  size       = 0;   // SetTextureImage pixel size
+};
+
+// GLideN64 TileSizes parity:
+//     _sizes.clampWidth = (clamps && cycleType != G_CYC_COPY) ? tileWidth : width;
+// clampWidth/Height bound the SOURCE texel reads during TMEM decode, so texels
+// past the loaded extent replicate the edge instead of reading on into whatever
+// TMEM holds next (adjacent texture data or the palette). Optional out-params;
+// pass nullptr to skip.
+static void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH,
+                         const TileLoadInfo* loadInfo = nullptr,
+                         int cycleType = 0,
+                         int* outClampW = nullptr, int* outClampH = nullptr) {
     int tileW = std::max(1, tile.GetWidth());
     int tileH = std::max(1, tile.GetHeight());
+
+    // ── LOADTYPE_TILE branch (GLideN64 Textures.cpp::_calcTileSizes) ──
+    // For data brought in by G_LOADTILE the hardware-visible extent is the
+    // region that was actually LOADED, not the tile's mask-derived extent.
+    // GLideN64:
+    //     width = min(info.width, info.texWidth);
+    //     if (width == 0) width = tileWidth;
+    //     if (info.size > pTile->size) width <<= info.size - pTile->size;
+    //     height = info.height; if (height == 0) height = tileHeight;
+    // The size-shift matters because a load performed at a larger pixel size
+    // than the tile samples at packs proportionally more texels per row.
+    if (loadInfo != nullptr && loadInfo->isTileLoad) {
+        int w = static_cast<int>(std::min<uint32_t>(loadInfo->width, loadInfo->texWidth));
+        if (w == 0) w = tileW;
+        if (loadInfo->size > tile.size)
+            w <<= (loadInfo->size - tile.size);
+        int h = static_cast<int>(loadInfo->height);
+        if (h == 0) h = tileH;
+        // Clamp override: a clamped, unmasked axis reports the tile extent.
+        outW = (tile.IsClamped_S() && tile.maskS == 0) ? tileW : std::max(1, w);
+        outH = (tile.IsClamped_T() && tile.maskT == 0) ? tileH : std::max(1, h);
+        constexpr int kCycCopy = 2;
+        if (outClampW) *outClampW = (tile.IsClamped_S() && cycleType != kCycCopy) ? tileW : outW;
+        if (outClampH) *outClampH = (tile.IsClamped_T() && cycleType != kCycCopy) ? tileH : outH;
+        return;
+    }
+
     bool hasTLUT = (tlutType != 0);
     static const uint32_t noTLUT[]   = { 8192, 4096, 2048, 1024 };
     static const uint32_t withTLUT[] = { 4096, 2048, 2048, 1024 };
@@ -123,6 +169,9 @@ static void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW
         outH = maskH;
     else
         outH = tileH;
+    constexpr int kCycCopy = 2;
+    if (outClampW) *outClampW = (tile.IsClamped_S() && cycleType != kCycCopy) ? tileW : outW;
+    if (outClampH) *outClampH = (tile.IsClamped_T() && cycleType != kCycCopy) ? tileH : outH;
 }
 
 // NOTE: namespace Nova64::Video is intentionally left open here.

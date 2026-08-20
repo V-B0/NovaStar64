@@ -146,6 +146,31 @@ void TextureCache::SetConfig(const TextureCacheConfig& config) {
 //  TEXTURE LOOKUP / CREATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+namespace {
+// Replicate the edge texel past the clamp extent on each axis (no-op when the
+// key carries no decode-time clamp).
+void ApplyDecodeClamp(const TextureKey& key, std::vector<uint32_t>& pixels)
+{
+    const uint32_t w = key.width, h = key.height;
+    const uint32_t cw = key.clampWidth, ch = key.clampHeight;
+    if (w == 0 || h == 0) return;
+    if (pixels.size() < static_cast<size_t>(w) * h) return;
+    if (cw > 0 && cw < w) {
+        for (uint32_t y = 0; y < h; ++y) {
+            uint32_t* row = pixels.data() + static_cast<size_t>(y) * w;
+            const uint32_t edge = row[cw - 1];
+            for (uint32_t x = cw; x < w; ++x) row[x] = edge;
+        }
+    }
+    if (ch > 0 && ch < h) {
+        const uint32_t* edgeRow = pixels.data() + static_cast<size_t>(ch - 1) * w;
+        for (uint32_t y = ch; y < h; ++y)
+            std::memcpy(pixels.data() + static_cast<size_t>(y) * w,
+                        edgeRow, static_cast<size_t>(w) * sizeof(uint32_t));
+    }
+}
+} // namespace
+
 CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram,
                                           const uint8_t* tmem) {
     // Look up in cache
@@ -219,6 +244,16 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     }
 
     if (pixels.empty()) return nullptr;
+
+    // ── Decode-time CLAMP (GLideN64 Textures.cpp clampSClamp/clampTClamp) ──
+    // On a CLAMPed axis the RDP re-reads the edge texel past the loaded extent
+    // rather than continuing into TMEM. GLideN64 bounds the source read while
+    // decoding; replicating the edge texel across the remainder of the decoded
+    // image is equivalent and avoids touching all nine format decoders.
+    // Without this, texels between the loaded extent and the sampled extent
+    // came from whatever followed in TMEM (a neighbouring texture, or the
+    // palette) -- garbage/smeared columns and rows at texture edges.
+    ApplyDecodeClamp(key, pixels);
 
     {
         static const bool s_texDbg = std::getenv("NOVA64_TEXDBG") != nullptr;
@@ -449,6 +484,16 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         DecodeTexture(rawKey, rdram + key.address, pixels, false);
     }
     if (pixels.empty()) return nullptr;
+
+    // ── Decode-time CLAMP (GLideN64 Textures.cpp clampSClamp/clampTClamp) ──
+    // On a CLAMPed axis the RDP re-reads the edge texel past the loaded extent
+    // rather than continuing into TMEM. GLideN64 bounds the source read while
+    // decoding; replicating the edge texel across the remainder of the decoded
+    // image is equivalent and avoids touching all nine format decoders.
+    // Without this, texels between the loaded extent and the sampled extent
+    // came from whatever followed in TMEM (a neighbouring texture, or the
+    // palette) -- garbage/smeared columns and rows at texture edges.
+    ApplyDecodeClamp(key, pixels);
 
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;

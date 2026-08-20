@@ -4,7 +4,7 @@
  */
 // ══════════════════════════════════════════════════════════════════════════════
 // NovaGraphics — Video Plugin Interface
-// Main entry point implementing SuperNova64's GFXPlugin abstract base.
+// Main entry point implementing NovaStar64's GFXPlugin abstract base.
 // Handles plugin lifecycle: Initialize → ProcessDList → UpdateScreen → Shutdown.
 // ══════════════════════════════════════════════════════════════════════════════
 

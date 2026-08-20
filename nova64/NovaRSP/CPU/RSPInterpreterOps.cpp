@@ -1,18 +1,10 @@
 /**
  * @file RSPInterpreterOps.cpp
  * @brief RSP Interpreter Operations - Complete opcode implementations.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Interpreter Operations - Complete opcode implementations
-// Based on Project64's RSPInterpreterOps.cpp, modernized for C++20
-//
-// Changes from PJ64:
-//  - Uses PipelineStage::DoDelaySlot instead of RSPPIPELINE_DELAY_SLOT define
-//  - Uses SPStatus:: / DPCWrite:: / DPCStatus:: namespace constants
-//  - Uses RSPRegister enum class instead of RSPRegister_* defines
-//  - Uses C++20 std::countl_zero instead of manual clz32
-//  - Uses Nova64 g_RSPDebugger interface
-//  - Proper const/noexcept annotations
 
 #include "RSPInterpreterOps.hpp"
 #include "RSPCpu.hpp"

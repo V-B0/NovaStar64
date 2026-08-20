@@ -1,10 +1,10 @@
 /**
  * @file RspLog.hpp
  * @brief RSP Logging.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Logging - Modernized from Project64's RspLog.h
-// C++20 with format strings and structured RDP logging
 
 #pragma once
 #include <cstdint>

@@ -66,6 +66,11 @@ struct TextureKey {
     uint16_t tmemOffset;    // Tile base offset in TMEM (in 64-bit words = tmemAddr)
     uint8_t  tlutType;      // 0=none, 2=RGBA16, 3=IA16 (from otherModeH bits 15:14)
     uint8_t  mipLevels;     // Number of mip levels in tile chain (0 = base only)
+    // Decode-time clamp extents (GLideN64 TileSizes::clampWidth/clampHeight).
+    // When an axis is CLAMPed, texels beyond this extent must replicate the
+    // edge texel rather than read further TMEM. 0 = no decode-time clamp.
+    uint16_t clampWidth;
+    uint16_t clampHeight;
     uint64_t crc;           // Content hash for change detection
 
     bool operator==(const TextureKey& other) const {
@@ -85,6 +90,8 @@ struct TextureKey {
                tmemOffset == other.tmemOffset &&
                tlutType == other.tlutType &&
                mipLevels == other.mipLevels &&
+               clampWidth == other.clampWidth &&
+               clampHeight == other.clampHeight &&
                crc == other.crc;
     }
 };
@@ -108,6 +115,8 @@ struct TextureKeyHash {
         h ^= std::hash<uint16_t>{}(k.tmemOffset) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint8_t>{}(k.tlutType) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint8_t>{}(k.mipLevels) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint16_t>{}(k.clampWidth) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint16_t>{}(k.clampHeight) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };

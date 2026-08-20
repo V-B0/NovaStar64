@@ -1,10 +1,10 @@
 /**
  * @file RspClamp.hpp
  * @brief RSP Clamping Utilities.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
-// SuperNova64 - N64 Emulator
-// RSP Clamping Utilities - Modernized from Project64's RspClamp.h
-// C++20 constexpr with branchless SIMD-friendly implementations
 
 #pragma once
 #include <cstdint>

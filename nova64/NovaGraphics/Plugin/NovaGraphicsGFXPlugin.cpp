@@ -50,7 +50,7 @@ NovaGraphicsGFXPlugin::~NovaGraphicsGFXPlugin()
     info.Type                = ::Plugins::PluginType::Graphics;
     info.Version             = 0x0104; // 1.4
     info.Name                = "NovaGraphics";
-    info.Author              = "SuperNova64 Team";
+    info.Author              = "NovaStar64 Team";
     info.Description         = "OpenGL 4.6 N64 video plugin";
     info.SupportsThreading   = false;
     info.SupportsStateSync   = false;

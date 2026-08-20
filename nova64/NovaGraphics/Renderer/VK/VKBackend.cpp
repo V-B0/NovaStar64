@@ -461,6 +461,7 @@ public:
         m_midFrameReadbackDone = false;
         m_frameReadbackCount = 0;
         m_activeCanvasDirty = false;
+        DrainPendingUploads();
 
         // Reset per-frame descriptor pool (frees all sets allocated last time
         // this frame index was active).
@@ -575,8 +576,18 @@ public:
         // the window "fixed" the bouncing precisely because swapchain recreation
         // drops all canvases, breaking the feedback loop -- a long-standing
         // clue in this investigation that only makes sense with this mechanism.)
+        // NOTE (diagnostic, see NOVA64_CANVAS_DBG below): whether the save
+        // actually RUNS is gated on m_activeCanvasDirty, not just oldC being
+        // non-null -- a canvas object can exist (from a previous frame) while
+        // this particular activation drew nothing to it, in which case the
+        // save is correctly skipped and the canvas keeps its LAST real content
+        // (not garbage) -- but the OLD trace line below couldn't distinguish
+        // "skipped, kept prior valid content" from "skipped, still never
+        // written" from "actually saved this time". Capture the real outcome.
+        bool savedOld = false;
         if (swapImg && oldC && m_activeCanvasDirty) {
             SaveSwapchainToCanvas(f.cmd, swapImg, *oldC);
+            savedOld = true;
         }
         CanvasSlot* newC = EnsureCanvas(n64Addr);
         if (swapImg && newC && newC->valid) {
@@ -588,9 +599,11 @@ public:
 
         static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
         if (s_cvDbg) {
-            std::fprintf(stderr, "[CANVAS] switch 0x%06X -> 0x%06X (saveOld=%d loadNew=%d newValid=%d)\n",
+            std::fprintf(stderr, "[CANVAS] switch 0x%06X -> 0x%06X (oldExists=%d dirty=%d savedOld=%d oldValidNow=%d loadNew=%d newValid=%d)\n",
                          m_activeCanvasAddr, n64Addr,
-                         oldC != nullptr, newC != nullptr, newC ? (int)newC->valid : -1);
+                         oldC != nullptr, m_activeCanvasDirty, savedOld,
+                         oldC ? (int)oldC->valid : -1,
+                         newC != nullptr, newC ? (int)newC->valid : -1);
         }
 
         m_activeCanvasAddr  = n64Addr;
@@ -1533,12 +1546,143 @@ public:
     // Use this when a mid-frame SetColorImage switches away from a rendered FB
     // and we want to keep drawing on top of it afterwards.
     void InvalidateCanvas() override {
-        for (auto& [addr, c] : m_canvases) c.valid = false;
+        // The call site (VideoPlugin.cpp, VI_TYPE==0 / screen-blank handling)
+        // documents the intent as dropping the FRAME-CARRY canvas so a blank
+        // doesn't resurrect the previous frame's content on the next
+        // BeginFrame -- i.e. only whatever's about to be shown again next
+        // frame (the currently-active buffer). This previously invalidated
+        // EVERY canvas in the map instead, unconditionally -- including
+        // completely unrelated scratch buffers with no connection to what's
+        // being blanked. MM/OoT's pause-menu world-snapshot buffer (written
+        // once at menu-open, then read back as a texture on every background
+        // recomposite -- e.g. page turns -- without ever becoming the active
+        // render target again) was exactly such a buffer: any VI blank during
+        // the menu-open or page-turn transition animation (fades are a
+        // textbook use of VI_TYPE==0) permanently zeroed its valid flag, and
+        // since only SaveSwapchainToCanvas (which only runs for the ACTIVE
+        // target) ever sets valid=true again, it never recovered. Confirmed
+        // via a live capture: the background read correctly for exactly two
+        // frames, then failed on every following frame with no recovery --
+        // a one-time event, not a gradual staleness/eviction pattern.
+        auto it = m_canvases.find(m_activeCanvasAddr);
+        if (it != m_canvases.end()) it->second.valid = false;
     }
 
     // Sample a specific N64 buffer's persistent canvas as a texture. See the
     // rationale on IRenderer::BlitCanvasToTexture -- this is our equivalent of
     // GLideN64's always-available per-FrameBuffer color texture.
+    // CPU->GPU framebuffer upload: the direction that never existed on this
+    // backend (see IRenderer::UploadPixelsToCanvas). Stages RGBA8 pixels into a
+    // temporary N64-resolution image, then blits (scaling) into the persistent
+    // canvas for that buffer address, leaving it in the canonical TRANSFER_SRC
+    // resting layout so the normal present/save/load paths pick it up unchanged.
+    bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h,
+                              const uint32_t* pixels) override {
+        if (!m_initialized || !m_canvasPreserve || !pixels || w == 0 || h == 0)
+            return false;
+        if (!m_frameRecording || m_skipPresent ||
+            m_ctx.deviceLost.load(std::memory_order_relaxed))
+            return false;
+
+        CanvasSlot* c = EnsureCanvas(n64Addr & 0x7FFFFF);
+        if (!c || !c->img) return false;
+
+        const VkDeviceSize bytes = VkDeviceSize(w) * h * 4;
+        VKBufferStorage staging{};
+        if (!CreateBufferStorage(m_ctx, bytes,
+                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 staging) || !staging.mapped) {
+            return false;
+        }
+        std::memcpy(staging.mapped, pixels, static_cast<size_t>(bytes));
+
+        // Temporary N64-resolution image to blit from (canvases are swapchain
+        // sized, so a straight buffer->image copy could not rescale).
+        VkImage tmpImg = VK_NULL_HANDLE;
+        VkDeviceMemory tmpMem = VK_NULL_HANDLE;
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType = VK_IMAGE_TYPE_2D;
+        ici.format = VK_FORMAT_R8G8B8A8_UNORM;
+        ici.extent = { w, h, 1 };
+        ici.mipLevels = 1;
+        ici.arrayLayers = 1;
+        ici.samples = VK_SAMPLE_COUNT_1_BIT;
+        ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(m_device.Get(), &ici, nullptr, &tmpImg) != VK_SUCCESS) {
+            DestroyBufferStorage(m_ctx, staging);
+            return false;
+        }
+        VkMemoryRequirements mr{};
+        vkGetImageMemoryRequirements(m_device.Get(), tmpImg, &mr);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize = mr.size;
+        mai.memoryTypeIndex = FindMemoryType(m_ctx.physical, mr.memoryTypeBits,
+                                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (mai.memoryTypeIndex == UINT32_MAX ||
+            vkAllocateMemory(m_device.Get(), &mai, nullptr, &tmpMem) != VK_SUCCESS ||
+            vkBindImageMemory(m_device.Get(), tmpImg, tmpMem, 0) != VK_SUCCESS) {
+            if (tmpMem) vkFreeMemory(m_device.Get(), tmpMem, nullptr);
+            vkDestroyImage(m_device.Get(), tmpImg, nullptr);
+            DestroyBufferStorage(m_ctx, staging);
+            return false;
+        }
+
+        PerFrame& f = m_frames[m_currentFrame];
+        bool wasActive = m_passActive;
+        if (wasActive) { vkCmdEndRenderPass(f.cmd); m_passActive = false; }
+
+        TransitionImage(f.cmd, tmpImg,
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferImageCopy bic{};
+        bic.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        bic.imageExtent = { w, h, 1 };
+        vkCmdCopyBufferToImage(f.cmd, staging.buffer, tmpImg,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bic);
+        TransitionImage(f.cmd, tmpImg,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        // Canvas rests in TRANSFER_SRC (or UNDEFINED when freshly created).
+        TransitionImage(f.cmd, c->img,
+                        c->valid ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        c->valid ? VK_ACCESS_TRANSFER_READ_BIT : 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        const VkExtent2D ext = m_swapchain.GetExtent();
+        VkImageBlit region{};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = region.srcSubresource;
+        region.srcOffsets[0] = { 0, 0, 0 };
+        region.srcOffsets[1] = { int32_t(w), int32_t(h), 1 };
+        region.dstOffsets[0] = { 0, 0, 0 };
+        region.dstOffsets[1] = { int32_t(ext.width), int32_t(ext.height), 1 };
+        vkCmdBlitImage(f.cmd, tmpImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       c->img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &region, VK_FILTER_LINEAR);
+        TransitionImage(f.cmd, c->img,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        c->valid = true;
+
+        if (wasActive) BeginPassLoad();
+
+        // Retire once this frame slot is known complete (see DrainPendingUploads).
+        PendingUpload pu;
+        pu.img = tmpImg; pu.mem = tmpMem; pu.staging = staging;
+        pu.frameIdx = m_currentFrame; pu.age = 0;
+        m_pendingUploads.push_back(pu);
+        return true;
+    }
+
     bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) override {
         if (!dst || !m_initialized || !m_canvasPreserve) return false;
         const uint32_t addr = n64Addr & 0x7FFFFF;
@@ -1737,18 +1881,6 @@ public:
             }
         } else {
             srcImage = m_swapchain.GetImage(m_currentImage);
-        }
-        {
-            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
-            static uint32_t s_rcN = 0;
-            if (s_dbg && ++s_rcN <= 60) {
-                CanvasSlot* dbgC = FindCanvasForOrigin(reqAddr);
-                std::fprintf(stderr,
-                    "[RDRAMCOPY] addr=0x%06X active=0x%06X wantActive=%d canvas=%d valid=%d -> %s\n",
-                    reqAddr, m_activeCanvasAddr, wantActive ? 1 : 0,
-                    dbgC != nullptr, (dbgC && dbgC->valid) ? 1 : 0,
-                    srcImage ? "COPYING" : "ABORT(no source)");
-            }
         }
         if (!srcImage) {
             // Deliberately DO NOT fall back to the swapchain for a non-active
@@ -2476,6 +2608,21 @@ private:
     // nullptr on allocation failure or before the swapchain exists. All
     // canvases share the swapchain's dimensions; a resize drops them all
     // (DestroyCanvas is called from RecreateSwapchain).
+    // Free upload temporaries whose frame slot has cycled all the way around
+    // (so the GPU is guaranteed done with them). Called from BeginFrame.
+    void DrainPendingUploads() {
+        for (auto it = m_pendingUploads.begin(); it != m_pendingUploads.end(); ) {
+            if (++it->age >= kFramesInFlight + 1) {
+                if (it->img) vkDestroyImage(m_device.Get(), it->img, nullptr);
+                if (it->mem) vkFreeMemory(m_device.Get(), it->mem, nullptr);
+                DestroyBufferStorage(m_ctx, it->staging);
+                it = m_pendingUploads.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     CanvasSlot* EnsureCanvas(uint32_t addr) {
         VkExtent2D ext = m_swapchain.GetExtent();
         if (ext.width == 0 || ext.height == 0) return nullptr;
@@ -2541,9 +2688,28 @@ private:
     // equals a SetColorImage address but can be offset into the buffer
     // (scanline offsets, interlace fields), so fall back to the nearest
     // canvas that starts at or below the origin within a 1 MB window.
+    //
+    // Touches lastUse on a hit: EnsureCanvas only bumps lastUse when a
+    // canvas becomes the ACTIVE RENDER TARGET, never when it's merely read
+    // back as a texture (the only thing that happens here). A canvas that's
+    // written once and then repeatedly re-read as a texture -- e.g. MM/OoT's
+    // pause-menu world-snapshot scratch buffer, redrawn into the visible
+    // frame every time the background needs recompositing but never
+    // rewritten -- would otherwise look permanently stale to the LRU and get
+    // evicted by kMaxCanvases (6) as soon as any other buffer address needed
+    // a 7th slot (MM's routine per-frame Z-buffer-reuse trick alone touches
+    // 2 extra addresses on top of the double-buffer, so this wasn't rare).
+    // Once evicted, every later read fell through to raw, never-synced
+    // RDRAM -- the pause background rendering correctly for its first two
+    // frames, then permanently breaking (confirmed via a live capture: reads
+    // succeeded via the snapshot ring for frames 914/916, then failed for
+    // every frame from 917 onward with no further successes).
     CanvasSlot* FindCanvasForOrigin(uint32_t origin) {
         auto it = m_canvases.find(origin);
-        if (it != m_canvases.end()) return &it->second;
+        if (it != m_canvases.end()) {
+            it->second.lastUse = ++m_canvasUseCounter;
+            return &it->second;
+        }
         CanvasSlot* best = nullptr;
         uint32_t bestDelta = 0x100000; // 1 MB — larger than any 640x480x4 fb
         for (auto& [addr, c] : m_canvases) {
@@ -2552,6 +2718,7 @@ private:
                 best = &c;
             }
         }
+        if (best) best->lastUse = ++m_canvasUseCounter;
         return best;
     }
 
@@ -2580,11 +2747,18 @@ private:
                         VK_ACCESS_TRANSFER_READ_BIT,
                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT);
+        // Canvases rest in TRANSFER_SRC_OPTIMAL after a successful save (see
+        // the class comment on m_canvases) and only sit in UNDEFINED before
+        // their first-ever write. Unconditionally claiming UNDEFINED here --
+        // as this code did previously -- lies to the driver about a
+        // once-valid canvas's real layout, matching the c.valid-conditional
+        // pattern the sibling CPU-upload path (EnsureCanvas write-back,
+        // ~line 1624) already uses correctly for the identical situation.
         TransitionImage(cmd, c.img,
-                        VK_IMAGE_LAYOUT_UNDEFINED, // full overwrite
+                        c.valid ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        c.valid ? VK_ACCESS_TRANSFER_READ_BIT : 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT);
         BlitFull(cmd, swapImg, c.img);
         TransitionImage(cmd, c.img,
@@ -2756,6 +2930,17 @@ private:
     VKContext                     m_ctx{};
     std::array<PerFrame, kFramesInFlight> m_frames{};
     uint32_t      m_currentFrame = 0;
+    // Transient resources used by UploadPixelsToCanvas. The temp image/staging
+    // buffer are referenced by the in-flight command buffer, so they can only be
+    // freed once that frame index comes around again (kFramesInFlight later).
+    struct PendingUpload {
+        VkImage          img = VK_NULL_HANDLE;
+        VkDeviceMemory   mem = VK_NULL_HANDLE;
+        VKBufferStorage  staging{};
+        uint32_t         frameIdx = 0;
+        uint32_t         age = 0;
+    };
+    std::vector<PendingUpload> m_pendingUploads;
     uint32_t      m_currentImage = 0;
     bool          m_skipPresent  = false;
     // Has anything been DRAWN to the currently-active canvas since it became
@@ -2834,7 +3019,25 @@ private:
     // still being drawn.  This is real double-buffer isolation at swapchain
     // resolution, and it also keeps Z-buffer clear fills (SetColorImage to
     // the depth address) off the visible output entirely.
-    static constexpr size_t kMaxCanvases = 6;
+    // Was 6 -- too tight. MM/OoT's pause menu alone needs 6 DISTINCT addresses
+    // live simultaneously just from routine per-frame mechanics: the 2 double-
+    // buffer targets (e.g. 0x000500/0x7DA800), 2 addresses from the every-frame
+    // Z-buffer-reuse-as-color-target trick (0x383AC0 and 0x3A92C0 -- the start
+    // and end of the same depth-buffer-sized scratch region, used for two
+    // different purposes), the boot-time 0x000000 placeholder, and the pause-
+    // menu's own world-snapshot scratch buffer (e.g. 0x784600) -- which is
+    // written ONCE at menu-open but then read back as a texture repeatedly
+    // (every background recomposite, e.g. on page turns) without ever
+    // becoming the active render target again. At exactly 6, that snapshot
+    // buffer was the very next eviction candidate: any 7th distinct address
+    // (trivially reached by normal gameplay) evicted it via LRU, and every
+    // later read of it permanently fell through to raw, never-synced RDRAM --
+    // confirmed via a live capture where the read succeeded for the pause
+    // background's first two frames, then failed for every frame after with
+    // no further recovery. Each canvas is one swapchain-sized image (e.g.
+    // ~20MB at 3440x1440 BGRA8), so even a generous cap here is a trivial
+    // memory cost against the eviction-thrash risk.
+    static constexpr size_t kMaxCanvases = 16;
     std::unordered_map<uint32_t, CanvasSlot> m_canvases; // key: N64 fb address
     uint32_t       m_activeCanvasAddr = 0;   // buffer the game is drawing into
     uint32_t       m_presentOriginAddr = 0;  // VI origin (display-ready buffer)
