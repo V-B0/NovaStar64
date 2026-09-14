@@ -16,8 +16,19 @@ CMakeUserPresets.json
 build/
 .vs/
 Gliden64/
-Saves/
 ShaderCache/
+
+# Emulator data: the folders stay in the repo, their contents never do.
+# ROMs are copyrighted game images and saves are personal.
+**/roms/*
+!**/roms/.gitkeep
+# Saves/ must come before the exception: on case-insensitive filesystems it
+# also matches saves/, and the last matching rule wins.
+**/Saves/*
+**/saves/*
+!**/saves/.gitkeep
+
+.DS_Store
 nova64/build/nova64.dir/
 dump
 nova64/dump
