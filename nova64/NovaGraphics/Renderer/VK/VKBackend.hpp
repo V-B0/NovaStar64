@@ -18,7 +18,8 @@
 namespace Nova64 { namespace Video { namespace VK {
 
 /// Returns true if a usable Vulkan 1.2+ loader and physical device are
-/// present on the system. Currently always returns false (stub).
+/// present on the system. Performs a real probe (volkInitialize +
+/// vkEnumerateInstanceVersion) — see VKBackend.cpp for the implementation.
 bool IsVulkanAvailable();
 
 /// Create a Vulkan IRenderer instance. Even when Vulkan is unavailable

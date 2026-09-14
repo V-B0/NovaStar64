@@ -605,18 +605,9 @@ void SRegistersHandler::ClearHalt()
     m_Reg.m_defer_hle_interrupts = true;
     m_Reg.m_deferred_mi_intr = 0;
     
-    const uint32_t taskType = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFC0]);
-    const uint32_t ucode = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFD0]);
-    const uint32_t dataPtr = *reinterpret_cast<const uint32_t*>(&m_DMEM[0xFF0]);
-    // Log::infof("RSPTRACE ClearHalt enter status=0x%08X pc=0x%03X task=%u ucode=0x%08X data=0x%08X",
-    //           SP_STATUS, SP_PC & 0xFFF, taskType, ucode, dataPtr);
-
     // Execute RSP until it BREAKs or halts itself
     Nova64::RSP::DoRspCycles(0xFFFFFFFF);
 
-    // Log::infof("RSPTRACE ClearHalt exit status=0x%08X pc=0x%03X",
-    //           SP_STATUS, SP_PC & 0xFFF);
-    
     m_Reg.m_defer_hle_interrupts = false;
     
     // ── P64-style immediate interrupt delivery ──

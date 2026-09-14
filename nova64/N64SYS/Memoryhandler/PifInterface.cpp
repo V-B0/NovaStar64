@@ -200,8 +200,11 @@ void PifRamHandler::dma_read()
     // since NextTimer decrements by CountPerOp per instruction (matching P64).
     const uint32_t SI_DMA_DELAY = 900;
     if (m_system.GetSystemTimer()) {
-        uint32_t random = std::rand() % 0x40;
-        m_system.GetSystemTimer()->set_timer(N64System::TimerType::SiTimer, SI_DMA_DELAY + random, false);
+        // Spread completion slightly across successive transfers, as the real SI
+        // does, but derive the offset from the transfer count rather than rand()
+        // so a given run is reproducible.
+        const uint32_t jitter = static_cast<uint32_t>(m_stats.dma_operations) & 0x3F;
+        m_system.GetSystemTimer()->set_timer(N64System::TimerType::SiTimer, SI_DMA_DELAY + jitter, false);
     } else {
         m_registers.m_Mips_Interface[2] |= 0x02;
         m_registers.m_SerialInterface[static_cast<int>(SI::Register::STATUS)] |= 0x1000;

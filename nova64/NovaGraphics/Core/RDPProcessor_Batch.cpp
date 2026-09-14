@@ -787,16 +787,23 @@ void RDPProcessor::FlushBatch() {
                 float size0[2]  = { 1.0f, 1.0f };
                 float size1[2]  = { 1.0f, 1.0f };
 
-                // Use mask/clamp-aware tile sizes (must match BuildTextureKey)
+                // Use mask/clamp-aware tile sizes, LoadTile-load-aware just
+                // like BuildTextureKey (the actual decode-size authority) —
+                // these feed the shader's UV scale, so if this disagrees with
+                // what the texture was actually decoded at, the result is a
+                // stretched/squashed sample: the shader thinks the texture is
+                // one size, the data underneath it is a different size.
                 uint8_t tlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
+                const TileLoadInfo li0 = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
+                const TileLoadInfo li1 = MakeTileLoadInfo(m_state.rdp, call.tileDesc1);
                 int w0, h0;
-                CalcTileSize(call.tileDesc0, tlut, w0, h0);
+                CalcTileSize(call.tileDesc0, tlut, w0, h0, &li0);
                 if (w0 > 0 && h0 > 0) {
                     size0[0] = static_cast<float>(w0);
                     size0[1] = static_cast<float>(h0);
                 }
                 int w1, h1;
-                CalcTileSize(call.tileDesc1, tlut, w1, h1);
+                CalcTileSize(call.tileDesc1, tlut, w1, h1, &li1);
                 if (w1 > 0 && h1 > 0) {
                     size1[0] = static_cast<float>(w1);
                     size1[1] = static_cast<float>(h1);
@@ -863,7 +870,8 @@ void RDPProcessor::FlushBatch() {
                     --s_treeDbgLeft;
                     uint8_t dbgTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
                     int dbgW = 0, dbgH = 0;
-                    CalcTileSize(call.tileDesc0, dbgTlut, dbgW, dbgH);
+                    const TileLoadInfo dbgLi = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
+                    CalcTileSize(call.tileDesc0, dbgTlut, dbgW, dbgH, &dbgLi);
                     std::fprintf(stderr,
                         "[TREEDBG] type=%d clampS=%u clampT=%u maskS=%u maskT=%u "
                         "calcSize=(%d,%d) sl=%.1f tl=%.1f hash=0x%llX vtx=%d\n",
@@ -908,7 +916,8 @@ void RDPProcessor::FlushBatch() {
                     call.tileDesc0.GetWidth() == 32) {
                     int bdW = 0, bdH = 0;
                     uint8_t bdTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
-                    CalcTileSize(call.tileDesc0, bdTlut, bdW, bdH);
+                    const TileLoadInfo bdLi = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
+                    CalcTileSize(call.tileDesc0, bdTlut, bdW, bdH, &bdLi);
                     std::fprintf(stderr,
                         "[BINDDBG] cmb=0x%llX crc=0x%016llX off0=(%.2f,%.2f) clamp0=(%.0f,%.0f,%.0f,%.0f) "
                         "mask0=(%.0f,%.0f) shift0=(%u,%u) calcSize=(%d,%d) tcBounds=%d "

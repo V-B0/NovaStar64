@@ -8,6 +8,7 @@
  */
 
 #include "Register.hpp"
+#include "../StateTrace.hpp"
 #include "Sysevents.hpp"
 #include "Systiming.hpp"
 #include "Vmem.hpp"
@@ -339,14 +340,19 @@ uint64_t CRegisters::Cop0_MF(COP0Reg Reg)
     else if (Reg == COP0Reg::Random)
     {
         m_SystemTimer.UpdateTimers();
-        // Random register cycles in range [WIRED, 31].
-        // When Wired > 31, hardware wraps through the full 0-31 range.
+        // On the R4300i, Random is a down-counter, not a PRNG: it decrements
+        // as the CPU runs and wraps from Wired back to 31. Deriving it from
+        // Count reproduces that shape while keeping it a pure function of
+        // emulated state -- using rand() here made every run of the same ROM
+        // take a different path through TLBWR, which defeats save states,
+        // trace comparison, and any attempt to reproduce a bug.
         uint32_t wired = static_cast<uint32_t>(WIRED_REGISTER) & 0x3F;
+        const uint32_t count = static_cast<uint32_t>(COUNT_REGISTER);
         if (wired > 31) {
-            return rand() % 64;
+            return count & 0x3F;
         }
-        uint32_t range = 32 - wired;
-        return wired + (rand() % range);
+        const uint32_t range = 32 - wired;
+        return 31 - (count % range);
     }
     // Unused registers return latch value
     else if (regIndex == 7 || regIndex == 21 || regIndex == 22 || 
@@ -415,6 +421,9 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value)
         
     case COP0Reg::Compare:
         m_SystemTimer.UpdateTimers();
+        // Compare is written by the game's scheduler from the Count it just
+        // read, so its value is a sensitive indicator of timing divergence.
+        Nova64::Trace::RecordEvent("cmpw", COUNT_REGISTER);
         m_CP0[regIndex] = Value;
         CAUSE_REGISTER.PendingInterrupts &= ~COP0Flags::CAUSE_IP7;
         m_SystemTimer.update_compare_timer();
@@ -553,6 +562,7 @@ bool CRegisters::DoIntrException()
         return false;
     }
 
+    Nova64::Trace::RecordEvent("intr", COUNT_REGISTER);
     TriggerException(static_cast<uint32_t>(ExceptionCode::EXC_INT), 0);
     return true;
 }

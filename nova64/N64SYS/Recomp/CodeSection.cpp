@@ -31,7 +31,7 @@
 #include "../../common/log.hpp"
 #include "../../common/trace.hpp"
 #include "../../common/MemoryManagment.hpp"
-#include "../../common/StdString.hpp"
+#include <format>
 
 #include <algorithm>
 #include <chrono>
@@ -196,7 +196,7 @@ CodeSection::CodeSection(CodeBlock* parent_block,
     exit_state_.reset();
 
     log_generation("Section created at PC 0x" +
-                   stdstr_f("%08X", entry_pc) + " id=" +
+                   std::format("{:08X}", entry_pc) + " id=" +
                    std::to_string(static_cast<uint32_t>(id)));
 }
 
@@ -304,7 +304,7 @@ void CodeSection::set_jump_target(uint32_t branch_pc, uint32_t target_pc, bool p
     {
         flags_ = flags_ | SectionFlags::HasLoop;
         type_ = SectionType::Loop;
-        log_generation("Permanent loop detected at 0x" + stdstr_f("%08X", branch_pc));
+        log_generation("Permanent loop detected at 0x" + std::format("{:08X}", branch_pc));
     }
 
     // Record the target address for later section graph construction
@@ -312,8 +312,8 @@ void CodeSection::set_jump_target(uint32_t branch_pc, uint32_t target_pc, bool p
     outgoing_edges_.push_back(edge);
 
     metadata_.end_pc = branch_pc;
-    log_generation("Jump target set: 0x" + stdstr_f("%08X", branch_pc) +
-                   " -> 0x" + stdstr_f("%08X", target_pc));
+    log_generation("Jump target set: 0x" + std::format("{:08X}", branch_pc) +
+                   " -> 0x" + std::format("{:08X}", target_pc));
 }
 
 void CodeSection::set_continue_target(uint32_t branch_pc, uint32_t target_pc)
@@ -331,8 +331,8 @@ void CodeSection::set_continue_target(uint32_t branch_pc, uint32_t target_pc)
     successor_addresses_.push_back(target_pc);
     outgoing_edges_.push_back(edge);
 
-    log_generation("Continue target set: 0x" + stdstr_f("%08X", branch_pc) +
-                   " -> 0x" + stdstr_f("%08X", target_pc));
+    log_generation("Continue target set: 0x" + std::format("{:08X}", branch_pc) +
+                   " -> 0x" + std::format("{:08X}", target_pc));
 }
 
 // =============================================================================
@@ -350,7 +350,7 @@ CodeSection::GenerationResult CodeSection::generate_native_code()
     }
 
     log_generation("=== Generating native code for section 0x" +
-                   stdstr_f("%08X", metadata_.entry_pc) + " ===");
+                   std::format("{:08X}", metadata_.entry_pc) + " ===");
 
     // Step 1: Analyze the section
     auto analysis = analyze_section();
@@ -408,7 +408,7 @@ CodeSection::GenerationResult CodeSection::generate_native_code()
 bool CodeSection::generate_linkage()
 {
     log_generation("Generating linkage for section 0x" +
-                   stdstr_f("%08X", metadata_.entry_pc));
+                   std::format("{:08X}", metadata_.entry_pc));
 
     if (!parent_block_)
     {
@@ -443,13 +443,13 @@ bool CodeSection::generate_linkage()
             // Register ourselves as a parent of the target
             target_section->add_parent(this);
 
-            log_generation("Linked to section 0x" + stdstr_f("%08X", target_addr) +
+            log_generation("Linked to section 0x" + std::format("{:08X}", target_addr) +
                            " (id=" + std::to_string(static_cast<uint32_t>(target_id)) + ")");
         }
         else
         {
             log_generation("WARNING: No existing section found for target 0x" +
-                           stdstr_f("%08X", target_addr));
+                           std::format("{:08X}", target_addr));
         }
     }
 
@@ -507,7 +507,7 @@ bool CodeSection::inline_section(const CodeSection& source)
     metadata_.instruction_count += source.metadata().instruction_count;
     flags_ = flags_ | SectionFlags::InlineCandidate;
 
-    log_generation("Inlined section 0x" + stdstr_f("%08X", source.entry_pc()) +
+    log_generation("Inlined section 0x" + std::format("{:08X}", source.entry_pc()) +
                    " (" + std::to_string(source.metadata().instruction_count) + " instructions)");
     return true;
 }
@@ -660,7 +660,7 @@ void CodeSection::determine_loops()
     {
         flags_ = flags_ | SectionFlags::HasLoop;
         type_ = SectionType::Loop;
-        log_generation("Loop detected in section 0x" + stdstr_f("%08X", metadata_.entry_pc));
+        log_generation("Loop detected in section 0x" + std::format("{:08X}", metadata_.entry_pc));
     }
 }
 
@@ -719,7 +719,7 @@ std::optional<CodeSection*> CodeSection::find_existing_section(uint32_t address)
 
     // For now search by walking our outgoing/incoming edges
     // A full implementation would query parent_block_->find_section(address)
-    log_generation("Looking for existing section at 0x" + stdstr_f("%08X", address));
+    log_generation("Looking for existing section at 0x" + std::format("{:08X}", address));
 
     return std::nullopt; // Will be connected when CodeBlock exposes section lookup
 }
@@ -941,7 +941,7 @@ void CodeSection::capture_entry_state()
     // Capture the current CPU register state as the entry state for this section
     // This would normally read from the actual CPU state via the system object
     log_generation("Capturing entry register state at 0x" +
-                   stdstr_f("%08X", metadata_.entry_pc));
+                   std::format("{:08X}", metadata_.entry_pc));
 
     // Mark all GPRs as potentially allocated (conservative)
     for (size_t i = 0; i < 32; ++i)
@@ -1316,7 +1316,7 @@ void CodeSection::add_patch_point(uint32_t mips_address, asmjit::Label label)
     pp.resolved = false;
 
     patch_points_.push_back(pp);
-    log_generation("Added patch point at 0x" + stdstr_f("%08X", mips_address));
+    log_generation("Added patch point at 0x" + std::format("{:08X}", mips_address));
 }
 
 bool CodeSection::resolve_patch_points()
@@ -1334,7 +1334,7 @@ bool CodeSection::resolve_patch_points()
             // In a full AsmJit integration, we'd resolve the label offset here
             pp.resolved = true;
             log_generation("Resolved patch point at 0x" +
-                           stdstr_f("%08X", pp.mips_address));
+                           std::format("{:08X}", pp.mips_address));
         }
         else
         {
@@ -1358,7 +1358,7 @@ void CodeSection::handleError(asmjit::Error error, const char* message,
 
 std::optional<CodeSection::AnalysisResult> CodeSection::analyze_section()
 {
-    log_generation("Analyzing section at 0x" + stdstr_f("%08X", metadata_.entry_pc));
+    log_generation("Analyzing section at 0x" + std::format("{:08X}", metadata_.entry_pc));
 
     AnalysisResult result{};
     result.basic_blocks.push_back(metadata_.entry_pc);
@@ -1516,7 +1516,7 @@ bool CodeSection::generate_code(const AnalysisResult& analysis)
         if (!gen.generate_instruction(addr, instructions_[i]))
         {
             log_generation("WARNING: Failed to generate instruction at 0x" +
-                           stdstr_f("%08X", addr));
+                           std::format("{:08X}", addr));
             // Continue with remaining instructions
         }
     }

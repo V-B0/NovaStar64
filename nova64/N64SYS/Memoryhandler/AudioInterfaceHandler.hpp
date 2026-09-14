@@ -33,14 +33,12 @@ namespace AI {
     // Convert byte offset (address & 0x1F) to register index
     inline uint32_t OffsetToIndex(uint32_t byteOffset) { return (byteOffset & 0x1C) >> 2; }
     
-    // Status bits
+    // Status bits (read)
     constexpr uint32_t STATUS_DMA_BUSY  = 0x40000000; // Bit 30
     constexpr uint32_t STATUS_FULL      = 0x80000000; // Bit 31
-    constexpr uint32_t STATUS_DMA_ENABLE    = 0x01; // Not a real status bit, but used in control? NO.
-    
-    // Control bits (Write)
-    constexpr uint32_t CONTROL_DMA_ENABLE   = 0x01;
-    constexpr uint32_t CONTROL_CLEAR_INTR   = 0x00; // Any write clears interrupt generally? No, specific bits usually.
+
+    // Control bits (write)
+    constexpr uint32_t CONTROL_DMA_ENABLE = 0x01;
 }
 
 // Register wrapper
@@ -83,7 +81,7 @@ public:
     // helper to get frequency
     uint32_t GetFrequency() const;
     
-    // WASAPI audio output
+    // Audio output (SDL2 queue-mode, see NovaRSP/HLE/AudioOutput.cpp)
     void InitAudioOutput();
     void QueueDmaSamples(uint32_t dramAddr, uint32_t len);
     Nova64::RSP::HLE::CAudioOutput& AudioOutput() { return m_audioOutput; }
@@ -108,11 +106,18 @@ private:
     uint32_t m_pending_len = 0;
     bool m_pending_valid = false;
     
-    static constexpr uint32_t AI_BASE_FREQ = 48681812; // NTSC DAC Clock
-    
-    // WASAPI audio output
+    // Real N64 AI DAC clocks. PAL differs from NTSC by ~2%, which detunes every
+    // sound and mispaces DMA completion timing if the wrong one is used.
+    static constexpr uint32_t AI_CLOCK_NTSC = 48681812;
+    static constexpr uint32_t AI_CLOCK_PAL  = 49656530;
+
+    /// AI DAC clock for the loaded ROM's region. Resolved on first use because
+    /// the handler is constructed before the ROM is loaded.
+    uint32_t AIClock() const;
+    mutable uint32_t m_aiClock = 0;   // 0 = not yet resolved
+
     Nova64::RSP::HLE::CAudioOutput m_audioOutput;
     bool m_audioInitialized{false};
-    bool m_audioInitFailed{false};   // Set after first WASAPI failure — stops retries
+    bool m_audioInitFailed{false};   // Set after first output-init failure — stops retries
     uint32_t m_lastDacFreq{0};
 };

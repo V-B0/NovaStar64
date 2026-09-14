@@ -10,8 +10,13 @@ extern "C" {
 #include <lauxlib.h>
 }
 
+#include "../N64SYS/MainSYS.hpp"
+#include "../N64SYS/N64Rom.hpp"
+
 #include <cstring>
 #include <filesystem>
+
+extern CN64System* g_System;
 
 namespace NovaUI {
 
@@ -66,6 +71,12 @@ bool LuaEngine::LoadScript(const std::string& path) {
 void LuaEngine::UnloadAll() {
     Shutdown();
     Init(m_rdram, m_rdramSize);
+}
+
+void LuaEngine::BindMemory(uint8_t* rdram, size_t rdramSize) {
+    if (m_rdram == rdram && m_rdramSize == rdramSize) return;
+    m_rdram     = rdram;
+    m_rdramSize = rdramSize;
 }
 
 void LuaEngine::OnFrame() {
@@ -203,12 +214,20 @@ int LuaEngine::lua_mem_write32(lua_State* L) {
 }
 
 int LuaEngine::lua_emu_frame_count(lua_State* L) {
-    lua_pushinteger(L, 0); // TODO: wire real frame counter
+    lua_pushinteger(L, g_System
+        ? static_cast<lua_Integer>(g_System->GetCurrentFrameCount())
+        : 0);
     return 1;
 }
 
 int LuaEngine::lua_emu_rom_name(lua_State* L) {
-    lua_pushstring(L, "unknown"); // TODO: wire ROM name
+    if (g_System) {
+        if (N64Rom* rom = g_System->GetRom(); rom && rom->IsLoaded()) {
+            lua_pushstring(L, rom->GetImage().GetRomName().c_str());
+            return 1;
+        }
+    }
+    lua_pushstring(L, "");
     return 1;
 }
 

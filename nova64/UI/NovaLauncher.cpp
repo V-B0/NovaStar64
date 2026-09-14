@@ -24,6 +24,9 @@
 #include <fstream>
 
 #include "../N64SYS/MainSYS.hpp"
+#include "../N64SYS/MIPSY/Vmem.hpp"
+
+extern CN64System* g_System;
 #include "../NovaGraphics/Plugin/FrameCallback.hpp"
 
 #ifndef _WIN32
@@ -284,12 +287,17 @@ void NovaUI::NovaLauncher::LaunchEmbedded(const std::string& romPath) {
     // Setup save state
     m_saveState.SetRom(m_emuRomPath);
 
-    // Init Lua engine (wire RDRAM after emulator starts — placeholder for now)
+    // The machine does not exist yet, so RDRAM is bound on the first frame below.
     m_lua.Init(nullptr, 0);
 
     // Register frame callback — pixel upload is now handled by UploadFromPixelBuf
     // in the launcher render loop. The callback only ticks Lua scripts.
     Nova64::Video::g_frameCallback = [this]() {
+        if (g_System) {
+            if (auto* mem = g_System->GetMemory()) {
+                m_lua.BindMemory(mem->Rdram(), mem->RdramSize());
+            }
+        }
         m_lua.OnFrame();
     };
 

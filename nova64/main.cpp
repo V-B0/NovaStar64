@@ -4,7 +4,6 @@
  */
 
 #include "common/log.hpp"
-#include "common/path.hpp"
 #include "N64SYS/MainSYS.hpp"
 #include "N64SYS/N64Rom.hpp"
 #include "N64SYS/SysGlobals.hpp"

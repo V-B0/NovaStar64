@@ -53,6 +53,7 @@ enum RTFeatureFlags : uint32_t {
     RT_F_REFLECTIONS = 1u << 2,
     RT_F_DEBUG       = 1u << 3,   // normal-as-color + grid (pass/wiring check)
     RT_F_DEBUG_TERM  = 1u << 4,   // lighting-term-only view (alignment check)
+    RT_F_DEBUG_COVERED = 1u << 5, // raster-depth-guard view: red=suppressed, green=RT applied, black=no hit
 };
 
 class VKComputeRaytracer {

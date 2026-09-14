@@ -24,7 +24,9 @@ set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
   asmjit
   GIT_REPOSITORY https://github.com/asmjit/asmjit.git
-  GIT_TAG        master
+  # Pinned: upstream b56f417 (Nov 2025) marks a64::Assembler 'final', which
+  # breaks CArm64Ops. This is the last revision the ARM64 backend compiles against.
+  GIT_TAG        5134d396bd00c1b63259387acdbb12dfdf009f9b
 )
 FetchContent_MakeAvailable(asmjit)
 
@@ -65,7 +67,7 @@ message(STATUS "glad OpenGL 4.6 loader integrated (pre-generated)")
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master
+    GIT_TAG        2c980bb59875b0d32144a71867fbdebb2f77cd20
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(stb)
@@ -156,7 +158,7 @@ message(STATUS "ImGui integrated for debug UI panels")
 FetchContent_Declare(
     imgui_node_editor
     GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
-    GIT_TAG        master
+    GIT_TAG        021aa0ea4da13fed864bafb2a92d4c5205076866
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(imgui_node_editor)
@@ -230,15 +232,9 @@ set(SOURCES
     common/log.cpp
     common/md5.cpp
     common/MemoryManagment.cpp
-    common/path.cpp
-    common/platform.cpp
-    common/Random.cpp
-    common/StdString.cpp
-    common/SyncEvents.cpp
     common/Thread.cpp
     common/TimeStamp.cpp
     common/trace.cpp
-    common/util.cpp
     
     # N64 System files
     N64SYS/SysGlobals.cpp
@@ -342,20 +338,15 @@ set(SOURCES
     NovaGraphics/Common/Memory.cpp
     NovaGraphics/Common/SIMDMath.cpp
     NovaGraphics/Common/VectorMath.cpp
-    NovaGraphics/Common/VideoConfig.cpp
-    NovaGraphics/Common/CRC.cpp
 
     # NovaGraphics - Graphics plugin (Compat)
     NovaGraphics/Compat/GameDatabase.cpp
-    NovaGraphics/Compat/GamePatches.cpp
 
     # NovaGraphics - Graphics plugin (Core)
     NovaGraphics/Core/DepthBuffer.cpp
     NovaGraphics/Core/FramebufferManager.cpp
     NovaGraphics/Core/N64Math.cpp
-    NovaGraphics/Core/N64Memory.cpp
     NovaGraphics/Core/RDPCommand.cpp
-    NovaGraphics/Core/RDPLogger.cpp
     NovaGraphics/Core/RDPProcessor.cpp
     NovaGraphics/Core/RDPProcessor_State.cpp
     NovaGraphics/Core/RDPProcessor_Texture.cpp
@@ -408,9 +399,6 @@ set(SOURCES
     NovaGraphics/Texture/TextureCache.cpp
 
     # NovaGraphics - Graphics plugin (Window)
-    NovaGraphics/Window/DisplayConfig.cpp
-    NovaGraphics/Window/InputManager.cpp
-    NovaGraphics/Window/VideoInterface.cpp
     NovaGraphics/Window/WindowManager.cpp
 
     main.cpp
@@ -440,9 +428,7 @@ set(HEADERS
     common/md5.hpp
     common/MemoryManagment.hpp
     common/platform.hpp
-    common/path.hpp
     common/trace.hpp
-    common/util.hpp
     
     # N64 System headers
     N64SYS/MainSYS.hpp
@@ -507,6 +493,9 @@ target_include_directories(softfloat PUBLIC
 
   # SaveState
   list(APPEND SOURCES N64SYS/SaveState.cpp)
+
+  # Cross-engine divergence tracing
+  list(APPEND SOURCES N64SYS/StateTrace.cpp)
 
   # NovaLua scripting
   list(APPEND SOURCES NovaLua/LuaEngine.cpp)

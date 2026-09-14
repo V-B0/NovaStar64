@@ -8,7 +8,6 @@
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Vmem.hpp"
 #include "../../common/log.hpp"
-#include "../../common/path.hpp"
 #include "../../common/File.hpp"
 #include "../../common/IniFile.hpp"
 #include <algorithm>
@@ -125,7 +124,7 @@ bool PluginManager::LoadPlugin(PluginType type, const std::string& path)
     std::string pluginPath = path.empty() ? GetDefaultPluginPath(type) : path;
     
     // Try to load from file if path specified
-    if (!pluginPath.empty() && CPath(pluginPath).Exists()) {
+    if (!pluginPath.empty() && std::filesystem::exists(pluginPath)) {
         auto plugin = LoadPluginFromFile(pluginPath, type);
         if (plugin) {
             switch (type) {
@@ -385,7 +384,7 @@ bool PluginManager::LoadConfiguration(const std::string& configPath)
     
     m_ConfigFilePath = configPath;
     
-    if (!CPath(configPath).Exists()) {
+    if (!std::filesystem::exists(configPath)) {
         Log::warning("PluginManager: Config file not found, using defaults");
         return true;  // Not an error - will use defaults
     }

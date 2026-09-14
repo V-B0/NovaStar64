@@ -13,6 +13,8 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <cstdio>
+#include <cstdlib>
 
 // Global frame counter for interrupt diagnostics
 uint64_t g_vi_frame_count = 0;
@@ -174,6 +176,12 @@ bool VideoInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
 void VideoInterfaceHandler::handle_status_register_write(uint32_t value, uint32_t /*mask*/) {
     uint32_t old_status = m_vi_regs.status();
     m_vi_regs.status() = value;
+    static const bool s_viDbg = std::getenv("NOVA64_VI_STATUS_DBG") != nullptr;
+    if (s_viDbg && old_status != value) {
+        std::fprintf(stderr, "[VISTATUS] 0x%08X gamma=%d gammaDither=%d aaMode=%d ditherFilter=%d divot=%d\n",
+                     value, (value >> 3) & 1, (value >> 2) & 1, (value >> 8) & 3,
+                     (value >> 4) & 1, (value >> 5) & 1);
+    }
     
     // Check for mode changes (BPP etc)
     if ((old_status & 0x03) != (value & 0x03)) {

@@ -4,6 +4,7 @@
  */
 
 #include "InterpreterOps.hpp"
+#include "../StateTrace.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Vmem.hpp"
 #include "../MIPSY/TLB.hpp"
@@ -178,6 +179,8 @@ void R4300iInterpreter::InPermLoop()
     }
     else if (m_System.m_NextTimer > 0)
     {
+        ++Nova64::Trace::Counters().idleSkip;
+        Nova64::Trace::RecordEvent("idle", m_Reg.COUNT_REGISTER);
         // Fast-forward to next timer event (matches Project64 InPermLoop):
         // 1. Sync timer array with current m_NextTimer position
         m_System.m_SystemTimer->UpdateTimers();
@@ -242,11 +245,36 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles)
         switch (CurrentPipelineStage)
         {
         case PIPELINE_STAGE_NORMAL:
-            // Like Project64: do NOT process events between instructions.
-            // Events are only checked at branch targets (PIPELINE_STAGE_JUMP)
-            // when CheckTimer is true. This naturally protects the MTC0 Status → ERET
-            // sequence because ERET (which sets PipelineStage=JUMP and TestTimer=true)
-            // always runs before any event is processed.
+            // Service the timer at the instruction boundary it actually expires
+            // on, rather than deferring to the next backward branch. The
+            // recompiler exits its block at this same boundary, so both engines
+            // enter the ISR having executed exactly the same instructions --
+            // which is what keeps their CP0 Compare values in step.
+            //
+            // Only in the NORMAL stage: a delay slot must not be separated from
+            // its branch. DoIntrException additionally refuses to deliver while
+            // ExceptionLevel is set, so the MTC0 Status -> ERET sequence stays
+            // protected.
+            if (NextTimer <= 0)
+            {
+                ++Nova64::Trace::Counters().timerChecks;
+                if (NextTimer < 0)
+                {
+                    ++Nova64::Trace::Counters().timerDone;
+                    Nova64::Trace::RecordEvent("done", m_Reg.COUNT_REGISTER);
+                    m_System.m_SystemTimer->TimerDone();
+                }
+                if (SystemEvents.DoSomething())
+                {
+                    SystemEvents.ExecuteEvents();
+                }
+                if (CurrentPipelineStage == PIPELINE_STAGE_JUMP)
+                {
+                    m_PROGRAM_COUNTER = JumpToLocation;
+                    CurrentPipelineStage = PIPELINE_STAGE_NORMAL;
+                    updateInstructionMemory = true;
+                }
+            }
             break;
         case PIPELINE_STAGE_DELAY_SLOT:
             CurrentPipelineStage = PIPELINE_STAGE_JUMP;
@@ -255,7 +283,10 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles)
             CurrentPipelineStage = PIPELINE_STAGE_PERMLOOP_DELAY_DONE;
             break;
         case PIPELINE_STAGE_JUMP:
-            CheckTimer = (JumpToLocation < m_PROGRAM_COUNTER - 4 || TestTimer);
+            // The NORMAL stage above already services the timer at the exact
+            // instruction it expires on, so this only needs to cover control
+            // transfers (branch/delay-slot pairs), where that check is skipped.
+            CheckTimer = true;
             m_PROGRAM_COUNTER = JumpToLocation;
             CurrentPipelineStage = PIPELINE_STAGE_NORMAL;
             if ((m_PROGRAM_COUNTER & 0x3) != 0)
@@ -267,8 +298,11 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles)
             else if (CheckTimer)
             {
                 TestTimer = false;
+                ++Nova64::Trace::Counters().timerChecks;
                 if (NextTimer < 0)
                 {
+                    ++Nova64::Trace::Counters().timerDone;
+                    Nova64::Trace::RecordEvent("done", m_Reg.COUNT_REGISTER);
                     m_System.m_SystemTimer->TimerDone();
                 }
                 if (SystemEvents.DoSomething())
@@ -296,6 +330,8 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles)
             m_PROGRAM_COUNTER = JumpToLocation;
             CurrentPipelineStage = PIPELINE_STAGE_NORMAL;
             InPermLoop();
+            ++Nova64::Trace::Counters().timerDone;
+            Nova64::Trace::RecordEvent("perm", m_Reg.COUNT_REGISTER);
             m_System.m_SystemTimer->TimerDone();
             if (SystemEvents.DoSomething())
             {
@@ -2113,12 +2149,10 @@ void R4300iInterpreter::COP0_CO_TLBWI()
 
 void R4300iInterpreter::COP0_CO_TLBWR()
 {
-    // Random register cycles in [WIRED, 31]; compute random index on use
-    uint32_t wired = static_cast<uint32_t>(m_Reg.WIRED_REGISTER) & 0x3F;
-    if (wired > 31) wired = 31;
-    uint32_t range = 32 - wired;
-    uint32_t random_index = wired + (rand() % range);
-    m_TLB.WriteEntry(random_index, true);
+    // TLBWR writes the entry selected by the Random register. Read it rather
+    // than recomputing so both paths agree on the same deterministic value.
+    const uint32_t index = static_cast<uint32_t>(m_Reg.Cop0_MF(CRegisters::COP0Reg::Random)) & 0x1F;
+    m_TLB.WriteEntry(index, true);
 }
 
 void R4300iInterpreter::COP0_CO_TLBP()

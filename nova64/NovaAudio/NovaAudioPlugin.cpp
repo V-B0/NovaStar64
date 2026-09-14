@@ -1,10 +1,10 @@
 /**
  * @file NovaAudioPlugin.cpp
- * @brief Adapter bridging AudioPlugin → AudioInterfaceHandler (AI DMA + WASAPI)
+ * @brief Adapter bridging AudioPlugin → AudioInterfaceHandler (AI DMA + output)
  *
  * NovaAudio is a built-in audio plugin that implements the Plugins::AudioPlugin
  * interface by delegating to the emulator's AudioInterfaceHandler for hardware-
- * level AI register / DMA emulation and WASAPI audio output.
+ * level AI register / DMA emulation and sample output.
  */
 
 #include "NovaAudioPlugin.hpp"
@@ -44,7 +44,7 @@ NovaAudioPlugin::~NovaAudioPlugin()
     info.Version             = 0x0100; // 1.0
     info.Name                = "NovaAudio";
     info.Author              = "NovaStar64 Team";
-    info.Description         = "Built-in audio plugin with WASAPI output";
+    info.Description         = "Built-in audio plugin (AI DMA + SDL2 output)";
     info.SupportsThreading   = false;
     info.SupportsStateSync   = false;
     info.RequiresAudioSync   = false;
@@ -95,7 +95,7 @@ void NovaAudioPlugin::Reset(bool /*coldReset*/)
 
 void NovaAudioPlugin::Pause()
 {
-    // No-op: WASAPI output is driven by DMA completion timers
+    // No-op: output is driven by DMA completion timers
 }
 
 void NovaAudioPlugin::Resume()
@@ -186,7 +186,7 @@ bool NovaAudioPlugin::InitializeAudio(const ::Plugins::AudioSettings& settings)
     Log::infof("NovaAudioPlugin: InitializeAudio freq=%u vol=%u sync=%s",
                m_frequency, m_volume, m_syncAudio ? "true" : "false");
 
-    // The AudioInterfaceHandler manages WASAPI directly — nothing extra to do here.
+    // The AudioInterfaceHandler owns the output device — nothing extra to do here.
     return true;
 }
 
@@ -200,7 +200,7 @@ void NovaAudioPlugin::ProcessAICommand()
 {
     // Called when the game writes AI_LEN_REG to start a DMA transfer.
     // The AudioInterfaceHandler already handles the DMA scheduling and
-    // WASAPI output in Write32(), so this is a notification hook.
+    // sample output in Write32(), so this is a notification hook.
     //
     // If we have direct register pointers from SetAudioInfo, we could
     // read AI_DRAM_ADDR and AI_LEN here. But since AIH handles it,
@@ -226,16 +226,16 @@ void NovaAudioPlugin::SetDACRate(uint32_t dacRate)
 {
     m_dacRate = dacRate;
 
-    // Calculate frequency: freq = NTSC_CLOCK / (dacRate + 1)
-    static constexpr uint32_t AI_NTSC_CLOCK = 48681812;
-    if (dacRate > 0) {
-        m_frequency = AI_NTSC_CLOCK / (dacRate + 1);
+    // Ask the handler rather than recomputing: it resolves the AI DAC clock
+    // from the ROM's region, and PAL's clock differs from NTSC's by ~2%.
+    if (dacRate > 0 && m_aiHandler) {
+        m_frequency = m_aiHandler->GetFrequency();
     }
 
     Log::infof("NovaAudioPlugin: SetDACRate %u → freq=%u Hz", dacRate, m_frequency);
 
-    // AudioInterfaceHandler reconfigures WASAPI in its Write32(DACRATE) handler,
-    // so we don't need to duplicate that here.
+    // AudioInterfaceHandler reconfigures the output device in its
+    // Write32(DACRATE) handler, so we don't duplicate that here.
 }
 
 void NovaAudioPlugin::SetBitRate(uint32_t bitrate)
@@ -245,7 +245,7 @@ void NovaAudioPlugin::SetBitRate(uint32_t bitrate)
 
 void NovaAudioPlugin::AddAudioSamples(const int16_t* buffer, uint32_t length)
 {
-    // Forward raw PCM samples to the AudioInterfaceHandler's WASAPI output
+    // Forward raw PCM samples to the AudioInterfaceHandler's output device
     if (!m_aiHandler || !buffer || length == 0) return;
 
     m_aiHandler->AudioOutput().QueueSamples(buffer, length);
@@ -264,7 +264,7 @@ bool NovaAudioPlugin::IsPlaying() const
 
 uint32_t NovaAudioPlugin::GetBufferLevel() const
 {
-    // Return approximate number of samples queued in WASAPI buffer
+    // Return approximate number of samples queued in the output buffer
     // For now return 0 — the audio output doesn't expose buffer level yet
     return 0;
 }

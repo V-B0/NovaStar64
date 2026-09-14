@@ -130,7 +130,6 @@
 #include <cstdarg>
 #include <cstring>
 #include <cmath>
-#include <cstdio>   // FILE, for fopen_s shim below
 
 #define stricmp strcasecmp
 #define _stricmp strcasecmp
@@ -138,50 +137,6 @@
 #define _snprintf snprintf
 #define _isnan std::isnan
 
-/**
- * @brief Calculate the number of characters needed for formatted output
- * @param format Printf-style format string
- * @param pargs Variable argument list
- * @return Number of characters that would be written (excluding null terminator)
- */
-int _vscprintf(const char* format, va_list pargs);
-
-/**
- * @brief Safe string copy
- * @param dest Destination buffer
- * @param dest_size Size of destination buffer
- * @param src Source string
- * @return Zero on success, non-zero on error
- */
-int strcpy_s(char* dest, size_t dest_size, const char* src);
-
-/**
- * @brief Safe string concatenation
- * @param dest Destination buffer
- * @param dest_size Size of destination buffer
- * @param src Source string
- * @return Zero on success, non-zero on error
- */
-int strcat_s(char* dest, size_t dest_size, const char* src);
-
-/**
- * @brief Safe formatted output
- * @param buffer Destination buffer
- * @param size Size of destination buffer
- * @param format Printf-style format string
- * @param ... Format arguments
- * @return Number of characters written (excluding null terminator)
- */
-int sprintf_s(char* buffer, size_t size, const char* format, ...);
-
-/**
- * @brief Open file with security enhancements
- * @param pFile Pointer to file pointer
- * @param filename File name
- * @param mode File mode
- * @return Zero on success, non-zero on error
- */
-int fopen_s(FILE** pFile, const char* filename, const char* mode);
 
 #endif // !_WIN32
 

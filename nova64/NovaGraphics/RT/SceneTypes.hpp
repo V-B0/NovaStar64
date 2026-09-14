@@ -41,6 +41,17 @@ struct SceneTriangle {
     uint32_t otherModeL;        // RDP otherMode low word
     bool     isTranslucent;     // Blended translucent surface (water/glass)
     bool     isCutout;          // Texture-alpha cutout (billboards/sprites)
+    // True when the RDP color combiner's FINAL cycle multiplicatively
+    // references SHADE (the per-vertex interpolated color — from dynamic
+    // RSP lighting or raw vertex colors, whichever the DL supplied) in
+    // producing this triangle's rasterized color. Only such triangles can
+    // have their baked shading validly divided back out for RT's de-light/
+    // re-light step; for anything else (pure PRIMITIVE/ENVIRONMENT color,
+    // texture-only combiners, etc.) shade has zero influence on the raster
+    // output, so dividing by it would apply a meaningless correction.
+    // Computed from materialHash (the raw combine mode) + otherModeH's
+    // cycle-type bits — see GBIHandler::ComputeUsesShadeInFinalColor.
+    bool     usesShadeInFinalColor;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

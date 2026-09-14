@@ -65,6 +65,20 @@ public:
 
     // --- Control-flow / housekeeping primitives -----------------------------
     void EmitTimerDecrement();
+
+    /// Decrements the timer and, if it has expired, leaves the block with the
+    /// program counter pointing at `nextPC`.
+    ///
+    /// This exists so the recompiler takes a pending interrupt at the same
+    /// instruction boundary the interpreter would. Without it the timer is only
+    /// noticed at a block exit, so the two engines enter the ISR tens of cycles
+    /// apart and the game then computes a different CP0 Compare.
+    ///
+    /// Only valid for straight-line instructions: the caller must not use it for
+    /// a branch (the delay slot still has to run) or for a delay slot (the
+    /// branch callback has already set the PC, and `nextPC` would clobber it).
+    void EmitTimerDecrementAndCheck(uint32_t nextPC);
+
     void EmitPipelineStageCheck();
     void EmitPCUpdate();
     // Unconditionally write m_PROGRAM_COUNTER = sign_extend32(addr).  Used at

@@ -195,6 +195,27 @@ void ArmRecompilerOps::EmitTimerDecrement()
     a.str(a64::w9, a64::ptr(a64::x22));
 }
 
+void ArmRecompilerOps::EmitTimerDecrementAndCheck(uint32_t nextPC)
+{
+    auto& a = m_Assembler->GetAssembler();
+    const uint32_t countPerOp = m_Context.system.CountPerOp();
+
+    a.ldr(a64::w9, a64::ptr(a64::x22));
+    a.sub(a64::w9, a64::w9, countPerOp);
+    a.str(a64::w9, a64::ptr(a64::x22));
+
+    // w9 still holds the decremented value, so the test costs one compare.
+    // m_NextTimer is signed; <= 0 means the next timer event is due.
+    asmjit::Label keepGoing = a.new_label();
+    a.cmp(a64::w9, 0);
+    a.b_gt(keepGoing);
+
+    EmitSetPC(nextPC);   // clobbers x9, whose value has already been consumed
+    a.b(m_BlockExitLabel);
+
+    a.bind(keepGoing);
+}
+
 void ArmRecompilerOps::EmitPipelineStageCheck()
 {
     auto& a = m_Assembler->GetAssembler();

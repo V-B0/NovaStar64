@@ -140,12 +140,6 @@ namespace N64Controller {
             return false;
         }
 
-        // Set up the specific mempak
-        auto& temp_mempak = m_mempaks[controller_index]; // Use reference to local variable logic if loop over all, but here we init one? 
-        // The header implies we have m_mempaks array. initialize usually sets up the system.
-        // Wait, the signature takes a specific controller_index.
-        
-        // Actually, let's just initialize the specific one requested.
         m_mempaks[controller_index].file_path = MempakUtils::generate_mempak_filename(controller_index, m_save_directory);
         
         if (!load_from_disk(controller_index)) {

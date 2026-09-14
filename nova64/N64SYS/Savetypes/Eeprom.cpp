@@ -15,7 +15,6 @@
 #include "../N64Rom.hpp"
 #include "../Types.hpp"
 #include "../../common/log.hpp"
-#include "../../common/path.hpp"
 #include <cstring>
 #include <ctime>
 #include <stdexcept>

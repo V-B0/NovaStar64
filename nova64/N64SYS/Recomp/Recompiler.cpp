@@ -10,6 +10,7 @@
  */
 
 #include "Recompiler.hpp"
+#include "../StateTrace.hpp"
 #include "RecompilerMemory.hpp"
 #include "FunctionMap.hpp"
 #include "FunctionInfo.hpp"
@@ -645,18 +646,21 @@ void CRecompiler::Execute_VirtualTable() {
         // Periodic interrupt check in slow path (e.g. after Status register write)
         m_Reg.CheckInterrupts();
         
-        // Idle loop detection: if the block is a tiny self-loop (e.g. `b .` + NOP),
-        // advance the timer directly to the next event instead of spinning.
+        // Idle loop detection: a spin loop can be fast-forwarded to the next
+        // timer event instead of being executed a few million times.
+        //
+        // The test is the block's own self-branch analysis, not "is this block
+        // small": a short block that loops while doing real work must still be
+        // executed, and the interpreter would execute it. Using a size
+        // heuristic here made the two engines skip different loops and their
+        // Count values drift apart.
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
             if (newPC == pc && nextTimer > 0) {
-                // Check instruction count for idle detection
-                uint32_t instrCount = 1;
-                if (auto* block = func->GetCodeBlock()) {
-                    instrCount = static_cast<uint32_t>(block->instruction_count());
-                    if (instrCount == 0) instrCount = 1;
-                }
-                if (instrCount <= 2) {
+                auto* block = func->GetCodeBlock();
+                if (block && block->is_spin_loop()) {
+                    ++Nova64::Trace::Counters().idleSkip;
+                    Nova64::Trace::RecordEvent("idle", m_Reg.COUNT_REGISTER);
                     systemTimer->UpdateTimers();
                     nextTimer = 0 - static_cast<int32_t>(countPerOp);
                     systemTimer->UpdateTimers();
@@ -666,7 +670,10 @@ void CRecompiler::Execute_VirtualTable() {
         
         // Timer and event processing
         m_System.m_TestTimer = false;
+        ++Nova64::Trace::Counters().timerChecks;
         if (nextTimer < 0) {
+            ++Nova64::Trace::Counters().timerDone;
+            Nova64::Trace::RecordEvent("done", m_Reg.COUNT_REGISTER);
             systemTimer->TimerDone();
         }
         if (systemEvents && systemEvents->DoSomething()) {
@@ -746,7 +753,9 @@ void CRecompiler::Execute_VirtualTable_Validate() {
         // Idle loop detection
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+            const auto* idleBlock = func->GetCodeBlock();
+            if (newPC == pc && nextTimer > 0 &&
+                idleBlock && idleBlock->is_spin_loop()) {
                 nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
             }
         }
@@ -832,7 +841,9 @@ void CRecompiler::Execute_MemoryChange() {
         // Idle loop detection
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+            const auto* idleBlock = func->GetCodeBlock();
+            if (newPC == pc && nextTimer > 0 &&
+                idleBlock && idleBlock->is_spin_loop()) {
                 nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
             }
         }
@@ -909,7 +920,9 @@ void CRecompiler::Execute_Lookup() {
         // Idle loop detection
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+            const auto* idleBlock = func->GetCodeBlock();
+            if (newPC == pc && nextTimer > 0 &&
+                idleBlock && idleBlock->is_spin_loop()) {
                 nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
             }
         }
@@ -993,7 +1006,9 @@ void CRecompiler::Execute_Lookup_Validate() {
         // Idle loop detection
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
-            if (newPC == pc && instrCount <= 2 && nextTimer > 0) {
+            const auto* idleBlock = func->GetCodeBlock();
+            if (newPC == pc && nextTimer > 0 &&
+                idleBlock && idleBlock->is_spin_loop()) {
                 nextTimer = 0 - static_cast<int32_t>(m_System.CountPerOp());
             }
         }

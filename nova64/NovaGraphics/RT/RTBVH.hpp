@@ -52,6 +52,9 @@ enum RTMaterialFlags : uint32_t {
     RT_MAT_TRANSLUCENT = 1u << 0,   // blended (water/glass): hit, never occlude
     RT_MAT_REFLECTIVE  = 1u << 1,   // env-mapped metal
     RT_MAT_CUTOUT      = 1u << 2,   // texture-alpha billboard: invisible to rays
+    RT_MAT_USES_SHADE  = 1u << 3,   // combiner's final color multiplicatively
+                                     // references SHADE — only these surfaces
+                                     // are valid de-light/re-light candidates
 };
 
 /**

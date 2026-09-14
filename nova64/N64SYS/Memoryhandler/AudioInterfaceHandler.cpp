@@ -4,6 +4,7 @@
  */
 #include "AudioInterfaceHandler.hpp"
 #include "../MainSYS.hpp"
+#include "../N64Rom.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
 #include "../MIPSY/Vmem.hpp"
@@ -21,7 +22,7 @@
 static uint32_t s_aiLenWriteCount = 0;
 static uint32_t s_aiDmaCompleteCount = 0;
 static uint32_t s_aiDacRateWriteCount = 0;
-static uint32_t s_aiWasapiInitCount = 0;
+static uint32_t s_aiAudioInitCount = 0;
 
 AudioInterfaceHandler::AudioInterfaceHandler(CN64System& system, CRegisters& registers)
     : m_system(system),
@@ -48,8 +49,8 @@ bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
                 uint32_t cycles_left = m_system_timer.get_timer(N64System::TimerType::AiTimerDMA);
                 uint32_t dac_period = m_ai_regs.dacrate() + 1;
                 
-                // len = (cycles * 4 * AI_BASE_FREQ) / (dac_period * CPU_CLOCK)
-                uint64_t remaining = (static_cast<uint64_t>(cycles_left) * 4 * AI_BASE_FREQ);
+                // len = (cycles * 4 * AI_CLOCK) / (dac_period * CPU_CLOCK)
+                uint64_t remaining = (static_cast<uint64_t>(cycles_left) * 4 * AIClock());
                 value = static_cast<uint32_t>(remaining / (static_cast<uint64_t>(dac_period) * 93750000ULL));
             } else {
                 value = 0; // Not busy -> 0 bytes remaining
@@ -85,7 +86,7 @@ bool AudioInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
                     InitAudioOutput();
                 }
 
-                // Queue audio samples to WASAPI output
+                // Queue audio samples to the audio output device
                 QueueDmaSamples(m_ai_regs.dram_addr(), len);
                 
                 if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
@@ -117,21 +118,9 @@ bool AudioInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
         }
             
         case AI::Register::CONTROL:
-            // Write to control usually clears interrupt if bit 0 is set
-            if (value & 1) {
-                // Determine logic: does it start DMA? 
-                // Documentation: "DMA Enable" bit (Bit 0). 
-                // Using standard: writing 1 clears interrupt? 
-                // Check N64 docs: 
-                // AI_CONTROL_REG:
-                // Bit 0: DMA Enable (1=Start/Enable) - actually usually writes start DMA if length set
-                // Legacy Docs say: Write any value clears AI Interrupt?
-                
-                // Correction:
-                // AI_STATUS: Read (Busy/Full/Etc), Write (Clear Interrupt)
-                // Wait, different docs say different things.
-                // Standard: Write to Status clears Interrupt.
-            }
+            // Bit 0 is the DMA-enable gate. DMA is already started by the LEN
+            // write above, and the interrupt is cleared by a STATUS write, so
+            // there is nothing to do here.
             break;
             
         case AI::Register::STATUS:
@@ -176,18 +165,27 @@ uint32_t AudioInterfaceHandler::CalculateCycles(uint32_t len) {
     // Audio DMA duration in CPU cycles.
     // Stereo 16-bit PCM = 4 bytes per stereo sample pair.
     // The DAC consumes one stereo sample every (dacRate + 1) video-clock ticks.
-    // Video clock (NTSC) = 48,681,812 Hz.  CPU clock = 93,750,000 Hz.
+    // AI DAC clock is region-dependent (see AIClock).  CPU clock = 93,750,000 Hz.
     // Convert: cpu_cycles = video_ticks * CPU_FREQ / VI_FREQ.
     uint32_t dac_period = m_ai_regs.dacrate() + 1;
     uint32_t samples = len / 4;  // stereo sample pairs
     uint64_t video_ticks = static_cast<uint64_t>(samples) * dac_period;
-    return static_cast<uint32_t>(video_ticks * 93750000ULL / AI_BASE_FREQ);
+    return static_cast<uint32_t>(video_ticks * 93750000ULL / AIClock());
+}
+
+uint32_t AudioInterfaceHandler::AIClock() const {
+    if (m_aiClock == 0) {
+        N64Rom* rom = m_system.GetRom();
+        m_aiClock = (rom && rom->IsLoaded() && rom->GetImage().IsPal())
+                        ? AI_CLOCK_PAL : AI_CLOCK_NTSC;
+    }
+    return m_aiClock;
 }
 
 uint32_t AudioInterfaceHandler::GetFrequency() const {
     uint32_t dac = m_ai_regs.dacrate();
     if (dac == 0) return 44100; // Safety
-    return AI_BASE_FREQ / (dac + 1);
+    return AIClock() / (dac + 1);
 }
 
 void AudioInterfaceHandler::DMAComplete() {
@@ -236,21 +234,21 @@ void AudioInterfaceHandler::InitAudioOutput()
     if (freq < 4000) freq = 4000;
     if (freq > 48000) freq = 48000;
 
-    Logging::log(Logging::Level::Info, "AI: Initializing WASAPI audio output at " + std::to_string(freq) + " Hz");
-    ++s_aiWasapiInitCount;
-    std::fprintf(stderr, "[AI] InitAudioOutput #%u: freq=%u Hz\n", s_aiWasapiInitCount, freq);
+    Logging::log(Logging::Level::Info, "AI: Initializing audio output at " + std::to_string(freq) + " Hz");
+    ++s_aiAudioInitCount;
+    std::fprintf(stderr, "[AI] InitAudioOutput #%u: freq=%u Hz\n", s_aiAudioInitCount, freq);
 
     if (m_audioOutput.Initialize(freq, 2))
     {
         m_audioOutput.SetSourceRate(freq);
         m_audioOutput.Start();
         m_audioInitialized = true;
-        std::fprintf(stderr, "[AI] WASAPI initialized successfully (source=%u Hz)\n", freq);
+        std::fprintf(stderr, "[AI] Audio output initialized successfully (source=%u Hz)\n", freq);
     }
     else
     {
-        std::fprintf(stderr, "[AI] WASAPI initialization FAILED\n");
-        Logging::log(Logging::Level::Error, "AI: Failed to initialize WASAPI audio output (will not retry)");
+        std::fprintf(stderr, "[AI] Audio output initialization FAILED\n");
+        Logging::log(Logging::Level::Error, "AI: Failed to initialize audio output (will not retry)");
         m_audioInitialized = false;
         m_audioInitFailed = true;
     }

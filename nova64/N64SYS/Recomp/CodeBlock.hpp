@@ -202,6 +202,19 @@ public:
     BlockFlags flags() const noexcept { return flags_; }
     bool is_valid() const noexcept { return is_valid_; }
 
+    /// True when the block is a spin loop: a branch back to its own address
+    /// whose delay slot cannot change the branch condition.
+    ///
+    /// This is the recompiler's equivalent of the interpreter's permanent-loop
+    /// test (`CN64System::DelayedRelativeJump` with offset 0), and the two must
+    /// agree -- if one engine fast-forwards the timer through a loop and the
+    /// other spins it out instruction by instruction, their Count values drift
+    /// apart. BlockFlags::HasLoop is set only by `check_perm_loop`, so it means
+    /// exactly this and nothing broader.
+    bool is_spin_loop() const noexcept {
+        return (flags_ & BlockFlags::HasLoop) != BlockFlags::None;
+    }
+
     asmjit::CodeHolder* GetCodeHolder() { return code_holder_.get(); }
     
     /// Get the system registers (used by platform-specific recompiler register allocators)

@@ -43,6 +43,11 @@ public:
     /// Called by the emulator every VI frame — fires registered frame callbacks.
     void OnFrame();
 
+    /// Points the script API at the running machine's RDRAM. Safe to call every
+    /// frame: it re-binds only when the pointer actually changes, which is what
+    /// lets scripts keep working across a reset or a ROM swap.
+    void BindMemory(uint8_t* rdram, size_t rdramSize);
+
     /// Returns the console output log (populated by console.print).
     const std::vector<std::string>& GetLog() const { return m_log; }
     void ClearLog() { m_log.clear(); }

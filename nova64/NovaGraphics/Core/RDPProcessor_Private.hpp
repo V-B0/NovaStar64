@@ -112,6 +112,26 @@ struct TileLoadInfo {
     uint8_t  size       = 0;   // SetTextureImage pixel size
 };
 
+// Build a TileLoadInfo for `tile` from its TMEM slot's load record. Every
+// CalcTileSize call site must go through this (not construct TileLoadInfo by
+// hand) so they all agree on tile size — a call site that skips it silently
+// falls back to CalcTileSize's mask/clamp-only path and can disagree with one
+// that doesn't, for the same texture, in the same frame (this was the case
+// for FlushBatch's shader texture-size uniforms vs BuildTextureKey's decode
+// size — the same LoadTile-sourced texture got sized two different ways,
+// which is exactly a UV-scale/actual-decode-size mismatch: stretching).
+template <typename RDPStateT>
+static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor& tile) {
+    TileLoadInfo li;
+    const uint32_t slot = tile.tmemAddr & 0x1FF;
+    li.isTileLoad = (rdp.tmemLoadType[slot] == RDPStateT::LOADTYPE_TILE);
+    li.width      = rdp.tmemLoadWidth[slot];
+    li.height     = rdp.tmemLoadHeight[slot];
+    li.texWidth   = rdp.tmemLoadTexWidth[slot];
+    li.size       = rdp.tmemLoadSize[slot];
+    return li;
+}
+
 // GLideN64 TileSizes parity:
 //     _sizes.clampWidth = (clamps && cycleType != G_CYC_COPY) ? tileWidth : width;
 // clampWidth/Height bound the SOURCE texel reads during TMEM decode, so texels

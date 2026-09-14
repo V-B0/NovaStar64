@@ -60,14 +60,28 @@ inline GpuRTTri Pack(const SceneTriangle& t, float sceneDiagSq) {
         const float cy = ex[2]*ey[0] - ex[0]*ey[2];
         const float cz = ex[0]*ey[1] - ex[1]*ey[0];
         const float area = 0.5f * std::sqrt(cx*cx + cy*cy + cz*cz);
-        if (area > 1e-3f * sceneDiagSq) mat |= RT_MAT_TRANSLUCENT;   // water
-        else                            mat |= RT_MAT_CUTOUT;        // decal
+        // Large translucents ALSO need to be roughly up/down-facing to count
+        // as water (same eye-space ns.y test the shader uses to gate water
+        // reflections — N64 cameras stay near-upright, so eye-space "up" is a
+        // reasonable proxy for world "up"). Without this, big CAMERA-FACING
+        // alpha billboards (the moon/sun sky sprite: soft round texture on an
+        // oversized quad, easily bigger than a real lake) pass the pure size
+        // check and get treated as solid, primary-ray-hittable "water" — the
+        // BVH has no texture alpha, so the sprite's transparent soft edges
+        // become a hard opaque rectangle sitting in the sky, visible to rays
+        // that should have passed straight through to the actual scene.
+        const float ny = (area > 1e-8f) ? (cy / (2.0f * area)) : 0.0f;
+        if (area > 1e-3f * sceneDiagSq && std::fabs(ny) > 0.55f)
+            mat |= RT_MAT_TRANSLUCENT;   // water
+        else
+            mat |= RT_MAT_CUTOUT;        // decal / sky billboard
     }
     // Reflective = N64 environment mapping (G_TEXTURE_GEN / _LINEAR). This is the
     // hardware "chrome/metal/shiny" signal — the metal cap, shiny objects, etc.
     // (Values from N64Types.hpp: G_TEXTURE_GEN=0x00040000, _LINEAR=0x00080000.)
     constexpr uint32_t kTexGenBits = 0x00040000u | 0x00080000u;
     if (t.geometryMode & kTexGenBits) mat |= RT_MAT_REFLECTIVE;
+    if (t.usesShadeInFinalColor) mat |= RT_MAT_USES_SHADE;
     g.material = mat;
     return g;
 }

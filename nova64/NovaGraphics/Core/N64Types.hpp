@@ -72,7 +72,7 @@ constexpr uint32_t DPC_CLR_CLOCK_CTR          = 0x0200;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Video Interface — register offsets are in VideoInterface.hpp (VIRegister enum)
-//  Absolute addresses are in N64Memory.hpp (N64Mem namespace)
+//  Absolute addresses live with their respective hardware handlers in N64SYS.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // VI Status bits
@@ -320,6 +320,17 @@ struct TransformedVertex {
     // World-space position (ModelView * object-pos) captured BEFORE MVP projection.
     // Used by the hardware raytracing pipeline via ISceneGeometryConsumer.
     float worldPos[3];
+
+    // Eye-space normal (normal * ModelView upper-3x3, normalized), captured
+    // from the SAME modelview matrix snapshot as worldPos above (zero when
+    // lighting/texgen are off). Used by the raytracing pipeline so RT normals
+    // stay consistent with worldPos even when the modelview stack changes
+    // between this vertex's load (G_VTX) and the triangle draw that
+    // references it (G_TRI1/G_TRI2) — common in segmented actor display
+    // lists (F3DZEX) that interleave per-limb matrix loads with vertex
+    // batches. Re-deriving the normal at draw time from the *current* stack
+    // top used the wrong matrix in exactly that case.
+    float eyeNormal[3];
 
     static constexpr uint32_t CLIP_LEFT   = 0x01;
     static constexpr uint32_t CLIP_RIGHT  = 0x02;

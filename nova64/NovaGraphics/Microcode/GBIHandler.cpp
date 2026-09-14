@@ -271,6 +271,11 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
                 float invLen = 1.0f / len;
                 tnx *= invLen; tny *= invLen; tnz *= invLen;
             }
+            // Persist for RT (same mvMtx snapshot as worldPos above — see
+            // TransformedVertex::eyeNormal).
+            tv.eyeNormal[0] = tnx; tv.eyeNormal[1] = tny; tv.eyeNormal[2] = tnz;
+        } else {
+            tv.eyeNormal[0] = tv.eyeNormal[1] = tv.eyeNormal[2] = 0.0f;
         }
 
         // --- Lighting ---
@@ -1097,6 +1102,59 @@ static constexpr bool DEBUG_DISABLE_BRANCH     = false;  // force-disable Branch
 static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling + AND-rejection in DrawTriangle
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  RT: does this triangle's raster color actually depend on SHADE?
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The RT compute pipeline's "de-light" step recovers an approximate raw
+// texture albedo by dividing the rasterized color by the baked per-vertex
+// shade (`albedo = ras / shade`), then relights it with traced shadows/AO.
+// That's only valid when SHADE actually multiplicatively contributes to the
+// combiner's final output — for a combiner that only ever reads PRIMITIVE or
+// ENVIRONMENT color, or TEXEL0 alone (common for env-mapped chrome, HUD-style
+// flat color fills, etc.), shade has zero influence on the raster color, so
+// dividing by it applies a meaningless correction to an unrelated value.
+//
+// Decodes the same SET_COMBINE mux encoding ShaderGenerator.cpp's
+// GenerateTextureSampleCode already decodes for the raster path (verified
+// there against libultra's EncodeCombineMode / GLideN64's Combiner.h) — same
+// bit positions, same SHADE index (4, consistent across the A/B/C/D input
+// tables). In 2-cycle mode, cycle 1 can reference cycle 0's result via
+// COMBINED (index 0); if it does, shade usage is inherited from cycle 0 too
+// (hardware clears the pipeline to a constant before cycle 0, so there's
+// nothing further to recurse into there).
+static bool ComputeUsesShadeInFinalColor(uint64_t mux, uint32_t otherModeH) {
+    const uint32_t hi = static_cast<uint32_t>(mux >> 32);
+    const uint32_t lo = static_cast<uint32_t>(mux & 0xFFFFFFFFu);
+    const uint32_t cycleType = (otherModeH >> 20) & 0x3u;   // 0=1cyc 1=2cyc 2=copy 3=fill
+    if (cycleType >= 2) return false;   // COPY/FILL: no combiner, no shade at all
+
+    // Cycle 1 fields (also what 1-cycle mode actually uses — the RSP clears
+    // cycle 0's fields to no-ops in 1-cycle mode; hardware always evaluates
+    // via the "cycle 1" bit positions). Same field layout as ShaderGenerator.
+    const uint32_t aRGB = (hi >> 5) & 0xFu;
+    const uint32_t bRGB = (lo >> 24) & 0xFu;
+    const uint32_t cRGB = hi & 0x1Fu;
+    const uint32_t dRGB = (lo >> 6) & 0x7u;
+    constexpr uint32_t kShade = 4u, kCombined = 0u;
+    auto refsShade = [](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+        return a == kShade || b == kShade || c == kShade || d == kShade;
+    };
+    auto refsCombined = [](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+        return a == kCombined || b == kCombined || c == kCombined || d == kCombined;
+    };
+    if (refsShade(aRGB, bRGB, cRGB, dRGB)) return true;
+    if (cycleType == 1 && refsCombined(aRGB, bRGB, cRGB, dRGB)) {
+        // Cycle 0 fields.
+        const uint32_t c0aRGB = (hi >> 20) & 0xFu;
+        const uint32_t c0bRGB = (lo >> 28) & 0xFu;
+        const uint32_t c0cRGB = (hi >> 15) & 0x1Fu;
+        const uint32_t c0dRGB = (lo >> 15) & 0x7u;
+        if (refsShade(c0aRGB, c0bRGB, c0cRGB, c0dRGB)) return true;
+    }
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  Triangle Drawing
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1647,30 +1705,28 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     if (ctx.geometryConsumer && rtPerspective) {
         const auto& vb = ctx.state->geometry.vertexBuffer;
         RT::SceneTriangle st{};
-        // Smooth EYE-space normals for RT (object normal × MV upper-3x3, same
-        // frame as worldPos). Only meaningful when lighting is on — unlit
-        // vertices store packed colors where normals would be, so submit zeros
-        // and let the shader fall back to the flat geometric normal.
-        const bool rtLit = (ctx.state->geometry.geometryMode & G_LIGHTING) != 0;
-        const auto& rtMv = ctx.state->geometry.modelViewStack[
-                               ctx.state->geometry.modelViewStackDepth];
+        // EYE-space normals for RT: read the value TransformVertexBatch
+        // already computed at G_VTX time from the SAME modelview matrix
+        // snapshot as worldPos (see TransformedVertex::eyeNormal). Zero for
+        // unlit/non-texgen vertices — the shader falls back to the flat
+        // geometric normal in that case.
+        //
+        // Previously this re-transformed tv.normal here using whatever
+        // modelview matrix was on top of the stack at DRAW time, which is
+        // only guaranteed to match the vertex's LOAD-time matrix for simple
+        // display lists (true for SM64's Fast3D). F3DZEX (Zelda OoT/MM)
+        // segmented-actor display lists routinely load a new per-limb matrix
+        // between a G_VTX batch and the G_TRI1/G_TRI2 that references it,
+        // so the re-derived normal pointed the wrong way relative to
+        // worldPos — RT lighting/shadow terms on skinned actors ended up
+        // misaligned with their geometry.
         auto fillV = [&](RT::SceneVertex& sv, const TransformedVertex& tv) {
             sv.worldPos[0] = tv.worldPos[0];
             sv.worldPos[1] = tv.worldPos[1];
             sv.worldPos[2] = tv.worldPos[2];
-            sv.normal[0] = sv.normal[1] = sv.normal[2] = 0.0f;
-            if (rtLit) {
-                float nx = tv.normal[0], ny = tv.normal[1], nz = tv.normal[2];
-                float ex = nx*rtMv.m[0][0] + ny*rtMv.m[1][0] + nz*rtMv.m[2][0];
-                float ey = nx*rtMv.m[0][1] + ny*rtMv.m[1][1] + nz*rtMv.m[2][1];
-                float ez = nx*rtMv.m[0][2] + ny*rtMv.m[1][2] + nz*rtMv.m[2][2];
-                float len = std::sqrt(ex*ex + ey*ey + ez*ez);
-                if (len > 1e-4f) {
-                    sv.normal[0] = ex / len;
-                    sv.normal[1] = ey / len;
-                    sv.normal[2] = ez / len;
-                }
-            }
+            sv.normal[0] = tv.eyeNormal[0];
+            sv.normal[1] = tv.eyeNormal[1];
+            sv.normal[2] = tv.eyeNormal[2];
             sv.uv[0]       = tv.texCoord[0];
             sv.uv[1]       = tv.texCoord[1];
             sv.color[0]    = tv.color[0];
@@ -1700,6 +1756,7 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         st.isCutout      = (oml & 0x1000) != 0;
         st.isTranslucent = !st.isCutout && (oml & 0x4000) != 0
                         && (zmode == 0x0800 || zmode == 0x0C00);
+        st.usesShadeInFinalColor = ComputeUsesShadeInFinalColor(st.materialHash, st.otherModeH);
         ctx.geometryConsumer->SubmitTriangle(st);
 
         // Capture the active EYE->CLIP projection for compute-RT primary rays.
@@ -1722,20 +1779,59 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             ctx.geometryConsumer->SetViewport(vpn);
         }
 
-        // Capture the primary directional light for RT shadows.
+        // Capture the primary directional light for RT shadows: lights[0]
+        // ONLY, not an average across all active lights.
         //
-        // N64 light directions are stored in EYE (camera) space: the RSP dots
-        // them directly against the eye-space vertex normal (see the lighting
-        // loop above, `tnx*dir + tny*dir + tnz*dir`, where tnx/y/z = normal ×
-        // MV upper-3x3). That is why SM64's lighting "follows the camera". The
-        // compute BVH is also eye-space (worldPos = objPos × MV), so the light
-        // direction is submitted verbatim — no extra matrix transform. (A prior
-        // MV multiply here double-transformed it and pointed shadows the wrong
-        // way.) Direction is unit-length from the light-load path; the shader
-        // renormalizes defensively.
+        // N64 light directions are stored in EYE (camera) space: the RSP
+        // dots them directly against the eye-space vertex normal (see the
+        // lighting loop above, `tnx*dir + tny*dir + tnz*dir`, where tnx/y/z
+        // = normal × MV upper-3x3). That is why SM64's lighting "follows the
+        // camera". The compute BVH is also eye-space (worldPos = objPos ×
+        // MV), so the direction is submitted verbatim — no extra matrix
+        // transform. (A prior MV multiply here double-transformed it and
+        // pointed shadows the wrong way.) Direction is unit-length from the
+        // light-load path; the shader renormalizes defensively.
+        //
+        // WHY NOT AVERAGE ALL LIGHTS (tried, reverted): OOT/MM's overworld
+        // environment lighting (Environment_Update, z_kankyo.c, verified
+        // against the zeldaret decomp for BOTH games) configures exactly two
+        // directional lights per frame, and light2Dir is set as the exact
+        // NEGATION of light1Dir:
+        //   light2Dir = -light1Dir   (every frame, both games, verbatim)
+        // This is a deliberate key+fill pair: per-vertex Lambertian shading
+        // sums both lights, so a surface facing away from "the sun" still
+        // gets lit from the opposite fill direction. That's correct for the
+        // RASTER's additive per-vertex model, but averaging two
+        // near-exact-opposite directions for RT SHADOW CASTING mostly
+        // cancels to a near-zero, physically meaningless vector — there is
+        // no single "the sun" left to trace shadow rays toward. lights[0]
+        // (dirLight1) is the one actually derived from time-of-day; lights[1]
+        // is purely its mirror. Use index 0 only.
+        //
+        // THE (1,0,0)-LOOKING DEGENERATE CASE IS AUTHENTIC, NOT A BUG: the
+        // same decomp function has its own explicit fallback —
+        //   if (dir.x == 0 && dir.y == 0 && dir.z == 0) dir.x = 1;
+        // — for whenever the time-of-day trig produces an exact zero vector.
+        // A cutscene hitting this shows (1,0,0) on real N64 hardware too;
+        // faithfully reproducing it here is correct emulation, not a bug to
+        // filter around (an earlier pass through this code added exactly
+        // such a filter — removed once the decomp explained where the value
+        // actually comes from).
+        //
+        // POINT LIGHTS (ca != 0, common for Zelda torches/lava/magic effects)
+        // store a POSITION in the same bytes MoveMem reads as "direction" for
+        // regular lights (see MoveMemGBI1/GBI2's G_MV_L0..L7 case: bytes 8-13
+        // are read BOTH as three signed-int8 direction components AND as
+        // three int16 position halfwords, into light.direction and
+        // light.position respectively — confirmed against the real F3DEX2
+        // point-light extension: byte 3 is the point/directional type flag,
+        // byte 7 is linear attenuation, byte 14 is quadratic attenuation).
+        // For a point light, .direction is therefore garbage. Skip those.
         if (ctx.state->geometry.numLights > 0) {
             const auto& L0 = ctx.state->geometry.lights[0];
-            ctx.geometryConsumer->SetLight(L0.direction, L0.color);
+            if (L0.ca == 0.0f) {
+                ctx.geometryConsumer->SetLight(L0.direction, L0.color);
+            }
         }
     }
 

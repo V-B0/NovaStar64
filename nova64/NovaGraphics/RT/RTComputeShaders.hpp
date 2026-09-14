@@ -115,6 +115,8 @@ const uint RT_F_DEBUG       = 8u;
 const uint RT_MAT_TRANSLUCENT = 1u;   // blended (water): hit, never occlude
 const uint RT_MAT_REFLECTIVE  = 2u;   // env-mapped metal
 const uint RT_MAT_CUTOUT      = 4u;   // billboard: invisible to all rays
+const uint RT_MAT_USES_SHADE  = 8u;   // combiner's final color multiplicatively
+                                       // references SHADE — gates de-light
 
 const float T_MIN = 1e-3;
 const float T_MAX = 1e30;
@@ -302,10 +304,22 @@ void main() {
         // blends surface and background, so de-lighting with the surface's
         // shade is wrong. Force shade=1 (no de-light) + unlit path: shadow
         // modulation and reflections only.
+        //
+        // shdOut.a gates de-light in composite, so it must answer "does this
+        // triangle's RASTER COLOR actually depend on shade" (RT_MAT_USES_SHADE,
+        // decoded from the real RDP combine mode) — NOT "is ns a valid smooth
+        // normal" (isLit, above). Those are different questions: a surface can
+        // be dynamically lit (isLit) yet have a combiner that never reads
+        // shade (pure PRIMITIVE/ENVIRONMENT color, env-mapped chrome), where
+        // de-lighting would divide by a value the raster never used; equally,
+        // an unlit (no RSP lighting) surface using raw per-vertex colors
+        // multiplicatively IS a valid de-light candidate. isLit still governs
+        // the smooth-vs-geometric normal choice above — that's unrelated.
         bool translucentHit = (tri.mat.x & RT_MAT_TRANSLUCENT) != 0u;
+        bool usesShade = (tri.mat.x & RT_MAT_USES_SHADE) != 0u;
         vec3 shade = h.bary.x * tri.c0.rgb + h.bary.y * tri.c1.rgb + h.bary.z * tri.c2.rgb;
         shdOut = translucentHit ? vec4(1.0, 1.0, 1.0, 0.0)
-                                : vec4(shade, isLit ? 1.0 : 0.0);
+                                : vec4(shade, usesShade ? 1.0 : 0.0);
 
         float sceneDiag = max(length(nodes[0].aabbMax - nodes[0].aabbMin), 1e-3);
 
@@ -548,9 +562,10 @@ layout(rgba8,  binding = 7) uniform readonly  image2D giHistImg; // half: accumu
 layout(rgba8,  binding = 8) uniform writeonly image2D outImg;
 layout(binding = 9) uniform sampler2D depthTex;                  // full-res raster depth
 
-const uint RT_F_SHADOWS    = 1u;
-const uint RT_F_DEBUG      = 8u;
-const uint RT_F_DEBUG_TERM = 16u;   // visualize the lighting term (grayscale)
+const uint RT_F_SHADOWS       = 1u;
+const uint RT_F_DEBUG         = 8u;
+const uint RT_F_DEBUG_TERM    = 16u;   // visualize the lighting term (grayscale)
+const uint RT_F_DEBUG_COVERED = 32u;   // visualize the raster-depth guard (red=suppressed, green=RT applied, black=no BVH hit)
 
 void main() {
     uvec2 pix = gl_GlobalInvocationID.xy;
@@ -625,6 +640,11 @@ void main() {
             float tRT  = refDepth * max(u.misc.x, 1e-3);   // RT surface distance
             covered = tRas < tRT * 0.97 - u.misc.x * 0.002;
         }
+    }
+
+    if ((flags & RT_F_DEBUG_COVERED) != 0u) {
+        imageStore(outImg, ip, vec4(wSum < 1e-3 ? vec3(0.0) : (covered ? vec3(1.0,0.0,0.0) : vec3(0.0,1.0,0.0)), 1.0));
+        return;
     }
 
     vec3 outColor;

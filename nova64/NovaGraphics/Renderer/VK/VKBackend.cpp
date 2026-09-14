@@ -4,27 +4,16 @@
  */
 // SPDX-License-Identifier: MIT
 //
-// What works in this stage:
-//   * volk loader init, instance + debug messenger, device, surface, swapchain.
-//   * BeginFrame acquires the next swapchain image.
-//   * EndFrame records a command buffer that transitions the image to
-//     TRANSFER_DST, vkCmdClearColorImage with the latest clear color, then
-//     transitions to PRESENT_SRC and submits with the standard
-//     image-available / render-finished semaphores + per-frame fence.
-//   * Present queue-presents the image.
-//   * Window resize (OnResize) recreates the swapchain.
-//
-// What is intentionally still a no-op (Stage 2+):
-//   * All resource creation (CreateVertexBuffer, CreateTexture, â€¦) returns
-//     valid no-op objects (callers won't crash on null deref).
-//   * Draw / DrawArrays / DrawIndexed do nothing â€” no real geometry yet.
-//   * BindShader / BindPipeline / BindRenderTarget / state setters are no-ops.
-//   * BindImageForRW, DispatchCompute, ReadPixels are no-ops.
-//
-// IsVulkanAvailable() now performs a real probe: it tries to volkInitialize()
-// and call vkEnumerateInstanceVersion. DetectBestBackend() still does NOT
-// auto-pick Vulkan (you must explicitly request it) until draw-call support
-// lands in Stage 4.
+// Full Vulkan 1.2 IRenderer implementation: real geometry (Draw/DrawArrays/
+// DrawIndexed), textures, dynamically-built pipelines, the compute-based ray
+// tracer (VKComputeRaytracer, MoltenVK has no hardware RT), per-N64-buffer
+// persistent canvases for framebuffer isolation and framebuffer-as-texture
+// reads, GPU<->RDRAM sync (CopyFramebufferToRDRAM / UploadPixelsToCanvas),
+// and VI gamma correction. IsVulkanAvailable() performs a real probe
+// (volkInitialize + vkEnumerateInstanceVersion) rather than a hardcoded
+// answer. See the class-level comments throughout this file for how each
+// subsystem works; there are no remaining stubbed/no-op entry points in the
+// IRenderer interface (checked against Renderer.hpp's virtuals).
 
 #include "VKBackend.hpp"
 #include "VKCommon.hpp"
@@ -43,6 +32,7 @@
 #include "../../RT/RTBVH.hpp"
 #include "../../Common/Logger.hpp"
 #include "../../Texture/ImageWrite.hpp"
+#include "../../Core/FramebufferManager.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
@@ -144,12 +134,8 @@ bool IsVulkanAvailable() {
 
 namespace {
 
-// Vertex/Index/Uniform buffers and Texture are now real (see VKBuffer/VKTexture).
-// Shaders and Pipelines are real (see VKShader/VKPipeline).
-// Only resources that are still no-ops live here.
-
-// Vertex/Index/Uniform buffers, Texture, Shader, Pipeline, RenderTarget are all
-// real now. No local stubs remain in Stage 5.
+// Vertex/Index/Uniform buffers and Texture: see VKBuffer/VKTexture.
+// Shaders and Pipelines: see VKShader/VKPipeline. No stubs remain locally.
 
 constexpr uint32_t kFramesInFlight = 2;
 
@@ -865,6 +851,238 @@ public:
             Logger::Error("[SHOT] WritePNG failed for {}", path);
     }
 
+    // Lazily build the gamma-correction compute pipeline. Mirrors the m_computeRT
+    // pattern above: cheap to skip entirely for a game/frame that never enables
+    // gamma, built once on first actual use.
+    bool BuildGammaPass() {
+        if (m_gammaBuilt) return m_gammaPipeline != VK_NULL_HANDLE;
+        m_gammaBuilt = true;
+
+        // In-place sqrt() on an rgba8 storage image. N64 Programming Manual
+        // §5.3: recovering the pre-gamma value from a gamma-corrected one is
+        // "square and shift down by 8 each color component" — i.e. in
+        // normalized [0,1] terms, undo = x². The forward hardware op the VI
+        // actually applies is therefore the inverse of squaring: sqrt(x).
+        // (Matches FramebufferManager's existing, correct GL implementation:
+        // pow(c, 1.0/uGamma) with uGamma=2.0 — this is the same curve, just
+        // with the exponent spelled out instead of computed from a variable
+        // gamma value that in practice is always 2.0 for this bit.)
+        static const char* kGammaSrc = R"GLSL(
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(rgba8, binding = 0) uniform image2D img;
+void main() {
+    ivec2 sz = imageSize(img);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+    vec4 c = imageLoad(img, p);
+    c.rgb = sqrt(c.rgb);
+    imageStore(img, p, c);
+}
+)GLSL";
+        GlslangInitProcess();
+        std::vector<uint32_t> spv = CompileGLSLtoSPIRV(ShaderStage::Compute, kGammaSrc, "vi_gamma");
+        GlslangFinalizeProcess();
+        if (spv.empty()) {
+            Logger::Error("VulkanRenderer: gamma shader compilation failed");
+            return false;
+        }
+        VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+        mi.codeSize = spv.size() * sizeof(uint32_t);
+        mi.pCode    = spv.data();
+        if (vkCreateShaderModule(m_device.Get(), &mi, nullptr, &m_gammaShaderMod) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma shader module creation failed");
+            return false;
+        }
+
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding         = 0;
+        binding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        binding.descriptorCount = 1;
+        binding.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+        VkDescriptorSetLayoutCreateInfo dslci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        dslci.bindingCount = 1;
+        dslci.pBindings    = &binding;
+        if (vkCreateDescriptorSetLayout(m_device.Get(), &dslci, nullptr, &m_gammaDSLayout) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma descriptor set layout creation failed");
+            return false;
+        }
+
+        VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        pli.setLayoutCount = 1;
+        pli.pSetLayouts    = &m_gammaDSLayout;
+        if (vkCreatePipelineLayout(m_device.Get(), &pli, nullptr, &m_gammaPipeLayout) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma pipeline layout creation failed");
+            return false;
+        }
+
+        VkPipelineShaderStageCreateInfo ssi{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        ssi.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+        ssi.module = m_gammaShaderMod;
+        ssi.pName  = "main";
+        VkComputePipelineCreateInfo cpi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        cpi.stage  = ssi;
+        cpi.layout = m_gammaPipeLayout;
+        if (vkCreateComputePipelines(m_device.Get(), m_ctx.pipelineCache, 1, &cpi, nullptr,
+                                     &m_gammaPipeline) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma pipeline creation failed");
+            return false;
+        }
+
+        VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1};
+        VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        dpci.maxSets       = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes    = &poolSize;
+        if (vkCreateDescriptorPool(m_device.Get(), &dpci, nullptr, &m_gammaDescPool) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma descriptor pool creation failed");
+            return false;
+        }
+        VkDescriptorSetAllocateInfo dsai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        dsai.descriptorPool     = m_gammaDescPool;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts        = &m_gammaDSLayout;
+        if (vkAllocateDescriptorSets(m_device.Get(), &dsai, &m_gammaDescSet) != VK_SUCCESS) {
+            Logger::Error("VulkanRenderer: gamma descriptor set allocation failed");
+            return false;
+        }
+        return true;
+    }
+
+    // Applies the sqrt() gamma curve to the just-rendered swapchain image,
+    // in place, right before it's presented. Gated on the SAME VIConfig the
+    // GL backend already reads (g_fbManager.GetVIConfig().gammaCorrect,
+    // populated from the live VI_STATUS register in VideoPlugin.cpp) — a
+    // no-op unless the game itself actually enabled gamma correction.
+    //
+    // Swapchain images aren't created with STORAGE_BIT usage (and adding it
+    // isn't universally safe across present-engine/driver combinations), so
+    // this blits into a private rgba8 storage-capable temp image (format
+    // conversion happens for free in the blit — same trick the RT compute
+    // pipeline already uses to read the swapchain, VKComputeRaytracer.cpp's
+    // "copy the textured raster (swapchain) into the private raster image"),
+    // runs the shader in place there, then blits back.
+    void ApplyGammaIfNeeded() {
+        if (!g_fbManager.GetVIConfig().gammaCorrect) return;
+        if (!BuildGammaPass()) return;
+
+        VkExtent2D ext = m_swapchain.GetExtent();
+        if (m_gammaTmpW != ext.width || m_gammaTmpH != ext.height) {
+            if (m_gammaTmpView) { vkDestroyImageView(m_device.Get(), m_gammaTmpView, nullptr); m_gammaTmpView = VK_NULL_HANDLE; }
+            if (m_gammaTmpImg)  { vkDestroyImage(m_device.Get(), m_gammaTmpImg, nullptr); m_gammaTmpImg = VK_NULL_HANDLE; }
+            if (m_gammaTmpMem)  { vkFreeMemory(m_device.Get(), m_gammaTmpMem, nullptr); m_gammaTmpMem = VK_NULL_HANDLE; }
+
+            VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+            ici.imageType     = VK_IMAGE_TYPE_2D;
+            ici.format        = VK_FORMAT_R8G8B8A8_UNORM;
+            ici.extent        = {ext.width, ext.height, 1};
+            ici.mipLevels     = 1;
+            ici.arrayLayers   = 1;
+            ici.samples       = VK_SAMPLE_COUNT_1_BIT;
+            ici.tiling        = VK_IMAGE_TILING_OPTIMAL;
+            ici.usage         = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            ici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+            ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            if (vkCreateImage(m_device.Get(), &ici, nullptr, &m_gammaTmpImg) != VK_SUCCESS) return;
+            VkMemoryRequirements mr{};
+            vkGetImageMemoryRequirements(m_device.Get(), m_gammaTmpImg, &mr);
+            VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            mai.allocationSize  = mr.size;
+            mai.memoryTypeIndex = FindMemoryType(m_ctx.physical, mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (mai.memoryTypeIndex == UINT32_MAX ||
+                vkAllocateMemory(m_device.Get(), &mai, nullptr, &m_gammaTmpMem) != VK_SUCCESS ||
+                vkBindImageMemory(m_device.Get(), m_gammaTmpImg, m_gammaTmpMem, 0) != VK_SUCCESS) {
+                return;
+            }
+            VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            vi.image    = m_gammaTmpImg;
+            vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            vi.format   = VK_FORMAT_R8G8B8A8_UNORM;
+            vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            if (vkCreateImageView(m_device.Get(), &vi, nullptr, &m_gammaTmpView) != VK_SUCCESS) return;
+            m_gammaTmpW = ext.width;
+            m_gammaTmpH = ext.height;
+            m_gammaTmpValid = false;
+
+            VkDescriptorImageInfo dii{};
+            dii.imageView   = m_gammaTmpView;
+            dii.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet          = m_gammaDescSet;
+            w.dstBinding      = 0;
+            w.descriptorCount = 1;
+            w.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            w.pImageInfo      = &dii;
+            vkUpdateDescriptorSets(m_device.Get(), 1, &w, 0, nullptr);
+        }
+        if (!m_gammaTmpImg) return;
+
+        VkImage swapImg = m_swapchain.GetImage(m_currentImage);
+
+        VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        cai.commandPool        = m_transientPool;
+        cai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cai.commandBufferCount = 1;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(m_device.Get(), &cai, &cb) != VK_SUCCESS) return;
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cb, &bi);
+
+        TransitionImage(cb, swapImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        TransitionImage(cb, m_gammaTmpImg,
+                        m_gammaTmpValid ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkImageBlit region{};
+        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.srcOffsets[1]  = {static_cast<int32_t>(ext.width), static_cast<int32_t>(ext.height), 1};
+        region.dstSubresource = region.srcSubresource;
+        region.dstOffsets[1]  = region.srcOffsets[1];
+        vkCmdBlitImage(cb, swapImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       m_gammaTmpImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
+        m_gammaTmpValid = true;
+
+        TransitionImage(cb, m_gammaTmpImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_gammaPipeline);
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, m_gammaPipeLayout, 0, 1, &m_gammaDescSet, 0, nullptr);
+        vkCmdDispatch(cb, (ext.width + 7) / 8, (ext.height + 7) / 8, 1);
+        TransitionImage(cb, m_gammaTmpImg, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        TransitionImage(cb, swapImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        vkCmdBlitImage(cb, m_gammaTmpImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       swapImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
+        TransitionImage(cb, swapImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        // Leave m_gammaTmpImg in TRANSFER_SRC_OPTIMAL (matches m_gammaTmpValid's
+        // implied layout for next frame's DST transition above).
+        TransitionImage(cb, m_gammaTmpImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        vkEndCommandBuffer(cb);
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.commandBufferCount = 1;
+        si.pCommandBuffers    = &cb;
+        VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence fence = VK_NULL_HANDLE;
+        vkCreateFence(m_device.Get(), &fci, nullptr, &fence);
+        vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, fence);
+        vkWaitForFences(m_device.Get(), 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(m_device.Get(), fence, nullptr);
+        vkFreeCommandBuffers(m_device.Get(), m_transientPool, 1, &cb);
+    }
+
     void Present() override {
         if (!m_initialized || m_skipPresent) {
             m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
@@ -874,6 +1092,7 @@ public:
             m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
             return;
         }
+        ApplyGammaIfNeeded();
         MaybeCaptureFrame();
         PerFrame& f = m_frames[m_currentFrame];
         VkSwapchainKHR sc = m_swapchain.Get();
@@ -1298,37 +1517,27 @@ public:
         m_rtUBO.ambient[2] = s_rtEdgeD;
         m_rtUBO.ambient[3] = s_rtShadow;
 
-        // Camera-motion detection for the temporal denoiser. Geometry is
-        // eye-space, so ANY camera move shifts the whole scene — the BVH root
-        // AABB center is a free, robust motion signal. Same-pixel depth/normal
-        // validation can't catch a flat floor sliding under the camera (the
-        // "shadows swim while moving" complaint), so while the scene moves we
-        // cut the history cap hard and lean on the spatial filter instead.
-        {
-            const auto& root = m_rtBVH.Nodes()[0];
-            float cx = 0.5f * (root.aabbMin[0] + root.aabbMax[0]);
-            float cy = 0.5f * (root.aabbMin[1] + root.aabbMax[1]);
-            float cz = 0.5f * (root.aabbMin[2] + root.aabbMax[2]);
-            float dx = root.aabbMax[0] - root.aabbMin[0];
-            float dy = root.aabbMax[1] - root.aabbMin[1];
-            float dz = root.aabbMax[2] - root.aabbMin[2];
-            float diag = std::sqrt(dx*dx + dy*dy + dz*dz);
-            static float s_prevC[3] = {0, 0, 0};
-            static bool  s_prevValid = false;
-            float motion = 0.0f;
-            if (s_prevValid && diag > 1e-3f) {
-                float mx = cx - s_prevC[0], my = cy - s_prevC[1], mz = cz - s_prevC[2];
-                motion = std::sqrt(mx*mx + my*my + mz*mz) / diag;
-            }
-            s_prevC[0] = cx; s_prevC[1] = cy; s_prevC[2] = cz;
-            s_prevValid = true;
-            // Fast motion (title-head pop, camera whips) → no history at all;
-            // even a 4-frame trail is visible on fast movers.
-            float histCap = (motion > 1e-2f) ? 1.0f
-                          : (motion > 3e-3f) ? 4.0f
-                          : (motion > 5e-4f) ? 12.0f : 32.0f;
-            m_rtUBO.extra[0] = histCap / 64.0f;
-        }
+        // NO TEMPORAL HISTORY: every frame's shadows/AO/GI are computed fresh
+        // from that frame's own trace + spatial (single-frame) bilateral blur
+        // only, with zero blending from any previous frame. The denoise
+        // shader's blend is `mix(prevFrame, thisFrame, 1/histCap)` — histCap=1
+        // makes that a full replace every time (see RTComputeShaders.hpp's
+        // "Temporal: RT64-style history accumulation" block). This used to be
+        // motion-adaptive (long history when the camera was still, for extra
+        // noise reduction), driven by a heuristic that approximated camera
+        // motion from how much the RT BVH's root AABB center shifts — the
+        // only motion signal available in an eye-space-only pipeline (the
+        // camera is always at the origin by construction, so there's no
+        // direct position to track). That heuristic degrades badly in large
+        // open scenes (Zelda's outdoor areas pull huge, distant terrain/sky
+        // into the same BVH, so its diagonal dwarfs any nearby motion), and
+        // even tuned correctly, a stale multi-frame blend means shadows/
+        // lighting visibly lag the current frame's geometry after any camera
+        // or character movement — reads as everything being spatially "off"
+        // from where it should be. Forcing histCap=1 removes that failure
+        // mode entirely, at the cost of the extra noise reduction favorable
+        // static-camera history gave.
+        m_rtUBO.extra[0] = 1.0f / 64.0f;
         m_rtUBO.extra[1] = s_rtExpose;
         // Reflections ON by default, material-gated to metal (env-mapped) and
         // water (translucent up-facing) in the trace shader. NOVA64_RT_REFL=0
@@ -1339,9 +1548,10 @@ public:
         }();
         m_rtUBO.dims[2] = m_rtBVH.NodeCount();
         m_rtUBO.dims[3] = RT_F_SHADOWS | RT_F_LIGHTING
-                        | (s_rtRefl       ? RT_F_REFLECTIONS : 0u)
-                        | (s_rtDebug == 1 ? RT_F_DEBUG       : 0u)
-                        | (s_rtDebug == 2 ? RT_F_DEBUG_TERM  : 0u);
+                        | (s_rtRefl       ? RT_F_REFLECTIONS   : 0u)
+                        | (s_rtDebug == 1 ? RT_F_DEBUG         : 0u)
+                        | (s_rtDebug == 2 ? RT_F_DEBUG_TERM    : 0u)
+                        | (s_rtDebug == 3 ? RT_F_DEBUG_COVERED : 0u);
         m_rtComposePending = true;
 
         {
@@ -2194,6 +2404,16 @@ private:
         // Destroy Stage-4 owned objects first (they reference the device).
         if (m_device.Get()) {
             m_rtPipeline.reset(); // destroy RT pipeline before device
+            m_computeRT.reset();
+            // VI gamma-correction pass resources
+            if (m_gammaTmpView)  { vkDestroyImageView(m_device.Get(), m_gammaTmpView, nullptr); m_gammaTmpView = VK_NULL_HANDLE; }
+            if (m_gammaTmpImg)   { vkDestroyImage(m_device.Get(), m_gammaTmpImg, nullptr); m_gammaTmpImg = VK_NULL_HANDLE; }
+            if (m_gammaTmpMem)   { vkFreeMemory(m_device.Get(), m_gammaTmpMem, nullptr); m_gammaTmpMem = VK_NULL_HANDLE; }
+            if (m_gammaDescPool) { vkDestroyDescriptorPool(m_device.Get(), m_gammaDescPool, nullptr); m_gammaDescPool = VK_NULL_HANDLE; }
+            if (m_gammaPipeline)   { vkDestroyPipeline(m_device.Get(), m_gammaPipeline, nullptr); m_gammaPipeline = VK_NULL_HANDLE; }
+            if (m_gammaPipeLayout){ vkDestroyPipelineLayout(m_device.Get(), m_gammaPipeLayout, nullptr); m_gammaPipeLayout = VK_NULL_HANDLE; }
+            if (m_gammaDSLayout)  { vkDestroyDescriptorSetLayout(m_device.Get(), m_gammaDSLayout, nullptr); m_gammaDSLayout = VK_NULL_HANDLE; }
+            if (m_gammaShaderMod) { vkDestroyShaderModule(m_device.Get(), m_gammaShaderMod, nullptr); m_gammaShaderMod = VK_NULL_HANDLE; }
             // Destroy dynamically-built per-shader pipelines
             m_dynPipelines.clear();
             m_curDynPipeline = nullptr;
@@ -3084,6 +3304,30 @@ private:
     // raster), so the RT reads the finished textured frame and is not discarded.
     bool                                m_rtComposePending = false;
     RTUBOData                           m_rtUBO{};
+
+    // ── VI gamma correction ──────────────────────────────────────────────
+    // Real N64 VI hardware, when VI_STATUS's gamma-enable bit is set,
+    // brightens the output with a sqrt() curve (N64 Programming Manual
+    // §5.3: undoing it is "square and shift down by 8 each color
+    // component" — i.e. the forward op is the inverse of squaring). This
+    // was already implemented correctly for GL (FramebufferManager's
+    // uGamma=2.0 shader does pow(c,1/2.0)=sqrt(c)) but never had a Vulkan
+    // counterpart, so it silently never ran on this platform despite every
+    // test ROM (SM64/OOT/MM) enabling it. Built lazily on first use, exactly
+    // like m_computeRT above.
+    bool                 m_gammaBuilt = false;
+    VkShaderModule       m_gammaShaderMod   = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_gammaDSLayout   = VK_NULL_HANDLE;
+    VkPipelineLayout      m_gammaPipeLayout = VK_NULL_HANDLE;
+    VkPipeline            m_gammaPipeline   = VK_NULL_HANDLE;
+    VkDescriptorPool      m_gammaDescPool   = VK_NULL_HANDLE;
+    VkDescriptorSet       m_gammaDescSet    = VK_NULL_HANDLE;
+    VkImage               m_gammaTmpImg     = VK_NULL_HANDLE;
+    VkDeviceMemory        m_gammaTmpMem     = VK_NULL_HANDLE;
+    VkImageView           m_gammaTmpView    = VK_NULL_HANDLE;
+    uint32_t              m_gammaTmpW       = 0;
+    uint32_t              m_gammaTmpH       = 0;
+    bool                  m_gammaTmpValid   = false;   // has this frame's blit-in happened at least once?
 
     static constexpr const char* kRTRgenSrc = R"GLSL(
 // n64rt.rgen

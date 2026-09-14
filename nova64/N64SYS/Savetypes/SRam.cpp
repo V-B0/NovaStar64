@@ -4,7 +4,6 @@
  */
 #include "SRam.hpp"
 #include "../../common/log.hpp"
-#include "../../common/path.hpp"
 #include "../../common/MemoryManagment.hpp"
 #include "../MainSYS.hpp"
 #include "../N64Rom.hpp"
@@ -213,9 +212,7 @@ bool CSram::LoadSram()
     // Ensure save directory exists
     std::filesystem::create_directories(savePath);
     
-    CPath fullPathObj(savePath);
-    fullPathObj.AppendDirectory(fileName);
-    std::string fullPath = fullPathObj.GetString();
+    std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
 
     Log::debugf("CSram::LoadSram - Save path: %s", fullPath.c_str());
 

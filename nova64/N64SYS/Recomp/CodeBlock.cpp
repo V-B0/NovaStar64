@@ -29,6 +29,7 @@
 #include "Arm64/arm64RecompilerOps.hpp"
 #endif
 
+#include <cstdio>
 #include <cstring>
 #include <cstdarg>
 #include <chrono>
@@ -174,6 +175,11 @@ CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options)
     if (!analysis.has_value()) {
         return CompileResult::FailedAnalysis;
     }
+
+    // Keep what the analysis found. BlockFlags::HasLoop in particular is what
+    // the dispatcher uses to recognise a spin loop, and it was previously
+    // computed and then thrown away.
+    flags_ = analysis->flags;
 
     // Step 2: Generate code
     if (!generate_code(analysis.value(), options)) {
@@ -368,15 +374,26 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     };
 
     // Helper lambda: check if branch target forms a permanent loop
+    // A branch back to its own address is a spin loop: nothing but an interrupt
+    // will get it out, so the dispatcher may skip ahead to the next timer event
+    // rather than executing it a few million times.
+    //
+    // This deliberately matches the interpreter's test exactly
+    // (`CN64System::DelayedRelativeJump` with offset 0) and nothing more. It
+    // used to also require that the delay slot could not affect the branch
+    // condition, which sounds stricter and better but made the two engines
+    // disagree: the interpreter fast-forwarded the spin loop while the
+    // recompiler executed it, so their Count values drifted and the game
+    // programmed CP0 Compare differently on each.
+    //
+    // The typical spin loop reloads its flag in the delay slot, so that extra
+    // condition rejected almost every real case. Skipping to the next timer is
+    // still correct for those: the flag is written by an interrupt handler or a
+    // DMA completion, and both of those *are* timer events. If this is ever
+    // refined to spot self-terminating loops (e.g. a countdown in the delay
+    // slot), the interpreter has to be changed in the same commit.
     auto check_perm_loop = [&](uint32_t target_pc) -> bool {
-        if (target_pc != pc) return false;
-        // Read delay slot and check if it affects the branch comparison
-        uint32_t delay_instr = 0;
-        if (!memory_->MemoryValue32(pc + 4, delay_instr)) {
-            return false;
-        }
-        R4300iInstruction instr(pc, opcode);
-        return !instr.AffectedByDelaySlot(delay_instr);
+        return target_pc == pc;
     };
 
     switch (op) {
@@ -1003,8 +1020,19 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
             log_error("ARM64 CompileInstruction failed at 0x" + std::to_string(addr));
         }
 
+        // A timer-expiry exit is only safe on a straight-line instruction: the
+        // branch must still run its delay slot, and after the delay slot the
+        // branch callback owns the PC. For those two, just decrement.
+        const bool isBranch    = (i == branchInstrIdx);
+        const bool isDelaySlot = (branchInstrIdx != static_cast<size_t>(-1) &&
+                                  i == branchInstrIdx + 1);
+
         if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
-            ops.EmitTimerDecrement();
+            if (isBranch || isDelaySlot) {
+                ops.EmitTimerDecrement();
+            } else {
+                ops.EmitTimerDecrementAndCheck(addr + 4);
+            }
         }
 
         if (i != branchInstrIdx) {

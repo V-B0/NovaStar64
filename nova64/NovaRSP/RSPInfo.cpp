@@ -104,7 +104,7 @@ void RspRomClosed()
 {
     CRSPSettings::SetRomOpen(false);
 
-    // Destroy HLE context (shuts down WASAPI audio, flushes buffers)
+    // Destroy HLE context (shuts down audio output, flushes buffers)
     s_HleContext.reset();
 
 #ifdef NOVA_RSP_RECOMPILER

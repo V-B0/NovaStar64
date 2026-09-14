@@ -61,9 +61,9 @@ CHle::CHle(CRSPSystem& system)
     if (!m_AudioHle)
         WarnMessage("RSP HLE: Audio HLE is DISABLED — audio tasks will not be processed");
 
-    // Audio output is owned by AudioInterfaceHandler — it initializes WASAPI
+    // Audio output is owned by AudioInterfaceHandler — it initializes the device
     // when the game writes a valid DACRATE.  Don't init here (premature default
-    // rate fails WASAPI shared mode on most Windows devices).
+    // rate is rejected by some output backends).
 }
 
 CHle::~CHle() = default;

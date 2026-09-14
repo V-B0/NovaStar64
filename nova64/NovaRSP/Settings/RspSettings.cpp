@@ -9,7 +9,6 @@
 #include "RspSettings.hpp"
 #include "GameDB.hpp"
 #include "../../common/IniFile.hpp"
-#include "../../common/path.hpp"
 #include <cstdio>
 #include <filesystem>
 

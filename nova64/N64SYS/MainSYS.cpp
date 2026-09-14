@@ -6,7 +6,6 @@
 #include <cstdio>
 #include "../common/trace.hpp"
 #include "../common/log.hpp"
-#include "../common/path.hpp"
 #include "../common/file.hpp"
 #include "../common/md5.hpp"
 #include "../common/MemoryManagment.hpp"
@@ -22,6 +21,7 @@
 #include "MainSYS.hpp"
 #include "Types.hpp"
 #include "N64Rom.hpp"
+#include "StateTrace.hpp"
 #include "N64DD.hpp"
 #include "MIPSY/Systiming.hpp"
 #include "MIPSY/Register.hpp"
@@ -790,13 +790,8 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             auto bootCode = GetRom()->GetBootCode();
             if (!bootCode.empty())
             {
-                // Copy boot code to SP DMEM (0xA4000040)
-                uint32_t destAddr = 0xA4000040;
-                // Since MipsMemoryVM::Dmem() returns a pointer, we don't need UpdateMemoryValue8 
-                // IF we trust the mapping.
-                // However, UpdateMemoryValue8 is "virtual" write.
-                // But Dmem() is direct pointer access. 
-                // Let's use Dmem() pointer arithmetic as it's cleaner for block copy.
+                // Copy boot code to SP DMEM (0xA4000040). Dmem() hands back a
+                // direct pointer, so a block copy beats per-byte virtual writes.
                 uint8_t* dmem = m_Memory->Dmem();
                 if (dmem)
                 {
@@ -1153,14 +1148,21 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     if (m_TLB) m_TLB->Initialize(m_Memory.get(), m_Registers.get(), nullptr);
     if (m_MIPSInterfaceHandler) m_MIPSInterfaceHandler->Reset();
 
-    // Set up initial VI timer (NTSC ~60Hz: 93,750,000 / 60 ≈ 1,562,500 cycles per frame)
+    // Set up the initial VI timer. The VR4300 runs at 93.75 MHz in both regions,
+    // so the field rate is what differs: NTSC 60 Hz, PAL 50 Hz.
+    //   NTSC: 93,750,000 / 60 = 1,562,500 Count ticks per field
+    //   PAL:  93,750,000 / 50 = 1,875,000 Count ticks per field
+    // NextTimer decrements by CountPerOp per instruction, so the period is
+    // expressed as (ticks / CountPerOp) * CountPerOp.
     if (m_SystemTimer)
     {
-        // P64 NTSC: ViTimerPeriod = ViTimerIncrement * CountPerOp = 781,250 * 2 = 1,562,500.
-        // NextTimer decrements by CountPerOp per instruction, so this fires every
-        // 1,562,500 / CountPerOp = 781,250 instructions per frame.
-        // COUNT_REGISTER += elapsed gives 1,562,500 Count ticks per frame (same as P64).
-        m_SystemTimer->set_timer_periodic(N64System::TimerType::ViTimer, 781250 * CountPerOp());
+        const bool isPal = GetRom() && GetRom()->IsLoaded() &&
+                           GetRom()->GetImage().IsPal();
+        const uint32_t viIncrement = isPal ? 937500u : 781250u;
+        m_SystemTimer->set_timer_periodic(N64System::TimerType::ViTimer,
+                                          viIncrement * CountPerOp());
+        Log::infof("VI timer: %s field rate (%u Count ticks/field)",
+                   isPal ? "PAL 50Hz" : "NTSC 60Hz", viIncrement * 2);
         // Set up initial Compare timer based on Count/Compare registers
         m_SystemTimer->update_compare_timer();
         Log::debug("VI timer and Compare timer initialized");
@@ -1259,8 +1261,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         
         // Read backendType from settings/NovaGraphics.ini
         int32_t backendType = 0; // Default to OpenGL
-        CPath iniPath(std::string("settings/NovaGraphics.ini"));
-        if (iniPath.Exists()) {
+        if (std::filesystem::exists("settings/NovaGraphics.ini")) {
             CIniFile ini("settings/NovaGraphics.ini");
             // VideoPlugin uses "Backend" section
             backendType = ini.GetNumber("Backend", "backendType", 0);
@@ -1529,7 +1530,13 @@ void CN64System::RefreshScreen()
     // --- END PROFILING SETUP ---
     
     uint64_t frameNum = GetCurrentFrameCount();
-    
+
+    // Divergence tracing. Recorded before any frameskip decision so the trace
+    // is identical whether or not this frame ends up being rendered.
+    if (Nova64::Trace::IsEnabled()) {
+        Nova64::Trace::RecordFrame(*this, frameNum);
+    }
+
     // Auto-frameskip: check if we're behind schedule
     bool shouldRender = true;
     if (m_TargetFPS > 0 && m_FramePaceInitialized)
@@ -1757,9 +1764,8 @@ bool CN64System::LoadState()
             c = '_';
     }
     
-    CPath fullPath(savePath);
-    fullPath.AppendDirectory(fileName);
-    return LoadState(fullPath.GetString().c_str());
+    const std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
+    return LoadState(fullPath.c_str());
 }
 
 bool CN64System::LoadState(const char* FileName)
@@ -1855,9 +1861,8 @@ bool CN64System::SaveState()
             c = '_';
     }
     
-    CPath fullPath(savePath);
-    fullPath.AppendDirectory(fileName);
-    return SaveState(fullPath.GetString().c_str());
+    const std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
+    return SaveState(fullPath.c_str());
 }
 
 bool CN64System::SaveState(const char* FileName)
