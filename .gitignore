@@ -46,4 +46,10 @@ nova64/dump
 *.bmp
 *.json
 
+# Editor settings are personal (paths, launch targets); don't share them.
+.vscode/
 
+# README screenshots stay local: they show copyrighted games. The folder stays
+# in the repo, its contents never do.
+docs/images/*
+!docs/images/.gitkeep
