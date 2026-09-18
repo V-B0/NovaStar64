@@ -42,26 +42,27 @@ publicly documented RSP/RDP behaviour. Those are not Project64.
 
 ## Current scope
 
-Measured by file-header attribution across the tree:
+Measured by file-header attribution across the tree (a file counts if one of
+its first 40 lines mentions Project64, and is counted in full). Regenerate the
+totals with `python3 nova64/scripts/measure-derivation.py`.
 
 | Area | Files | Lines | Notes |
 |---|---:|---:|---|
-| `N64SYS/Recomp/` | 35 | 21,883 | Dynamic recompiler: code blocks, sections, register allocation, x64 and ARM64 backends |
+| `N64SYS/Recomp/` | 34 | 21,633 | Dynamic recompiler: code blocks, sections, register allocation, x64 and ARM64 backends |
 | `NovaRSP/Recompiler/` | 18 | 10,511 | RSP recompiler incl. x64 vector codegen |
 | `NovaRSP/CPU/` | 18 | 5,984 | RSP interpreter, registers, memory |
-| `NovaRSP/HLE/` | 15 | 4,508 | HLE audio lists and microcode dispatch |
-| `common/` | 1 | 468 | Executable-memory allocation for the recompiler |
-| `N64SYS/MIPSY/` | 4 | 1,921 | Registers, timing, virtual memory |
-| `N64SYS/Plugins/` | 4 | 1,882 | Zilmar-spec plugin interfaces |
-| `N64SYS/Enhancement/` | 4 | 998 | GameShark-style cheat engine |
-| `N64SYS/Savetypes/` | 2 | 888 | EEPROM, FlashRAM |
-| `N64SYS/Memoryhandler/` | 1 | 710 | |
+| `NovaRSP/HLE/` | 15 | 4,517 | HLE audio lists and microcode dispatch |
+| `N64SYS/Plugins/` | 4 | 1,788 | Zilmar-spec plugin interfaces |
+| `N64SYS/MIPSY/` | 3 | 1,531 | Registers, timing, virtual memory |
+| `N64SYS/Savetypes/` | 2 | 897 | EEPROM, FlashRAM |
 | `N64SYS/Interpreter/` | 1 | 503 | MIPS interpreter |
-| `NovaRSP/` (misc) | 7 | 726 | Debugger, settings, info |
-| **Total** | **110** | **50,960** | |
+| `common/` | 1 | 468 | Executable-memory allocation for the recompiler |
+| `NovaRSP/` (settings, debugger, info) | 7 | 725 | |
+| **Total** | **103** | **48,557** | |
 
-`NovaGraphics/` (~60K lines), `UI/`, and `NovaAudio/` contain no derived code.
-Keep it that way — see [CONTRIBUTING.md](../CONTRIBUTING.md).
+`NovaGraphics/` (~55K lines), `UI/`, `NovaAudio/`, `NovaInput/` and `NovaLua/`
+contain no derived code. Keep it that way — see
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
@@ -98,11 +99,11 @@ That makes it an unusually clean target: the specification *is* the public
 document, so a clean-room implementer has everything they need without touching
 the existing code.
 
-### 3. `N64SYS/Savetypes/` and `Enhancement/` (~1,900 lines)
+### 3. `N64SYS/Savetypes/` (~900 lines)
 
 Self-contained and well documented publicly. EEPROM/FlashRAM command protocols
-are documented on n64brew.dev; the GameShark code format is widely published.
-Low coupling to the rest of the system, so mistakes stay local.
+are documented on n64brew.dev. Low coupling to the rest of the system, so
+mistakes stay local.
 
 ### 4. `NovaRSP/CPU/` and `NovaRSP/HLE/` (~10,500 lines)
 

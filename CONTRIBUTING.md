@@ -1,24 +1,52 @@
 # Contributing to NovaStar64
 
 Thanks for your interest. NovaStar64 is a hobby-scale N64 emulator under heavy
-development. Please open an issue or discussion before starting anything large so
-we can agree on direction first.
+development. For anything larger than a small fix, please open an issue or
+discussion first so we can agree on direction before you invest the time.
+
+**On this page:**
+[Getting set up](#getting-set-up) ·
+[Pull requests](#pull-requests) ·
+[Testing your change](#testing-your-change) ·
+[Diagnostic variables](#diagnostic-variables) ·
+[Things that have bitten us before](#things-that-have-bitten-us-before) ·
+[Code style](#code-style) ·
+[Project64-derived code](#project64-derived-code) ·
+[Reporting bugs](#reporting-bugs)
 
 ## Getting set up
 
-See [README.md](README.md) for full build instructions.
+See [README.md](README.md#getting-started) for requirements. In short:
 
 ```bash
+git submodule update --init                       # Berkeley SoftFloat
 cd nova64
 cmake -B build -G Ninja
 cmake --build build
 codesign --force --deep --sign - build/nova64   # macOS, after every rebuild
 ```
 
-## Branches
+You need your own ROM images to test with. None are included, and `roms/` and
+`saves/` are git-ignored — keep it that way.
 
-- `main` — release branch; stable, playable builds.
-- `devbuild` — active development. Target pull requests here unless asked otherwise.
+The [project layout](README.md#how-it-works) in the README maps the source
+directories to subsystems.
+
+## Pull requests
+
+- **Branches.** `main` is the release branch: stable, playable builds. `devbuild`
+  is active development; target pull requests there unless asked otherwise.
+- **Keep them focused.** Several small reviewable pull requests beat one large
+  one. A dependency bump goes in its own commit, with the reason.
+- **Say what you tested** in the description — which ROMs, which engine
+  (`--interpreter`, `--recompiler` or both), which region. See
+  [Testing your change](#testing-your-change) for what to run for each kind of
+  change.
+- **Say if code came from elsewhere.** If you port or adapt code from Project64
+  or any other GPL codebase, say so in the description and add the attribution
+  header described in [Project64-derived code](#project64-derived-code).
+- **Explain the why.** A commit message or comment that records the root cause of
+  a bug is worth far more than one that restates the diff.
 
 ---
 
@@ -31,21 +59,34 @@ works.
 At minimum, run a few commercial ROMs headless and confirm a clean exit:
 
 ```bash
-SDL_AUDIODRIVER=dummy ./build/nova64 path/to/rom.z64 --frames 120
+SDL_AUDIODRIVER=dummy ./build/nova64 path/to/rom.z64 --headless --frames 120
 ```
 
-`SDL_AUDIODRIVER=dummy` matters — without it, headless runs leave audio
-threads producing sound.
+`SDL_AUDIODRIVER=dummy` matters — without it, headless runs leave audio threads
+producing sound. `--headless` opens no window and does not take keyboard focus.
 
-### The divergence harness
+Then, depending on what you touched:
 
-For anything touching CPU, RSP, or timing, use the state trace. It records a
+- **CPU or RSP execution** — test with both `--interpreter` and `--recompiler`,
+  and compare them with the state trace below.
+- **Graphics** — test with at least one ROM that actually exercises the path you
+  changed, and compare frames before and after (`NOVA64_SHOT_EVERY=N` writes
+  periodic screenshots).
+- **Timing, audio or video** — test a **PAL** ROM as well as an NTSC one. The two
+  regions use different video field rates and a different audio DAC clock, and
+  region handling has been a recurring source of bugs. Also run the
+  [absolute timing check](#timing-count-is-the-unit-of-time).
+- **Save states or rewind** — see [Save states and rewind](#save-states-and-rewind).
+
+### The state-trace harness
+
+For anything touching CPU, RSP or timing, use the state trace. It records a
 digest of architectural state once per VI frame so two runs can be diffed:
 
 ```bash
-NOVA64_TRACE_STATE=/tmp/before.trace ./build/nova64 rom.z64 --frames 300
+NOVA64_TRACE_STATE=/tmp/before.trace ./build/nova64 rom.z64 --headless --frames 300
 # ...make your change, rebuild...
-NOVA64_TRACE_STATE=/tmp/after.trace  ./build/nova64 rom.z64 --frames 300
+NOVA64_TRACE_STATE=/tmp/after.trace  ./build/nova64 rom.z64 --headless --frames 300
 scripts/compare-trace.py /tmp/before.trace /tmp/after.trace
 ```
 
@@ -55,88 +96,206 @@ traces** — if they don't, something has reintroduced a nondeterminism source
 (wall-clock time or a PRNG leaking into emulated state), which is a bug in its
 own right.
 
-The same harness compares the two execution engines
-(`--interpreter` vs `--recompiler`). Read the `ALIGNMENT` line first: the engines
-advance in different granularities, so frames sampled at different CP0 `Count`
-values are inconclusive. Only frames the script reports as `CONFIRMED` — same
+The same harness compares the two execution engines (`--interpreter` against
+`--recompiler`). Read the `ALIGNMENT` line first: frames sampled at different CP0
+`Count` values are inconclusive. Only frames reported as `CONFIRMED` — same
 `Count`, different state — are real disagreements.
 
 Useful extras: `NOVA64_TRACE_RDRAM=1` also hashes RDRAM each frame (slow),
-`NOVA64_TRACE_CP0=1` emits a per-register CP0 breakdown for pinpointing which
-register diverged, and `NOVA64_TRACE_FRAMES=<n>` caps the trace length.
+`NOVA64_TRACE_CP0=1` emits a per-register CP0 breakdown so you can see which
+register diverged first, `NOVA64_TRACE_EVENTS=1` records timer and interrupt
+events with their `Count`, and `NOVA64_TRACE_FRAMES=<n>` caps the trace length.
 
-### Interrupt timing: both engines service the timer at the same boundary
+### Timing: `Count` is the unit of time
 
-**Instruction cycle counting is exact** — both engines charge `CountPerOp` per
-instruction, and `SystemTimer::TimerDone()` fires at byte-identical `Count` on
-both. There has never been a miscount.
+Everything in the emulated machine is scheduled in CP0 `Count` ticks: the VI,
+AI, PI, SI and RSP events and the Compare interrupt all go through
+`SystemTimer`, and `m_NextTimer` counts down toward the next one, decremented by
+`CountPerOp` (2) per instruction. Four rules follow from that, each learned from
+a real bug.
 
-What used to diverge was *when the interrupt got delivered*. The interpreter
-only checked for pending interrupts on backward branches; the recompiler only at
-block exits. The timer fired at the same instant on both, but the CPU entered
-the ISR tens of cycles apart, so the game read a different `Count` and wrote a
-different CP0 `Compare`.
+**1. Timer periods are already in `Count` ticks — don't scale them by
+`CountPerOp`.** The VI timer was once scheduled as `781250 * CountPerOp()`. The
+constant is already `Count` ticks per NTSC field (93.75 MHz ÷ 2 ÷ 60), so the
+field came out twice as long in `Count` terms. Wall-clock frame pacing in
+`RefreshScreen()` still held real output at 60 fps, so video, movement and
+per-frame game logic all looked perfect — but every game clock that reads
+`Count` (`osGetTime()`) ran twice as fast, which showed up as a minigame
+stopwatch running at double speed. It was invisible to every cross-engine
+comparison because both engines had the same wrong constant.
 
-Both now service the timer on the instruction it actually expires on:
+**2. Both engines must service the timer on the instruction it expires on.**
+`R4300iInterpreter::ExecuteOps` checks `NextTimer <= 0` in the
+`PIPELINE_STAGE_NORMAL` case, at every straight-line instruction;
+`ArmRecompilerOps::EmitTimerDecrementAndCheck` folds a compare into the
+per-instruction decrement and leaves the block with the PC pointing at the next
+instruction. If they deliver an interrupt at different instructions, the game
+reads a different `Count`, writes a different CP0 `Compare`, and the two engines
+walk away from each other. Two corollaries:
 
-- `R4300iInterpreter::ExecuteOps` checks `NextTimer <= 0` in the
-  `PIPELINE_STAGE_NORMAL` case, i.e. at every straight-line instruction.
-- `ArmRecompilerOps::EmitTimerDecrementAndCheck` folds a compare into the
-  per-instruction timer decrement and leaves the block with the PC pointed at
-  the next instruction.
+- Never take a timer exit on a branch or its delay slot. The branch must still
+  run its delay slot, and afterwards the branch callback owns the PC — writing
+  `addr + 4` there would clobber the jump target.
+- A mid-block exit must write the resume PC itself. `ExitCodeBlock()` only flushes
+  registers and returns.
 
-Two rules matter if you touch this:
+**3. An idle-loop fast-forward must finish with `TimerDone()` in both engines.**
+Both engines skip a spin loop by forcing `NextTimer` negative and calling
+`UpdateTimers()`. That call can fire a periodic timer (VI, AI DMA) whose handler
+reschedules itself, and rescheduling rewrites `NextTimer` — leaving it positive
+again. The interpreter's version (`InPermLoop`, serviced from
+`PIPELINE_STAGE_PERMLOOP_DELAY_DONE`) always calls `TimerDone()` afterwards,
+which is what re-syncs everything. The recompiler used to gate that call on
+`NextTimer < 0`, so whenever a handler had rescheduled, the timer bookkeeping was
+silently skipped and the two engines forked completely within twenty frames of
+booting Super Mario 64.
 
-- **Never take a timer exit on a branch or its delay slot.** The branch still
-  has to run its delay slot, and after the delay slot the branch callback owns
-  the PC — writing `addr + 4` there would clobber the jump target. `CodeBlock`'s
-  ARM64 loop excludes both.
-- **A mid-block exit must write the resume PC itself.** `ExitCodeBlock()` only
-  flushes registers and returns; it does not set PC. The exception path gets
-  away with it because the exception handler supplies the PC.
-
-Measured effect (150 frames, interpreter vs recompiler, diverging frames):
-SM64 35 → 22, OOT 103 → 38, MM 114 → 53. No measurable performance cost.
-
-### Spin-loop detection
-
-Both engines treat exactly one thing as a spin loop: a branch back to its own
-address. The interpreter tests `offset == 0` in
+**4. Both engines treat exactly one thing as a spin loop: a branch back to its
+own address.** The interpreter tests `offset == 0` in
 `CN64System::DelayedRelativeJump`; the recompiler sets `BlockFlags::HasLoop`
-during analysis and the dispatcher queries `CodeBlock::is_spin_loop()`.
+during analysis and the dispatcher queries `CodeBlock::is_spin_loop()`. Keep the
+two in step, and if you ever refine the rule, change both engines in the same
+commit.
 
-Keep those two in step. The recompiler previously used a size heuristic
-(`instrCount <= 2`), which would happily fast-forward a short loop that was
-doing real work, and it separately required that the delay slot could not affect
-the branch condition — a stricter-sounding rule that in practice rejected nearly
-every real spin loop, since the usual pattern reloads its flag in the delay
-slot. Skipping ahead is correct for those: the flag is written by an interrupt
-handler or a DMA completion, and both are timer events.
+**The absolute check.** Cross-engine agreement only proves the engines agree,
+not that they are right (see rule 1). After a run of *N* video fields, `Count`
+must equal *N* × 781,250 on NTSC (× 937,500 on PAL), to within rounding. The
+last line of a state trace gives you `Count` at that frame:
 
-If you ever refine this (for example to spot a self-terminating loop that
-counts down in its delay slot), change both engines in the same commit.
+```bash
+NOVA64_TRACE_STATE=/tmp/t.trace ./build/nova64 rom.z64 --headless --frames 600
+tail -1 /tmp/t.trace     # column 2 is Count in hex; expect ≈ 600 * 781250 = 0x1BF08EB0
+```
 
-### What still diverges
+### What still differs between the engines
 
-CP0 `Compare` on a handful of frames. `Compare` is written by the game from the
-`Count` it just read, so it is the most sensitive indicator left. Aligning
-spin-loop detection did **not** move this — measured identical before and after
-— so the cause is something else still unidentified. Use
-`NOVA64_TRACE_EVENTS=1` and compare `cmpw` records to see the `Count` at each
-write.
+Measured on 2026-09-18, headless, `NOVA64_TURBO=1`, current `devbuild`:
 
-Then, depending on what you touched:
+- **Super Mario 64**, 1,200 frames: 5 frames differ, all in the CP0 digest only —
+  PC, GPRs and FPRs match — and each resolves by the next sample.
+- **Majora's Mask**, 3,000 frames from boot: 2,666 frames differ, 2,506 of them
+  at the same `Count`. (175 frames were sampled at different `Count` values,
+  which makes any difference on them inconclusive.) The first confirmed
+  difference is at frame 45. The typical pattern is the recompiler's PC one instruction
+  ahead of the interpreter's at the same `Count`, with different GPRs.
 
-- **CPU or RSP execution** — test with both `--interpreter` and `--recompiler`.
-  They must agree.
-- **Graphics** — test with at least one ROM that actually exercises the path you
-  changed, and compare frames before and after. `NOVA64_SHOT_EVERY=N` writes
-  periodic screenshots.
-- **Timing, audio, or video** — test a **PAL** ROM as well as an NTSC one. The
-  two regions use different video field rates and a different audio DAC clock,
-  and region handling has been a recurring source of bugs.
+It is a real, lasting difference, not a sampling artifact: rerunning Majora's
+Mask for 600 frames with `NOVA64_TRACE_RDRAM=1` shows RDRAM itself differing from
+frame 47 onward (555 of 600 frames), starting two frames after the first PC/GPR
+difference. So the two engines' game memory diverges early in the boot. Which
+engine is right is not yet known — the interpreter is the reference by
+construction, but nothing has proven it. It has not been tied to a visible bug,
+and a 30-minute Majora's Mask playthrough ran on the recompiler, but a
+disagreement this early is a good first suspect for any effect that renders
+differently between the two CPU cores. Candidates are a one-instruction
+difference in where the engines stop relative to a timer exit, or in how a
+branch-likely with a skipped delay slot is charged.
 
-Say what you tested in the pull request description.
+If you work on it, start from `NOVA64_TRACE_EVENTS=1` and `NOVA64_TRACE_CP0=1`
+on the first differing frame, and remember rule 2 above.
+
+### Unattended game runs
+
+Runs read `settings/` and write cartridge saves (`Saves/`) and the shader cache
+relative to the working directory, and a game can change its save during a test.
+Majora's Mask deletes an owl save when it loads one. Run from a scratch
+directory that holds copies, and copy the save in again before every run so runs
+stay comparable:
+
+```bash
+mkdir -p /tmp/run/Saves && cd /tmp/run
+cp -R ~/NovaStar64/settings . && ln -s ~/NovaStar64/nova64/build/roms roms
+cp "path/to/ZELDA MAJORA'S MASK.fla" Saves/
+SDL_AUDIODRIVER=dummy NOVA64_AUTOINPUT_MM=1 NOVA64_SHOT_START=1800 NOVA64_SHOT_EVERY=600 \
+NOVA64_SHOT_PATH=/tmp/run/shot ~/NovaStar64/nova64/build/nova64 roms/MM \
+    --headless --resolution 480p --frames 2450 --fps 0
+```
+
+The scratch directory needs its own `roms` and `settings`: if the working
+directory has neither, the app assumes it was launched from a GUI and switches to
+the folder containing the executable, which is where your real settings and saves
+are.
+
+The scripted input is applied where the PIF reads the controller
+(`NovaInput::ApplyScriptedInput`). Screenshot and trace frame numbers count
+presented frames, and heavy tracing can shift when the game reaches a scene.
+Screenshots from the Vulkan backend are boxed to 4:3 (16:9 with a widescreen
+setting), so compare them only with screenshots taken since the letterbox was
+added.
+
+Game controller code (`NovaInput/GamepadInput.cpp`) can be tested without a
+physical controller: SDL's virtual controllers
+(`SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0)`)
+appear as real ones, with axes and buttons numbered like SDL's controller enums.
+Set the trigger axes to -32768 for "released". Virtual controllers can't rumble.
+Attach one from a thread inside the running launcher rather than from an
+isolated unit test — an isolated test with a single device cannot reproduce
+player-slot problems that only appear when several controllers are present.
+
+### Save states and rewind
+
+A snapshot (`N64SYS/MachineState.cpp`) holds everything needed to carry on from
+that instant: CPU, FPU and CP0 registers, every hardware block's registers and
+private state, the timers, the TLB, RSP memory, PIF RAM, the FlashRAM command
+state, the plugins' state and RDRAM. Snapshots are only taken and restored at an
+instruction boundary, from a system event (`SysEvent_ServiceStates`): inside a
+recompiled block, guest registers live in host registers, so `CRegisters` is not
+the whole state there.
+
+**If you add state to a component, add it to that component's
+`SerializeState`.** Anything that influences emulated timing counts, even when it
+looks like a statistic. The SI DMA jitter is derived from the PIF's
+`dma_operations` counter; until that counter was saved, a replay after a rewind
+drifted by thousands of CPU cycles within a second. The layout must stay
+fixed-size (plain values and arrays), and changing it changes the save-state
+file format.
+
+To check a change, trace a run that rewinds, then compare the frames it played
+twice:
+
+```bash
+NOVA64_TRACE_STATE=/tmp/rewind.trace NOVA64_TRACE_RDRAM=1 \
+NOVA64_UI_ROM=roms/game.z64 NOVA64_UI_KEYS=1200:Backspace,1240:Left,1270:Left,1350:Return \
+NOVA64_UI_SHOT=/tmp/ui NOVA64_UI_SHOT_AT=1900 ./build/nova64
+scripts/compare-trace.py --replay /tmp/rewind.trace
+```
+
+The whole check runs unattended: `NOVA64_UI_KEYS` presses launcher keys on the
+given launcher frames, and `NOVA64_UI_SHOT_AT` saves a screenshot on each listed
+frame and exits after the last.
+
+---
+
+## Diagnostic variables
+
+Diagnostics are environment-variable-gated so they cost nothing in normal use.
+These are the ones you are most likely to want; `grep -r NOVA64_ nova64/` lists
+the rest.
+
+| Variable | Effect |
+|---|---|
+| `NOVA64_TRACE_STATE=<file>` | Write a per-VI-frame state digest (see above) |
+| `NOVA64_TRACE_RDRAM=1` / `_CP0=1` / `_EVENTS=1` | Also hash RDRAM / per-register CP0 / timer and interrupt events |
+| `NOVA64_TRACE_FRAMES=<n>` | Stop tracing after `n` frames |
+| `NOVA64_TURBO=1` | Uncap the frame rate so headless runs reach late game state quickly |
+| `NOVA64_SHOT_FRAME=a,b,c` | Save a screenshot on each listed presented frame |
+| `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
+| `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
+| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher tab to a PNG and exit |
+| `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |
+| `NOVA64_UI_KEYS=600:Backspace,660:Return` | Press launcher keys on the given launcher frames |
+| `NOVA64_UI_SHOT_AT=580,700` | With `NOVA64_UI_SHOT`, save `<path>_<frame>` on each frame and exit after the last (pass a path without an extension; the files are PNG) |
+| `NOVA64_AUTOINPUT=1` | Play controller 1 from a script: menu mashing, then wandering |
+| `NOVA64_AUTOINPUT_MM=1` (`_MM_BOOT=<reads>`) | Walk through Majora's Mask and open its pause menu, with a longer boot if needed |
+| `NOVA64_MM_RDP_TRACE=1` (`_FROM=`, `_TO=`) | Log RDP commands, limited to a range of presented frames — tracing a whole run is far too slow |
+| `NOVA64_TRI_DUMP=min,max` | Dump every triangle drawn in a range of frames |
+| `NOVA64_TEXDBG=1` / `NOVA64_FORENSIC=1` | Log texture decodes / texture-cache hits and misses |
+| `NOVA64_NO_MIPMAPS=1` | Disable mipmapping, to isolate texture problems |
+| `NOVA64_RT=1` | Enable the experimental ray tracer |
+| `NOVA64_LOG_LEVEL=<0-6>` | Override the log verbosity |
+
+Gate any new tracing the same way, and remove it once the bug it was written for
+is fixed.
 
 ---
 
@@ -144,15 +303,34 @@ Say what you tested in the pull request description.
 
 These are real failure modes from this codebase, not hypotheticals.
 
-**Prove code is reachable before you fix it.** Several subsystems here are
-wired up but never actually called. Before investing in a fix, confirm the code
-runs at all — add a counter or a log line and watch it fire. Removing a source
-file from the build and checking that it still links is a reliable deadness test.
+**Prove code is reachable before you fix it.** Several subsystems here are wired
+up but never actually called. `TextureCache::BeginFrame()` — which drains the
+queue of evicted GPU textures waiting to be freed — had no caller anywhere, so
+every eviction leaked a Vulkan texture until MoltenVK ran out of Metal
+residency-set allocations and the driver aborted the process mid-game. The cache
+looked correct on paper: its own counters stayed within budget. Before investing
+in a fix, confirm the code runs at all — add a counter or a log line and watch it
+fire, or `grep` for a call site. Removing a source file from the build and
+checking that it still links is a reliable deadness test.
+
+**Two engines agreeing does not make them right.** The VI-period bug above
+existed identically in the interpreter and the recompiler, so the
+interpreter-vs-recompiler trace comparison could never see it. When a value has a
+real-hardware definition, check it against that absolute number, not just against
+the other implementation.
+
+**Don't rely on the working directory.** `settings/`, `roms/` and `saves/` are
+found relative to where the process starts. A terminal launch from the right
+folder gets this by construction; a GUI launch (Finder, Dock) hands the process an
+unrelated directory, and the Games tab came up empty. `main.cpp` now falls back
+to the executable's own folder when the working directory has neither `roms/` nor
+`settings/` — don't add new relative-path assumptions that bypass that.
 
 **macOS filesystems are case-insensitive.** `RspTypes.hpp` and `RSPTypes.hpp` are
 the same file. A case-insensitive search may report a header as unused when it is
 included everywhere under different casing. Check both spellings before deleting
-anything.
+anything. The same applies to `Saves/` and `saves/`, which are one folder on macOS
+and two on Linux.
 
 **Never leave a dependency on a moving tag.** Every `FetchContent_Declare` must
 pin an exact tag or commit SHA. An unpinned `GIT_TAG master` silently broke the
@@ -164,6 +342,9 @@ deliberately, in its own commit, and say why.
 a `cmake .. && ninja` chain short-circuits and Ninja happily relinks stale object
 files — including sources you just deleted. Verify the configure step actually
 ran.
+
+**A rebuilt macOS binary must be re-signed.** Skip `codesign` and the dynamic
+libraries fail to load and the process hangs silently.
 
 **Region matters.** If you add a hardware constant, check whether it differs
 between NTSC and PAL before hardcoding it.
@@ -182,7 +363,9 @@ between NTSC and PAL before hardcoding it.
   latter while tidying.
 - Don't leave thinking-out-loud comments ("does this start DMA? docs disagree?")
   in merged code. Resolve the question, then state the answer.
-- Keep pull requests focused. Several small reviewable ones beat one large one.
+- Where a behaviour is modelled on another emulator's (GLideN64,
+  angrylion-rdp-plus, mupen64plus-rsp-hle), say so in a comment — the existing
+  code does, and it is what lets a later reader check the two against each other.
 - Gate diagnostic tracing behind an environment variable rather than a permanent
   code path, and remove it once the underlying bug is fixed.
 
@@ -192,8 +375,10 @@ between NTSC and PAL before hardcoding it.
 
 Large parts of NovaStar64 — the CPU core, the RSP, and some of `common/` —
 originate from [Project64](https://github.com/project64/project64), which is
-GPL-2.0 licensed. `NovaGraphics/`, `UI/`, and `NovaAudio/` are original work and
-should stay that way.
+GPL-2.0 licensed. `NovaGraphics/`, `UI/`, `NovaAudio/`, `NovaInput/` and
+`NovaLua/` are original work and should stay that way. The exact share is in the
+[README](README.md#project64-and-licensing); regenerate it with
+`python3 nova64/scripts/measure-derivation.py` if you change it materially.
 
 If you port or adapt code from Project64 or any other GPL-2.0 codebase:
 
@@ -215,10 +400,11 @@ Removing one does not make the code any less derived — it just makes the proje
 non-compliant.
 
 Please don't introduce *new* Project64-derived code into `NovaGraphics/`, `UI/`,
-or `NovaAudio/`. Those subsystems are currently clean, and keeping them that way
-preserves options. If you want to help remove the existing dependency, read
-[docs/REIMPLEMENTATION.md](docs/REIMPLEMENTATION.md) first — the rules about who
-may write replacement code are stricter than they look.
+`NovaAudio/`, `NovaInput/` or `NovaLua/`. Those subsystems are currently clean,
+and keeping them that way preserves options. If you want to help remove the
+existing dependency, read [docs/REIMPLEMENTATION.md](docs/REIMPLEMENTATION.md)
+first — the rules about who may write replacement code are stricter than they
+look.
 
 All contributions are accepted under the project's GPL-2.0 license.
 
@@ -228,7 +414,10 @@ All contributions are accepted under the project's GPL-2.0 license.
 
 Open a GitHub issue with:
 
-- The ROM (name and **region**), and whether you used the interpreter or recompiler.
+- The ROM (name and **region**), and whether you used the interpreter or the
+  recompiler. If a problem appears with one CPU core and not the other, say so —
+  it narrows the search a great deal.
 - Steps to reproduce.
 - A screenshot or capture for graphical issues.
+- A log, if you can: `--log <file>` writes one.
 - Your OS, and on macOS whether you're on Apple Silicon or Intel.

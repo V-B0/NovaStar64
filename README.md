@@ -1,64 +1,157 @@
-# NovaStar64
+<h1 align="center">NovaStar64</h1>
 
-A Nintendo 64 emulator written in C++20, built around a dynamic recompiler, a
-high-level-emulation (HLE) graphics pipeline, and a Vulkan/MoltenVK renderer.
+<p align="center">
+  A Nintendo 64 emulator written in C++20, with a dynamic recompiler, a
+  from-scratch high-level graphics pipeline, and save states with rewind.
+</p>
 
-NovaStar64 began as a fork of [Project64](https://github.com/project64/project64).
-The graphics plugin, launcher UI, and audio plugin have since been written from
-scratch; the CPU core and RSP remain substantially Project64-derived. The project
-is licensed under **GPL-2.0** in accordance with Project64's license — see
-[LICENSE](LICENSE), and [What is and isn't Project64-derived](#what-is-and-isnt-project64-derived)
-below for the specifics.
+<p align="center">
+  <img alt="License: GPL-2.0" src="https://img.shields.io/badge/license-GPL--2.0-blue">
+  <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C">
+  <img alt="Graphics: Vulkan and OpenGL" src="https://img.shields.io/badge/graphics-Vulkan%20%7C%20OpenGL-a41e22">
+  <img alt="Tested on macOS (Apple Silicon)" src="https://img.shields.io/badge/tested%20on-macOS%20(Apple%20Silicon)-lightgrey">
+  <img alt="Status: active development" src="https://img.shields.io/badge/status-active%20development-orange">
+</p>
 
-NovaStar64 is under active development. Expect bugs, missing features, and rough
-edges.
+<p align="center">
+  <img src="docs/images/mm-gameplay.jpg" width="720"
+       alt="The Legend of Zelda: Majora's Mask running in the NovaStar64 launcher window at 60 fps">
+</p>
 
----
+NovaStar64 plays commercial N64 games inside a self-contained launcher window.
+It has a game library, four save-state slots per game, and a rewind strip that
+lets you jump back to any moment from earlier in your session. The CPU core and
+the RSP began as a fork of [Project64](https://github.com/project64/project64)
+and are credited as such; the graphics pipeline, launcher, controller support
+and audio output were written from scratch.
 
-## Features
+The project is under active development. Expect bugs and rough edges — see
+[Status](#status) for what has been tested and what is known to be wrong.
 
-- **Dynamic recompiler** for x86-64 and ARM64 (Apple Silicon), with a MIPS
-  interpreter fallback for debugging.
-- **HLE graphics pipeline** (`NovaGraphics`) implementing the RDP pixel pipeline —
-  colour combiner, blender, TMEM and all N64 texture formats, TLUT, mipmapping,
-  both hardware dither patterns, fog, chroma key, YUV convert, and N64-accurate
-  decal depth compare in generated shader code.
-- **Broad microcode coverage**: F3D, F3DEX, F3DEX2/F3DZEX, S2DEX, Perfect Dark,
-  plus roughly a dozen per-game variants (Diddy Kong Racing, Turbo3D, the L3D
-  family, ZSortBOSS and others).
-- **Vulkan and OpenGL backends.** macOS runs through Vulkan via the bundled
-  MoltenVK, since macOS caps OpenGL at 4.1 and the GL path needs 4.6.
-- **Experimental compute ray tracing** layered over the rasterised output
-  (`NOVA64_RT=1`) — shadows and ambient occlusion.
-- **Launcher UI** with a ROM library, Lua scripting console, hex editor,
-  RetroAchievements integration, and a hardware simulator view.
-- **Save states and cartridge saves** (EEPROM, SRAM, FlashRAM), Controller Pak,
-  Rumble Pak, Transfer Pak, GameShark-style enhancements, and partial N64DD
-  support.
-- **NTSC and PAL timing.** Video field rate and the audio DAC clock are both
-  derived from the ROM's region.
-
-### Known gaps
-
-- No netplay.
-- Compatibility is routinely verified against only a handful of titles; there is
-  no automated regression suite yet.
-- The ray tracer is a research feature configured through environment variables
-  rather than the settings UI.
-- Audio `SetVolume`/`SetMute` and the buffer-level/sync API are accepted but not
-  yet applied to the output stream.
+**Contents:**
+[Highlights](#highlights) ·
+[Screenshots](#screenshots) ·
+[Status](#status) ·
+[Getting started](#getting-started) ·
+[Controls](#controls) ·
+[Configuration](#configuration) ·
+[How it works](#how-it-works) ·
+[Development](#development) ·
+[Known limitations](#known-limitations) ·
+[Project64 and licensing](#project64-and-licensing) ·
+[Third-party software](#third-party-software) ·
+[Acknowledgements](#acknowledgements)
 
 ---
 
-## Building
+## Highlights
 
-Requirements: CMake 3.10+, a C++20 compiler, and [Ninja](https://ninja-build.org/).
+- **High-level graphics that models the RDP in generated shaders.** Colour
+  combiner, blender, TMEM and every N64 texture format, TLUT, mipmapping, both
+  hardware dither patterns, fog, chroma key, YUV conversion and N64-accurate
+  decal depth comparison — produced as GLSL per render state rather than
+  approximated with a fixed pipeline.
+- **Vulkan and OpenGL backends.** macOS runs on Vulkan through the bundled
+  MoltenVK (macOS caps OpenGL at 4.1; the GL path needs 4.6). Internal
+  resolution scales from 1× to 8×.
+- **Save states and rewind.** Esc opens a pause menu with four save-state slots,
+  each with a picture of where it was made. Backspace pauses and shows a strip
+  of pictures — one for every 2 seconds of play — and you can resume from any
+  of them. The history lives in memory and is discarded when the game closes.
+- **A dynamic recompiler for x86-64 and ARM64**, alongside a MIPS interpreter.
+  The two engines can be compared frame by frame with a state-trace tool (see
+  [Development](#development)).
+- **Deterministic emulation.** Two runs of the same build on the same ROM
+  produce byte-identical state traces, which makes CPU and timing bugs
+  reproducible and makes rewind verifiable.
+- **Game controllers for up to four players** through SDL, with an
+  N64-shaped analog range, rebindable buttons, per-controller player slots and
+  a Rumble Pak. A controller also drives the launcher's menus.
+- **Built-in tools:** a Lua scripting console, a memory viewer and a hardware
+  simulator view.
+- **Cartridge hardware:** EEPROM, SRAM and FlashRAM saves, Rumble Pak, Transfer
+  Pak and partial N64DD support.
+- **NTSC and PAL timing.** The video field rate, real-time frame pacing and the
+  audio DAC clock are all derived from the ROM's region.
+- **Experimental compute ray tracing** over the rasterised image
+  (`NOVA64_RT=1`): shadows and ambient occlusion.
 
-Most third-party dependencies (SDL2, Vulkan-Headers, volk, glslang, Dear ImGui,
-stb, nlohmann/json, rcheevos, AsmJit, Lua) are fetched automatically by CMake's
-`FetchContent` on first configure, so the first build needs an internet
-connection. Every dependency is pinned to an exact tag or commit — see
-[CONTRIBUTING.md](CONTRIBUTING.md) before changing one.
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/pause-menu.jpg" alt="The pause menu with four save-state slots, each showing a picture of where it was saved"></td>
+    <td width="50%"><img src="docs/images/rewind.jpg" alt="The rewind strip: pictures of the last several seconds of play along the bottom of the window"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Pause menu</b> — four save-state slots with pictures</td>
+    <td align="center"><b>Rewind</b> — pick a moment from the last few seconds and play on from there</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/mm-dialogue.jpg" alt="Majora's Mask: a Deku Scrub's dialogue box in the launcher window"></td>
+    <td><img src="docs/images/sm64-gameplay.jpg" alt="Super Mario 64: Mario near Princess Peach's castle, rendered at 4x internal resolution"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Majora's Mask</b> — in-game text and UI</td>
+    <td align="center"><b>Super Mario 64</b> — 4× internal resolution</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/launcher-games.png" alt="The launcher's Games tab listing three games"></td>
+    <td><img src="docs/images/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Game library</b></td>
+    <td align="center"><b>Controller settings</b></td>
+  </tr>
+</table>
+
+<sub>Game images are shown to illustrate the emulator. All game titles and
+artwork belong to their respective owners; see [Legal](#legal).</sub>
+
+## Status
+
+Day-to-day testing uses three NTSC-U titles. Nothing else has been checked
+systematically, and there is no automated compatibility suite.
+
+| Game | Status | Notes |
+|---|---|---|
+| The Legend of Zelda: Majora's Mask (NTSC-U 1.0) | Playable | A 30-minute playthrough turned up only some incomplete visual effects. |
+| Super Mario 64 (NTSC-U) | Playable | Title screen through the castle grounds and the pause screen work. The text on Peach's letter in the opening cutscene doesn't appear. |
+| The Legend of Zelda: Ocarina of Time (NTSC-U 1.2) | Boots | Reaches the file-select screens. Gameplay has not been checked. |
+
+macOS on Apple Silicon is the only platform it has been built and run on. The
+ARM64 recompiler runs the games above but is still incomplete — on Majora's Mask
+its memory state drifts from the interpreter's early in boot (see
+[CONTRIBUTING.md](CONTRIBUTING.md#what-still-differs-between-the-engines)) — so
+the launcher's **Automatic** CPU core setting uses the interpreter on Apple
+Silicon and the recompiler on x86-64.
+
+## Getting started
+
+NovaStar64 is an emulator only. It ships without games; you supply your own
+legally obtained ROM images (`.z64`, `.n64`, `.v64`).
+
+### Requirements
+
+- CMake 3.10 or newer, [Ninja](https://ninja-build.org/) and a C++20 compiler
+  (Apple Clang on macOS).
+- An internet connection for the first configure. Most dependencies (SDL2,
+  Vulkan-Headers, volk, glslang, Dear ImGui, stb, nlohmann/json, rcheevos,
+  AsmJit, Lua) are fetched by CMake's `FetchContent`, each pinned to an exact
+  tag or commit — see [CONTRIBUTING.md](CONTRIBUTING.md) before changing one.
+- macOS uses the prebuilt MoltenVK in `nova64/thirdparty/MoltenVK/`, which the
+  build copies next to the executable.
+
+### Build
+
+Berkeley SoftFloat is a git submodule, so fetch it along with the source:
+
+```bash
+git clone --recurse-submodules <repository-url>   # or, in an existing clone:
+git submodule update --init
+```
+
+Then:
 
 ```bash
 cd nova64
@@ -66,33 +159,34 @@ cmake -B build -G Ninja
 cmake --build build
 ```
 
-### Apple Silicon
+**macOS:** re-sign the binary after *every* rebuild, otherwise its dynamic
+libraries fail to load and the process hangs without an error message:
 
-`pip install cmake ninja` is a convenient way to get both tools. Note that pip
-installs them to a directory that is not on `PATH` by default — if `cmake` is
-not found, or worse, if a scripted build appears to succeed while silently
-skipping the configure step, add it first:
+```bash
+codesign --force --deep --sign - build/nova64
+```
+
+`pip install cmake ninja` is a convenient way to get both tools on Apple
+Silicon, but pip installs them somewhere that is not on `PATH`. If a scripted
+build seems to succeed while silently skipping the configure step, that is why:
 
 ```bash
 export PATH="$HOME/Library/Python/3.9/bin:$PATH"
 ```
 
-After **every** rebuild on macOS the binary must be re-signed, otherwise the
-dynamic libraries fail to load and the process hangs with no error:
+### Run
 
 ```bash
-codesign --force --deep --sign - nova64/build/nova64
+./build/nova64                    # open the launcher
+./build/nova64 path/to/game.z64   # start a game directly
 ```
 
----
+Games started from the launcher play inside its window. Esc opens the pause
+menu, Backspace rewinds and Tab toggles double speed. On a controller, Back
+(View, Select or Share) or Guide opens the pause menu.
 
-## Running
-
-```bash
-./nova64/build/nova64 path/to/rom.z64
-```
-
-Running with no ROM argument opens the launcher UI.
+<details>
+<summary>Command-line options</summary>
 
 ```
 --help, -h       Show this help message
@@ -100,75 +194,224 @@ Running with no ROM argument opens the launcher UI.
 --log <file>     Write log to file
 --config <file>  Use specified config file
 --frames <N>     Run for N frames (0 = unlimited, default)
---fps <N>        Target FPS (0 = unlimited, 30, 60; default: 60)
+--fps <N>        Speed as an NTSC frame rate: 60 = full speed (PAL games
+                 pace at 50), 120 = double, 0 = unlimited; default 60
 --resolution <R> Window resolution: 480p, 720p, 960p, 1080p, 1440p, 4k
 --scale <N>      Internal resolution scale, 1-8x (overrides NovaGraphics.ini)
 --fullscreen     Exclusive fullscreen
 --windowed       Windowed mode
---interpreter    Force interpreter mode (slower, better for debugging)
+--interpreter    Force the interpreter (slower, better for debugging)
 --recompiler     Force the dynamic recompiler (JIT)
 --headless       Run without showing a window
 --pipe <name>    Connect to a named pipe for IPC commands/framebuffer
 ```
 
-Graphics settings live in `nova64/settings/NovaGraphics.ini`.
+</details>
 
-### Diagnostics
+## Controls
 
-Many subsystems expose environment-variable-gated tracing, intended for
-debugging rather than normal use. `NOVA64_RT=1` enables the ray tracer;
-`NOVA64_TURBO=1` uncaps the frame rate; `NOVA64_SHOT_EVERY=N` writes a
-screenshot every N frames; `NOVA64_LOG_LEVEL` controls log verbosity. Grep for
-`NOVA64_` in the source for the full set.
+Every binding can be changed under **Settings → Controls**. Player 1 can use
+the keyboard as well as a controller; players 2–4 use controllers.
 
----
+| N64 | Keyboard (default) | Controller (default) |
+|---|---|---|
+| Analog stick | W A S D | Left stick |
+| A | X | A |
+| B | Z or Y | X or B |
+| Z trigger | C | Left trigger |
+| Start | Enter | Start |
+| D-pad | T F G H | D-pad |
+| L | Left Shift | Left bumper |
+| R | Right Shift | Right bumper or right trigger |
+| C buttons | Arrow keys | Right stick |
 
-## Project layout
+| Emulator | Keyboard | Controller |
+|---|---|---|
+| Pause menu (save states) | Esc | Back / Guide |
+| Rewind | Backspace | Pause menu → Rewind |
+| Double speed | Tab | Pause menu → Speed |
+
+Controllers are assigned to players in the order the operating system reports
+them, which can put a stale Bluetooth pairing ahead of the pad you are holding.
+Settings → Controls has a "move to player" control per controller; the choice is
+remembered for that specific controller.
+
+## Configuration
+
+Settings live in a `settings/` folder. NovaStar64 looks for it, and for `roms/`
+and `saves/`, in the directory it is started from. If none of them is there —
+for example when the app is opened from Finder — it uses the folder containing
+the executable instead.
+
+| File | Contents |
+|---|---|
+| `settings/NovaGraphics.ini` | Graphics driver, internal resolution, aspect ratio, ray tracing |
+| `settings/launcher.ini` | Speed, display mode, CPU core, rewind, volume |
+| `settings/keybindings.ini` | Keyboard bindings |
+| `settings/controllers.ini` | Controller bindings, stick deadzone and range, Rumble Pak per player, preferred player slots |
+| `settings/library.txt` | The game list |
+
+Games added in the launcher are copied into `roms/`. Cartridge saves and save
+states go in `saves/`. These folders are git-ignored: their contents are never
+committed.
+
+## How it works
+
+```mermaid
+flowchart LR
+    ROM[("ROM")] --> CPU
+    subgraph N64SYS["N64SYS"]
+        CPU["VR4300 CPU<br/>interpreter or recompiler"] --> BUS["Memory map and hardware<br/>MI, VI, AI, PI, SI, SP"]
+        BUS --> PIF["PIF<br/>controllers, cartridge saves"]
+    end
+    BUS -->|"SP task"| RSP["NovaRSP<br/>RSP and HLE task dispatch"]
+    RSP -->|"display list"| GFX["NovaGraphics<br/>microcode, RDP, renderer"]
+    BUS -->|"AI DMA"| AUD["NovaAudio<br/>SDL2 output"]
+    GFX --> VK["Vulkan or MoltenVK"]
+    GFX --> GL["OpenGL 4.6"]
+    INP["NovaInput<br/>keyboard and gamepads"] --> PIF
+    UI["Launcher (Dear ImGui)<br/>library, save states, rewind,<br/>Lua, memory viewer"] --- CPU
+```
+
+The CPU runs the game. When it starts an RSP task, NovaRSP hands graphics tasks
+to `NovaGraphics` as display lists and processes audio tasks itself. The
+graphics side decodes each command through a per-microcode handler, tracks RDP
+state and TMEM, and emits batched draws whose fragment shaders are generated
+from the current combiner, blender and texture state. The launcher hosts the
+whole thing: the game renders offscreen and the launcher composites it, which
+is what lets save states, rewind, the memory viewer and Lua reach the running
+game on every platform.
 
 | Path | Contents |
 |---|---|
-| `nova64/N64SYS/` | CPU core: MIPS interpreter, dynamic recompiler (x64/ARM64), memory and hardware-register handlers, plugin interfaces, save types |
-| `nova64/NovaRSP/` | RSP: interpreter, recompiler, and HLE audio/graphics microcode dispatch |
-| `nova64/NovaGraphics/` | RDP command processing, microcode handlers, texture cache, Vulkan/OpenGL backends, ray tracer |
-| `nova64/NovaAudio/` | Audio plugin (AI DMA bridge, SDL2 output) |
-| `nova64/NovaInput/` | Input plugin |
+| `nova64/N64SYS/` | CPU core: MIPS interpreter, dynamic recompiler (x86-64 and ARM64), memory and hardware-register handlers, plugin interfaces, save types, machine snapshots for save states and rewind |
+| `nova64/NovaRSP/` | RSP interpreter and recompiler, plus HLE audio and graphics task dispatch |
+| `nova64/NovaGraphics/` | Microcode handlers, RDP processing, texture cache, Vulkan and OpenGL backends, ray tracer |
+| `nova64/NovaAudio/` | Audio plugin: AI DMA bridge and SDL2 output |
+| `nova64/NovaInput/` | Keyboard and game controller input, bindings |
 | `nova64/NovaLua/` | Embedded Lua scripting engine |
-| `nova64/UI/` | Launcher UI and hex editor |
-| `nova64/common/` | Shared utilities (logging, INI parsing, file I/O, platform macros) |
+| `nova64/UI/` | The launcher |
+| `nova64/common/` | Shared utilities: logging, INI parsing, file I/O, platform macros |
+| `nova64/scripts/` | Development tools: trace comparison, derivation measurement |
+| `softfloat/` | Berkeley SoftFloat, used for the FPU |
+| `docs/` | Design notes and roadmaps |
 
----
+## Development
 
-## What is and isn't Project64-derived
+Emulator bugs regress silently: the build stays green, the ROM still boots, and
+one effect somewhere renders wrong. NovaStar64 therefore leans on tooling that
+makes behaviour *comparable*:
 
-This matters if you plan to redistribute, relicense, or reimplement any part of
-the project, so it is stated precisely rather than in general terms.
+- **State traces.** `NOVA64_TRACE_STATE=<file>` records a digest of CPU, FPU, CP0
+  and (optionally) RDRAM state once per video frame. `nova64/scripts/compare-trace.py`
+  diffs two traces and exits non-zero on divergence — comparing a build against
+  itself, the interpreter against the recompiler, or a rewind against the frames
+  it replays.
+- **Unattended runs.** `--headless` runs a game with no window, and the
+  `NOVA64_UI_*`, `NOVA64_SHOT_*` and `NOVA64_AUTOINPUT` variables script the
+  launcher, capture screenshots and play a controller from a script — every
+  screenshot in this README was taken that way.
 
-| Subsystem | Status |
-|---|---|
-| `NovaGraphics/` | **Original.** No Project64-derived files. |
-| `UI/` | **Original.** |
-| `NovaAudio/` | **Original.** |
-| `NovaRSP/` | Substantially Project64-derived. |
-| `N64SYS/` | Roughly 40% of files are Project64-derived, concentrated in the recompiler, interpreter, and plugin layers. |
-| `common/` | One remaining Project64-derived file (`MemoryManagment.cpp`). |
+[CONTRIBUTING.md](CONTRIBUTING.md) documents the workflow, the full list of
+diagnostic variables and the failure modes that have already cost time.
 
-Files carrying Project64 code state so in their file header. Those headers are
-required by GPL-2.0 § 1 and must not be removed — removing them does not change
-what the code is derived from, it just makes the project non-compliant.
+## Known limitations
+
+- No netplay, and no RetroAchievements support yet (the tab is a placeholder).
+- Only NTSC-U games have been tested. PAL timing is implemented but has not
+  been checked against a commercial PAL game.
+- Majora's Mask has some incomplete visual effects, and Super Mario 64's
+  opening letter is missing its text (see [Status](#status)).
+- The launcher is written to build on Windows and Linux but has only been built
+  and run on macOS. Drawing a game inside the launcher with the OpenGL renderer
+  (the default outside macOS) is untested; Vulkan is the tested path.
+- Controller support has been exercised with a physical controller on macOS and
+  with SDL's virtual controllers; rumble motor output has not been verified. The
+  Controller Pak (memory card) is not available.
+- The ray tracer is an experimental research feature.
+- Save states made before rewind was added can't be loaded.
+- The audio plugin's buffer-level and sync calls are accepted but not applied to
+  the output stream.
+- On case-sensitive filesystems (Linux), cartridge saves are written to
+  `Saves/` and save states to `saves/`.
+
+## Project64 and licensing
+
+NovaStar64 is licensed under **GPL-2.0** (see [LICENSE](LICENSE)). It began as a
+fork of Project64 and remains a derivative work of it, so it carries
+Project64's license. The Project64-derived code is identified precisely rather
+than in general terms:
+
+| Subsystem | Files crediting Project64 | Lines in those files |
+|---|---|---|
+| `N64SYS/` | 44 of 127 (35%) | 26,352 of 62,856 (42%) |
+| `NovaRSP/` | 58 of 66 (88%) | 21,737 of 23,423 (93%) |
+| `NovaGraphics/` | 0 of 115 (0%) | 0 of 55,575 (0%) |
+| `NovaAudio/` | 0 of 2 (0%) | 0 of 397 (0%) |
+| `NovaInput/` | 0 of 6 (0%) | 0 of 1,049 (0%) |
+| `NovaLua/` | 0 of 2 (0%) | 0 of 350 (0%) |
+| `UI/` | 0 of 11 (0%) | 0 of 3,073 (0%) |
+| `common/` | 1 of 24 (4%) | 468 of 5,887 (8%) |
+| `main.cpp` | 0 of 1 (0%) | 0 of 308 (0%) |
+| **Total** | **103 of 354 (29%)** | **48,557 of 152,918 (32%)** |
+
+A file counts if its header credits Project64, and is counted in full, so these
+figures are an upper bound on the derived code. Regenerate them with
+`python3 nova64/scripts/measure-derivation.py --markdown`.
+
+Files carrying Project64 code say so in their header. Those headers are
+required by GPL-2.0 § 1 and must not be removed — removing one does not change
+what the code is derived from, it only makes the project non-compliant.
 
 GPL-2.0 permits commercial sale. What it requires is that recipients get the
-source and the same rights; it does not permit shipping this closed-source. If
-you want a proprietary derivative, the Project64-derived subsystems have to be
-replaced by genuine clean-room reimplementation — see
+source and the same rights; it does not permit shipping this closed-source. A
+proprietary derivative would need the Project64-derived subsystems replaced by
+genuine clean-room reimplementation — see
 [docs/REIMPLEMENTATION.md](docs/REIMPLEMENTATION.md).
 
----
+## Third-party software
+
+Each component keeps its own license.
+
+| Component | Used for | License |
+|---|---|---|
+| [AsmJit](https://github.com/asmjit/asmjit) | Recompiler code generation | Zlib |
+| [SDL2](https://github.com/libsdl-org/SDL) | Windowing, input, audio | zlib |
+| [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers), [volk](https://github.com/zeux/volk) | Vulkan API and loader | Apache-2.0 / MIT; MIT |
+| [glslang](https://github.com/KhronosGroup/glslang) | GLSL to SPIR-V for the Vulkan backend | BSD-3-Clause and others |
+| [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan on Metal (prebuilt macOS library) | Apache-2.0 |
+| [Dear ImGui](https://github.com/ocornut/imgui), [imgui-node-editor](https://github.com/thedmd/imgui-node-editor) | Launcher UI | MIT |
+| [stb](https://github.com/nothings/stb) | Image reading and writing | MIT / public domain |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON | MIT |
+| [rcheevos](https://github.com/RetroAchievements/rcheevos) | RetroAchievements (not yet wired up) | MIT |
+| [Lua](https://www.lua.org/) 5.4 | Scripting | MIT |
+| [Berkeley SoftFloat](http://www.jhauser.us/arithmetic/SoftFloat.html) 3e | FPU arithmetic (`softfloat/`) | BSD-3-Clause |
+
+## Acknowledgements
+
+- The [Project64](https://github.com/project64/project64) team, whose CPU
+  core, recompiler and RSP this project started from.
+- [mupen64plus-rsp-hle](https://github.com/mupen64plus/mupen64plus-rsp-hle), whose
+  audio microcode behaviour the RSP HLE follows; source comments cite it
+  throughout.
+- [GLideN64](https://github.com/gonetz/GLideN64) and
+  [angrylion-rdp-plus](https://github.com/ata4/angrylion-rdp-plus), used as
+  behavioural references for graphics accuracy. Where a specific behaviour is
+  modelled on one of them, the source comment says so.
+- The N64 hardware documentation and homebrew community.
+
+## Legal
+
+NovaStar64 is not affiliated with or endorsed by Nintendo or the Project64
+team. Nintendo 64 and the names of the games shown are trademarks of their
+respective owners. NovaStar64 contains no game images or console firmware; use
+it only with games you own.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). For anything
+large, open an issue first so the direction can be agreed.
 
 ## License
 
-GPL-2.0. NovaStar64 is a derivative work of Project64 and is licensed under the
-same terms; see [LICENSE](LICENSE).
+GPL-2.0. See [LICENSE](LICENSE).
