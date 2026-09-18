@@ -17,12 +17,74 @@
 #ifdef __APPLE__
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
+
+// Returns the directory containing the running executable, or an empty path
+// if it can't be determined.
+static std::filesystem::path GetExecutableDir()
+{
+#if defined(__APPLE__)
+    char exePath[4096];
+    uint32_t sz = sizeof(exePath);
+    if (_NSGetExecutablePath(exePath, &sz) != 0) return {};
+    std::error_code ec;
+    auto real = std::filesystem::canonical(exePath, ec);
+    return ec ? std::filesystem::path(exePath).parent_path() : real.parent_path();
+#elif defined(_WIN32)
+    wchar_t exePath[4096];
+    DWORD len = GetModuleFileNameW(nullptr, exePath, static_cast<DWORD>(std::size(exePath)));
+    if (len == 0 || len == std::size(exePath)) return {};
+    return std::filesystem::path(exePath).parent_path();
+#elif defined(__linux__)
+    std::error_code ec;
+    auto real = std::filesystem::read_symlink("/proc/self/exe", ec);
+    return ec ? std::filesystem::path{} : real.parent_path();
+#else
+    return {};
+#endif
+}
+
+// The launcher and the ROM loader both find settings/, roms/ and saves/ as
+// plain relative paths, resolved against the process's working directory.
+// A terminal launch from the project root gets this right by construction,
+// but macOS (and other OSes) hand a GUI-launched process an unrelated
+// working directory -- typically the user's home directory, not wherever
+// the executable actually lives -- so the Games tab would come up empty
+// even though the ROMs are sitting right next to the binary. If neither
+// "roms" nor "settings" exists relative to the current directory, retry
+// relative to the executable's own directory before anything else runs.
+static void FixWorkingDirectoryForGuiLaunch()
+{
+    std::error_code ec;
+    if (std::filesystem::is_directory("roms", ec) ||
+        std::filesystem::is_directory("settings", ec)) {
+        return;
+    }
+    std::filesystem::path exeDir = GetExecutableDir();
+    if (exeDir.empty()) return;
+    if (!std::filesystem::is_directory(exeDir / "roms", ec) &&
+        !std::filesystem::is_directory(exeDir / "settings", ec)) {
+        return; // exe dir doesn't look right either -- leave cwd alone
+    }
+    std::filesystem::current_path(exeDir, ec);
+    if (!ec) {
+        Log::infof("Working directory didn't have roms/settings; switched to executable's directory: %s",
+                   exeDir.string().c_str());
+    }
+}
 
 // macOS has no system Vulkan loader. The Vulkan backend reaches Vulkan through
 // MoltenVK (Vulkan-on-Metal), which volk loads via dlopen("libMoltenVK.dylib").
 // We ship libMoltenVK.dylib next to the executable; preload it by absolute path
 // here (RTLD_GLOBAL) so volk's later bare-name dlopen resolves to this image —
 // no DYLD_LIBRARY_PATH needed. Harmless if the dylib is absent (GL/other paths).
+#ifdef __APPLE__
 static void PreloadMoltenVK()
 {
     char exePath[4096];
@@ -49,7 +111,8 @@ static void PrintUsage(const char* programName)
     std::printf("  --log <file>     Write log to file\n");
     std::printf("  --config <file>  Use specified config file\n");
     std::printf("  --frames <N>     Run for N frames (0 = unlimited, default)\n");
-    std::printf("  --fps <N>        Target FPS (0=unlimited, 30, 60; default: 60)\n");
+    std::printf("  --fps <N>        Speed as an NTSC frame rate: 60 = full speed (PAL games pace at 50),\n");
+    std::printf("                   120 = double, 0 = unlimited; default 60\n");
     std::printf("  --resolution <R> Window resolution: 480p, 720p, 960p, 1080p, 1440p, 4k (default: 960p)\n");
     std::printf("  --fullscreen     Run in exclusive fullscreen mode\n");
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
@@ -66,6 +129,8 @@ int main(int argc, char* argv[])
     LoggingConfig::enable_console_output(true);
 
     Log::info("NovaStar64 starting...");
+
+    FixWorkingDirectoryForGuiLaunch();
 
 #ifdef __APPLE__
     PreloadMoltenVK();
@@ -189,8 +254,7 @@ int main(int argc, char* argv[])
         Log::info("No ROM specified. Launching Nova UI...");
         NovaUI::NovaLauncher launcher;
         launcher.Run();
-        // The launcher manages all emulator instances as child processes.
-        // When it exits, we're done.
+        // Games started from the launcher run inside it, so when it exits we're done.
         Log::info("Launcher closed. NovaStar64 exiting.");
         Logging::stop_logging();
         return 0;

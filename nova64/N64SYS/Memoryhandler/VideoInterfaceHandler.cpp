@@ -3,6 +3,7 @@
  * @brief Video Interface Handler implementation.
  */
 #include "VideoInterfaceHandler.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
@@ -98,8 +99,9 @@ bool VideoInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
             if (elapsed_since_update < 0) elapsed_since_update = 0;
             int32_t vi_remaining = static_cast<int32_t>(vi_stored) - elapsed_since_update;
             if (vi_remaining < 0) vi_remaining = 0;
-            uint32_t count_per_op = m_system.CountPerOp();
-            uint32_t vi_period = 781250u * count_per_op;
+            // Must match the VI timer's actual scheduled period (Count-tick
+            // units -- see the set_timer_periodic() call in CN64System::Reset()).
+            uint32_t vi_period = 781250u;
             uint32_t v_sync_val = m_vi_regs.v_sync();
             uint32_t num_half_lines = (v_sync_val > 0) ? (v_sync_val + 1) : 526u;
             uint32_t vi_refresh_rate = vi_period / num_half_lines;
@@ -470,3 +472,11 @@ void VideoInterfaceHandler::on_game_state_loaded() {
     detect_video_mode_change();
 }
 
+void VideoInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("VI  ");
+    ar.Value(m_registers);
+    ar.Value(m_video_state);
+    ar.Value(m_stats.total_frames);
+    ar.Value(m_stats.vi_interrupts);
+    if (ar.IsLoading()) g_vi_frame_count = m_stats.total_frames;
+}

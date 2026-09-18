@@ -59,6 +59,7 @@ public:
         m_Count = 0;
         m_bDoSomething = false;
 
+        bool serviceStates = false;
         for (int i = 0; i < count; i++) {
             switch (events[i]) {
             case SysEvent_CloseCPU:
@@ -81,7 +82,14 @@ public:
                     m_System.m_Registers->DoIntrException();
                 }
                 break;
+            case SysEvent_ServiceStates:
+                serviceStates = true;
+                break;
             }
+        }
+        // Last, so a snapshot sees the machine after every other event.
+        if (serviceStates) {
+            m_System.ServiceStates();
         }
     }
     

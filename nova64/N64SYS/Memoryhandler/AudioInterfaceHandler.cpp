@@ -3,6 +3,7 @@
  * @brief Audio Interface Handler implementation.
  */
 #include "AudioInterfaceHandler.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../N64Rom.hpp"
 #include "../MIPSY/Register.hpp"
@@ -279,4 +280,14 @@ void AudioInterfaceHandler::QueueDmaSamples(uint32_t dramAddr, uint32_t len)
     }
 
     m_audioOutput.QueueSamples(samples.data(), sampleCount, GetFrequency());
+}
+
+void AudioInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("AI  ");
+    ar.Value(m_registers);
+    ar.Value(m_current_dma_len);
+    ar.Value(m_current_dma_addr);
+    ar.Value(m_pending_dram_addr);
+    ar.Value(m_pending_len);
+    ar.Value(m_pending_valid);
 }

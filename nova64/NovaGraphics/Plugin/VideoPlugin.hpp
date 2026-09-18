@@ -195,6 +195,9 @@ private:
     // Internal methods
     bool CreateDisplayRenderer();
     bool CreateDisplayWindow();
+    /// Size frames are rendered at: the window's drawable size, or without a window
+    /// N64 resolution times the internal scale.
+    void GetOutputSize(int32_t& width, int32_t& height) const;
     void DestroyDisplayRenderer();
     void DestroyDisplayWindow();
     void ApplyGameSpecificHacks();

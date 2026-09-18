@@ -3,6 +3,7 @@
  * @brief TLB implementation.
  */
 #include "TLB.hpp"
+#include "../StateArchive.hpp"
 #include "Vmem.hpp"
 #include "../../common/Log.hpp"
 #include "../MainSYS.hpp"
@@ -740,6 +741,31 @@ bool CTLB::operator==(const CTLB& rTLB) const {
 
 bool CTLB::operator!=(const CTLB& rTLB) const {
     return !(*this == rTLB);
+}
+
+
+void CTLB::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("TLB ");
+    // The MMU's page tables are built from the entries: unmap the old entries
+    // before loading and map the loaded ones afterwards.
+    const bool loading = ar.IsLoading();
+    if (loading && m_MMU) {
+        for (const auto& entry : m_tlb) {
+            if (entry.EntryDefined) m_MMU->RemoveTLBMapping(entry.EntryHi.Value, entry.PageMask.Value);
+        }
+    }
+    ar.Value(m_tlb);
+    ar.Value(m_FastTlb);
+    ar.Value(m_PrivilegeMode);
+    ar.Value(m_AddressSize32bit);
+    if (loading && m_MMU) {
+        for (const auto& entry : m_tlb) {
+            if (entry.EntryDefined) {
+                m_MMU->ApplyTLBMapping(entry.EntryHi.Value, entry.PageMask.Value,
+                                       entry.EntryLo0.Value, entry.EntryLo1.Value);
+            }
+        }
+    }
 }
 
 } // namespace N64System

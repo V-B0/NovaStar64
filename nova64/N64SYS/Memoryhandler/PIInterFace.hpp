@@ -16,7 +16,7 @@
 // Forward declarations
 class CN64System;
 class CRegisters;
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 class UncachedRom;
 class CEeprom;
 
@@ -159,6 +159,8 @@ namespace PI {
     [[nodiscard]] bool is_dma_active() const { return m_dma_state.active; }
     [[nodiscard]] const DMAState& get_dma_state() const { return m_dma_state; }
     void force_dma_completion();
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
     struct PeripheralInterfaceReg {
         std::array<uint32_t, PI::REGISTER_COUNT>& r;

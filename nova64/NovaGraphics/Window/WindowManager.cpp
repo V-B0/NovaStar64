@@ -7,6 +7,7 @@
 // SDL2 window, OpenGL context, input, display management
 
 #include "WindowManager.hpp"
+#include "../../NovaInput/GamepadInput.hpp"
 #include "../Debug/ImGuiDebugUI.hpp"
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -73,6 +74,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
     }
+    NovaInput::Gamepads::Instance().Init();
     // ── Set OpenGL attributes ────────────────────────────────────────────
     if (config.backendType == 0) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, config.glMajor);
@@ -450,6 +452,7 @@ bool WindowManager::ProcessEvents() {
     while (SDL_PollEvent(&event)) {
         // Forward events to ImGui debug UI
         g_imguiDebugUI.ProcessEvent(event);
+        NovaInput::Gamepads::Instance().HandleEvent(event);
 
         // F7 toggles the ImGui debug panels
         if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F7) {

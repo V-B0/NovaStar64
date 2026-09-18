@@ -11,6 +11,7 @@
 
 // Forward declaration
 class CRegisters;
+namespace Nova64 { class StateArchive; }
 
 namespace RDRAM {
     // Register offsets from 0x04700000 (RI - RDRAM Interface)
@@ -103,6 +104,8 @@ public:
     
     // State management
     void reset();
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
     
     // Debug information
     [[nodiscard]] std::string get_register_dump() const;

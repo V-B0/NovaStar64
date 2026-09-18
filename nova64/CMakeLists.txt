@@ -325,8 +325,10 @@ set(SOURCES
     NovaRSP/RSPDebugger.cpp
     NovaRSP/RSPInfo.cpp
 
-    # NovaInput - Keyboard input mapping
+    # NovaInput - Keyboard and game controller input
     NovaInput/KeyboardInput.cpp
+    NovaInput/KeyBindings.cpp
+    NovaInput/GamepadInput.cpp
 
     # NovaAudio - Built-in audio plugin
     NovaAudio/NovaAudioPlugin.cpp
@@ -486,6 +488,11 @@ target_include_directories(softfloat PUBLIC
 
   # Append UI Launcher
   list(APPEND SOURCES UI/NovaLauncher.cpp)
+  list(APPEND SOURCES UI/LauncherGames.cpp)
+  list(APPEND SOURCES UI/LauncherSettings.cpp)
+  list(APPEND SOURCES UI/LauncherTools.cpp)
+  list(APPEND SOURCES UI/LauncherSimulator.cpp)
+  list(APPEND SOURCES UI/LauncherPlay.cpp)
   list(APPEND SOURCES UI/HexEditor.cpp)
 
   # FrameCallback
@@ -493,6 +500,7 @@ target_include_directories(softfloat PUBLIC
 
   # SaveState
   list(APPEND SOURCES N64SYS/SaveState.cpp)
+  list(APPEND SOURCES N64SYS/MachineState.cpp)
 
   # Cross-engine divergence tracing
   list(APPEND SOURCES N64SYS/StateTrace.cpp)
@@ -540,9 +548,9 @@ if(NOVA_RSP_RECOMPILER)
     target_compile_definitions(nova64 PRIVATE NOVA_RSP_RECOMPILER)
 endif()
 
-# WASAPI audio output (Windows)
+# Windows system libraries: COM, and the common file dialog the launcher opens ROMs with
 if(WIN32)
-    target_link_libraries(nova64 PRIVATE ole32 uuid)
+    target_link_libraries(nova64 PRIVATE ole32 uuid comdlg32)
 endif()
 
 # macOS: ship MoltenVK (Vulkan-on-Metal) next to the binary. macOS has no system

@@ -283,11 +283,13 @@ void NovaAudioPlugin::SetSyncMode(bool sync)
 void NovaAudioPlugin::SetVolume(uint32_t volume)
 {
     m_volume = std::min(volume, 100u);
+    Nova64::RSP::HLE::CAudioOutput::SetMasterVolume(m_volume);
 }
 
 void NovaAudioPlugin::SetMute(bool mute)
 {
     m_muted = mute;
+    Nova64::RSP::HLE::CAudioOutput::SetMuted(mute);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

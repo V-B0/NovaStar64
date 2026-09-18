@@ -16,6 +16,7 @@
 class CN64System;
 class CRegisters;
 namespace N64System { class SystemTimer; }
+namespace Nova64 { class StateArchive; }
 
 namespace AI {
     // Register indices (sequential, for array indexing)
@@ -88,6 +89,9 @@ public:
     
     // Called by timer system when AI DMA completes
     void DMAComplete();
+
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
 private:
     CN64System& m_system;

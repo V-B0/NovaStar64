@@ -3,6 +3,7 @@
  * @brief SI Interface Handler implementation.
  */
 #include "SIInterfaceHandler.hpp"
+#include "../StateArchive.hpp"
 #include "PifInterface.hpp"
 #include "../MIPSY/Register.hpp" // For CRegisters definition
 #include "../Mipsy/Mempak.hpp" // If needed
@@ -296,4 +297,10 @@ void SerialInterfaceHandler::log_register_access(uint32_t address, uint32_t valu
     if (m_config.enable_dma_logging) {
          Log::debugf("SI %s 0x%08X: 0x%08X", is_write ? "Write" : "Read", address, value);
     }
+}
+
+void SerialInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
+    // The SI registers themselves live in CRegisters.
+    ar.Section("SI  ");
+    ar.Value(m_dma_state);
 }

@@ -146,7 +146,7 @@ void VKInstance::Destroy() {
 bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
                                     uint32_t& outGraphicsFamily,
                                     uint32_t& outPresentFamily) {
-    if (!m_instance || !surface) return false;
+    if (!m_instance) return false;
 
     uint32_t count = 0;
     VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &count, nullptr));
@@ -184,11 +184,14 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
         gfx = UINT32_MAX; present = UINT32_MAX;
         for (uint32_t i = 0; i < qCount; ++i) {
             if (qprops[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) gfx = i;
-            VkBool32 canPresent = VK_FALSE;
-            vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &canPresent);
-            if (canPresent) present = i;
-            if (gfx != UINT32_MAX && present != UINT32_MAX) break;
+            if (surface) {
+                VkBool32 canPresent = VK_FALSE;
+                vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &canPresent);
+                if (canPresent) present = i;
+            }
+            if (gfx != UINT32_MAX && (present != UINT32_MAX || !surface)) break;
         }
+        if (!surface) present = gfx;
         if (gfx == UINT32_MAX || present == UINT32_MAX) return -1;
 
         int score = 1;
@@ -223,6 +226,18 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
                  VK_VERSION_MINOR(m_physicalProps.apiVersion),
                  VK_VERSION_PATCH(m_physicalProps.apiVersion));
     return true;
+}
+
+bool VKInstance::HasInstanceExtension(const char* name) {
+    if (!vkEnumerateInstanceExtensionProperties) return false;
+    uint32_t count = 0;
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS) return false;
+    std::vector<VkExtensionProperties> exts(count);
+    if (count && vkEnumerateInstanceExtensionProperties(nullptr, &count, exts.data()) != VK_SUCCESS) return false;
+    for (const auto& e : exts) {
+        if (std::strcmp(e.extensionName, name) == 0) return true;
+    }
+    return false;
 }
 
 }}} // namespace Nova64::Video::VK

@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <unordered_map>
 
@@ -141,6 +142,7 @@ void CRecompiler::Run() {
     };
     m_System.m_DMAInvalidateFn  = dmaInvalidate;
     m_System.m_DMAInvalidateCtx = this;
+    m_System.m_FlushCodeFn = [](void* ctx) { static_cast<CRecompiler*>(ctx)->ClearAllCode(); };
 
     // Select execution mode
     switch (m_ExecutionMode) {
@@ -180,6 +182,7 @@ void CRecompiler::Run() {
 
     // Unregister DMA invalidation callback
     m_System.m_DMAInvalidateFn  = nullptr;
+    m_System.m_FlushCodeFn      = nullptr;
     m_System.m_DMAInvalidateCtx = nullptr;
 }
 
@@ -280,6 +283,12 @@ void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, 
     uint32_t virtualAddress = physicalAddress | 0x80000000;  // KSEG0 mapping
     
     ClearRecompCode_Virt(virtualAddress, length, reason);
+}
+
+void CRecompiler::ClearAllCode() {
+    m_SmcThrashMap.clear();
+    ClearCodeRange(0, 0xFFFFFFFF, RemoveReason::Cache);
+    ++m_Stats.codeInvalidations;
 }
 
 void CRecompiler::ResetMemoryStackPos() noexcept {
@@ -664,10 +673,30 @@ void CRecompiler::Execute_VirtualTable() {
                     systemTimer->UpdateTimers();
                     nextTimer = 0 - static_cast<int32_t>(countPerOp);
                     systemTimer->UpdateTimers();
+
+                    // The UpdateTimers() call above can fire a periodic timer
+                    // (VI, AI DMA, ...) whose completion handler reschedules
+                    // itself via set_timer()/set_timer_periodic(), which
+                    // resyncs m_NextTimer as a side effect and can leave it
+                    // positive again before the "if (nextTimer < 0)" check
+                    // below ever sees it negative. That check then silently
+                    // skips TimerDone(), dropping whatever else was due at
+                    // the fast-forwarded instant and leaving this engine's
+                    // idea of "next timer" stale relative to the interpreter.
+                    // The interpreter's equivalent (InPermLoop, serviced from
+                    // PIPELINE_STAGE_PERMLOOP_DELAY_DONE) always calls
+                    // TimerDone() right after fast-forwarding, regardless of
+                    // what NextTimer became -- mirror that here so both
+                    // engines finish an idle skip the same way. This is safe
+                    // to call unconditionally: if nothing rescheduled nextTimer,
+                    // TimerDone() sees elapsed<=0 and just re-syncs.
+                    ++Nova64::Trace::Counters().timerDone;
+                    Nova64::Trace::RecordEvent("done", m_Reg.COUNT_REGISTER);
+                    systemTimer->TimerDone();
                 }
             }
         }
-        
+
         // Timer and event processing
         m_System.m_TestTimer = false;
         ++Nova64::Trace::Counters().timerChecks;

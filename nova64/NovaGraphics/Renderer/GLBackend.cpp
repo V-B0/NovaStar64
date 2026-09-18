@@ -84,9 +84,11 @@ GLVertexBuffer::GLVertexBuffer(size_t sizeBytes, BufferUsage usage)
 {
     glCreateBuffers(1, &m_handle);
     if (sizeBytes > 0) {
-        GLbitfield flags = 0;
+        // Every buffer can be updated: Upload()/Update() use glNamedBufferSubData,
+        // which immutable storage refuses without GL_DYNAMIC_STORAGE_BIT.
+        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
         if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream)
-            flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT;
+            flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), nullptr, flags);
     }
 }
@@ -102,9 +104,9 @@ void GLVertexBuffer::Upload(const void* data, size_t sizeBytes) {
         glDeleteBuffers(1, &m_handle);
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
-        GLbitfield flags = 0;
+        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
         if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream)
-            flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT;
+            flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), data, flags);
     } else {
         glNamedBufferSubData(m_handle, 0, static_cast<GLsizeiptr>(sizeBytes), data);
@@ -128,9 +130,11 @@ GLIndexBuffer::GLIndexBuffer(size_t sizeBytes, BufferUsage usage)
 {
     glCreateBuffers(1, &m_handle);
     if (sizeBytes > 0) {
-        GLbitfield flags = 0;
+        // Every buffer can be updated: Upload()/Update() use glNamedBufferSubData,
+        // which immutable storage refuses without GL_DYNAMIC_STORAGE_BIT.
+        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
         if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream)
-            flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT;
+            flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), nullptr, flags);
     }
 }
@@ -150,9 +154,9 @@ void GLIndexBuffer::Upload(const void* data, size_t sizeBytes, IndexType type) {
         glDeleteBuffers(1, &m_handle);
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
-        GLbitfield flags = 0;
+        GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
         if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream)
-            flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT;
+            flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), data, flags);
     } else {
         glNamedBufferSubData(m_handle, 0, static_cast<GLsizeiptr>(sizeBytes), data);
@@ -203,37 +207,29 @@ void GLUniformBuffer::BindSlot(uint32_t slot) {
 GLTexture::GLTexture(const TextureDesc& desc)
     : m_desc(desc)
 {
-    // Try to acquire a recycled GL handle from the pool
-    m_handle = GLTexturePool::Instance().Acquire(desc.width, desc.height, desc.format, desc.mipLevels);
-    if (m_handle) {
-        // Pooled handle already has correct storage allocated, just reset sampler params
-        glBindTexture(GL_TEXTURE_2D, m_handle);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1));
-        glBindTexture(GL_TEXTURE_2D, 0);
-    } else {
-        // No pooled handle — create new mutable storage
-        glGenTextures(1, &m_handle);
-        glBindTexture(GL_TEXTURE_2D, m_handle);
-
-        GLFormatInfo fmt = TranslateFormat(desc.format);
-        for (uint32_t mip = 0; mip < desc.mipLevels; ++mip) {
-            uint32_t w = std::max(1u, desc.width >> mip);
-            uint32_t h = std::max(1u, desc.height >> mip);
-            glTexImage2D(GL_TEXTURE_2D, mip, fmt.internalFormat, w, h, 0,
-                         fmt.baseFormat, fmt.type, nullptr);
-        }
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(desc.mipLevels - 1));
-        glBindTexture(GL_TEXTURE_2D, 0);
+    // Direct state access throughout: creating, uploading to or configuring a
+    // texture never changes what is bound to the active texture unit. The old
+    // glBindTexture calls did, so a texture created or uploaded while a draw
+    // was being set up (a cache miss on texture 1) replaced texture 0.
+    m_desc.mipLevels = std::max(1u, desc.mipLevels);
+    m_handle = GLTexturePool::Instance().Acquire(m_desc.width, m_desc.height, m_desc.format, m_desc.mipLevels);
+    if (!m_handle) {
+        const GLFormatInfo fmt = TranslateFormat(m_desc.format);
+        glCreateTextures(GL_TEXTURE_2D, 1, &m_handle);
+        glTextureStorage2D(m_handle, static_cast<GLsizei>(m_desc.mipLevels), fmt.internalFormat,
+                           static_cast<GLsizei>(std::max(1u, m_desc.width)),
+                           static_cast<GLsizei>(std::max(1u, m_desc.height)));
     }
+    // A pooled handle keeps the previous owner's parameters; reset all of them.
+    glTextureParameteri(m_handle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(m_handle, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(m_handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(m_handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(m_handle, GL_TEXTURE_BASE_LEVEL, 0);
+    glTextureParameteri(m_handle, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(m_desc.mipLevels - 1));
+    glTextureParameterf(m_handle, GL_TEXTURE_LOD_BIAS, 0.0f);
+    if (GLAD_GL_VERSION_4_6 || GLAD_GL_ARB_texture_filter_anisotropic || GLAD_GL_EXT_texture_filter_anisotropic)
+        glTextureParameterf(m_handle, GL_TEXTURE_MAX_ANISOTROPY, 1.0f);
 
     // Set debug label if available
     if (desc.debugName && desc.debugName[0]) {
@@ -249,45 +245,40 @@ GLTexture::~GLTexture() {
 }
 
 void GLTexture::Upload(const void* data, size_t sizeBytes, uint32_t mipLevel) {
-    if (!data) return;
-    GLFormatInfo fmt = TranslateFormat(m_desc.format);
-    uint32_t w = std::max(1u, m_desc.width >> mipLevel);
-    uint32_t h = std::max(1u, m_desc.height >> mipLevel);
-    glBindTexture(GL_TEXTURE_2D, m_handle);
-    glTexSubImage2D(GL_TEXTURE_2D, mipLevel, 0, 0, w, h, fmt.baseFormat, fmt.type, data);
+    (void)sizeBytes;
+    if (!data || mipLevel >= m_desc.mipLevels) return;
+    const GLFormatInfo fmt = TranslateFormat(m_desc.format);
+    const uint32_t w = std::max(1u, m_desc.width >> mipLevel);
+    const uint32_t h = std::max(1u, m_desc.height >> mipLevel);
+    glTextureSubImage2D(m_handle, static_cast<GLint>(mipLevel), 0, 0,
+                        static_cast<GLsizei>(w), static_cast<GLsizei>(h), fmt.baseFormat, fmt.type, data);
 }
 
 void GLTexture::UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                                  const void* data, size_t sizeBytes, uint32_t mipLevel) {
-    if (!data) return;
-    GLFormatInfo fmt = TranslateFormat(m_desc.format);
-    glBindTexture(GL_TEXTURE_2D, m_handle);
-    glTexSubImage2D(GL_TEXTURE_2D, mipLevel, x, y, w, h, fmt.baseFormat, fmt.type, data);
+    (void)sizeBytes;
+    if (!data || mipLevel >= m_desc.mipLevels) return;
+    const GLFormatInfo fmt = TranslateFormat(m_desc.format);
+    glTextureSubImage2D(m_handle, static_cast<GLint>(mipLevel), static_cast<GLint>(x), static_cast<GLint>(y),
+                        static_cast<GLsizei>(w), static_cast<GLsizei>(h), fmt.baseFormat, fmt.type, data);
 }
 
 void GLTexture::GenerateMipmaps() {
-    glBindTexture(GL_TEXTURE_2D, m_handle);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    if (m_desc.mipLevels > 1) glGenerateTextureMipmap(m_handle);
 }
 
 void GLTexture::SetSampler(const SamplerDesc& desc) {
-    glBindTexture(GL_TEXTURE_2D, m_handle);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TranslateTexFilter(desc.minFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, TranslateTexFilter(desc.magFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, TranslateTexWrap(desc.wrapS));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, TranslateTexWrap(desc.wrapT));
-
-    if (desc.maxAnisotropy > 1.0f) {
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, desc.maxAnisotropy);
-    }
-
-    // Apply per-game LOD bias (sharpen/blur mip selection)
-    if (desc.lodBias != 0.0f) {
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, desc.lodBias);
-    }
-
+    glTextureParameteri(m_handle, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(TranslateTexFilter(desc.minFilter)));
+    glTextureParameteri(m_handle, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(TranslateTexFilter(desc.magFilter)));
+    glTextureParameteri(m_handle, GL_TEXTURE_WRAP_S, static_cast<GLint>(TranslateTexWrap(desc.wrapS)));
+    glTextureParameteri(m_handle, GL_TEXTURE_WRAP_T, static_cast<GLint>(TranslateTexWrap(desc.wrapT)));
+    // Always set, so a value from an earlier sampler (or a pooled handle's
+    // previous owner) doesn't linger when the new one uses the default.
+    if (GLAD_GL_VERSION_4_6 || GLAD_GL_ARB_texture_filter_anisotropic || GLAD_GL_EXT_texture_filter_anisotropic)
+        glTextureParameterf(m_handle, GL_TEXTURE_MAX_ANISOTROPY, std::max(1.0f, desc.maxAnisotropy));
+    glTextureParameterf(m_handle, GL_TEXTURE_LOD_BIAS, desc.lodBias);
     if (desc.wrapS == TextureWrap::ClampToBorder || desc.wrapT == TextureWrap::ClampToBorder) {
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, desc.borderColor);
+        glTextureParameterfv(m_handle, GL_TEXTURE_BORDER_COLOR, desc.borderColor);
     }
 }
 

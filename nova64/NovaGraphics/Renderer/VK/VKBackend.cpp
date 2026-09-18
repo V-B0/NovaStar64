@@ -33,6 +33,7 @@
 #include "../../Common/Logger.hpp"
 #include "../../Texture/ImageWrite.hpp"
 #include "../../Core/FramebufferManager.hpp"
+#include "../../Plugin/FrameCallback.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
@@ -46,6 +47,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -188,32 +190,39 @@ public:
     ~VulkanRenderer() override { Shutdown(); }
 
     // â”€â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // With no window handle the renderer works offscreen: no surface or
+    // swapchain, and every presented frame is read back into g_framePixels.
+    // That is how a game is drawn inside the launcher, which also works where a
+    // window can't be created off the main thread (macOS).
     bool Initialize(void* windowHandle, uint32_t width, uint32_t height) override {
         m_sdlWindow = static_cast<SDL_Window*>(windowHandle);
-        m_width  = width;
-        m_height = height;
-
-        if (!m_sdlWindow) {
-            Logger::Error("VulkanRenderer: null SDL_Window passed to Initialize");
-            return false;
-        }
+        m_offscreen = (m_sdlWindow == nullptr);
+        m_width  = width  ? width  : 1280;
+        m_height = height ? height : 960;
         if (!IsVulkanAvailable()) {
             Logger::Warn("VulkanRenderer: Vulkan loader not available");
             return false;
         }
 
         // â”€â”€ instance extensions required by SDL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        unsigned int extCount = 0;
-        if (!SDL_Vulkan_GetInstanceExtensions(m_sdlWindow, &extCount, nullptr)) {
-            Logger::Error("VulkanRenderer: SDL_Vulkan_GetInstanceExtensions(count) failed: {}",
-                          SDL_GetError());
-            return false;
-        }
-        std::vector<const char*> extNames(extCount);
-        if (extCount && !SDL_Vulkan_GetInstanceExtensions(m_sdlWindow, &extCount, extNames.data())) {
-            Logger::Error("VulkanRenderer: SDL_Vulkan_GetInstanceExtensions(names) failed: {}",
-                          SDL_GetError());
-            return false;
+        std::vector<const char*> extNames;
+        if (m_offscreen) {
+            // VK_KHR_swapchain, which the device still enables, depends on it.
+            if (VKInstance::HasInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME))
+                extNames.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        } else {
+            unsigned int extCount = 0;
+            if (!SDL_Vulkan_GetInstanceExtensions(m_sdlWindow, &extCount, nullptr)) {
+                Logger::Error("VulkanRenderer: SDL_Vulkan_GetInstanceExtensions(count) failed: {}",
+                              SDL_GetError());
+                return false;
+            }
+            extNames.resize(extCount);
+            if (extCount && !SDL_Vulkan_GetInstanceExtensions(m_sdlWindow, &extCount, extNames.data())) {
+                Logger::Error("VulkanRenderer: SDL_Vulkan_GetInstanceExtensions(names) failed: {}",
+                              SDL_GetError());
+                return false;
+            }
         }
 
 // Validation layers add significant CPU/GPU overhead that can trigger Intel
@@ -227,7 +236,7 @@ public:
         }
 
         // â”€â”€ surface (requires instance) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        if (!SDL_Vulkan_CreateSurface(m_sdlWindow, m_instance.Get(), &m_surface)) {
+        if (!m_offscreen && !SDL_Vulkan_CreateSurface(m_sdlWindow, m_instance.Get(), &m_surface)) {
             Logger::Error("VulkanRenderer: SDL_Vulkan_CreateSurface failed: {}",
                           SDL_GetError());
             Cleanup();
@@ -248,8 +257,12 @@ public:
         }
 
         // â”€â”€ swapchain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        if (!m_swapchain.Create(m_instance.GetPhysical(), m_device.Get(), m_surface,
-                                gfxFam, presFam, m_width, m_height, /*vsync=*/false)) {
+        const bool haveTargets = m_offscreen
+            ? m_swapchain.CreateOffscreen(m_instance.GetPhysical(), m_device.Get(),
+                                          m_width, m_height, kFramesInFlight)
+            : m_swapchain.Create(m_instance.GetPhysical(), m_device.Get(), m_surface,
+                                 gfxFam, presFam, m_width, m_height, /*vsync=*/false);
+        if (!haveTargets) {
             Cleanup();
             return false;
         }
@@ -365,6 +378,8 @@ public:
     }
 
     void BeginFrame() override {
+        m_haveViewport = false;
+        m_haveScissor  = false;
         if (!m_initialized) return;
         if (m_ctx.deviceLost.load(std::memory_order_relaxed)) {
             m_skipPresent = true;
@@ -396,9 +411,14 @@ public:
             return;
         }
 
-        VkResult r = vkAcquireNextImageKHR(m_device.Get(), m_swapchain.Get(),
-                                           UINT64_MAX, f.imageAvailable,
-                                           VK_NULL_HANDLE, &m_currentImage);
+        VkResult r = VK_SUCCESS;
+        if (m_offscreen) {
+            m_currentImage = m_currentFrame % m_swapchain.GetImageCount();
+        } else {
+            r = vkAcquireNextImageKHR(m_device.Get(), m_swapchain.Get(),
+                                      UINT64_MAX, f.imageAvailable,
+                                      VK_NULL_HANDLE, &m_currentImage);
+        }
         if (r == VK_ERROR_OUT_OF_DATE_KHR) {
             RecreateSwapchain();
             m_skipPresent = true;
@@ -600,6 +620,7 @@ public:
     // VI origin update from the video plugin: which N64 buffer is display-
     // ready. EndFrame presents this buffer's canvas instead of the one still
     // being drawn.
+    void SetOutputAspect(float aspect) override { m_outputAspect = aspect; }
     void SetPresentOrigin(uint32_t n64Addr) override {
         m_presentOriginAddr = n64Addr & 0x7FFFFF;
     }
@@ -697,6 +718,14 @@ public:
             }
         }
 
+        // Box the picture to the N64's shape with black bars, as the GL path
+        // does in BlitToScreen. Rendering fills the whole swapchain, so without
+        // this a 4:3 game was stretched to the window's shape (a third too wide
+        // in a 16:9 window). Offscreen frames go to the launcher, which boxes
+        // them itself.
+        if (!m_offscreen && m_frameOnSwapchain && m_currentRT == nullptr && m_outputAspect > 0.0f)
+            LetterboxSwapchain(f.cmd);
+
         m_frameRecording = false;
         vkEndCommandBuffer(f.cmd);
 
@@ -718,12 +747,13 @@ public:
                                          VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         VkSemaphore waitSem = m_midFrameReadbackDone ? f.midFrameDone : f.imageAvailable;
-        si.waitSemaphoreCount   = 1;
+        // Offscreen there is no acquired image to wait for and no present to signal.
+        si.waitSemaphoreCount   = (m_midFrameReadbackDone || !m_offscreen) ? 1 : 0;
         si.pWaitSemaphores      = &waitSem;
         si.pWaitDstStageMask    = &waitStage;
         si.commandBufferCount   = 1;
         si.pCommandBuffers      = &f.cmd;
-        si.signalSemaphoreCount = 1;
+        si.signalSemaphoreCount = m_offscreen ? 0 : 1;
         si.pSignalSemaphores    = &f.renderFinished;
         VkResult sr = vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, f.inFlightFence);
         m_midFrameReadbackDone = false;
@@ -781,6 +811,78 @@ public:
         if (!hit) return;
         s_lastCaptured = n;
         CaptureSwapchainToPNG((s_basePath + "_" + std::to_string(n) + ".png").c_str());
+    }
+
+    // Offscreen "present": copies the finished frame into g_framePixels (RGBA,
+    // top row first) for the launcher to draw. Waits for the GPU, as the
+    // OpenGL path's glReadPixels does.
+    void ReadbackOffscreenFrame() {
+        const VkExtent2D ext = m_swapchain.GetExtent();
+        const VkDeviceSize size = static_cast<VkDeviceSize>(ext.width) * ext.height * 4;
+        if (size == 0) return;
+        if (size != m_readbackSize) {
+            if (m_readbackStaging.buffer) DestroyBufferStorage(m_ctx, m_readbackStaging);
+            m_readbackStaging = {};
+            m_readbackSize = 0;
+            if (!CreateBufferStorage(m_ctx, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    m_readbackStaging))
+                return;
+            m_readbackSize = size;
+        }
+
+        VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ai.commandPool = m_transientPool;
+        ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ai.commandBufferCount = 1;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(m_device.Get(), &ai, &cb) != VK_SUCCESS) return;
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cb, &bi);
+        VkImage img = m_swapchain.GetImage(m_currentImage);
+        TransitionImage(cb, img, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_MEMORY_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferImageCopy region{};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent = { ext.width, ext.height, 1 };
+        vkCmdCopyImageToBuffer(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               m_readbackStaging.buffer, 1, &region);
+        TransitionImage(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        vkEndCommandBuffer(cb);
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cb;
+        const VkResult sr = vkQueueSubmit(m_device.GetGraphicsQueue(), 1, &si, VK_NULL_HANDLE);
+        if (sr == VK_SUCCESS) vkQueueWaitIdle(m_device.GetGraphicsQueue());
+        vkFreeCommandBuffers(m_device.Get(), m_transientPool, 1, &cb);
+        if (sr != VK_SUCCESS) {
+            if (sr == VK_ERROR_DEVICE_LOST) m_ctx.deviceLost.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        const VkFormat fmt = m_swapchain.GetFormat();
+        const bool bgra = (fmt == VK_FORMAT_B8G8R8A8_UNORM || fmt == VK_FORMAT_B8G8R8A8_SRGB);
+        const size_t pixels = static_cast<size_t>(ext.width) * ext.height;
+        const auto* src = static_cast<const uint8_t*>(m_readbackStaging.mapped);
+        std::lock_guard<std::mutex> lock(g_frameMutex);
+        g_framePixels.resize(pixels * 4);
+        uint8_t* dst = g_framePixels.data();
+        for (size_t i = 0; i < pixels; ++i, src += 4, dst += 4) {
+            dst[0] = bgra ? src[2] : src[0];
+            dst[1] = src[1];
+            dst[2] = bgra ? src[0] : src[2];
+            dst[3] = 255;
+        }
+        g_frameW.store(static_cast<int>(ext.width), std::memory_order_relaxed);
+        g_frameH.store(static_cast<int>(ext.height), std::memory_order_relaxed);
+        g_frameReady.store(true, std::memory_order_release);
     }
 
     void CaptureSwapchainToPNG(const char* path) {
@@ -1094,6 +1196,11 @@ void main() {
         }
         ApplyGammaIfNeeded();
         MaybeCaptureFrame();
+        if (m_offscreen) {
+            ReadbackOffscreenFrame();
+            m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
+            return;
+        }
         PerFrame& f = m_frames[m_currentFrame];
         VkSwapchainKHR sc = m_swapchain.Get();
 
@@ -1160,6 +1267,11 @@ void main() {
 
     // â”€â”€â”€ State Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     void SetViewport(const RenderViewport& v) override {
+        // Remembered so a pass restarted mid-frame (after a blit or a
+        // readback ends it) gets the game's viewport back instead of the
+        // full-screen default ResumePass sets.
+        m_lastViewport = v;
+        m_haveViewport = true;
         if (!m_passActive) return;
         VkExtent2D ext = m_swapchain.GetExtent();
         // Remember FBO size so SetScissor can undo the OpenGL Y-flip
@@ -1183,6 +1295,8 @@ void main() {
         vkCmdSetViewport(m_frames[m_currentFrame].cmd, 0, 1, &vp);
     }
     void SetScissor(const RenderScissorRect& r) override {
+        m_lastScissor = r;   // see SetViewport
+        m_haveScissor = true;
         if (!m_passActive) return;
         VkExtent2D ext = m_swapchain.GetExtent();
         // r uses OpenGL scissor convention: y=0 at bottom of FBO.
@@ -1224,12 +1338,10 @@ void main() {
         }
     }
     void SetBlendColor(float r, float g, float b, float a) override {
-        // Real blend constants via dynamic state; also kept as the swapchain
-        // clear color so callers without an explicit clear can still see
-        // their state reflected.
+        // Blend constants only. This used to double as the swapchain clear
+        // color, so a frame that started without canvas content was cleared to
+        // whatever N64 blend color the last draw set instead of black.
         const float c[4] = { r, g, b, a };
-        m_clearColor[0] = r; m_clearColor[1] = g;
-        m_clearColor[2] = b; m_clearColor[3] = a;
         if (m_passActive) {
             vkCmdSetBlendConstants(m_frames[m_currentFrame].cmd, c);
         }
@@ -1329,7 +1441,10 @@ void main() {
 
     void Draw(const DrawCommand& cmd) override {
         if (cmd.indexed) {
-            DrawIndexed(cmd.primitive, cmd.indexCount, IndexType::UInt16, cmd.indexOffset);
+            // The index type belongs to the bound index buffer; forcing 16-bit
+            // here misread 32-bit buffers.
+            const IndexType type = (m_curIndexType == VK_INDEX_TYPE_UINT32) ? IndexType::UInt32 : IndexType::UInt16;
+            DrawIndexed(cmd.primitive, cmd.indexCount, type, cmd.indexOffset);
         } else {
             DrawArrays(cmd.primitive, cmd.vertexOffset, cmd.vertexCount);
         }
@@ -1373,7 +1488,7 @@ void main() {
                                     m_curPipeline->GetLayout(), 0, 1, &ds, 1, &dynOffset);
             vkCmdDispatch(f.cmd, gx, gy, gz);
         }
-        if (wasActive) BeginPass(m_currentRT);
+        if (wasActive) ResumePass();
     }
 
     void DispatchRayTracing(void* tlas, void* outputImage,
@@ -1399,7 +1514,7 @@ void main() {
 
         m_rtPipeline->Dispatch(f.cmd, tlas, outputImage, w, h);
 
-        if (wasActive) BeginPass(m_currentRT);
+        if (wasActive) ResumePass();
     }
     void ExecuteRayTracing(RT::RTSceneManager* scene,
                            uint32_t w, uint32_t h) override {
@@ -1591,7 +1706,7 @@ void main() {
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                  staging)) {
             Logger::Error("VulkanRenderer::ReadPixels: staging buffer alloc failed");
-            if (wasActive) BeginPass(m_currentRT);
+            if (wasActive) ResumePass();
             return;
         }
 
@@ -1673,7 +1788,7 @@ void main() {
         }
         m_skipPresent = true; 
 
-        if (wasActive) BeginPass(m_currentRT);
+        if (wasActive) ResumePass();
     }
 
     // GPU-side blit: copy the current swapchain image into dst using vkCmdCopyImage
@@ -1689,7 +1804,7 @@ void main() {
 
         VkImage  srcImage = m_swapchain.GetImage(m_currentImage);
         VkImage  dstImage = reinterpret_cast<VkImage>(dst->GetNativeHandle());
-        if (!srcImage || !dstImage) { if (wasActive) BeginPass(m_currentRT); return; }
+        if (!srcImage || !dstImage) { if (wasActive) ResumePass(); return; }
         uint32_t w = std::min(dst->GetWidth(),  m_swapchain.GetExtent().width);
         uint32_t h = std::min(dst->GetHeight(), m_swapchain.GetExtent().height);
 
@@ -1748,7 +1863,7 @@ void main() {
 
         // Resume the render pass - inventory draws continue in the same cmd buffer.
         // EndFrame will submit everything normally (m_skipPresent is NOT set).
-        if (wasActive) BeginPass(m_currentRT);
+        if (wasActive) ResumePass();
     }
 
     // GPU-side snapshot without clearing: copy the swapchain into dst, then
@@ -2167,7 +2282,7 @@ void main() {
         // keeps a valid chain (and EndFrame makes the same substitution when
         // choosing its own wait semaphore).
         VkSemaphore rbWaitSem = m_midFrameReadbackDone ? f.midFrameDone : f.imageAvailable;
-        si.waitSemaphoreCount = 1;
+        si.waitSemaphoreCount = (m_midFrameReadbackDone || !m_offscreen) ? 1 : 0;
         si.pWaitSemaphores = &rbWaitSem;
         si.pWaitDstStageMask = &waitStage;
         si.signalSemaphoreCount = 1;
@@ -2213,18 +2328,19 @@ void main() {
 
         const uint8_t* pixels = static_cast<const uint8_t*>(staging.mapped);
         const uint32_t pixelCount = fbW * fbH;
-        uint32_t scaleX = (fbW > 0) ? (extent.width / fbW) : 1;
-        uint32_t scaleY = (fbH > 0) ? (extent.height / fbH) : 1;
-        if (scaleX == 0) scaleX = 1;
-        if (scaleY == 0) scaleY = 1;
+        // Nearest source pixel for each N64 pixel. An integer step
+        // (extent / fb) dropped the right quarter of an 854-wide canvas
+        // (854 / 320 = 2), so the game read back a cropped frame.
+        auto sourceX = [&](uint32_t fx) { return std::min<uint32_t>(static_cast<uint32_t>((uint64_t{fx} * extent.width + extent.width / 2) / fbW), extent.width - 1); };
+        auto sourceY = [&](uint32_t fy) { return std::min<uint32_t>(static_cast<uint32_t>((uint64_t{fy} * extent.height + extent.height / 2) / fbH), extent.height - 1); };
 
         if (isRGBA16) {
             uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + fbAddress);
             for (uint32_t i = 0; i < pixelCount; ++i) {
                 uint32_t fy = i / fbW;
                 uint32_t fx = i % fbW;
-                uint32_t sx = std::min(fx * scaleX, extent.width - 1);
-                uint32_t sy = std::min(fy * scaleY, extent.height - 1);
+                uint32_t sx = sourceX(fx);
+                uint32_t sy = sourceY(fy);
                 uint32_t off = (sy * extent.width + sx) * 4;
                 uint8_t b = pixels[off + 0];
                 uint8_t g = pixels[off + 1];
@@ -2241,8 +2357,8 @@ void main() {
             for (uint32_t i = 0; i < pixelCount; ++i) {
                 uint32_t fy = i / fbW;
                 uint32_t fx = i % fbW;
-                uint32_t sx = std::min(fx * scaleX, extent.width - 1);
-                uint32_t sy = std::min(fy * scaleY, extent.height - 1);
+                uint32_t sx = sourceX(fx);
+                uint32_t sy = sourceY(fy);
                 uint32_t off = (sy * extent.width + sx) * 4;
                 uint8_t b = pixels[off + 0];
                 uint8_t g = pixels[off + 1];
@@ -2364,6 +2480,9 @@ private:
     }
 
     void DestroyTransient() {
+        if (m_readbackStaging.buffer) DestroyBufferStorage(m_ctx, m_readbackStaging);
+        m_readbackStaging = {};
+        m_readbackSize = 0;
         if (m_transientPool && m_device.Get()) {
             vkDestroyCommandPool(m_device.Get(), m_transientPool, nullptr);
             m_transientPool = VK_NULL_HANDLE;
@@ -2816,6 +2935,7 @@ private:
     };
 
     void DestroyCanvas() {
+        DestroyPresentScratch();
         for (auto& [addr, c] : m_canvases) {
             if (c.img) vkDestroyImage(m_device.Get(), c.img, nullptr);
             if (c.mem) vkFreeMemory(m_device.Get(), c.mem, nullptr);
@@ -3001,6 +3121,115 @@ private:
     // it always is after SaveSwapchainToCanvas). Swapchain may be in any
     // layout (UNDEFINED discard is fine — full overwrite); leaves it
     // PRESENT_SRC so the LOAD render pass can begin.
+    // Copies the finished swapchain image aside, clears the swapchain to black
+    // and scales the copy into a centred box of shape m_outputAspect.
+    // Expects and leaves the swapchain image in PRESENT_SRC_KHR.
+    void LetterboxSwapchain(VkCommandBuffer cmd) {
+        const VkExtent2D ext = m_swapchain.GetExtent();
+        const VkImage swapImg = m_swapchain.GetImage(m_currentImage);
+        if (!swapImg || ext.width == 0 || ext.height == 0) return;
+
+        const float windowAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+        int32_t boxW = static_cast<int32_t>(ext.width);
+        int32_t boxH = static_cast<int32_t>(ext.height);
+        if (windowAspect > m_outputAspect * 1.005f)
+            boxW = std::max(1, static_cast<int32_t>(static_cast<float>(ext.height) * m_outputAspect + 0.5f));
+        else if (windowAspect < m_outputAspect / 1.005f)
+            boxH = std::max(1, static_cast<int32_t>(static_cast<float>(ext.width) / m_outputAspect + 0.5f));
+        else
+            return;   // the window already has the picture's shape
+        const int32_t boxX = (static_cast<int32_t>(ext.width) - boxW) / 2;
+        const int32_t boxY = (static_cast<int32_t>(ext.height) - boxH) / 2;
+        if (!EnsurePresentScratch(ext)) return;
+
+        const int32_t w = static_cast<int32_t>(ext.width);
+        const int32_t h = static_cast<int32_t>(ext.height);
+        VkImageBlit full{};
+        full.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        full.dstSubresource = full.srcSubresource;
+        full.srcOffsets[1]  = { w, h, 1 };
+        full.dstOffsets[1]  = { w, h, 1 };
+
+        TransitionImage(cmd, swapImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        TransitionImage(cmd, m_presentScratch.img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        vkCmdBlitImage(cmd, swapImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       m_presentScratch.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &full, VK_FILTER_NEAREST);
+
+        TransitionImage(cmd, m_presentScratch.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        TransitionImage(cmd, swapImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        const VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
+        const VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        vkCmdClearColorImage(cmd, swapImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+
+        VkImageBlit box = full;
+        box.dstOffsets[0] = { boxX, boxY, 0 };
+        box.dstOffsets[1] = { boxX + boxW, boxY + boxH, 1 };
+        vkCmdBlitImage(cmd, m_presentScratch.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       swapImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &box,
+                       m_presentLinearBlit ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+        TransitionImage(cmd, swapImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    }
+
+    bool EnsurePresentScratch(VkExtent2D ext) {
+        const VkFormat format = m_swapchain.GetFormat();
+        if (m_presentScratch.img && m_presentScratchW == ext.width &&
+            m_presentScratchH == ext.height && m_presentScratchFormat == format)
+            return true;
+        DestroyPresentScratch();
+
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType     = VK_IMAGE_TYPE_2D;
+        ici.format        = format;
+        ici.extent        = { ext.width, ext.height, 1 };
+        ici.mipLevels     = 1;
+        ici.arrayLayers   = 1;
+        ici.samples       = VK_SAMPLE_COUNT_1_BIT;
+        ici.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        ici.usage         = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        ici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (vkCreateImage(m_device.Get(), &ici, nullptr, &m_presentScratch.img) != VK_SUCCESS) {
+            m_presentScratch.img = VK_NULL_HANDLE;
+            return false;
+        }
+        VkMemoryRequirements mr{};
+        vkGetImageMemoryRequirements(m_device.Get(), m_presentScratch.img, &mr);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize  = mr.size;
+        mai.memoryTypeIndex = FindMemoryType(m_ctx.physical, mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (mai.memoryTypeIndex == UINT32_MAX ||
+            vkAllocateMemory(m_device.Get(), &mai, nullptr, &m_presentScratch.mem) != VK_SUCCESS ||
+            vkBindImageMemory(m_device.Get(), m_presentScratch.img, m_presentScratch.mem, 0) != VK_SUCCESS) {
+            DestroyPresentScratch();
+            return false;
+        }
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(m_ctx.physical, format, &fp);
+        m_presentLinearBlit     = (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+        m_presentScratchW       = ext.width;
+        m_presentScratchH       = ext.height;
+        m_presentScratchFormat  = format;
+        return true;
+    }
+
+    void DestroyPresentScratch() {
+        if (m_presentScratch.img) vkDestroyImage(m_device.Get(), m_presentScratch.img, nullptr);
+        if (m_presentScratch.mem) vkFreeMemory(m_device.Get(), m_presentScratch.mem, nullptr);
+        m_presentScratch = CanvasSlot{};
+        m_presentScratchW = m_presentScratchH = 0;
+        m_presentScratchFormat = VK_FORMAT_UNDEFINED;
+    }
+
     void LoadCanvasToSwapchain(VkCommandBuffer cmd, CanvasSlot& c, VkImage swapImg,
                                VkImageLayout swapOldLayout) {
         TransitionImage(cmd, swapImg,
@@ -3028,6 +3257,36 @@ private:
     // render target. Sets default full-extent dynamic viewport+scissor.
     // Restart the swapchain render pass with LOAD_OP_LOAD (preserve content).
     // Called by SnapshotToTexture after the GPU copy.
+    // Reopens a pass that was closed mid-frame (for a compute dispatch or a
+    // readback) without clearing what was drawn so far. BeginPass's clearing
+    // swapchain pass is only right at the start of a frame; using it here wiped
+    // the frame in progress.
+    void ResumePass() {
+        if (m_currentRT) {           // custom targets always use LOAD_OP_LOAD
+            BeginPass(m_currentRT);
+            return;
+        }
+        BeginPassLoad();
+        const VkExtent2D ext = m_swapchain.GetExtent();
+        const float vpW = static_cast<float>(ext.width);
+        const float vpH = static_cast<float>(ext.height);
+        m_vpFBOW = vpW;
+        m_vpFBOH = vpH;
+        VkViewport vp{};
+        vp.width    = vpW;
+        vp.height   = -vpH;
+        vp.y        = vpH;
+        vp.minDepth = 0.0f;
+        vp.maxDepth = 1.0f;
+        PerFrame& f = m_frames[m_currentFrame];
+        vkCmdSetViewport(f.cmd, 0, 1, &vp);
+        VkRect2D sc{ {0, 0}, ext };
+        vkCmdSetScissor(f.cmd, 0, 1, &sc);
+        // Viewport first: SetScissor maps through the viewport's buffer size.
+        if (m_haveViewport) SetViewport(m_lastViewport);
+        if (m_haveScissor)  SetScissor(m_lastScissor);
+    }
+
     void BeginPassLoad() {
         PerFrame& f = m_frames[m_currentFrame];
         VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -3137,6 +3396,10 @@ private:
 
     // members
     SDL_Window*   m_sdlWindow = nullptr;
+    RenderViewport    m_lastViewport{};   ///< last SetViewport this frame
+    RenderScissorRect m_lastScissor{};    ///< last SetScissor this frame
+    bool              m_haveViewport = false;
+    bool              m_haveScissor  = false;
     uint32_t      m_width  = 0;
     uint32_t      m_height = 0;
 
@@ -3144,6 +3407,9 @@ private:
     VkSurfaceKHR  m_surface = VK_NULL_HANDLE;
     VKDevice      m_device;
     VKSwapchain   m_swapchain;
+    bool          m_offscreen = false;       // no window: frames go to g_framePixels
+    VKBufferStorage m_readbackStaging{};
+    VkDeviceSize  m_readbackSize = 0;
 
     VkCommandPool                 m_cmdPool       = VK_NULL_HANDLE;
     VkCommandPool                 m_transientPool = VK_NULL_HANDLE;
@@ -3264,6 +3530,11 @@ private:
     uint64_t       m_canvasUseCounter = 0;
     uint32_t       m_canvasW = 0, m_canvasH = 0; // common canvas dimensions
     bool           m_canvasPreserve = true;   // copy-forward enabled
+    float          m_outputAspect = 4.0f / 3.0f;  // picture shape in the window (SetOutputAspect)
+    CanvasSlot     m_presentScratch{};            // copy of the frame while it is boxed
+    uint32_t       m_presentScratchW = 0, m_presentScratchH = 0;
+    VkFormat       m_presentScratchFormat = VK_FORMAT_UNDEFINED;
+    bool           m_presentLinearBlit = false;
     bool           m_frameOnSwapchain = false; // current frame targets the swapchain pass
     bool           m_frameRecording = false;   // command buffer open (BeginFrame..EndFrame)
 

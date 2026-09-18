@@ -9,6 +9,14 @@ Typical use — validate the recompiler against the interpreter:
         ./build/nova64 rom.z64 --frames 600 --recompiler
     scripts/compare-trace.py /tmp/interp.trace /tmp/recomp.trace
 
+Or check that a rewind or a loaded save state replays exactly. The trace of a
+run that went back in time records some frames twice, and each repeat must
+match what was recorded the first time:
+
+    NOVA64_TRACE_STATE=/tmp/rewind.trace NOVA64_TRACE_RDRAM=1 ./build/nova64
+    # ...play a game in the launcher and rewind or load a save state...
+    scripts/compare-trace.py --replay /tmp/rewind.trace
+
 Exit status is 0 when the traces agree and 1 when they diverge, so this can be
 used directly as a regression check in CI.
 """
@@ -21,9 +29,13 @@ ALIGN = "count"
 FIELDS = ["pc", "gpr", "hilo", "fpr", "cp0", "rdram"]
 
 
-def load(path):
-    """Returns {frame: {field: value}} for one trace file."""
-    frames = {}
+def load_passes(path):
+    """Returns a list of {frame: {field: value}}, one per pass through a trace.
+
+    A new pass starts wherever the frame number fails to increase, i.e. where
+    the run went back in time (a rewind or a loaded save state).
+    """
+    passes, frames, previous = [], {}, None
     with open(path) as handle:
         for lineno, line in enumerate(handle, 1):
             line = line.strip()
@@ -37,15 +49,30 @@ def load(path):
                 frame = int(parts[0])
             except ValueError:
                 sys.exit(f"{path}:{lineno}: frame number is not an integer")
+            if previous is not None and frame <= previous:
+                passes.append(frames)
+                frames = {}
             frames[frame] = dict(zip([ALIGN] + FIELDS, parts[1:]))
-    return frames
+            previous = frame
+    passes.append(frames)
+    return passes
+
+
+def load(path):
+    """Returns {frame: {field: value}} for a trace with no rewinds."""
+    passes = load_passes(path)
+    if len(passes) > 1:
+        sys.exit(f"{path} goes back in time {len(passes) - 1} time(s); use --replay for it")
+    return passes[0]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("baseline", help="reference trace (e.g. the interpreter)")
-    ap.add_argument("candidate", help="trace to check against it")
+    ap.add_argument("candidate", nargs="?", help="trace to check against it")
+    ap.add_argument("--replay", action="store_true",
+                    help="check the frames a single trace recorded more than once")
     ap.add_argument("--ignore", action="append", default=[], metavar="FIELD",
                     help=f"field to skip; repeatable. One of: {', '.join(FIELDS)}")
     ap.add_argument("--max-report", type=int, default=5,
@@ -58,8 +85,27 @@ def main():
 
     checked = [f for f in FIELDS if f not in args.ignore]
 
-    base = load(args.baseline)
-    cand = load(args.candidate)
+    if args.replay:
+        if args.candidate:
+            sys.exit("--replay takes a single trace")
+        passes = load_passes(args.baseline)
+        if len(passes) < 2:
+            sys.exit(f"{args.baseline} never goes back in time; nothing to replay")
+        status = 0
+        for i in range(1, len(passes)):
+            status |= compare(passes[i - 1], passes[i], f"{args.baseline} pass {i}",
+                              f"{args.baseline} pass {i + 1}", checked, args)
+            print()
+        return status
+
+    if not args.candidate:
+        sys.exit("give a candidate trace, or use --replay")
+    return compare(load(args.baseline), load(args.candidate),
+                   args.baseline, args.candidate, checked, args)
+
+
+def compare(base, cand, base_name, cand_name, checked, args):
+    """Prints the comparison of two traces; returns 0 if they agree, else 1."""
 
     if not base or not cand:
         sys.exit("at least one trace contains no frames — did tracing actually run?")
@@ -82,8 +128,8 @@ def main():
     only_base = sorted(set(base) - set(cand))
     only_cand = sorted(set(cand) - set(base))
 
-    print(f"baseline : {args.baseline}  ({len(base)} frames)")
-    print(f"candidate: {args.candidate}  ({len(cand)} frames)")
+    print(f"baseline : {base_name}  ({len(base)} frames)")
+    print(f"candidate: {cand_name}  ({len(cand)} frames)")
     print(f"compared : {len(shared)} shared frames on [{', '.join(checked)}]")
     if args.ignore:
         print(f"ignored  : {', '.join(args.ignore)}")

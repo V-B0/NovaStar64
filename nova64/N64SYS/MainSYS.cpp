@@ -22,6 +22,7 @@
 #include "Types.hpp"
 #include "N64Rom.hpp"
 #include "StateTrace.hpp"
+#include "SaveState.hpp"
 #include "N64DD.hpp"
 #include "MIPSY/Systiming.hpp"
 #include "MIPSY/Register.hpp"
@@ -36,6 +37,8 @@
 #include "../NovaGraphics/Window/WindowManager.hpp"
 #include "../NovaGraphics/Plugin/NovaGraphicsGFXPlugin.hpp"
 #include "../NovaGraphics/Plugin/FrameCallback.hpp"
+#include "../NovaGraphics/Plugin/PluginConfig.hpp"
+#include <SDL.h>
 
 #include "../common/IniFile.hpp"
 
@@ -65,6 +68,7 @@ CN64System* g_System = nullptr;
 CN64System* g_BaseSystem = nullptr;
 N64Rom* g_Rom = nullptr;
 int CN64System::s_TargetFPS = 60;
+std::atomic<bool> CN64System::s_StopRequested{false};
 int CN64System::s_WindowWidth = 1280;
 int CN64System::s_WindowHeight = 960;
 int CN64System::s_InternalResScale = 0;
@@ -472,6 +476,7 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
 {
     LOG_DEBUG("RunLoadedImage with frameLimit");
     Log::infof("RunLoadedImage (frameLimit: %llu)", (unsigned long long)frameLimit);
+    if (s_StopRequested.load()) return;
 
     g_BaseSystem = new CN64System((uint32_t)time(nullptr), false, false);
     if (g_BaseSystem)
@@ -529,9 +534,10 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
             Log::infof("Frame limit applied: %llu frames", (unsigned long long)frameLimit);
         }
         
-        // Apply target FPS
-        g_BaseSystem->SetTargetFPS(s_TargetFPS);
-        Log::infof("Frame rate limiter: %d FPS%s", s_TargetFPS, 
+        // s_TargetFPS is an NTSC-equivalent speed; SetSpeed converts it to the
+        // ROM's field rate.
+        g_BaseSystem->SetSpeed(s_TargetFPS);
+        Log::infof("Frame rate limiter: %d fields/s%s", g_BaseSystem->GetTargetFPS(),
                    s_TargetFPS == 0 ? " (unlimited)" : "");
 
         // Reset system state: copies boot code to DMEM, sets post-PIF registers
@@ -560,7 +566,7 @@ void CN64System::RunLoadedImage(uint64_t frameLimit)
             g_BaseSystem->StartEmulation(true);
             // Block this thread (RunFileImage) until emulation finishes or
             // CloseSystem() is called from the launcher thread.
-            while (g_BaseSystem && g_BaseSystem->IsEmulationRunning()) {
+            while (g_BaseSystem && g_BaseSystem->IsEmulationRunning() && !s_StopRequested.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
             // Wait for CPU thread to actually finish
@@ -1149,20 +1155,25 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     if (m_MIPSInterfaceHandler) m_MIPSInterfaceHandler->Reset();
 
     // Set up the initial VI timer. The VR4300 runs at 93.75 MHz in both regions,
-    // so the field rate is what differs: NTSC 60 Hz, PAL 50 Hz.
-    //   NTSC: 93,750,000 / 60 = 1,562,500 Count ticks per field
-    //   PAL:  93,750,000 / 50 = 1,875,000 Count ticks per field
-    // NextTimer decrements by CountPerOp per instruction, so the period is
-    // expressed as (ticks / CountPerOp) * CountPerOp.
+    // and Count increments once every 2 CPU cycles, so Count ticks per field is
+    // (93,750,000 / fieldRate) / 2: NTSC 60 Hz -> 781,250, PAL 50 Hz -> 937,500.
+    // SystemTimer's `period`/`cycles_to_fire` are already Count-tick units (see
+    // update_compare_timer()'s "distance IS the timer period"), so viIncrement
+    // must be passed as-is -- multiplying by CountPerOp() here double-counted
+    // the /2 already baked into viIncrement, scheduling VI at half the correct
+    // rate in Count-tick terms. Wall-clock pacing in RefreshScreen() still held
+    // real VI delivery at 60fps, so the game looked and moved normally, but its
+    // own Count-based real-time reads (osGetTime()-style timers -- minigame
+    // countdowns, event timers) saw Count advancing 2x too fast.
     if (m_SystemTimer)
     {
         const bool isPal = GetRom() && GetRom()->IsLoaded() &&
                            GetRom()->GetImage().IsPal();
         const uint32_t viIncrement = isPal ? 937500u : 781250u;
         m_SystemTimer->set_timer_periodic(N64System::TimerType::ViTimer,
-                                          viIncrement * CountPerOp());
+                                          viIncrement);
         Log::infof("VI timer: %s field rate (%u Count ticks/field)",
-                   isPal ? "PAL 50Hz" : "NTSC 60Hz", viIncrement * 2);
+                   isPal ? "PAL 50Hz" : "NTSC 60Hz", viIncrement);
         // Set up initial Compare timer based on Count/Compare registers
         m_SystemTimer->update_compare_timer();
         Log::debug("VI timer and Compare timer initialized");
@@ -1247,7 +1258,11 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
     // Only create on first call — warm resets must not destroy the window
     // or plugin, as that would lose all rendering state.
     // ──────────────────────────────────────────────────────────────────
-    if (!m_WindowManager) {
+    // A game drawn inside the launcher has no window of its own: the video
+    // plugin renders offscreen or into a hidden window. A window made here would
+    // also be made off the main thread, which macOS doesn't allow.
+    const bool embedded = Nova64::Video::g_embeddedMode.load(std::memory_order_relaxed);
+    if (!m_WindowManager && !embedded) {
         m_WindowManager = std::make_unique<Nova64::Video::WindowManager>();
         Nova64::Video::WindowConfig windowConfig;
         windowConfig.title = "NovaStar64 - Emulator";
@@ -1259,14 +1274,13 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         windowConfig.glMajor = 4;
         windowConfig.glMinor = 6;
         
-        // Read backendType from settings/NovaGraphics.ini
-        int32_t backendType = 0; // Default to OpenGL
-        if (std::filesystem::exists("settings/NovaGraphics.ini")) {
-            CIniFile ini("settings/NovaGraphics.ini");
-            // VideoPlugin uses "Backend" section
-            backendType = ini.GetNumber("Backend", "backendType", 0);
-        }
-        windowConfig.backendType = backendType;
+        // The window must be made for the renderer the video plugin will pick:
+        // SDL can't create a Vulkan surface on a window made for OpenGL. Read the
+        // setting the way the plugin does, so a missing file gives the same
+        // platform default (Vulkan on macOS) instead of OpenGL.
+        Nova64::Video::PluginConfig graphicsConfig;
+        graphicsConfig.LoadFromFile("settings/NovaGraphics.ini");
+        windowConfig.backendType = graphicsConfig.backendType;
         
         // Fullscreen mode: borderless fullscreen by default to bypass DWM compositor stalls
         if (s_FullscreenMode == 2) {
@@ -1301,7 +1315,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
         m_PluginManager->InitializePlugins();
     
         // Initialize the graphics plugin display with the window handle
-        if (windowReady) {
+        if (windowReady || embedded) {
             auto* gfxPlugin = m_PluginManager->GetGraphicsPlugin();
             if (gfxPlugin) {
                 Plugins::RenderSettings settings;
@@ -1310,7 +1324,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                 settings.AntiAliasing = false;
                 settings.Fullscreen = false;
                 
-                if (gfxPlugin->InitializeDisplay(m_WindowManager->GetNativeHandle(), settings)) {
+                if (gfxPlugin->InitializeDisplay(windowReady ? m_WindowManager->GetNativeHandle() : nullptr, settings)) {
                     Log::info("Graphics plugin display initialized with window handle");
                 } else {
                     Log::warning("Graphics plugin display initialization failed");
@@ -1322,9 +1336,10 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                 }
             }
 
-            // Release GL context from the main thread so the CPU thread can use it
+            // Release the GL context from this thread so the CPU thread can use it
             // (UpdateScreen/ProcessDList run on the CPU thread and need the context)
-            m_WindowManager->ReleaseContext();
+            if (windowReady) m_WindowManager->ReleaseContext();
+            else if (SDL_GL_GetCurrentContext()) SDL_GL_MakeCurrent(SDL_GL_GetCurrentWindow(), nullptr);
         }
     
         Log::info("PluginManager created and plugins initialized");
@@ -1368,7 +1383,7 @@ void CN64System::ExecuteCPU()
 {
     LOG_DEBUG( "ExecuteCPU - Start");
 
-    m_EndEmulation = false;
+    m_EndEmulation = s_StopRequested.load();
 
     if (m_EndEmulation) return;
 
@@ -1537,14 +1552,17 @@ void CN64System::RefreshScreen()
         Nova64::Trace::RecordFrame(*this, frameNum);
     }
 
+    // Read once: the launcher can change the target from another thread.
+    const int targetFPS = GetTargetFPS();
+
     // Auto-frameskip: check if we're behind schedule
     bool shouldRender = true;
-    if (m_TargetFPS > 0 && m_FramePaceInitialized)
+    if (targetFPS > 0 && m_FramePaceInitialized)
     {
         using clock = std::chrono::steady_clock;
         using namespace std::chrono;
         auto targetDuration = duration_cast<nanoseconds>(
-            duration<double>(1.0 / m_TargetFPS));
+            duration<double>(1.0 / targetFPS));
         auto now = clock::now();
         auto remaining = (m_FramePaceStart + targetDuration) - now;
         
@@ -1587,13 +1605,13 @@ void CN64System::RefreshScreen()
         const char* v = std::getenv("NOVA64_TURBO");
         return v && v[0] != '\0' && v[0] != '0';
     }();
-    if (m_TargetFPS > 0 && !s_turbo)
+    if (targetFPS > 0 && !s_turbo)
     {
         using clock = std::chrono::steady_clock;
         using namespace std::chrono;
 
         auto targetDuration = duration_cast<nanoseconds>(
-            duration<double>(1.0 / m_TargetFPS));
+            duration<double>(1.0 / targetFPS));
 
         if (!m_FramePaceInitialized)
         {
@@ -1741,246 +1759,13 @@ void CN64System::RefreshScreen()
             }
     }
 
+    // Save-state requests, rewind points and the launcher's pause are handled
+    // at the next instruction boundary, where the machine state is complete.
+    if (m_SystemEvents && Nova64::StateService::Instance().NeedsService(frameNum)) {
+        m_SystemEvents->QueueEvent(SysEvent_ServiceStates);
+    }
+
     m_bCleanFrameBox = false;
-}
-
-bool CN64System::LoadState()
-{
-    LOG_DEBUG( "LoadState (default slot)");
-    
-    // Build default save state path from ROM name
-    if (!g_Rom || !g_Rom->IsLoaded())
-    {
-        LOG_ERROR( "LoadState: No ROM loaded");
-        return false;
-    }
-    
-    std::string savePath = "Saves";
-    std::string fileName = g_Rom->GetImage().GetRomName() + ".pj.zip";
-    // Remove invalid characters from filename
-    for (char& c : fileName)
-    {
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
-            c = '_';
-    }
-    
-    const std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
-    return LoadState(fullPath.c_str());
-}
-
-bool CN64System::LoadState(const char* FileName)
-{
-    Log::debugf("LoadState: \"%s\"", FileName ? FileName : "(null)");
-    
-    if (FileName == nullptr || FileName[0] == '\0')
-    {
-        LOG_ERROR( "LoadState: Invalid filename");
-        return false;
-    }
-    
-    // Open save state file
-    std::ifstream file(FileName, std::ios::binary);
-    if (!file.is_open())
-    {
-        Log::errorf("LoadState: Could not open file \"%s\"", FileName);
-        return false;
-    }
-    
-    // Read and validate header
-    char magic[4];
-    file.read(magic, 4);
-    if (magic[0] != 'N' || magic[1] != '6' || magic[2] != '4' || magic[3] != 'S')
-    {
-        LOG_ERROR( "LoadState: Invalid save state header");
-        return false;
-    }
-    
-    uint32_t version;
-    file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (version != 1)
-    {
-        Log::errorf("LoadState: Unsupported save state version %u", version);
-        return false;
-    }
-    
-    // Read system state
-    file.read(reinterpret_cast<char*>(&m_NextTimer), sizeof(m_NextTimer));
-    
-    // Read registers
-    if (m_Registers)
-    {
-        // GPR (32 x 64-bit)
-        file.read(reinterpret_cast<char*>(m_Registers->m_GPR.data()), sizeof(uint64_t) * 32);
-        // FPR (32 x 64-bit)
-        file.read(reinterpret_cast<char*>(m_Registers->m_FPR.data()), sizeof(uint64_t) * 32);
-        // CP0 (32 x 64-bit)
-        file.read(reinterpret_cast<char*>(m_Registers->m_CP0.data()), sizeof(uint64_t) * 32);
-        // Special registers (HI, LO, PC)
-        file.read(reinterpret_cast<char*>(&m_Registers->m_HI), sizeof(uint64_t));
-        file.read(reinterpret_cast<char*>(&m_Registers->m_LO), sizeof(uint64_t));
-        file.read(reinterpret_cast<char*>(&m_Registers->m_PROGRAM_COUNTER), sizeof(uint64_t));
-    }
-    
-    // Read RDRAM (4MB or 8MB)
-    if (m_Memory)
-    {
-        uint32_t rdramSize;
-        file.read(reinterpret_cast<char*>(&rdramSize), sizeof(rdramSize));
-        uint8_t* rdram = m_Memory->Rdram();
-        if (rdram && rdramSize <= 0x800000)
-        {
-            file.read(reinterpret_cast<char*>(rdram), rdramSize);
-        }
-    }
-    
-    if (!file.good())
-    {
-        LOG_ERROR( "LoadState: Error reading save state");
-        return false;
-    }
-    
-    Log::infof("State loaded from \"%s\"", FileName);
-    return true;
-}
-
-bool CN64System::SaveState()
-{
-    LOG_DEBUG( "SaveState (default slot)");
-    
-    if (!g_Rom || !g_Rom->IsLoaded())
-    {
-        LOG_ERROR( "SaveState: No ROM loaded");
-        return false;
-    }
-    
-    std::string savePath = "Saves";
-    std::string fileName = g_Rom->GetImage().GetRomName() + ".pj.zip";
-    for (char& c : fileName)
-    {
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
-            c = '_';
-    }
-    
-    const std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
-    return SaveState(fullPath.c_str());
-}
-
-bool CN64System::SaveState(const char* FileName)
-{
-    LOG_DEBUG(
-              "SaveState: \"{}\"", FileName ? FileName : "(null)");
-    
-    if (FileName == nullptr || FileName[0] == '\0')
-    {
-        LOG_ERROR( "SaveState: Invalid filename");
-        return false;
-    }
-    
-    // Create save directory if needed
-    {
-        std::filesystem::path filePath(FileName);
-        auto parentDir = filePath.parent_path();
-        if (!parentDir.empty())
-        {
-            std::filesystem::create_directories(parentDir);
-        }
-    }
-    
-    // Open save state file
-    std::ofstream file(FileName, std::ios::binary | std::ios::trunc);
-    if (!file.is_open())
-    {
-        Log::errorf("SaveState: Could not create file \"%s\"", FileName);
-        return false;
-    }
-    
-    // Write header
-    const char magic[4] = {'N', '6', '4', 'S'};
-    file.write(magic, 4);
-    uint32_t version = 1;
-    file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-    
-    // Write system state
-    file.write(reinterpret_cast<const char*>(&m_NextTimer), sizeof(m_NextTimer));
-    
-    // Write registers
-    if (m_Registers)
-    {
-        file.write(reinterpret_cast<const char*>(m_Registers->m_GPR.data()), sizeof(uint64_t) * 32);
-        file.write(reinterpret_cast<const char*>(m_Registers->m_FPR.data()), sizeof(uint64_t) * 32);
-        file.write(reinterpret_cast<const char*>(m_Registers->m_CP0.data()), sizeof(uint64_t) * 32);
-        file.write(reinterpret_cast<const char*>(&m_Registers->m_HI), sizeof(uint64_t));
-        file.write(reinterpret_cast<const char*>(&m_Registers->m_LO), sizeof(uint64_t));
-        file.write(reinterpret_cast<const char*>(&m_Registers->m_PROGRAM_COUNTER), sizeof(uint64_t));
-    }
-    
-    // Write RDRAM
-    if (m_Memory)
-    {
-        uint32_t rdramSize = m_Memory->RdramSize();
-        file.write(reinterpret_cast<const char*>(&rdramSize), sizeof(rdramSize));
-        uint8_t* rdram = m_Memory->Rdram();
-        if (rdram)
-        {
-            file.write(reinterpret_cast<const char*>(rdram), rdramSize);
-        }
-    }
-    
-    if (!file.good())
-    {
-        LOG_ERROR( "SaveState: Error writing save state");
-        return false;
-    }
-    
-    Log::infof("State saved to \"%s\"", FileName);
-    return true;
-}
-
-// Stub functions for zip.h functionality
-// These would normally use the zip library, but we're stubbing them for now
-
-namespace ZipStub
-{
-    // Stub for opening zip files
-    void* OpenZipFile(const char* filename)
-    {
-        LOG_DEBUG(
-                  "ZipStub::OpenZipFile: \"{}\" (STUBBED)", filename);
-        // Return nullptr to indicate zip files are not supported yet
-        return nullptr;
-    }
-
-    // Stub for closing zip files
-    void CloseZipFile(void* zipHandle)
-    {
-        LOG_DEBUG(
-                  "ZipStub::CloseZipFile (STUBBED)");
-        // Nothing to do
-    }
-
-    // Stub for getting file count in zip
-    int GetZipFileCount(void* zipHandle)
-    {
-        LOG_DEBUG(
-                  "ZipStub::GetZipFileCount (STUBBED)");
-        return 0;
-    }
-
-    // Stub for getting file from zip
-    bool GetZipFile(void* zipHandle, int fileIndex, void* buffer, size_t bufferSize)
-    {
-        LOG_DEBUG(
-                  "ZipStub::GetZipFile (STUBBED)");
-        return false;
-    }
-
-    // Stub for getting file info from zip
-    bool GetZipFileInfo(void* zipHandle, int fileIndex, char* filename, size_t* fileSize)
-    {
-        LOG_DEBUG(
-                  "ZipStub::GetZipFileInfo (STUBBED)");
-        return false;
-    }
 }
 
 N64System::SystemTimer* CN64System::GetSystemTimer() const
@@ -1991,6 +1776,13 @@ N64System::SystemTimer* CN64System::GetSystemTimer() const
 N64Rom* CN64System::GetRom() const
 {
     return g_Rom;
+}
+
+void CN64System::SetSpeed(int ntscEquivalentFps)
+{
+    // Pacing is per VI field, and a PAL console scans 50 fields a second, not 60.
+    const bool isPal = g_Rom && g_Rom->IsLoaded() && g_Rom->GetImage().IsPal();
+    SetTargetFPS(isPal ? ntscEquivalentFps * 5 / 6 : ntscEquivalentFps);
 }
 
 N64Rom* CN64System::GetDDRom() const

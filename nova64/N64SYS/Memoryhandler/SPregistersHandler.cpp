@@ -8,6 +8,7 @@
  * - Semaphore operations
  */
 #include "SPregistersHandler.hpp"
+#include "../StateArchive.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
 #include "../MIPSY/Vmem.hpp"
@@ -698,4 +699,13 @@ void SRegistersHandler::SystemReset()
     // Reset pending addresses
     m_PendingSPMemAddr = 0;
     m_PendingSPDramAddr = 0;
+}
+
+void SRegistersHandler::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("SP  ");
+    ar.Value(m_IMEM);
+    ar.Value(m_DMEM);
+    ar.Value(m_SPRegs);
+    ar.Value(m_PendingSPMemAddr);
+    ar.Value(m_PendingSPDramAddr);
 }

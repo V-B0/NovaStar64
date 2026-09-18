@@ -1,11 +1,12 @@
 #pragma once
 #include <imgui.h>
+#include <imgui_node_editor.h>
 
 namespace NovaUI {
 
 inline void ApplyWin95Theme() {
     ImGuiStyle& style = ImGui::GetStyle();
-    
+
     // Modern/Win95 Hybrid colors (beige/orange palette)
     ImVec4* colors = style.Colors;
     colors[ImGuiCol_Text]                   = ImVec4(0.25f, 0.25f, 0.25f, 1.00f); // Dark text
@@ -30,7 +31,7 @@ inline void ApplyWin95Theme() {
     colors[ImGuiCol_SliderGrab]             = ImVec4(0.85f, 0.43f, 0.26f, 1.00f);
     colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.70f, 0.35f, 0.20f, 1.00f);
     colors[ImGuiCol_Button]                 = ImVec4(0.85f, 0.43f, 0.26f, 1.00f); // Orange buttons
-    colors[ImGuiCol_ButtonHovered]          = ImVec4(0.90f, 0.48f, 0.30f, 1.00f); 
+    colors[ImGuiCol_ButtonHovered]          = ImVec4(0.90f, 0.48f, 0.30f, 1.00f);
     colors[ImGuiCol_ButtonActive]           = ImVec4(0.75f, 0.35f, 0.20f, 1.00f);
     colors[ImGuiCol_Header]                 = ImVec4(0.85f, 0.43f, 0.26f, 0.50f); // Selection
     colors[ImGuiCol_HeaderHovered]          = ImVec4(0.85f, 0.43f, 0.26f, 0.80f);
@@ -46,6 +47,17 @@ inline void ApplyWin95Theme() {
     colors[ImGuiCol_TabActive]              = ImVec4(0.85f, 0.43f, 0.26f, 1.00f);
     colors[ImGuiCol_TabUnfocused]           = ImVec4(0.90f, 0.89f, 0.85f, 1.00f);
     colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.80f, 0.78f, 0.74f, 1.00f);
+    // Anything not set here keeps ImGui's dark-theme value, which is unreadable
+    // against dark text (table headers were dark grey on dark grey).
+    colors[ImGuiCol_TableHeaderBg]          = ImVec4(0.88f, 0.86f, 0.81f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong]      = ImVec4(0.80f, 0.78f, 0.74f, 1.00f);
+    colors[ImGuiCol_TableBorderLight]       = ImVec4(0.87f, 0.85f, 0.81f, 1.00f);
+    colors[ImGuiCol_TableRowBg]             = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt]          = ImVec4(0.00f, 0.00f, 0.00f, 0.03f);
+    colors[ImGuiCol_TextSelectedBg]         = ImVec4(0.85f, 0.43f, 0.26f, 0.35f);
+    colors[ImGuiCol_NavCursor]              = ImVec4(0.85f, 0.43f, 0.26f, 1.00f);
+    colors[ImGuiCol_DragDropTarget]         = ImVec4(0.85f, 0.43f, 0.26f, 1.00f);
+    colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.20f, 0.18f, 0.15f, 0.35f);
 
     // Rounded/Square aesthetics
     style.WindowRounding    = 8.0f; // Softer corners for modern look
@@ -58,6 +70,20 @@ inline void ApplyWin95Theme() {
     style.WindowBorderSize  = 1.0f;
     style.FrameBorderSize   = 1.0f;
     style.PopupBorderSize   = 1.0f;
+}
+
+/// Matches the node editor to the light theme. Its defaults are a near-black
+/// canvas and node background, on which the theme's dark text disappears.
+/// Call with the editor context current.
+inline void ApplyNodeEditorTheme() {
+    namespace ed = ax::NodeEditor;
+    ed::Style& s = ed::GetStyle();
+    s.Colors[ed::StyleColor_Bg]            = ImColor(229, 225, 214, 255);
+    s.Colors[ed::StyleColor_Grid]          = ImColor(120, 110,  95,  45);
+    s.Colors[ed::StyleColor_NodeBg]        = ImColor(250, 248, 242, 245);
+    s.Colors[ed::StyleColor_NodeBorder]    = ImColor(150, 140, 125, 220);
+    s.Colors[ed::StyleColor_HovNodeBorder] = ImColor(217, 110,  66, 255);
+    s.Colors[ed::StyleColor_SelNodeBorder] = ImColor(217, 110,  66, 255);
 }
 
 } // namespace NovaUI

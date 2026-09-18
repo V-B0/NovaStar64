@@ -4,6 +4,7 @@
  */
 
 #include "PifInterface.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Systiming.hpp"
@@ -12,6 +13,7 @@
 #include "../../common/log.hpp"
 #include "SIInterfaceHandler.hpp"
 #include "../../NovaInput/KeyboardInput.hpp"
+#include "../../NovaInput/GamepadInput.hpp"
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
@@ -266,8 +268,18 @@ void PifRamHandler::pif_control_read()
 {
     if (m_pif_ram[0x3F] == 0x02) return;
 
-    // Poll keyboard and update controller 0 state
+    // Player 1 is the keyboard plus the first game controller. Players 2-4 are
+    // plugged in while a controller is connected for them.
+    auto& gamepads = NovaInput::Gamepads::Instance();
     m_controllers[0] = NovaInput::PollKeyboard();
+    gamepads.Apply(0, m_controllers[0]);
+    for (int player = 1; player < 4; ++player) {
+        PIF::ControllerState pad{};
+        pad.plugged_in = gamepads.Connected(player);
+        if (pad.plugged_in) gamepads.Apply(player, pad);
+        m_controllers[player] = pad;
+    }
+    NovaInput::ApplyScriptedInput(m_controllers[0]);
 
     int channel = 0;
     for (int cur = 0; cur < 0x40; )
@@ -634,6 +646,33 @@ void PifRamHandler::ControllerPak::set_data(const std::vector<uint8_t>& data) {
     std::copy(data.begin(), data.begin() + copy_len, m_data.begin());
 }
 
+bool PifRamHandler::PakPresent(int channel) const {
+    if (channel < 0 || channel >= 4) return false;
+    return NovaInput::Gamepads::Instance().HasRumblePak(channel) || m_controller_paks[channel].is_present();
+}
+
+// Rumble Pak behaviour as in mupen64plus: the pak identifies itself by reading
+// 0x80 in 0x8000-0x8FFF, and a write to 0xC000 turns the motor on (non-zero)
+// or off (zero).
+void PifRamHandler::PakRead(int channel, uint32_t address, uint8_t* data) {
+    if (NovaInput::Gamepads::Instance().HasRumblePak(channel)) {
+        std::fill(data, data + 32, static_cast<uint8_t>((address >= 0x8000 && address < 0x9000) ? 0x80 : 0x00));
+        return;
+    }
+    for (int i = 0; i < 32; i++)
+        m_controller_paks[channel].read(address + i, data[i]);
+}
+
+void PifRamHandler::PakWrite(int channel, uint32_t address, const uint8_t* data) {
+    auto& gamepads = NovaInput::Gamepads::Instance();
+    if (gamepads.HasRumblePak(channel)) {
+        if (address >= 0xC000 && address < 0xD000) gamepads.SetRumble(channel, data[0] != 0);
+        return;
+    }
+    for (int i = 0; i < 32; i++)
+        m_controller_paks[channel].write(address + i, data[i]);
+}
+
 // Controller helpers
 // ============================================================================
 // ReadControllerCommand — called during ControlRead (DMA_READ path)
@@ -658,11 +697,10 @@ void PifRamHandler::ReadControllerCommand(int channel, uint8_t* Command)
     case 0x02: // Read from controller pak
         if (m_controllers[channel].plugged_in)
         {
-            if (m_controller_paks[channel].is_present()) {
+            if (PakPresent(channel)) {
                 uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
                 uint8_t* data = &Command[5];
-                for (int i = 0; i < 32; i++)
-                    m_controller_paks[channel].read(address + i, data[i]);
+                PakRead(channel, address, data);
                 Command[0x25] = calculate_mempak_crc(data);
             } else {
                 // No accessory present — set "no response" error flag
@@ -673,11 +711,10 @@ void PifRamHandler::ReadControllerCommand(int channel, uint8_t* Command)
     case 0x03: // Write controller pak
         if (m_controllers[channel].plugged_in)
         {
-            if (m_controller_paks[channel].is_present()) {
+            if (PakPresent(channel)) {
                 uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
                 uint8_t* data = &Command[5];
-                for (int i = 0; i < 32; i++)
-                    m_controller_paks[channel].write(address + i, data[i]);
+                PakWrite(channel, address, data);
                 Command[0x25] = calculate_mempak_crc(data);
             } else {
                 Command[1] |= 0x80;
@@ -700,12 +737,14 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
     case 0xFF: // Reset and check
         if ((Command[1] & 0x80) != 0)
             break;
+        if (channel > 0 && channel < 4)
+            m_controllers[channel].plugged_in = NovaInput::Gamepads::Instance().Connected(channel);
         if (m_controllers[channel].plugged_in)
         {
             // N64 Controller identifier: 0x0500, status byte
             Command[3] = 0x05;
             Command[4] = 0x00;
-            Command[5] = m_controller_paks[channel].is_present() ? 0x01 : 0x00;
+            Command[5] = PakPresent(channel) ? 0x01 : 0x00;
         }
         else
         {
@@ -724,11 +763,10 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
     case 0x02: // Read from controller pak
         if (m_controllers[channel].plugged_in)
         {
-            if (m_controller_paks[channel].is_present()) {
+            if (PakPresent(channel)) {
                 uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
                 uint8_t* data = &Command[5];
-                for (int i = 0; i < 32; i++)
-                    m_controller_paks[channel].read(address + i, data[i]);
+                PakRead(channel, address, data);
                 Command[0x25] = calculate_mempak_crc(data);
             } else {
                 // No accessory present — set "no response" error flag
@@ -744,11 +782,10 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
     case 0x03: // Write controller pak
         if (m_controllers[channel].plugged_in)
         {
-            if (m_controller_paks[channel].is_present()) {
+            if (PakPresent(channel)) {
                 uint32_t address = (Command[3] << 8) | (Command[4] & 0xE0);
                 uint8_t* data = &Command[5];
-                for (int i = 0; i < 32; i++)
-                    m_controller_paks[channel].write(address + i, data[i]);
+                PakWrite(channel, address, data);
                 Command[0x25] = calculate_mempak_crc(data);
             } else {
                 Command[1] |= 0x80;
@@ -764,4 +801,14 @@ void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command)
         Log::warningf("PIF: Unknown controller command 0x%02X on ch%d", Command[2], channel);
         break;
     }
+}
+
+void PifRamHandler::SerializeState(Nova64::StateArchive& ar) {
+    // Controller Pak contents are save data and stay as they are.
+    ar.Section("PIF ");
+    ar.Value(m_pif_ram);
+    ar.Value(m_cic_state);
+    // The SI DMA completion jitter is derived from this count, so it is timing
+    // state, not just a statistic.
+    ar.Value(m_stats.dma_operations);
 }

@@ -891,16 +891,27 @@ void RDPProcessor::FlushBatch() {
             {
                 float offset0[2] = { call.tileDesc0.GetSL() + call.scrollS0, call.tileDesc0.GetTL() + call.scrollT0 };
                 float offset1[2] = { call.tileDesc1.GetSL() + call.scrollS1, call.tileDesc1.GetTL() + call.scrollT1 };
-                // clamp vec4 = (clampS, clampT, mirrorS, mirrorT)
+                // clamp vec4 = (tile width if S clamps else 0, tile height if T
+                // clamps else 0, mirrorS, mirrorT): the shader clamps texel
+                // coordinates to the tile, like GLideN64's uTexClamp. An axis
+                // clamps when its clamp bit is set or it has no mask (angrylion
+                // clampens = cs || !mask_s), except in COPY mode.
+                const bool copyCycle = ((call.otherModeH >> 20) & 0x03) == 2;
+                auto clampLimit = [copyCycle](const TileDescriptor& td, bool s) -> float {
+                    if (copyCycle) return 0.0f;
+                    const bool clamps = s ? (td.IsClamped_S() || td.maskS == 0)
+                                          : (td.IsClamped_T() || td.maskT == 0);
+                    return clamps ? static_cast<float>(s ? td.GetWidth() : td.GetHeight()) : 0.0f;
+                };
                 float clamp0[4] = {
-                    call.tileDesc0.IsClamped_S() ? 1.0f : 0.0f,
-                    call.tileDesc0.IsClamped_T() ? 1.0f : 0.0f,
+                    clampLimit(call.tileDesc0, true),
+                    clampLimit(call.tileDesc0, false),
                     call.tileDesc0.IsMirrored_S() ? 1.0f : 0.0f,
                     call.tileDesc0.IsMirrored_T() ? 1.0f : 0.0f
                 };
                 float clamp1[4] = {
-                    call.tileDesc1.IsClamped_S() ? 1.0f : 0.0f,
-                    call.tileDesc1.IsClamped_T() ? 1.0f : 0.0f,
+                    clampLimit(call.tileDesc1, true),
+                    clampLimit(call.tileDesc1, false),
                     call.tileDesc1.IsMirrored_S() ? 1.0f : 0.0f,
                     call.tileDesc1.IsMirrored_T() ? 1.0f : 0.0f
                 };
@@ -1516,6 +1527,26 @@ void RDPProcessor::FlushBatch() {
         float gpuScale1[2] = {1.0f, 1.0f};
         int fbMono0 = 0, fbMono1 = 0, fbAlpha0 = 0, fbAlpha1 = 0;
 
+        // A framebuffer bound as a texture holds the whole N64 buffer, not just
+        // the tile that was loaded from it, so it is sampled in buffer texels:
+        // the shader divides the tile coordinate by uTexSize and multiplies by
+        // uGPUScale, so a framebuffer draw gets the buffer's size, a scale of 1,
+        // and a tile offset measured from where the tile's texels start inside
+        // the buffer (GLideN64 keeps that as the framebuffer texture's
+        // offsetS/offsetT). Applied after binding, below.
+        bool  fbSampling0 = false, fbSampling1 = false;
+        float fbOffset0[2]  = {0.0f, 0.0f}, fbOffset1[2]  = {0.0f, 0.0f};
+        float fbTexSize0[2] = {1.0f, 1.0f}, fbTexSize1[2] = {1.0f, 1.0f};
+        auto fbTileOrigin = [](const GPUFramebuffer& fb, uint32_t texAddr, float& s, float& t) {
+            const uint32_t base   = fb.desc.address & 0x7FFFFF;
+            const uint32_t addr   = texAddr & 0x7FFFFF;
+            const uint32_t stride = fb.desc.stride ? fb.desc.stride : fb.desc.width * 2;
+            const uint32_t bpp    = fb.desc.size ? fb.desc.size : 2;
+            const uint32_t delta  = addr > base ? addr - base : 0;
+            s = static_cast<float>((delta % stride) / bpp);
+            t = static_cast<float>(delta / stride);
+        };
+
         auto getGLWrapMode = [](const TileDescriptor& td, bool isS) -> GLenum {
             bool clamp  = isS ? td.IsClamped_S()  : td.IsClamped_T();
             bool mirror = isS ? td.IsMirrored_S() : td.IsMirrored_T();
@@ -1772,9 +1803,22 @@ void RDPProcessor::FlushBatch() {
                     } else if (useVKSnapshot0 && vkSnapshotTex0) {
                         m_renderer->BindTexture(0, vkSnapshotTex0);
                     }
-                    // Set UV scale based on FB dimensions so texcoords map correctly
-                    gpuScale0[0] = 1.0f / static_cast<float>(rtFB0->desc.width);
-                    gpuScale0[1] = 1.0f / static_cast<float>(rtFB0->desc.height);
+                    // Sample in buffer texels (see fbSampling0 above). The old
+                    // 1/width scale on top of the shader's tile-size
+                    // normalisation squeezed every read into the buffer's
+                    // first texels, so each strip of a copied frame repeated
+                    // the same few rows.
+                    {
+                        float originS = 0.0f, originT = 0.0f;
+                        fbTileOrigin(*rtFB0, key0.address, originS, originT);
+                        fbSampling0   = true;
+                        fbOffset0[0]  = call.tileDesc0.GetSL() + call.scrollS0 - originS;
+                        fbOffset0[1]  = call.tileDesc0.GetTL() + call.scrollT0 - originT;
+                        fbTexSize0[0] = static_cast<float>(rtFB0->desc.width);
+                        fbTexSize0[1] = static_cast<float>(rtFB0->desc.height);
+                    }
+                    gpuScale0[0] = 1.0f;
+                    gpuScale0[1] = 1.0f;
                     // FB-as-texture monochrome detection (matches GLideN64 UFrameBufferInfo):
                     //  size==1 (8-bit): mono mode 1 (red channel), fixedAlpha if IM_RD off
                     //  tile IA16: mono mode 2 (weighted luminance)
@@ -1823,7 +1867,13 @@ void RDPProcessor::FlushBatch() {
                             // Force correct per-draw filter mode from otherModeH
                             // texFilter 0/1=point, 2=3-point (shader samples texels manually), 3=bilinear
                             GLenum glFilter = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter);
+                            // A tile chain (G_TL_LOD) is read by explicit level, and GL
+                            // ignores the level unless minification uses mipmaps, so the
+                            // LOD path only ever saw the base tile.
+                            GLenum glMinFilter = glFilter;
+                            if (mipCount > 0)
+                                glMinFilter = (texFilter == 3) ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glMinFilter);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter);
                         }
                         gpuScale0[0] = cached0->scaleS;
@@ -1984,9 +2034,18 @@ void RDPProcessor::FlushBatch() {
                     } else if (useVKSnapshot1 && vkSnapshotTex1) {
                         m_renderer->BindTexture(1, vkSnapshotTex1);
                     }
-                    // Set UV scale based on FB dimensions so texcoords map correctly
-                    gpuScale1[0] = 1.0f / static_cast<float>(rtFB1->desc.width);
-                    gpuScale1[1] = 1.0f / static_cast<float>(rtFB1->desc.height);
+                    // Sample in buffer texels -- see fbSampling0 above.
+                    {
+                        float originS = 0.0f, originT = 0.0f;
+                        fbTileOrigin(*rtFB1, key1.address, originS, originT);
+                        fbSampling1   = true;
+                        fbOffset1[0]  = call.tileDesc1.GetSL() + call.scrollS1 - originS;
+                        fbOffset1[1]  = call.tileDesc1.GetTL() + call.scrollT1 - originT;
+                        fbTexSize1[0] = static_cast<float>(rtFB1->desc.width);
+                        fbTexSize1[1] = static_cast<float>(rtFB1->desc.height);
+                    }
+                    gpuScale1[0] = 1.0f;
+                    gpuScale1[1] = 1.0f;
                     if (rtFB1->desc.size == 1) {
                         fbMono1 = 1;
                         if ((call.otherModeL & 0x40) == 0) fbAlpha1 = 1;
@@ -2038,6 +2097,22 @@ void RDPProcessor::FlushBatch() {
                     }
                 }
             }
+        }
+        if (fbSampling0 || fbSampling1) {
+            m_shaderManager->SetTextureUniforms(0, 1, nullptr, nullptr,
+                                                fbSampling0 ? fbTexSize0 : nullptr,
+                                                fbSampling1 ? fbTexSize1 : nullptr,
+                                                nullptr, nullptr);
+            // A framebuffer is read without the tile's clamp, wrap or mirror,
+            // as in GLideN64.
+            static const float kNoClamp[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            static const float kNoMask[2]  = {0.0f, 0.0f};
+            m_shaderManager->SetTextureTileParams(fbSampling0 ? fbOffset0 : nullptr,
+                                                  fbSampling1 ? fbOffset1 : nullptr,
+                                                  fbSampling0 ? kNoClamp : nullptr,
+                                                  fbSampling1 ? kNoClamp : nullptr,
+                                                  fbSampling0 ? kNoMask : nullptr,
+                                                  fbSampling1 ? kNoMask : nullptr);
         }
         m_shaderManager->SetGPUScale(gpuScale0, gpuScale1);
         m_shaderManager->SetFBTextureParams(fbMono0, fbMono1, fbAlpha0, fbAlpha1);

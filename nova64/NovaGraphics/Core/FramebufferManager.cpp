@@ -1233,13 +1233,13 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     int32_t vpX = 0, vpY = 0;
     uint32_t vpW = screenWidth, vpH = screenHeight;
 
-    if (m_widescreenStretch) {
-        // Widescreen hack: fill the entire window — the projection matrix
-        // already squished the content horizontally, so stretching restores
-        // correct proportions with the wider FOV.
+    if (m_outputAspect <= 0.0f || screenHeight == 0) {
         vpX = 0; vpY = 0; vpW = screenWidth; vpH = screenHeight;
     } else {
-        float srcAspect = static_cast<float>(displayFB->width) / static_cast<float>(displayFB->height);
+        // Box to the output shape, not the framebuffer's pixel ratio: the N64
+        // shows every framebuffer at 4:3 (PAL games draw 320x288, and a
+        // widescreen hack still wants 16:9 rather than the window's shape).
+        float srcAspect = m_outputAspect;
         float dstAspect = static_cast<float>(screenWidth) / static_cast<float>(screenHeight);
 
         if (srcAspect > dstAspect) {

@@ -171,16 +171,17 @@ void GLRenderer::SetBlendState(const BlendState& state) {
         );
         glBlendColor(state.blendColor[0], state.blendColor[1],
                       state.blendColor[2], state.blendColor[3]);
-        glColorMask(
-            (state.colorWriteMask & 0x01) ? GL_TRUE : GL_FALSE,
-            (state.colorWriteMask & 0x02) ? GL_TRUE : GL_FALSE,
-            (state.colorWriteMask & 0x04) ? GL_TRUE : GL_FALSE,
-            (state.colorWriteMask & 0x08) ? GL_TRUE : GL_FALSE
-        );
     } else {
         glDisable(GL_BLEND);
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     }
+    // The write mask applies whether or not blending is on (Vulkan's pipeline
+    // uses it either way); it used to be forced to all channels without blending.
+    glColorMask(
+        (state.colorWriteMask & 0x01) ? GL_TRUE : GL_FALSE,
+        (state.colorWriteMask & 0x02) ? GL_TRUE : GL_FALSE,
+        (state.colorWriteMask & 0x04) ? GL_TRUE : GL_FALSE,
+        (state.colorWriteMask & 0x08) ? GL_TRUE : GL_FALSE
+    );
     m_stats.stateChanges++;
 }
 
@@ -536,13 +537,16 @@ void GLRenderer::QueryCapabilities() {
             "}\n";
         GLuint sh = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(sh, 1, &testSrc, nullptr);
-        // Suppress debug output during probe — expected to fail on some drivers
+        // Suppress debug output during probe — expected to fail on some drivers.
+        // Restore what was there: release builds never turn debug output on,
+        // and enabling it without a callback only slows the driver down.
+        const GLboolean debugOutputWasOn = glIsEnabled(GL_DEBUG_OUTPUT);
         glDisable(GL_DEBUG_OUTPUT);
         glCompileShader(sh);
         GLint ok = 0;
         glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
         glDeleteShader(sh);
-        glEnable(GL_DEBUG_OUTPUT);
+        if (debugOutputWasOn) glEnable(GL_DEBUG_OUTPUT);
         m_caps.supportsFragmentShaderInterlock = (ok == GL_TRUE);
     }
 }

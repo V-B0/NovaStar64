@@ -14,7 +14,7 @@
 
 
 // Forward declarations
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 class CPlugins;
 class CRegisters;
 namespace N64System { class SystemTimer; }
@@ -287,6 +287,8 @@ public:
     void reset();
     void save_state(std::ostream& os) const;
     void load_state(std::istream& is);
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
     
     // Video information
     [[nodiscard]] VideoMode get_current_video_mode() const;

@@ -6,6 +6,7 @@
  *            } // namespace Nova64::Video
  */
 #pragma once
+#include <limits>
 
 #include "RDPProcessor.hpp"
 #include "RDPUtils.hpp"
@@ -68,12 +69,24 @@ static bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool
     return ((rdramAddress - fb->desc.address) % fb->desc.stride) == 0;
 }
 
+// NOVA64_MM_RDP_TRACE=1 logs RDP commands; NOVA64_MM_RDP_TRACE_FROM / _TO limit
+// it to a range of VI frames, since tracing a whole run is far too slow.
 static bool TraceMMRdpEnabled() {
     static const bool enabled = []() {
         const char* value = std::getenv("NOVA64_MM_RDP_TRACE");
         return value && value[0] != '\0' && value[0] != '0';
     }();
-    return enabled;
+    if (!enabled) return false;
+    static const long from = []() {
+        const char* v = std::getenv("NOVA64_MM_RDP_TRACE_FROM");
+        return v ? std::strtol(v, nullptr, 10) : 0L;
+    }();
+    static const long to = []() {
+        const char* v = std::getenv("NOVA64_MM_RDP_TRACE_TO");
+        return v ? std::strtol(v, nullptr, 10) : std::numeric_limits<long>::max();
+    }();
+    const long frame = g_presentIndex.load(std::memory_order_relaxed);
+    return frame >= from && frame <= to;
 }
 
 #define MM_RDP_TRACE(fmt, ...)                                                   \

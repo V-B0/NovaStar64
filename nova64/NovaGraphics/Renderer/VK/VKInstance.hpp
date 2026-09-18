@@ -21,9 +21,14 @@ public:
 
     /// Pick a discrete GPU (preferred) or first available physical device that
     /// supports graphics+present on the given surface and the swapchain extension.
+    /// With no surface (offscreen rendering) only graphics is required.
     bool PickPhysicalDevice(VkSurfaceKHR surface,
                             uint32_t& outGraphicsFamily,
                             uint32_t& outPresentFamily);
+
+    /// Whether the loader offers an instance extension. volk must already be
+    /// initialized, which IsVulkanAvailable() does.
+    static bool HasInstanceExtension(const char* name);
 
     VkInstance       Get()         const { return m_instance; }
     VkPhysicalDevice GetPhysical() const { return m_physical; }

@@ -146,6 +146,69 @@ bool VKSwapchain::Create(VkPhysicalDevice physical,
     return true;
 }
 
+bool VKSwapchain::CreateOffscreen(VkPhysicalDevice physical,
+                                  VkDevice         device,
+                                  uint32_t         width,
+                                  uint32_t         height,
+                                  uint32_t         imageCount) {
+    m_offscreen = true;
+    m_format    = VK_FORMAT_B8G8R8A8_UNORM;
+    m_extent    = { width, height };
+    if (width == 0 || height == 0 || imageCount == 0) return false;
+
+    m_images.assign(imageCount, VK_NULL_HANDLE);
+    m_imageMemory.assign(imageCount, VK_NULL_HANDLE);
+    m_imageViews.assign(imageCount, VK_NULL_HANDLE);
+    for (uint32_t i = 0; i < imageCount; ++i) {
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType     = VK_IMAGE_TYPE_2D;
+        ici.format        = m_format;
+        ici.extent        = { width, height, 1 };
+        ici.mipLevels     = 1;
+        ici.arrayLayers   = 1;
+        ici.samples       = VK_SAMPLE_COUNT_1_BIT;
+        ici.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        // Same usage as the swapchain images in Create().
+        ici.usage         = VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                          | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                          | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        ici.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VK_CHECK(vkCreateImage(device, &ici, nullptr, &m_images[i]));
+
+        VkMemoryRequirements req{};
+        vkGetImageMemoryRequirements(device, m_images[i], &req);
+        const uint32_t typeIdx = FindMemoryType(physical, req.memoryTypeBits,
+                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (typeIdx == UINT32_MAX) {
+            Logger::Error("VKSwapchain: no suitable memory type for offscreen image");
+            return false;
+        }
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize  = req.size;
+        mai.memoryTypeIndex = typeIdx;
+        VK_CHECK(vkAllocateMemory(device, &mai, nullptr, &m_imageMemory[i]));
+        VK_CHECK(vkBindImageMemory(device, m_images[i], m_imageMemory[i], 0));
+
+        VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        ivci.image    = m_images[i];
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        ivci.format   = m_format;
+        ivci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        ivci.subresourceRange.levelCount = 1;
+        ivci.subresourceRange.layerCount = 1;
+        VK_CHECK(vkCreateImageView(device, &ivci, nullptr, &m_imageViews[i]));
+    }
+
+    if (!CreateDepthBuffer(physical, device)) return false;
+    if (!CreateRenderPass(device)) return false;
+    if (!CreateRenderPassLoad(device)) return false;
+    if (!CreateFramebuffers(device)) return false;
+
+    Logger::Info("VKSwapchain: created offscreen targets {}x{}, images={}", width, height, imageCount);
+    return true;
+}
+
 void VKSwapchain::Destroy(VkDevice device) {
     for (auto fb : m_framebuffers) {
         if (fb) vkDestroyFramebuffer(device, fb, nullptr);
@@ -167,6 +230,16 @@ void VKSwapchain::Destroy(VkDevice device) {
         if (v) vkDestroyImageView(device, v, nullptr);
     }
     m_imageViews.clear();
+    // Swapchain images belong to the swapchain; offscreen ones are ours.
+    if (m_offscreen) {
+        for (auto img : m_images) {
+            if (img) vkDestroyImage(device, img, nullptr);
+        }
+    }
+    for (auto mem : m_imageMemory) {
+        if (mem) vkFreeMemory(device, mem, nullptr);
+    }
+    m_imageMemory.clear();
     m_images.clear();
     if (m_swapchain) {
         vkDestroySwapchainKHR(device, m_swapchain, nullptr);
@@ -183,6 +256,11 @@ bool VKSwapchain::Recreate(VkPhysicalDevice physical,
                            uint32_t         desiredHeight,
                            bool             vsync) {
     vkDeviceWaitIdle(device);
+    if (m_offscreen) {
+        const uint32_t count = std::max<uint32_t>(1, static_cast<uint32_t>(m_images.size()));
+        Destroy(device);
+        return CreateOffscreen(physical, device, desiredWidth, desiredHeight, count);
+    }
     Destroy(device);
     return Create(physical, device, surface, graphicsFamily, presentFamily,
                   desiredWidth, desiredHeight, vsync);

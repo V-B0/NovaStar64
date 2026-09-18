@@ -733,18 +733,20 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         // Depth buffer range: conservative upper bound (width � width � 1.5).
         uint32_t zbRange  = fbWidth * fbWidth * 3 / 2;
 
-        if (texSize == 2 && zbAddr != 0 &&
-            texAddr >= zbAddr && texAddr < zbAddr + zbRange) {
-
-            // texturedRectDepthBufferCopy: 1-pixel-high rect that copies a
-            // scanline of depth data from TMEM back to RDRAM.  The GPU has
-            // nothing to render � skip the draw entirely.
-            if (rect.y0 == 0.0f && rect.y1 <= 1.0f) {
-                return;
-            }
-
-            // texturedRectShadowMap: depth buffer read for shadow overlay.
-            // Mark as shadow map so FlushBatch uses the depth-fog shader.
+        const bool readsDepthBuffer = texSize == 2 && zbAddr != 0 &&
+                                      texAddr >= zbAddr && texAddr < zbAddr + zbRange;
+        // Only the games GLideN64 applies these to (see m_hacks). Other games
+        // put ordinary pictures there: Majora's Mask stores its pause backdrop
+        // at the depth buffer's address, and treating those strips as a
+        // shadow map replaced the picture with a depth-fog overlay.
+        if (readsDepthBuffer && m_hacks.texRectDepthBufferCopy &&
+            rect.y0 == 0.0f && rect.y1 <= 1.0f) {
+            // texturedRectDepthBufferCopy: a 1-row copy of depth data from
+            // TMEM back to RDRAM. The GPU has nothing to render.
+            return;
+        }
+        // texturedRectShadowMap: depth read drawn as a fog-coloured shadow.
+        if (readsDepthBuffer && m_hacks.texRectShadowMap) {
             shadowMapRect = true;
         }
     }

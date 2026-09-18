@@ -18,7 +18,7 @@
 
 // Forward declarations
 class CRegisters;
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 
 // SP Register Addresses (relative to 0x04040000)
 namespace SPRegAddr {
@@ -130,6 +130,9 @@ public:
 
     uint8_t * Imem() { return &m_IMEM[0]; }
     uint8_t * Dmem() { return &m_DMEM[0]; }
+
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
     void SetRDRAM(uint8_t* rdram, uint32_t size) {
         m_RDRAM = rdram;

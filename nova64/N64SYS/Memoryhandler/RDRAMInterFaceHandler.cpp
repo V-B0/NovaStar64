@@ -3,6 +3,7 @@
  * @brief RDRAM Inter Face Handler implementation.
  */
 #include "RDRAMInterFaceHandler.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../../common/log.hpp"
@@ -172,4 +173,10 @@ RDRAM::Register RDRAMInterfaceHandler::address_to_register(uint32_t address) con
         case 0x1C: return RDRAM::Register::WERROR;
         default:   return RDRAM::Register::MODE;
     }
+}
+
+void RDRAMInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("RI  ");
+    ar.Value(m_register_data);
+    ar.Value(m_initialized);
 }

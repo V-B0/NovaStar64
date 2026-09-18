@@ -31,20 +31,18 @@ namespace N64Button {
 }
 
 /**
- * @brief Poll the SDL keyboard state and return the N64 controller state
- *        for player 1 using the built-in key mapping.
- *
- * Key mapping:
- *   A         = X
- *   B         = Y or Z (keyboard)
- *   Start     = Enter/Return
- *   Z trigger = C
- *   L bumper  = Left Shift
- *   R bumper  = Right Shift
- *   Analog    = W/A/S/D (digital, +/-80 magnitude)
- *   D-Pad     = T/F/G/H
- *   C-buttons = Arrow keys
+ * @brief Poll the SDL keyboard state and return the N64 controller state for
+ *        player 1, using the bindings in settings/keybindings.ini (defaults in
+ *        KeyBindings.cpp). The analog stick is digital, at +/-80 magnitude.
  */
 PIF::ControllerState PollKeyboard();
+
+/**
+ * @brief Debug-only scripted input for unattended runs. With NOVA64_AUTOINPUT
+ *        (SM64-style menu masher) or NOVA64_AUTOINPUT_MM (walk, open the pause
+ *        menu, cycle pages) set, replaces player 1's state; otherwise leaves it.
+ *        The counter advances once per controller read.
+ */
+void ApplyScriptedInput(PIF::ControllerState& state);
 
 } // namespace NovaInput

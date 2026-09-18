@@ -494,7 +494,8 @@ private:
     std::string GenerateFogCode(uint64_t features) const;
     std::string GenerateNoiseCode(uint64_t features) const;
     std::string GenerateTextureSampleCode(uint64_t features) const;
-    std::string GenerateN64TexFilterCode() const; // 3-point filter
+    std::string GenerateN64TexFilterCode() const;
+    std::string GenerateN64TexelReadCode() const; // 3-point filter
     std::string GenerateDepthCompareCode(uint64_t features) const;
     std::string GenerateDepthRenderCode(uint64_t features) const;
     std::string GeneratePrimDepthCode(uint64_t features) const;

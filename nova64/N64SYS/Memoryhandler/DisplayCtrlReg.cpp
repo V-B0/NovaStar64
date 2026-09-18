@@ -9,6 +9,7 @@
  */
 
 #include "DisplayCtrlReg.hpp"
+#include "../StateArchive.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../Plugins/GFXPlugin.hpp"
 #include "../../common/log.hpp"
@@ -367,4 +368,13 @@ void DisplayProcessorHandler::Reset()
     m_ProcessingDList = false;
     m_DListStart = 0;
     m_DListEnd = 0;
+}
+
+void DisplayProcessorHandler::SerializeState(Nova64::StateArchive& ar) {
+    // The DPC registers themselves live in CRegisters.
+    ar.Section("DPC ");
+    ar.Value(m_ProcessingDList);
+    ar.Value(m_pendingPipelineClear);
+    ar.Value(m_DListStart);
+    ar.Value(m_DListEnd);
 }

@@ -15,7 +15,7 @@
 
 // Forward declarations
 class CN64System;
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 class CRegisters;
 
 namespace PIF {
@@ -117,6 +117,8 @@ public:
     void set_cic_type(PIF::CicType type) { m_cic_type = type; m_config.cic_type = type; }
     void save_state(std::ostream& os) const;
     void load_state(std::istream& is);
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
     
     // Controller management
     void set_controller_state(size_t port, const PIF::ControllerState& state);
@@ -206,6 +208,12 @@ private:
     // Controller command handlers  (P64-style, pointer to TX byte)
     void ReadControllerCommand(int channel, uint8_t* Command);
     void ProcessControllerCommand(int channel, uint8_t* Command);
+
+    // The accessory in a controller's slot: a Rumble Pak when the controller
+    // settings give that player one, otherwise the Controller Pak if present.
+    [[nodiscard]] bool PakPresent(int channel) const;
+    void PakRead(int channel, uint32_t address, uint8_t* data);
+    void PakWrite(int channel, uint32_t address, const uint8_t* data);
 
     // Legacy / unused — kept for compile compat
     void process_controller_command(size_t port, Common::Span<uint8_t> command);

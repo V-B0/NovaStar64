@@ -1131,6 +1131,9 @@ std::string ShaderGenerator::GenerateNoiseCode(uint64_t features) const {
 
 std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const {
     std::string code;
+    // Per-draw N64 texture filter: 0 = point, 1 = bilinear, 2 = 3-point.
+    const std::string texFilterMode = (features & SF_TEXTURE_3POINT) ? "2"
+                                    : ((features & SF_TEXTURE_BILINEAR) ? "1" : "0");
     if (features & SF_TEXTURE_0) {
         // Perspective-correct texture coordinates: divide by vClipW (1/W)
         // to recover screen-space texels.  The vertex setup pre-multiplied
@@ -1193,8 +1196,13 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         if (features & SF_TEXTURE_LOD) {
             // ── Mipmap tile ladder: compute LOD then sample with explicit level ──
             code += "    {\n";
-            code += "        vec2 dSDX = dFdx(tc0 * uTexSize0) * uScreenScale;\n";
-            code += "        vec2 dSDY = dFdy(tc0 * uTexSize0) * uScreenScale;\n";
+            // tc0 is already in texels, so its screen-space derivative is the
+            // LOD directly (GLideN64: dFdx(vLodTexCoord) * uScreenScale;
+            // angrylion's tclod uses the unshifted s/t). Multiplying by the
+            // texture size first picked mip levels far too coarse, smearing
+            // every LOD texture.
+            code += "        vec2 dSDX = dFdx(tc0) * uScreenScale;\n";
+            code += "        vec2 dSDY = dFdy(tc0) * uScreenScale;\n";
             code += "        float lodMag = max(max(abs(dSDX.x), abs(dSDX.y)), max(abs(dSDY.x), abs(dSDY.y)));\n";
             code += "        int max_tile = min(uTextureDetail != 2 ? 7 : 6, uMaxTile);\n";
             code += "        float min_lod = uTextureDetail != 0 ? uMinLod : 1.0;\n";
@@ -1210,12 +1218,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             // Detail mode: shift tile indices so texel0=lod_tile+1, texel1=lod_tile+2
             code += "    int sample_tile = (uTextureDetail == 2 && lod_tile >= 0) ? lod_tile + 1 : lod_tile;\n";
             code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, float(min(sample_tile, uMaxTile)));\n";
-        } else if (features & SF_TEXTURE_3POINT)
-            code += "    vec4 texel0 = n64Filter3Point(uTexture0, uv0, uTexSize0, uGPUScale0);\n";
-        else if (features & SF_TEXTURE_BILINEAR)
-            code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, 0.0);\n"; // GL bilinear, level 0 only
-        else
-            code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, 0.0);\n";
+        } else {
+            // Texel addressing and filtering done here rather than by the
+            // sampler, so both renderers match: see GenerateN64TexelReadCode.
+            code += "    vec4 texel0 = n64ReadTexture(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0, uGPUScale0, " + texFilterMode + ");\n";
+        }
         // FB monochrome/fixedAlpha for tile 0 — when texture comes from a framebuffer
         code += "    if (uFbMonochrome0 == 1) texel0 = vec4(texel0.r);\n";
         code += "    else if (uFbMonochrome0 == 2) texel0.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel0.rgb));\n";
@@ -1278,10 +1285,7 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "        }\n";
             code += "      }\n";
             code += "    }\n";
-            if (features & SF_TEXTURE_3POINT)
-                code += "    vec4 texel1 = n64Filter3Point(uTexture1, uv1, uTexSize1, uGPUScale1);\n";
-            else
-                code += "    vec4 texel1 = textureLod(uTexture1, uv1 * uGPUScale1, 0.0);\n";
+            code += "    vec4 texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, uGPUScale1, " + texFilterMode + ");\n";
             // FB monochrome/fixedAlpha for tile 1
             code += "    if (uFbMonochrome1 == 1) texel1 = vec4(texel1.r);\n";
             code += "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
@@ -1333,6 +1337,68 @@ vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
 // is a depth value.  Write it to the Z-image and set gl_FragDepth so the GL
 // depth buffer also receives the value.
 // ═══════════════════════════════════════════════════════════════════════════════
+
+std::string ShaderGenerator::GenerateN64TexelReadCode() const {
+    // How the RDP addresses texels, as GLideN64's accurate texture engine and
+    // angrylion-rdp do it: in texel units, clamp to the tile (SH - SL), then
+    // mirror or wrap by the mask, separately for every texel the filter reads,
+    // and filter with texel centres on whole coordinates. Sampling after the
+    // wrap with the GPU sampler instead put seams at every wrap and mirror
+    // edge, used the sampler's filter rather than the draw's (Vulkan keeps one
+    // sampler per texture), and shifted filtered textures by half a texel.
+    // uTexClamp: xy = tile width/height when that axis clamps (0 = no clamp),
+    // zw = mirror flags. Wraps avoid mod(), which is fmod() in the HLSL dialect.
+    return R"(
+vec2 n64WrapTexel(vec2 c, vec4 clampMirror, vec2 maskBits) {
+    vec2 r = c;
+    if (clampMirror.x > 0.0) r.x = clamp(r.x, 0.0, clampMirror.x - 1.0);
+    if (clampMirror.y > 0.0) r.y = clamp(r.y, 0.0, clampMirror.y - 1.0);
+    if (maskBits.x > 0.0) {
+        float p = pow(2.0, maskBits.x);
+        if (clampMirror.z > 0.0) {
+            float m = r.x - 2.0 * p * floor(r.x / (2.0 * p));
+            r.x = (m >= p) ? (2.0 * p - 1.0 - m) : m;
+        } else {
+            r.x = r.x - p * floor(r.x / p);
+        }
+    }
+    if (maskBits.y > 0.0) {
+        float p = pow(2.0, maskBits.y);
+        if (clampMirror.w > 0.0) {
+            float m = r.y - 2.0 * p * floor(r.y / (2.0 * p));
+            r.y = (m >= p) ? (2.0 * p - 1.0 - m) : m;
+        } else {
+            r.y = r.y - p * floor(r.y / p);
+        }
+    }
+    return r;
+}
+
+vec4 n64FetchTexel(sampler2D tex, vec2 c, vec2 size, vec2 gpuScale) {
+    vec2 s = max(size, vec2(1.0, 1.0));
+    vec2 w = c - s * floor(c / s);   // axes with no clamp or mask repeat
+    return textureLod(tex, (floor(w) + 0.5) / s * gpuScale, 0.0);
+}
+
+vec4 n64ReadTexture(sampler2D tex, vec2 tileCoord, vec2 size, vec4 clampMirror,
+                    vec2 maskBits, vec2 gpuScale, int filterMode) {
+    vec2 base = floor(tileCoord);
+    if (filterMode == 0)
+        return n64FetchTexel(tex, n64WrapTexel(base, clampMirror, maskBits), size, gpuScale);
+    vec2 f = tileCoord - base;
+    vec4 c00 = n64FetchTexel(tex, n64WrapTexel(base, clampMirror, maskBits), size, gpuScale);
+    vec4 c10 = n64FetchTexel(tex, n64WrapTexel(base + vec2(1.0, 0.0), clampMirror, maskBits), size, gpuScale);
+    vec4 c01 = n64FetchTexel(tex, n64WrapTexel(base + vec2(0.0, 1.0), clampMirror, maskBits), size, gpuScale);
+    vec4 c11 = n64FetchTexel(tex, n64WrapTexel(base + vec2(1.0, 1.0), clampMirror, maskBits), size, gpuScale);
+    if (filterMode == 2) {
+        vec4 lower = c00 + f.x * (c10 - c00) + f.y * (c01 - c00);
+        vec4 upper = c11 + (1.0 - f.x) * (c01 - c11) + (1.0 - f.y) * (c10 - c11);
+        return mix(lower, upper, step(1.0, f.x + f.y));
+    }
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+)";
+}
 
 std::string ShaderGenerator::GenerateDepthRenderCode(uint64_t features) const {
     if (!(features & SF_DEPTH_RENDER)) return "";
@@ -1772,6 +1838,8 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         }
         if (f & SF_TEXTURE_3POINT)
             fragHeader += GenerateN64TexFilterCode();
+        if (f & (SF_TEXTURE_0 | SF_TEXTURE_1))
+            fragHeader += GenerateN64TexelReadCode();
         tmpl.fragmentHeader = std::move(fragHeader);
 
         std::string frag;
@@ -1931,6 +1999,8 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     }
     if (f & SF_TEXTURE_3POINT)
         tmpl.fragmentHeader += GenerateN64TexFilterCode();
+    if (f & (SF_TEXTURE_0 | SF_TEXTURE_1))
+        tmpl.fragmentHeader += GenerateN64TexelReadCode();
 
     // ── fragment body ────────────────────────────────────────────────────
     std::string frag;
@@ -2098,6 +2168,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
         }
         if (key.features & SF_TEXTURE_3POINT)
             src += GenerateN64TexFilterCode();
+        if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1))
+            src += GenerateN64TexelReadCode();
         src += "PSOutput main(PSInput input) {\n";
         src += "    float4 vColor = input.vColor;\n";
         src += "    float4 vColorNP = input.vColorNP;\n";
@@ -2187,6 +2259,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     }
     if (key.features & SF_TEXTURE_3POINT)
         src += GenerateN64TexFilterCode();
+    if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1))
+        src += GenerateN64TexelReadCode();
     src += "void main() {\n";
     // Declare texel0 default before GenerateDetailSharpenCode which may use it
     if (!(key.features & SF_TEXTURE_0)) src += "    vec4 texel0 = vec4(0.0, 0.0, 0.0, 1.0);\n";

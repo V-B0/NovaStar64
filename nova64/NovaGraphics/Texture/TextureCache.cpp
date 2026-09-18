@@ -346,15 +346,13 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // filtering on N64 textures with undefined RGB at alpha=0 texels.
     BleedAlphaEdges(pixels.data(), key.width, key.height);
 
-    // Calculate GPU texture dimensions (may round up to power of 2)
+    // The GPU texture is exactly the tile's size, as in GLideN64. Rounding up
+    // to a power of two left a transparent margin past the tile that repeat
+    // wrapping, bilinear/3-point filtering and generated mip levels all
+    // sampled: gaps in tiled surfaces, dark seams at texture edges, and
+    // surfaces fading at a distance. Vulkan and GL 4.6 mipmap any size.
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;
-
-    // Some GPUs prefer power-of-2 textures for mipmapping
-    if (m_config.enableMipmaps) {
-        gpuWidth = NextPow2(key.width);
-        gpuHeight = NextPow2(key.height);
-    }
 
     // Create GPU texture
     TextureDesc desc;
@@ -495,12 +493,9 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // palette) -- garbage/smeared columns and rows at texture edges.
     ApplyDecodeClamp(key, pixels);
 
+    // Exactly the tile's size -- see the note in the other upload path.
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;
-    if (m_config.enableMipmaps) {
-        gpuWidth = NextPow2(key.width);
-        gpuHeight = NextPow2(key.height);
-    }
 
     // Determine actual mip level count: base + mipCount additional levels,
     // clamped to what the (post-pow2) base dimensions can actually support.

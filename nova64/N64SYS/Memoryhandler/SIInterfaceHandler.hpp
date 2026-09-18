@@ -14,7 +14,7 @@
 
 
 class PifRamHandler;
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 class CRegisters;
 class Logger;
 
@@ -187,6 +187,8 @@ public:
     // Control
     [[nodiscard]] bool is_dma_active() const { return m_dma_state.active; }
     void force_dma_completion();
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
 private:
     

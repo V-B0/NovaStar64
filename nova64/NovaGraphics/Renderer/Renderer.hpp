@@ -694,6 +694,11 @@ public:
     /// display-ready buffer). Vulkan presents THAT buffer's canvas rather
     /// than the one still being drawn. GL no-op.
     virtual void SetPresentOrigin(uint32_t n64Addr) { (void)n64Addr; }
+    /// Width / height of the picture in the window: 4:3 for the N64's video
+    /// output, 16:9 with the widescreen settings, 0 to fill the window. The
+    /// window-presenting Vulkan path boxes the frame to it; GL does the same
+    /// in FramebufferManager::BlitToScreen.
+    virtual void SetOutputAspect(float aspect) { (void)aspect; }
     /// Like BlitToTexture but restarts the render pass with LOAD_OP_LOAD instead
     /// of LOAD_OP_CLEAR, preserving existing swapchain content.
     virtual void SnapshotToTexture(ITexture* dst) { (void)dst; }

@@ -1,151 +1,188 @@
 /**
  * @file HexEditor.cpp
- * @brief ImGui memory hex editor widget implementation.
+ * @brief Read-only ImGui memory viewer implementation.
  */
 #include "HexEditor.hpp"
+
 #include <imgui.h>
-#include <vector>
-#include <cstdio>
-#include <cstring>
-#include <cctype>
+
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
 
 namespace NovaUI {
 
-void HexEditor::Render(const char* label, uint8_t* mem, size_t size, uint32_t baseAddr) {
+namespace {
+
+uint8_t ByteAt(const uint8_t* mem, size_t size, size_t i, bool wordSwapped) {
+    // Within a host-order word, big-endian byte n lives at host offset n ^ 3.
+    if (wordSwapped && (i | 3) < size) return mem[i ^ 3];
+    return mem[i];
+}
+
+bool ParseHexBytes(const char* text, std::vector<uint8_t>& out, std::string& bad) {
+    out.clear();
+    const char* p = text;
+    while (*p) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+        const char* start = p;
+        while (*p && *p != ' ') ++p;
+        std::string token(start, p);
+        if (token.size() > 2 ||
+            !std::all_of(token.begin(), token.end(), [](unsigned char c) { return std::isxdigit(c); })) {
+            bad = token;
+            return false;
+        }
+        out.push_back(static_cast<uint8_t>(std::strtoul(token.c_str(), nullptr, 16)));
+    }
+    return true;
+}
+
+} // namespace
+
+void HexEditor::Render(const uint8_t* mem, size_t size, uint32_t baseAddr, bool wordSwapped) {
     if (!mem || size == 0) {
         ImGui::TextDisabled("No memory available.");
         return;
     }
+    m_cursor = std::min(m_cursor, size - 1);
 
-    DrawToolbar(mem, size, baseAddr);
+    DrawToolbar(mem, size, baseAddr, wordSwapped);
     ImGui::Separator();
-    DrawRows(mem, size, baseAddr);
+
+    // Only the rows scroll; the toolbar stays in view.
+    ImGui::BeginChild("##hexrows", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    DrawRows(mem, size, baseAddr, wordSwapped);
+    ImGui::EndChild();
 }
 
-void HexEditor::DrawToolbar(uint8_t* mem, size_t size, uint32_t baseAddr) {
-    // -- Go To Address --
-    ImGui::SetNextItemWidth(120);
-    if (ImGui::InputText("##goto", m_gotoInput, sizeof(m_gotoInput),
-                         ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
-        uint32_t addr = 0;
-        sscanf(m_gotoInput, "%x", &addr);
-        if (addr >= baseAddr && (addr - baseAddr) < (uint32_t)size)
-            m_cursorByte = addr - baseAddr;
-    }
+void HexEditor::DrawToolbar(const uint8_t* mem, size_t size, uint32_t baseAddr, bool wordSwapped) {
+    ImGui::SetNextItemWidth(110);
+    const bool gotoEntered = ImGui::InputTextWithHint("##goto", "80000000", m_gotoInput, sizeof(m_gotoInput),
+        ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    ImGui::TextDisabled("Go To (hex addr)");
+    if (ImGui::Button("Go to") || gotoEntered) {
+        const unsigned long addr = std::strtoul(m_gotoInput, nullptr, 16);
+        // Accept either an absolute address or an offset into the region.
+        size_t offset = SIZE_MAX;
+        if (addr >= baseAddr && addr - baseAddr < size) offset = addr - baseAddr;
+        else if (addr < size)                           offset = addr;
+        if (offset != SIZE_MAX) {
+            m_cursor = offset;
+            m_scrollToCursor = true;
+            m_status.clear();
+        } else {
+            m_status = "Address is outside this memory region.";
+        }
+    }
 
     ImGui::SameLine(0, 20);
-
-    // -- Search bytes --
-    ImGui::SetNextItemWidth(160);
-    ImGui::InputText("##search", m_searchBuf, sizeof(m_searchBuf));
+    ImGui::SetNextItemWidth(170);
+    const bool findEntered = ImGui::InputTextWithHint("##find", "bytes, e.g. 3C 1A 80", m_searchInput,
+        sizeof(m_searchInput), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    if (ImGui::Button("Find")) {
-        // Parse space-separated hex bytes
+    if (ImGui::Button("Find next") || findEntered) {
         std::vector<uint8_t> pattern;
-        char* p = m_searchBuf;
-        while (*p) {
-            while (*p == ' ') ++p;
-            if (!*p) break;
-            uint32_t b = 0;
-            sscanf(p, "%2x", &b);
-            pattern.push_back((uint8_t)b);
-            while (*p && *p != ' ') ++p;
-        }
-        if (!pattern.empty()) {
-            auto it = std::search(mem, mem + size, pattern.begin(), pattern.end());
-            m_searchHit = (it != mem + size) ? (size_t)(it - mem) : SIZE_MAX;
-            if (m_searchHit != SIZE_MAX) m_cursorByte = m_searchHit;
+        std::string bad;
+        if (!ParseHexBytes(m_searchInput, pattern, bad)) {
+            m_status = "Not a hex byte: \"" + bad + "\"";
+        } else if (!pattern.empty() && pattern.size() <= size) {
+            // Search forward from just after the cursor, wrapping once.
+            const size_t last = size - pattern.size();
+            size_t found = SIZE_MAX;
+            for (size_t step = 1; step <= last + 1 && found == SIZE_MAX; ++step) {
+                const size_t start = (m_cursor + step) % (last + 1);
+                size_t k = 0;
+                while (k < pattern.size() && ByteAt(mem, size, start + k, wordSwapped) == pattern[k]) ++k;
+                if (k == pattern.size()) found = start;
+            }
+            if (found != SIZE_MAX) {
+                m_cursor = found;
+                m_scrollToCursor = true;
+                m_status.clear();
+            } else {
+                m_status = "Not found.";
+            }
         }
     }
 
     ImGui::SameLine(0, 20);
-    ImGui::Checkbox("Read Only", &ReadOnly);
-    ImGui::SameLine();
     ImGui::Checkbox("ASCII", &ShowAscii);
+
+    // Selected byte, and the 32-bit word containing it.
+    const size_t wordStart = m_cursor & ~size_t{3};
+    ImGui::Text("Address %08X   Byte %02X", static_cast<unsigned>(baseAddr + m_cursor),
+                ByteAt(mem, size, m_cursor, wordSwapped));
+    if (wordStart + 4 <= size) {
+        uint32_t word = 0;
+        for (size_t k = 0; k < 4; ++k) word = (word << 8) | ByteAt(mem, size, wordStart + k, wordSwapped);
+        ImGui::SameLine();
+        ImGui::Text("  Word %08X", word);
+    }
+    if (!m_status.empty()) {
+        ImGui::SameLine(0, 20);
+        ImGui::TextColored(ImVec4(0.75f, 0.25f, 0.15f, 1.0f), "%s", m_status.c_str());
+    }
 }
 
-void HexEditor::DrawRows(uint8_t* mem, size_t size, uint32_t baseAddr) {
-    const float lineH   = ImGui::GetTextLineHeight();
-    const int   bpr     = std::max(1, BytesPerRow);
-    const size_t rows   = (size + bpr - 1) / bpr;
+void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, bool wordSwapped) {
+    const int    bpr       = std::max(1, BytesPerRow);
+    const size_t rows      = (size + bpr - 1) / bpr;
+    const float  rowHeight = ImGui::GetTextLineHeightWithSpacing();
 
-    // Scroll to cursor
-    size_t cursorRow = m_cursorByte / bpr;
+    if (m_scrollToCursor) {
+        ImGui::SetScrollY(static_cast<float>(m_cursor / bpr) * rowHeight);
+        m_scrollToCursor = false;
+    }
 
     ImGuiListClipper clipper;
-    clipper.Begin((int)rows, lineH);
+    clipper.Begin(static_cast<int>(rows), rowHeight);
     while (clipper.Step()) {
-        for (int rowIdx = clipper.DisplayStart; rowIdx < clipper.DisplayEnd; ++rowIdx) {
-            size_t rowBase = (size_t)rowIdx * bpr;
-            uint32_t dispAddr = baseAddr + (uint32_t)rowBase;
+        for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+            const size_t rowBase = static_cast<size_t>(row) * bpr;
+            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.60f, 1.0f), "%08X",
+                               static_cast<unsigned>(baseAddr + rowBase));
 
-            // Address column
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 1.0f, 1.0f), "%08X:", dispAddr);
-            ImGui::SameLine();
+            for (int col = 0; col < bpr && rowBase + col < size; ++col) {
+                const size_t i = rowBase + col;
+                ImGui::SameLine(0, col == 0 ? 12.0f : (col % 4 == 0 ? 8.0f : 3.0f));
 
-            // Hex bytes
-            for (int col = 0; col < bpr; ++col) {
-                size_t byteIdx = rowBase + col;
-                if (byteIdx >= size) {
-                    ImGui::TextDisabled("   ");
-                } else {
-                    uint8_t val = mem[byteIdx];
-                    bool isCursor = (byteIdx == m_cursorByte);
-                    bool isHit    = (m_searchHit != SIZE_MAX && byteIdx == m_searchHit);
-
-                    if (col > 0) ImGui::SameLine(0, col % 8 == 0 ? 6 : 2);
-
-                    char hexLabel[16];
-                    snprintf(hexLabel, sizeof(hexLabel), "%02X##b%zu", val, byteIdx);
-
-                    if (isCursor)
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
-                    else if (isHit)
-                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-
-                    if (isCursor || isHit) {
-                        if (ImGui::SmallButton(hexLabel)) m_cursorByte = byteIdx;
-                        ImGui::PopStyleColor();
-                    } else {
-                        if (ImGui::SmallButton(hexLabel)) m_cursorByte = byteIdx;
-                    }
-                }
+                char label[24];
+                std::snprintf(label, sizeof(label), "%02X##%zu", ByteAt(mem, size, i, wordSwapped), i);
+                const bool selected = (i == m_cursor);
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+                else          ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                if (ImGui::SmallButton(label)) m_cursor = i;
+                ImGui::PopStyleColor();
             }
 
-            // ASCII sidebar
             if (ShowAscii) {
-                ImGui::SameLine(0, 12);
-                ImGui::TextDisabled("|");
-                ImGui::SameLine(0, 4);
-                char ascii[64] = {};
-                for (int col = 0; col < bpr && rowBase + col < size; ++col) {
-                    uint8_t b = mem[rowBase + col];
-                    ascii[col] = (b >= 0x20 && b < 0x7F) ? (char)b : '.';
+                char ascii[65] = {};
+                int n = 0;
+                for (; n < bpr && n < 64 && rowBase + n < size; ++n) {
+                    const uint8_t b = ByteAt(mem, size, rowBase + n, wordSwapped);
+                    ascii[n] = (b >= 0x20 && b < 0x7F) ? static_cast<char>(b) : '.';
                 }
-                ImGui::TextUnformatted(ascii);
+                ImGui::SameLine(0, 16);
+                ImGui::TextUnformatted(ascii, ascii + n);
             }
         }
     }
 
-    // Keyboard editing when not read-only
-    if (!ReadOnly && ImGui::IsWindowFocused()) {
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && m_cursorByte + 1 < size) ++m_cursorByte;
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  && m_cursorByte > 0) --m_cursorByte;
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)  && m_cursorByte + bpr < size) m_cursorByte += bpr;
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)    && m_cursorByte >= (size_t)bpr) m_cursorByte -= bpr;
-    }
-
-    // Tooltip on hover
-    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
-        if (m_cursorByte < size) {
-            uint32_t addr32 = *(uint32_t*)(mem + (m_cursorByte & ~3));
-            ImGui::SetTooltip("Addr: %08X  u8: %02X  u32@align: %08X",
-                              baseAddr + (uint32_t)m_cursorByte,
-                              mem[m_cursorByte],
-                              addr32);
+    if (ImGui::IsWindowFocused()) {
+        size_t next = m_cursor;
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && m_cursor + 1 < size)            next = m_cursor + 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  && m_cursor > 0)                   next = m_cursor - 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)  && m_cursor + bpr < size)          next = m_cursor + bpr;
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)    && m_cursor >= static_cast<size_t>(bpr)) next = m_cursor - bpr;
+        if (next != m_cursor) {
+            m_cursor = next;
+            const float y = static_cast<float>(m_cursor / bpr) * rowHeight;
+            if (y < ImGui::GetScrollY() || y + rowHeight > ImGui::GetScrollY() + ImGui::GetWindowHeight())
+                m_scrollToCursor = true;
         }
     }
 }

@@ -3,6 +3,10 @@
  * @brief N64 system timer implementation: timer update, expiry, and scheduling.
  */
 #include "Systiming.hpp"
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include "../StateArchive.hpp"
 #include "../../common/Log.hpp"
 #include "../MainSYS.hpp"
 #include "Vmem.hpp"
@@ -403,6 +407,19 @@ uint32_t SystemTimer::get_current_count() const {
         count += static_cast<uint32_t>(elapsed);
     }
     return count;
+}
+
+
+void SystemTimer::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("TIME");
+    for (auto& timer : timers) {
+        ar.Value(timer.active);
+        ar.Value(timer.cycles_to_fire);
+        ar.Value(timer.period);
+    }
+    ar.Value(current_timer);
+    ar.Value(total_cycles);
+    ar.Value(last_update_cycles);
 }
 
 } // namespace N64System

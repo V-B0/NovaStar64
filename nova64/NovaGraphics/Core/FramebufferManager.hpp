@@ -351,7 +351,8 @@ public:
 
     /// Enable widescreen stretch: BlitToScreen fills the entire window
     /// instead of preserving the FBO's native aspect ratio.
-    void SetWidescreenStretch(bool enable) { m_widescreenStretch = enable; }
+    /// Width / height of the picture on screen; 0 fills the window. See IRenderer::SetOutputAspect.
+    void SetOutputAspect(float aspect) { m_outputAspect = aspect; }
 
     // Intel Iris Xe workaround: FBOs created lazily (after game textures)
     // can have broken texture sampling. Recreating gives a fresh GL object.
@@ -392,7 +393,7 @@ private:
     uint64_t m_frameCounter = 0;
     bool     m_depthClearPending = false;     // Set by OnSetDepthImage, consumed by OnSetColorImage
     bool     m_depthCopiedThisFrame = false;  // PD hack: track depth copy per frame
-    bool     m_widescreenStretch = false;     // Stretch blit to fill entire window (no pillarbox)
+    float    m_outputAspect = 4.0f / 3.0f;     // picture shape on screen; 0 = fill the window
     const uint8_t* m_rdram = nullptr;        // Stored RDRAM pointer for CopyToGPU in UpdateVI
     Stats m_stats{};
     bool m_initialized = false;

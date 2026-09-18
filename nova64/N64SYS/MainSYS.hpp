@@ -45,7 +45,7 @@ class CThread;
 class CRegisters;
 class CSystemEvents;
 namespace N64System { class SystemTimer; class CTLB; }
-namespace Nova64 { class MipsMemoryVM; }
+namespace Nova64 { class MipsMemoryVM; class StateArchive; }
 
 // System event enumeration
 enum SystemEvent
@@ -55,7 +55,8 @@ enum SystemEvent
     SysEvent_ResetCPU_Hard,
     SysEvent_PauseCPU,
     SysEvent_ResumeCPU,
-    SysEvent_ExecuteInterrupt
+    SysEvent_ExecuteInterrupt,
+    SysEvent_ServiceStates      ///< save states, rewind and the launcher's pause
 };
 
 // Main N64 System class
@@ -104,9 +105,15 @@ public:
     [[nodiscard]] bool IsFrameLimitReached() const;
     [[nodiscard]] uint64_t GetCurrentFrameCount() const;
 
-    // Frame rate target (0=unlimited, 30, 60)
-    void SetTargetFPS(int fps) { m_TargetFPS = fps; }
-    [[nodiscard]] int GetTargetFPS() const { return m_TargetFPS; }
+    // Frame rate target in VI fields per second (0 = unlimited). Safe to call
+    // from another thread while emulation runs.
+    void SetTargetFPS(int fps) { m_TargetFPS.store(fps, std::memory_order_relaxed); }
+    [[nodiscard]] int GetTargetFPS() const { return m_TargetFPS.load(std::memory_order_relaxed); }
+
+    /// Sets emulation speed as an NTSC-equivalent rate (60 = full speed,
+    /// 120 = double, 0 = unlimited) and converts it to the loaded ROM's field
+    /// rate, so 60 paces a PAL game at 50 fields per second.
+    void SetSpeed(int ntscEquivalentFps);
     
     // Static target FPS to pass through to system before creation
     static int s_TargetFPS;
@@ -146,11 +153,19 @@ public:
 
     [[nodiscard]] bool IsEmulationRunning() const { return !m_EndEmulation; }
     
-    // Save state management
-    bool LoadState();
-    bool LoadState(const char* FileName);
-    bool SaveState();
-    bool SaveState(const char* FileName);
+    // Machine state for save states and rewind (see MachineState.hpp). These
+    // run on the emulator thread at an instruction boundary.
+    void SerializeMachineState(Nova64::StateArchive& ar);
+    /// After a load: drops compiled code and queued events from the old state.
+    void FinishStateLoad();
+    /// Carries out StateService requests; runs for SysEvent_ServiceStates.
+    void ServiceStates();
+
+    /// Asks a game started with RunFileImage() on another thread to stop, even
+    /// one that is still starting up. RunFileImage() then returns.
+    static void RequestStop() { s_StopRequested.store(true); }
+    static void ClearStopRequest() { s_StopRequested.store(false); }
+    static std::atomic<bool> s_StopRequested;
 
     // Delete copy/move semantics
     CN64System(const CN64System&) = delete;
@@ -196,7 +211,7 @@ public:
     uint64_t m_MaxFrames = 0; // 0 = unlimited, >0 = frame limit for CLI testing
     
     // Frame rate limiter
-    int m_TargetFPS = 60;  // 0=unlimited, 30=half speed, 60=full speed (NTSC)
+    std::atomic<int> m_TargetFPS{60};  // fields/sec; written by the launcher thread
     std::chrono::steady_clock::time_point m_FramePaceStart;
     bool m_FramePaceInitialized = false;
     int m_FrameSkipCount = 0;    // Consecutive frames skipped
@@ -243,5 +258,15 @@ public:
     void NotifyDMAToRDRAM(uint32_t physAddr, uint32_t length) {
         if (m_DMAInvalidateFn)
             m_DMAInvalidateFn(m_DMAInvalidateCtx, physAddr, length);
+    }
+
+    // Discards all compiled code. Set by the recompiler while it runs, with
+    // m_DMAInvalidateCtx as its context.
+    using CodeFlushFunc = void(*)(void* ctx);
+    CodeFlushFunc m_FlushCodeFn = nullptr;
+
+    void FlushCompiledCode() {
+        if (m_FlushCodeFn)
+            m_FlushCodeFn(m_DMAInvalidateCtx);
     }
 };

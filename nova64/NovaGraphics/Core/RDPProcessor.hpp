@@ -472,6 +472,10 @@ public:
         bool starCraftBgSkip = false;       // Block FB ops when LUT is RGBA16
         bool snapForceCopy = false;         // Skip automatic aux buffer copies
         bool pdDepthCopyOnce = false;       // Only copy depth buffer once per frame
+        // Texture rectangles that sample the depth buffer's address, chosen per
+        // game from the ROM name as GLideN64's _setSpecialTexrect does.
+        bool texRectShadowMap = false;        // Beetle/HSV Adventure Racing, Duck Dodgers
+        bool texRectDepthBufferCopy = false;  // Perfect Dark, Turok: 1-row depth copies
     } m_hacks;
 
 private:

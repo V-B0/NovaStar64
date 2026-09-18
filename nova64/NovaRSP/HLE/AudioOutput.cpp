@@ -91,8 +91,18 @@ void CAudioOutput::QueueSamples(const int16_t* samples, uint32_t sampleCount, ui
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
-    SDL_QueueAudio(m_sdlDeviceId, samples,
-                   sampleCount * sizeof(int16_t));
+    const uint32_t volume = s_muted.load(std::memory_order_relaxed) ? 0 : s_volume.load(std::memory_order_relaxed);
+    if (volume >= 100) {
+        SDL_QueueAudio(m_sdlDeviceId, samples, sampleCount * sizeof(int16_t));
+        return;
+    }
+    // Squared, so the slider sounds even across its range. Muted output still
+    // queues silence, which keeps the back-pressure above pacing the game.
+    const int32_t gain = static_cast<int32_t>(volume * volume);   // out of 10000
+    m_scaled.resize(sampleCount);
+    for (uint32_t i = 0; i < sampleCount; ++i)
+        m_scaled[i] = static_cast<int16_t>(static_cast<int32_t>(samples[i]) * gain / 10000);
+    SDL_QueueAudio(m_sdlDeviceId, m_scaled.data(), sampleCount * sizeof(int16_t));
 }
 
 void CAudioOutput::Start()

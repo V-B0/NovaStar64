@@ -18,6 +18,7 @@
 // Global Forward declarations
 class CRegisters;
 class CRecompiler;
+namespace Nova64 { class StateArchive; }
 class CGameSettings;
 namespace Nova64 { class MipsMemoryVM; }
 
@@ -369,6 +370,10 @@ public:
     bool operator!=(const CTLB& rTLB) const;
 
     CRegisters& GetRegisters() const { return *m_Reg; }
+
+public:
+    /// Save states and rewind: the entries, and the MMU mappings made from them.
+    void SerializeState(Nova64::StateArchive& ar);
 
 private:
     // CTLB();  // Removed conflicting private default constructor

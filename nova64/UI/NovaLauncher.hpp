@@ -1,25 +1,23 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <thread>
 #include <atomic>
-#include <mutex>
-#include <cstring>
-#include <functional>
 #include <cstdint>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#endif
+#include <memory>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "../N64SYS/SaveState.hpp"
+#include "../NovaGraphics/Plugin/PluginConfig.hpp"
+#include "../NovaInput/GamepadInput.hpp"
+#include "../NovaInput/KeyBindings.hpp"
 #include "../NovaLua/LuaEngine.hpp"
 #include "HexEditor.hpp"
 
 struct SDL_Window;
-typedef void* SDL_GLContext;
+union SDL_Event;
 
 namespace NovaUI {
 
@@ -36,7 +34,6 @@ enum class Tab {
 struct RomMetadata {
     std::string path;
     std::string name;
-    std::string boxArtPath;
     std::string notes;
 };
 
@@ -56,11 +53,16 @@ enum class SimNodeKind {
 };
 
 struct SimNode {
-    int id;
-    SimNodeKind kind;
+    int id = 0;
+    SimNodeKind kind = SimNodeKind::N64Console;
 
     bool showConfig = false;
     bool isPowered  = false;
+
+    // New nodes are placed once, the first time they are drawn in the editor.
+    bool  placed = false;
+    float spawnX = 0.0f;
+    float spawnY = 0.0f;
 
     int  ramMB           = 4;
     bool hasExpansionPak = false;
@@ -69,8 +71,6 @@ struct SimNode {
     char cartPath[512]   = {};
     char ddCartName[128] = {};
     char ddCartPath[512] = {};
-
-    int pakType = 0;
 };
 
 struct SimLink {
@@ -79,189 +79,202 @@ struct SimLink {
     int toPin;
 };
 
-enum class SimTool { Select, Delete, Cable };
+/// Launcher options that aren't graphics settings (settings/launcher.ini).
+struct LaunchOptions {
+    int  speed            = 60;    ///< NTSC-equivalent: 30, 60, 120, or 0 = unlimited
+    int  displayMode      = 0;     ///< 0 = play in the launcher window as it is, 1 = go fullscreen while playing
+    int  cpuCore          = 0;     ///< 0 = platform default, 1 = interpreter, 2 = recompiler
+    bool rewind           = true;
+    bool pauseOnFocusLoss = false; ///< pause when another application becomes active
+    bool showFps          = false;
+    int  volume           = 100;   ///< 0-100
+    bool muted            = false;
 
-// Represents a single running emulator child process (Simulator mode only)
-struct EmuInstance {
-    std::string romName;
-    std::string romPath;
-#ifdef _WIN32
-    PROCESS_INFORMATION pi{};
-#else
-    // POSIX child process id (-1 when none / reaped).
-    long pid = -1;
-#endif
-    bool running = true;
-};
-
-// -----------------------------------------------
-// Key bindings (configurable, saved to settings/)
-// SDL_Scancode is enum : int; we store as int to avoid pulling SDL headers here.
-// -----------------------------------------------
-struct KeyBindings {
-    int A       = 27;  // SDL_SCANCODE_X
-    int B       = 29;  // SDL_SCANCODE_Z
-    int Z       = 224; // SDL_SCANCODE_LCTRL
-    int Start   = 40;  // SDL_SCANCODE_RETURN
-    int DPadUp  = 23;  // SDL_SCANCODE_T
-    int DPadDn  = 10;  // SDL_SCANCODE_G
-    int DPadLt  = 9;   // SDL_SCANCODE_F
-    int DPadRt  = 11;  // SDL_SCANCODE_H
-    int L       = 225; // SDL_SCANCODE_LSHIFT
-    int R       = 229; // SDL_SCANCODE_RSHIFT
-    int CUp     = 82;  // SDL_SCANCODE_UP
-    int CDown   = 81;  // SDL_SCANCODE_DOWN
-    int CLeft   = 80;  // SDL_SCANCODE_LEFT
-    int CRight  = 79;  // SDL_SCANCODE_RIGHT
-    int StickUp = 26;  // SDL_SCANCODE_W
-    int StickDn = 22;  // SDL_SCANCODE_S
-    int StickLt = 4;   // SDL_SCANCODE_A
-    int StickRt = 7;   // SDL_SCANCODE_D
-
-    void Save(const std::string& path) const;
     void Load(const std::string& path);
+    void Save(const std::string& path) const;
 };
 
-// -----------------------------------------------
-// Main Launcher class
-// -----------------------------------------------
+/// GL textures made from state thumbnails, kept for as long as the thumbnail exists.
+class ThumbnailTextures {
+public:
+    /// The texture for a thumbnail, made on first use; 0 if there is none.
+    uint32_t Get(const std::shared_ptr<const Nova64::StateThumbnail>& thumbnail);
+    /// Deletes the textures of thumbnails that no longer exist.
+    void DropUnused();
+    void Clear();
+
+private:
+    struct Entry {
+        std::weak_ptr<const Nova64::StateThumbnail> source;
+        uint32_t texture = 0;
+    };
+    std::unordered_map<const Nova64::StateThumbnail*, Entry> m_entries;
+};
+
 class NovaLauncher {
 public:
     NovaLauncher();
     ~NovaLauncher();
 
-    std::string Run();
+    void Run();
 
 private:
-    // ---- Render Sections ----
+    // ---- Layout ----
     void RenderTopNavbar(SDL_Window* window);
     void RenderUI(SDL_Window* window);
     void RenderSidebar();
     void RenderHomeTab();
     void RenderGamesTab();
     void RenderSettingsTab();
+    void RenderInputSettingsWidget();
+    void RenderControllerSettingsWidget();
     void RenderScriptsTab();
     void RenderHexEditorTab();
     void RenderAchievementsTab();
     void RenderSimulatorTab();
-    void RenderInstancesPanel();
-    void RenderInputSettingsWidget();
-
-    // ---- Pause Menu (ESC) ----
-    void RenderPauseMenu();
-
-    // ---- Embedded Game ----
-    void LaunchEmbedded(const std::string& romPath);
-    void StopEmbedded();
-    void RenderGameView(SDL_Window* window);
-
-    // ---- Simulator / Child process ----
-    void LaunchEmulator(const SimNode& node);
-    // Launch a ROM as a separate child process (own window). On macOS this is
-    // the path that actually renders: the child owns its main thread, so the
-    // Vulkan/MoltenVK window/surface can be created (a background thread cannot).
-    void LaunchProcess(const std::string& romPath, const std::string& romName);
-    void PollInstances();
-
-    // ---- Simulator helpers ----
-    void SpawnNode(SimNodeKind kind, int cartIndex = -1);
-    void RenderSimNode(SimNode& node);
-    const char* NodeIcon(SimNodeKind k);
-    const char* NodeLabel(SimNodeKind k);
-    bool IsN64DDDisk(const std::string& path);
-
-    int GetPinId(int nodeId, int pinIndex) const { return (nodeId << 4) | pinIndex; }
-    int GetNodeIdFromPin(int pinId) const { return pinId >> 4; }
-    bool IsInputPin(int pinId) const { return (pinId & 0xF) > 0; }
-
-    // Window animation
     void UpdateWindowAnimations(SDL_Window* window);
 
-    // GL texture for embedded game
-    void UploadFrameTex(uint32_t srcTex, int w, int h);
-    void UploadFromPixelBuf();   // uploads g_framePixels → m_gameTex (launcher GL thread)
+    // ---- Input ----
+    /// Captures the next key press while a binding is being changed.
+    /// Returns true when the event was consumed.
+    bool HandleRebindEvent(const SDL_Event& event);
+    /// The same for a game controller input being assigned.
+    bool HandlePadRebindEvent(const SDL_Event& event);
 
+    // ---- Library ----
+    void LoadLibrary();
+    void SaveLibrary() const;
+    void AddToLibrary(const std::string& path, const std::string& name, const std::string& notes = {});
+    void OpenRomWithPicker();
 
-    // ---- State ----
-    std::string m_selectedRom;
-    bool m_shouldExit;
-    Tab m_activeTab;
+    // ---- Settings ----
+    void LoadSettings();
+    void SaveGraphicsSettings();
+    void SaveLaunchOptions();
+    void SaveControllerSettings();
+    /// Pushes the options that take effect immediately (volume, rewind) to the emulator.
+    void ApplyLaunchOptions();
+    void SetTurbo(bool enabled);
 
-    std::vector<RomMetadata> m_library;
+    // ---- Playing a game inside the launcher (LauncherPlay.cpp) ----
+    void PlayRom(const std::string& path, const std::string& name);
+    void LaunchEmulator(const SimNode& node);
+    void StopEmbedded();
+    /// Per-frame bookkeeping: a game that ended, a pending resume, new messages.
+    void UpdatePlayState();
+    /// Hotkeys while a game runs. Returns true when the key was used.
+    bool HandleGameKey(int scancode, bool repeat);
+    /// Controller buttons the launcher uses while a game runs (Back opens the
+    /// pause menu). Returns true when the button was used.
+    bool HandleGamePadButton(int button);
+    void OpenPauseMenu();
+    void ClosePauseMenu();
+    /// Un-pauses once no key is held, so the key that closed a menu (Enter is
+    /// Start by default) doesn't reach the game as well.
+    void ResumeGame();
+    void OpenRewind();
+    void CloseRewind(bool jumpToSelection);
+    void MoveRewindSelection(int delta);
+    void SyncStateLists();
+    void ShowStatus(const std::string& text);
+    void UploadFromPixelBuf();
+    void RenderGameView();
+    void RenderPauseMenu();
+    void RenderSaveSlots();
+    void RenderRewindBar();
 
-    // ROM modals
-    bool m_showEditModal;
-    bool m_showAddModal;
-    int  m_editingRomIndex;
-    char m_editNameBuffer[128];
-    char m_editBoxArtBuffer[256];
-    char m_editNotesBuffer[1024];
-
-    // Settings
-    int  m_ramAmount;
-    int  m_graphicsApi;
-    bool m_vsync;
-    int  m_internalResScale;
-    bool m_fullscreen;
-    int  m_targetFPS;
-    int  m_antiAliasing;
-    int  m_texFilter;
-    bool m_enableMipmaps;
-    bool m_multiThreading;
-    bool m_showFPS;
-
-    // Key bindings
-    KeyBindings m_bindings;
-    int m_rebindTarget = -1;   // -1 = not rebinding; >=0 = index of button being rebound
-
-    // Simulator State
-    int  m_simMode;
-    SimTool m_simTool;
-    int     m_nextNodeId;
-    int     m_nextLinkId;
-    int     m_selectedCartIndex;
-    std::vector<SimNode> m_simNodes;
-    std::vector<SimLink> m_simLinks;
-    std::vector<EmuInstance> m_instances;
-
-    // Window Animation
-    float m_windowOpacity;
-    enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState;
-
-    // ---- Embedded Emulator State ----
-    std::thread          m_emuThread;
-    std::atomic<bool>    m_emuRunning { false };
-    std::string          m_emuRomPath;
-
-    // Display texture (blitted to launcher window)
-    uint32_t m_gameTex      = 0;   ///< GL texture ID updated each frame
-    int      m_gameTexW     = 640;
-    int      m_gameTexH     = 480;
-    std::mutex m_gameTexMtx;
-
-    // Pause menu
-    bool m_showPauseMenu    = false;
-
-    // Speed: 1x / 2x (TAB key)
-    bool m_turboMode        = false;
-
-    // Save state manager
-    SaveStateManager m_saveState;
-
-    // Lua scripting
-    LuaEngine m_lua;
-    std::vector<std::string> m_scriptFiles; ///< discovered in scripts/
+    // ---- Tools ----
     void RefreshScriptFiles();
 
-    // Hex editor
-    HexEditor m_hexEditor;
+    // ---- Simulator ----
+    void SpawnNode(SimNodeKind kind, int cartIndex = -1);
+    void RenderSimNode(SimNode& node);
+    static const char* NodeIcon(SimNodeKind k);
+    static const char* NodeLabel(SimNodeKind k);
+    static bool IsN64DDDisk(const std::string& path);
+    static int  GetPinId(int nodeId, int pinIndex) { return (nodeId << 4) | pinIndex; }
+    static int  GetNodeIdFromPin(int pinId)        { return pinId >> 4; }
+    static bool IsInputPin(int pinId)              { return (pinId & 0xF) > 0; }
 
-    // RetroAchievements
-    std::string m_raUsername;
-    std::string m_raPassword;
+    // ---- State ----
+    bool        m_shouldExit = false;
+    Tab         m_activeTab  = Tab::Home;
+    SDL_Window* m_window     = nullptr;
+    void*       m_glContext  = nullptr;   ///< the launcher's SDL_GLContext, while Run() is active
 
-    // Rewind key display name
-    static const char* kRewindKeyName;
+    std::vector<RomMetadata> m_library;
+    bool m_showAddModal    = false;
+    bool m_showEditModal   = false;
+    int  m_editingRomIndex = -1;
+    char m_editPathBuffer[512]   = {};
+    char m_editNameBuffer[128]   = {};
+    char m_editNotesBuffer[1024] = {};
+    std::string m_modalError;
+
+    Nova64::Video::PluginConfig m_gfx;
+    LaunchOptions               m_launch;
+    NovaInput::KeyBindings      m_bindings;
+    int                         m_rebindTarget = -1;   ///< N64Input index being changed, or -1
+    NovaInput::ControllerSettings m_padSettings;
+    int                         m_padRebindTarget = -1;   ///< N64Input index waiting for a controller input, or -1
+
+    int m_nextNodeId = 10;
+    int m_nextLinkId = 100;
+    std::vector<SimNode> m_simNodes;
+    std::vector<SimLink> m_simLinks;
+
+    float m_windowOpacity = 0.0f;
+    enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState = AnimState::FadeIn;
+
+    // ---- The game running inside the launcher ----
+    std::thread       m_emuThread;
+    std::atomic<bool> m_emuRunning{false};
+    std::atomic<bool> m_emuStartFailed{false};
+    std::string       m_emuRomPath;
+    std::string       m_emuTitle;
+    uint32_t          m_gameTex  = 0;
+    int               m_gameTexW = 0;
+    int               m_gameTexH = 0;
+    bool              m_turboMode      = false;
+    bool              m_resumePending  = false;
+    bool              m_wentFullscreen = false;
+
+    bool m_showPauseMenu  = false;
+    bool m_focusPauseMenu = false;
+    int  m_overwriteSlot  = -1;      ///< slot waiting for "replace?" confirmation
+    bool m_openOverwrite  = false;
+
+    // The rewind bar lists m_rewindPoints followed by a "Now" entry.
+    bool                             m_rewindOpen              = false;
+    bool                             m_rewindFromPauseMenu     = false;
+    bool                             m_rewindScrollToSelection = false;
+    int                              m_rewindSelection         = 0;
+    float                            m_rewindWheel             = 0.0f;
+    std::vector<Nova64::RewindPoint> m_rewindPoints;
+    uint64_t                         m_stateRevision = 0;
+    ThumbnailTextures                m_thumbnails;
+
+    // Frame rate shown in the top bar, measured in video fields per second.
+    float    m_fps          = 0.0f;
+    uint64_t m_fpsLastField = 0;
+    uint32_t m_fpsLastTick  = 0;
+
+    std::string m_statusText;
+    uint32_t    m_statusUntil    = 0;   ///< SDL tick count
+    uint64_t    m_statusSequence = 0;
+
+    LuaEngine                m_lua;
+    std::vector<std::string> m_scriptFiles;
+    size_t                   m_shownLogLines = 0;
+    HexEditor                m_hexEditor;
+
+    // ---- Unattended runs (NOVA64_UI_*, see the constructor) ----
+    std::string                      m_shotPath;
+    std::vector<int>                 m_shotFrames;
+    std::string                      m_forcedSubTab;
+    std::string                      m_autoRom;
+    std::vector<std::pair<int, int>> m_autoKeys;   ///< launcher frame, SDL scancode
+    int                              m_frameCount = 0;
 };
 
 } // namespace NovaUI

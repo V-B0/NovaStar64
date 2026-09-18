@@ -21,9 +21,21 @@ public:
                 uint32_t         desiredWidth,
                 uint32_t         desiredHeight,
                 bool             vsync);
+
+    /// Render targets without a window: `imageCount` color images with the
+    /// same usage, render passes and framebuffers a swapchain has. Get() stays
+    /// null, as there is nothing to acquire or present.
+    bool CreateOffscreen(VkPhysicalDevice physical,
+                         VkDevice         device,
+                         uint32_t         width,
+                         uint32_t         height,
+                         uint32_t         imageCount);
+    bool IsOffscreen() const { return m_offscreen; }
+
     void Destroy(VkDevice device);
 
-    /// Tear down and recreate (for window resize / vsync toggle).
+    /// Tear down and recreate (for window resize / vsync toggle). Offscreen
+    /// targets are recreated offscreen at the new size.
     bool Recreate(VkPhysicalDevice physical,
                   VkDevice         device,
                   VkSurfaceKHR     surface,
@@ -63,6 +75,8 @@ private:
     VkExtent2D               m_extent    = {0, 0};
     std::vector<VkImage>     m_images;
     std::vector<VkImageView> m_imageViews;
+    bool                     m_offscreen = false;
+    std::vector<VkDeviceMemory> m_imageMemory;   // offscreen images only
     VkRenderPass               m_renderPass     = VK_NULL_HANDLE;
     VkRenderPass               m_renderPassLoad = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_framebuffers;

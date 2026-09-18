@@ -206,59 +206,41 @@ void NovaGraphicsGFXPlugin::ShowConfigDialog(void* /*hwndParent*/)
     m_videoPlugin.OpenConfigDialog();
 }
 
+namespace {
+
+// Plugin state kept in a snapshot. Only what changes the emulated result
+// belongs here: the frame counter that seeds the noise dither. Games such as
+// Majora's Mask read the framebuffer back into RDRAM, so without it a replay
+// after a rewind gets differently dithered pixels.
+struct PluginState {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t ditherFrame;
+};
+constexpr uint32_t kPluginStateMagic   = 0x4E564753; // "NVGS"
+constexpr uint32_t kPluginStateVersion = 2;
+
+} // namespace
+
 size_t NovaGraphicsGFXPlugin::SaveState(uint8_t* data, size_t size) {
-    // Video plugin state: VI registers + frame counter.
-    // TMEM and RDRAM are saved by the system-level save state.
-    struct VideoState {
-        uint32_t magic;       // 'NVGS'
-        uint32_t version;
-        uint64_t frameCount;
-        uint32_t viStatus;
-        uint32_t viOrigin;
-        uint32_t viWidth;
-        uint32_t viXScale;
-        uint32_t viYScale;
-    };
+    if (!data) return sizeof(PluginState);   // size query
+    if (size < sizeof(PluginState)) return 0;
 
-    constexpr size_t stateSize = sizeof(VideoState);
-    if (!data) return stateSize;  // Query size
-    if (size < stateSize) return 0;
-
-    VideoState state{};
-    state.magic      = 0x4E564753; // "NVGS"
-    state.version    = 1;
-    state.frameCount = m_videoPlugin.GetFrameStats().viInterrupts;
-    // VI registers are maintained by VideoPlugin
-    // Store zeros here — the emulator core saves VI register state separately
-    std::memcpy(data, &state, stateSize);
-    return stateSize;
+    PluginState state{kPluginStateMagic, kPluginStateVersion, 0};
+    if (auto& rdp = m_videoPlugin.GetRDPProcessor()) state.ditherFrame = rdp->GetVideoState().frameCount;
+    std::memcpy(data, &state, sizeof(state));
+    return sizeof(state);
 }
 
 bool NovaGraphicsGFXPlugin::LoadState(const uint8_t* data, size_t size) {
-    struct VideoState {
-        uint32_t magic;
-        uint32_t version;
-        uint64_t frameCount;
-        uint32_t viStatus;
-        uint32_t viOrigin;
-        uint32_t viWidth;
-        uint32_t viXScale;
-        uint32_t viYScale;
-    };
+    PluginState state{};
+    if (!data || size < sizeof(state)) return false;
+    std::memcpy(&state, data, sizeof(state));
+    if (state.magic != kPluginStateMagic || state.version != kPluginStateVersion) return false;
 
-    constexpr size_t stateSize = sizeof(VideoState);
-    if (!data || size < stateSize) return false;
-
-    VideoState state{};
-    std::memcpy(&state, data, stateSize);
-
-    if (state.magic != 0x4E564753 || state.version != 1)
-        return false;
-
-    // Invalidate texture cache since RDRAM contents changed
-    // (system-level restore overwrites RDRAM, so cached GPU textures are stale)
-    m_videoPlugin.GetRDPProcessor().reset();
-    LOG_INFO("Video plugin state loaded (frame {})", state.frameCount);
+    // Nothing else to rebuild: the texture cache keys entries by content hash,
+    // so textures from before the load stop matching on their own.
+    if (auto& rdp = m_videoPlugin.GetRDPProcessor()) rdp->GetVideoStateMutable().frameCount = state.ditherFrame;
     return true;
 }
 

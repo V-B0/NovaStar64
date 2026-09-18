@@ -583,7 +583,7 @@ void PluginManager::NotifyPluginEvent(PluginType type, PluginNotification notifi
 
 bool PluginManager::SaveState(std::vector<uint8_t>& data)
 {
-    Log::info("PluginManager: Saving plugin states");
+    Log::debug("PluginManager: Saving plugin states");
     
     data.clear();
     
@@ -619,7 +619,7 @@ bool PluginManager::SaveState(std::vector<uint8_t>& data)
 
 bool PluginManager::LoadState(const std::vector<uint8_t>& data)
 {
-    Log::info("PluginManager: Loading plugin states");
+    Log::debug("PluginManager: Loading plugin states");
     
     PluginBase* plugins[] = {
         m_GraphicsPlugin.get(),

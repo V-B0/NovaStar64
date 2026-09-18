@@ -6,6 +6,7 @@
 // NovaGraphics — Video Plugin Implementation
 // ══════════════════════════════════════════════════════════════════════════════
 
+#include <cctype>
 #include "VideoPlugin.hpp"
 #include "FrameCallback.hpp"
 #include "../Common/Logger.hpp"
@@ -110,6 +111,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Load configuration
     m_config.LoadDefaults();
+    // The file is only written here, when it doesn't exist yet, so there is one
+    // to edit. Saving at shutdown wrote per-game overrides and command-line
+    // flags back into the user's settings.
+    if (!std::filesystem::exists("settings/NovaGraphics.ini")) {
+        std::error_code ec;
+        std::filesystem::create_directories("settings", ec);
+        m_config.SaveToFile("settings/NovaGraphics.ini");
+    }
     m_config.LoadFromFile("settings/NovaGraphics.ini");
 
     // ── MLE pivot: propagate renderingMode to RSP settings ───────────
@@ -152,14 +161,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     GameDatabase::Instance().Init();
     GameDatabase::Instance().LoadCustomProfiles("NovaGraphics_games.ini");
 
-    // In embedded mode, use the launcher's SDL window/GL context directly.
-    // This MUST happen before the CreateDisplayWindow() check below so that
-    // VideoPlugin skips its own window creation entirely.
-    if (g_embeddedMode.load(std::memory_order_relaxed) && g_launcherWindowManager) {
-        LOG_INFO("Embedded mode: using launcher WindowManager (no separate SDL2 window)");
-        m_externalWindow = g_launcherWindowManager;
-    }
-
     // Create window (unless an external window was provided)
     if (m_externalWindow) {
         LOG_INFO("Using external window (skipping internal window creation)");
@@ -200,12 +201,11 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // not create a context; the SDL+OpenGL context was already made by the
     // WindowManager, so passing nullptr for the window handle is correct.
     {
-        int32_t winW = m_config.windowWidth, winH = m_config.windowHeight;
+        // With no window, Vulkan renders offscreen (a game inside the launcher).
+        int32_t winW = 0, winH = 0;
+        GetOutputSize(winW, winH);
         void* windowHandle = nullptr;
-        if (auto* win = GetActiveWindow()) {
-            win->GetDrawableSize(winW, winH);
-            windowHandle = win->GetSDLWindow();
-        }
+        if (auto* win = GetActiveWindow()) windowHandle = win->GetSDLWindow();
         if (!m_renderer->Initialize(windowHandle,
                                      static_cast<uint32_t>(winW),
                                      static_cast<uint32_t>(winH))) {
@@ -219,10 +219,18 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         }
     }
 
+    {
+        const auto& caps = m_renderer->GetCapabilities();
+        std::lock_guard<std::mutex> lock(g_frameMutex);
+        g_rendererDescription = std::string(GetBackendName(m_renderer->GetBackendType())) + " on " + caps.deviceName;
+    }
+
     // Create texture cache
     m_textureCache = std::make_unique<Tex::TextureCache>();
     {
         Tex::TextureCacheConfig tcConfig;
+        tcConfig.enableMipmaps = m_config.enableMipmaps;
+        tcConfig.lodBias       = m_config.lodBias;
         m_textureCache->Initialize(m_renderer.get(), tcConfig);
     }
 
@@ -279,9 +287,16 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     if (m_config.aspectRatio == AspectRatio::Widescreen16_9) {
         float wsScale = (16.0f / 9.0f) / (4.0f / 3.0f);  // ≈ 1.333
         m_rdpProcessor->GetVideoStateMutable().rdp.geometry.widescreenScale = wsScale;
-        g_fbManager.SetWidescreenStretch(true);
         LOG_INFO("Widescreen 16:9 hack enabled (scale={:.3f})", wsScale);
     }
+
+    // Shape of the picture in the window, the same for both renderers: 4:3
+    // like the N64's video output, 16:9 with either widescreen setting.
+    const float outputAspect = (m_config.aspectRatio == AspectRatio::Widescreen16_9 ||
+                                m_config.aspectRatio == AspectRatio::Stretch16_9)
+                                   ? 16.0f / 9.0f : 4.0f / 3.0f;
+    g_fbManager.SetOutputAspect(outputAspect);
+    if (m_renderer) m_renderer->SetOutputAspect(outputAspect);
 
     // Initialize depth buffer manager (N64-accurate depth compare)
     g_depthManager.Init();
@@ -292,8 +307,8 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // Initialize post-processing pipeline (GL-only)
     if (g_fbManager.IsGL()) {
         m_postProcess = std::make_unique<PostProcessingPipeline>();
-        int32_t w = 640, h = 480;
-        if (auto* win = GetActiveWindow()) win->GetDrawableSize(w, h);
+        int32_t w = 0, h = 0;
+        GetOutputSize(w, h);
         m_postProcess->Init(w, h);
         m_postProcess->SetupDefaultChain(); // Gamma + FXAA
         LOG_INFO("Post-processing pipeline initialized ({}x{})", w, h);
@@ -403,9 +418,6 @@ void VideoPlugin::Shutdown() {
 
     // Shut down ImGui debug UI
     g_imguiDebugUI.Shutdown();
-
-    // Save config
-    m_config.SaveToFile("settings/NovaGraphics.ini");
 
     // Shut down subsystems in reverse order
 
@@ -596,8 +608,8 @@ void VideoPlugin::ProcessDList() {
         // Do NOT call glViewport here — OnSetColorImage (emitted by the DL) binds the correct
         // game FBO and sets glViewport to the FBO dimensions (320×240). Forcing 640×480 here
         // would map NDC 0..1 to window coords 320..640, clipping the right half of every draw.
-        int32_t winW = 640, winH = 480;
-        if (auto* w = GetActiveWindow()) w->GetDrawableSize(winW, winH);
+        int32_t winW = 0, winH = 0;
+        GetOutputSize(winW, winH);
         m_renderer->OnResize(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
 
         // On Vulkan, begin the frame here (before any draw calls).
@@ -720,8 +732,8 @@ void VideoPlugin::ProcessRDPList() {
     // first ProcessRDPList of the VI period opens the swapchain frame; on GL
     // the default FBO is always available.
     if (!m_vkFrameBegun) {
-        int32_t winW = 640, winH = 480;
-        if (auto* w = GetActiveWindow()) w->GetDrawableSize(winW, winH);
+        int32_t winW = 0, winH = 0;
+        GetOutputSize(winW, winH);
         m_renderer->OnResize(static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
         if (!g_fbManager.IsGL()) {
             m_renderer->BeginFrame();
@@ -800,6 +812,19 @@ void VideoPlugin::UpdateScreen() {
     // the window can't be created on the emulator's background thread).  Skip all
     // GL work instead of crashing in glClearColor/etc.
     if (!m_renderer) return;
+
+    // Advance the texture cache's frame counter. This drains its deferred-
+    // destroy "zombie" queue (evicted GPU textures held a few frames so any
+    // in-flight command buffer referencing them finishes first) and runs its
+    // periodic stale-texture sweep. Without this call -- which nothing in the
+    // codebase was making -- evicted textures' GPU resources were never
+    // actually freed: every cache eviction (routine once the 8192-entry/256MB
+    // budget fills, which happens well within a normal play session) leaked
+    // its Vulkan/Metal texture allocation for the rest of the process, until
+    // MoltenVK's IOGPU residency-set allocation limit was exceeded and the
+    // driver called abort() (SIGABRT) out from under a texture upload.
+    if (m_textureCache) m_textureCache->BeginFrame();
+
     auto start = std::chrono::high_resolution_clock::now();
     auto stage = start;
     double tSwap=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
@@ -845,8 +870,8 @@ void VideoPlugin::UpdateScreen() {
         // RT: dispatch ray tracing if shadow HLE captured geometry this frame.
         const bool canRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
         if (canRT && hadShadowScene && m_rtScene.GetTriangleCount() > 0) {
-            int32_t winW = 640, winH = 480;
-            if (win) win->GetDrawableSize(winW, winH);
+            int32_t winW = 0, winH = 0;
+            GetOutputSize(winW, winH);
             m_renderer->ExecuteRayTracing(
                 &m_rtScene,
                 static_cast<uint32_t>(winW),
@@ -960,8 +985,8 @@ void VideoPlugin::UpdateScreen() {
 
     if (m_hleRenderedThisFrame || m_hleEverRendered) {
         // HLE content is available — present it directly (no VI RDRAM compositing).
-        int32_t winW = 640, winH = 480;
-        if (win) win->GetDrawableSize(winW, winH);
+        int32_t winW = 0, winH = 0;
+        GetOutputSize(winW, winH);
 
         // Vulkan per-buffer canvases: present the buffer VI says is display-
         // ready, not the one the display list is still drawing into.
@@ -1020,8 +1045,8 @@ void VideoPlugin::UpdateScreen() {
             m_renderer->BeginFrame();
 
             // Set viewport/scissor AFTER BeginFrame (which may reset them)
-            int32_t winW = 640, winH = 480;
-            if (win) win->GetDrawableSize(winW, winH);
+            int32_t winW = 0, winH = 0;
+            GetOutputSize(winW, winH);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, winW, winH);
             glDisable(GL_SCISSOR_TEST);
@@ -1066,8 +1091,8 @@ void VideoPlugin::UpdateScreen() {
     // FB into an intermediate texture, then run the effect chain back to FB 0.
     // GL-only: PostProcessingPipeline is not initialized on Vulkan.
     if (didRender && m_postProcess && m_postProcess->HasEnabledEffects() && g_fbManager.IsGL()) {
-        int32_t ppW = 640, ppH = 480;
-        if (auto* ppWin = GetActiveWindow()) ppWin->GetDrawableSize(ppW, ppH);
+        int32_t ppW = 0, ppH = 0;
+        GetOutputSize(ppW, ppH);
 
         // (Re)create intermediate FBO if window size changed
         if (m_ppFBO == 0 || m_ppWidth != ppW || m_ppHeight != ppH) {
@@ -1119,36 +1144,36 @@ void VideoPlugin::UpdateScreen() {
     m_swapPending = true;
     markStage(tFlush);
 
-    // ── Embedded-launcher frame readback ─────────────────────────
-    // In embedded mode we do a CPU readback (glReadPixels) into g_framePixels.
-    // The launcher's GL thread then uploads those pixels to its own texture.
-    // This is safe because both threads use *different* GL contexts — we cannot
-    // share texture handles across contexts without explicit context sharing.
-    if (g_embeddedMode.load(std::memory_order_relaxed) && g_fbManager.IsGL()) {
-        int32_t cbW = 640, cbH = 480;
-        if (win) win->GetDrawableSize(cbW, cbH);
-        if (cbW > 0 && cbH > 0) {
-            // Read from the default (window) framebuffer that was just flushed.
-            // Bind FBO 0 (the window surface) so glReadPixels sees the finished frame.
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-            {
+    // ── Frame for the launcher ──────────────────────────────────
+    // A game drawn inside the launcher hands each frame over as RGBA pixels,
+    // top row first, in g_framePixels. Vulkan does that itself when it presents
+    // offscreen; on OpenGL the frame is read back from the hidden window here.
+    // The launcher uploads the pixels to its own texture, since the two GL
+    // contexts don't share objects.
+    if (g_embeddedMode.load(std::memory_order_relaxed)) {
+        if (g_fbManager.IsGL()) {
+            int32_t cbW = 0, cbH = 0;
+            GetOutputSize(cbW, cbH);
+            if (cbW > 0 && cbH > 0) {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
                 std::lock_guard<std::mutex> lk(g_frameMutex);
-                g_framePixels.resize(cbW * cbH * 4);
+                const size_t row = static_cast<size_t>(cbW) * 4;
+                g_framePixels.resize(row * static_cast<size_t>(cbH));
                 glReadPixels(0, 0, cbW, cbH, GL_RGBA, GL_UNSIGNED_BYTE, g_framePixels.data());
+                std::vector<uint8_t> rowBuffer(row);   // GL rows are bottom-up
+                for (int32_t y = 0; y < cbH / 2; ++y) {
+                    uint8_t* top    = g_framePixels.data() + static_cast<size_t>(y) * row;
+                    uint8_t* bottom = g_framePixels.data() + static_cast<size_t>(cbH - 1 - y) * row;
+                    std::memcpy(rowBuffer.data(), top, row);
+                    std::memcpy(top, bottom, row);
+                    std::memcpy(bottom, rowBuffer.data(), row);
+                }
                 g_frameW.store(cbW, std::memory_order_relaxed);
                 g_frameH.store(cbH, std::memory_order_relaxed);
                 g_frameReady.store(true, std::memory_order_release);
             }
         }
         if (g_frameCallback) g_frameCallback();
-    }
-
-    // ── Pause spin-wait ─────────────────────────────────────────
-    // When the launcher ESC pause menu is open, stall the emulator CPU thread
-    // here so the game freezes cleanly. The launcher render loop continues
-    // on its own thread unaffected. We yield in 4ms slices to stay responsive.
-    while (g_emuPaused.load(std::memory_order_relaxed)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(4));
     }
 
     // ── HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ───────────
@@ -1448,6 +1473,20 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
                                 m_rdpProcessor.get());
     }
 
+    // Depth-buffer texture rectangles mean different things in different
+    // games; enable each reading only for the games GLideN64 enables it for.
+    if (m_rdpProcessor) {
+        std::string name = sysInfo.romName;
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        auto found = [&](const char* part) { return name.find(part) != std::string::npos; };
+        auto& hacks = m_rdpProcessor->m_hacks;
+        hacks.texRectShadowMap = found("BEETLE") || found("HSV") ||
+                                 found("DUCK DODGERS") || found("DAFFY DUCK");
+        hacks.texRectDepthBufferCopy = !hacks.texRectShadowMap &&
+                                       (found("PERFECT DARK") || found("TUROK_DINOSAUR_HUNTE"));
+    }
+
     // Look up game profile
     auto& db = GameDatabase::Instance();
     m_activeProfile = db.FindByGameId(sysInfo.romGameId);
@@ -1603,21 +1642,25 @@ void VideoPlugin::UnlockRender() {
 // ═══════════════════════════════════════════════════════════════
 
 bool VideoPlugin::CreateDisplayWindow() {
-    m_window = std::make_unique<WindowManager>();
-    
     WindowConfig wc;
     wc.width     = m_config.windowWidth;
     wc.height    = m_config.windowHeight;
     wc.title     = "NovaStar64 - NovaGraphics";
     wc.resizable = true;
 
-    // In embedded mode the launcher owns the visible window.
-    // Create the GL context as a hidden window from the start so the
-    // VideoPlugin window never appears or steals SDL keyboard focus.
+    // A game drawn inside the launcher has no visible window. Vulkan renders
+    // offscreen without one; OpenGL still needs a context, so it gets a hidden
+    // window the size of the frames the launcher shows.
     if (g_embeddedMode.load(std::memory_order_relaxed)) {
+        if (m_config.backendType == 1) return true;
+        int32_t w = 0, h = 0;
+        GetOutputSize(w, h);
+        wc.width    = w;
+        wc.height   = h;
         wc.headless = true;
     }
 
+    m_window = std::make_unique<WindowManager>();
     if (!m_window->Initialize(wc)) {
         LOG_ERROR("WindowManager init failed");
         m_window.reset();
@@ -1625,6 +1668,19 @@ bool VideoPlugin::CreateDisplayWindow() {
     }
 
     return true;
+}
+
+// Frames are rendered at the window's drawable size. With no window (Vulkan
+// drawing a game inside the launcher, or before the hidden GL window exists)
+// the size is N64 resolution times the internal scale.
+void VideoPlugin::GetOutputSize(int32_t& width, int32_t& height) const {
+    if (auto* win = GetActiveWindow()) {
+        win->GetDrawableSize(width, height);
+        return;
+    }
+    const int scale = std::clamp(m_config.internalResScale, 1, 8);
+    height = 240 * scale;
+    width  = (m_config.aspectRatio == AspectRatio::Widescreen16_9) ? height * 16 / 9 : 320 * scale;
 }
 
 bool VideoPlugin::CreateDisplayRenderer() {

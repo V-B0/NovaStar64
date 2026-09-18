@@ -11,6 +11,7 @@
  */
 
 #include "FRam.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../N64Rom.hpp"
 #include "../Types.hpp"
@@ -425,4 +426,14 @@ bool CFlashRam::LoadFlashram()
     }
 
     return m_File.is_open();
+}
+
+void CFlashRam::SerializeState(Nova64::StateArchive& ar)
+{
+    // Only the command state machine: the flash contents are the player's save.
+    ar.Section("FLSH");
+    ar.Value(m_FlashFlag);
+    ar.Value(m_FlashStatus);
+    ar.Value(m_FlashRAM_Offset);
+    ar.Value(m_PageBuffer);
 }

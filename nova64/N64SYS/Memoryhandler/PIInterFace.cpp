@@ -21,6 +21,7 @@
  */
 
 #include "PIInterFace.hpp"
+#include "../StateArchive.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Vmem.hpp"
@@ -694,6 +695,15 @@ void PeripheralInterfaceHandler::reset()
     
     m_dma_used = false;
     m_first_dma = true;
+}
+
+
+void PeripheralInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
+    ar.Section("PI  ");
+    ar.Value(m_pi_registers_array);
+    ar.Value(m_dma_state);
+    ar.Value(m_dma_used);
+    ar.Value(m_first_dma);
 }
 
 } // namespace PI

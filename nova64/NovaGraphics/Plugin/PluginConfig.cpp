@@ -273,6 +273,7 @@ bool PluginConfig::SaveToFile(const std::string& path) const {
 
     file << "[Rendering]\n";
     file << "renderingMode = " << static_cast<int>(renderingMode) << "  # 0=HLE, 1=LLE, 2=Auto\n";
+    file << "rayTracing = " << (rayTracing ? "1" : "0") << "\n";
     file << "ditheringEnabled = " << (ditheringEnabled ? "1" : "0") << "\n";
     file << "ditheringPattern = " << ditheringPattern << "\n";
     file << "fogEnabled = " << (fogEnabled ? "1" : "0") << "\n";

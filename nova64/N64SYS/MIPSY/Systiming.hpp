@@ -22,6 +22,8 @@ class CRegisters;
 class RomMemoryHandler;
 class AudioInterfaceHandler;
 
+namespace Nova64 { class StateArchive; }
+
 namespace N64System {
 
 // Timer type enumeration
@@ -124,16 +126,8 @@ public:
     static constexpr uint32_t AI_CLOCK_FREQUENCY = 46875000;   // 46.875 MHz
     static constexpr uint32_t VI_CLOCK_FREQUENCY = 48681812;   // ~48.68 MHz
     
-    // Save state support
-    struct SaveState {
-        std::array<uint64_t, static_cast<size_t>(TimerType::MaxTimers)> cycles_remaining;
-        std::array<bool, static_cast<size_t>(TimerType::MaxTimers)> active;
-        uint64_t total_cycles;
-        TimerType current_timer;
-    };
-    
-    SaveState save_state() const;
-    void load_state(const SaveState& state);
+    /// Save states and rewind (see StateArchive.hpp). Callbacks are wiring, not state.
+    void SerializeState(Nova64::StateArchive& ar);
     
     // Callback registration
     void register_callback(TimerType type, const std::function<void()>& callback);

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include "../../common/file.hpp"
 
+namespace Nova64 { class StateArchive; }
+
 class CFlashRam
 {
 public:
@@ -26,6 +28,9 @@ public:
     void DmaToFlashram(uint8_t * Source, int32_t StartOffset, int32_t len);
     uint32_t ReadFromFlashStatus(uint32_t PAddr);
     void WriteToFlashCommand(uint32_t Value);
+
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
 private:
     CFlashRam(void);

@@ -149,6 +149,10 @@ public:
      * @param reason Reason for clearing
      */
     void ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, RemoveReason reason);
+
+    /// Discards all compiled code, for when any of RDRAM may have changed
+    /// (a save state was loaded).
+    void ClearAllCode();
     
     /**
      * @brief Get memory stack position pointer

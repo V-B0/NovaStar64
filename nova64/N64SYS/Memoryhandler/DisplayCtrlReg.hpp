@@ -10,6 +10,7 @@
 
 // Forward declarations
 class CRegisters;
+namespace Nova64 { class StateArchive; }
 namespace Plugins {
     class GFXPlugin;
 }
@@ -92,6 +93,9 @@ public:
 
     // Reset
     void Reset();
+
+    /// Save states and rewind (see StateArchive.hpp).
+    void SerializeState(Nova64::StateArchive& ar);
 
     // Set DMEM pointer for XBUS mode
     void SetDMEM(uint8_t* dmem) { m_DMEM = dmem; }
