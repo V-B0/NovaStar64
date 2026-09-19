@@ -349,10 +349,12 @@ diagnostic variables and the failure modes that have already cost time.
 
 ## Project64 and licensing
 
-NovaStar64 is licensed under **GPL-2.0** (see [LICENSE](LICENSE)). It began as a
-fork of Project64 and remains a derivative work of it, so it carries
-Project64's license. The Project64-derived code is identified precisely rather
-than in general terms:
+Copyright (C) 2026 Varga Bálint. NovaStar64 is licensed under **GPL-2.0** (see
+[LICENSE](LICENSE)). It began as a fork of Project64 and remains a derivative work
+of it, so it carries Project64's license. Code derived from Project64, and through
+it from mupen64plus-rsp-hle, stays copyright its original authors, as the notices in
+those files say. The Project64-derived code is identified precisely rather than in
+general terms:
 
 | Subsystem | Files crediting Project64 | Lines in those files |
 |---|---|---|
@@ -415,8 +417,8 @@ Each component keeps its own license.
 
 ## Legal
 
-NovaStar64 is not affiliated with or endorsed by Nintendo or the Project64
-team. Nintendo 64 and the names of the games shown are trademarks of their
+Copyright (C) 2026 Varga Bálint. NovaStar64 is not affiliated with or endorsed by
+Nintendo or the Project64 team. Nintendo 64 and the names of the games shown are trademarks of their
 respective owners. NovaStar64 contains no game images or console firmware; use
 it only with games you own.
 
