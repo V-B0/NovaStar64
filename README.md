@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="nova64/assets/icon/Novastar.png" width="71" alt="The NovaStar64 icon">
+</p>
+
 <h1 align="center">NovaStar64</h1>
 
 <p align="center">
@@ -159,12 +163,10 @@ cmake -B build -G Ninja
 cmake --build build
 ```
 
-**macOS:** re-sign the binary after *every* rebuild, otherwise its dynamic
-libraries fail to load and the process hangs without an error message:
-
-```bash
-codesign --force --deep --sign - build/nova64
-```
+**macOS:** the build signs the binary itself (ad hoc; an unsigned one can't load
+its dynamic libraries and hangs without an error message) and then gives it the
+NovaStar icon in Finder. There is nothing to run by hand. Signing refuses a file
+that already has the icon, so if you ever re-sign manually, do it on a fresh link.
 
 `pip install cmake ninja` is a convenient way to get both tools on Apple
 Silicon, but pip installs them somewhere that is not on `PATH`. If a scripted
@@ -238,10 +240,17 @@ remembered for that specific controller.
 
 ## Configuration
 
-Settings live in a `settings/` folder. NovaStar64 looks for it, and for `roms/`
-and `saves/`, in the directory it is started from. If none of them is there —
-for example when the app is opened from Finder — it uses the folder containing
-the executable instead.
+Everything NovaStar64 keeps — `settings/`, `roms/`, `saves/` — lives in one data
+folder: **the folder containing the executable** (`nova64/build/` for a build from
+source). It is the same however the program is started, from a terminal in any
+directory or by opening the executable from Finder, so the same games, save states,
+cartridge saves and settings show up every time. Set the `NOVA64_HOME` environment
+variable to use a different folder instead, for example to keep several sets of
+saves.
+
+Paths typed on the command line are relative to where you typed them, and
+`nova64 roms/game.z64` falls back to the data folder's `roms/` when nothing is
+there.
 
 | File | Contents |
 |---|---|
@@ -292,7 +301,8 @@ game on every platform.
 | `nova64/NovaLua/` | Embedded Lua scripting engine |
 | `nova64/UI/` | The launcher |
 | `nova64/common/` | Shared utilities: logging, INI parsing, file I/O, platform macros |
-| `nova64/scripts/` | Development tools: trace comparison, derivation measurement |
+| `nova64/scripts/` | Development tools: trace comparison, derivation measurement, icon generation |
+| `nova64/assets/` | The NovaStar icon (PNG, and ICO for the Windows executable), built into the program |
 | `softfloat/` | Berkeley SoftFloat, used for the FPU |
 | `docs/` | Design notes and roadmaps |
 

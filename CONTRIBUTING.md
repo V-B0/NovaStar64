@@ -23,8 +23,10 @@ git submodule update --init                       # Berkeley SoftFloat
 cd nova64
 cmake -B build -G Ninja
 cmake --build build
-codesign --force --deep --sign - build/nova64   # macOS, after every rebuild
 ```
+
+On macOS the build signs the binary and sets its Finder icon (see
+`scripts/set-macos-file-icon.sh`); there is no separate `codesign` step.
 
 You need your own ROM images to test with. None are included, and `roms/` and
 `saves/` are git-ignored — keep it that way.
@@ -196,25 +198,27 @@ on the first differing frame, and remember rule 2 above.
 
 ### Unattended game runs
 
-Runs read `settings/` and write cartridge saves (`Saves/`) and the shader cache
-relative to the working directory, and a game can change its save during a test.
-Majora's Mask deletes an owl save when it loads one. Run from a scratch
-directory that holds copies, and copy the save in again before every run so runs
-stay comparable:
+A run reads `settings/` and writes cartridge saves (`Saves/`), save states and the
+shader cache in the data folder: `$NOVA64_HOME` if it is set, otherwise the folder
+containing the executable. The shell's directory does not matter. **Always point
+`NOVA64_HOME` at a scratch folder for a test run** -- without it a run of
+`build/nova64` reads and writes your real settings and saves, and a game can change
+its save during a test (Majora's Mask deletes an owl save when it loads one). Copy
+the save in again before every run so runs stay comparable:
 
 ```bash
-mkdir -p /tmp/run/Saves && cd /tmp/run
-cp -R ~/NovaStar64/settings . && ln -s ~/NovaStar64/nova64/build/roms roms
+export NOVA64_HOME=/tmp/run
+mkdir -p $NOVA64_HOME/Saves && cd $NOVA64_HOME
+cp -R ~/NovaStar64/nova64/build/settings . && ln -s ~/NovaStar64/nova64/build/roms roms
 cp "path/to/ZELDA MAJORA'S MASK.fla" Saves/
 SDL_AUDIODRIVER=dummy NOVA64_AUTOINPUT_MM=1 NOVA64_SHOT_START=1800 NOVA64_SHOT_EVERY=600 \
 NOVA64_SHOT_PATH=/tmp/run/shot ~/NovaStar64/nova64/build/nova64 roms/MM \
     --headless --resolution 480p --frames 2450 --fps 0
 ```
 
-The scratch directory needs its own `roms` and `settings`: if the working
-directory has neither, the app assumes it was launched from a GUI and switches to
-the folder containing the executable, which is where your real settings and saves
-are.
+Copying the binary into the scratch folder and running it from there works too,
+since the executable's own folder is then the data folder. Use absolute paths for
+output files such as `NOVA64_SHOT_PATH`: a relative one lands in the data folder.
 
 `NOVA64_AUTOINPUT_SCRIPT` plays a timeline instead of the built-in mashing. Each
 line is `from to Buttons [pulse=period,on] [stickX stickY]`, counted in video
@@ -384,12 +388,15 @@ interpreter-vs-recompiler trace comparison could never see it. When a value has 
 real-hardware definition, check it against that absolute number, not just against
 the other implementation.
 
-**Don't rely on the working directory.** `settings/`, `roms/` and `saves/` are
-found relative to where the process starts. A terminal launch from the right
-folder gets this by construction; a GUI launch (Finder, Dock) hands the process an
-unrelated directory, and the Games tab came up empty. `main.cpp` now falls back
-to the executable's own folder when the working directory has neither `roms/` nor
-`settings/` — don't add new relative-path assumptions that bypass that.
+**Don't rely on the working directory.** `settings/`, `roms/`, `saves/`, `Saves/` and
+`ShaderCache/` are plain relative paths, so they follow the process's working
+directory. That used to be whichever folder the program was started in, and the same
+game had different save states and cartridge saves depending on whether it was
+opened from a terminal (project root, `nova64/` or `build/`) or from Finder. Since
+`main.cpp` now moves to one data folder at startup (`$NOVA64_HOME`, else the
+executable's folder), relative paths are safe -- but a path typed on the command line
+is relative to where the user typed it, so resolve it before that move
+(`ResolveFromStartDir`), and never add a second place that data can live.
 
 **macOS filesystems are case-insensitive.** `RspTypes.hpp` and `RSPTypes.hpp` are
 the same file. A case-insensitive search may report a header as unused when it is
@@ -408,8 +415,11 @@ a `cmake .. && ninja` chain short-circuits and Ninja happily relinks stale objec
 files — including sources you just deleted. Verify the configure step actually
 ran.
 
-**A rebuilt macOS binary must be re-signed.** Skip `codesign` and the dynamic
-libraries fail to load and the process hangs silently.
+**A rebuilt macOS binary must be signed, and signing must come before the icon.**
+Skip `codesign` and the dynamic libraries fail to load and the process hangs
+silently. The build now does both steps, in that order, because `codesign` refuses a
+file that already carries a Finder icon ("resource fork, Finder information, or
+similar detritus not allowed") and the icon is lost whenever the file is relinked.
 
 **Region matters.** If you add a hardware constant, check whether it differs
 between NTSC and PAL before hardcoding it.
