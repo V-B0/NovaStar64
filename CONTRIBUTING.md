@@ -216,6 +216,31 @@ directory has neither, the app assumes it was launched from a GUI and switches t
 the folder containing the executable, which is where your real settings and saves
 are.
 
+`NOVA64_AUTOINPUT_SCRIPT` plays a timeline instead of the built-in mashing. Each
+line is `from to Buttons [pulse=period,on] [stickX stickY]`, counted in video
+fields; buttons are joined with `+` (`A`, `B`, `Z`, `Start`, `L`, `R`, `DUp`,
+`CUp`, ...). This one takes Ocarina of Time from boot into Link's house, opens the
+pause menu, turns through its pages and closes it again:
+
+```
+300 700 Start pulse=100,6      # title screen, then file 1
+760 900 A pulse=30,12          # type letters (the cursor starts on A)
+920 930 Start                  # cursor to END
+960 15099 A pulse=50,10        # confirm the name, then skip dialogue into the house
+15100 15108 Start              # open the pause menu
+15570 15578 R                  # page right, four times
+15650 15658 R
+15730 15738 R
+15810 15818 R
+16000 16008 Start              # close it
+```
+
+Running that to field 15000 with `NOVA64_STATE_SAVE_AT=15000:1` leaves a state
+you can start later runs from. A state loaded at the very start of a headless run
+begins with no framebuffers on the GPU side, and the picture can stay black
+(Ocarina of Time's did until its pause menu opened); for anything that depends on
+the display, play through with a script instead.
+
 The scripted input is applied where the PIF reads the controller
 (`NovaInput::ApplyScriptedInput`). Screenshot and trace frame numbers count
 presented frames, and heavy tracing can shift when the game reaches a scene.
@@ -287,6 +312,8 @@ the rest.
 | `NOVA64_UI_SHOT_AT=580,700` | With `NOVA64_UI_SHOT`, save `<path>_<frame>` on each frame and exit after the last (pass a path without an extension; the files are PNG) |
 | `NOVA64_AUTOINPUT=1` | Play controller 1 from a script: menu mashing, then wandering |
 | `NOVA64_AUTOINPUT_MM=1` (`_MM_BOOT=<reads>`) | Walk through Majora's Mask and open its pause menu, with a longer boot if needed |
+| `NOVA64_AUTOINPUT_SCRIPT=<file>` | Play controller 1 from a timeline: one span per line, `from to Buttons [pulse=period,on] [stickX stickY]`, counted in video fields, `#` starts a comment (see [Unattended game runs](#unattended-game-runs)) |
+| `NOVA64_STATE_SAVE_AT=<field>[:slot],...` / `NOVA64_STATE_LOAD_AT=` | Save or load a state when the video field count reaches the value, so a headless run can start from late in a game. A run that loads a state continues from the field count the state was saved at |
 | `NOVA64_MM_RDP_TRACE=1` (`_FROM=`, `_TO=`) | Log RDP commands, limited to a range of presented frames — tracing a whole run is far too slow |
 | `NOVA64_TRI_DUMP=min,max` | Dump every triangle drawn in a range of frames |
 | `NOVA64_TEXDBG=1` / `NOVA64_FORENSIC=1` | Log texture decodes / texture-cache hits and misses |
@@ -324,6 +351,32 @@ line's accumulated offset and drifted off-screen, and Peach's letter came out
 blank while its draw calls all ran. When text or UI goes missing, check the
 geometry first: `NOVA64_TRI_DUMP` shows the NDC positions, and anything outside
 -1..1 is being placed wrong rather than skipped.
+
+**A framebuffer the game stopped using can still claim its memory.** The RDP
+image the game rendered into a region is only a stand-in for that RDRAM while the
+game leaves the region alone. Ocarina of Time renders Link's equipment-page
+preview into a 64x112 buffer inside the heap; when the menu closes, gameplay
+textures are loaded over the same memory. The framebuffer table still listed the
+buffer, so a texture load that landed inside its range was bound to the buffer's
+canvas instead of being decoded from RDRAM: Link's cap came out black (the
+preview's background), and the same range could put pieces of his portrait on
+other textures. Each buffer now
+keeps a hash of its RDRAM footprint from the last time the RDP drew into it or the
+backend copied it back (`FramebufferManager::RecordRdramFingerprint`); a
+range-only match whose memory no longer hashes the same is not treated as a
+framebuffer. Exact-address matches keep the old behaviour on purpose: Majora's
+Mask and Ocarina of Time both read their pause-menu backdrop that way after the
+CPU has worked on the memory. To spot this class of bug in a trace, look for
+`BindTex0` lines with `fbFound=true fbAlias=false` on textures that should be plain
+RDRAM.
+
+**The picture follows the VI, not the last draw.** A frame in which the RDP drew
+nothing used to present the buffer the game had drawn into last. Ocarina of
+Time's pause menu leaves the RDP idle for seconds while the CPU filters the
+frozen frame, and the last task before that had rendered a coverage image into
+the old framebuffer's memory, so the screen went white until the menu appeared.
+`VulkanRenderer::EndFrame` now presents the display-ready buffer (the VI origin)
+even when nothing was drawn.
 
 **Two engines agreeing does not make them right.** The VI-period bug above
 existed identically in the interpreter and the recompiler, so the

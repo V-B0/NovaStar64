@@ -117,7 +117,7 @@ systematically, and there is no automated compatibility suite.
 |---|---|---|
 | The Legend of Zelda: Majora's Mask (NTSC-U 1.0) | Playable | A 30-minute playthrough turned up only some incomplete visual effects. |
 | Super Mario 64 (NTSC-U) | Playable | Title screen, the opening cutscene with Peach's letter, the castle grounds and the pause screen all work. |
-| The Legend of Zelda: Ocarina of Time (NTSC-U 1.2) | Boots | Reaches the file-select screens. Gameplay has not been checked. |
+| The Legend of Zelda: Ocarina of Time (NTSC-U 1.2) | Playable | Name entry, the intro dialogue, Link's house in Kokiri Forest and all four pause-menu pages (items, map, quest status, equipment) work. Opening the pause menu holds the last frame for a few seconds while the game filters it on the CPU. |
 
 macOS on Apple Silicon is the only platform it has been built and run on. The
 ARM64 recompiler runs the games above but is still incomplete — on Majora's Mask
@@ -321,6 +321,9 @@ diagnostic variables and the failure modes that have already cost time.
 - Only NTSC-U games have been tested. PAL timing is implemented but has not
   been checked against a commercial PAL game.
 - Majora's Mask has some incomplete visual effects (see [Status](#status)).
+- Ocarina of Time's pause menu holds the last frame for a few seconds while the game
+  builds its background on the CPU. The length of the wait has not been compared with
+  real hardware.
 - The launcher is written to build on Windows and Linux but has only been built
   and run on macOS. Drawing a game inside the launcher with the OpenGL renderer
   (the default outside macOS) is untested; Vulkan is the tested path.
