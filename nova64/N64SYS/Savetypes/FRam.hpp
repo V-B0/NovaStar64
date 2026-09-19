@@ -1,6 +1,9 @@
 /**
  * @file FRam.hpp
  * @brief F Ram declarations and types.
+ *
+ * Derived from Project64 (https://github.com/project64/project64),
+ * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
 #pragma once
 #include <cstdint>

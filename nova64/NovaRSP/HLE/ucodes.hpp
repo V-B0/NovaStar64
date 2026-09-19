@@ -2,8 +2,12 @@
  * @file ucodes.hpp
  * @brief RSP HLE Audio Ucodes.
  *
- * Derived from Project64 (https://github.com/project64/project64),
+ * Derived from Project64 (https://github.com/project64/project64), whose RSP HLE code in turn
+ * comes from mupen64plus-rsp-hle (https://github.com/mupen64plus/mupen64plus-rsp-hle),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
+ *
+ * Copyright(C) 2001-2021 Project64
+ * Copyright(C) 2014 Bobby Smiles
  */
 
 #pragma once
