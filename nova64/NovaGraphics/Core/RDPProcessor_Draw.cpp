@@ -1326,27 +1326,6 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     }
     } // end else (overrideCrc == 0)
 
-    // TEMP DIAGNOSTIC (NOVA64_CRC_STALE_DBG=1): a batched draw's texture key uses
-    // a CRC snapshotted at enqueue time (overrideCrc) instead of a fresh TMEM read,
-    // to survive TMEM being overwritten by later draws before the batch flushes.
-    // This recomputes what the CRC would be if read fresh from TMEM right now (at
-    // flush time) and logs any mismatch -- proving whether the snapshot is stale
-    // for a specific draw, without changing which CRC is actually used.
-    if (overrideCrc != 0) {
-        static const bool s_crcStaleDbg = std::getenv("NOVA64_CRC_STALE_DBG") != nullptr;
-        if (s_crcStaleDbg && (key.format == Tex::N64TexFormat::CI || tlutType != 0)) {
-            Tex::TextureKey freshKey = BuildTextureKey(tile, textureImageAddr, tlutType, mipTiles, mipCount, 0);
-            if (freshKey.crc != overrideCrc) {
-                std::fprintf(stderr,
-                    "[STALE-CRC] addr=0x%06X fmt=%d size=%d w=%u h=%u pal=%u tlut=%u snapCrc=0x%016llX freshCrc=0x%016llX\n",
-                    key.address & 0x7FFFFF, static_cast<int>(key.format), static_cast<int>(key.size),
-                    key.width, key.height, key.palette, tlutType,
-                    static_cast<unsigned long long>(overrideCrc),
-                    static_cast<unsigned long long>(freshKey.crc));
-            }
-        }
-    }
-
     if (TraceMMRdpEnabled()) {
         bool interestingTexture = key.format == Tex::N64TexFormat::CI ||
                                   tlutType != 0 ||
