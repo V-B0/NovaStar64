@@ -151,7 +151,7 @@ legally obtained ROM images (`.z64`, `.n64`, `.v64`).
 Berkeley SoftFloat is a git submodule, so fetch it along with the source:
 
 ```bash
-git clone --recurse-submodules <repository-url>   # or, in an existing clone:
+git clone --recurse-submodules https://github.com/V-B0/NovaStar64.git   # or, in an existing clone:
 git submodule update --init
 ```
 
@@ -356,16 +356,16 @@ than in general terms:
 
 | Subsystem | Files crediting Project64 | Lines in those files |
 |---|---|---|
-| `N64SYS/` | 44 of 127 (35%) | 26,352 of 62,856 (42%) |
-| `NovaRSP/` | 58 of 66 (88%) | 21,737 of 23,423 (93%) |
-| `NovaGraphics/` | 0 of 115 (0%) | 0 of 55,575 (0%) |
+| `N64SYS/` | 51 of 127 (40%) | 31,306 of 62,909 (50%) |
+| `NovaRSP/` | 58 of 66 (88%) | 21,779 of 23,465 (93%) |
+| `NovaGraphics/` | 0 of 115 (0%) | 0 of 55,678 (0%) |
 | `NovaAudio/` | 0 of 2 (0%) | 0 of 397 (0%) |
-| `NovaInput/` | 0 of 6 (0%) | 0 of 1,049 (0%) |
+| `NovaInput/` | 0 of 6 (0%) | 0 of 1,136 (0%) |
 | `NovaLua/` | 0 of 2 (0%) | 0 of 350 (0%) |
-| `UI/` | 0 of 11 (0%) | 0 of 3,073 (0%) |
-| `common/` | 1 of 24 (4%) | 468 of 5,887 (8%) |
-| `main.cpp` | 0 of 1 (0%) | 0 of 308 (0%) |
-| **Total** | **103 of 354 (29%)** | **48,557 of 152,918 (32%)** |
+| `UI/` | 0 of 13 (0%) | 0 of 3,190 (0%) |
+| `common/` | 1 of 24 (4%) | 468 of 5,954 (8%) |
+| `main.cpp` | 0 of 1 (0%) | 0 of 346 (0%) |
+| **Total** | **110 of 356 (31%)** | **53,553 of 153,425 (35%)** |
 
 A file counts if its header credits Project64, and is counted in full, so these
 figures are an upper bound on the derived code. Regenerate them with
@@ -391,7 +391,8 @@ Each component keeps its own license.
 | [SDL2](https://github.com/libsdl-org/SDL) | Windowing, input, audio | zlib |
 | [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers), [volk](https://github.com/zeux/volk) | Vulkan API and loader | Apache-2.0 / MIT; MIT |
 | [glslang](https://github.com/KhronosGroup/glslang) | GLSL to SPIR-V for the Vulkan backend | BSD-3-Clause and others |
-| [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan on Metal (prebuilt macOS library) | Apache-2.0 |
+| [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan on Metal (prebuilt macOS library in `nova64/thirdparty/MoltenVK/`, with its license text) | Apache-2.0 |
+| [glad](https://github.com/Dav1dde/glad) 2.0 | OpenGL loader (generated, `nova64/external/glad/`) | (WTFPL or CC0-1.0) and Apache-2.0; `khrplatform.h` is Khronos MIT-style |
 | [Dear ImGui](https://github.com/ocornut/imgui), [imgui-node-editor](https://github.com/thedmd/imgui-node-editor) | Launcher UI | MIT |
 | [stb](https://github.com/nothings/stb) | Image reading and writing | MIT / public domain |
 | [nlohmann/json](https://github.com/nlohmann/json) | JSON | MIT |
