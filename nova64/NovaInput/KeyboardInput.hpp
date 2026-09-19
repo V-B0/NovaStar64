@@ -41,8 +41,16 @@ PIF::ControllerState PollKeyboard();
  * @brief Debug-only scripted input for unattended runs. With NOVA64_AUTOINPUT
  *        (SM64-style menu masher) or NOVA64_AUTOINPUT_MM (walk, open the pause
  *        menu, cycle pages) set, replaces player 1's state; otherwise leaves it.
- *        The counter advances once per controller read.
+ *        Those two count controller reads.
+ *
+ *        NOVA64_AUTOINPUT_SCRIPT=<file> plays a timeline instead, keyed on video
+ *        frames (`viFrame`), so it lines up with NOVA64_SHOT_* screenshot numbers.
+ *        One line per span: `FROM TO BUTTONS [X Y] [pulse=PERIOD,ON]`, frames
+ *        half-open [FROM, TO), BUTTONS joined with `+` (A B Z Start DUp DDown
+ *        DLeft DRight L R CUp CDown CLeft CRight) or `-` for none, X and Y the
+ *        stick in -80..80, `pulse` to press only for the first ON frames of every
+ *        PERIOD. Spans overlap freely (buttons OR together); `#` starts a comment.
  */
-void ApplyScriptedInput(PIF::ControllerState& state);
+void ApplyScriptedInput(PIF::ControllerState& state, uint64_t viFrame);
 
 } // namespace NovaInput

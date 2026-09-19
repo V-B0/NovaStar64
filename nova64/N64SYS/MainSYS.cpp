@@ -44,6 +44,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <vector>
 #include <memory>
 #include <ctime>
 #include <chrono>
@@ -400,6 +401,11 @@ bool CN64System::RunFileImage(const char* FileLoc, uint64_t frameLimit)
     LOG_DEBUG("RunFileImage with frameLimit");
     Log::infof("RunFileImage: \"%s\" (frameLimit: %llu)", 
                FileLoc ? FileLoc : "(null)", (unsigned long long)frameLimit);
+
+    // NOVA64_STATE_SAVE_AT / NOVA64_STATE_LOAD_AT need the save-state service,
+    // which the launcher normally starts; start it here for command-line runs.
+    if (FileLoc && (std::getenv("NOVA64_STATE_SAVE_AT") || std::getenv("NOVA64_STATE_LOAD_AT")))
+        Nova64::StateService::Instance().BeginSession(FileLoc);
 
     // Uninitialize g_Disk and g_DDRom to prevent exception when ending emulation
     if (g_Disk != nullptr)
@@ -1757,6 +1763,32 @@ void CN64System::RefreshScreen()
                     }
                 }
             }
+    }
+
+    // Test hooks for unattended runs: NOVA64_STATE_SAVE_AT=<frame>[:slot],... saves
+    // a state when the video field count reaches <frame>; NOVA64_STATE_LOAD_AT
+    // loads one. Slot defaults to 0. A run that loads a state continues counting
+    // from the field count the state was saved at.
+    {
+        struct Trigger { uint64_t frame; int slot; };
+        static const auto parse = [](const char* name) {
+            std::vector<Trigger> out;
+            const char* value = std::getenv(name);
+            for (const char* p = value; p && *p;) {
+                char* end = nullptr;
+                const uint64_t frame = std::strtoull(p, &end, 10);
+                if (end == p) break;
+                int slot = 0;
+                if (*end == ':') slot = static_cast<int>(std::strtol(end + 1, &end, 10));
+                out.push_back({frame, slot});
+                p = (*end == ',') ? end + 1 : end;
+            }
+            return out;
+        };
+        static const std::vector<Trigger> saves = parse("NOVA64_STATE_SAVE_AT");
+        static const std::vector<Trigger> loads = parse("NOVA64_STATE_LOAD_AT");
+        for (const Trigger& t : saves) if (t.frame == frameNum) Nova64::StateService::Instance().RequestSave(t.slot);
+        for (const Trigger& t : loads) if (t.frame == frameNum) Nova64::StateService::Instance().RequestLoad(t.slot);
     }
 
     // Save-state requests, rewind points and the launcher's pause are handled

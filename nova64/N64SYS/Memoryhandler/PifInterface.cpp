@@ -279,7 +279,7 @@ void PifRamHandler::pif_control_read()
         if (pad.plugged_in) gamepads.Apply(player, pad);
         m_controllers[player] = pad;
     }
-    NovaInput::ApplyScriptedInput(m_controllers[0]);
+    NovaInput::ApplyScriptedInput(m_controllers[0], m_system.GetCurrentFrameCount());
 
     int channel = 0;
     for (int cur = 0; cur < 0x40; )

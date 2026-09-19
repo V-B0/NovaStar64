@@ -8,10 +8,17 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 namespace NovaInput {
 
@@ -93,8 +100,80 @@ PIF::ControllerState PollKeyboard()
     return state;
 }
 
-void ApplyScriptedInput(PIF::ControllerState& state)
+namespace {
+
+struct ScriptSpan {
+    uint64_t from = 0, to = 0;
+    uint16_t buttons = 0;
+    bool     hasStick = false;
+    int8_t   x = 0, y = 0;
+    uint32_t period = 0, on = 0;   // pulse: press for the first `on` frames of every `period`
+};
+
+uint16_t ParseButtons(const std::string& text)
 {
+    static const std::pair<const char*, uint16_t> kNames[] = {
+        {"A", N64Button::A}, {"B", N64Button::B}, {"Z", N64Button::Z}, {"Start", N64Button::Start},
+        {"DUp", N64Button::DPadUp}, {"DDown", N64Button::DPadDn}, {"DLeft", N64Button::DPadLt},
+        {"DRight", N64Button::DPadRt}, {"L", N64Button::L}, {"R", N64Button::R},
+        {"CUp", N64Button::CUp}, {"CDown", N64Button::CDown}, {"CLeft", N64Button::CLeft},
+        {"CRight", N64Button::CRight}};
+    uint16_t mask = 0;
+    std::stringstream parts(text);
+    for (std::string name; std::getline(parts, name, '+');)
+        for (const auto& [known, bit] : kNames)
+            if (name == known) mask |= bit;
+    return mask;
+}
+
+const std::vector<ScriptSpan>& LoadScript()
+{
+    static const std::vector<ScriptSpan> spans = []() {
+        std::vector<ScriptSpan> out;
+        const char* path = std::getenv("NOVA64_AUTOINPUT_SCRIPT");
+        if (!path || !*path) return out;
+        std::ifstream file(path);
+        for (std::string line; std::getline(file, line);) {
+            if (const auto hash = line.find('#'); hash != std::string::npos) line.erase(hash);
+            std::stringstream in(line);
+            ScriptSpan span;
+            std::string buttons;
+            if (!(in >> span.from >> span.to >> buttons)) continue;
+            span.buttons = ParseButtons(buttons);
+            for (std::string token; in >> token;) {
+                if (token.rfind("pulse=", 0) == 0) {
+                    unsigned period = 0, on = 0;
+                    if (std::sscanf(token.c_str() + 6, "%u,%u", &period, &on) == 2) { span.period = period; span.on = on; }
+                } else if (!span.hasStick) {
+                    int x = std::atoi(token.c_str()), y = 0;
+                    if (in >> y) { span.x = static_cast<int8_t>(std::clamp(x, -80, 80)); span.y = static_cast<int8_t>(std::clamp(y, -80, 80)); span.hasStick = true; }
+                }
+            }
+            out.push_back(span);
+        }
+        return out;
+    }();
+    return spans;
+}
+
+} // namespace
+
+void ApplyScriptedInput(PIF::ControllerState& state, uint64_t viFrame)
+{
+    if (const auto& script = LoadScript(); !script.empty()) {
+        uint16_t buttons = 0;
+        int8_t x = 0, y = 0;
+        for (const ScriptSpan& span : script) {
+            if (viFrame < span.from || viFrame >= span.to) continue;
+            if (span.period == 0 || (viFrame - span.from) % span.period < span.on) buttons |= span.buttons;
+            if (span.hasStick) { x = span.x; y = span.y; }
+        }
+        state.buttons    = buttons;
+        state.joystick_x = x;
+        state.joystick_y = y;
+        return;
+    }
+
     // These scripts used to live in the DLL input plugin's GetControllerState,
     // which the PIF never calls (it reads PollKeyboard directly), so they had
     // no effect at all.
