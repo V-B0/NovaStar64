@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/mm-gameplay.jpg" width="720"
+  <img src="docs/showcase/mm-gameplay.jpg" width="720"
        alt="The Legend of Zelda: Majora's Mask running in the NovaStar64 launcher window at 60 fps">
 </p>
 
@@ -80,24 +80,24 @@ The project is under active development. Expect bugs and rough edges — see
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/pause-menu.jpg" alt="The pause menu with four save-state slots, each showing a picture of where it was saved"></td>
-    <td width="50%"><img src="docs/images/rewind.jpg" alt="The rewind strip: pictures of the last several seconds of play along the bottom of the window"></td>
+    <td width="50%"><img src="docs/showcase/pause-menu.jpg" alt="The pause menu with four save-state slots, each showing a picture of where it was saved"></td>
+    <td width="50%"><img src="docs/showcase/rewind.jpg" alt="The rewind strip: pictures of the last several seconds of play along the bottom of the window"></td>
   </tr>
   <tr>
     <td align="center"><b>Pause menu</b> — four save-state slots with pictures</td>
     <td align="center"><b>Rewind</b> — pick a moment from the last few seconds and play on from there</td>
   </tr>
   <tr>
-    <td><img src="docs/images/mm-dialogue.jpg" alt="Majora's Mask: a Deku Scrub's dialogue box in the launcher window"></td>
-    <td><img src="docs/images/sm64-gameplay.jpg" alt="Super Mario 64: Mario near Princess Peach's castle, rendered at 4x internal resolution"></td>
+    <td><img src="docs/showcase/mm-dialogue.jpg" alt="Majora's Mask: a Deku Scrub's dialogue box in the launcher window"></td>
+    <td><img src="docs/showcase/sm64-gameplay.jpg" alt="Super Mario 64: Mario near Princess Peach's castle, rendered at 4x internal resolution"></td>
   </tr>
   <tr>
     <td align="center"><b>Majora's Mask</b> — in-game text and UI</td>
     <td align="center"><b>Super Mario 64</b> — 4× internal resolution</td>
   </tr>
   <tr>
-    <td><img src="docs/images/launcher-games.png" alt="The launcher's Games tab listing three games"></td>
-    <td><img src="docs/images/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
+    <td><img src="docs/showcase/launcher-games.png" alt="The launcher's Games tab listing three games"></td>
+    <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
   </tr>
   <tr>
     <td align="center"><b>Game library</b></td>
