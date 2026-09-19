@@ -116,7 +116,7 @@ systematically, and there is no automated compatibility suite.
 | Game | Status | Notes |
 |---|---|---|
 | The Legend of Zelda: Majora's Mask (NTSC-U 1.0) | Playable | A 30-minute playthrough turned up only some incomplete visual effects. |
-| Super Mario 64 (NTSC-U) | Playable | Title screen through the castle grounds and the pause screen work. The text on Peach's letter in the opening cutscene doesn't appear. |
+| Super Mario 64 (NTSC-U) | Playable | Title screen, the opening cutscene with Peach's letter, the castle grounds and the pause screen all work. |
 | The Legend of Zelda: Ocarina of Time (NTSC-U 1.2) | Boots | Reaches the file-select screens. Gameplay has not been checked. |
 
 macOS on Apple Silicon is the only platform it has been built and run on. The
@@ -320,8 +320,7 @@ diagnostic variables and the failure modes that have already cost time.
 - No netplay, and no RetroAchievements support yet (the tab is a placeholder).
 - Only NTSC-U games have been tested. PAL timing is implemented but has not
   been checked against a commercial PAL game.
-- Majora's Mask has some incomplete visual effects, and Super Mario 64's
-  opening letter is missing its text (see [Status](#status)).
+- Majora's Mask has some incomplete visual effects (see [Status](#status)).
 - The launcher is written to build on Windows and Linux but has only been built
   and run on macOS. Drawing a game inside the launcher with the OpenGL renderer
   (the default outside macOS) is untested; Vulkan is the tested path.

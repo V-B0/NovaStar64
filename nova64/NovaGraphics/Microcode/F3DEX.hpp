@@ -295,8 +295,9 @@ inline void F3DEXHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0
 }
 
 inline void F3DEXHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0;
-    PopMatrix(ctx, w1);
+    (void)w0; (void)w1;
+    // GBI1: w1 is G_MTX_MODELVIEW (0) or G_MTX_PROJECTION (1), not a count.
+    PopMatrixN(ctx, 1);
 }
 
 inline void F3DEXHandler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {

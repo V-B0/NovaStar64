@@ -250,8 +250,10 @@ inline void F3DHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1
 }
 
 inline void F3DHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0;
-    PopMatrix(ctx, w1);
+    (void)w0; (void)w1;
+    // GBI1: w1 is G_MTX_MODELVIEW (0) or G_MTX_PROJECTION (1), not a count.
+    // GLideN64 F3D_PopMtx -> gSPPopMatrix pops exactly one model-view matrix.
+    PopMatrixN(ctx, 1);
 }
 
 inline void F3DHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_t w1) {

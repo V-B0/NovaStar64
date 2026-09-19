@@ -313,6 +313,18 @@ in a fix, confirm the code runs at all — add a counter or a log line and watch
 fire, or `grep` for a call site. Removing a source file from the build and
 checking that it still links is a reliable deadness test.
 
+**The same GBI command can mean different things in different microcodes.**
+`G_POPMTX` carries `G_MTX_MODELVIEW` (0) in F3D and F3DEX, where it means "pop
+one matrix", but a count times 64 in F3DEX2. The shared handler used the F3DEX2
+meaning for everything, so in F3D games nothing was ever popped. It went
+unnoticed for a long time because Super Mario 64 draws its 3D objects with
+`G_MTX_LOAD` and never needs a pop — but its dialog and letter text pushes a
+translation per line and pops back, so each line started from the previous
+line's accumulated offset and drifted off-screen, and Peach's letter came out
+blank while its draw calls all ran. When text or UI goes missing, check the
+geometry first: `NOVA64_TRI_DUMP` shows the NDC positions, and anything outside
+-1..1 is being placed wrong rather than skipped.
+
 **Two engines agreeing does not make them right.** The VI-period bug above
 existed identically in the interpreter and the recompiler, so the
 interpreter-vs-recompiler trace comparison could never see it. When a value has a

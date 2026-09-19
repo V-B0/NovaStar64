@@ -1904,9 +1904,6 @@ void GBIHandler::EndDisplayList(DListContext& ctx) {
 }
 
 void GBIHandler::PopMatrix(DListContext& ctx, uint32_t param) {
-    if (!ctx.state) return;
-    auto& geo = ctx.state->geometry;
-
     // GBI2: count = w1 >> 6 (GLideN64 F3DEX2.cpp: gSPPopMatrixN(0, w1 >> 6)).
     // Real semantics (gSP.cpp gSPPopMatrixN) are all-or-nothing, NOT
     // clamp-to-1-and-pop-what-you-can:
@@ -1921,9 +1918,14 @@ void GBIHandler::PopMatrix(DListContext& ctx, uint32_t param) {
     // grandparent's transform instead of its parent's -- a plausible source
     // of a displaced/duplicated-looking sub-mesh (e.g. a face feature drawn
     // at the wrong bone transform).
-    int count = static_cast<int>(param >> 6);
-    if (count > 0 && geo.modelViewStackDepth >= count) {
-        geo.modelViewStackDepth -= count;
+    PopMatrixN(ctx, param >> 6);
+}
+
+void GBIHandler::PopMatrixN(DListContext& ctx, uint32_t count) {
+    if (!ctx.state) return;
+    auto& geo = ctx.state->geometry;
+    if (count > 0 && geo.modelViewStackDepth >= static_cast<int>(count)) {
+        geo.modelViewStackDepth -= static_cast<int>(count);
         geo.combinedDirty = true;
         ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
     }

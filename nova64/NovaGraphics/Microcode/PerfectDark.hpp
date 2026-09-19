@@ -308,8 +308,9 @@ inline void F3DPDHandler::Cmd_G_CLEARGEOMETRYMODE_PD(DListContext& ctx, uint32_t
 }
 
 inline void F3DPDHandler::Cmd_G_POPMTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0;
-    PopMatrix(ctx, w1);
+    (void)w0; (void)w1;
+    // F3D-derived (GBI1 command encoding): pops exactly one model-view matrix.
+    PopMatrixN(ctx, 1);
 }
 
 inline void F3DPDHandler::Cmd_G_CULLDL_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {

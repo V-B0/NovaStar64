@@ -293,7 +293,12 @@ protected:
     void EndDisplayList(DListContext& ctx);
     
     /// Process G_POPMTX
+    /// GBI2 (F3DEX2): w1 carries the number of 64-byte matrices to pop (count = w1 >> 6).
     void PopMatrix(DListContext& ctx, uint32_t param);
+    /// Pops `count` model-view matrices; nothing is popped if the stack is shallower than `count`.
+    /// GBI1 microcodes (F3D, F3DEX, F3DPD) always pop exactly one: their w1 is
+    /// G_MTX_MODELVIEW (0) or G_MTX_PROJECTION (1), not a count.
+    void PopMatrixN(DListContext& ctx, uint32_t count);
     
     /// Process G_MODIFYVTX
     void ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxIndex, uint32_t value);
