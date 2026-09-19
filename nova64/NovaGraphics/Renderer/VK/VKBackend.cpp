@@ -698,6 +698,27 @@ public:
             VkImage    swapImg = m_swapchain.GetImage(m_currentImage);
             VkExtent2D ext     = m_swapchain.GetExtent();
             CanvasSlot* active = EnsureCanvas(m_activeCanvasAddr);
+            if (swapImg && active && !m_activeCanvasDirty &&
+                ext.width == m_canvasW && ext.height == m_canvasH) {
+                // Nothing was drawn this frame, so the swapchain still holds
+                // whatever BeginFrame loaded: the ACTIVE buffer's canvas, i.e.
+                // the buffer the game last drew into, not the one the VI is
+                // scanning out. Usually they are the same, but not when the
+                // game leaves the RDP idle for a long stretch after a draw
+                // that used a scratch buffer. OOT/MM's pause-menu opening does
+                // exactly that: its last graphics task renders an 8-bit
+                // coverage pass into the old framebuffer's memory, then the
+                // CPU spends seconds in a software anti-alias filter without
+                // submitting another task -- and the screen went white
+                // (the coverage image) for the whole stretch instead of
+                // holding the frozen frame. Present the display-ready buffer,
+                // as the VI would.
+                CanvasSlot* presentC = FindCanvasForOrigin(m_presentOriginAddr);
+                if (presentC && presentC != active && presentC->valid) {
+                    LoadCanvasToSwapchain(f.cmd, *presentC, swapImg,
+                                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                }
+            }
             if (swapImg && active && m_activeCanvasDirty &&
                 ext.width == m_canvasW && ext.height == m_canvasH) {
                 SaveSwapchainToCanvas(f.cmd, swapImg, *active);

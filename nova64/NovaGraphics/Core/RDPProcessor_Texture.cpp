@@ -431,6 +431,10 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         rawSrcFB = g_fbManager.FindContaining(address);
     }
     bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
+    // Memory reused since the RDP last drew here: the buffer is stale, and the
+    // readback below would overwrite the game's new data with its old pixels.
+    if (rawSrcFB && !canAliasSrcFB && !g_fbManager.RdramUnchanged(rawSrcFB, m_rdram, m_rdramSize))
+        rawSrcFB = nullptr;
     GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
     MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} fbType={} fbW={} fbH={} gpuModified={} fbCount={}",
                  tile,
@@ -508,6 +512,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         const auto& d = rawSrcFB->desc;
         m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
                                             d.format == FBFormat::RGBA16, m_rdram);
+        g_fbManager.RecordRdramFingerprint(rawSrcFB, m_rdram, m_rdramSize);
         rawSrcFB->gpuModified = false;
         rawSrcFB->needsRdramResync = false;
     }
@@ -726,6 +731,7 @@ void RDPProcessor::HandleSyncFull() {
                 m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
                                                    d.format == FBFormat::RGBA16,
                                                    m_rdram);
+                g_fbManager.RecordRdramFingerprint(colorFB, m_rdram, m_rdramSize);
                 // Also sync the DISPLAY buffer when it differs from the current
                 // render target. MM double-buffers (0x000500 / 0x7DA800) and the
                 // CPU capture reads the frame the player is actually looking at,
@@ -743,6 +749,7 @@ void RDPProcessor::HandleSyncFull() {
                     m_renderer->CopyFramebufferToRDRAM(dd.address, dd.width, dd.height,
                                                        dd.format == FBFormat::RGBA16,
                                                        m_rdram);
+                    g_fbManager.RecordRdramFingerprint(displayFB, m_rdram, m_rdramSize);
                 }
             }
         }

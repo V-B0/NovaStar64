@@ -123,6 +123,14 @@ struct GPUFramebuffer {
     // detail); the upload then only fires for buffers the RDP never drew,
     // i.e. genuinely CPU-authored ones.
     bool     everGpuRendered = false;
+    // Hash of this buffer's RDRAM footprint from the last moment the GPU image
+    // and that memory were known to agree: the first draw after a sync, and
+    // again after every GPU->RDRAM readback. A later mismatch means the game
+    // has since put something else in that memory (a texture or object loaded
+    // over a region it once used as a scratch render target) and the GPU image
+    // no longer describes it. See FramebufferManager::RdramUnchanged.
+    uint64_t rdramFingerprint = 0;
+    bool     hasFingerprint   = false;
     uint32_t drawCallsSinceSwitch = 0;   // DIAGNOSTIC: FlushBatch calls since this FB was last snapshotted/switched
     uint32_t trianglesSinceSwitch = 0;   // DIAGNOSTIC: triangle count in those draw calls
     uint64_t lastUsedFrame = 0;
@@ -207,6 +215,16 @@ public:
     GPUFramebuffer* FindContaining(uint32_t address);
     GPUFramebuffer* GetCurrentColor() { return m_currentColor; }
     GPUFramebuffer* GetCurrentDepth() { return m_currentDepth; }
+
+    /// Remember what RDRAM holds under `fb` right now, as the state the GPU
+    /// image is consistent with. Call when the RDP starts drawing into a buffer
+    /// and after copying the buffer back to RDRAM.
+    static void RecordRdramFingerprint(GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize);
+    /// False when `fb`'s RDRAM footprint no longer matches the recorded
+    /// fingerprint, i.e. the memory was reused after the last RDP draw. The
+    /// current render target is always considered unchanged, and so is a buffer
+    /// with no fingerprint yet.
+    bool RdramUnchanged(const GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize) const;
     uint32_t GetFBCount() const { return m_fbCount; }
     GPUFramebuffer* GetFB(uint32_t idx) { return idx < m_fbCount ? &m_framebuffers[idx] : nullptr; }
     uint64_t GetFrameCounter() const { return m_frameCounter; }

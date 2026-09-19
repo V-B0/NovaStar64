@@ -683,6 +683,37 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType prefe
     return bestOfType ? bestOfType : bestAny;
 }
 
+// Sampled FNV-1a over the buffer's RDRAM bytes: at most kMaxSamples words spread
+// evenly across the footprint, so a 150 KB frame costs about as much as a 4 KB
+// texture. Reused memory (a DMA'd texture, a decompressed object) changes most
+// words, so a sparse sample is enough to notice it.
+static uint64_t FootprintFingerprint(const FramebufferDesc& d, const uint8_t* rdram, size_t rdramSize) {
+    constexpr uint32_t kMaxSamples = 1024;
+    const uint64_t begin = d.address & ~3u;
+    const uint64_t end   = std::min<uint64_t>(d.EndAddress(), rdramSize);
+    if (end <= begin + 3) return 0;
+    const uint64_t words = (end - begin) / 4;
+    const uint64_t step  = std::max<uint64_t>(1, words / kMaxSamples);
+    uint64_t hash = 1469598103934665603ull;
+    for (uint64_t w = 0; w < words; w += step) {
+        uint32_t v;
+        std::memcpy(&v, rdram + begin + w * 4, sizeof(v));
+        hash = (hash ^ v) * 1099511628211ull;
+    }
+    return hash;
+}
+
+void FramebufferManager::RecordRdramFingerprint(GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize) {
+    if (!fb || !rdram) return;
+    fb->rdramFingerprint = FootprintFingerprint(fb->desc, rdram, rdramSize);
+    fb->hasFingerprint   = true;
+}
+
+bool FramebufferManager::RdramUnchanged(const GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize) const {
+    if (!fb || !rdram || !fb->hasFingerprint || fb == m_currentColor) return true;
+    return FootprintFingerprint(fb->desc, rdram, rdramSize) == fb->rdramFingerprint;
+}
+
 GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
     address &= 0x7FFFFF;
     for (uint32_t i = 0; i < m_fbCount; ++i) {

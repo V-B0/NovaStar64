@@ -47,6 +47,8 @@ void RDPProcessor::FlushBatch() {
                              a, m_batch.drawCalls.size());
             }
         }
+        if (!curFB->gpuModified)
+            g_fbManager.RecordRdramFingerprint(curFB, m_rdram, m_rdramSize);
         curFB->gpuModified = true;
         curFB->needsInventorySnapshot = true;
         curFB->needsRdramResync = true;
@@ -1584,6 +1586,14 @@ void RDPProcessor::FlushBatch() {
                 if (!g_fbManager.IsGL() && !rawRTFB0)
                     rawRTFB0 = g_fbManager.FindContaining(key0.address);
                 bool aliasRTFB0 = CanAliasFramebuffer(rawRTFB0, key0.address, IsRGBAFramebufferFormat(key0));
+                // A buffer matched only by RANGE whose memory has been reused
+                // since the RDP last drew into it is not a framebuffer read.
+                // OOT renders Link's equipment-page preview into a 64x112 buffer
+                // inside the heap; once the menu closes, gameplay textures are
+                // loaded over that memory, and treating them as reads of the
+                // stale buffer bound the preview image in place of Link's cap.
+                if (rawRTFB0 && !aliasRTFB0 && !g_fbManager.RdramUnchanged(rawRTFB0, m_rdram, m_rdramSize))
+                    rawRTFB0 = nullptr;
                 GPUFramebuffer* rtFB0 = aliasRTFB0 ? rawRTFB0 : nullptr;
 
                 MM_RDP_TRACE("BindTex0 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} line={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X} shiftS={} shiftT={}",
@@ -1913,6 +1923,8 @@ void RDPProcessor::FlushBatch() {
                 if (!g_fbManager.IsGL() && !rawRTFB1)
                     rawRTFB1 = g_fbManager.FindContaining(key1.address);
                 bool aliasRTFB1 = CanAliasFramebuffer(rawRTFB1, key1.address, IsRGBAFramebufferFormat(key1));
+                if (rawRTFB1 && !aliasRTFB1 && !g_fbManager.RdramUnchanged(rawRTFB1, m_rdram, m_rdramSize))
+                    rawRTFB1 = nullptr;   // memory reused since the last draw; see tex0 above
                 GPUFramebuffer* rtFB1 = aliasRTFB1 ? rawRTFB1 : nullptr;
                 MM_RDP_TRACE("BindTex1 drawType={} addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} tmem={} crc=0x{:016X} fbFound={} fbAlias={} fbAddr=0x{:06X} color=0x{:06X} z=0x{:06X}",
                              static_cast<int>(call.type),
