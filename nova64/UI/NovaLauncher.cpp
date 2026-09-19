@@ -5,6 +5,7 @@
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
 #include "NovaTheme.hpp"
+#include "AppIcon.hpp"
 
 #include <SDL.h>
 #include <glad/gl.h>
@@ -29,6 +30,23 @@ namespace NovaUI {
 ed::EditorContext* g_NodeEditor = nullptr;
 
 namespace {
+
+// Uploads the embedded icon as a GL texture (0 if it couldn't be decoded).
+GLuint UploadIconTexture() {
+    const IconImage& icon = AppIconImage();
+    if (icon.width == 0) return 0;
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, icon.width, icon.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 icon.rgba.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
 
 constexpr float kNavbarHeight = 40.0f;
 constexpr float kWindowButton = 34.0f;
@@ -173,6 +191,7 @@ void NovaLauncher::Run() {
     if (!window) { SDL_Quit(); return; }
     SDL_SetWindowMinimumSize(window, 800, 560);
     SDL_SetWindowHitTest(window, LauncherHitTest, nullptr);
+    ApplyAppIcon(window);
 
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, glContext);
@@ -197,6 +216,8 @@ void NovaLauncher::Run() {
         SDL_Quit();
         return;
     }
+
+    m_iconTex = UploadIconTexture();
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -350,6 +371,11 @@ void NovaLauncher::Run() {
 
     ed::DestroyEditor(g_NodeEditor);
     g_NodeEditor = nullptr;
+    if (m_iconTex) {
+        const GLuint icon = m_iconTex;
+        glDeleteTextures(1, &icon);
+        m_iconTex = 0;
+    }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
@@ -463,6 +489,12 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
 }
 
 void NovaLauncher::RenderSidebar() {
+    if (m_iconTex) {
+        constexpr float kIcon = 26.0f;
+        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(kIcon, kIcon));
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+    }
     ImGui::TextDisabled("NOVASTAR64");
     ImGui::Spacing();
     ImGui::Spacing();
@@ -479,10 +511,17 @@ void NovaLauncher::RenderSidebar() {
 }
 
 void NovaLauncher::RenderHomeTab() {
+    if (m_iconTex) {
+        constexpr float kIcon = 60.0f;
+        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(kIcon, kIcon));
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
     ImGui::SetWindowFontScale(1.5f);
     ImGui::Text("NovaStar64");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::TextDisabled("Nintendo 64 emulator");
+    ImGui::EndGroup();
     ImGui::Separator();
     ImGui::Spacing();
 

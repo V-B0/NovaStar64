@@ -494,6 +494,30 @@ target_include_directories(softfloat PUBLIC
   list(APPEND SOURCES UI/LauncherSimulator.cpp)
   list(APPEND SOURCES UI/LauncherPlay.cpp)
   list(APPEND SOURCES UI/HexEditor.cpp)
+  list(APPEND SOURCES UI/AppIcon.cpp)
+
+  # The NovaStar icon: compiled into the binary as a list of bytes that
+  # UI/AppIcon.cpp includes, so the launcher and every window can use it without
+  # a file next to the executable. Rewritten only when the picture changes, so an
+  # ordinary reconfigure doesn't recompile it.
+  set(NOVA_ICON_PNG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/Novastar.png")
+  set(NOVA_ICON_INC "${CMAKE_CURRENT_BINARY_DIR}/generated/NovastarIcon.inc")
+  file(READ "${NOVA_ICON_PNG}" NOVA_ICON_HEX HEX)
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," NOVA_ICON_BYTES "${NOVA_ICON_HEX}")
+  set(NOVA_ICON_OLD "")
+  if(EXISTS "${NOVA_ICON_INC}")
+      file(READ "${NOVA_ICON_INC}" NOVA_ICON_OLD)
+  endif()
+  if(NOT NOVA_ICON_OLD STREQUAL "${NOVA_ICON_BYTES}\n")
+      file(WRITE "${NOVA_ICON_INC}" "${NOVA_ICON_BYTES}\n")
+  endif()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${NOVA_ICON_PNG}")
+
+  # Windows: the executable's own icon comes from a resource script.
+  if(WIN32)
+      enable_language(RC)
+      list(APPEND SOURCES assets/nova64.rc)
+  endif()
 
   # FrameCallback
   list(APPEND SOURCES NovaGraphics/Plugin/FrameCallback.cpp)
@@ -518,6 +542,7 @@ target_include_directories(nova64 PRIVATE
     ${SDL2_INCLUDE_DIRS}
     ${stb_SOURCE_DIR}
     ${lua_SOURCE_DIR}/src
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 
 # Link AsmJit if available
@@ -556,12 +581,19 @@ endif()
 # macOS: ship MoltenVK (Vulkan-on-Metal) next to the binary. macOS has no system
 # Vulkan loader and its OpenGL caps at 4.1 (the renderer needs 4.6), so Vulkan via
 # MoltenVK is the only working backend. main.cpp preloads this dylib at startup.
+#
+# The same step signs the binary (ad hoc; without it the dylib fails to load and
+# the process hangs silently) and then gives it the NovaStar icon. The order
+# matters: signing refuses a file that already carries a Finder icon.
 if(APPLE)
     add_custom_command(TARGET nova64 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/MoltenVK/libMoltenVK.dylib"
             "$<TARGET_FILE_DIR:nova64>/libMoltenVK.dylib"
-        COMMENT "Copying libMoltenVK.dylib next to nova64")
+        COMMAND codesign --force --deep --sign - "$<TARGET_FILE:nova64>"
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/scripts/set-macos-file-icon.sh"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/Novastar.png" "$<TARGET_FILE:nova64>"
+        COMMENT "Copying libMoltenVK.dylib, signing nova64 and giving it the NovaStar icon")
 endif()
 
 # Compiler flags

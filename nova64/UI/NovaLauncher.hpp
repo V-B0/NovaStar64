@@ -232,6 +232,7 @@ private:
     std::atomic<bool> m_emuStartFailed{false};
     std::string       m_emuRomPath;
     std::string       m_emuTitle;
+    uint32_t          m_iconTex  = 0;   ///< the NovaStar icon, drawn in the sidebar and on the Home tab
     uint32_t          m_gameTex  = 0;
     int               m_gameTexW = 0;
     int               m_gameTexH = 0;

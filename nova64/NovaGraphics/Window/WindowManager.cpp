@@ -9,6 +9,7 @@
 #include "WindowManager.hpp"
 #include "../../NovaInput/GamepadInput.hpp"
 #include "../Debug/ImGuiDebugUI.hpp"
+#include "../../UI/AppIcon.hpp"
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <glad/gl.h>
@@ -133,6 +134,8 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
         return false;
     }
+
+    NovaUI::ApplyAppIcon(m_window);
 
     // Save windowed position/size
     SDL_GetWindowPosition(m_window, &m_windowedX, &m_windowedY);
