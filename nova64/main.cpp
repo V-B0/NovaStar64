@@ -50,32 +50,70 @@ static std::filesystem::path GetExecutableDir()
 #endif
 }
 
-// The launcher and the ROM loader both find settings/, roms/ and saves/ as
-// plain relative paths, resolved against the process's working directory.
-// A terminal launch from the project root gets this right by construction,
-// but macOS (and other OSes) hand a GUI-launched process an unrelated
-// working directory -- typically the user's home directory, not wherever
-// the executable actually lives -- so the Games tab would come up empty
-// even though the ROMs are sitting right next to the binary. If neither
-// "roms" nor "settings" exists relative to the current directory, retry
-// relative to the executable's own directory before anything else runs.
-static void FixWorkingDirectoryForGuiLaunch()
+// Where the program was started from, recorded before SelectDataDirectory()
+// moves the process. Paths typed on the command line are relative to this.
+static std::filesystem::path g_startDir;
+
+static std::string ResolveFromStartDir(const std::string& path)
+{
+    const std::filesystem::path p(path);
+    if (p.is_absolute() || g_startDir.empty()) return path;
+    return (g_startDir / p).string();
+}
+
+// A ROM named on the command line: relative to where the user typed it, or, if
+// nothing is there, relative to the data folder, so `nova64 roms/game.z64` still
+// picks a game from the library when started from anywhere.
+static std::string ResolveRomPath(const std::string& path)
+{
+    const std::string fromStart = ResolveFromStartDir(path);
+    std::error_code ec;
+    return std::filesystem::exists(fromStart, ec) ? fromStart : path;
+}
+
+// The launcher, the ROM loader, the save code and the shader cache all use
+// plain relative paths -- settings/, roms/, saves/, Saves/, ShaderCache/ --
+// resolved against the working directory. Left alone, that made the data depend
+// on how the program was started: a terminal launch used whichever folder the
+// shell happened to be in (the project root, nova64/, build/), while opening the
+// executable from Finder used the executable's folder, so the same game had
+// different save states, cartridge saves and settings depending on the launch.
+//
+// So the working directory is always set to one data folder, chosen the same way
+// every time: $NOVA64_HOME if it is set (tests and portable setups), otherwise
+// the folder containing the executable. Nothing about the shell's directory
+// matters.
+static void SelectDataDirectory()
 {
     std::error_code ec;
-    if (std::filesystem::is_directory("roms", ec) ||
-        std::filesystem::is_directory("settings", ec)) {
+    g_startDir = std::filesystem::current_path(ec);
+
+    std::filesystem::path dataDir;
+    if (const char* home = std::getenv("NOVA64_HOME"); home && *home) {
+        dataDir = ResolveFromStartDir(home);
+        std::filesystem::create_directories(dataDir, ec);
+    } else {
+        dataDir = GetExecutableDir();
+    }
+    if (dataDir.empty()) return; // can't tell where we live -- leave cwd alone
+
+    if (!g_startDir.empty() && std::filesystem::equivalent(dataDir, g_startDir, ec)) return;
+
+    const bool startLooksLikeData =
+        std::filesystem::is_directory(g_startDir / "settings", ec) ||
+        std::filesystem::is_directory(g_startDir / "roms", ec) ||
+        std::filesystem::is_directory(g_startDir / "saves", ec);
+
+    std::filesystem::current_path(dataDir, ec);
+    if (ec) {
+        Log::errorf("Couldn't switch to the data folder %s: %s -- staying in %s",
+                    dataDir.string().c_str(), ec.message().c_str(), g_startDir.string().c_str());
         return;
     }
-    std::filesystem::path exeDir = GetExecutableDir();
-    if (exeDir.empty()) return;
-    if (!std::filesystem::is_directory(exeDir / "roms", ec) &&
-        !std::filesystem::is_directory(exeDir / "settings", ec)) {
-        return; // exe dir doesn't look right either -- leave cwd alone
-    }
-    std::filesystem::current_path(exeDir, ec);
-    if (!ec) {
-        Log::infof("Working directory didn't have roms/settings; switched to executable's directory: %s",
-                   exeDir.string().c_str());
+    Log::infof("Data folder (settings/, roms/, saves/): %s", dataDir.string().c_str());
+    if (startLooksLikeData) {
+        Log::infof("Ignoring the settings/roms/saves in %s; set NOVA64_HOME to use that folder instead",
+                   g_startDir.string().c_str());
     }
 }
 
@@ -130,7 +168,7 @@ int main(int argc, char* argv[])
 
     Log::info("NovaStar64 starting...");
 
-    FixWorkingDirectoryForGuiLaunch();
+    SelectDataDirectory();
 
 #ifdef __APPLE__
     PreloadMoltenVK();
@@ -163,11 +201,11 @@ int main(int argc, char* argv[])
         }
         else if (std::strcmp(argv[i], "--log") == 0 && i + 1 < argc)
         {
-            LoggingConfig::open_log_file(argv[++i]);
+            LoggingConfig::open_log_file(ResolveFromStartDir(argv[++i]));
         }
         else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
         {
-            configPath = argv[++i];
+            configPath = ResolveFromStartDir(argv[++i]);
         }
         else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
         {
@@ -237,7 +275,7 @@ int main(int argc, char* argv[])
         }
         else if (argv[i][0] != '-')
         {
-            romPath = argv[i];
+            romPath = ResolveRomPath(argv[i]);
         }
         else
         {
