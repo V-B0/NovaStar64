@@ -1,3 +1,7 @@
+# Build output
+build/
+.vs/
+CMakeUserPresets.json
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
@@ -9,42 +13,33 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
-CMakeUserPresets.json
-
-
-# Build directories
-build/
-.vs/
-Gliden64/
-ShaderCache/
-
-# Emulator data: the folders stay in the repo, their contents never do.
-# ROMs are copyrighted game images and saves are personal.
-**/roms/*
-!**/roms/.gitkeep
-# Saves/ must come before the exception: on case-insensitive filesystems it
-# also matches saves/, and the last matching rule wins.
-**/Saves/*
-**/saves/*
-!**/saves/.gitkeep
-
-.DS_Store
 nova64/build/nova64.dir/
-dump
-nova64/dump
 
+# Emulator data. The program keeps all of this next to its executable (or in
+# $NOVA64_HOME), and none of it belongs in the repository: ROMs are copyrighted
+# game images, saves are personal, and the rest is per-machine.
+roms/
+saves/
+Saves/
+ShaderCache/
+screenshots/
+/settings/
+/nova64/settings/
+
+# The Vulkan loader manifest that ships with MoltenVK; the app loads the dylib directly.
+*_icd.json
+
+# Debug output
+dump/
+*.log
+
+# Windows build products
 *.pdb
 *.obj
 *.exe
 *.dll
 *.ilk
-*.txt
-*.z64
-*.log
-*.ini
-*.bin
-*.bmp
-*.json
 
 # Editor settings are personal (paths, launch targets); don't share them.
 .vscode/
+.DS_Store
