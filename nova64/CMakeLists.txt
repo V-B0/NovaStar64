@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(nova64)
 
+# A plain `cmake -B build` leaves the build type empty, which compiles without
+# optimisation -- far too slow to play a game. Default to the configuration the
+# project is developed and tested with.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (Debug, Release, RelWithDebInfo)" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
