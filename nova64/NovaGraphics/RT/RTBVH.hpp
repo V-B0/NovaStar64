@@ -43,7 +43,8 @@ struct GpuRTTri {
     float c1[4];
     float c2[4];
     uint32_t material;   // packed flags (translucent, reflective, …)
-    uint32_t pad0, pad1, pad2;
+    uint32_t lights;     // light-table indices: bits 0-3 directional, 4-7 point (15 = none)
+    uint32_t pad1, pad2;
 };
 static_assert(sizeof(GpuRTTri) % 16 == 0, "GpuRTTri must be 16-byte aligned");
 

@@ -80,8 +80,14 @@ The project is under active development. Expect bugs and rough edges — see
   Pak and partial N64DD support.
 - **NTSC and PAL timing.** The video field rate, real-time frame pacing and the
   audio DAC clock are all derived from the ROM's region.
-- **Experimental compute ray tracing** over the rasterised image
-  (`NOVA64_RT=1`): shadows and ambient occlusion.
+- **Experimental compute ray tracing** over the rasterised image (Settings →
+  Video → *Ray-traced lighting*, or `NOVA64_RT=1`): soft shadows, ambient
+  occlusion with one-bounce colour bleeding, reflections on water and metal, and
+  point lights. Every object is shadowed toward the light the game lit it with,
+  and accumulated history is kept only where a surface hasn't moved, so shadows
+  settle when the picture is still and never lag when it isn't. Needs Vulkan and
+  high-level graphics emulation. See
+  [the ray tracer notes](nova64/NovaGraphics/Renderer/VK/VK_RayTracing_Architecture.md).
 
 ## Screenshots
 
@@ -364,7 +370,11 @@ diagnostic variables and the failure modes that have already cost time.
 - Controller support has been exercised with a physical controller on macOS and
   with SDL's virtual controllers; rumble motor output has not been verified. The
   Controller Pak (memory card) is not available.
-- The ray tracer is an experimental research feature.
+- The ray tracer is an experimental research feature. It runs on the GPU's
+  compute units (MoltenVK has no hardware ray tracing), traces at half
+  resolution, and costs roughly 2 to 4 ms a frame at 720p, growing with the
+  window size. Point lights (torches, fires) are only seen in games that switch
+  positional lighting on, and haven't been tried in a real game yet.
 - Save states made before rewind was added can't be loaded.
 - The audio plugin's buffer-level and sync calls are accepted but not applied to
   the output stream.

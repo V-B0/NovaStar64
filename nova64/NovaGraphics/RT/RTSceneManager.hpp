@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 
 namespace Nova64::Video::RT {
 
@@ -43,14 +44,21 @@ public:
     void NewFrame() override {
         m_frame.Reset();
         m_hasCamera = false;
-        m_lightFinalized = false;
-        m_dirAccum[0] = m_dirAccum[1] = m_dirAccum[2] = 0.0f;
-        m_colAccum[0] = m_colAccum[1] = m_colAccum[2] = 0.0f;
-        m_lightSamples = 0;
+        m_lightCount = 0;
+        for (uint32_t& c : m_sunUse) c = 0;
+        m_curSun = m_curLocal = kNoLight;
+        m_haveLighting = false;
     }
 
     void SubmitTriangles(const SceneTriangle* tris, uint32_t count) override {
+        const size_t first = m_frame.triangles.size();
         m_frame.triangles.insert(m_frame.triangles.end(), tris, tris + count);
+        for (size_t i = first; i < m_frame.triangles.size(); ++i) {
+            SceneTriangle& t = m_frame.triangles[i];
+            t.sunLight   = m_curSun;
+            t.localLight = m_curLocal;
+            if (m_curSun != kNoLight) ++m_sunUse[m_curSun];
+        }
     }
 
     /// Capture the perspective projection used for the 3D scene (last one wins,
@@ -65,20 +73,21 @@ public:
         for (int i = 0; i < 4; ++i) m_viewport[i] = vp[i];
     }
 
-    /// Accumulate the primary directional light (eye-space dir + rgb color).
-    ///
-    /// Called once per submitted triangle. N64 games (SM64 especially) give
-    /// EVERY OBJECT its own light — direction AND color (object material colors
-    /// are baked into light colors). Taking the last call verbatim made the RT
-    /// sun flicker red/yellow/green and point wherever the last-drawn object's
-    /// light pointed (whole characters wrongly self-shadowed). Instead we
-    /// average over all calls — the level terrain dominates by triangle count —
-    /// and temporally smooth the result when it's queried.
-    void SetLight(const float dir[3], const float color[3]) override {
-        m_dirAccum[0] += dir[0]; m_dirAccum[1] += dir[1]; m_dirAccum[2] += dir[2];
-        m_colAccum[0] += color[0]; m_colAccum[1] += color[1]; m_colAccum[2] += color[2];
-        ++m_lightSamples;
-        m_hasLight = true;
+    /// The lights in force for the triangles that follow. N64 games light every
+    /// object with its own light (SM64 bakes material colours into them, Zelda
+    /// rewrites its sun every frame for the time of day, and positional lights
+    /// come and go with torches and fires), so each triangle is stamped with the
+    /// light that lit it and the tracer shadows it toward that light -- there is
+    /// no scene-wide average and nothing is smoothed across frames, so a moving
+    /// light moves its shadows on the very frame it moves.
+    void SetLighting(const SceneLighting& lighting) override {
+        if (m_haveLighting && SameLight(lighting.sun, m_lastSun) && SameLight(lighting.local, m_lastLocal))
+            return;
+        m_lastSun = lighting.sun;
+        m_lastLocal = lighting.local;
+        m_haveLighting = true;
+        m_curSun   = lighting.sun.valid   ? Intern(lighting.sun,   false) : kNoLight;
+        m_curLocal = lighting.local.valid ? Intern(lighting.local, true)  : kNoLight;
     }
 
     // ─── Accessors ───────────────────────────────────────────────────
@@ -95,11 +104,22 @@ public:
     /// N64 viewport {scaleX, transX, scaleY, transY} (fullscreen default).
     const float* Viewport()      const { return m_viewport; }
 
-    /// Primary directional light for this frame (eye-space): the accumulated
-    /// average of all per-object lights, temporally smoothed across frames.
-    bool         HasLight()    const { return m_hasLight; }
-    const float* LightDir()    const { FinalizeLight(); return m_lightDir; }
-    const float* LightColor()  const { FinalizeLight(); return m_lightColor; }
+    /// Index 15 (kNoLight) means "no light" in a triangle's light fields, so a
+    /// table holds at most 15 entries.
+    static constexpr uint32_t kMaxLights = 15;
+    static constexpr uint8_t  kNoLight   = 0xFF;
+
+    /// One light-table row, laid out the way the compute shaders read it (two
+    /// vec4s): a = {direction toward the light | position, la}, b = {rgb, qa}.
+    struct LightEntry { float a[4]; float b[4]; };
+    uint32_t          LightCount() const { return m_lightCount; }
+    const LightEntry* Lights()     const { return m_lights; }
+
+    /// The directional light that most of this frame's triangles used. Triangles
+    /// the game drew unlit (vertex colours, sky, effects) have no light of their
+    /// own; they take this one so shadows still land on them.
+    bool HasSun() const { return FallbackSun() != kNoLight; }
+    const float* SunDir() const { return m_lights[FallbackSun() == kNoLight ? 0 : FallbackSun()].a; }
 
     // ─── Acceleration Structure Build ────────────────────────────────
 
@@ -155,49 +175,78 @@ private:
     // N64 viewport (fullscreen 320×240 default; scaleY negative = y-flip).
     float m_viewport[4] = {160.0f, 160.0f, -120.0f, 120.0f};
 
-    // Compute-RT light: per-frame accumulators + smoothed output (eye-space).
-    float m_dirAccum[3] = {0.0f, 0.0f, 0.0f};
-    float m_colAccum[3] = {0.0f, 0.0f, 0.0f};
-    uint32_t m_lightSamples = 0;
-    bool  m_hasLight = false;
-    mutable bool  m_lightFinalized = false;
-    mutable bool  m_lightEverSet   = false;
-    mutable float m_lightDir[3]   = {0.0f, 1.0f, 0.0f};
-    mutable float m_lightColor[3] = {1.0f, 1.0f, 1.0f};
+    // Compute-RT lights: this frame's table plus the entries currently stamped
+    // on submitted triangles.
+    LightEntry m_lights[kMaxLights] = {};
+    bool       m_lightIsPoint[kMaxLights] = {};
+    uint32_t   m_lightCount = 0;
+    uint32_t   m_sunUse[kMaxLights] = {};   // triangles per directional entry
+    uint8_t    m_curSun = kNoLight, m_curLocal = kNoLight;
+    bool       m_haveLighting = false;
+    SceneLight m_lastSun{}, m_lastLocal{};
+    mutable float m_keptSun[3] = {0.0f, 1.0f, 0.0f};   // last fallback direction (hysteresis)
+    mutable bool  m_keptSunValid = false;
 
-    /// Turn this frame's accumulated per-object lights into one stable sun:
-    /// average (terrain dominates by triangle count), bias the color halfway
-    /// to white (object-material tints average out but never fully), and lerp
-    /// against last frame's value so residual draw-order variation can't
-    /// flicker. Idempotent per frame.
-    void FinalizeLight() const {
-        if (m_lightFinalized || m_lightSamples == 0) return;
-        m_lightFinalized = true;
+    static bool SameLight(const SceneLight& a, const SceneLight& b) {
+        if (a.valid != b.valid) return false;
+        if (!a.valid) return true;
+        return a.point == b.point && a.la == b.la && a.qa == b.qa
+            && std::memcmp(a.vec, b.vec, sizeof(a.vec)) == 0
+            && std::memcmp(a.color, b.color, sizeof(a.color)) == 0;
+    }
 
-        float inv = 1.0f / static_cast<float>(m_lightSamples);
-        float d[3] = {m_dirAccum[0]*inv, m_dirAccum[1]*inv, m_dirAccum[2]*inv};
-        float len = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
-        // Opposing per-object lights can cancel out; keep last frame's sun then.
-        if (len < 0.05f) return;
-        d[0] /= len; d[1] /= len; d[2] /= len;
-
-        float c[3] = {m_colAccum[0]*inv, m_colAccum[1]*inv, m_colAccum[2]*inv};
-        for (int i = 0; i < 3; ++i) c[i] = 0.5f * c[i] + 0.5f;   // bias to white
-
-        if (!m_lightEverSet) {
-            m_lightEverSet = true;
-            for (int i = 0; i < 3; ++i) { m_lightDir[i] = d[i]; m_lightColor[i] = c[i]; }
-            return;
+    /// Find or add the table row for `l`. Near-identical lights share a row
+    /// (an object's own light is re-sent with every draw); when the table is
+    /// full the nearest existing light of the same kind stands in.
+    uint8_t Intern(const SceneLight& l, bool point) {
+        uint8_t best = kNoLight;
+        float   bestScore = -1e30f;
+        for (uint32_t i = 0; i < m_lightCount; ++i) {
+            if (m_lightIsPoint[i] != point) continue;
+            const LightEntry& e = m_lights[i];
+            float score, tol;
+            if (point) {
+                const float dx = e.a[0] - l.vec[0], dy = e.a[1] - l.vec[1], dz = e.a[2] - l.vec[2];
+                score = -(dx*dx + dy*dy + dz*dz);
+                tol   = -0.25f;   // within half a unit and the same colour/attenuation
+                if (score >= tol && e.a[3] == l.la && e.b[3] == l.qa &&
+                    std::fabs(e.b[0]-l.color[0]) + std::fabs(e.b[1]-l.color[1]) + std::fabs(e.b[2]-l.color[2]) < 0.02f)
+                    return static_cast<uint8_t>(i);
+            } else {
+                score = e.a[0]*l.vec[0] + e.a[1]*l.vec[1] + e.a[2]*l.vec[2];
+                if (score > 0.9998f) return static_cast<uint8_t>(i);   // ~1 degree
+            }
+            if (score > bestScore) { bestScore = score; best = static_cast<uint8_t>(i); }
         }
-        constexpr float kSmooth = 0.25f;   // per-frame blend toward the new value
-        float sm[3];
-        for (int i = 0; i < 3; ++i)
-            sm[i] = m_lightDir[i] + (d[i] - m_lightDir[i]) * kSmooth;
-        float smLen = std::sqrt(sm[0]*sm[0] + sm[1]*sm[1] + sm[2]*sm[2]);
-        if (smLen > 1e-4f)
-            for (int i = 0; i < 3; ++i) m_lightDir[i] = sm[i] / smLen;
-        for (int i = 0; i < 3; ++i)
-            m_lightColor[i] += (c[i] - m_lightColor[i]) * kSmooth;
+        if (m_lightCount < kMaxLights) {
+            const uint32_t i = m_lightCount++;
+            LightEntry& e = m_lights[i];
+            e.a[0] = l.vec[0]; e.a[1] = l.vec[1]; e.a[2] = l.vec[2]; e.a[3] = l.la;
+            e.b[0] = l.color[0]; e.b[1] = l.color[1]; e.b[2] = l.color[2]; e.b[3] = l.qa;
+            m_lightIsPoint[i] = point;
+            return static_cast<uint8_t>(i);
+        }
+        return best;
+    }
+
+    /// The directional entry most triangles used. A near-tie keeps last frame's
+    /// choice so unlit surfaces don't flip between two lights.
+    uint8_t FallbackSun() const {
+        uint8_t best = kNoLight;
+        uint32_t bestUse = 0;
+        for (uint32_t i = 0; i < m_lightCount; ++i)
+            if (!m_lightIsPoint[i] && m_sunUse[i] > bestUse) { bestUse = m_sunUse[i]; best = static_cast<uint8_t>(i); }
+        if (best == kNoLight) return kNoLight;
+        if (m_keptSunValid) {
+            for (uint32_t i = 0; i < m_lightCount; ++i) {
+                if (m_lightIsPoint[i]) continue;
+                const float d = m_lights[i].a[0]*m_keptSun[0] + m_lights[i].a[1]*m_keptSun[1] + m_lights[i].a[2]*m_keptSun[2];
+                if (d > 0.9998f && m_sunUse[i] * 10 >= bestUse * 6) { best = static_cast<uint8_t>(i); break; }
+            }
+        }
+        for (int k = 0; k < 3; ++k) m_keptSun[k] = m_lights[best].a[k];
+        m_keptSunValid = true;
+        return best;
     }
 
     // Acceleration structures rebuilt each frame.

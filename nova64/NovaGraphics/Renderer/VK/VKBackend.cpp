@@ -1565,7 +1565,24 @@ void main() {
             m_computeRT = std::make_unique<VKComputeRaytracer>();
             if (!m_computeRT->Build(m_ctx)) { m_computeRT.reset(); return; }
         }
+        static const bool s_rtStats = []() {
+            const char* v = std::getenv("NOVA64_RT_STATS");
+            return v && v[0] && v[0] != '0';
+        }();
+        const auto bvhStart = std::chrono::steady_clock::now();
         m_rtBVH.Build(scene->GetFrameData());
+        if (s_rtStats) {
+            static double s_msSum = 0.0;
+            static uint64_t s_triSum = 0;
+            static uint32_t s_n = 0;
+            s_msSum  += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - bvhStart).count();
+            s_triSum += scene->GetTriangleCount();
+            if (++s_n == 120) {
+                Logger::Info("RT-stats: scene update {:.2f} ms/frame, {} tris (avg of 120)",
+                             s_msSum / s_n, s_triSum / s_n);
+                s_msSum = 0.0; s_triSum = 0; s_n = 0;
+            }
+        }
         if (m_rtBVH.Empty()) return;
 
         // Scene-size gate, effectively OFF by default (user wants RT on menus
@@ -1607,8 +1624,13 @@ void main() {
             const float* vp = scene->Viewport();
             for (int i = 0; i < 4; ++i) m_rtUBO.viewport[i] = vp[i];
         }
-        if (scene->HasLight()) {
-            const float* d = scene->LightDir();
+        // Lights: the per-object light table (each triangle carries the index of the
+        // light it was drawn with) plus, in lightDir, the frame's dominant sun for
+        // triangles drawn unlit. Sun colour is WHITE: N64 light colours are
+        // per-object MATERIAL colours (SM64 bakes object tints into them), and
+        // averaging or applying them tinted the whole scene. Scene colour belongs
+        // to the albedo. Point lights keep their colour -- that IS their look.
+        {
             // lightDir.w = the sun's angular size (tangent), RT64's pointRadius
             // analogue for a directional light: the trace shader jitters shadow
             // rays across a cone of this radius for soft penumbras. 0 disables.
@@ -1616,16 +1638,20 @@ void main() {
                 const char* v = std::getenv("NOVA64_RT_SUN");
                 return (v && v[0]) ? static_cast<float>(std::atof(v)) : 0.05f;
             }();
-            m_rtUBO.lightDir[0] = d[0]; m_rtUBO.lightDir[1] = d[1]; m_rtUBO.lightDir[2] = d[2];
-            m_rtUBO.lightDir[3] = s_rtSunSize;
-            // Sun color is WHITE. N64 light colors are per-object MATERIAL
-            // colors (SM64 bakes object tints into them) — averaging them
-            // tinted the whole scene (user saw everything red). Scene color
-            // belongs to the albedo; the sun stays neutral, like RT64's.
-            m_rtUBO.lightColor[0] = 1.0f;
-            m_rtUBO.lightColor[1] = 1.0f;
-            m_rtUBO.lightColor[2] = 1.0f;
+            if (scene->HasSun()) {
+                const float* d = scene->SunDir();
+                m_rtUBO.lightDir[0] = d[0]; m_rtUBO.lightDir[1] = d[1]; m_rtUBO.lightDir[2] = d[2];
+                m_rtUBO.lightDir[3] = s_rtSunSize;
+            }
+            static_assert(RT::RTSceneManager::kMaxLights == kRTMaxLights, "light table size");
+            const uint32_t n = std::min(scene->LightCount(), kRTMaxLights);
+            for (uint32_t i = 0; i < n; ++i) {
+                const RT::RTSceneManager::LightEntry& e = scene->Lights()[i];
+                std::memcpy(m_rtUBO.lights[i * 2],     e.a, sizeof(e.a));
+                std::memcpy(m_rtUBO.lights[i * 2 + 1], e.b, sizeof(e.b));
+            }
         }
+        m_rtUBO.lightColor[0] = m_rtUBO.lightColor[1] = m_rtUBO.lightColor[2] = 1.0f;
         // lightColor.w = frame counter — rotates the shadow sampling pattern each
         // frame so the temporal accumulator converges (RT64's frameCount).
         static uint32_t s_rtFrameCounter = 0;
@@ -1653,28 +1679,22 @@ void main() {
         m_rtUBO.ambient[2] = s_rtEdgeD;
         m_rtUBO.ambient[3] = s_rtShadow;
 
-        // NO TEMPORAL HISTORY: every frame's shadows/AO/GI are computed fresh
-        // from that frame's own trace + spatial (single-frame) bilateral blur
-        // only, with zero blending from any previous frame. The denoise
-        // shader's blend is `mix(prevFrame, thisFrame, 1/histCap)` — histCap=1
-        // makes that a full replace every time (see RTComputeShaders.hpp's
-        // "Temporal: RT64-style history accumulation" block). This used to be
-        // motion-adaptive (long history when the camera was still, for extra
-        // noise reduction), driven by a heuristic that approximated camera
-        // motion from how much the RT BVH's root AABB center shifts — the
-        // only motion signal available in an eye-space-only pipeline (the
-        // camera is always at the origin by construction, so there's no
-        // direct position to track). That heuristic degrades badly in large
-        // open scenes (Zelda's outdoor areas pull huge, distant terrain/sky
-        // into the same BVH, so its diagonal dwarfs any nearby motion), and
-        // even tuned correctly, a stale multi-frame blend means shadows/
-        // lighting visibly lag the current frame's geometry after any camera
-        // or character movement — reads as everything being spatially "off"
-        // from where it should be. Forcing histCap=1 removes that failure
-        // mode entirely, at the cost of the extra noise reduction favorable
-        // static-camera history gave.
-        m_rtUBO.extra[0] = 1.0f / 64.0f;
+        // Temporal accumulation is per pixel and validated by the shaders
+        // (RTComputeShaders.hpp, historyTrust): history only carries over where the
+        // same surface still covers the pixel, so it converges when the picture is
+        // still and resets the instant something moves. The cap is the longest
+        // history in frames (NOVA64_RT_HISTORY, 1 = off). This replaces the old
+        // approach of switching accumulation off altogether, which kept shadows
+        // from lagging but left them noisy and flickering in motion.
+        static const float s_rtHistory = std::clamp(envf("NOVA64_RT_HISTORY", 24.0f), 1.0f, 60.0f);
+        m_rtUBO.extra[0] = s_rtHistory / 64.0f;
         m_rtUBO.extra[1] = s_rtExpose;
+        // Rays per pixel for a pixel with no history (it needs the full count; one
+        // with a long history drops to a single ray, see the trace shader).
+        static const float s_rtShadowRays = std::clamp(envf("NOVA64_RT_SHADOW_RAYS", 2.0f), 1.0f, 16.0f);
+        static const float s_rtAoRays     = std::clamp(envf("NOVA64_RT_AO_RAYS",     4.0f), 1.0f, 16.0f);
+        m_rtUBO.extra[2] = s_rtShadowRays;
+        m_rtUBO.extra[3] = s_rtAoRays;
         // Reflections ON by default, material-gated to metal (env-mapped) and
         // water (translucent up-facing) in the trace shader. NOVA64_RT_REFL=0
         // disables them.
@@ -1701,6 +1721,11 @@ void main() {
                              root.aabbMax[0], root.aabbMax[1], root.aabbMax[2],
                              m_rtUBO.lightDir[0], m_rtUBO.lightDir[1], m_rtUBO.lightDir[2],
                              m_rtUBO.lightDir[3]);
+                for (uint32_t i = 0; i < scene->LightCount(); ++i) {
+                    const auto& e = scene->Lights()[i];
+                    Logger::Info("RT[{}]:   light {} ({:.2f},{:.2f},{:.2f}) rgb=({:.2f},{:.2f},{:.2f}) la={} qa={}",
+                                 s_rtLog, i, e.a[0], e.a[1], e.a[2], e.b[0], e.b[1], e.b[2], e.a[3], e.b[3]);
+                }
             }
             ++s_rtLog;
         }

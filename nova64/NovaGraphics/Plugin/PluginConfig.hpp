@@ -148,7 +148,7 @@ struct PluginConfig {
     bool     n64DepthCompare     = false;   // Software N64-accurate depth compare
 
     // ── Emulation level (MLE pivot) ──────────────────────────
-    RenderingMode renderingMode  = RenderingMode::LLE;
+    RenderingMode renderingMode  = RenderingMode::HLE;   // the launcher's "recommended" choice
 
     // ── Compute ray tracing (MoltenVK hybrid shadows/lighting/reflections) ──
     bool rayTracing              = false;

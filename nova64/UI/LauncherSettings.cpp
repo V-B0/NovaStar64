@@ -514,7 +514,7 @@ void NovaLauncher::RenderSettingsTab() {
         ImGui::BeginDisabled(m_gfx.backendType != 1);
         if (ImGui::Checkbox("Ray-traced lighting (experimental)", &m_gfx.rayTracing)) SaveGraphicsSettings();
         ImGui::EndDisabled();
-        Hint("Vulkan only");
+        Hint("Vulkan with high-level graphics emulation; takes effect when a game starts");
 
         if (ImGui::Checkbox("Show frame rate while playing", &m_launch.showFps)) SaveLaunchOptions();
 

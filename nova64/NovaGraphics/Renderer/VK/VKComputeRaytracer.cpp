@@ -13,6 +13,7 @@
 #include "../../Common/Logger.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <vector>
@@ -157,6 +158,8 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,   // 5 gbuf
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,   // 6 shd
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,   // 7 gi
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,   // 8 prev hist (sample-pattern rotation)
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,   // 9 prev gbuf
     });
     m_denoiseDsLayout = makeLayout({
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -218,8 +221,8 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
     }
 
     // ── Descriptor pool + per-frame sets/UBOs ────────────────────────────────
-    // Per frame: trace(1 UBO, 2 SSBO, 5 img) + denoise(1 UBO, 8 img)
-    //          + composite(1 UBO, 8 img) = 3 UBO, 2 SSBO, 21 images.
+    // Per frame: trace(1 UBO, 2 SSBO, 7 img) + denoise(1 UBO, 8 img)
+    //          + composite(1 UBO, 8 img) = 3 UBO, 2 SSBO, 23 images.
     std::array<VkDescriptorPoolSize, 4> ps{{
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         3 * kFrames},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         2 * kFrames},
@@ -270,6 +273,19 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
             Logger::Error("VKComputeRaytracer: depth sampler creation failed");
             return false;
         }
+    }
+
+    // Optional GPU timing (NOVA64_RT_STATS=1). Timestamps are best-effort: if the
+    // driver can't provide them the readout simply stays silent.
+    if (const char* v = std::getenv("NOVA64_RT_STATS"); v && v[0] && v[0] != '0') {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(ctx.physical, &props);
+        VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        qi.queryType  = VK_QUERY_TYPE_TIMESTAMP;
+        qi.queryCount = kFrames * kTimestamps;
+        if (props.limits.timestampComputeAndGraphics &&
+            vkCreateQueryPool(ctx.device, &qi, nullptr, &m_queryPool) == VK_SUCCESS)
+            m_tickMs = static_cast<double>(props.limits.timestampPeriod) * 1e-6;
     }
 
     Logger::Info("VKComputeRaytracer: built (half-res trace+denoise + full-res composite, {} frames)", kFrames);
@@ -399,7 +415,7 @@ void VKComputeRaytracer::WriteDescriptors(const VKContext& ctx, FrameRes& fr,
     VkDescriptorImageInfo  dep   {m_depthSampler, m_depthView,
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-    std::array<VkWriteDescriptorSet, 27> w{};
+    std::array<VkWriteDescriptorSet, 29> w{};
     uint32_t n = 0;
     auto W = [&](VkDescriptorSet set, uint32_t binding, VkDescriptorType t,
                  VkDescriptorBufferInfo* bi, VkDescriptorImageInfo* ii) {
@@ -421,6 +437,8 @@ void VKComputeRaytracer::WriteDescriptors(const VKContext& ctx, FrameRes& fr,
     W(fr.traceSet, 5, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  nullptr, &gbuf);
     W(fr.traceSet, 6, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  nullptr, &shd);
     W(fr.traceSet, 7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  nullptr, &gi);
+    W(fr.traceSet, 8, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  nullptr, &pHist);
+    W(fr.traceSet, 9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  nullptr, &pGbuf);
     // Pass 2 (denoise, half res). 3/4/7 reference the OTHER frame-in-flight's
     // hist/gbuf/giHist — that ping-pong is the temporal history storage.
     W(fr.denoiseSet, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, &ubo, nullptr);
@@ -454,6 +472,7 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     if (!EnsureDepthView(ctx, depthImg, depthFormat)) return false;
     FrameRes& fr   = m_frame[frameIdx % kFrames];
     FrameRes& prev = m_frame[(frameIdx + 1) % kFrames];
+    const uint32_t slot = frameIdx % kFrames;
 
     const VkDeviceSize nodeBytes = static_cast<VkDeviceSize>(bvh.Nodes().size())     * sizeof(RT::GpuBVHNode);
     const VkDeviceSize triBytes  = static_cast<VkDeviceSize>(bvh.Triangles().size()) * sizeof(RT::GpuRTTri);
@@ -466,8 +485,32 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
 
     std::memcpy(fr.nodeBuf.mapped, bvh.Nodes().data(),     static_cast<size_t>(nodeBytes));
     std::memcpy(fr.triBuf.mapped,  bvh.Triangles().data(), static_cast<size_t>(triBytes));
-    std::memcpy(fr.ubo.mapped,     &uboIn,                 sizeof(RTUBOData));
+    // The history's depths are relative to the diagonal of the frame that wrote
+    // them, so hand the shaders the diagonal of the frame in the `prev` slot.
+    RTUBOData ubo = uboIn;
+    ubo.misc[1] = prev.diag;
+    fr.diag     = uboIn.misc[0];
+    std::memcpy(fr.ubo.mapped,     &ubo,                   sizeof(RTUBOData));
     if (fr.descDirty) { WriteDescriptors(ctx, fr, prev); fr.descDirty = false; }
+
+    if (m_queryPool) {
+        // This slot was last recorded kFrames frames ago, and its fence has
+        // signalled by now, so its timestamps are ready.
+        if (m_slotTimed[slot]) {
+            uint64_t t[kTimestamps] = {};
+            if (vkGetQueryPoolResults(ctx.device, m_queryPool, slot * kTimestamps, kTimestamps, sizeof(t), t,
+                                      sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS &&
+                t[1] > t[0]) {
+                m_gpuMsSum += static_cast<double>(t[1] - t[0]) * m_tickMs;
+                if (++m_gpuMsCount == 120) {
+                    Logger::Info("RT-stats: gpu {:.2f} ms/frame (avg of 120)", m_gpuMsSum / m_gpuMsCount);
+                    m_gpuMsSum = 0.0; m_gpuMsCount = 0;
+                }
+            }
+        }
+        vkCmdResetQueryPool(cmd, m_queryPool, slot * kTimestamps, kTimestamps);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_queryPool, slot * kTimestamps);
+    }
 
     // Initialise freshly created images: intermediates to GENERAL (contents
     // don't matter — history length 0 rejects them), hist cleared to
@@ -481,10 +524,11 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
                        0, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
         }
-        // Clear both history accumulators: hist to "fully lit, zero history",
+        // Clear both history accumulators: hist to "fully lit, zero history"
+        // (shadow, AO and point-light visibility all 1, length 0),
         // giHist to neutral irradiance (0.66 = 1.0 after the ×1.5 decode).
         struct { VkImage img; VkClearColorValue cv; } clears[2] = {
-            { p->hist.image,   {{1.0f, 1.0f, 0.0f, 0.0f}} },
+            { p->hist.image,   {{1.0f, 1.0f, 1.0f, 0.0f}} },
             { p->giHist.image, {{0.66f, 0.66f, 0.66f, 0.0f}} },
         };
         VkImageSubresourceRange rng{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -523,6 +567,14 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     for (VkImage im : pass1Out) {
         ImgBarrier(cmd, im, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
                    0, VK_ACCESS_SHADER_WRITE_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    }
+
+    // 2b) The trace samples last frame's history to decide its sample pattern, so
+    //     that frame's denoise writes must be visible to it.
+    for (VkImage im : {prev.hist.image, prev.gbuf.image}) {
+        ImgBarrier(cmd, im, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
 
@@ -590,6 +642,10 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     ImgBarrier(cmd, swapchainImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    if (m_queryPool) {
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_queryPool, slot * kTimestamps + 1);
+        m_slotTimed[slot] = true;
+    }
     return true;
 }
 
@@ -610,6 +666,9 @@ void VKComputeRaytracer::Destroy(const VKContext& ctx) {
         if (fr.ubo.buffer)     DestroyBufferStorage(ctx, fr.ubo);
         fr = FrameRes{};
     }
+    if (m_queryPool) vkDestroyQueryPool(ctx.device, m_queryPool, nullptr);
+    m_queryPool = VK_NULL_HANDLE;
+    for (bool& b : m_slotTimed) b = false;
     if (m_depthView)    vkDestroyImageView(ctx.device, m_depthView, nullptr);
     if (m_depthSampler) vkDestroySampler(ctx.device, m_depthSampler, nullptr);
     m_depthView = VK_NULL_HANDLE; m_depthSampler = VK_NULL_HANDLE;

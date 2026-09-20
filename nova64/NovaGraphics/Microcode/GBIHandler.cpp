@@ -1757,6 +1757,34 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         st.isTranslucent = !st.isCutout && (oml & 0x4000) != 0
                         && (zmode == 0x0800 || zmode == 0x0C00);
         st.usesShadeInFinalColor = ComputeUsesShadeInFinalColor(st.materialHash, st.otherModeH);
+
+        // The lights that lit this triangle (see the note below the submit).
+        // Triangles the game draws without RSP lighting carry none.
+        RT::SceneLighting lighting;
+        if ((ctx.state->geometry.geometryMode & G_LIGHTING) != 0) {
+            const auto& geo = ctx.state->geometry;
+            const bool positional = (geo.geometryMode & G_POINT_LIGHTING) != 0;
+            for (int l = 0; l < geo.numLights; ++l) {
+                const auto& L = geo.lights[l];
+                if (L.ca == 0.0f) {
+                    if (lighting.sun.valid) continue;
+                    lighting.sun.valid = true;
+                    for (int k = 0; k < 3; ++k) { lighting.sun.vec[k] = L.direction[k]; lighting.sun.color[k] = L.color[k]; }
+                } else if (positional) {
+                    // The brightest point light stands for them all.
+                    const float lum = L.color[0] + L.color[1] + L.color[2];
+                    if (lum < 0.05f) continue;
+                    if (lighting.local.valid &&
+                        lum <= lighting.local.color[0] + lighting.local.color[1] + lighting.local.color[2]) continue;
+                    lighting.local.valid = true;
+                    lighting.local.point = true;
+                    lighting.local.la = L.la;
+                    lighting.local.qa = L.qa;
+                    for (int k = 0; k < 3; ++k) { lighting.local.vec[k] = L.position[k]; lighting.local.color[k] = L.color[k]; }
+                }
+            }
+        }
+        ctx.geometryConsumer->SetLighting(lighting);
         ctx.geometryConsumer->SubmitTriangle(st);
 
         // Capture the active EYE->CLIP projection for compute-RT primary rays.
@@ -1779,60 +1807,29 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             ctx.geometryConsumer->SetViewport(vpn);
         }
 
-        // Capture the primary directional light for RT shadows: lights[0]
-        // ONLY, not an average across all active lights.
+        // (The lights were captured above, before the triangle was submitted.)
         //
-        // N64 light directions are stored in EYE (camera) space: the RSP
-        // dots them directly against the eye-space vertex normal (see the
-        // lighting loop above, `tnx*dir + tny*dir + tnz*dir`, where tnx/y/z
-        // = normal × MV upper-3x3). That is why SM64's lighting "follows the
-        // camera". The compute BVH is also eye-space (worldPos = objPos ×
-        // MV), so the direction is submitted verbatim — no extra matrix
-        // transform. (A prior MV multiply here double-transformed it and
-        // pointed shadows the wrong way.) Direction is unit-length from the
-        // light-load path; the shader renormalizes defensively.
+        // WHY THE SUN IS lights[0], NOT AN AVERAGE OF THE DIRECTIONAL LIGHTS:
+        // N64 light directions are stored in EYE (camera) space -- the RSP dots
+        // them directly against the eye-space vertex normal (see the lighting
+        // loop above) -- and the RT scene is eye-space too (worldPos = objPos x
+        // MV), so the direction goes through verbatim. OOT/MM configure exactly
+        // two directional lights per frame with light2Dir = -light1Dir
+        // (Environment_Update, z_kankyo.c): a key + fill pair. Averaging those
+        // nearly cancels to a meaningless vector, so the first directional light
+        // is the one shadow rays go toward.
         //
-        // WHY NOT AVERAGE ALL LIGHTS (tried, reverted): OOT/MM's overworld
-        // environment lighting (Environment_Update, z_kankyo.c, verified
-        // against the zeldaret decomp for BOTH games) configures exactly two
-        // directional lights per frame, and light2Dir is set as the exact
-        // NEGATION of light1Dir:
-        //   light2Dir = -light1Dir   (every frame, both games, verbatim)
-        // This is a deliberate key+fill pair: per-vertex Lambertian shading
-        // sums both lights, so a surface facing away from "the sun" still
-        // gets lit from the opposite fill direction. That's correct for the
-        // RASTER's additive per-vertex model, but averaging two
-        // near-exact-opposite directions for RT SHADOW CASTING mostly
-        // cancels to a near-zero, physically meaningless vector — there is
-        // no single "the sun" left to trace shadow rays toward. lights[0]
-        // (dirLight1) is the one actually derived from time-of-day; lights[1]
-        // is purely its mirror. Use index 0 only.
+        // The (1,0,0)-looking degenerate case in a cutscene is authentic: the same
+        // decomp function falls back to dir.x = 1 when its time-of-day trig
+        // yields an exact zero vector, and real hardware shows it too.
         //
-        // THE (1,0,0)-LOOKING DEGENERATE CASE IS AUTHENTIC, NOT A BUG: the
-        // same decomp function has its own explicit fallback —
-        //   if (dir.x == 0 && dir.y == 0 && dir.z == 0) dir.x = 1;
-        // — for whenever the time-of-day trig produces an exact zero vector.
-        // A cutscene hitting this shows (1,0,0) on real N64 hardware too;
-        // faithfully reproducing it here is correct emulation, not a bug to
-        // filter around (an earlier pass through this code added exactly
-        // such a filter — removed once the decomp explained where the value
-        // actually comes from).
-        //
-        // POINT LIGHTS (ca != 0, common for Zelda torches/lava/magic effects)
-        // store a POSITION in the same bytes MoveMem reads as "direction" for
-        // regular lights (see MoveMemGBI1/GBI2's G_MV_L0..L7 case: bytes 8-13
-        // are read BOTH as three signed-int8 direction components AND as
-        // three int16 position halfwords, into light.direction and
-        // light.position respectively — confirmed against the real F3DEX2
-        // point-light extension: byte 3 is the point/directional type flag,
-        // byte 7 is linear attenuation, byte 14 is quadratic attenuation).
-        // For a point light, .direction is therefore garbage. Skip those.
-        if (ctx.state->geometry.numLights > 0) {
-            const auto& L0 = ctx.state->geometry.lights[0];
-            if (L0.ca == 0.0f) {
-                ctx.geometryConsumer->SetLight(L0.direction, L0.color);
-            }
-        }
+        // POINT LIGHTS (ca != 0; torches, lava, fire, fairies) keep their POSITION
+        // in the same bytes MoveMem reads as a direction for directional lights
+        // (bytes 8-13 are both three int8 direction components and three int16
+        // position halfwords; byte 3 is the point/directional flag, byte 7 the
+        // linear and byte 14 the quadratic attenuation), so for them .direction is
+        // garbage and only .position is meaningful. They are only lights when
+        // G_LIGHTING_POSITIONAL is on.
     }
 
     } // end geo scope

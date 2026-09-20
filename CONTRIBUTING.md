@@ -325,6 +325,12 @@ the rest.
 | `NOVA64_DUMP_TEXTURES=1` | Write every texture the game uses to `texture_dump/<game name>/` as a Rice-format picture (same as the setting) |
 | `NOVA64_UI_OPEN=add` / `edit:<index>` | Open the launcher's Add Game or Edit Game dialog on start, for screenshots |
 | `NOVA64_RT=1` | Enable the experimental ray tracer |
+| `NOVA64_RT_STATS=1` | Log the ray tracer's scene-update time and GPU time every 120 frames |
+| `NOVA64_RT_HISTORY=<n>` | Longest temporal history in frames (default 24; `1` turns accumulation off) |
+| `NOVA64_RT_SHADOW_RAYS=<n>` / `NOVA64_RT_AO_RAYS=<n>` | Rays per pixel for a pixel with no history (defaults 2 and 4); a pixel with a long history uses one |
+| `NOVA64_RT_DEBUG=1/2/3` | Ray tracer debug views: normals and grid, lighting term only, raster-depth guard |
+| `NOVA64_RT_SUN=<x>` / `NOVA64_RT_BLUR=<px>` / `NOVA64_RT_SHADOW=<x>` / `NOVA64_RT_EXPOSURE=<x>` | Shadow softness, denoise radius, shadow strength and exposure |
+| `NOVA64_RT_REFL=0` | Turn the ray tracer's reflections off |
 | `NOVA64_LOG_LEVEL=<0-6>` | Override the log verbosity |
 
 Gate any new tracing the same way, and remove it once the bug it was written for

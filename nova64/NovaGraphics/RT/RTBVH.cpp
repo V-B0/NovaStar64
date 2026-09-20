@@ -83,6 +83,8 @@ inline GpuRTTri Pack(const SceneTriangle& t, float sceneDiagSq) {
     if (t.geometryMode & kTexGenBits) mat |= RT_MAT_REFLECTIVE;
     if (t.usesShadeInFinalColor) mat |= RT_MAT_USES_SHADE;
     g.material = mat;
+    g.lights = (t.sunLight   == 0xFF ? 15u : (t.sunLight   & 15u))
+             | (t.localLight == 0xFF ? 15u : (t.localLight & 15u)) << 4;
     return g;
 }
 } // namespace

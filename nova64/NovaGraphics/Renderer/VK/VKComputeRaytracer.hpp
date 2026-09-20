@@ -38,13 +38,17 @@ struct RTUBOData {
                               // power, z=depth edge threshold, w=ambient level
     float    viewport[4];     // N64 viewport {scaleX, transX, scaleY, transY}
                               // (fb-pixel units; rays must invert this mapping)
-    float    extra[4];        // x = temporal history cap /64 (camera motion),
-                              // y = exposure, z/w = reserved
+    float    extra[4];        // x = temporal history cap /64, y = exposure,
+                              // z = shadow rays per pixel, w = AO/GI rays per pixel
+                              // (the most a pixel with no history gets)
     float    proj[16];        // eye -> clip (FORWARD; row-major flatten like
                               // invProj — used to predict raster depth values)
-    float    misc[4];         // x = scene AABB diagonal, y/z/w = reserved
+    float    misc[4];         // x = scene AABB diagonal, y = previous RT frame's diagonal
+                              // (the temporal history's depths are relative to it), z/w = reserved
     uint32_t dims[4];         // x=width y=height z=nodeCount w=featureFlags
+    float    lights[30][4];   // light table, two vec4 per light: {dir|pos, la}, {rgb, qa}
 };
+static constexpr uint32_t kRTMaxLights = 15;
 
 // Feature flags for RTUBOData::dims.w (must match RTComputeShaders.hpp).
 enum RTFeatureFlags : uint32_t {
@@ -115,6 +119,7 @@ private:
         Img             gi{};        // HALF res: raw one-bounce irradiance
         Img             giHist{};    // HALF res: accumulated irradiance
         uint32_t        w = 0, h = 0;
+        float           diag = 0.0f;         // scene diagonal of the frame these images hold
         bool            outInGeneral = false;
         bool            imagesFresh  = false;  // just (re)created → need init/clear
         bool            descDirty    = true;
@@ -150,6 +155,17 @@ private:
     VkDescriptorPool      m_pool              = VK_NULL_HANDLE;
 
     FrameRes m_frame[kFrames];
+
+    // GPU timing for NOVA64_RT_STATS=1: one timestamp pair per frame slot,
+    // read back kFrames frames later (when that slot's fence has signalled).
+    // Timestamps per frame: start and end. (Metal only samples at encoder
+    // boundaries, so per-dispatch timestamps inside the frame would be misleading.)
+    static constexpr uint32_t kTimestamps = 2;
+    VkQueryPool m_queryPool    = VK_NULL_HANDLE;
+    double      m_tickMs       = 0.0;        // milliseconds per timestamp tick
+    bool        m_slotTimed[kFrames] = {};
+    double      m_gpuMsSum     = 0.0;
+    uint32_t    m_gpuMsCount   = 0;
 };
 
 }}} // namespace Nova64::Video::VK

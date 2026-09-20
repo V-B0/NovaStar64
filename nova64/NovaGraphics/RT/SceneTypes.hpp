@@ -29,6 +29,28 @@ struct SceneVertex {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SceneLighting  —  the lights the game had set when a triangle was drawn
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One light as the game set it, in EYE space (the space the RT scene lives in).
+struct SceneLight {
+    bool  valid = false;
+    bool  point = false;
+    float vec[3]   = {0, 0, 0};   ///< directional: unit vector TOWARD the light; point: position
+    float color[3] = {1, 1, 1};   ///< 0..1
+    float la = 0.0f, qa = 0.0f;   ///< point light: the RSP's linear/quadratic attenuation bytes
+};
+
+/// What lights a triangle: the game's main directional light and, when it has
+/// switched on positional lighting, its strongest point light (a torch, a fire,
+/// a fairy). Both are stamped on every triangle so each object is shadowed by
+/// the light that actually lit it.
+struct SceneLighting {
+    SceneLight sun;
+    SceneLight local;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  SceneTriangle  —  one renderable triangle with material identity
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -52,6 +74,11 @@ struct SceneTriangle {
     // Computed from materialHash (the raw combine mode) + otherModeH's
     // cycle-type bits — see GBIHandler::ComputeUsesShadeInFinalColor.
     bool     usesShadeInFinalColor;
+
+    // Indices into the frame's light table (RTSceneManager::Lights()); 0xFF = none.
+    // Stamped by the scene manager from the lighting current at submission time.
+    uint8_t  sunLight   = 0xFF;
+    uint8_t  localLight = 0xFF;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,11 +111,9 @@ public:
     /// land offset/scaled relative to the raster. Default no-op.
     virtual void SetViewport(const float vp[4]) { (void)vp; }
 
-    /// Optional: report the primary directional light (eye-space direction and
-    /// rgb color) used for RT shadows/lighting. Default no-op.
-    virtual void SetLight(const float dir[3], const float color[3]) {
-        (void)dir; (void)color;
-    }
+    /// Optional: report the lights that apply to the triangles submitted from
+    /// now on (until the next call). Default no-op.
+    virtual void SetLighting(const SceneLighting& lighting) { (void)lighting; }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

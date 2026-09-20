@@ -10,9 +10,12 @@
  * Passes 1–2 run at HALF RESOLUTION (¼ of the rays — the perf win); pass 3
  * composites at full resolution so the game's raster image stays sharp:
  *
- *   Pass 1 — TRACE (kRTTraceSrc, half res): primary ray + soft-shadow rays +
- *   stochastic AO per pixel. Writes:
- *     • lit  (rgba8)   — rgb = metal reflection color × mix (additive extras)
+ *   Pass 1 — TRACE (kRTTraceSrc, half res): primary ray + soft-shadow rays
+ *   toward the surface's own light (per-triangle light index) + a shadow ray
+ *   toward its point light + stochastic AO/GI per pixel. Ray counts fall as a
+ *   pixel's temporal history builds. Writes:
+ *     • lit  (rgba8)   — rgb = metal reflection color × mix (additive extras),
+ *                        a = light indices (sun | point << 4; 15 = none)
  *     • shd  (rgba8)   — rgb = interpolated BAKED VERTEX SHADE at the hit
  *                        (the N64's own lighting result), a = lit flag.
  *                        Used by the composite to DIVIDE the baked lighting
@@ -24,9 +27,10 @@
  *                        a = normalized depth.
  *
  *   Pass 2 — DENOISE (kRTDenoiseSrc, half res): edge-aware bilateral blur of the
- *   occ term guided by gbuf, then RT64-style temporal accumulation (history
- *   validated against last frame's G-buffer, capped 64 frames; the two
- *   frames-in-flight ping-pong as history storage). Writes hist.
+ *   occ term guided by gbuf, then temporal accumulation where the same surface
+ *   still covers the pixel (historyTrust: matching normal and eye distance; the
+ *   two frames-in-flight ping-pong as history storage). Writes hist
+ *   (r = shadow, g = AO, b = point-light visibility, a = history length / 64).
  *
  *   Pass 3 — COMPOSITE (kRTCompositeSrc, full res): DE-LIGHT + RELIGHT.
  *   This is the key to matching sm64rt/RT64: those mods patch the game to
@@ -42,7 +46,8 @@
  *
  * Layout contract (must match RTBVH.hpp / RTUBOData in VKComputeRaytracer.hpp):
  *   BVHNode = 32 bytes : vec3 aabbMin; uint leftFirst; vec3 aabbMax; uint triCount;
- *   RTTri              : v0 v1 v2 (vec4 pos) n0 n1 n2 (vec4 nrm) c0 c1 c2 (vec4 col) uvec4 mat
+ *   RTTri              : v0 v1 v2 (vec4 pos) n0 n1 n2 (vec4 nrm) c0 c1 c2 (vec4 col) uvec4 mat  (mat.x = flags, mat.y = light indices)
+ *   UBO lights[2i], [2i+1] : light table row i = {direction toward light | position, la}, {rgb, qa}
  *   UBO lightDir.w     : sun angular size (0 = light off)
  *   UBO lightColor.w   : frame counter (temporal sampling rotation)
  *   UBO ambient.xyzw   : x=blur radius, y=normal power, z=depth threshold,
@@ -77,10 +82,11 @@ layout(std140, binding = 0) uniform UBO {
     vec4  lightColor; // rgb, w = frame counter
     vec4  ambient;    // denoise params (unused in trace)
     vec4  viewport;   // N64 viewport {scaleX, transX, scaleY, transY}
-    vec4  extra;      // x=history cap/64, y=exposure (unused in trace)
+    vec4  extra;      // x=history cap/64 (unused here), y=exposure (unused here), z=max shadow rays, w=max AO/GI rays
     mat4  proj;       // eye -> clip (forward; raster-depth prediction)
-    vec4  misc;       // x = scene AABB diagonal
+    vec4  misc;       // x = scene AABB diagonal, y = previous RT frame's diagonal
     uvec4 dims;       // x=FULL width y=FULL height z=nodeCount w=flags
+    vec4  lights[30]; // light table: [2i] = {direction toward light | position, la}, [2i+1] = {rgb, qa}
 } u;
 
 // Window pixel -> NDC through the N64 viewport (screen = ndc*scale + trans, fb
@@ -105,7 +111,9 @@ layout(rgba8,  binding = 3) uniform writeonly image2D litImg;   // rgb=refl extr
 layout(rgba8,  binding = 4) uniform writeonly image2D occImg;   // r=shadow g=ao b=reflMix a=hit
 layout(rgba16f,binding = 5) uniform writeonly image2D gbufImg;  // rgb=normal a=depth
 layout(rgba8,  binding = 6) uniform writeonly image2D shdImg;   // rgb=baked shade a=litFlag
-layout(rgba8,  binding = 7) uniform writeonly image2D giImg;    // rgb=raw indirect irradiance
+layout(rgba8,  binding = 7) uniform writeonly image2D giImg;    // rgb=raw indirect irradiance a=point-light visibility
+layout(rgba8,  binding = 8) uniform readonly  image2D prevHistImg;  // last frame's hist (a = length/64)
+layout(rgba16f,binding = 9) uniform readonly  image2D prevGbufImg;  // last frame's gbuf
 
 const uint RT_F_SHADOWS     = 1u;
 const uint RT_F_LIGHTING    = 2u;
@@ -123,25 +131,47 @@ const float T_MAX = 1e30;
 
 struct Hit { float t; vec3 bary; uint tri; };
 
-bool slabHit(vec3 ro, vec3 invDir, vec3 bmin, vec3 bmax, float tmax) {
+// How much of last frame's history at this pixel still describes the surface we
+// hit, 0..1. There are no motion vectors, so the only history worth keeping is a
+// pixel whose surface hasn't moved: the normal must agree and the eye distance
+// must match to within a fraction of a percent (each frame's gbuf depth is
+// relative to that frame's scene diagonal, hence the conversion). The same test
+// runs in the denoise pass -- keep them in sync.
+float historyTrust(vec3 n, float tAbs, vec4 pg) {
+    if (pg.w < 0.0 || u.misc.y <= 0.0) return 0.0;
+    float tPrev = pg.w * u.misc.y;
+    float wN = clamp((dot(n, pg.xyz) - 0.97) / 0.03, 0.0, 1.0);
+    float wD = clamp(1.0 - abs(tAbs - tPrev) / max(tAbs * 0.006, 1e-3), 0.0, 1.0);
+    return wN * wD;
+}
+
+// Ray/box slab test. tNear receives the entry distance (0 if the origin is inside).
+bool slabHitT(vec3 ro, vec3 invDir, vec3 bmin, vec3 bmax, float tmax, out float tNear) {
     vec3 t0 = (bmin - ro) * invDir;
     vec3 t1 = (bmax - ro) * invDir;
     vec3 ts = min(t0, t1);
     vec3 tb = max(t0, t1);
     float tN = max(max(ts.x, ts.y), ts.z);
     float tF = min(min(tb.x,  tb.y),  tb.z);
+    tNear = max(tN, 0.0);
     return tN <= tF && tF >= 0.0 && tN < tmax;
+}
+bool slabHit(vec3 ro, vec3 invDir, vec3 bmin, vec3 bmax, float tmax) {
+    float tn;
+    return slabHitT(ro, invDir, bmin, bmax, tmax, tn);
 }
 
 // Double-sided Möller–Trumbore (N64 winding is not globally consistent).
-bool triHit(vec3 ro, vec3 rd, RTTri tri, float tmax, out float tOut, out vec3 baryOut) {
-    vec3  e1  = tri.v1.xyz - tri.v0.xyz;
-    vec3  e2  = tri.v2.xyz - tri.v0.xyz;
+// Takes just the three positions: passing the whole 160-byte triangle made every
+// intersection test copy normals and colours it never reads.
+bool triHit(vec3 ro, vec3 rd, vec3 v0, vec3 v1, vec3 v2, float tmax, out float tOut, out vec3 baryOut) {
+    vec3  e1  = v1 - v0;
+    vec3  e2  = v2 - v0;
     vec3  p   = cross(rd, e2);
     float det = dot(e1, p);
     if (abs(det) < 1e-8) return false;
     float idet = 1.0 / det;
-    vec3  tv  = ro - tri.v0.xyz;
+    vec3  tv  = ro - v0;
     float uu  = dot(tv, p) * idet;
     if (uu < 0.0 || uu > 1.0) return false;
     vec3  q   = cross(tv, e1);
@@ -164,25 +194,41 @@ bool triHit(vec3 ro, vec3 rd, RTTri tri, float tmax, out float tOut, out vec3 ba
 bool traverse(vec3 ro, vec3 rd, float tmax, out Hit hit) {
     hit.t = tmax; hit.tri = 0xffffffffu; hit.bary = vec3(0.0);
     vec3 invDir = 1.0 / rd;
-    uint stack[48]; int sp = 0;
-    stack[sp++] = 0u;
+    // Both children are tested when their parent is popped and the nearer one is
+    // visited first, so once something is hit the farther subtrees (and everything
+    // behind the hit) are culled by their entry distance instead of being walked.
+    uint  stack[56];
+    float stackT[56];
+    int   sp = 0;
+    float t0;
+    if (!slabHitT(ro, invDir, nodes[0].aabbMin, nodes[0].aabbMax, hit.t, t0)) return false;
+    stack[0] = 0u; stackT[0] = t0; sp = 1;
     bool found = false;
     while (sp > 0) {
-        uint ni = stack[--sp];
-        BVHNode n = nodes[ni];
-        if (!slabHit(ro, invDir, n.aabbMin, n.aabbMax, hit.t)) continue;
+        --sp;
+        if (stackT[sp] >= hit.t) continue;
+        BVHNode n = nodes[stack[sp]];
         if (n.triCount > 0u) {
             for (uint i = 0u; i < n.triCount; ++i) {
                 uint ti = n.leftFirst + i;
                 if ((tris[ti].mat.x & RT_MAT_CUTOUT) != 0u) continue;
                 float t; vec3 b;
-                if (triHit(ro, rd, tris[ti], hit.t, t, b)) {
+                if (triHit(ro, rd, tris[ti].v0.xyz, tris[ti].v1.xyz, tris[ti].v2.xyz, hit.t, t, b)) {
                     hit.t = t; hit.tri = ti; hit.bary = b; found = true;
                 }
             }
-        } else if (sp < 46) {
-            stack[sp++] = n.leftFirst;
-            stack[sp++] = n.leftFirst + 1u;
+        } else if (sp < 54) {
+            uint l = n.leftFirst, r = l + 1u;
+            BVHNode nl = nodes[l];
+            BVHNode nr = nodes[r];
+            float tl, tr;
+            bool hl = slabHitT(ro, invDir, nl.aabbMin, nl.aabbMax, hit.t, tl);
+            bool hr = slabHitT(ro, invDir, nr.aabbMin, nr.aabbMax, hit.t, tr);
+            if (hl && hr) {
+                if (tl <= tr) { stack[sp] = r; stackT[sp++] = tr; stack[sp] = l; stackT[sp++] = tl; }
+                else          { stack[sp] = l; stackT[sp++] = tl; stack[sp] = r; stackT[sp++] = tr; }
+            } else if (hl) { stack[sp] = l; stackT[sp++] = tl; }
+            else if (hr)   { stack[sp] = r; stackT[sp++] = tr; }
         }
     }
     return found;
@@ -206,7 +252,7 @@ bool occluded(vec3 ro, vec3 rd, float tmin, float tmax, uint skipTri) {
                 if (ti == skipTri) continue;
                 if ((tris[ti].mat.x & (RT_MAT_TRANSLUCENT | RT_MAT_CUTOUT)) != 0u) continue;
                 float t; vec3 b;
-                if (triHit(ro, rd, tris[ti], tmax, t, b) && t > tmin) return true;
+                if (triHit(ro, rd, tris[ti].v0.xyz, tris[ti].v1.xyz, tris[ti].v2.xyz, tmax, t, b) && t > tmin) return true;
             }
         } else if (sp < 46) {
             stack[sp++] = n.leftFirst;
@@ -224,8 +270,7 @@ bool occluded(vec3 ro, vec3 rd, float tmin, float tmax, uint skipTri) {
 // temporal accumulator converges instead of re-averaging one pattern.
 // Returns irradiance rgb; AO scalar via `aoOut`.
 vec3 gatherIndirect(vec3 pos, vec3 n, uint skipTri, float aoDist, float tmin,
-                    float phase, out float aoOut) {
-    const uint K = 4u;
+                    float phase, uint K, out float aoOut) {
     const vec3 kSky = vec3(0.94, 0.98, 1.06);
     vec3 up = (abs(n.z) < 0.999) ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
     vec3 t  = normalize(cross(up, n));
@@ -268,6 +313,8 @@ void main() {
     vec4  gOut      = vec4(0.0, 0.0, 1.0, -1.0);
     vec4  shdOut    = vec4(1.0, 1.0, 1.0, 0.0);   // shade=1 (no de-light), unlit
     vec3  irrOut    = vec3(1.0);                  // neutral indirect
+    float localVis  = 1.0;                        // point-light visibility
+    float packedLights = 1.0;                     // light indices (both "none"): 0xFF/255
 
     // Primary ray (eye-space; camera at origin) through the half-res pixel,
     // mapped through the N64 viewport (scaleY sign supplies the y-flip).
@@ -323,11 +370,19 @@ void main() {
 
         float sceneDiag = max(length(nodes[0].aabbMax - nodes[0].aabbMin), 1e-3);
 
+        // The light THIS triangle was drawn with (per object, per frame), so
+        // every object is shadowed toward its own light and a light that moves
+        // moves its shadows the same frame. Triangles drawn unlit take the
+        // frame's dominant sun (lightDir).
+        uint  sunIdx     = tri.mat.y & 15u;
+        uint  locIdx     = (tri.mat.y >> 4) & 15u;
+        packedLights     = float(sunIdx | (locIdx << 4)) / 255.0;
+        vec3  sunVec     = (sunIdx != 15u) ? u.lights[sunIdx * 2u].xyz : u.lightDir.xyz;
         float sunSize    = u.lightDir.w;
         bool  validLight = ((flags & RT_F_SHADOWS) != 0u)
                         && (sunSize > 1e-4)
-                        && (dot(u.lightDir.xyz, u.lightDir.xyz) > 1e-6);
-        vec3  L     = validLight ? normalize(u.lightDir.xyz) : vec3(0.0, 1.0, 0.0);
+                        && (dot(sunVec, sunVec) > 1e-6);
+        vec3  L     = validLight ? normalize(sunVec) : vec3(0.0, 1.0, 0.0);
         float NdotL = dot(ns, L);
 
         // Ray-origin offset + minimum occluder distance (both scene-scaled).
@@ -345,7 +400,21 @@ void main() {
         // by the shadow disk sampling and the AO spiral.
         float ign   = fract(52.9829189 * fract(0.06711056 * float(pix.x)
                                              + 0.00583715 * float(pix.y)));
-        uint  frame = uint(u.lightColor.w);
+        // Sample-pattern rotation. A pixel whose surface is unchanged since last
+        // frame rotates its pattern every frame so the temporal accumulation
+        // converges; a pixel whose surface moved keeps ONE fixed pattern, so the
+        // noise stays put on screen instead of boiling from frame to frame.
+        float histLen = imageLoad(prevHistImg, ip).a * 64.0
+                      * historyTrust(ns, h.t, imageLoad(prevGbufImg, ip));
+        uint  frame = (histLen >= 1.0) ? uint(u.lightColor.w) : 0u;
+        // Ray budget. A pixel with a long trusted history gets its noise averaged
+        // away by the accumulation, so it needs far fewer rays per frame: the
+        // budget falls from the full count (new or moving surfaces) to one ray
+        // as history builds over its first eight frames. Cost per frame drops
+        // accordingly whenever the picture holds still.
+        float settled   = clamp((histLen - 1.0) / 7.0, 0.0, 1.0);
+        uint  shadowRays = uint(clamp(mix(u.extra.z, 1.0, settled) + 0.5, 1.0, u.extra.z));
+        uint  aoRays     = uint(clamp(mix(u.extra.w, 1.0, settled) + 0.5, 1.0, u.extra.w));
 
         // RT64-style soft shadow: jittered rays across the sun's disk, averaged;
         // temporal accumulation in pass 2 converges it. Back-lit surfaces
@@ -354,7 +423,7 @@ void main() {
             vec3 sup = (abs(L.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
             vec3 stx = normalize(cross(sup, L));
             vec3 sty = cross(L, stx);
-            const uint S = 4u;
+            const uint S = shadowRays;
             float vis = 0.0;
             for (uint i = 0u; i < S; ++i) {
                 float fi = float(frame * S + i);
@@ -371,7 +440,30 @@ void main() {
         if ((flags & RT_F_LIGHTING) != 0u && !translucentHit) {
             float aoPhase = 6.2831853 * fract(ign + float(frame) * 0.61803398875);
             irrOut = gatherIndirect(shadowOrig, ns, h.tri, sceneDiag * 0.08,
-                                    shadowMin * 0.25, aoPhase, aoOut);
+                                    shadowMin * 0.25, aoPhase, aoRays, aoOut);
+        }
+
+        // Point light (torch, fire, fairy): one shadow ray toward the light,
+        // jittered over a small disc for a soft edge. Ends at the light itself.
+        if (locIdx != 15u && (flags & RT_F_SHADOWS) != 0u && !translucentHit) {
+            vec3  toL   = u.lights[locIdx * 2u].xyz - pos;
+            float dist  = length(toL);
+            vec3  Lp    = toL / max(dist, 1e-4);
+            if (dist > shadowMin * 4.0 && dot(ns, Lp) > 0.0) {
+                vec3 sup = (abs(Lp.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                vec3 stx = normalize(cross(sup, Lp));
+                vec3 sty = cross(Lp, stx);
+                const uint S = (settled > 0.5) ? 1u : 2u;
+                float vis = 0.0;
+                for (uint i = 0u; i < S; ++i) {
+                    float fi = float(frame * S + i);
+                    float a  = 6.2831853 * fract(ign + 0.31 + fi * 0.61803398875);
+                    float r  = sqrt(fract(ign * 7.0 + fi * 0.38196601125));
+                    vec3 dir = normalize(Lp + (stx * cos(a) + sty * sin(a)) * (r * 0.05));
+                    if (!occluded(shadowOrig, dir, shadowMin, dist - shadowMin * 2.0, h.tri)) vis += 1.0;
+                }
+                localVis = vis / float(S);
+            }
         }
 
         // Reflections — MATERIAL-GATED to metal and water only:
@@ -403,11 +495,11 @@ void main() {
         gOut = vec4(ns, h.t / sceneDiag);
     }
 
-    imageStore(litImg,  ip, vec4(extras, 0.0));
+    imageStore(litImg,  ip, vec4(extras, packedLights));
     imageStore(shdImg,  ip, shdOut);
     imageStore(occImg,  ip, vec4(shadowVis, aoOut, reflMix, hitMask));
     imageStore(gbufImg, ip, gOut);
-    imageStore(giImg,   ip, vec4(irrOut * 0.66, 1.0));   // ×0.66: keep ≤1 in rgba8
+    imageStore(giImg,   ip, vec4(irrOut * 0.66, localVis));   // ×0.66: keep ≤1 in rgba8
 }
 )GLSL";
 
@@ -426,16 +518,26 @@ layout(std140, binding = 0) uniform UBO {
     vec4  viewport;   // N64 viewport (unused here; keeps std140 layout in sync)
     vec4  extra;      // x = history cap/64 (CPU lowers it while the camera moves)
     mat4  proj;       // (layout sync)
-    vec4  misc;       // (layout sync)
+    vec4  misc;       // x = scene diagonal, y = previous RT frame's diagonal
     uvec4 dims;       // x=FULL width y=FULL height z=nodeCount w=flags
 } u;
+
+// Same test as the trace pass (keep in sync): how much of last frame's history at
+// this pixel still describes this surface, 0..1. See the trace shader.
+float historyTrust(vec3 n, float tAbs, vec4 pg) {
+    if (pg.w < 0.0 || u.misc.y <= 0.0) return 0.0;
+    float tPrev = pg.w * u.misc.y;
+    float wN = clamp((dot(n, pg.xyz) - 0.97) / 0.03, 0.0, 1.0);
+    float wD = clamp(1.0 - abs(tAbs - tPrev) / max(tAbs * 0.006, 1e-3), 0.0, 1.0);
+    return wN * wD;
+}
 
 layout(rgba8,  binding = 1) uniform readonly  image2D occImg;      // r=shadow g=ao b=reflMix a=hit
 layout(rgba16f,binding = 2) uniform readonly  image2D gbufImg;     // rgb=normal a=depth
 layout(rgba8,  binding = 3) uniform readonly  image2D prevHistImg; // last frame's hist
 layout(rgba16f,binding = 4) uniform readonly  image2D prevGbufImg; // last frame's gbuf
-layout(rgba8,  binding = 5) uniform writeonly image2D histImg;     // r=shadow g=ao a=len/64
-layout(rgba8,  binding = 6) uniform readonly  image2D giImg;       // raw indirect irradiance
+layout(rgba8,  binding = 5) uniform writeonly image2D histImg;     // r=shadow g=ao b=point-light vis a=len/64
+layout(rgba8,  binding = 6) uniform readonly  image2D giImg;       // raw indirect irradiance, a=point-light vis
 layout(rgba8,  binding = 7) uniform readonly  image2D prevGiHistImg; // last frame's GI accum
 layout(rgba8,  binding = 8) uniform writeonly image2D giHistImg;     // GI accum out
 
@@ -448,7 +550,7 @@ void main() {
     vec4 oc0 = imageLoad(occImg, ip);
     // Miss → reset history so stale terms don't bleed back in.
     if (oc0.a < 0.5) {
-        imageStore(histImg,   ip, vec4(1.0, 1.0, 0.0, 0.0));
+        imageStore(histImg,   ip, vec4(1.0, 1.0, 1.0, 0.0));
         imageStore(giHistImg, ip, vec4(0.66, 0.66, 0.66, 0.0));   // neutral irr
         return;
     }
@@ -464,9 +566,9 @@ void main() {
     // ── Spatial: edge-aware (bilateral) blur of the shadow/AO/GI terms ───────
     // Also tracks the neighborhood min/max, used below to clamp temporal
     // history (TAA-style) so moving shadows don't ghost.
-    float sSum = 0.0, aSum = 0.0, wSum = 0.0;
+    float sSum = 0.0, aSum = 0.0, pSum = 0.0, wSum = 0.0;
     vec3  gSum = vec3(0.0);
-    float sMin = 1.0, sMax = 0.0, aMin = 1.0, aMax = 0.0;
+    float sMin = 1.0, sMax = 0.0, aMin = 1.0, aMax = 0.0, pMin = 1.0, pMax = 0.0;
     float sig2 = 2.0 * float(R) * float(R) + 1.0;
     for (int dy = -R; dy <= R; ++dy) {
         for (int dx = -R; dx <= R; ++dx) {
@@ -481,42 +583,46 @@ void main() {
             float wgt = wn * wd * ws;
             sSum += oc.r * wgt;
             aSum += oc.g * wgt;
-            gSum += imageLoad(giImg, p).rgb * wgt;
+            vec4 gr = imageLoad(giImg, p);
+            gSum += gr.rgb * wgt;
+            pSum += gr.a * wgt;
             wSum += wgt;
             if (wgt > 1e-3) {
                 sMin = min(sMin, oc.r); sMax = max(sMax, oc.r);
                 aMin = min(aMin, oc.g); aMax = max(aMax, oc.g);
+                pMin = min(pMin, gr.a); pMax = max(pMax, gr.a);
             }
         }
     }
     float sSpat = (wSum > 0.0) ? (sSum / wSum) : 1.0;
     float aSpat = (wSum > 0.0) ? (aSum / wSum) : 1.0;
+    float pSpat = (wSum > 0.0) ? (pSum / wSum) : 1.0;
     vec3  gSpat = (wSum > 0.0) ? (gSum / wSum) : vec3(0.66);
 
-    // ── Temporal: RT64-style history accumulation ─────────────────────────────
-    // historyWeight = depth/normal-validated; blend = lerp(hist, new, 1/len).
-    // Anti-ghosting guards on top of RT64's scheme (we have no motion vectors):
-    //  • history clamped to the spatial neighborhood min/max;
-    //  • CPU cuts the cap while the camera TRANSLATES (AABB-center motion);
-    //  • the normal validation is SHARP (pow 32): an object ROTATING in place
-    //    (menu Mario head) barely moves its AABB and keeps per-pixel depth, so
-    //    only the rotating normals betray it — pow 4 let its shadow terms lag
-    //    the rotation ("shadows floating just in front of the head").
+    // ── Temporal: history accumulation on pixels whose surface hasn't moved ────
+    // There are no motion vectors, so history is only trusted where the same
+    // surface still covers the pixel (historyTrust: matching normal, eye distance
+    // within a fraction of a percent). A partly-trusted pixel keeps a shorter
+    // history in proportion, which bounds the lag of a slowly drifting view; a
+    // moved pixel restarts from this frame's own (spatially denoised) result
+    // instead of dragging last frame's shadow along. History is also clamped to
+    // the spatial neighbourhood (TAA-style) so a shadow edge can't ghost.
     vec4  ph      = imageLoad(prevHistImg, ip);
     vec4  pgi     = imageLoad(prevGiHistImg, ip);
     vec4  pg      = imageLoad(prevGbufImg, ip);
-    float wNormal = pow(max(dot(n0, pg.xyz), 0.0), 32.0);
-    float wDepth  = exp(-abs(d0 - pg.w) / dThresh);
+    float trust   = historyTrust(n0, d0 * u.misc.x, pg);
     float histCap = max(u.extra.x * 64.0, 1.0);
-    float histLen = ph.a * 64.0 * wNormal * wDepth;   // reject stale history
+    float histLen = ph.a * 64.0 * trust;
     histLen = min(histLen + 1.0, histCap);
     float alpha = 1.0 / histLen;
     float sPrev = clamp(ph.r, sMin, sMax);
     float aPrev = clamp(ph.g, aMin, aMax);
+    float pPrev = clamp(ph.b, pMin, pMax);
     float sT = mix(sPrev, sSpat, alpha);
     float aT = mix(aPrev, aSpat, alpha);
+    float pT = mix(pPrev, pSpat, alpha);
     vec3  gT = mix(pgi.rgb, gSpat, alpha);
-    imageStore(histImg,   ip, vec4(sT, aT, 0.0, histLen / 64.0));
+    imageStore(histImg,   ip, vec4(sT, aT, pT, histLen / 64.0));
     imageStore(giHistImg, ip, vec4(gT, 1.0));
 }
 )GLSL";
@@ -538,6 +644,7 @@ layout(std140, binding = 0) uniform UBO {
     mat4  proj;       // eye -> clip (forward; raster-depth prediction)
     vec4  misc;       // x = scene AABB diagonal
     uvec4 dims;       // x=FULL width y=FULL height z=nodeCount w=flags
+    vec4  lights[30]; // light table: [2i] = {direction toward light | position, la}, [2i+1] = {rgb, qa}
 } u;
 
 // Window pixel -> NDC through the N64 viewport (see trace shader).
@@ -587,6 +694,7 @@ void main() {
     vec2  f  = hc - vec2(b0);
     vec4  tOcc[4]; vec4 tGbuf[4]; float tW[4];
     float bestW = 0.0, refDepth = 0.0;
+    int   bestK = 0;
     for (int k = 0; k < 4; ++k) {
         ivec2 o = ivec2(k & 1, k >> 1);
         ivec2 p = clamp(b0 + o, ivec2(0), ivec2(rdim) - 1);
@@ -594,9 +702,18 @@ void main() {
         tGbuf[k] = imageLoad(gbufImg, p);
         float wb = ((o.x == 0) ? (1.0 - f.x) : f.x) * ((o.y == 0) ? (1.0 - f.y) : f.y);
         tW[k] = wb * tOcc[k].a;
-        if (tW[k] > bestW) { bestW = tW[k]; refDepth = tGbuf[k].w; }
+        if (tW[k] > bestW) { bestW = tW[k]; refDepth = tGbuf[k].w; bestK = k; }
     }
-    float shadow = 0.0, ao = 0.0, reflMix = 0.0, litW = 0.0, wSum = 0.0;
+    // Which lights lit the surface at this pixel (trace packs the indices into lit.a).
+    // Indices can't be blended, so they come from the strongest tap.
+    uint packedLights = 255u;
+    {
+        ivec2 bp = clamp(b0 + ivec2(bestK & 1, bestK >> 1), ivec2(0), ivec2(rdim) - 1);
+        packedLights = uint(imageLoad(litImg, bp).a * 255.0 + 0.5);
+    }
+    uint sunIdx = packedLights & 15u;
+    uint locIdx = (packedLights >> 4) & 15u;
+    float shadow = 0.0, ao = 0.0, reflMix = 0.0, litW = 0.0, wSum = 0.0, localVis = 0.0;
     vec3  extras = vec3(0.0), nrm = vec3(0.0), shade = vec3(0.0), irr = vec3(0.0);
     for (int k = 0; k < 4; ++k) {
         float wgt = tW[k] * exp(-abs(tGbuf[k].w - refDepth) * 20.0);
@@ -607,6 +724,7 @@ void main() {
         vec4 sh = imageLoad(shdImg, p);
         shadow  += hs.r * wgt;
         ao      += hs.g * wgt;
+        localVis += hs.b * wgt;
         reflMix += tOcc[k].b * wgt;
         litW    += sh.a * wgt;
         shade   += sh.rgb * wgt;
@@ -663,7 +781,7 @@ void main() {
         outColor = ras * mod * (1.0 - reflMix) + extras;
     } else {
         float inv = 1.0 / wSum;
-        shadow *= inv; ao *= inv; reflMix *= inv; extras *= inv; shade *= inv;
+        shadow *= inv; ao *= inv; reflMix *= inv; extras *= inv; shade *= inv; localVis *= inv;
         irr = irr * inv * 1.5;   // decode the ×0.66 rgba8 packing (1.0 = neutral)
         vec3 n = (dot(nrm, nrm) > 1e-6) ? normalize(nrm) : vec3(0.0, 0.0, 1.0);
 
@@ -683,15 +801,17 @@ void main() {
         vec3  albedo  = clamp(mix(ras, ras / shadeM, dlAmt), 0.0, 1.2);
 
         // ── RELIGHT (RT64 model: albedo × (indirect + direct)) ───────────────
+        // The same per-object light the trace shadowed toward.
+        vec3  sunVec     = (sunIdx != 15u) ? u.lights[sunIdx * 2u].xyz : u.lightDir.xyz;
         float sunSize    = u.lightDir.w;
         bool  validLight = ((flags & RT_F_SHADOWS) != 0u)
                         && (sunSize > 1e-4)
-                        && (dot(u.lightDir.xyz, u.lightDir.xyz) > 1e-6);
+                        && (dot(sunVec, sunVec) > 1e-6);
         float NdotLw = 1.0;
         vec3  sunCol = vec3(1.0);
         vec3  L      = vec3(0.0, 1.0, 0.0);
         if (validLight) {
-            L = normalize(u.lightDir.xyz);
+            L = normalize(sunVec);
             // Wrap diffuse: soft terminator so low-poly models don't band.
             NdotLw = clamp((dot(n, L) + 0.4) / 1.4, 0.0, 1.0);
             sunCol = clamp(u.lightColor.rgb, 0.0, 1.0);
@@ -708,7 +828,22 @@ void main() {
         float eyeF     = max(dot(n, -rd), 0.0);
         vec3  indirect = ambientL * (0.7 * ao * irr + 0.3 * eyeF * kSkyTint);
         vec3  direct   = (1.0 - ambientL) * NdotLw * shadow * sunCol * kSunTint;
-        vec3  lightTerm = (indirect + direct) * u.extra.y;
+        // Point light (torch, fire, fairy): its colour, falloff and shadow. The
+        // falloff is the RSP's own: distance weights z twice, and
+        // D = 1 + (2*la*d + qa*d^2/8) / 65536, so the light reaches as far as the
+        // game intended and no further.
+        vec3 localTerm = vec3(0.0);
+        if (locIdx != 15u && (flags & RT_F_SHADOWS) != 0u) {
+            vec4  pa = u.lights[locIdx * 2u];
+            vec4  pb = u.lights[locIdx * 2u + 1u];
+            vec3  ePos = rd * (refDepth * max(u.misc.x, 1e-3));   // this surface, eye space
+            vec3  toL  = pa.xyz - ePos;
+            float dRsp = floor(sqrt(toL.x * toL.x + toL.y * toL.y + 2.0 * toL.z * toL.z));
+            float atten = 1.0 / (1.0 + (dRsp * pa.w * 2.0 + dRsp * dRsp * pb.w / 8.0) / 65536.0);
+            float ndl  = max(dot(n, normalize(toL)), 0.0);
+            localTerm  = pb.rgb * (ndl * atten * localVis);
+        }
+        vec3  lightTerm = (indirect + direct + localTerm) * u.extra.y;
         dbgTerm = lightTerm;
 
         // Specular from the denoised shadow term, tinted like the diffuse.
