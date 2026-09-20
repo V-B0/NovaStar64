@@ -35,6 +35,7 @@ struct RomMetadata {
     std::string path;
     std::string name;
     std::string notes;
+    std::string cover;   ///< picture shown on the game's card; a path relative to the data folder ("covers/..."), or empty
 };
 
 // -----------------------------------------------
@@ -144,7 +145,10 @@ private:
     // ---- Library ----
     void LoadLibrary();
     void SaveLibrary() const;
-    void AddToLibrary(const std::string& path, const std::string& name, const std::string& notes = {});
+    void OpenAddDialog();
+    void OpenEditDialog(int index);
+    void AddToLibrary(const std::string& path, const std::string& name, const std::string& notes = {},
+                      const std::string& cover = {});
     void OpenRomWithPicker();
 
     // ---- Settings ----
@@ -209,7 +213,24 @@ private:
     char m_editPathBuffer[512]   = {};
     char m_editNameBuffer[128]   = {};
     char m_editNotesBuffer[1024] = {};
+    char m_editCoverBuffer[512]  = {};
     std::string m_modalError;
+
+    /// A cover picture uploaded to the GPU, cached by file path.
+    struct CoverTexture {
+        uint32_t texture = 0;
+        int      width   = 0;
+        int      height  = 0;
+        bool     failed  = false;   ///< the file couldn't be read; don't retry every frame
+    };
+    std::unordered_map<std::string, CoverTexture> m_coverTextures;
+    /// The texture for a cover picture, loading it on first use; null if there is none.
+    const CoverTexture* GetCoverTexture(const std::string& path);
+    /// Forget a cached picture (its file was replaced) or all of them (before the GL context goes).
+    void ForgetCoverTexture(const std::string& path);
+    void ReleaseCoverTextures();
+    /// Draws a game's cover, or a placeholder, in a box of the given width. Returns true if clicked.
+    bool DrawCover(const std::string& coverPath, float width);
 
     Nova64::Video::PluginConfig m_gfx;
     LaunchOptions               m_launch;

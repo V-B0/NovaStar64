@@ -6,7 +6,14 @@
 // This file compiles the stb_image library for PNG/BMP/TGA/etc loading.
 
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG        // Only need PNG support (BMP/TGA/DDS handled natively)
+// PNG for texture packs and JPEG for the launcher's cover images; every other
+// format is compiled out (BMP/TGA/DDS are handled natively).
+#define STBI_NO_BMP
+#define STBI_NO_PSD
+#define STBI_NO_TGA
+#define STBI_NO_GIF
+#define STBI_NO_PIC
+#define STBI_NO_PNM
 #define STBI_NO_STDIO        // We'll use our own file I/O
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR

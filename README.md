@@ -261,8 +261,9 @@ there.
 | `settings/library.txt` | The game list |
 
 Games added in the launcher are copied into `roms/`. Cartridge saves and save
-states go in `saves/`. These folders are git-ignored: their contents are never
-committed.
+states go in `saves/`. A cover picture chosen in the Add Game or Edit dialog (PNG or
+JPEG) is copied into `covers/` and shown on the game's card. These folders are
+git-ignored: their contents are never committed.
 
 ## How it works
 

@@ -101,6 +101,8 @@ NovaLauncher::NovaLauncher() {
     //       start a game as soon as the window is up
     //   NOVA64_UI_KEYS=600:Backspace,640:Left,700:Return
     //       press keys at the given launcher frames
+    //   NOVA64_UI_OPEN=add | edit:<index>
+    //       open the Add Game or Edit Game dialog as soon as the launcher starts
     //   NOVA64_UI_SHOT_AT=580,660,900
     //       with NOVA64_UI_SHOT, save <name>_<frame>.png at each frame and exit after the last
     if (const char* shot = std::getenv("NOVA64_UI_SHOT")) m_shotPath = shot;
@@ -139,6 +141,12 @@ NovaLauncher::NovaLauncher() {
 
     LoadSettings();
     LoadLibrary();
+
+    //   NOVA64_UI_OPEN=add | edit:<index>   open the Add Game or Edit Game dialog on start
+    if (const char* open = std::getenv("NOVA64_UI_OPEN")) {
+        if (std::strcmp(open, "add") == 0) OpenAddDialog();
+        else if (std::strncmp(open, "edit:", 5) == 0) OpenEditDialog(std::atoi(open + 5));
+    }
 }
 
 NovaLauncher::~NovaLauncher() {
@@ -371,6 +379,7 @@ void NovaLauncher::Run() {
 
     ed::DestroyEditor(g_NodeEditor);
     g_NodeEditor = nullptr;
+    ReleaseCoverTextures();
     if (m_iconTex) {
         const GLuint icon = m_iconTex;
         glDeleteTextures(1, &icon);
