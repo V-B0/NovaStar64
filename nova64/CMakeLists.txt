@@ -404,7 +404,7 @@ set(SOURCES
 
     # NovaGraphics - Graphics plugin (Texture)
     NovaGraphics/Texture/stb_image_impl.cpp
-    NovaGraphics/Texture/HiResTextures.cpp
+    NovaGraphics/Texture/HiResPack.cpp
     NovaGraphics/Texture/TextureCache.cpp
 
     # NovaGraphics - Graphics plugin (Window)

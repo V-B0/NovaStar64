@@ -166,6 +166,7 @@ int VKShaderCompiler::GetUniformLocation(Shader::ShaderHandle /*program*/,
         { "uMaxTile",             uMaxTile             },
         { "uDebugOutput",         uDebugOutput         },
         { "uTexCvgAlpha",         uTexCvgAlpha         },
+        { "uTexHiRes",            uTexHiRes            },
     };
 
     for (const auto& e : kTable) {

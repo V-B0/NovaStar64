@@ -10,6 +10,7 @@
 
 #include "../Core/N64Types.hpp"
 #include "../Renderer/Renderer.hpp"
+#include "HiResPack.hpp"
 #include "../Common/Logger.hpp"
 
 #include <cstdint>
@@ -21,6 +22,8 @@
 #include <array>
 #include <list>
 #include <deque>
+#include <filesystem>
+#include <unordered_set>
 
 namespace Nova64 { namespace Video { namespace Tex {
 
@@ -72,6 +75,13 @@ struct TextureKey {
     uint16_t clampWidth;
     uint16_t clampHeight;
     uint64_t crc;           // Content hash for change detection
+    // Texture-pack identity (see HiResPack.hpp): the Rice checksums of the texel data and
+    // palette, and the size of the region they were computed over. All zero unless a pack
+    // or texture dumping is active.
+    uint32_t hiresTexCrc;
+    uint32_t hiresPalCrc;
+    uint16_t hiresWidth;
+    uint16_t hiresHeight;
 
     bool operator==(const TextureKey& other) const {
         return address == other.address &&
@@ -92,6 +102,10 @@ struct TextureKey {
                mipLevels == other.mipLevels &&
                clampWidth == other.clampWidth &&
                clampHeight == other.clampHeight &&
+               hiresTexCrc == other.hiresTexCrc &&
+               hiresPalCrc == other.hiresPalCrc &&
+               hiresWidth == other.hiresWidth &&
+               hiresHeight == other.hiresHeight &&
                crc == other.crc;
     }
 };
@@ -117,6 +131,8 @@ struct TextureKeyHash {
         h ^= std::hash<uint8_t>{}(k.mipLevels) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint16_t>{}(k.clampWidth) + 0x9e3779b9 + (h << 6) + (h >> 2);
         h ^= std::hash<uint16_t>{}(k.clampHeight) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint32_t>{}(k.hiresTexCrc) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint32_t>{}(k.hiresPalCrc) + 0x9e3779b9 + (h << 6) + (h >> 2);
         return h;
     }
 };
@@ -134,6 +150,8 @@ struct CachedTexture {
     uint64_t lastUsedFrame = 0;  // LRU tracking
     uint32_t useCount = 0;       // Frequency tracking
     bool isHiRes = false;        // Hi-res texture pack replacement
+    uint16_t hiresWidth = 0;     // N64-side size the replacement stands in for (isHiRes only)
+    uint16_t hiresHeight = 0;
     bool needsUpdate = false;    // Content changed in RDRAM
 
     // Texture coordinate scale (realWidth may differ from N64 width)
@@ -235,6 +253,17 @@ public:
     /// Update config at runtime
     void SetConfig(const TextureCacheConfig& config);
 
+    /// Use a texture pack: textures whose identity it lists are replaced by its pictures.
+    /// Null or empty turns replacement off. Drops the cache, since what a key maps to changes.
+    void SetHiResPack(std::shared_ptr<const HiResPack> pack);
+    bool HasHiResPack() const { return m_hiResPack && !m_hiResPack->Empty(); }
+
+    /// Write every new texture the game uses to `folder` as a Rice-format picture named
+    /// `<gameName>#<crc>#<format>#<size>[#<palette crc>]_all.png`, ready to be edited into a pack.
+    /// An empty folder turns dumping off.
+    void SetDumpFolder(const std::filesystem::path& folder, const std::string& gameName);
+    bool DumpingTextures() const { return !m_dumpFolder.empty(); }
+
 private:
     /// Decode N64 texture data into RGBA8888
     void DecodeTexture(const TextureKey& key, const uint8_t* tmem,
@@ -274,7 +303,14 @@ private:
     /// Load hi-res texture replacement
     bool LoadHiResTexture(CachedTexture& entry, const TextureKey& key);
 
+    /// Save a decoded texture into the dump folder (once per identity).
+    void DumpTexture(const TextureKey& key, const std::vector<uint32_t>& pixels);
+
     IRenderer* m_renderer = nullptr;
+    std::shared_ptr<const HiResPack> m_hiResPack;
+    std::filesystem::path m_dumpFolder;
+    std::string m_dumpGameName;
+    std::unordered_set<uint64_t> m_dumped;   // identities already written this run
     TextureCacheConfig m_config;
     TextureCacheStats m_stats;
     uint64_t m_frameCounter = 0;

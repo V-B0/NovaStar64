@@ -322,6 +322,7 @@ the rest.
 | `NOVA64_TRI_DUMP=min,max` | Dump every triangle drawn in a range of frames |
 | `NOVA64_TEXDBG=1` / `NOVA64_FORENSIC=1` | Log texture decodes / texture-cache hits and misses |
 | `NOVA64_NO_MIPMAPS=1` | Disable mipmapping, to isolate texture problems |
+| `NOVA64_DUMP_TEXTURES=1` | Write every texture the game uses to `texture_dump/<game name>/` as a Rice-format picture (same as the setting) |
 | `NOVA64_UI_OPEN=add` / `edit:<index>` | Open the launcher's Add Game or Edit Game dialog on start, for screenshots |
 | `NOVA64_RT=1` | Enable the experimental ray tracer |
 | `NOVA64_LOG_LEVEL=<0-6>` | Override the log verbosity |

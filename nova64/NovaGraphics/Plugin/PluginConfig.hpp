@@ -120,14 +120,14 @@ struct PluginConfig {
     float    lodBias             = 0.0f;
 
     // ── HiRes textures ────────────────────────────────────────
-    bool     hiResTexEnabled     = false;
+    bool     hiResTexEnabled     = true;                 // use texture packs found in hiResTexPath/<game name>/
     HiResFormat hiResFormat      = HiResFormat::None;
-    std::string hiResTexPath;
+    std::string hiResTexPath     = "hires_texture";
 
     // ── Texture cache ─────────────────────────────────────────
     int      textureCacheSizeMB  = 128;
-    bool     textureDump         = false;
-    std::string textureDumpPath;
+    bool     textureDump         = false;                // write every texture a game uses to textureDumpPath/<game name>/
+    std::string textureDumpPath  = "texture_dump";
 
     // ── Frame buffer emulation ────────────────────────────────
     bool     fbEmulation         = true;

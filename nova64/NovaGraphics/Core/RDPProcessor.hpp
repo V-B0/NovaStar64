@@ -21,6 +21,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <array>
 #include <string>
@@ -77,6 +78,11 @@ struct DrawCall {
     // draws share the same batch and subsequent loads overwrite TMEM.
     uint64_t snapshotCrc0;
     uint64_t snapshotCrc1;
+    // Texture-pack identity captured when the draw was queued, for the same reason as the CRCs
+    // above: TMEM and the load records have moved on by the time the batch is flushed.
+    struct HiResSnapshot { uint32_t texCrc = 0, palCrc = 0; uint16_t width = 0, height = 0; };
+    HiResSnapshot snapHiRes0;
+    HiResSnapshot snapHiRes1;
 
     // Tile descriptor snapshots for texture binding at flush time
     TileDescriptor tileDesc0;
@@ -493,6 +499,21 @@ private:
                                     const TileDescriptor* mipTiles = nullptr,
                                     int mipCount = 0,
                                     uint64_t overrideCrc = 0) const;
+
+public:
+    /// Texture packs and texture dumping identify a texture by a Rice checksum of its data in
+    /// RDRAM. Computing it costs a little, so it is only done while one of them is in use.
+    void SetHiResHashing(bool on) { m_hiResHashing = on; m_hiResIdMemo.clear(); }
+
+private:
+    /// The texture-pack identity of the texture a tile shows, following how GLideN64 finds the
+    /// region (size, row stride, palette) to checksum. Sets the region's size in outWidth/outHeight.
+    Tex::HiResId ComputeHiResIdFor(const TileDescriptor& tile, const Tex::TextureKey& key, uint8_t tlutType,
+                                   uint16_t* outWidth, uint16_t* outHeight) const;
+
+    struct HiResMemo { Tex::HiResId id; uint16_t width = 0; uint16_t height = 0; };
+    bool m_hiResHashing = false;
+    mutable std::unordered_map<uint64_t, HiResMemo> m_hiResIdMemo;   // by texture content, so each is hashed once
 };
 
 } // namespace Nova64::Video

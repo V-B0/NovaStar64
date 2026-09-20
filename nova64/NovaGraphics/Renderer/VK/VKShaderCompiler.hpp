@@ -51,7 +51,7 @@ namespace Nova64 { namespace Video { namespace VK {
 //    [560]  ivec4 uIntBits0         x=frameCount y=zMode z=useTexCoordBounds w=texPersp
 //    [576]  ivec4 uIntBits1         x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
 //    [592]  ivec4 uIntBits2         x=fogUsage y=sst z=texDetail w=maxTile
-//    [608]  ivec4 uIntBits3         x=debugOutput yzw=0
+//    [608]  ivec4 uIntBits3         x=debugOutput y=texCvgAlpha z=texHiRes w=0
 //  Total: 624 bytes
 
 static constexpr size_t kN64UBOSize = 624;
@@ -113,6 +113,7 @@ namespace N64UBOOff {
     constexpr int uMaxTile             = 604;
     constexpr int uDebugOutput         = 608;
     constexpr int uTexCvgAlpha         = 612;  // uIntBits3.y: when 1, multiply combined.a by texel0.a
+    constexpr int uTexHiRes            = 616;  // uIntBits3.z: bit 0 = texture 0, bit 1 = texture 1 is a texture-pack picture
 } // namespace N64UBOOff
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -173,7 +173,7 @@ std::string ShaderGenerator::GetCommonUniforms() const {
             "    ivec4 uIntBits0;\n"          //  [560] x=frameCount y=zMode z=useTexCoordBounds w=texPersp
             "    ivec4 uIntBits1;\n"          //  [576] x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
             "    ivec4 uIntBits2;\n"          //  [592] x=fogUsage y=sst z=texDetail w=maxTile
-            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput y=texCvgAlpha zw=0
+            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput y=texCvgAlpha z=texHiRes (bit0 tex0, bit1 tex1) w=0
             "} uN64;\n"
             // Aliases mapping original uniform names → UBO fields
             "#define uMVPMatrix           uN64.uMVPMatrix\n"
@@ -231,7 +231,8 @@ std::string ShaderGenerator::GetCommonUniforms() const {
             "#define uTextureDetail       uN64.uIntBits2.z\n"
             "#define uMaxTile             uN64.uIntBits2.w\n"
             "#define uDebugOutput         uN64.uIntBits3.x\n"
-            "#define uTexCvgAlpha         uN64.uIntBits3.y\n";
+            "#define uTexCvgAlpha         uN64.uIntBits3.y\n"
+            "#define uTexHiRes            uN64.uIntBits3.z\n";
     }
     return
         "uniform mat4  uMVPMatrix;\n"
@@ -291,7 +292,9 @@ std::string ShaderGenerator::GetCommonUniforms() const {
         "uniform int   uFogUsage;\n"
         "uniform int   uScreenSpaceTriangle;\n"
         "uniform vec2  uResolutionScale;\n"
-        "uniform int   uDebugOutput;\n";
+        "uniform int   uDebugOutput;\n"
+        "uniform int   uTexCvgAlpha;\n"
+        "uniform int   uTexHiRes;\n";
 }
 
 std::string ShaderGenerator::GetTextureUniforms() const {
@@ -1221,7 +1224,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         } else {
             // Texel addressing and filtering done here rather than by the
             // sampler, so both renderers match: see GenerateN64TexelReadCode.
-            code += "    vec4 texel0 = n64ReadTexture(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0, uGPUScale0, " + texFilterMode + ");\n";
+            // A texture-pack picture is sampled at the fragment's own position rather than at
+            // the centres of the N64 texels it stands in for (see n64ReadHiRes).
+            code += "    vec4 texel0;\n";
+            code += "    if ((uTexHiRes & 1) != 0) texel0 = n64ReadHiRes(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0);\n";
+            code += "    else texel0 = n64ReadTexture(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0, uGPUScale0, " + texFilterMode + ");\n";
         }
         // FB monochrome/fixedAlpha for tile 0 — when texture comes from a framebuffer
         code += "    if (uFbMonochrome0 == 1) texel0 = vec4(texel0.r);\n";
@@ -1285,7 +1292,9 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "        }\n";
             code += "      }\n";
             code += "    }\n";
-            code += "    vec4 texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, uGPUScale1, " + texFilterMode + ");\n";
+            code += "    vec4 texel1;\n";
+            code += "    if ((uTexHiRes & 2) != 0) texel1 = n64ReadHiRes(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1);\n";
+            code += "    else texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, uGPUScale1, " + texFilterMode + ");\n";
             // FB monochrome/fixedAlpha for tile 1
             code += "    if (uFbMonochrome1 == 1) texel1 = vec4(texel1.r);\n";
             code += "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
@@ -1396,6 +1405,37 @@ vec4 n64ReadTexture(sampler2D tex, vec2 tileCoord, vec2 size, vec4 clampMirror,
         return mix(lower, upper, step(1.0, f.x + f.y));
     }
     return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A texture-pack picture is several times finer than the N64 texture it replaces, so it is
+// read with the GPU's own bilinear filter at the exact position inside the tile instead of
+// once per N64 texel. The tile's clamp, mirror and mask still apply, on continuous
+// coordinates: p is in texel units with whole numbers at texel centres, as above. Repeat
+// needs no code of its own; the picture's sampler repeats, so a read across the seam
+// blends the last texel with the first.
+vec4 n64ReadHiRes(sampler2D tex, vec2 tileCoord, vec2 size, vec4 clampMirror, vec2 maskBits) {
+    vec2 p = tileCoord;
+    if (clampMirror.x > 0.0) p.x = clamp(p.x, 0.0, clampMirror.x - 1.0);
+    if (clampMirror.y > 0.0) p.y = clamp(p.y, 0.0, clampMirror.y - 1.0);
+    if (maskBits.x > 0.0) {
+        float period = pow(2.0, maskBits.x);
+        if (clampMirror.z > 0.0) {
+            float m = p.x - 2.0 * period * floor(p.x / (2.0 * period));
+            p.x = (m > period - 0.5) ? (2.0 * period - 1.0 - m) : m;
+        } else {
+            p.x = p.x - period * floor(p.x / period);
+        }
+    }
+    if (maskBits.y > 0.0) {
+        float period = pow(2.0, maskBits.y);
+        if (clampMirror.w > 0.0) {
+            float m = p.y - 2.0 * period * floor(p.y / (2.0 * period));
+            p.y = (m > period - 0.5) ? (2.0 * period - 1.0 - m) : m;
+        } else {
+            p.y = p.y - period * floor(p.y / period);
+        }
+    }
+    return texture(tex, (p + 0.5) / max(size, vec2(1.0)));
 }
 )";
 }

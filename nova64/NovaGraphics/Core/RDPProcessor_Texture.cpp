@@ -33,6 +33,8 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
     // Clear any stale LOADTYPE_TILE record for this slot: a block load must not
     // inherit a previous tile load's dimensions.
     m_state.rdp.tmemLoadType[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = RDPState::LOADTYPE_BLOCK;
+    m_state.rdp.tmemLoadDxt[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = static_cast<uint32_t>(dxt);
+    m_state.rdp.tmemLoadBlockWidth[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = static_cast<uint16_t>(texels);
     ExecuteLoadBlock(tile, uls, ult, texels, dxt);
 }
 
@@ -647,6 +649,14 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
         uint32_t crc = CRC32_Fast(m_rdram + srcAddr, crcBytes);
         m_state.rdp.tmem.RecordLoad(srcAddr, static_cast<uint16_t>(tileDesc.tmemAddr),
                                      static_cast<uint16_t>(crcBytes), crc);
+    }
+
+    // Raw copy of the palette memory for texture-pack checksums: the bytes as RDRAM holds
+    // them, at the palette's own position (entry = TMEM word - 256).
+    {
+        const uint32_t first = static_cast<uint32_t>(tileDesc.tmemAddr) - 256;
+        if (first + static_cast<uint32_t>(count) <= 256 && srcAddr + crcBytes <= m_rdramSize)
+            std::memcpy(m_state.rdp.texFilterPalette + 8 + first * 2, m_rdram + srcAddr, crcBytes);
     }
 
     m_stats.textureLoads++;

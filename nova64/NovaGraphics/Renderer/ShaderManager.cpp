@@ -634,6 +634,12 @@ void ShaderManager::SetTexCvgAlpha(int v) {
         m_compiler->SetUniform1i(m_currentShader->uniforms.texCvgAlpha, v);
 }
 
+void ShaderManager::SetTexHiRes(int bits) {
+    if (!m_currentShader || !m_compiler) return;
+    if (m_currentShader->uniforms.texHiRes >= 0)
+        m_compiler->SetUniform1i(m_currentShader->uniforms.texHiRes, bits);
+}
+
 const CompiledShader* ShaderManager::GetDepthOnlyShader() {
     if (m_depthOnlyShader && m_depthOnlyShader->valid) return m_depthOnlyShader.get();
     if (!m_compiler || !m_generator) return nullptr;
@@ -924,6 +930,7 @@ void ShaderManager::QueryUniformLocations(CompiledShader& shader) {
     u.resolutionScale = Q("uResolutionScale");
     u.debugOutput     = Q("uDebugOutput");
     u.texCvgAlpha     = Q("uTexCvgAlpha");
+    u.texHiRes        = Q("uTexHiRes");
 }
 
 }}} // namespace Nova64::Video::Shader

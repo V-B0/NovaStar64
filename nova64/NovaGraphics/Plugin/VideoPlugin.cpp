@@ -1502,6 +1502,8 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
         LOG_INFO("No game profile found, using defaults");
     }
 
+    SetupTexturePack();
+
     // Reset frame state
     m_frameStats = {};
     m_frameCount = 0;
@@ -1513,6 +1515,58 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
 
     // Optional: Clear any uninitialized RDRAM at the VI origin or just wait
     // We will handle skipping the render in UpdateScreen and BlitVIFramebuffer
+}
+
+// The folder a game's textures live in is named after its internal ROM name, as Rice Video and
+// GLideN64 name theirs, so packs made for those work unchanged.
+static std::string TexturePackName(const std::string& romName) {
+    std::string name;
+    for (char c : romName)
+        name += (std::strchr("\\/:*?\"<>|", c) != nullptr) ? '_' : c;
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    return name;
+}
+
+// `<root>/<game>`, matching the folder name without regard to case.
+static std::filesystem::path FindGameFolder(const std::filesystem::path& root, const std::string& game) {
+    std::error_code ec;
+    if (game.empty() || !std::filesystem::is_directory(root, ec)) return {};
+    auto lower = [](std::string s) { for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
+    const std::string wanted = lower(game);
+    for (const auto& entry : std::filesystem::directory_iterator(root, ec))
+        if (entry.is_directory(ec) && lower(entry.path().filename().string()) == wanted) return entry.path();
+    return {};
+}
+
+void VideoPlugin::SetupTexturePack() {
+    if (!m_textureCache) return;
+    const std::string game = TexturePackName(m_sysInfo.romName);
+
+    std::shared_ptr<Tex::HiResPack> pack;
+    if (m_config.hiResTexEnabled) {
+        const std::filesystem::path folder = FindGameFolder(m_config.hiResTexPath.empty() ? "hires_texture" : m_config.hiResTexPath, game);
+        if (!folder.empty()) {
+            pack = std::make_shared<Tex::HiResPack>();
+            if (pack->Load(folder)) {
+                LOG_INFO("Texture pack: {} pictures from {}", pack->Count(), folder.string());
+            } else {
+                LOG_INFO("Texture pack folder {} holds no pictures in the Rice format", folder.string());
+                pack.reset();
+            }
+        }
+    }
+    m_textureCache->SetHiResPack(pack);
+
+    const char* dumpEnv = std::getenv("NOVA64_DUMP_TEXTURES");
+    const bool dump = (m_config.textureDump || (dumpEnv && dumpEnv[0] && dumpEnv[0] != '0')) && !game.empty();
+    if (dump) {
+        const std::filesystem::path folder = std::filesystem::path(m_config.textureDumpPath.empty() ? "texture_dump" : m_config.textureDumpPath) / game;
+        LOG_INFO("Dumping textures to {}", folder.string());
+        m_textureCache->SetDumpFolder(folder, game);
+    } else {
+        m_textureCache->SetDumpFolder({}, game);
+    }
+    if (m_rdpProcessor) m_rdpProcessor->SetHiResHashing(pack != nullptr || dump);
 }
 
 void VideoPlugin::RomClosed() {

@@ -1527,6 +1527,7 @@ void RDPProcessor::FlushBatch() {
         // --- Bind textures if available and set wrap modes ---
         float gpuScale0[2] = {1.0f, 1.0f};
         float gpuScale1[2] = {1.0f, 1.0f};
+        int hiResBits = 0;   // bit 0: texture 0 is a texture-pack picture, bit 1: texture 1
         int fbMono0 = 0, fbMono1 = 0, fbAlpha0 = 0, fbAlpha1 = 0;
 
         // A framebuffer bound as a texture holds the whole N64 buffer, not just
@@ -1568,6 +1569,10 @@ void RDPProcessor::FlushBatch() {
                                                     call.mipLevelCount > 0 ? call.mipTiles : nullptr,
                                                     call.mipLevelCount,
                                                     call.snapshotCrc0);
+            key0.hiresTexCrc = call.snapHiRes0.texCrc;
+            key0.hiresPalCrc = call.snapHiRes0.palCrc;
+            key0.hiresWidth  = call.snapHiRes0.width;
+            key0.hiresHeight = call.snapHiRes0.height;
 
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rawRTFB0 = g_fbManager.FindByAddress(key0.address);
@@ -1888,6 +1893,7 @@ void RDPProcessor::FlushBatch() {
                         }
                         gpuScale0[0] = cached0->scaleS;
                         gpuScale0[1] = cached0->scaleT;
+                        if (cached0->isHiRes) hiResBits |= 1;
                         MM_RDP_TRACE("UseCachedTex0 present={} addr=0x{:06X} scale={:.4f},{:.4f} mipCount={} texFilter={}",
                                      g_presentIndex.load(std::memory_order_relaxed),
                                      key0.address & 0x7FFFFF,
@@ -1917,6 +1923,10 @@ void RDPProcessor::FlushBatch() {
             uint8_t tlutType1 = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
             Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, tlutType1,
                                                     nullptr, 0, call.snapshotCrc1);
+            key1.hiresTexCrc = call.snapHiRes1.texCrc;
+            key1.hiresPalCrc = call.snapHiRes1.palCrc;
+            key1.hiresWidth  = call.snapHiRes1.width;
+            key1.hiresHeight = call.snapHiRes1.height;
             if (key1.width > 0 && key1.height > 0) {
                 GPUFramebuffer* rawRTFB1 = g_fbManager.FindByAddress(key1.address);
                 // Same stride-alignment fallback as tex0 above.
@@ -2087,6 +2097,7 @@ void RDPProcessor::FlushBatch() {
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, glFilter1);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, glFilter1);
                         }
+                        if (cached1->isHiRes) hiResBits |= 2;
                         gpuScale1[0] = cached1->scaleS;
                         gpuScale1[1] = cached1->scaleT;
                         MM_RDP_TRACE("UseCachedTex1 addr=0x{:06X} scale={:.4f},{:.4f} texFilter={}",
@@ -2127,6 +2138,7 @@ void RDPProcessor::FlushBatch() {
                                                   fbSampling1 ? kNoMask : nullptr);
         }
         m_shaderManager->SetGPUScale(gpuScale0, gpuScale1);
+        m_shaderManager->SetTexHiRes(hiResBits);
         m_shaderManager->SetFBTextureParams(fbMono0, fbMono1, fbAlpha0, fbAlpha1);
 
         // --- Bind noise (unit 5) and dither (unit 6) textures ---

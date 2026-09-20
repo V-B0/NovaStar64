@@ -120,6 +120,8 @@ void NovaLauncher::SaveGraphicsSettings() {
     onDisk.rayTracing       = m_gfx.rayTracing;
     onDisk.backendType      = m_gfx.backendType;
     onDisk.enableMipmaps    = m_gfx.enableMipmaps;
+    onDisk.hiResTexEnabled  = m_gfx.hiResTexEnabled;
+    onDisk.textureDump      = m_gfx.textureDump;
     onDisk.renderingMode    = m_gfx.renderingMode;
     onDisk.fbReadAccess     = m_gfx.fbReadAccess;
     onDisk.fbWriteAccess    = m_gfx.fbWriteAccess;
@@ -502,6 +504,12 @@ void NovaLauncher::RenderSettingsTab() {
 
         if (ImGui::Checkbox("Mipmapping", &m_gfx.enableMipmaps)) SaveGraphicsSettings();
         Hint("smoother textures in the distance");
+
+        if (ImGui::Checkbox("Texture packs", &m_gfx.hiResTexEnabled)) SaveGraphicsSettings();
+        Hint("hires_texture/<game name>/, Rice format; takes effect when a game starts");
+
+        if (ImGui::Checkbox("Save game textures for making a pack", &m_gfx.textureDump)) SaveGraphicsSettings();
+        Hint("writes texture_dump/<game name>/; takes effect when a game starts");
 
         ImGui::BeginDisabled(m_gfx.backendType != 1);
         if (ImGui::Checkbox("Ray-traced lighting (experimental)", &m_gfx.rayTracing)) SaveGraphicsSettings();

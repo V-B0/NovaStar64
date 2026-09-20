@@ -1176,6 +1176,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
                                                 call.mipLevelCount > 0 ? call.mipTiles : nullptr,
                                                 call.mipLevelCount);
         call.snapshotCrc0 = key0.crc;
+        call.snapHiRes0 = {key0.hiresTexCrc, key0.hiresPalCrc, key0.hiresWidth, key0.hiresHeight};
         if (m_textureCache && key0.width > 0 && key0.height > 0) {
             if (call.mipLevelCount > 0) {
                 Tex::TextureCache::MipTileInfo mipInfo[7];
@@ -1198,6 +1199,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     if (call.textureHash1 != 0) {
         Tex::TextureKey key1 = BuildTextureKey(call.tileDesc1, call.textureImageAddr1, snapTlutType);
         call.snapshotCrc1 = key1.crc;
+        call.snapHiRes1 = {key1.hiresTexCrc, key1.hiresPalCrc, key1.hiresWidth, key1.hiresHeight};
         if (m_textureCache && key1.width > 0 && key1.height > 0)
             m_textureCache->GetTexture(key1, m_rdram, m_state.rdp.tmem.data);
     }
@@ -1210,6 +1212,85 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
                    call.textureImageAddr,
                    call.snapshotCrc0,
                    call.snapshotCrc1);
+}
+
+namespace {
+
+// Helpers for finding the row stride of a LoadBlock texture, from the DXT it was loaded
+// with. They come from Rice Video's texture code, by way of GLideN64's Textures.cpp,
+// since packs are checksummed with the strides they produce.
+uint32_t CalculateDXT(uint32_t txl2words) {
+    return txl2words == 0 ? 1 : (2048 + txl2words - 1) / txl2words;
+}
+
+uint32_t Txl2Words(uint32_t width, uint32_t size) {
+    static const uint32_t kSizeBytes[4] = {0, 1, 2, 4};
+    return size == 0 ? std::max(1u, width / 16) : std::max(1u, width * kSizeBytes[size & 3] / 8);
+}
+
+uint32_t ReverseDXT(uint32_t val, uint32_t width, uint32_t size) {
+    if (val == 0x800) return 1;
+    int low = static_cast<int>(2047 / val);
+    if (CalculateDXT(static_cast<uint32_t>(low)) > val) low++;
+    const int high = static_cast<int>(2047 / (val - 1));
+    if (low == high) return static_cast<uint32_t>(low);
+    for (int i = low; i <= high; i++)
+        if (Txl2Words(width, size) == static_cast<uint32_t>(i)) return static_cast<uint32_t>(i);
+    return static_cast<uint32_t>((low + high) / 2);
+}
+
+} // namespace
+
+Tex::HiResId RDPProcessor::ComputeHiResIdFor(const TileDescriptor& tile, const Tex::TextureKey& key, uint8_t tlutType,
+                                             uint16_t* outWidth, uint16_t* outHeight) const {
+    const RDPState& rdp = m_state.rdp;
+    const uint32_t slot = tile.tmemAddr & 0x1FF;
+    const uint32_t address = rdp.tmemSourceAddress[slot];
+    if (address == 0 || !m_rdram) return {};
+
+    int width, height, bytesPerRow;
+    if (rdp.tmemLoadType[slot] == RDPState::LOADTYPE_TILE) {
+        // LoadTile: the rows are those of the source image.
+        const int texWidth = rdp.tmemLoadTexWidth[slot];
+        const int loadSize = rdp.tmemLoadSize[slot];
+        bytesPerRow = (texWidth << loadSize) >> 1;
+        width = std::min<int>(rdp.tmemLoadWidth[slot], texWidth);
+        if (loadSize > tile.size) width <<= loadSize - tile.size;
+        height = rdp.tmemLoadHeight[slot];
+    } else {
+        // LoadBlock: the size comes from the tile's clamp and mask, the stride from its line/DXT.
+        const int tileW = (((tile.sh >> 2) - (tile.sl >> 2)) & 0x3FF) + 1;
+        const int tileH = (((tile.th >> 2) - (tile.tl >> 2)) & 0x3FF) + 1;
+        const int maskW = tile.maskS == 0 ? tileW : (1 << tile.maskS);
+        const int maskH = tile.maskT == 0 ? tileH : (1 << tile.maskT);
+        const bool clampS = (tile.clampS & 2) != 0;
+        const bool clampT = (tile.clampT & 2) != 0;
+        width  = (clampS && tileW <= 256) ? std::min(maskW, tileW) : maskW;
+        height = ((clampT && tileH <= 256) || maskH > 256) ? std::min(maskH, tileH) : maskH;
+        if (tile.size == 3) {
+            bytesPerRow = tile.line << 4;
+        } else {
+            uint32_t dxt = rdp.tmemLoadDxt[slot];
+            if (dxt == 0) {
+                bytesPerRow = tile.line << 3;
+            } else {
+                if (dxt > 1) dxt = ReverseDXT(dxt, key.width, tile.size);
+                bytesPerRow = static_cast<int>(dxt << 3);
+            }
+        }
+    }
+
+    // Palette textures also depend on the palette entries they use.
+    const uint8_t* palette = nullptr;
+    if (tile.size < 2 && (tlutType != 0 || tile.format == 2)) {
+        palette = rdp.texFilterPalette + 8;
+        if (tile.size == 0) palette += static_cast<size_t>(tile.palette) << 5;   // 16 entries of 2 bytes each
+    }
+
+    *outWidth  = static_cast<uint16_t>(std::clamp(width, 0, 0xFFFF));
+    *outHeight = static_cast<uint16_t>(std::clamp(height, 0, 0xFFFF));
+    return Tex::ComputeHiResId(m_rdram, m_rdramSize, address & static_cast<uint32_t>(m_rdramSize - 1),
+                               width, height, tile.format, tile.size, bytesPerRow, palette);
 }
 
 Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
@@ -1325,6 +1406,33 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
     }
     } // end else (overrideCrc == 0)
+
+    if (m_hiResHashing && mipCount == 0 && overrideCrc == 0) {
+        // Each distinct texture is checksummed once; the memo is keyed by everything that
+        // decides which bytes of RDRAM the checksum covers, plus the texture's content hash.
+        uint64_t memoKey = key.crc;
+        auto mix = [&memoKey](uint64_t v) { memoKey ^= v + 0x9e3779b97f4a7c15ULL + (memoKey << 6) + (memoKey >> 2); };
+        const uint32_t slot = tile.tmemAddr & 0x1FF;
+        mix(m_state.rdp.tmemSourceAddress[slot]);
+        mix((static_cast<uint64_t>(key.width) << 16) | key.height);
+        mix((static_cast<uint64_t>(tile.format) << 8) | tile.size | (static_cast<uint64_t>(tile.palette) << 16) | (static_cast<uint64_t>(tlutType) << 24));
+        mix((static_cast<uint64_t>(m_state.rdp.tmemLoadType[slot]) << 32) | m_state.rdp.tmemLoadDxt[slot]);
+        mix((static_cast<uint64_t>(m_state.rdp.tmemLoadWidth[slot]) << 32) | (static_cast<uint64_t>(m_state.rdp.tmemLoadHeight[slot]) << 16) | m_state.rdp.tmemLoadTexWidth[slot]);
+        mix((static_cast<uint64_t>(tile.line) << 32) | (static_cast<uint32_t>(tile.sl) << 8) ^ static_cast<uint32_t>(tile.sh));
+        mix((static_cast<uint64_t>(tile.maskS) << 24) | (static_cast<uint64_t>(tile.maskT) << 16) | (static_cast<uint64_t>(tile.clampS) << 8) | tile.clampT);
+
+        auto memo = m_hiResIdMemo.find(memoKey);
+        if (memo == m_hiResIdMemo.end()) {
+            if (m_hiResIdMemo.size() > 40000) m_hiResIdMemo.clear();
+            HiResMemo entry;
+            entry.id = ComputeHiResIdFor(tile, key, tlutType, &entry.width, &entry.height);
+            memo = m_hiResIdMemo.emplace(memoKey, entry).first;
+        }
+        key.hiresTexCrc = memo->second.id.texCrc;
+        key.hiresPalCrc = memo->second.id.palCrc;
+        key.hiresWidth  = memo->second.width;
+        key.hiresHeight = memo->second.height;
+    }
 
     if (TraceMMRdpEnabled()) {
         bool interestingTexture = key.format == Tex::N64TexFormat::CI ||

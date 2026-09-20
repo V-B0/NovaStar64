@@ -201,6 +201,8 @@ private:
     void DestroyDisplayRenderer();
     void DestroyDisplayWindow();
     void ApplyGameSpecificHacks();
+    /// Loads the texture pack for the running game (if any) and turns texture dumping on or off.
+    void SetupTexturePack();
     void UpdateVIRegisters();
     uint32_t ReadVIRegister(uint32_t* reg) const;
 

@@ -506,6 +506,13 @@ struct RDPState {
     uint16_t tmemLoadHeight[TMEM_WORDS]= {0};   // rows actually loaded
     uint16_t tmemLoadTexWidth[TMEM_WORDS] = {0}; // SetTextureImage width
     uint8_t  tmemLoadSize[TMEM_WORDS]  = {0};   // SetTextureImage pixel size
+    // Two more things a texture pack's checksum needs (see HiResPack.hpp): the DXT a
+    // LoadBlock used (it says how wide the rows are), and a raw copy of the palette memory
+    // as LoadTLUT read it from RDRAM. The palette copy has 8 bytes of padding in front,
+    // which the checksum can read when a palette holds an odd number of entries.
+    uint32_t tmemLoadDxt[TMEM_WORDS]   = {0};
+    uint16_t tmemLoadBlockWidth[TMEM_WORDS] = {0};   // LoadBlock's last texel (lrs)
+    uint8_t  texFilterPalette[8 + 512] = {0};
     
     // ── Scissor ──
     ScissorRect scissor;
@@ -613,6 +620,9 @@ struct RDPState {
             std::memset(tmemLoadHeight, 0, sizeof(tmemLoadHeight));
             std::memset(tmemLoadTexWidth, 0, sizeof(tmemLoadTexWidth));
             std::memset(tmemLoadSize, 0, sizeof(tmemLoadSize));
+            std::memset(tmemLoadDxt, 0, sizeof(tmemLoadDxt));
+            std::memset(tmemLoadBlockWidth, 0, sizeof(tmemLoadBlockWidth));
+            std::memset(texFilterPalette, 0, sizeof(texFilterPalette));
         }
         std::memset(scrollS, 0, sizeof(scrollS));
         std::memset(scrollT, 0, sizeof(scrollT));

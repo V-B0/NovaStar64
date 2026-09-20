@@ -7,7 +7,7 @@
 // N64 texture decoding, caching, and GPU upload
 
 #include "TextureCache.hpp"
-#include "HiResTextures.hpp"
+#include "ImageWrite.hpp"
 #include "../Common/BitUtils.hpp"
 #include "../Common/Logger.hpp"
 #include "../../common/log.hpp"
@@ -253,6 +253,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // came from whatever followed in TMEM (a neighbouring texture, or the
     // palette) -- garbage/smeared columns and rows at texture edges.
     ApplyDecodeClamp(key, pixels);
+    if (!m_dumpFolder.empty()) DumpTexture(key, pixels);
 
     {
         static const bool s_texDbg = std::getenv("NOVA64_TEXDBG") != nullptr;
@@ -1073,103 +1074,106 @@ uint32_t TextureCache::MaxMipLevels(uint32_t w, uint32_t h) {
     return levels;
 }
 
-bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key) {
-    if (!m_config.enableHiResTextures || m_config.hiResTexturePath.empty())
-        return false;
+void TextureCache::SetHiResPack(std::shared_ptr<const HiResPack> pack) {
+    m_hiResPack = std::move(pack);
+    m_config.enableHiResTextures = HasHiResPack();
+    // Pictures are several times larger than the textures they replace.
+    if (m_config.enableHiResTextures)
+        m_config.maxCacheBytes = std::max<uint64_t>(m_config.maxCacheBytes, 1024ull * 1024 * 1024);
+    InvalidateAll();
+}
 
-    // Look up hi-res texture by CRC (the standard pack naming convention)
-    // Texture pack files: <packPath>/<CRC32>_<fmt>_<size>.png  or  <CRC32>.png
-    // We search for common naming patterns: CRC32 hex string in filename
+void TextureCache::SetDumpFolder(const std::filesystem::path& folder, const std::string& gameName) {
+    m_dumpFolder = folder;
+    m_dumpGameName = gameName;
+    m_dumped.clear();
+}
 
-    // Build glob pattern from CRC
-    std::ostringstream crcHex;
-    crcHex << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << key.crc;
-    std::string crcStr = crcHex.str();
+void TextureCache::DumpTexture(const TextureKey& key, const std::vector<uint32_t>& pixels) {
+    if (key.hiresTexCrc == 0 && key.hiresPalCrc == 0) return;
+    const uint64_t identity = ((static_cast<uint64_t>(key.hiresPalCrc) << 32) | key.hiresTexCrc)
+                            ^ (static_cast<uint64_t>(key.format) << 60) ^ (static_cast<uint64_t>(key.size) << 56);
+    if (!m_dumped.insert(identity).second) return;
 
-    // Common hi-res texture pack file naming conventions
-    static const char* extensions[] = { ".png", ".dds", ".bmp", ".tga", ".ktx" };
-    namespace fs = std::filesystem;
+    // The picture covers the region the checksum was computed over, which can be smaller
+    // than the decoded tile (clamped textures are padded out to the sampled size).
+    const uint32_t w = (key.hiresWidth  != 0 && key.hiresWidth  <= key.width)  ? key.hiresWidth  : key.width;
+    const uint32_t h = (key.hiresHeight != 0 && key.hiresHeight <= key.height) ? key.hiresHeight : key.height;
+    if (w == 0 || h == 0 || pixels.size() < static_cast<size_t>(key.width) * key.height) return;
 
-    std::string foundPath;
-    for (const auto& ext : extensions) {
-        // Pattern 1: <CRC>.ext
-        fs::path p1 = fs::path(m_config.hiResTexturePath) / (crcStr + ext);
-        if (fs::exists(p1)) { foundPath = p1.string(); break; }
-
-        // Pattern 2: <CRC>_all.ext (Rice-style packs)
-        fs::path p2 = fs::path(m_config.hiResTexturePath) / (crcStr + "_all" + ext);
-        if (fs::exists(p2)) { foundPath = p2.string(); break; }
-
-        // Pattern 3: <CRC>_rgb.ext + <CRC>_a.ext (separate alpha)
-        fs::path p3 = fs::path(m_config.hiResTexturePath) / (crcStr + "_rgb" + ext);
-        if (fs::exists(p3)) { foundPath = p3.string(); break; }
+    char name[512];
+    if (key.hiresPalCrc != 0) {
+        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X#%08X_all.png", m_dumpGameName.c_str(),
+                      key.hiresTexCrc, static_cast<unsigned>(key.format), static_cast<unsigned>(key.size), key.hiresPalCrc);
+    } else {
+        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X_all.png", m_dumpGameName.c_str(),
+                      key.hiresTexCrc, static_cast<unsigned>(key.format), static_cast<unsigned>(key.size));
     }
+    std::error_code ec;
+    std::filesystem::create_directories(m_dumpFolder, ec);
+    const std::filesystem::path file = m_dumpFolder / name;
+    if (std::filesystem::exists(file, ec)) return;
 
-    if (foundPath.empty())
-        return false;
+    std::vector<uint32_t> cropped;
+    const uint32_t* src = pixels.data();
+    if (w != key.width || h != key.height) {
+        cropped.resize(static_cast<size_t>(w) * h);
+        for (uint32_t y = 0; y < h; ++y)
+            std::memcpy(&cropped[static_cast<size_t>(y) * w], &pixels[static_cast<size_t>(y) * key.width], w * sizeof(uint32_t));
+        src = cropped.data();
+    }
+    Nova::WritePNG(file.string().c_str(), static_cast<int>(w), static_cast<int>(h), 4, src);
+}
 
-    // Use HiResTextures loader (static utility)
-    HiResTextureData hiResData;
-    std::string extLower = fs::path(foundPath).extension().string();
-    std::transform(extLower.begin(), extLower.end(), extLower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key) {
+    if (!HasHiResPack() || (key.hiresTexCrc == 0 && key.hiresPalCrc == 0)) return false;
+    // A picture is drawn over the whole texture, so the region its checksum covered has to
+    // be the whole texture; otherwise it would be stretched.
+    if (key.hiresWidth != key.width || key.hiresHeight != key.height) return false;
 
-    bool loaded = false;
-    HiResTextures hiResLoader;
-    if (extLower == ".png") loaded = hiResLoader.LoadPNG(foundPath, hiResData);
-    else if (extLower == ".bmp") loaded = hiResLoader.LoadBMP(foundPath, hiResData);
-    else if (extLower == ".tga") loaded = hiResLoader.LoadTGA(foundPath, hiResData);
-    else if (extLower == ".dds") loaded = hiResLoader.LoadDDS(foundPath, hiResData);
-    else if (extLower == ".ktx") loaded = hiResLoader.LoadKTX(foundPath, hiResData);
+    HiResId id;
+    id.texCrc = key.hiresTexCrc;
+    id.palCrc = key.hiresPalCrc;
+    id.format = static_cast<uint8_t>(key.format);
+    id.size   = static_cast<uint8_t>(key.size);
+    const std::unique_ptr<HiResImage> image = m_hiResPack->Find(id);
+    if (!image || image->width == 0 || image->height == 0) return false;
 
-    if (!loaded || hiResData.pixels.empty()) return false;
-
-    uint32_t hiW = hiResData.info.width;
-    uint32_t hiH = hiResData.info.height;
-
-    // Create GPU texture from hi-res data
     TextureDesc desc;
-    desc.width = hiW;
-    desc.height = hiH;
+    desc.width  = image->width;
+    desc.height = image->height;
     desc.format = TextureFormat::RGBA8;
-    desc.usage = BufferUsage::Static;
-    desc.mipLevels = m_config.enableMipmaps
-        ? std::min<uint32_t>(4, MaxMipLevels(hiW, hiH)) : 1;
+    desc.usage  = BufferUsage::Static;
+    desc.mipLevels = m_config.enableMipmaps ? std::min<uint32_t>(5, MaxMipLevels(desc.width, desc.height)) : 1;
 
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return false;
+    gpuTex->Upload(image->rgba.data(), image->rgba.size());
+    if (desc.mipLevels > 1) gpuTex->GenerateMipmaps();
 
-    gpuTex->Upload(hiResData.pixels.data(), hiResData.pixels.size());
-
-    if (m_config.enableMipmaps && desc.mipLevels > 1)
-        gpuTex->GenerateMipmaps();
-
-    // Set sampler state (hi-res textures look best with linear filtering)
-    SamplerDesc samplerDesc;
-    samplerDesc.minFilter = SamplerFilter::LinearMipLinear;
-    samplerDesc.magFilter = SamplerFilter::Linear;
-    auto translateWrap = [](uint8_t mode) -> TextureWrap {
-        if (mode & 0x2) return TextureWrap::ClampToEdge;
-        if (mode & 0x1) return TextureWrap::MirroredRepeat;
-        return TextureWrap::Repeat;
-    };
-    samplerDesc.wrapS = translateWrap(key.cms);
-    samplerDesc.wrapT = translateWrap(key.cmt);
-    samplerDesc.maxAnisotropy = std::max(m_config.anisotropicLevel, 4.0f);
-    samplerDesc.lodBias = m_config.lodBias;
-    gpuTex->SetSampler(samplerDesc);
+    // The shader does clamping, mirroring and masking itself, on continuous coordinates
+    // (n64ReadHiRes); repeat lets it read across the seam where a tile wraps.
+    SamplerDesc sampler;
+    sampler.minFilter = desc.mipLevels > 1 ? SamplerFilter::LinearMipLinear : SamplerFilter::Linear;
+    sampler.magFilter = SamplerFilter::Linear;
+    sampler.wrapS = TextureWrap::Repeat;
+    sampler.wrapT = TextureWrap::Repeat;
+    sampler.maxAnisotropy = std::max(m_config.anisotropicLevel, 4.0f);
+    sampler.lodBias = m_config.lodBias;
+    gpuTex->SetSampler(sampler);
 
     entry.key = key;
     entry.gpuTexture = std::move(gpuTex);
-    entry.realWidth = hiW;
-    entry.realHeight = hiH;
-    entry.sizeBytes = hiW * hiH * 4 * desc.mipLevels;
-    entry.isHiRes = true;
-    entry.scaleS = static_cast<float>(key.width) / hiW;
-    entry.scaleT = static_cast<float>(key.height) / hiH;
+    entry.realWidth  = image->width;
+    entry.realHeight = image->height;
+    entry.sizeBytes  = image->width * image->height * 4 * desc.mipLevels;
+    entry.isHiRes    = true;
+    entry.hiresWidth  = key.hiresWidth  ? key.hiresWidth  : key.width;
+    entry.hiresHeight = key.hiresHeight ? key.hiresHeight : key.height;
+    entry.scaleS = 1.0f;
+    entry.scaleT = 1.0f;
 
     m_stats.hiResLoaded++;
-    LOG_DEBUG("HiRes texture loaded: {} ({}x{} -> {}x{})", foundPath, key.width, key.height, hiW, hiH);
     return true;
 }
 

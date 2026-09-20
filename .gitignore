@@ -22,6 +22,8 @@ roms/
 saves/
 Saves/
 covers/
+hires_texture/
+texture_dump/
 ShaderCache/
 screenshots/
 /settings/

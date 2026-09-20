@@ -58,6 +58,9 @@ The project is under active development. Expect bugs and rough edges — see
 - **Vulkan and OpenGL backends.** macOS runs on Vulkan through the bundled
   MoltenVK (macOS caps OpenGL at 4.1; the GL path needs 4.6). Internal
   resolution scales from 1× to 8×.
+- **Texture packs.** Loads Rice-format hi-res packs, so packs made for Glide64 and
+  GLideN64 work as they are, and can write out a game's textures as a starting point
+  for making one.
 - **Save states and rewind.** Esc opens a pause menu with four save-state slots,
   each with a picture of where it was made. Backspace pauses and shows a strip
   of pictures — one for every 2 seconds of play — and you can resume from any
@@ -264,6 +267,26 @@ Games added in the launcher are copied into `roms/`. Cartridge saves and save
 states go in `saves/`. A cover picture chosen in the Add Game or Edit dialog (PNG or
 JPEG) is copied into `covers/` and shown on the game's card. These folders are
 git-ignored: their contents are never committed.
+
+### Texture packs
+
+NovaStar64 loads texture packs in the Rice Video format, the one Glide64 and GLideN64
+use, so packs made for those work unchanged. Put a pack in
+`hires_texture/<game name>/`, where the name is the game's internal name (for Super
+Mario 64, `SUPER MARIO 64`; subfolders are fine) and leave **Settings → Video → Texture
+packs** on. Each picture is named after the texture it replaces
+(`SUPER MARIO 64#8A848688#3#1_all.png`) and is used in its place, at whatever
+resolution it has; `_rgb` plus `_a` pairs and `$` wildcards are understood too.
+
+To make a pack, turn on **Save game textures for making a pack** (or set
+`NOVA64_DUMP_TEXTURES=1`), play, and collect the pictures from
+`texture_dump/<game name>/`: each one is already named the way the pack expects. Paint
+over them, keep the names, and put the results in `hires_texture/<game name>/`. Both
+settings take effect when a game starts. Texture packs are not part of this project and
+are not included.
+
+Pictures must be PNG (the old `_ci.bmp` form is not read), and textures the game
+mipmaps by hand, or whose checksummed area is not the whole texture, are not replaced.
 
 ## How it works
 

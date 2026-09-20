@@ -265,6 +265,9 @@ struct ShaderUniforms {
     // Texture-alpha coverage mask (RGBA16 sprites): multiply combined.a by texel0.a
     int texCvgAlpha       = -1; // int: 0=off, 1=on
 
+    // Texture-pack pictures: bit 0 = texture 0, bit 1 = texture 1 is sampled by n64ReadHiRes
+    int texHiRes          = -1; // int
+
     void Reset() {
         *this = ShaderUniforms();
     }
@@ -559,6 +562,7 @@ public:
     void SetScreenSpaceTriangle(int screenSpace);
     void SetDebugOutput(int mode);
     void SetTexCvgAlpha(int v);
+    void SetTexHiRes(int bits);
 
     // Built-in shader programs
     const CompiledShader* GetDepthOnlyShader();
