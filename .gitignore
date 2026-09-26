@@ -1,5 +1,5 @@
 # Build output
-# build/
+#build/
 .vs/
 CMakeUserPresets.json
 CMakeLists.txt.user
