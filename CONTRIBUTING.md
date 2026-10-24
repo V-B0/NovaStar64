@@ -8,6 +8,7 @@ discussion first so we can agree on direction before you invest the time.
 [Getting set up](#getting-set-up) ·
 [Pull requests](#pull-requests) ·
 [Testing your change](#testing-your-change) ·
+[Making an installer](#making-an-installer) ·
 [Diagnostic variables](#diagnostic-variables) ·
 [Things that have bitten us before](#things-that-have-bitten-us-before) ·
 [Code style](#code-style) ·
@@ -19,11 +20,14 @@ discussion first so we can agree on direction before you invest the time.
 See [README.md](README.md#getting-started) for requirements. In short:
 
 ```bash
-git submodule update --init                       # Berkeley SoftFloat
-cd nova64
-cmake -B build -G Ninja
-cmake --build build
+./build.sh            # checks the tools, fetches the dependencies, builds nova64/build/nova64
+./build.sh --run      # ... and opens the launcher
 ```
+
+Run it again after a change and only what changed is rebuilt. The manual equivalent is
+`cmake -S nova64 -B nova64/build -G Ninja && cmake --build nova64/build`. A build puts a
+`portable.txt` beside the executable, so it keeps its settings, games and saves in
+`nova64/build/` (see [Configuration](README.md#configuration)).
 
 On macOS the build signs the binary and sets its Finder icon (see
 `scripts/set-macos-file-icon.sh`); there is no separate `codesign` step.
@@ -200,7 +204,8 @@ on the first differing frame, and remember rule 2 above.
 
 A run reads `settings/` and writes cartridge saves (`Saves/`), save states and the
 shader cache in the data folder: `$NOVA64_HOME` if it is set, otherwise the folder
-containing the executable. The shell's directory does not matter. **Always point
+containing the executable for a portable copy (a build from source is one), otherwise
+the user data folder. The shell's directory does not matter. **Always point
 `NOVA64_HOME` at a scratch folder for a test run** -- without it a run of
 `build/nova64` reads and writes your real settings and saves, and a game can change
 its save during a test (Majora's Mask deletes an owl save when it loads one). Copy
@@ -216,9 +221,10 @@ NOVA64_SHOT_PATH=/tmp/run/shot ~/NovaStar64/nova64/build/nova64 roms/MM \
     --headless --resolution 480p --frames 2450 --fps 0
 ```
 
-Copying the binary into the scratch folder and running it from there works too,
-since the executable's own folder is then the data folder. Use absolute paths for
-output files such as `NOVA64_SHOT_PATH`: a relative one lands in the data folder.
+A copy of the binary run from a scratch folder keeps its data there only if
+`portable.txt` or a `settings/` folder is beside it; otherwise it uses your real user
+data folder, so set `NOVA64_HOME` regardless. Use absolute paths for output files such
+as `NOVA64_SHOT_PATH`: a relative one lands in the data folder.
 
 `NOVA64_AUTOINPUT_SCRIPT` plays a timeline instead of the built-in mashing. Each
 line is `from to Buttons [pulse=period,on] [stickX stickY]`, counted in video
@@ -294,6 +300,59 @@ given launcher frames, and `NOVA64_UI_SHOT_AT` saves a screenshot on each listed
 frame and exits after the last.
 
 ---
+
+## Making an installer
+
+`./build.sh --package` builds what you give to other people. On macOS it produces
+`dist/NovaStar64.app` and `dist/NovaStar64-<version>-macOS.dmg` (a drag-to-Applications
+image, with a checksum file) from `nova64/scripts/package-macos.sh`. It builds in its
+own `nova64/build-package/` folder, differently from an everyday build in two ways that
+matter for a copy that runs on other people's Macs:
+
+- **Not `-march=native`.** A binary tuned for the CPU that built it can use instructions
+  an older Mac or PC lacks and crash on the first one. `NOVA64_NATIVE_ARCH=OFF` (which
+  the script sets) uses the oldest Apple Silicon (`-mcpu=apple-m1`) or, on x86-64,
+  `-march=x86-64-v2`.
+- **A deployment target.** Without one the binary requires the macOS version of the SDK
+  that built it. The script targets macOS 13.3, the first version whose C++ library has
+  floating-point `std::format`, which the code uses; a lower target fails to compile.
+
+The app is Apple Silicon only (the MoltenVK library is thinned to arm64) and is signed
+ad hoc, which runs everywhere but makes macOS ask the user to approve it once
+(**System Settings → Privacy & Security → Open Anyway**; the text is in the disk
+image's `READ ME FIRST.txt`). Signing with a paid Apple Developer ID and notarising
+would remove that step: set `CODESIGN_IDENTITY="Developer ID Application: ..."` and the
+script signs with the hardened runtime and `nova64/assets/macos/NovaStar64.entitlements`.
+The entitlements are not optional: with the hardened runtime and without them the app
+cannot load MoltenVK (a different team ID) and the renderer fails to start. Notarising
+itself (`xcrun notarytool`) is not scripted.
+
+**Windows.** `nova64/installer/NovaStar64.iss` is an [Inno Setup](https://jrsoftware.org/isinfo.php)
+script: a standard setup wizard (licence, install folder, optional desktop shortcut,
+launch at the end) that installs for the current user without administrator rights.
+The release workflow builds the program with `-DNOVA64_STATIC_RUNTIME=ON` (so users don't
+need the Visual C++ Redistributable), wraps it in the installer, and also zips a portable copy. None of
+this has been run on Windows yet.
+
+**Releases.** The version is the one line in `VERSION`. To publish:
+
+```bash
+# edit VERSION, commit it, then:
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` builds both installers and creates a *draft* release
+with them attached; nothing is public until you publish the draft on GitHub. The tag
+must match `VERSION`. The workflow never runs on ordinary pushes; "Run workflow" on the
+Actions tab builds the installers without a release. Pushing a file under
+`.github/workflows/` needs a token with the `workflow` scope.
+
+**Where an installed copy keeps its data.** It has no `portable.txt`, so it uses the
+user data folder (see [Configuration](README.md#configuration)), not the install folder:
+an app in `/Applications` or `Program Files` can't write beside itself, and reinstalling
+must not delete saves. The build, the Windows portable zip and any folder that already
+holds `settings/`, `roms/` or `saves/` are portable. Don't add a second place data can
+live.
 
 ## Diagnostic variables
 
@@ -402,7 +461,7 @@ directory. That used to be whichever folder the program was started in, and the 
 game had different save states and cartridge saves depending on whether it was
 opened from a terminal (project root, `nova64/` or `build/`) or from Finder. Since
 `main.cpp` now moves to one data folder at startup (`$NOVA64_HOME`, else the
-executable's folder), relative paths are safe -- but a path typed on the command line
+executable's folder for a portable copy, else the user data folder), relative paths are safe -- but a path typed on the command line
 is relative to where the user typed it, so resolve it before that move
 (`ResolveFromStartDir`), and never add a second place that data can live.
 

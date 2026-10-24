@@ -1,0 +1,109 @@
+name: Release builds
+
+# Builds the installers: a .dmg for macOS and a setup wizard plus a portable .zip for
+# Windows. It runs when a version tag is pushed (git tag v0.1.0 && git push origin v0.1.0)
+# or when you press "Run workflow" on the Actions tab. It never runs on ordinary
+# pushes. A tag also creates a DRAFT release with the files attached; nothing is
+# published until you press the button on GitHub.
+#
+# The version comes from the VERSION file, and a tag must match it.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          version="$(head -n1 VERSION | tr -d '[:space:]')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "The tag is ${GITHUB_REF_NAME} but VERSION says $version. Change one so they match." >&2
+            exit 1
+          fi
+
+  macos:
+    needs: version
+    runs-on: macos-15            # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build the app and the .dmg
+        run: ./build.sh --package --yes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaStar64-macOS
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S nova64 -B nova64/build -G "Visual Studio 17 2022" -A x64 `
+            -DNOVA64_NATIVE_ARCH=OFF -DNOVA64_STATIC_RUNTIME=ON
+          cmake --build nova64/build --config RelWithDebInfo --parallel
+      - name: Build the setup wizard
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=${{ needs.version.outputs.version }}" `
+            "/DSourceDir=..\build\RelWithDebInfo" "/DOutputDir=..\..\dist" `
+            nova64\installer\NovaStar64.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Make the portable zip
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          $stage = "dist\NovaStar64-$v-Windows-portable"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item nova64\build\RelWithDebInfo\nova64.exe, nova64\build\RelWithDebInfo\portable.txt $stage
+          Copy-Item LICENSE, README.md $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
+          Remove-Item -Recurse $stage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaStar64-Windows
+          path: |
+            dist/*-Setup.exe
+            dist/*-portable.zip
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+            --draft --title "NovaStar64 ${GITHUB_REF_NAME#v}" --generate-notes

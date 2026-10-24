@@ -13,9 +13,12 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 extern CN64System* g_System;
 
@@ -219,6 +222,25 @@ namespace {
 void Hint(const char* text) {
     ImGui::SameLine();
     ImGui::TextDisabled("%s", text);
+}
+
+// A file:// URL for a folder, with everything outside the unreserved set escaped
+// (the user data folder has a space in it on macOS, and URLs may not).
+std::string FolderUrl(const std::filesystem::path& folder) {
+    const std::string path = folder.generic_string();   // forward slashes on every platform
+    std::string url = "file://";
+    if (path.empty() || path[0] != '/') url += '/';      // C:/Users/... -> file:///C:/Users/...
+    static const char* kHex = "0123456789ABCDEF";
+    for (unsigned char c : path) {
+        if (std::isalnum(c) || c == '/' || c == '-' || c == '.' || c == '_' || c == '~' || c == ':') {
+            url += static_cast<char>(c);
+        } else {
+            url += '%';
+            url += kHex[c >> 4];
+            url += kHex[c & 15];
+        }
+    }
+    return url;
 }
 
 } // namespace
@@ -437,6 +459,28 @@ void NovaLauncher::RenderSettingsTab() {
         if (ImGui::Checkbox("Rewind", &m_launch.rewind)) SaveLaunchOptions();
         Hint("keeps a picture every 2 seconds for Backspace; about 1 MB each");
         if (ImGui::Checkbox("Pause when another application is active", &m_launch.pauseOnFocusLoss)) SaveLaunchOptions();
+
+        // Everything NovaStar64 keeps -- settings, games, saves, covers, texture packs
+        // -- is in one folder, which for an installed copy is a hidden one.
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        static const std::filesystem::path dataFolder = std::filesystem::current_path();
+        static char dataFolderText[1024] = {};
+        static bool openFailed = false;
+        if (dataFolderText[0] == '\0')
+            std::snprintf(dataFolderText, sizeof(dataFolderText), "%s", dataFolder.string().c_str());
+        ImGui::TextUnformatted("Data folder");
+        // A read-only box rather than plain text: a long path scrolls instead of being
+        // cut off, and can be selected and copied.
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##dataFolder", dataFolderText, sizeof(dataFolderText), ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::Button("Open data folder")) {
+            openFailed = SDL_OpenURL(FolderUrl(dataFolder).c_str()) != 0;
+            if (openFailed) SDL_SetClipboardText(dataFolder.string().c_str());
+        }
+        Hint(openFailed ? "couldn't open it; the path is on the clipboard"
+                        : "settings, games, saves, covers and texture packs");
         ImGui::EndTabItem();
     }
 

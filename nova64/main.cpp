@@ -10,6 +10,7 @@
 #include "UI/NovaLauncher.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <filesystem>
@@ -23,6 +24,10 @@
 #include <windows.h>
 #elif defined(__linux__)
 #include <unistd.h>
+#endif
+
+#ifndef NOVA64_VERSION
+#define NOVA64_VERSION "unknown"
 #endif
 
 // Returns the directory containing the running executable, or an empty path
@@ -71,6 +76,41 @@ static std::string ResolveRomPath(const std::string& path)
     return std::filesystem::exists(fromStart, ec) ? fromStart : path;
 }
 
+// The per-user folder an installed copy keeps its data in: settings/, roms/, saves/,
+// Saves/, covers/, hires_texture/ and the shader cache. An installed program can't
+// write next to itself (/Applications and Program Files are not the user's to
+// change), and wiping the program by reinstalling it must not wipe the saves.
+static std::filesystem::path GetUserDataDir()
+{
+#if defined(__APPLE__)
+    if (const char* home = std::getenv("HOME"); home && *home)
+        return std::filesystem::path(home) / "Library" / "Application Support" / "NovaStar64";
+#elif defined(_WIN32)
+    // Local, not Roaming: game images are large and shouldn't follow the user around.
+    if (const wchar_t* local = _wgetenv(L"LOCALAPPDATA"); local && *local)
+        return std::filesystem::path(local) / L"NovaStar64";
+#else
+    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg)
+        return std::filesystem::path(xdg) / "NovaStar64";
+    if (const char* home = std::getenv("HOME"); home && *home)
+        return std::filesystem::path(home) / ".local" / "share" / "NovaStar64";
+#endif
+    return {};
+}
+
+// A copy is "portable" -- it keeps its data in its own folder -- if a portable.txt
+// sits next to the executable (the build and the portable download put one there),
+// or if that folder already holds settings, games or saves, which is how every copy
+// before the installers behaved and keeps working unchanged.
+static bool IsPortableInstall(const std::filesystem::path& exeDir)
+{
+    std::error_code ec;
+    return std::filesystem::exists(exeDir / "portable.txt", ec) ||
+           std::filesystem::is_directory(exeDir / "settings", ec) ||
+           std::filesystem::is_directory(exeDir / "roms", ec) ||
+           std::filesystem::is_directory(exeDir / "saves", ec);
+}
+
 // The launcher, the ROM loader, the save code and the shader cache all use
 // plain relative paths -- settings/, roms/, saves/, Saves/, ShaderCache/ --
 // resolved against the working directory. Left alone, that made the data depend
@@ -80,9 +120,9 @@ static std::string ResolveRomPath(const std::string& path)
 // different save states, cartridge saves and settings depending on the launch.
 //
 // So the working directory is always set to one data folder, chosen the same way
-// every time: $NOVA64_HOME if it is set (tests and portable setups), otherwise
-// the folder containing the executable. Nothing about the shell's directory
-// matters.
+// every time: $NOVA64_HOME if it is set (tests), otherwise the folder containing
+// the executable for a portable copy, otherwise the user's own data folder.
+// Nothing about the shell's directory matters.
 static void SelectDataDirectory()
 {
     std::error_code ec;
@@ -93,7 +133,18 @@ static void SelectDataDirectory()
         dataDir = ResolveFromStartDir(home);
         std::filesystem::create_directories(dataDir, ec);
     } else {
-        dataDir = GetExecutableDir();
+        const std::filesystem::path exeDir = GetExecutableDir();
+        if (exeDir.empty() || IsPortableInstall(exeDir)) {
+            dataDir = exeDir;
+        } else {
+            dataDir = GetUserDataDir();
+            std::filesystem::create_directories(dataDir, ec);
+            if (dataDir.empty() || !std::filesystem::is_directory(dataDir, ec)) {
+                Log::errorf("Couldn't create the user data folder %s -- using the program's own folder",
+                            dataDir.string().c_str());
+                dataDir = exeDir;
+            }
+        }
     }
     if (dataDir.empty()) return; // can't tell where we live -- leave cwd alone
 
@@ -119,7 +170,7 @@ static void SelectDataDirectory()
 
 // macOS has no system Vulkan loader. The Vulkan backend reaches Vulkan through
 // MoltenVK (Vulkan-on-Metal), which volk loads via dlopen("libMoltenVK.dylib").
-// We ship libMoltenVK.dylib next to the executable; preload it by absolute path
+// We ship libMoltenVK.dylib with the executable; preload it by absolute path
 // here (RTLD_GLOBAL) so volk's later bare-name dlopen resolves to this image —
 // no DYLD_LIBRARY_PATH needed. Harmless if the dylib is absent (GL/other paths).
 #ifdef __APPLE__
@@ -130,11 +181,14 @@ static void PreloadMoltenVK()
     if (_NSGetExecutablePath(exePath, &sz) != 0) return;
     std::error_code ec;
     std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
-    std::filesystem::path dylib = dir / "libMoltenVK.dylib";
-    if (std::filesystem::exists(dylib, ec)) {
+    // Next to the executable in a plain build; in Contents/Frameworks inside an app bundle.
+    for (const std::filesystem::path& dylib :
+         { dir / "libMoltenVK.dylib", dir / ".." / "Frameworks" / "libMoltenVK.dylib" }) {
+        if (!std::filesystem::exists(dylib, ec)) continue;
         if (!dlopen(dylib.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
             Log::infof("PreloadMoltenVK: dlopen failed: %s", dlerror());
         }
+        return;
     }
 }
 #endif
@@ -166,7 +220,7 @@ int main(int argc, char* argv[])
     LoggingConfig::set_min_level(Logging::Level::Info);
     LoggingConfig::enable_console_output(true);
 
-    Log::info("NovaStar64 starting...");
+    Log::infof("NovaStar64 %s starting...", NOVA64_VERSION);
 
     SelectDataDirectory();
 

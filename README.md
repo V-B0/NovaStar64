@@ -144,53 +144,88 @@ Silicon and the recompiler on x86-64.
 NovaStar64 is an emulator only. It ships without games; you supply your own
 legally obtained ROM images (`.z64`, `.n64`, `.v64`).
 
-### Requirements
+### Install
 
-- CMake 3.10 or newer, [Ninja](https://ninja-build.org/) and a C++20 compiler
-  (Apple Clang on macOS).
-- An internet connection for the first configure. Most dependencies (SDL2,
-  Vulkan-Headers, volk, glslang, Dear ImGui, stb, nlohmann/json, rcheevos,
-  AsmJit, Lua) are fetched by CMake's `FetchContent`, each pinned to an exact
-  tag or commit — see [CONTRIBUTING.md](CONTRIBUTING.md) before changing one.
-- macOS uses the prebuilt MoltenVK in `nova64/thirdparty/MoltenVK/`, which the
-  build copies next to the executable.
+Each [release](https://github.com/V-B0/NovaStar64/releases) has an installer:
 
-### Build
+| Platform | File | What to do |
+|---|---|---|
+| macOS (Apple Silicon, macOS 13.3 or later) | `NovaStar64-<version>-macOS.dmg` | Open it and drag NovaStar64 onto Applications. |
+| Windows (64-bit) | `NovaStar64-<version>-Windows-Setup.exe` | Run it and follow the setup wizard. `NovaStar64-<version>-Windows-portable.zip` runs from any folder, with nothing installed. |
 
-Berkeley SoftFloat is a git submodule, so fetch it along with the source:
+macOS asks you to approve the app the first time you open it, because it is not
+signed with a paid Apple developer certificate: try to open it, close the message,
+then open System Settings → Privacy & Security and click **Open Anyway**. (On macOS
+14 or earlier, right-click → Open does the same.) You only do this once. Intel Macs
+build from source for now.
 
-```bash
-git clone --recurse-submodules https://github.com/V-B0/NovaStar64.git   # or, in an existing clone:
-git submodule update --init
-```
+An installed copy keeps its settings, games and saves in your user data folder —
+`~/Library/Application Support/NovaStar64` on macOS, `%LOCALAPPDATA%\NovaStar64` on
+Windows — so updating or uninstalling the program never touches them. **Settings →
+Emulation → Open data folder** shows where it is; see
+[Configuration](#configuration).
 
-Then:
+### Build from source
 
-```bash
-cd nova64
-cmake -B build -G Ninja
-cmake --build build
-```
-
-**macOS:** the build signs the binary itself (ad hoc; an unsigned one can't load
-its dynamic libraries and hangs without an error message) and then gives it the
-NovaStar icon in Finder. There is nothing to run by hand. Signing refuses a file
-that already has the icon, so if you ever re-sign manually, do it on a fresh link.
-
-`pip install cmake ninja` is a convenient way to get both tools on Apple
-Silicon, but pip installs them somewhere that is not on `PATH`. If a scripted
-build seems to succeed while silently skipping the configure step, that is why:
+**macOS and Linux:** one command from the top of the source tree.
 
 ```bash
-export PATH="$HOME/Library/Python/3.9/bin:$PATH"
+git clone --recurse-submodules https://github.com/V-B0/NovaStar64.git
+cd NovaStar64
+./build.sh               # build; the program is nova64/build/nova64
+./build.sh --run         # build, then open the launcher
+./build.sh --package     # build an installer to give to other people (macOS: dist/*.dmg)
 ```
+
+`build.sh` checks for a C++ compiler, CMake and Ninja and offers to install what is
+missing (CMake and Ninja through Homebrew or pip, and on a Mac the Xcode command line
+tools), downloads the libraries the first time, builds with a progress readout, and
+says where the result is. The first build takes a few minutes; after that only what
+you changed is rebuilt. `./build.sh --help` lists the options.
+
+**Windows:** `build.bat` does the same with CMake and Visual Studio's C++ tools (it
+tells you how to install them if they are missing). It has not been tried on a real
+Windows machine yet.
+
+<details>
+<summary>The same thing by hand</summary>
+
+You need CMake 3.28 or newer (built and tested with 4.3), a C++20 compiler (Apple Clang on macOS) and,
+optionally, [Ninja](https://ninja-build.org/), which makes the build faster.
+
+```bash
+cmake -S nova64 -B nova64/build -G Ninja
+cmake --build nova64/build
+```
+
+- The first configure needs an internet connection. Most dependencies (SDL2,
+  Vulkan-Headers, volk, glslang, Dear ImGui, stb, nlohmann/json, rcheevos, AsmJit,
+  Lua) are fetched by CMake's `FetchContent`, each pinned to an exact tag or commit —
+  see [CONTRIBUTING.md](CONTRIBUTING.md) before changing one.
+- Berkeley SoftFloat is a git submodule (`git submodule update --init`). If it is
+  missing, for instance because you downloaded a source archive, the configure step
+  fetches the same commit itself.
+- macOS uses the prebuilt MoltenVK in `nova64/thirdparty/MoltenVK/`, which the build
+  copies next to the executable. The build also signs the binary (ad hoc; an unsigned
+  one can't load its dynamic libraries and hangs without an error message) and gives
+  it the NovaStar icon in Finder. Signing refuses a file that already has the icon, so
+  if you ever re-sign manually, do it on a fresh link.
+- `pip install cmake ninja` puts the tools somewhere that is not on `PATH`
+  (`~/Library/Python/3.9/bin` on macOS). If a hand-written build script seems to
+  succeed while silently skipping the configure step, that is why; `build.sh` looks
+  there itself.
+
+</details>
 
 ### Run
 
 ```bash
-./build/nova64                    # open the launcher
-./build/nova64 path/to/game.z64   # start a game directly
+nova64/build/nova64                    # open the launcher
+nova64/build/nova64 path/to/game.z64   # start a game directly
 ```
+
+An installed copy starts like any other application. Add your games with **Add Game**
+in the launcher.
 
 Games started from the launcher play inside its window. Esc opens the pause
 menu, Backspace rewinds and Tab toggles double speed. On a controller, Back
@@ -249,13 +284,21 @@ remembered for that specific controller.
 
 ## Configuration
 
-Everything NovaStar64 keeps — `settings/`, `roms/`, `saves/` — lives in one data
-folder: **the folder containing the executable** (`nova64/build/` for a build from
-source). It is the same however the program is started, from a terminal in any
-directory or by opening the executable from Finder, so the same games, save states,
-cartridge saves and settings show up every time. Set the `NOVA64_HOME` environment
-variable to use a different folder instead, for example to keep several sets of
-saves.
+Everything NovaStar64 keeps — `settings/`, `roms/`, `saves/`, `covers/`,
+`hires_texture/` and the shader cache — lives in one data folder, chosen the same way
+however the program is started, so the same games, save states, cartridge saves and
+settings show up whether you open it from a terminal in any directory or from Finder.
+In order:
+
+1. `$NOVA64_HOME`, if that environment variable is set. Use it to keep several sets of
+   saves, or to give a test run its own.
+2. The folder containing the executable, for a *portable* copy: one with a
+   `portable.txt` beside it (a build from source has one, and so does the Windows
+   portable zip), or one that already holds `settings/`, `roms/` or `saves/`.
+3. Otherwise your user data folder: `~/Library/Application Support/NovaStar64` on
+   macOS, `%LOCALAPPDATA%\NovaStar64` on Windows, `$XDG_DATA_HOME/NovaStar64` (or
+   `~/.local/share/NovaStar64`) on Linux. This is what an installed copy uses. To make
+   a copy portable, put a `portable.txt` beside the executable.
 
 Paths typed on the command line are relative to where you typed them, and
 `nova64 roms/game.z64` falls back to the data folder's `roms/` when nothing is
@@ -365,7 +408,9 @@ diagnostic variables and the failure modes that have already cost time.
   builds its background on the CPU. The length of the wait has not been compared with
   real hardware.
 - The launcher is written to build on Windows and Linux but has only been built
-  and run on macOS. Drawing a game inside the launcher with the OpenGL renderer
+  and run on macOS. `build.sh` has only been run on macOS, and `build.bat`, the
+  Windows installer and portable zip, and the release workflow that makes them have
+  not been run on Windows yet; the first release build there may need fixes. Drawing a game inside the launcher with the OpenGL renderer
   (the default outside macOS) is untested; Vulkan is the tested path.
 - Controller support has been exercised with a physical controller on macOS and
   with SDL's virtual controllers; rumble motor output has not been verified. The

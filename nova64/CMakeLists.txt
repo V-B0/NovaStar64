@@ -1,5 +1,24 @@
+# 3.10 only fixes the policy defaults the build was written against. The build itself
+# needs CMake 3.28 (FetchContent_Declare's EXCLUDE_FROM_ALL, used below); build.sh checks.
 cmake_minimum_required(VERSION 3.10)
-project(nova64)
+
+# The release version lives in one place, the VERSION file at the top of the
+# repository; the build scripts, the installers and the executable all read it.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" NOVA64_VERSION LIMIT_COUNT 1)
+project(nova64 VERSION ${NOVA64_VERSION})
+
+# Windows builds that are handed to other people link the C++ runtime statically,
+# so the program starts without the "Visual C++ Redistributable" being installed.
+# The release workflow turns this on; everyday builds leave it off. (Set after
+# project(), which is what defines MSVC.) The policy default makes the setting reach
+# the downloaded libraries too (SDL, glslang, ...), whose own CMake files would
+# otherwise ignore it.
+option(NOVA64_STATIC_RUNTIME "Link the MSVC runtime statically (Windows builds you distribute)" OFF)
+if(MSVC AND NOVA64_STATIC_RUNTIME)
+    cmake_policy(SET CMP0091 NEW)
+    set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # A plain `cmake -B build` leaves the build type empty, which compiles without
 # optimisation -- far too slow to play a game. Default to the configuration the
@@ -7,6 +26,13 @@ project(nova64)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type (Debug, Release, RelWithDebInfo)" FORCE)
 endif()
+
+# -march=native tunes the executable for the machine that builds it, which is what
+# you want for a build you will run yourself and exactly wrong for one you give to
+# other people: built on an M3 or a modern x86 CPU it can use instructions an
+# M1 or an older PC doesn't have and crash on the first one it meets. The packaging
+# scripts turn this off, which falls back to a baseline every supported CPU has.
+option(NOVA64_NATIVE_ARCH "Tune the build for this machine's CPU (turn off for builds you distribute)" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -456,7 +482,24 @@ set(HEADERS
 )
 
 # SoftFloat Library
+# Normally the git submodule in ../softfloat. A source archive downloaded from
+# GitHub, or a clone made without --recurse-submodules, has an empty folder there;
+# rather than failing with a missing-header error, fetch the same commit the
+# submodule points at (keep the two in step: `git submodule status`).
 set(SOFTFLOAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../softfloat")
+if(NOT EXISTS "${SOFTFLOAT_DIR}/source/include/softfloat.h")
+    message(STATUS "softfloat submodule is empty - fetching it instead")
+    FetchContent_Declare(
+        softfloat
+        GIT_REPOSITORY https://github.com/ucb-bar/berkeley-softfloat-3
+        GIT_TAG        a0c6494cdc11865811dec815d5c0049fba9d82a8
+    )
+    FetchContent_GetProperties(softfloat)
+    if(NOT softfloat_POPULATED)
+        FetchContent_Populate(softfloat)
+    endif()
+    set(SOFTFLOAT_DIR "${softfloat_SOURCE_DIR}")
+endif()
 file(GLOB SOFTFLOAT_SOURCES 
     "${SOFTFLOAT_DIR}/source/*.c"
     "${SOFTFLOAT_DIR}/source/8086-SSE/*.c"
@@ -540,6 +583,17 @@ target_include_directories(softfloat PUBLIC
   list(APPEND SOURCES NovaLua/LuaEngine.cpp)
 # Create main executable
 add_executable(nova64 ${SOURCES} ${HEADERS})
+# Only main.cpp reads the version, so only it is recompiled when it changes.
+set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS "NOVA64_VERSION=\"${NOVA64_VERSION}\"")
+
+# A build you run from its own folder keeps its settings, games and saves right
+# there, so the marker file below goes next to the executable. An installed copy
+# has no such file and keeps them in the user's own data folder instead (see
+# SelectDataDirectory in main.cpp).
+file(GENERATE OUTPUT "$<TARGET_FILE_DIR:nova64>/portable.txt" CONTENT
+"This file makes NovaStar64 keep its settings, games, saves and caches in this
+folder instead of in your user data folder. Delete it to use the user data folder.
+")
 
 # Include directories
 target_include_directories(nova64 PRIVATE 
@@ -621,9 +675,18 @@ if(MSVC)
     target_link_options(nova64 PRIVATE /STACK:8388608)
 else()
     target_compile_options(nova64 PRIVATE -Wall -Wextra)
-    target_compile_options(nova64 PRIVATE 
-        $<$<CONFIG:Release>:-O3 -march=native -ffast-math>
-        $<$<CONFIG:RelWithDebInfo>:-O2 -march=native>
+    if(NOVA64_NATIVE_ARCH)
+        set(NOVA64_ARCH_FLAG -march=native)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        set(NOVA64_ARCH_FLAG -march=x86-64-v2)    # SSE4.2: every x86-64 CPU since about 2009
+    elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+        set(NOVA64_ARCH_FLAG -mcpu=apple-m1)      # the oldest Apple Silicon; later ones run it too
+    else()
+        set(NOVA64_ARCH_FLAG "")
+    endif()
+    target_compile_options(nova64 PRIVATE
+        $<$<CONFIG:Release>:-O3 ${NOVA64_ARCH_FLAG} -ffast-math>
+        $<$<CONFIG:RelWithDebInfo>:-O2 ${NOVA64_ARCH_FLAG}>
     )
 endif()
 
