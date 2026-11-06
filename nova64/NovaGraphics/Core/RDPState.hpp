@@ -309,13 +309,13 @@ struct GeometryState {
     bool              vertexLoaded[VERTEX_BUFFER_SIZE];
     int               vertexCount;
 
-    // NOVA_F3D_VTRACE diagnostics only: per-slot "which LoadVertices call last
+    // NOVA64_F3D_VTRACE diagnostics only: per-slot "which LoadVertices call last
     // wrote this slot" stamp, to detect a triangle mixing vertices from very
     // different points in the same display list (stale cache-slot reuse).
     uint32_t          vertexGeneration[VERTEX_BUFFER_SIZE];
     uint32_t          vertexLoadCounter;
 
-    // NOVA_F3D_VTRACE diagnostics only: counts Reset() calls (~1 per display
+    // NOVA64_F3D_VTRACE diagnostics only: counts Reset() calls (~1 per display
     // list / frame). Deliberately NOT cleared by Reset() itself, so it gives
     // an absolute, monotonic frame index usable to scope a triangle dump to a
     // specific point in the run.

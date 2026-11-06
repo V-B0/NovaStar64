@@ -240,7 +240,9 @@ void RegisterCustomPlatform(PlatformType type,
 #elif defined(__i386__) || defined(_M_IX86)
     #define NOVA64_ARCH_X86 1
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #define NOVA64_ARCH_ARM64 1
+    #ifndef NOVA64_ARCH_ARM64
+        #define NOVA64_ARCH_ARM64 1
+    #endif
 #elif defined(__arm__) || defined(_M_ARM)
     #define NOVA64_ARCH_ARM32 1
 #elif defined(__riscv) && (__riscv_xlen == 64)

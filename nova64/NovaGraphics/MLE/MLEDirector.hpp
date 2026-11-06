@@ -136,10 +136,14 @@ private:
     // ─── Debug logging ────────────────────────────────────────────────────
     void LogIfEnabled(MLELevel level, const char* reason) const {
         static const bool kEnabled = []() {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
-            const char* v = std::getenv("MLE_DIRECTOR_DEBUG");
+#endif
+            const char* v = std::getenv("NOVA64_MLE_DEBUG");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
             return v && v[0] != '0';
         }();
         if (!kEnabled) return;

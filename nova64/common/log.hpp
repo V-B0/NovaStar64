@@ -48,15 +48,15 @@ public:
     class Logger {
     public:
         template<typename... Args>
-        void debug(const char* fmt, Args&&... args) {}
+        void debug(const char*, Args&&...) {}
         template<typename... Args>
-        void info(const char* fmt, Args&&... args) {}
+        void info(const char*, Args&&...) {}
         template<typename... Args>
-        void warn(const char* fmt, Args&&... args) {}
+        void warn(const char*, Args&&...) {}
         template<typename... Args>
-        void error(const char* fmt, Args&&... args) {}
+        void error(const char*, Args&&...) {}
         template<typename... Args>
-        void critical(const char* fmt, Args&&... args) {}
+        void critical(const char*, Args&&...) {}
     };
 };
 

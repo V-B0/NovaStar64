@@ -37,32 +37,12 @@ void RDPProcessor::FlushBatch() {
     // Mark the current render-target framebuffer as GPU-modified so that
     // subsequent LoadBlock/LoadTile calls know to sync GPU→RDRAM.
     if (auto* curFB = g_fbManager.GetCurrentColor()) {
-        // Which buffer is receiving draws, and how many? gpuModified==0 on the
-        // prerender buffer proved no batch ever flushed while it was current.
-        {
-            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
-            const uint32_t a = curFB->desc.address & 0x7FFFFF;
-            if (s_dbg && a >= 0x380000 && a <= 0x3B0000) {
-                std::fprintf(stderr, "[FLUSHTO] addr=0x%06X drawCalls=%zu\n",
-                             a, m_batch.drawCalls.size());
-            }
-        }
         if (!curFB->gpuModified)
             g_fbManager.RecordRdramFingerprint(curFB, m_rdram, m_rdramSize);
         curFB->gpuModified = true;
         curFB->needsInventorySnapshot = true;
         curFB->needsRdramResync = true;
         curFB->everGpuRendered = true;   // sticky; see the field's comment
-        // DIAGNOSTIC (NOVA64_SNAPSHOT_TRACE=1): tally draw activity per FB so
-        // the pause-menu snapshot capture points can log how much was
-        // actually rendered before the snapshot fired -- distinguishes "FB
-        // was fully rendered but the snapshot mechanism is broken" from "FB
-        // was snapshotted before the world/background geometry was drawn".
-        curFB->drawCallsSinceSwitch += static_cast<uint32_t>(m_batch.drawCalls.size());
-        for (const DrawCall& dc : m_batch.drawCalls) {
-            if (dc.type == DrawCall::Type::Triangle)
-                curFB->trianglesSinceSwitch += static_cast<uint32_t>(dc.vertexCount / 3);
-        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -294,91 +274,7 @@ void RDPProcessor::FlushBatch() {
 
     bool batchUsedN64Depth = false;
 
-    // ── LLE diagnostic: track unique (combine, tex0, scissor) tuples and triangle counts ──
-    struct DrawStats {
-        uint32_t triCount = 0;
-        uint32_t fillCount = 0;
-        uint32_t lastScissorXl = 0, lastScissorYl = 0;
-        uint32_t lastColorAddr = 0;
-        std::unordered_map<uint64_t, uint32_t> comboCount;
-    };
-    static DrawStats s_ds;
-    static uint32_t s_dsFrames = 0;
-    static bool s_dsDumped = false;
-    s_ds.lastScissorXl = m_state.rdp.scissor.xl;
-    s_ds.lastScissorYl = m_state.rdp.scissor.yl;
-    s_ds.lastColorAddr = m_state.rdp.colorImage.address;
     for (const auto& call : m_batch.drawCalls) {
-        if (!s_dsDumped) {
-            if (call.type == DrawCall::Type::Triangle) s_ds.triCount++;
-            else if (call.type == DrawCall::Type::FillRect) s_ds.fillCount++;
-            uint64_t key = call.combineMode ^ ((uint64_t)call.textureHash0 << 1);
-            s_ds.comboCount[key]++;
-        }
-
-        // Draw-call screen-bbox dump (NOVA64_DRAWBOX=viMin,viMax): correlate a
-        // visible artifact's pixel position with the exact draw call + state
-        // that painted it. One line per DrawCall at flush time.
-        {
-            static const long boxMin = []() -> long {
-                const char* v = std::getenv("NOVA64_DRAWBOX");
-                return v ? std::strtol(v, nullptr, 10) : -1L;
-            }();
-            static const long boxMax = []() -> long {
-                const char* v = std::getenv("NOVA64_DRAWBOX");
-                if (!v) return -1L;
-                const char* comma = std::strchr(v, ',');
-                return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
-            }();
-            const long presentNow = g_presentIndex.load(std::memory_order_relaxed);
-            if (boxMin >= 0 && presentNow >= boxMin && presentNow <= boxMax &&
-                call.vertexCount > 0 &&
-                static_cast<size_t>(call.vertexStart + call.vertexCount) <= m_batch.vertices.size()) {
-                float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
-                for (int vi = 0; vi < call.vertexCount; ++vi) {
-                    const auto& v = m_batch.vertices[call.vertexStart + vi];
-                    minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
-                    minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
-                }
-                const auto& v0 = m_batch.vertices[call.vertexStart];
-                const auto& vA = m_batch.vertices[call.vertexStart + std::min(1, call.vertexCount - 1)];
-                const auto& vB = m_batch.vertices[call.vertexStart + std::min(2, call.vertexCount - 1)];
-                auto* curFBDbg = g_fbManager.GetCurrentColor();
-                std::fprintf(stderr,
-                    "[DRAWBOX] vi=%ld type=%d nVtx=%d bbox=(%.0f,%.0f)-(%.0f,%.0f) cmb=0x%llX omL=0x%X omH=0x%X "
-                    "hash0=0x%llX addr0=0x%06X crc0=0x%016llX prim=(%u,%u,%u,%u) env=(%u,%u,%u,%u) "
-                    "v0col=(%.2f,%.2f,%.2f,%.2f) tile0fmt=%u tile0sz=%u tile0wh=(%d,%d) "
-                    "colorImg=0x%06X zImg=0x%06X curFB=0x%06X "
-                    "sltl=(%.2f,%.2f) cm=(%u,%u) mask=(%u,%u) shift=(%u,%u) scroll=(%.2f,%.2f) "
-                    "st0=(%.3f,%.3f,w%.4f) st1=(%.3f,%.3f,w%.4f) st2=(%.3f,%.3f,w%.4f) "
-                    "p0=(%.1f,%.1f) p1=(%.1f,%.1f) p2=(%.1f,%.1f)\n",
-                    presentNow, static_cast<int>(call.type), call.vertexCount,
-                    minX, minY, maxX, maxY,
-                    static_cast<unsigned long long>(call.combineMode),
-                    call.otherModeL, call.otherModeH,
-                    static_cast<unsigned long long>(call.textureHash0),
-                    call.textureImageAddr & 0x7FFFFF,
-                    static_cast<unsigned long long>(call.snapshotCrc0),
-                    call.primColor.r, call.primColor.g, call.primColor.b, call.primColor.a,
-                    call.envColor.r, call.envColor.g, call.envColor.b, call.envColor.a,
-                    v0.r, v0.g, v0.b, v0.a,
-                    static_cast<unsigned>(call.tileDesc0.format), static_cast<unsigned>(call.tileDesc0.size),
-                    call.tileDesc0.GetWidth(), call.tileDesc0.GetHeight(),
-                    m_state.rdp.colorImage.address & 0x7FFFFF,
-                    m_state.rdp.zbufferImage.address & 0x7FFFFF,
-                    curFBDbg ? (curFBDbg->desc.address & 0x7FFFFF) : 0xFFFFFFu,
-                    call.tileDesc0.GetSL(), call.tileDesc0.GetTL(),
-                    static_cast<unsigned>(call.tileDesc0.clampS), static_cast<unsigned>(call.tileDesc0.clampT),
-                    static_cast<unsigned>(call.tileDesc0.maskS), static_cast<unsigned>(call.tileDesc0.maskT),
-                    static_cast<unsigned>(call.tileDesc0.shiftS), static_cast<unsigned>(call.tileDesc0.shiftT),
-                    call.scrollS0, call.scrollT0,
-                    v0.s, v0.t, v0.perspW,
-                    vA.s, vA.t, vA.perspW,
-                    vB.s, vB.t, vB.perspW,
-                    v0.x, v0.y, vA.x, vA.y, vB.x, vB.y);
-            }
-        }
-
         // --- Build CombinerKey for shader lookup ---
         Shader::CombinerKey shaderKey{};
         shaderKey.mux = call.combineMode;
@@ -779,8 +675,6 @@ void RDPProcessor::FlushBatch() {
                 // compression un-applied, so the rect sampled a texel range far
                 // wider than intended -- aliasing into sparse noise-like dots for
                 // any icon actually relying on tile shift to minify.
-                bool isRect = (call.type == DrawCall::Type::TextureRect ||
-                               call.type == DrawCall::Type::FillRect);
                 float scale0[2], scale1[2];
                 scale0[0] = getShiftScale(call.tileDesc0.shiftS);
                 scale0[1] = getShiftScale(call.tileDesc0.shiftT);
@@ -813,80 +707,6 @@ void RDPProcessor::FlushBatch() {
 
                 m_shaderManager->SetTextureUniforms(0, 1, scale0, scale1, size0, size1, nullptr, nullptr);
 
-                // Tile diagnostic: log first 15 triangle draw calls with texture,
-                // and also log any draw call with vertices in the copyright region (x=[265,286], y=[42,62])
-                {
-                    // Gated behind NOVA64_COPY_DEBUG: the copyright-region branch
-                    // logs EVERY center-screen triangle, which floods stderr
-                    // (100MB+) and throttles headless runs via disk I/O.
-                    static const bool s_copyDbg = []() {
-                        const char* v = std::getenv("NOVA64_COPY_DEBUG");
-                        return v && v[0] != '\0' && v[0] != '0';
-                    }();
-                    static uint32_t s_tileLog = 0;
-                    bool inCopyrightRegion = false;
-                    if (s_copyDbg && !isRect && call.vertexCount > 0) {
-                        const auto& v0 = m_batch.vertices[call.vertexStart];
-                        inCopyrightRegion = (v0.x >= 100.f && v0.x <= 320.f && v0.y >= 40.f && v0.y <= 240.f);
-                    }
-                    if (s_copyDbg && !isRect && (s_tileLog < 15 || inCopyrightRegion)) {
-                        if (s_tileLog < 15) ++s_tileLog;
-                        float sl0 = call.tileDesc0.GetSL();
-                        float tl0 = call.tileDesc0.GetTL();
-                        bool tp = (call.otherModeH & OTHERMODE_TEXTPERSP) != 0;
-                        Log::infof("[TILE#%u] hash=0x%08X shiftS=%u shiftT=%u scale=%.2f,%.2f size=%.0f,%.0f sl=%.2f tl=%.2f mask=%u,%u tp=%d%s",
-                                   s_tileLog, (unsigned)call.textureHash0,
-                                   (unsigned)call.tileDesc0.shiftS, (unsigned)call.tileDesc0.shiftT,
-                                   scale0[0], scale0[1], size0[0], size0[1],
-                                   sl0, tl0,
-                                   (unsigned)call.tileDesc0.maskS, (unsigned)call.tileDesc0.maskT,
-                                   (int)tp,
-                                   inCopyrightRegion ? " [COPY]" : "");
-                        if (inCopyrightRegion) {
-                            const auto& v0c = m_batch.vertices[call.vertexStart];
-                            Log::infof("[COPY-MODE] x=%.1f y=%.1f hash=0x%08X combineMode=0x%016llX oMH=0x%08X oML=0x%08X fmt=%u siz=%u envA=%.4f",
-                                       v0c.x, v0c.y,
-                                       (unsigned)call.textureHash0,
-                                       (unsigned long long)call.combineMode,
-                                       call.otherModeH, call.otherModeL,
-                                       (unsigned)call.tileDesc0.format,
-                                       (unsigned)call.tileDesc0.size,
-                                       call.envColor.a / 255.0f);
-                        }
-                    }
-                }
-            }
-
-            // Tree-billboard uniform diagnostic (NOVA64_TREE_DBG=1): dumps the
-            // exact sampler state for 32×64 TEX_EDGE draws (the SM64 tree
-            // signature) — proves whether clamp/size/scale reach the shader.
-            {
-                static const bool s_treeDbg = []() {
-                    const char* v = std::getenv("NOVA64_TREE_DBG");
-                    return v && v[0] != '\0' && v[0] != '0';
-                }();
-                static int s_treeDbgLeft = 40;
-                if (s_treeDbg && s_treeDbgLeft > 0 &&
-                    call.tileDesc0.GetWidth() == 32 && call.tileDesc0.GetHeight() == 64 &&
-                    (call.otherModeL & 0x1000) != 0) {
-                    --s_treeDbgLeft;
-                    uint8_t dbgTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
-                    int dbgW = 0, dbgH = 0;
-                    const TileLoadInfo dbgLi = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
-                    CalcTileSize(call.tileDesc0, dbgTlut, dbgW, dbgH, &dbgLi);
-                    std::fprintf(stderr,
-                        "[TREEDBG] type=%d clampS=%u clampT=%u maskS=%u maskT=%u "
-                        "calcSize=(%d,%d) sl=%.1f tl=%.1f hash=0x%llX vtx=%d\n",
-                        static_cast<int>(call.type),
-                        static_cast<unsigned>(call.tileDesc0.clampS),
-                        static_cast<unsigned>(call.tileDesc0.clampT),
-                        static_cast<unsigned>(call.tileDesc0.maskS),
-                        static_cast<unsigned>(call.tileDesc0.maskT),
-                        dbgW, dbgH,
-                        call.tileDesc0.GetSL(), call.tileDesc0.GetTL(),
-                        static_cast<unsigned long long>(call.textureHash0),
-                        call.vertexCount);
-                }
             }
 
             // Set tile offset, clamp, mirror, mask uniforms
@@ -921,34 +741,6 @@ void RDPProcessor::FlushBatch() {
                 float mask1[2] = { static_cast<float>(call.tileDesc1.maskS), static_cast<float>(call.tileDesc1.maskT) };
                 m_shaderManager->SetTextureTileParams(offset0, offset1, clamp0, clamp1, mask0, mask1);
 
-                // Bind-time uniform forensics (NOVA64_BINDDBG=1): dumps the exact
-                // per-draw texture uniforms for small CI textures (skybox cells)
-                // so a black-vs-correct cell can be diffed at the GPU boundary.
-                static const bool s_bindDbg = std::getenv("NOVA64_BINDDBG") != nullptr;
-                if (s_bindDbg && call.tileDesc0.format == 2 &&
-                    call.tileDesc0.GetWidth() == 32) {
-                    int bdW = 0, bdH = 0;
-                    uint8_t bdTlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
-                    const TileLoadInfo bdLi = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
-                    CalcTileSize(call.tileDesc0, bdTlut, bdW, bdH, &bdLi);
-                    std::fprintf(stderr,
-                        "[BINDDBG] cmb=0x%llX crc=0x%016llX off0=(%.2f,%.2f) clamp0=(%.0f,%.0f,%.0f,%.0f) "
-                        "mask0=(%.0f,%.0f) shift0=(%u,%u) calcSize=(%d,%d) tcBounds=%d "
-                        "tex1hash=0x%llX off1=(%.2f,%.2f) tile1sltl=(%.2f,%.2f) tile1wh=(%d,%d)\n",
-                        static_cast<unsigned long long>(call.combineMode),
-                        static_cast<unsigned long long>(call.snapshotCrc0),
-                        offset0[0], offset0[1],
-                        clamp0[0], clamp0[1], clamp0[2], clamp0[3],
-                        mask0[0], mask0[1],
-                        static_cast<unsigned>(call.tileDesc0.shiftS),
-                        static_cast<unsigned>(call.tileDesc0.shiftT),
-                        bdW, bdH,
-                        call.useTexCoordBounds ? 1 : 0,
-                        static_cast<unsigned long long>(call.textureHash1),
-                        offset1[0], offset1[1],
-                        call.tileDesc1.GetSL(), call.tileDesc1.GetTL(),
-                        call.tileDesc1.GetWidth(), call.tileDesc1.GetHeight());
-                }
             }
 
             // Set texture coordinate bounds for TextureRect bilinear bleed prevention
@@ -1656,15 +1448,6 @@ void RDPProcessor::FlushBatch() {
                         }
                     }
                     if (nearFB) {
-                        {
-                            static const bool s_dbg = std::getenv("NOVA64_FBDUMP") != nullptr;
-                            static uint32_t s_skips = 0;
-                            if (s_dbg && ++s_skips <= 40) {
-                                std::fprintf(stderr, "[CFBSKIP] dropping TextureRect texAddr=0x%06X into curColor=0x%06X\n",
-                                             key0.address & 0x7FFFFF,
-                                             m_state.rdp.colorImage.address & 0x7FFFFF);
-                            }
-                        }
                         MM_RDP_TRACE("SkipTex0CfBCopy present={} addr=0x{:06X} drawType={} fmt={} size={}",
                                      g_presentIndex.load(std::memory_order_relaxed),
                                      key0.address & 0x7FFFFF,
@@ -1713,15 +1496,6 @@ void RDPProcessor::FlushBatch() {
                         // a stale index here let that overwritten content silently replace
                         // the intended source (the OoT/MM pause-menu background snapshot
                         // getting clobbered by the Link-doll render).
-                        if (snapTex && m_vkFBSnapshotAddrs[slot0] != (key0.address & 0x7FFFFF)) {
-                            static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
-                            if (s_snapTrace) {
-                                std::fprintf(stderr,
-                                    "[SNAPSHOT-STALE] slot=%u expectedAddr=0x%06X actualAddr=0x%06X -- "
-                                    "stale ring slot caught and rejected\n",
-                                    slot0, key0.address & 0x7FFFFF, m_vkFBSnapshotAddrs[slot0]);
-                            }
-                        }
                         if (snapTex && m_vkFBSnapshotAddrs[slot0] == (key0.address & 0x7FFFFF) &&
                             (rtFB0 || rawRTFB0)) {
                             fbTex0 = 1;
@@ -2266,28 +2040,6 @@ void RDPProcessor::FlushBatch() {
         }
         if (hasSceneDraws)
             g_fbManager.SnapshotForPresentation();
-    }
-
-    // ── LLE diagnostic: dump per-flush draw breakdown once after ~200 flushes ──
-    {
-        static uint32_t s_flushNum = 0;
-        s_flushNum++;
-        if (s_flushNum == 200 && !s_dsDumped) {
-            s_dsDumped = true;
-            Log::infof("[DRAW-STATS] flush#%u tris=%u fills=%u uniqueCombos=%zu scissorXl=%u Yl=%u colorAddr=0x%06X",
-                       s_flushNum, s_ds.triCount, s_ds.fillCount,
-                       s_ds.comboCount.size(),
-                       s_ds.lastScissorXl >> 2, s_ds.lastScissorYl >> 2,
-                       s_ds.lastColorAddr & 0x7FFFFF);
-            // Sort & dump top combos
-            std::vector<std::pair<uint64_t, uint32_t>> top(s_ds.comboCount.begin(), s_ds.comboCount.end());
-            std::sort(top.begin(), top.end(),
-                      [](const auto& a, const auto& b){ return a.second > b.second; });
-            for (size_t i = 0; i < top.size() && i < 12; ++i) {
-                Log::infof("[DRAW-STATS]   combo[%zu] key=0x%016llX count=%u",
-                           i, (unsigned long long)top[i].first, top[i].second);
-            }
-        }
     }
 
     m_batch.Reset();

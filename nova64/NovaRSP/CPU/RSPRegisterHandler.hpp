@@ -28,8 +28,10 @@ enum class RSPRegister : uint32_t {
 // Bits [12:19] = Count  (actual = value + 1)
 // Bits [20:31] = Skip   (bytes to skip between rows)
 // ──────────────────────────────────────────────
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4201)
+#endif
 union DMALengthReg {
     uint32_t Value;
     struct {
@@ -48,7 +50,9 @@ union DMALengthReg {
     [[nodiscard]] constexpr uint32_t ActualCount()  const { return Count + 1; }
     [[nodiscard]] constexpr uint32_t ActualSkip()   const { return Skip; }
 };
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
 // ──────────────────────────────────────────────
 // Abstract RSP Register Handler

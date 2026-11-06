@@ -5,7 +5,7 @@
 #include "TLB.hpp"
 #include "../StateArchive.hpp"
 #include "Vmem.hpp"
-#include "../../common/Log.hpp"
+#include "../../common/log.hpp"
 #include "../MainSYS.hpp"
 #include "Register.hpp"
 

@@ -71,7 +71,7 @@ public:
     [[nodiscard]] bool Write32(uint32_t address, uint32_t value, uint32_t mask) override;
     
     // Additional access methods
-    [[nodiscard]] bool Read8(uint32_t address, uint8_t& value);
+    [[nodiscard]] bool Read8(uint32_t address, uint8_t& value) override;
     [[nodiscard]] bool Read16(uint32_t address, uint16_t& value);
     [[nodiscard]] bool ReadBytes(uint32_t address, void* buffer, size_t size);
     

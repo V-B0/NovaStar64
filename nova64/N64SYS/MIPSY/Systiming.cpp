@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "../StateArchive.hpp"
-#include "../../common/Log.hpp"
+#include "../../common/log.hpp"
 #include "../MainSYS.hpp"
 #include "Vmem.hpp"
 #include "Register.hpp"

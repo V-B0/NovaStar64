@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "MIPSYInterfaceHandler.hpp"
+#include "MIPSYinterfacehandler.hpp"
 #include "Memoryhandler.hpp"
 #include <cstdint>
 #include <cstring>

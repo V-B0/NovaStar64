@@ -17,7 +17,7 @@
 #include "../Memoryhandler/CachedSysMemory.hpp"
 #include "../Memoryhandler/UnCachedSysMemory.hpp"
 #include "../Memoryhandler/DisplayCtrlReg.hpp"
-#include "../Memoryhandler/MIPSYInterfaceHandler.hpp"
+#include "../Memoryhandler/MIPSYinterfacehandler.hpp"
 #include "../Memoryhandler/PIInterFace.hpp"
 #include "../Memoryhandler/PifInterface.hpp"
 #include "../Memoryhandler/RDRAMInterFaceHandler.hpp"
@@ -59,7 +59,7 @@ namespace Nova64 {
 // ----------------------------------------------------------------------------
 // Memory Watch (debug-only).
 // Emits a log line whenever a DMA into RDRAM touches the configured range.
-// Configured via the same NOVA_WATCH_ADDR/LEN/FILE environment variables as
+// Configured via the same NOVA64_WATCH_ADDR/LEN/FILE environment variables as
 // the CPU store watch in Vmem.cpp. `source` is a short tag like "PI", "SP",
 // "SI", "DD", etc. for distinguishing the originator in the log output.
 // ----------------------------------------------------------------------------

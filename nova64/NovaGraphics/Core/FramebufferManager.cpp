@@ -456,22 +456,6 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     desc.address = address & 0x7FFFFF;  // Mask to RDRAM range
     desc.width   = width;
 
-    static const bool s_fbDumpTrace = std::getenv("NOVA64_FBDUMP") != nullptr;
-    bool s_ocShouldLog = false;
-    {
-        static uint32_t s_ocLogCount = 0;
-        if (s_fbDumpTrace && desc.address >= 0x380000 && desc.address <= 0x3B0000) {
-            ++s_ocLogCount;
-            // Log every call for the first 200, then every 50th, to see the
-            // whole session without flooding stderr.
-            s_ocShouldLog = (s_ocLogCount <= 200) || (s_ocLogCount % 50 == 0);
-            if (s_ocShouldLog) {
-                std::fprintf(stderr, "[ONSETCOLORIMAGE] #%u addr=0x%06X width=%u size=%u frame=%llu\n",
-                             s_ocLogCount, desc.address, width, size, static_cast<unsigned long long>(m_frameCounter));
-            }
-        }
-    }
-
     uint32_t height = 240;
     if (m_scissorHeight > 0) {
         height = m_scissorHeight;
@@ -506,14 +490,6 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     desc.type    = FBType::Color;
 
     GPUFramebuffer* fb = FindOrCreate(desc);
-    if (s_ocShouldLog) {
-        std::fprintf(stderr, "  -> FindOrCreate result: %s type=%d addr=0x%06X %ux%u fbCount=%u\n",
-                     fb ? "OK" : "NULL",
-                     fb ? static_cast<int>(fb->desc.type) : -1,
-                     fb ? fb->desc.address : 0u,
-                     fb ? fb->desc.width : 0u, fb ? fb->desc.height : 0u,
-                     m_fbCount);
-    }
     if (fb) {
         m_currentColor = fb;
         fb->lastUsedFrame = m_frameCounter;
@@ -738,18 +714,6 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
         }
         return false;
     };
-    static const bool s_evictTrace = std::getenv("NOVA64_EVICT_TRACE") != nullptr;
-    if (s_evictTrace) {
-        std::fprintf(stderr, "[EVICT] called at frame=%llu, fbCount=%u\n",
-                     static_cast<unsigned long long>(currentFrame), m_fbCount);
-        for (uint32_t i = 0; i < m_fbCount; ++i) {
-            auto& fb = m_framebuffers[i];
-            std::fprintf(stderr, "  [%u] addr=0x%06X type=%d lastUsed=%llu stale=%d freshSibling=%d\n",
-                         i, fb.desc.address, static_cast<int>(fb.desc.type),
-                         static_cast<unsigned long long>(fb.lastUsedFrame),
-                         isStale(fb), hasFreshSibling(fb));
-        }
-    }
     uint32_t writeIdx = 0;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (!isStale(m_framebuffers[i]) || hasFreshSibling(m_framebuffers[i])) {
@@ -758,10 +722,6 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
             }
             writeIdx++;
         } else {
-            if (s_evictTrace) {
-                std::fprintf(stderr, "  EVICTING [%u] addr=0x%06X type=%d\n",
-                             i, m_framebuffers[i].desc.address, static_cast<int>(m_framebuffers[i].desc.type));
-            }
             DestroyGPUFramebuffer(m_framebuffers[i]);
         }
     }

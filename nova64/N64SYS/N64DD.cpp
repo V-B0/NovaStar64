@@ -934,7 +934,7 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
     const uint8_t blocks[8] = {0, 1, 2, 3, 8, 9, 10, 11};
     for (int i = 0; i < 8; ++i) {
         m_DiskFile->Seek(0x4D08 * blocks[i]);
-        if (m_DiskFile->Read(testData, sizeof(testData)) != sizeof(testData)) {
+        if (!m_DiskFile->Read(testData, sizeof(testData))) {
             m_DiskFile->Close();
             return false;
         }
@@ -968,7 +968,7 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         const size_t chunkSize = 1024 * 1024; 
         while (totalRead < fileSize) {
             size_t toRead = std::min(chunkSize, fileSize - totalRead);
-            if (m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead) != toRead) {
+            if (!m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead)) {
                 m_DiskFile->Close();
                 return false;
             }
@@ -1020,7 +1020,7 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
             size_t remaining = fileSize - totalRead;
             size_t toRead = (chunkSize < remaining) ? chunkSize : remaining;
             
-            if (m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead) != toRead) {
+            if (!m_DiskFile->Read(m_Image->m_Data.data() + totalRead, toRead)) {
                 m_DiskFile->Close();
                 return false;
             }

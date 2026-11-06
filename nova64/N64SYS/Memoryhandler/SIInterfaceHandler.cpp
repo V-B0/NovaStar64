@@ -6,7 +6,7 @@
 #include "../StateArchive.hpp"
 #include "PifInterface.hpp"
 #include "../MIPSY/Register.hpp" // For CRegisters definition
-#include "../Mipsy/Mempak.hpp" // If needed
+#include "../MIPSY/Mempak.hpp" // If needed
 #include <iomanip>
 #include <sstream>
 

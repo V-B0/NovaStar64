@@ -9,7 +9,7 @@
 #pragma once
 #include "RSPOpcode.hpp"
 #include "RspPipelineStage.hpp"
-#include "RspTypes.hpp"
+#include "RSPTypes.hpp"
 #include <cstdint>
 #include <memory>
 

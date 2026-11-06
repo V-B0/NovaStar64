@@ -1,6 +1,6 @@
 ﻿/**
  * @file VKBackend.cpp
- * @brief Vulkan IRenderer implementation â€” full geometry, textures and pipeline.
+ * @brief Vulkan IRenderer implementation — full geometry, textures and pipeline.
  */
 // SPDX-License-Identifier: MIT
 //
@@ -55,21 +55,25 @@ namespace Nova64 { namespace Video { namespace VK {
 
 static bool ForensicEnabled() {
     static const bool enabled = []() {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
         const char* v = std::getenv("NOVA64_FORENSIC");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
         return v && v[0] != 0;
     }();
     return enabled;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  DynPipelineKey â€” shader + blend factors + depth state
+// ─────────────────────────────────────────────────────────────────────────────
+//  DynPipelineKey — shader + blend factors + depth state
 //  Used to cache VkPipelines that differ only in blend/depth mode.
-//  blendColor (the dynamic blend constant) is NOT included â€” it is set via
+//  blendColor (the dynamic blend constant) is NOT included — it is set via
 //  vkCmdSetBlendConstants every draw so it doesn't affect the pipeline.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 struct DynPipelineKey {
     void*   shaderPtr       = nullptr;
     uint8_t blendEnabled    = 0;
@@ -104,9 +108,9 @@ struct DynPipelineKeyHash {
     }
 };
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  IsVulkanAvailable â€” real probe via volk
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
+//  IsVulkanAvailable — real probe via volk
+// ─────────────────────────────────────────────────────────────────────────────
 
 bool IsVulkanAvailable() {
     static int cached = -1; // -1 unknown, 0 no, 1 yes
@@ -117,7 +121,7 @@ bool IsVulkanAvailable() {
         return false;
     }
     if (!vkEnumerateInstanceVersion) {
-        // Vulkan 1.0 loader only â€” we require 1.1+ for vkEnumerateInstanceVersion.
+        // Vulkan 1.0 loader only — we require 1.1+ for vkEnumerateInstanceVersion.
         cached = 0;
         return false;
     }
@@ -130,9 +134,9 @@ bool IsVulkanAvailable() {
     return cached == 1;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 //  Stub resources (Stage 2+ will replace these with real implementations)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -189,7 +193,7 @@ public:
     }
     ~VulkanRenderer() override { Shutdown(); }
 
-    // â”€â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Lifecycle ────────────────────────────────────────────
     // With no window handle the renderer works offscreen: no surface or
     // swapchain, and every presented frame is read back into g_framePixels.
     // That is how a game is drawn inside the launcher, which also works where a
@@ -204,7 +208,7 @@ public:
             return false;
         }
 
-        // â”€â”€ instance extensions required by SDL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── instance extensions required by SDL ─────────────
         std::vector<const char*> extNames;
         if (m_offscreen) {
             // VK_KHR_swapchain, which the device still enables, depends on it.
@@ -235,7 +239,7 @@ public:
             return false;
         }
 
-        // â”€â”€ surface (requires instance) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── surface (requires instance) ─────────────────────
         if (!m_offscreen && !SDL_Vulkan_CreateSurface(m_sdlWindow, m_instance.Get(), &m_surface)) {
             Logger::Error("VulkanRenderer: SDL_Vulkan_CreateSurface failed: {}",
                           SDL_GetError());
@@ -243,20 +247,20 @@ public:
             return false;
         }
 
-        // â”€â”€ physical device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── physical device ─────────────────────────────────
         uint32_t gfxFam = 0, presFam = 0;
         if (!m_instance.PickPhysicalDevice(m_surface, gfxFam, presFam)) {
             Cleanup();
             return false;
         }
 
-        // â”€â”€ logical device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── logical device ──────────────────────────────────
         if (!m_device.Create(m_instance.GetPhysical(), gfxFam, presFam)) {
             Cleanup();
             return false;
         }
 
-        // â”€â”€ swapchain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── swapchain ───────────────────────────────────────
         const bool haveTargets = m_offscreen
             ? m_swapchain.CreateOffscreen(m_instance.GetPhysical(), m_device.Get(),
                                           m_width, m_height, kFramesInFlight)
@@ -267,13 +271,13 @@ public:
             return false;
         }
 
-        // â”€â”€ per-frame command pool + sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── per-frame command pool + sync ───────────────────
         if (!CreateFrameResources()) {
             Cleanup();
             return false;
         }
 
-        // â”€â”€ transient pool for one-shot uploads (Stage 2) â”€â”€â”€
+        // ── transient pool for one-shot uploads (Stage 2) ───
         {
             VkCommandPoolCreateInfo tpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
             tpci.flags            = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -289,7 +293,7 @@ public:
         m_ctx.transferQueue = m_device.GetGraphicsQueue();
         m_ctx.transientPool = m_transientPool;
 
-        // Shared pipeline cache â€” persisted to ShaderCache/vk_pipeline_cache.bin
+        // Shared pipeline cache — persisted to ShaderCache/vk_pipeline_cache.bin
         // so that Intel Iris Xe (deferred GPU shader compilation) can reuse
         // pre-compiled pipelines on subsequent runs, avoiding TDR during the
         // first frame that exercises a new pipeline combination.
@@ -329,7 +333,7 @@ public:
         }
         m_ctx.pipelineCache = m_pipelineCache;
 
-        // â”€â”€ standard descriptor set layout + per-frame pools (Stage 4) â”€
+        // ── standard descriptor set layout + per-frame pools (Stage 4) ─
         m_setLayout = CreateStandardSetLayout(m_device.Get());
         if (!m_setLayout) { Cleanup(); return false; }
         if (!CreateDescriptorPools()) { Cleanup(); return false; }
@@ -408,12 +412,12 @@ public:
                          fenceMs, m_currentFrame, m_caps.isIntelGPU);
         }
         if (fw == VK_TIMEOUT) {
-            Logger::Warn("VulkanRenderer: vkWaitForFences timed out (5s) â€” GPU may be hung, skipping frame");
+            Logger::Warn("VulkanRenderer: vkWaitForFences timed out (5s) — GPU may be hung, skipping frame");
             m_skipPresent = true;
             return;
         }
         if (fw == VK_ERROR_DEVICE_LOST) {
-            Logger::Warn("VulkanRenderer: vkWaitForFences: VK_ERROR_DEVICE_LOST â€” attempting swapchain recreation");
+            Logger::Warn("VulkanRenderer: vkWaitForFences: VK_ERROR_DEVICE_LOST — attempting swapchain recreation");
             RecreateSwapchain();
             m_skipPresent = true;
             return;
@@ -439,14 +443,14 @@ public:
             // instead of VK_ERROR_OUT_OF_DATE_KHR when the swapchain surface is
             // temporarily invalid (e.g. during DWM updates on first present).
             // Attempt swapchain recreation before treating this as a fatal error.
-            Logger::Warn("VulkanRenderer: vkAcquireNextImageKHR: VK_ERROR_DEVICE_LOST â€” attempting swapchain recreation");
+            Logger::Warn("VulkanRenderer: vkAcquireNextImageKHR: VK_ERROR_DEVICE_LOST — attempting swapchain recreation");
             RecreateSwapchain();
             // Retry once with the new swapchain.
             r = vkAcquireNextImageKHR(m_device.Get(), m_swapchain.Get(),
                                       UINT64_MAX, f.imageAvailable,
                                       VK_NULL_HANDLE, &m_currentImage);
             if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
-                Logger::Error("VulkanRenderer: vkAcquireNextImageKHR still failing after swapchain recreate: {} â€” device lost",
+                Logger::Error("VulkanRenderer: vkAcquireNextImageKHR still failing after swapchain recreate: {} — device lost",
                               VkResultToString(r));
                 m_ctx.deviceLost.store(true, std::memory_order_relaxed);
                 m_skipPresent = true;
@@ -593,18 +597,13 @@ public:
         // the window "fixed" the bouncing precisely because swapchain recreation
         // drops all canvases, breaking the feedback loop -- a long-standing
         // clue in this investigation that only makes sense with this mechanism.)
-        // NOTE (diagnostic, see NOVA64_CANVAS_DBG below): whether the save
-        // actually RUNS is gated on m_activeCanvasDirty, not just oldC being
-        // non-null -- a canvas object can exist (from a previous frame) while
-        // this particular activation drew nothing to it, in which case the
-        // save is correctly skipped and the canvas keeps its LAST real content
-        // (not garbage) -- but the OLD trace line below couldn't distinguish
-        // "skipped, kept prior valid content" from "skipped, still never
-        // written" from "actually saved this time". Capture the real outcome.
-        bool savedOld = false;
+        // NOTE: the save only RUNS when m_activeCanvasDirty is set, not just
+        // when oldC exists -- a canvas object can persist from a previous frame
+        // while this activation drew nothing to it, in which case the save is
+        // correctly skipped and the canvas keeps its LAST real content (not
+        // garbage).
         if (swapImg && oldC && m_activeCanvasDirty) {
             SaveSwapchainToCanvas(f.cmd, swapImg, *oldC);
-            savedOld = true;
         }
         CanvasSlot* newC = EnsureCanvas(n64Addr);
         if (swapImg && newC && newC->valid) {
@@ -613,15 +612,6 @@ public:
         // If the new canvas has no content yet, keep the swapchain as-is: the
         // game fully repaints new buffers before displaying them, and stale
         // pixels are preferable to a hard black flash mid-frame.
-
-        static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
-        if (s_cvDbg) {
-            std::fprintf(stderr, "[CANVAS] switch 0x%06X -> 0x%06X (oldExists=%d dirty=%d savedOld=%d oldValidNow=%d loadNew=%d newValid=%d)\n",
-                         m_activeCanvasAddr, n64Addr,
-                         oldC != nullptr, m_activeCanvasDirty, savedOld,
-                         oldC ? (int)oldC->valid : -1,
-                         newC != nullptr, newC ? (int)newC->valid : -1);
-        }
 
         m_activeCanvasAddr  = n64Addr;
         m_activeCanvasDirty = false;   // nothing drawn to the new target yet
@@ -737,15 +727,6 @@ public:
                 if (presentC && presentC != active && presentC->valid) {
                     LoadCanvasToSwapchain(f.cmd, *presentC, swapImg,
                                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-                }
-                static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
-                if (s_cvDbg) {
-                    uint32_t presentAddr = 0xFFFFFF;
-                    for (auto& [a, c] : m_canvases) if (&c == presentC) presentAddr = a;
-                    std::fprintf(stderr, "[CANVAS] endframe active=0x%06X origin=0x%06X -> present=0x%06X (valid=%d self=%d)\n",
-                                 m_activeCanvasAddr, m_presentOriginAddr, presentAddr,
-                                 presentC ? (int)presentC->valid : -1,
-                                 presentC == active);
                 }
             }
         }
@@ -1255,7 +1236,7 @@ void main() {
         m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
     }
 
-    // â”€â”€â”€ Resource Creation (Stage 2: real buffers + textures) â”€
+    // ─── Resource Creation (Stage 2: real buffers + textures) ─
     std::unique_ptr<IVertexBuffer> CreateVertexBuffer(size_t s, BufferUsage u) override {
         return std::make_unique<VKVertexBufferImpl>(&m_ctx, s, u);
     }
@@ -1283,7 +1264,7 @@ void main() {
                 Logger::Error("VulkanRenderer: compute pipeline build failed");
             }
         } else if (sh && sh->VS() && sh->FS()) {
-            // Shader already available â€” build immediately.
+            // Shader already available — build immediately.
             if (!p->Build(m_ctx, d, m_swapchain.GetRenderPass(), m_setLayout)) {
                 Logger::Error("VulkanRenderer: pipeline build failed");
             }
@@ -1297,7 +1278,7 @@ void main() {
         return p;
     }
 
-    // â”€â”€â”€ State Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── State Management ─────────────────────────────────
     void SetViewport(const RenderViewport& v) override {
         // Remembered so a pass restarted mid-frame (after a blit or a
         // readback ends it) gets the game's viewport back instead of the
@@ -1333,7 +1314,7 @@ void main() {
         VkExtent2D ext = m_swapchain.GetExtent();
         // r uses OpenGL scissor convention: y=0 at bottom of FBO.
         // Vulkan scissor: y=0 at top of window.
-        // Step 1: undo GL Y-flip â†’ get top edge in FBO coords
+        // Step 1: undo GL Y-flip → get top edge in FBO coords
         float yTopFBO = m_vpFBOH - static_cast<float>(r.y + r.height);
         // Step 2: scale from FBO to swapchain
         float scaleX = static_cast<float>(ext.width)  / m_vpFBOW;
@@ -1379,7 +1360,7 @@ void main() {
         }
     }
 
-    // â”€â”€â”€ Binding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Binding ──────────────────────────────────────────────
     void BindVertexBuffer(IVertexBuffer* vb, const VertexLayout&) override {
         m_curVB = vb ? static_cast<VKVertexBufferImpl*>(vb)->GetVk() : VK_NULL_HANDLE;
     }
@@ -1438,7 +1419,7 @@ void main() {
         }
     }
 
-    // â”€â”€â”€ Image RW / draw / compute / readback (Stage 5+) â”€â”€â”€â”€â”€
+    // ─── Image RW / draw / compute / readback (Stage 5+) ─────
     void BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat fmt) override {
         // Store the binding; applied lazily when descriptor sets are written
         // for compute pipelines that use storage images.
@@ -1459,7 +1440,7 @@ void main() {
     }
     void ImageMemoryBarrier() override {
         if (!m_initialized) return;
-        // Full execution + memory barrier â€” flushes all in-flight image writes
+        // Full execution + memory barrier — flushes all in-flight image writes
         // before subsequent reads (equivalent to glMemoryBarrier(GL_ALL_BARRIER_BITS)).
         VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         mb.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
@@ -1533,7 +1514,7 @@ void main() {
             m_rtPipeline = std::make_unique<VKRTPipeline>();
             if (!m_rtPipeline->Build(m_ctx,
                     kRTRgenSrc, kRTRmissSrc, kRTRchitSrc)) {
-                Logger::Error("VulkanRenderer: RT pipeline build failed â€” RT disabled");
+                Logger::Error("VulkanRenderer: RT pipeline build failed — RT disabled");
                 m_rtPipeline.reset();
                 return;
             }
@@ -2449,9 +2430,9 @@ void main() {
         if (wasActive) BeginPassLoad();
     }
 
-    // â”€â”€â”€ Debug â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Debug ────────────────────────────────────────────────
     // VK_EXT_debug_utils is enabled with validation; functions are loaded by
-    // volk (null when extension absent â€” guard).
+    // volk (null when extension absent — guard).
     void PushDebugGroup(const char* name) override {
         if (!m_passActive && !m_initialized) return;
         if (!vkCmdBeginDebugUtilsLabelEXT) return;
@@ -2470,19 +2451,19 @@ void main() {
         vkCmdInsertDebugUtilsLabelEXT(m_frames[m_currentFrame].cmd, &lbl);
     }
 
-    // â”€â”€â”€ Queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Queries ──────────────────────────────────────────────
     BackendType GetBackendType() const override { return BackendType::Vulkan; }
     const RendererCaps& GetCapabilities() const override { return m_caps; }
     const RendererStats& GetStats() const override { return m_stats; }
     void ResetStats() override { m_stats.Reset(); }
 
-    // â”€â”€â”€ Vulkan UBO helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Vulkan UBO helper ─────────────────────────────────────
     void* GetMappedUBOPtr() override {
         auto& s = m_scratchUBO[m_currentFrame];
         return s.mapped ? s.mapped : nullptr;
     }
 
-    // â”€â”€â”€ Window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Window ───────────────────────────────────────────────
     void OnResize(uint32_t width, uint32_t height) override {
         if (width == m_width && height == m_height) return;
         m_width = width; m_height = height;
@@ -2696,7 +2677,7 @@ private:
         vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &b);
     }
 
-    // â”€â”€ Stage 4: descriptor pools, default UBO + white texture, PrepareDraw â”€â”€
+    // ── Stage 4: descriptor pools, default UBO + white texture, PrepareDraw ──
     bool CreateDescriptorPools() {
         std::array<VkDescriptorPoolSize, 2> sizes{};
         sizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -2848,7 +2829,7 @@ private:
         if (!effectivePipeline || !effectivePipeline->Get()) {
             static int s_nullPipeWarn = 0;
             if (s_nullPipeWarn < 5) {
-                Logger::Warn("PrepareDraw: null effective pipeline (shader={:p} dirty={}) â€” draw skipped",
+                Logger::Warn("PrepareDraw: null effective pipeline (shader={:p} dirty={}) — draw skipped",
                              static_cast<void*>(m_curShader), m_pipelineDirty);
                 ++s_nullPipeWarn;
             }
@@ -2911,11 +2892,11 @@ private:
         VkResult r = vkAllocateDescriptorSets(m_device.Get(), &ai, &ds);
         if (r != VK_SUCCESS) {
             if (r == VK_ERROR_OUT_OF_POOL_MEMORY) {
-                // Pool exhausted for this frame â€” degrade gracefully (skip draw).
+                // Pool exhausted for this frame — degrade gracefully (skip draw).
                 // Increase kMaxDescSetsPerFrame if this fires frequently.
                 static uint32_t s_poolExhaustedCount = 0;
                 if ((++s_poolExhaustedCount & 0x3FF) == 1) { // log 1st, then every 1024th
-                    Logger::Warn("VulkanRenderer: descriptor pool full ({} so far this session) â€” skipping draw",
+                    Logger::Warn("VulkanRenderer: descriptor pool full ({} so far this session) — skipping draw",
                                  s_poolExhaustedCount);
                 }
             } else {
@@ -2937,7 +2918,7 @@ private:
             // corrupting UBO data for in-flight descriptor sets.
             static uint32_t s_ringOverflowCount = 0;
             if ((++s_ringOverflowCount & 0xFF) == 1) {
-                Logger::Warn("VulkanRenderer: UBO ring overflow ({} so far) â€” skipping draw to avoid corruption",
+                Logger::Warn("VulkanRenderer: UBO ring overflow ({} so far) — skipping draw to avoid corruption",
                              s_ringOverflowCount);
             }
             return VK_NULL_HANDLE;
@@ -3435,7 +3416,7 @@ private:
         }
 
         // Default Y-flipped full-swapchain viewport. Game code calls SetViewport
-        // shortly after which applies the FBOâ†’swapchain scale too.
+        // shortly after which applies the FBO→swapchain scale too.
         float vpW = static_cast<float>(extent.width);
         float vpH = static_cast<float>(extent.height);
         m_vpFBOW = vpW;  // initialize FBO scale; SetViewport will update these
@@ -3512,11 +3493,11 @@ private:
     // kMaxSetsPerFrame MUST equal kMaxDescSetsPerFrame.
     // The UBO ring holds kMaxSetsPerFrame * alignedSlot bytes.  If the ring
     // limit is smaller than the pool limit, the ring wraps mid-frame and
-    // overwrites UBO slots still referenced by in-flight descriptor sets â€”
+    // overwrites UBO slots still referenced by in-flight descriptor sets —
     // causing data corruption and a visually frozen frame.  Keeping them equal
     // ensures the pool exhausts at the same draw as the ring would wrap, so
     // excess draws are simply skipped (no corruption).
-    static constexpr uint32_t     kMaxSetsPerFrame     = 262144; // UBO ring slots â€” must equal kMaxDescSetsPerFrame
+    static constexpr uint32_t     kMaxSetsPerFrame     = 262144; // UBO ring slots — must equal kMaxDescSetsPerFrame
     static constexpr uint32_t     kMaxDescSetsPerFrame = 262144; // descriptor pool capacity per frame
     static constexpr VkDeviceSize kScratchUBOSize  = 624; // exact N64 UBO size (aligned to 768 at runtime)
     VkDescriptorSetLayout                            m_setLayout = VK_NULL_HANDLE;
@@ -3620,7 +3601,7 @@ private:
     VkRenderPass         m_deferredRenderPass = VK_NULL_HANDLE;
     std::unordered_map<DynPipelineKey, std::unique_ptr<VKPipelineImpl>, DynPipelineKeyHash> m_dynPipelines;
 
-    // Pending draw state â€” set by SetBlendState / SetDepthStencilState.
+    // Pending draw state — set by SetBlendState / SetDepthStencilState.
     // Incorporated into the pipeline key in PrepareDraw().
     BlendState           m_pendingBlend{};
     DepthStencilState    m_pendingDepth{};
@@ -3629,10 +3610,10 @@ private:
     RendererCaps  m_caps{};
     RendererStats m_stats{};
 
-    // â”€â”€ RT (optional, activated when device supports RT extensions) â”€â”€â”€â”€â”€â”€
+    // ── RT (optional, activated when device supports RT extensions) ──────
     std::unique_ptr<VKRTPipeline> m_rtPipeline;
 
-    // â”€â”€ Compute ray tracer (MoltenVK / no-hardware-RT fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Compute ray tracer (MoltenVK / no-hardware-RT fallback) ─────────
     std::unique_ptr<VKComputeRaytracer> m_computeRT;
     RT::RTBVH                           m_rtBVH;
     // Deferred hybrid composite: BVH/UBO are prepared mid-display-list, but the

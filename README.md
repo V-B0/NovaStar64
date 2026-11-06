@@ -376,6 +376,9 @@ game on every platform.
 | `nova64/common/` | Shared utilities: logging, INI parsing, file I/O, platform macros |
 | `nova64/scripts/` | Development tools: trace comparison, derivation measurement, icon generation |
 | `nova64/assets/` | The NovaStar icon (PNG, and ICO for the Windows executable), built into the program |
+| `nova64/cmake/` | The build definition: `Sources.cmake` (our source files) and `Dependencies.cmake` (the pinned third-party libraries); `nova64/CMakeLists.txt` ties them together |
+| `nova64/installer/` | The Windows setup wizard (Inno Setup); `nova64/scripts/package-macos.sh` makes the macOS app and `.dmg` |
+| `nova64/thirdparty/`, `nova64/external/` | Third-party files that ship in the repository: the MoltenVK library for macOS and the glad OpenGL loader |
 | `softfloat/` | Berkeley SoftFloat, used for the FPU |
 | `docs/` | Design notes and roadmaps |
 

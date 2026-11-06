@@ -31,8 +31,10 @@ namespace Nova64 {
 }
 
 
+#ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable : 4201) 
+#pragma warning(disable : 4201)
+#endif
 
 
 union COP0EntryLo {
@@ -235,7 +237,9 @@ union FPStatusReg {
     FPStatusReg() : Value(0) {}
 };
 
-#pragma warning(pop)  
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 
 class CP0registers {

@@ -1174,8 +1174,10 @@ void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
 // The project uses /fp:fast which sets FTZ/DAZ and allows the compiler to
 // reorder/optimize FP operations. We need precise semantics for correct
 // N64 FPU emulation (denorm handling, exception flags, rounding modes).
-#pragma float_control(precise, on, push)
+#pragma float_control(precise, on, push)   // clang and MSVC both honour this
+#ifdef _MSC_VER
 #pragma fenv_access(on)
+#endif
 
 // VR4300: undefined COP1 format → UnimplementedOp (FPE)
 static void Interp_COP1_Unimplemented(CRegisters* regs, uint32_t opcVal) {
@@ -2085,7 +2087,9 @@ void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
 }
 
 // Restore /fp:fast for the rest of the file
+#ifdef _MSC_VER
 #pragma fenv_access(off)
+#endif
 #pragma float_control(pop)
 
 // ----- System / Trap / CACHE Callbacks -----

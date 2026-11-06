@@ -89,17 +89,6 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
                     m_renderer->SnapshotToTexture(slot.get());
                     m_vkFBSnapshotAddrs[m_vkFBSnapshotIdx] = prevFB->desc.address & 0x7FFFFF;
                     prevFB->needsInventorySnapshot = false;
-                    static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
-                    if (s_snapTrace) {
-                        std::fprintf(stderr,
-                            "[SNAPSHOT-CI] slot=%u fbAddr=0x%06X fbSize=%ux%u drawCalls=%u triangles=%u frame=%llu\n",
-                            m_vkFBSnapshotIdx, prevFB->desc.address & 0x7FFFFF,
-                            prevFB->desc.width, prevFB->desc.height,
-                            prevFB->drawCallsSinceSwitch, prevFB->trianglesSinceSwitch,
-                            static_cast<unsigned long long>(m_state.frameCount));
-                    }
-                    prevFB->drawCallsSinceSwitch = 0;
-                    prevFB->trianglesSinceSwitch = 0;
                 }
             }
         }

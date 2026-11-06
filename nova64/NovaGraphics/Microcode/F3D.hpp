@@ -16,14 +16,18 @@
 namespace Nova64::Video {
 
 // Diagnostic gate for F3D vertex-index sanity checking.
-// Enable by setting environment variable NOVA_F3D_VTRACE=1 before launch.
+// Enable by setting environment variable NOVA64_F3D_VTRACE=1 before launch.
 // Logs to stderr when a decoded vertex index >= 16 (F3D cache size).
 inline bool F3DVTraceEnabled() {
     static const bool enabled = []() {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
-        const char* v = std::getenv("NOVA_F3D_VTRACE");
+#endif
+        const char* v = std::getenv("NOVA64_F3D_VTRACE");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
         return v && v[0] != '\0' && v[0] != '0';
     }();
     return enabled;

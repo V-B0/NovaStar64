@@ -28,10 +28,14 @@ namespace Nova64 { namespace Video { namespace Tex {
 
 static bool ForensicEnabled() {
     static const bool enabled = []() {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
         const char* v = std::getenv("NOVA64_FORENSIC");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
         return v && v[0] != '\0' && v[0] != '0';
     }();
     return enabled;

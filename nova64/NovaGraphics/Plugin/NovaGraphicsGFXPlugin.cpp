@@ -18,7 +18,7 @@
 #include "../../N64SYS/N64Rom.hpp"
 #include "../../N64SYS/Memoryhandler/VideoInterfaceHandler.hpp"
 #include "../../N64SYS/Memoryhandler/DisplayCtrlReg.hpp"
-#include "../../N64SYS/Memoryhandler/MIPSYInterfaceHandler.hpp"
+#include "../../N64SYS/Memoryhandler/MIPSYinterfacehandler.hpp"
 #include "../Debug/ImGuiDebugUI.hpp"
 
 #include <cstring>

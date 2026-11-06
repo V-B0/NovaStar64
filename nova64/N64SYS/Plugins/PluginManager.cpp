@@ -8,7 +8,7 @@
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Vmem.hpp"
 #include "../../common/log.hpp"
-#include "../../common/File.hpp"
+#include "../../common/file.hpp"
 #include "../../common/IniFile.hpp"
 #include <algorithm>
 #include <cstring>

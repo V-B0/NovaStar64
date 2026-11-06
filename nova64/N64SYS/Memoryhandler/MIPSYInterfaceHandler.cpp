@@ -16,7 +16,7 @@
  * 0x0430000C - MI_INTR_MASK_REG (Write only - interrupt mask control)
  */
 
-#include "MIPSYInterfaceHandler.hpp"
+#include "MIPSYinterfacehandler.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MainSYS.hpp"
 #include "../MIPSY/Vmem.hpp"

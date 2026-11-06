@@ -3,7 +3,7 @@
  * @brief Rumblepak implementation.
  */
 #include "Rumblepak.hpp"
-#include "../../common/Log.hpp"
+#include "../../common/log.hpp"
 
 // Static state to track motor status
 static bool s_RumbleActive = false;

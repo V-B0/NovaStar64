@@ -39,17 +39,17 @@ static constexpr bool DISABLE_N64_DEPTH_COMPARE = false;
 
 namespace Nova64::Video {
 
-static bool IsRGBAFramebufferFormat(ImageFormat format, ImageSize size) {
+inline bool IsRGBAFramebufferFormat(ImageFormat format, ImageSize size) {
     return format == ImageFormat::RGBA &&
            (size == ImageSize::Bpp16 || size == ImageSize::Bpp32);
 }
 
-static bool IsRGBAFramebufferFormat(const Tex::TextureKey& key) {
+inline bool IsRGBAFramebufferFormat(const Tex::TextureKey& key) {
     return key.format == Tex::N64TexFormat::RGBA &&
            (key.size == Tex::N64TexSize::Bits16 || key.size == Tex::N64TexSize::Bits32);
 }
 
-static bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool framebufferFormat) {
+inline bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool framebufferFormat) {
     if (!fb) return false;
 
     // Depth FBs must never be sampled as color textures.
@@ -71,7 +71,7 @@ static bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool
 
 // NOVA64_MM_RDP_TRACE=1 logs RDP commands; NOVA64_MM_RDP_TRACE_FROM / _TO limit
 // it to a range of VI frames, since tracing a whole run is far too slow.
-static bool TraceMMRdpEnabled() {
+inline bool TraceMMRdpEnabled() {
     static const bool enabled = []() {
         const char* value = std::getenv("NOVA64_MM_RDP_TRACE");
         return value && value[0] != '\0' && value[0] != '0';
@@ -97,7 +97,7 @@ static bool TraceMMRdpEnabled() {
         }                                                                        \
     } while (0)
 
-static bool ForensicEnabled() {
+inline bool ForensicEnabled() {
     static const bool enabled = []() {
         const char* v = std::getenv("NOVA64_FORENSIC");
         return v && v[0] != '\0' && v[0] != '0';
@@ -151,7 +151,7 @@ static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor&
 // past the loaded extent replicate the edge instead of reading on into whatever
 // TMEM holds next (adjacent texture data or the palette). Optional out-params;
 // pass nullptr to skip.
-static void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH,
+inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH,
                          const TileLoadInfo* loadInfo = nullptr,
                          int cycleType = 0,
                          int* outClampW = nullptr, int* outClampH = nullptr) {

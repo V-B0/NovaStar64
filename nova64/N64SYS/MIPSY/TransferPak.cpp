@@ -4,7 +4,7 @@
  */
 #include "TransferPak.hpp"
 #include "GBcart.hpp"
-#include "../../common/Log.hpp"
+#include "../../common/log.hpp"
 
 namespace N64Controller {
 

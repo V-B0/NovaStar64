@@ -267,15 +267,6 @@ inline void F3DEX2Handler::Cmd_G_TRI2(DListContext& ctx, uint32_t w0, uint32_t w
     int v3 = ((w1 >> 16) & 0xFF) / 2;
     int v4 = ((w1 >> 8) & 0xFF) / 2;
     int v5 = (w1 & 0xFF) / 2;
-    {
-        static const bool s_tri2Dbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
-        static int s_tri2Left = 60;
-        if (s_tri2Dbg && s_tri2Left > 0 && (v3 == v5 || v3 == v4 || v4 == v5)) {
-            --s_tri2Left;
-            std::fprintf(stderr, "[TRI2RAW] w0=0x%08X w1=0x%08X -> t1=(%d,%d,%d) t2=(%d,%d,%d)\n",
-                         w0, w1, v0, v1, v2, v3, v4, v5);
-        }
-    }
     DrawTriangle2(ctx, v0, v1, v2, v3, v4, v5);
 }
 
@@ -717,17 +708,19 @@ inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, u
                 auto& light = geo.lights[lightIndex];
                 
                 // Color (bytes 0-2)
-                light.r = src[0 ^ 3];
-                light.g = src[1 ^ 3];
-                light.b = src[2 ^ 3];
+                // Words are stored big-endian, so byte i of the light is at i ^ 3.
+                auto byteAt = [src](int i) { return src[i ^ 3]; };
+                light.r = byteAt(0);
+                light.g = byteAt(1);
+                light.b = byteAt(2);
                 light.color[0] = static_cast<float>(light.r) / 255.0f;
                 light.color[1] = static_cast<float>(light.g) / 255.0f;
                 light.color[2] = static_cast<float>(light.b) / 255.0f;
                 
                 // Direction (bytes 8-10), then normalize
-                float dx = static_cast<float>(static_cast<int8_t>(src[8 ^ 3]));
-                float dy = static_cast<float>(static_cast<int8_t>(src[9 ^ 3]));
-                float dz = static_cast<float>(static_cast<int8_t>(src[10 ^ 3]));
+                float dx = static_cast<float>(static_cast<int8_t>(byteAt(8)));
+                float dy = static_cast<float>(static_cast<int8_t>(byteAt(9)));
+                float dz = static_cast<float>(static_cast<int8_t>(byteAt(10)));
                 float len = std::sqrt(dx*dx + dy*dy + dz*dz);
                 if (len > 0.0001f) {
                     float inv = 1.0f / len;

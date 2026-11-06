@@ -12,7 +12,7 @@
 #include <string>
 #include <optional>
 #include <functional>
-#include "../../common/Log.hpp"
+#include "../../common/log.hpp"
 #include "Register.hpp"
 
 // Global Forward declarations

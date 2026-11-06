@@ -149,13 +149,17 @@ public:
 
     // ─── Debug ───────────────────────────────────────────────────────
 
-    /// Log triangle count (activated by RT_SCENE_DEBUG=1 env var).
+    /// Log triangle count (activated by NOVA64_RT_SCENE_DEBUG=1 env var).
     void DebugLogIfEnabled() const {
         static const bool kEnabled = []() {
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
-            const char* v = std::getenv("RT_SCENE_DEBUG");
+#endif
+            const char* v = std::getenv("NOVA64_RT_SCENE_DEBUG");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
             return v && v[0] != '0';
         }();
         if (kEnabled) {

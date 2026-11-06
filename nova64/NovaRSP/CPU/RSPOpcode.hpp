@@ -15,8 +15,10 @@ namespace Nova64::RSP {
 // RSP Instruction Word - Bitfield Union
 // Mirrors N64 RSP MIPS instruction encoding
 // ──────────────────────────────────────────────
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4201) // nameless struct/union
+#endif
 
 union RSPOpcode {
     uint32_t Value;
@@ -84,7 +86,9 @@ union RSPOpcode {
     constexpr explicit RSPOpcode(uint32_t v) : Value(v) {}
 };
 
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
 
 // ──────────────────────────────────────────────
 // Primary Opcodes

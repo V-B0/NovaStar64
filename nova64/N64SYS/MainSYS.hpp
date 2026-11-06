@@ -17,7 +17,7 @@
 #include "Memoryhandler/VideoInterfaceHandler.hpp"
 #include "Memoryhandler/RDRAMInterFaceHandler.hpp"
 #include "Memoryhandler/RDRAMRegHandler.hpp"
-#include "Memoryhandler/MIPSYInterfaceHandler.hpp"
+#include "Memoryhandler/MIPSYinterfacehandler.hpp"
 #include "Memoryhandler/PIInterFace.hpp"
 #include "Memoryhandler/SIInterfaceHandler.hpp"
 #include "Memoryhandler/SPregistersHandler.hpp"

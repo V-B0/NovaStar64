@@ -32,6 +32,18 @@ Run it again after a change and only what changed is rebuilt. The manual equival
 On macOS the build signs the binary and sets its Finder icon (see
 `scripts/set-macos-file-icon.sh`); there is no separate `codesign` step.
 
+The build is defined in three files under `nova64/`:
+
+| File | What goes in it |
+|---|---|
+| `CMakeLists.txt` | Options, compiler flags, the `nova64` target, the macOS post-build step |
+| `cmake/Sources.cmake` | NovaStar64's own source files, grouped by component. A new `.cpp` file is added here by hand |
+| `cmake/Dependencies.cmake` | Every third-party library, each pinned to an exact tag or commit. Bump one in its own commit |
+
+Write `#include` paths with exactly the capitalisation of the file on disk. macOS and
+Windows don't care, Linux does, and Clang warns (`-Wnonportable-include-path`) when
+they differ.
+
 You need your own ROM images to test with. None are included, and `roms/` and
 `saves/` are git-ignored — keep it that way.
 
@@ -40,8 +52,8 @@ directories to subsystems.
 
 ## Pull requests
 
-- **Branches.** `main` is the release branch: stable, playable builds. `devbuild`
-  is active development; target pull requests there unless asked otherwise.
+- **Branches.** `main` is the only long-lived branch and should always build and
+  play. Branch from it and open the pull request against it.
 - **Keep them focused.** Several small reviewable pull requests beat one large
   one. A dependency bump goes in its own commit, with the reason.
 - **Say what you tested** in the description — which ROMs, which engine
@@ -175,7 +187,7 @@ tail -1 /tmp/t.trace     # column 2 is Count in hex; expect ≈ 600 * 781250 = 0
 
 ### What still differs between the engines
 
-Measured on 2026-09-18, headless, `NOVA64_TURBO=1`, current `devbuild`:
+Measured on 2026-09-18, headless, `NOVA64_TURBO=1`:
 
 - **Super Mario 64**, 1,200 frames: 5 frames differ, all in the CP0 digest only —
   PC, GPRs and FPRs match — and each resolves by the next sample.
@@ -357,8 +369,8 @@ live.
 ## Diagnostic variables
 
 Diagnostics are environment-variable-gated so they cost nothing in normal use.
-These are the ones you are most likely to want; `grep -r NOVA64_ nova64/` lists
-the rest.
+Every variable the code reads starts with `NOVA64_` and is listed here; if you add
+one, add its row.
 
 | Variable | Effect |
 |---|---|
@@ -391,6 +403,15 @@ the rest.
 | `NOVA64_RT_SUN=<x>` / `NOVA64_RT_BLUR=<px>` / `NOVA64_RT_SHADOW=<x>` / `NOVA64_RT_EXPOSURE=<x>` | Shadow softness, denoise radius, shadow strength and exposure |
 | `NOVA64_RT_REFL=0` | Turn the ray tracer's reflections off |
 | `NOVA64_LOG_LEVEL=<0-6>` | Override the log verbosity |
+| `NOVA64_VIDEO_LOG=<file>` / `NOVA64_VIDEO_LOG_LEVEL=trace\|debug\|info\|warning\|error` | Also write the graphics plugin's log to a file, and choose how much it says (default `info`) |
+| `NOVA64_DEBUG_OUTPUT_MODE=1-7` | Show one shader input instead of the final colour: 1 texel 0, 2 shade, 3 primitive colour, 4 environment colour, 5 UV, 6 depth, 7 alpha |
+| `NOVA64_IGNORE_QUIT=1` | Ignore window-close events, so an unattended capture isn't ended by a stray one |
+| `NOVA64_RT_EDGE_N=<x>` / `NOVA64_RT_EDGE_D=<x>` | Ray tracer denoise edge sensitivity: normal power (default 32) and depth threshold (default 0.02) |
+| `NOVA64_RT_MIN_TRIS=<n>` / `NOVA64_RT_MIN_DIAG=<x>` | Skip the ray tracer for scenes smaller than this (default 32 triangles, no size limit): an escape hatch for menus that misbehave |
+| `NOVA64_RT_SCENE_DEBUG=1` / `NOVA64_MLE_DEBUG=1` | Log the ray tracer's per-frame triangle counts / the renderer's accuracy-level decisions |
+| `NOVA64_F3D_VTRACE=1` | Log F3D vertex indices that fall outside the 16-entry vertex cache |
+| `NOVA64_WATCH_ADDR=<hex>` + `_LEN=<hex bytes>` `_FILE=<path>` `_FIRST=1` `_VAL=<hex>` `_MASK=<hex>` `_DUMP_INSN` | Log every CPU write and DMA that touches an address range (KSEG0, KSEG1 or physical), with the writing PC. `_FIRST` logs only the first write to each address, `_VAL`/`_MASK` filter by value. Details in the comment above `WatchConfig` in `Vmem.cpp` |
+| `NOVA64_DUMP_RDRAM=<path>` | Dump all 8 MB of RDRAM to a file when the program exits; compare a good run with a bad one |
 
 Gate any new tracing the same way, and remove it once the bug it was written for
 is fixed.

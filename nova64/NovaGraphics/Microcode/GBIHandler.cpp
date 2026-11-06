@@ -1186,14 +1186,8 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // reject these via subpixel coverage but our float pipeline rounds
     // them into visible 1-pixel lines.  Suspected cause of Bug A
     // (SM64 tree extra triangle near Bob-omb trees).
-    if (v0 == v1 || v1 == v2 || v0 == v2) {
-        static const bool s_rejDbg1 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
-        if (s_rejDbg1)
-            std::fprintf(stderr, "[REJ] degenerate idx=(%d,%d,%d) cmb=0x%llX\n",
-                         v0, v1, v2,
-                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
+    if (v0 == v1 || v1 == v2 || v0 == v2)
         return;
-    }
 
     // Bug A diagnostic (NOVA64_TRI_DUMP=min,max): unconditionally dump every
     // triangle's NDC position, vertex color, geometry mode, and vertex-cache
@@ -1222,48 +1216,6 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             long h = hb.fetch_add(1, std::memory_order_relaxed);
             if ((h % 100000) == 0)
                 std::fprintf(stderr, "[TRI-HB] call=%ld present(VI)=%ld\n", h, present);
-        }
-        // Cutout-billboard trap (NOVA64_TRI_TEXEDGE=min,max): logs ONLY
-        // TEX_EDGE (CVG_X_ALPHA) triangles — trees/sprites — with positions
-        // AND texture coords, to catch the "squished duplicate tree texture"
-        // triangle without needing the autoplayer to frame a tree.
-        {
-            static const long teMin = []() -> long {
-                const char* v = std::getenv("NOVA64_TRI_TEXEDGE");
-                return v ? std::strtol(v, nullptr, 10) : -1L;
-            }();
-            static const long teMax = []() -> long {
-                const char* v = std::getenv("NOVA64_TRI_TEXEDGE");
-                if (!v) return -1L;
-                const char* comma = std::strchr(v, ',');
-                return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
-            }();
-            if (teMin >= 0 && present >= teMin && present <= teMax &&
-                (ctx.state->otherModeL & 0x1000) != 0) {
-                const auto& a = geo.vertexBuffer[v0];
-                const auto& b = geo.vertexBuffer[v1];
-                const auto& c = geo.vertexBuffer[v2];
-                auto nd = [](const TransformedVertex& tv, int ax) -> float {
-                    float w = tv.position[3];
-                    return (std::fabs(w) < 1e-8f) ? 0.0f : tv.position[ax] / w;
-                };
-                const auto& tile = ctx.state->tiles[geo.texture.tileIndex & 7];
-                std::fprintf(stderr,
-                    "[TEXEDGE] p=%ld dl=%llu idx=(%d,%d,%d) gm=0x%X oml=0x%X cmb=0x%llX "
-                    "p0=(%.3f,%.3f,%.3f) p1=(%.3f,%.3f,%.3f) p2=(%.3f,%.3f,%.3f) "
-                    "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
-                    "tile=%u cmS=%u mS=%u cmT=%u mT=%u sz=(%.0f,%.0f)\n",
-                    present, static_cast<unsigned long long>(geo.frameSeq), v0, v1, v2,
-                    geo.geometryMode, ctx.state->otherModeL,
-                    static_cast<unsigned long long>(ctx.state->combineModeRaw),
-                    nd(a,0), nd(a,1), nd(a,2), nd(b,0), nd(b,1), nd(b,2), nd(c,0), nd(c,1), nd(c,2),
-                    a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1],
-                    c.texCoord[0], c.texCoord[1],
-                    static_cast<unsigned>(geo.texture.tileIndex),
-                    static_cast<unsigned>(tile.clampS), static_cast<unsigned>(tile.maskS),
-                    static_cast<unsigned>(tile.clampT), static_cast<unsigned>(tile.maskT),
-                    static_cast<float>(tile.GetWidth()), static_cast<float>(tile.GetHeight()));
-            }
         }
         if (dumpMin >= 0 && dumpMax >= dumpMin &&
             present >= dumpMin && present <= dumpMax &&
@@ -1304,60 +1256,6 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                 dumpTile.tmemAddr, dumpTile.line, static_cast<unsigned>(dumpTile.palette));
         }
 
-        // Screen-coverage dump (NOVA64_TRI_BIGTEX=1): fires on ANY textured
-        // triangle whose NDC bounding box spans more than half the screen on
-        // either axis, regardless of VI timing. Avoids needing to guess which
-        // VI range a specific on-screen moment (e.g. a large close-up surface
-        // like the moon) falls into -- big textured triangles are rare enough
-        // in normal gameplay that a small independent budget won't starve.
-        {
-            static const bool bigTexEnabled = std::getenv("NOVA64_TRI_BIGTEX") != nullptr;
-            static std::atomic<long> bigTexLinesLeft{2000000};
-            if (bigTexEnabled && geo.texture.enabled &&
-                bigTexLinesLeft.load(std::memory_order_relaxed) > 0) {
-                const auto& a = geo.vertexBuffer[v0];
-                const auto& b = geo.vertexBuffer[v1];
-                const auto& c = geo.vertexBuffer[v2];
-                auto ndcOf = [](const TransformedVertex& tv, int axis) -> float {
-                    float w = tv.position[3];
-                    if (std::fabs(w) < 1e-8f) return 0.0f;
-                    return tv.position[axis] / w;
-                };
-                float xs[3] = {ndcOf(a,0), ndcOf(b,0), ndcOf(c,0)};
-                float ys[3] = {ndcOf(a,1), ndcOf(b,1), ndcOf(c,1)};
-                float xspan = std::max({xs[0],xs[1],xs[2]}) - std::min({xs[0],xs[1],xs[2]});
-                float yspan = std::max({ys[0],ys[1],ys[2]}) - std::min({ys[0],ys[1],ys[2]});
-                if ((xspan > 1.0f || yspan > 1.0f) &&
-                    bigTexLinesLeft.fetch_sub(1, std::memory_order_relaxed) > 0) {
-                    const auto& tile = ctx.state->tiles[geo.texture.tileIndex & 7];
-                    std::fprintf(stderr,
-                        "[TRI-BIGTEX] present=%ld idx=(%d,%d,%d) xspan=%.3f yspan=%.3f "
-                        "ndc0=(%.3f,%.3f) ndc1=(%.3f,%.3f) ndc2=(%.3f,%.3f) "
-                        "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
-                        "tile0=%u tileFmt=%u tileSz=%u tileWH=(%.0f,%.0f) tileSLTL=(%.1f,%.1f) tileSHTH=(%.1f,%.1f) tmem=%u line=%u pal=%u "
-                        "clampS=%u maskS=%u shiftS=%u clampT=%u maskT=%u shiftT=%u texEn=%d scaleST=(%u,%u) scaleFloat=(%.4f,%.4f) addr=0x%06X "
-                        "lit=%d geomMode=0x%X numLights=%d col0=(%.2f,%.2f,%.2f,%.2f) col1=(%.2f,%.2f,%.2f,%.2f) col2=(%.2f,%.2f,%.2f,%.2f)\n",
-                        present, v0, v1, v2, xspan, yspan,
-                        xs[0], ys[0], xs[1], ys[1], xs[2], ys[2],
-                        a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1], c.texCoord[0], c.texCoord[1],
-                        static_cast<unsigned>(geo.texture.tileIndex),
-                        static_cast<unsigned>(tile.format), static_cast<unsigned>(tile.size),
-                        static_cast<float>(tile.GetWidth()), static_cast<float>(tile.GetHeight()),
-                        tile.GetSL(), tile.GetTL(), tile.GetSH(), tile.GetTH(),
-                        tile.tmemAddr, tile.line, static_cast<unsigned>(tile.palette),
-                        static_cast<unsigned>(tile.clampS), static_cast<unsigned>(tile.maskS), static_cast<unsigned>(tile.shiftS),
-                        static_cast<unsigned>(tile.clampT), static_cast<unsigned>(tile.maskT), static_cast<unsigned>(tile.shiftT),
-                        geo.texture.enabled ? 1 : 0,
-                        static_cast<unsigned>(geo.texture.scaleS), static_cast<unsigned>(geo.texture.scaleT),
-                        geo.texture.GetScaleSFloat(), geo.texture.GetScaleTFloat(),
-                        ctx.state->textureImage.address & 0x7FFFFFu,
-                        (geo.geometryMode & G_LIGHTING) ? 1 : 0, geo.geometryMode, geo.numLights,
-                        a.color[0], a.color[1], a.color[2], a.color[3],
-                        b.color[0], b.color[1], b.color[2], b.color[3],
-                        c.color[0], c.color[1], c.color[2], c.color[3]);
-                }
-            }
-        }
     }
 
     // Backface culling in screen space (like GLideN64) for numerical stability.
@@ -1401,19 +1299,10 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
             // scaleY is negative (Y-flip), so the cross product sign is
             // flipped compared to NDC.  CULL_BACK rejects CCW screen-space
             // triangles (cross > 0), CULL_FRONT rejects CW (cross < 0).
-            static const bool s_rejDbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
             if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
-                if (s_rejDbg)
-                    std::fprintf(stderr, "[REJ] cullback idx=(%d,%d,%d) cross=%.3f cmb=0x%llX\n",
-                                 v0, v1, v2, cross,
-                                 (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                 return;
             }
             if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
-                if (s_rejDbg)
-                    std::fprintf(stderr, "[REJ] cullfront idx=(%d,%d,%d) cross=%.3f cmb=0x%llX\n",
-                                 v0, v1, v2, cross,
-                                 (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                 return;
             }
         }
@@ -1450,11 +1339,6 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         bool reject = (andFlags & CLIP_W) != 0 ||     // all behind camera
                       (!anyBehind && andFlags != 0);   // valid same-side out
         if (reject) {
-            static const bool s_rejDbg2 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
-            if (s_rejDbg2)
-                std::fprintf(stderr, "[REJ] andflags idx=(%d,%d,%d) flags=(0x%X,0x%X,0x%X) cmb=0x%llX\n",
-                             v0, v1, v2, tv0c.clipFlags, tv1c.clipFlags, tv2c.clipFlags,
-                             (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
             return;
         }
     }
@@ -1502,22 +1386,6 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
         
         ClippedPolygon poly;
         int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly, geo.clipRatio);
-
-        {
-            static const bool s_clipDbg = std::getenv("NOVA64_REJECT_DBG") != nullptr;
-            if (s_clipDbg) {
-                std::fprintf(stderr,
-                    "[CLIP] idx=(%d,%d,%d) flags=(0x%X,0x%X,0x%X) triOut=%d nVtx=%d "
-                    "in_w=(%.4f,%.4f,%.4f) in_z=(%.4f,%.4f,%.4f) in_x=(%.3f,%.3f,%.3f) in_y=(%.3f,%.3f,%.3f) cmb=0x%llX\n",
-                    v0, v1, v2, tv0c.clipFlags, tv1c.clipFlags, tv2c.clipFlags,
-                    triCount, poly.vertexCount,
-                    tv0c.position[3], tv1c.position[3], tv2c.position[3],
-                    tv0c.position[2], tv1c.position[2], tv2c.position[2],
-                    tv0c.position[0], tv1c.position[0], tv2c.position[0],
-                    tv0c.position[1], tv1c.position[1], tv2c.position[1],
-                    (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
-            }
-        }
 
         if (triCount > 0 && poly.vertexCount >= 3) {
             // Fan-triangulate clipped polygon (vertex 0 is the hub)
@@ -1579,19 +1447,10 @@ void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
                                 - (rv2.x - rv0.x) * (rv1.y - rv0.y);
                     // scaleY is negative → screen-space winding is flipped.
                     // CULL_BACK rejects CCW (cross > 0), CULL_FRONT rejects CW (cross < 0).
-                    static const bool s_rejDbg3 = std::getenv("NOVA64_REJECT_DBG") != nullptr;
                     if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
-                        if (s_rejDbg3)
-                            std::fprintf(stderr, "[REJ] postclip-cullback idx=(%d,%d,%d) fan=%d cross=%.3f v0=(%.1f,%.1f) v1=(%.1f,%.1f) v2=(%.1f,%.1f) cmb=0x%llX\n",
-                                         v0, v1, v2, i, cross, rv0.x, rv0.y, rv1.x, rv1.y, rv2.x, rv2.y,
-                                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                         continue;
                     }
                     if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
-                        if (s_rejDbg3)
-                            std::fprintf(stderr, "[REJ] postclip-cullfront idx=(%d,%d,%d) fan=%d cross=%.3f v0=(%.1f,%.1f) v1=(%.1f,%.1f) v2=(%.1f,%.1f) cmb=0x%llX\n",
-                                         v0, v1, v2, i, cross, rv0.x, rv0.y, rv1.x, rv1.y, rv2.x, rv2.y,
-                                         (unsigned long long)(ctx.state ? ctx.state->combineModeRaw : 0));
                         continue;
                     }
                 }

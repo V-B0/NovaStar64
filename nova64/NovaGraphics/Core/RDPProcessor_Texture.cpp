@@ -250,17 +250,6 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                     // Mark as clean so subsequent LoadBlocks in this and future frames
                     // don't retrigger BlitToTexture until the FB is rendered to again.
                     srcFB->gpuModified = false;
-                    static const bool s_snapTrace = std::getenv("NOVA64_SNAPSHOT_TRACE") != nullptr;
-                    if (s_snapTrace) {
-                        std::fprintf(stderr,
-                            "[SNAPSHOT-LB] slot=%u fbAddr=0x%06X fbSize=%ux%u drawCalls=%u triangles=%u frame=%llu\n",
-                            m_vkFBSnapshotIdx, srcFB->desc.address & 0x7FFFFF,
-                            srcFB->desc.width, srcFB->desc.height,
-                            srcFB->drawCallsSinceSwitch, srcFB->trianglesSinceSwitch,
-                            static_cast<unsigned long long>(m_state.frameCount));
-                    }
-                    srcFB->drawCallsSinceSwitch = 0;
-                    srcFB->trianglesSinceSwitch = 0;
                 }
             }
         }
@@ -456,37 +445,6 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
                  rawSrcFB ? rawSrcFB->desc.height : 0u,
                  rawSrcFB ? rawSrcFB->gpuModified : false,
                  g_fbManager.GetFBCount());
-    if ((address & 0x7FFFFF) >= 0x380000 && (address & 0x7FFFFF) <= 0x3B0000) {
-        static const bool s_fbDumpTrace = std::getenv("NOVA64_FBDUMP") != nullptr;
-        static uint32_t s_fbDumpCount = 0;
-        if (s_fbDumpTrace && s_fbDumpCount < 400) {
-            ++s_fbDumpCount;
-            // Report the SPECIFIC question that matters for the inventory-panel
-            // bug: was a framebuffer entry found at all for this read (not just
-            // "found but rejected for aliasing" like the old miss-only version)?
-            // If rawSrcFB is null here, the whole RDRAM-sync block below never
-            // runs regardless of any gpuModified/needsRdramResync flag state.
-            std::fprintf(stderr, "[FBDUMP] addr=0x%06X found=%d alias=%d fbAddr=0x%06X type=%d %ux%u gpuModified=%d needsRdramResync=%d\n",
-                         address & 0x7FFFFF, rawSrcFB != nullptr, canAliasSrcFB,
-                         rawSrcFB ? rawSrcFB->desc.address : 0u,
-                         rawSrcFB ? static_cast<int>(rawSrcFB->desc.type) : -1,
-                         rawSrcFB ? rawSrcFB->desc.width : 0u,
-                         rawSrcFB ? rawSrcFB->desc.height : 0u,
-                         rawSrcFB ? rawSrcFB->gpuModified : false,
-                         rawSrcFB ? rawSrcFB->needsRdramResync : false);
-            if (!rawSrcFB || !canAliasSrcFB) {
-                std::fprintf(stderr, "  registry (%u entries):\n", g_fbManager.GetFBCount());
-                for (uint32_t i = 0; i < g_fbManager.GetFBCount(); ++i) {
-                    GPUFramebuffer* fb = g_fbManager.GetFB(i);
-                    if (!fb) continue;
-                    std::fprintf(stderr, "  [%u] addr=0x%06X type=%d %ux%u gpuModified=%d lastUsedFrame=%llu\n",
-                                 i, fb->desc.address, static_cast<int>(fb->desc.type),
-                                 fb->desc.width, fb->desc.height, fb->gpuModified,
-                                 static_cast<unsigned long long>(fb->lastUsedFrame));
-                }
-            }
-        }
-    }
     if (srcFB && (srcFB->gpuModified || srcFB->needsRdramResync)) {
         MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
                      address & 0x7FFFFF,

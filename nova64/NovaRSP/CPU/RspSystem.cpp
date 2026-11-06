@@ -6,6 +6,7 @@
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
 
+#include <new>
 #include "RspSystem.hpp"
 #include "RSPCpu.hpp"
 #include "RSPRegisterHandler.hpp"
@@ -476,11 +477,14 @@ void CRSPSystem::BasicSyncCheck()
 void* CRSPSystem::operator new(size_t size)
 {
 #if defined(_WIN32)
-    return _aligned_malloc(size, 16);
+    void* ptr = _aligned_malloc(size, 16);
+    if (!ptr)
+        throw std::bad_alloc();   // operator new must not return null
+    return ptr;
 #else
     void* ptr = nullptr;
     if (posix_memalign(&ptr, 16, size) != 0)
-        return nullptr;
+        throw std::bad_alloc();
     return ptr;
 #endif
 }

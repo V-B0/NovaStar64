@@ -90,8 +90,10 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     if (!g_logger.IsEnabled(LogLevel::Info, LogSubsystem::Core)) {
         LoggerConfig logCfg;
         logCfg.consoleOutput = true;
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
         const char* videoLogPath = std::getenv("NOVA64_VIDEO_LOG");
         logCfg.fileOutput    = videoLogPath && videoLogPath[0] != '\0';
         if (logCfg.fileOutput) logCfg.logFilePath = videoLogPath;
@@ -100,7 +102,9 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         if (std::getenv("NOVA64_MM_RDP_TRACE")) {
             logCfg.subsystemLevels[static_cast<size_t>(LogSubsystem::RDP)] = LogLevel::Info;
         }
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
         g_logger.Init(logCfg);
     }
 
@@ -1234,7 +1238,7 @@ void VideoPlugin::UpdateScreen() {
 
     // Per-stage averages every 60 frames
     {
-        static double aSwap=0,aVI=0,aCompose=0,aPost=0,aImgui=0,aAlpha=0,aFlush=0,aRead=0,aFin=0,aBeg=0,aTotal=0;
+        static double aSwap=0,aCompose=0,aPost=0,aImgui=0,aAlpha=0,aFlush=0,aRead=0,aFin=0,aBeg=0,aTotal=0;
         static int aFrames=0;
         aSwap+=tSwap; aCompose+=tCompose; aPost+=tPost; aImgui+=tImgui;
         aAlpha+=tAlpha; aFlush+=tFlush; aRead+=tRead; aFin+=tFinish; aBeg+=tBegin; aTotal+=totalMs;
@@ -1647,10 +1651,14 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
 
     // Write as TGA (always available, no external deps)
     // TGA header
+#ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
+#endif
     FILE* fp = fopen(path.c_str(), "wb");
+#ifdef _MSC_VER
 #pragma warning(pop)
+#endif
     if (!fp) {
         LOG_ERROR("Screenshot failed — cannot open {}", path);
         return;

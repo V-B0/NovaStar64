@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "RspTypes.hpp"
+#include "RSPTypes.hpp"
 #include "RSPOpcode.hpp"
 #include <cstdint>
 #include <array>

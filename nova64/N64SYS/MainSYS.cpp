@@ -149,6 +149,9 @@ using SAVE_CHIP_TYPE = N64Types::SaveChipType;
 constexpr SAVE_CHIP_TYPE SAVE_CHIP_UNKNOWN = SAVE_CHIP_TYPE::Auto;
 
 // Helper macro for logging - uses existing TRACE_* macros
+#undef LOG_DEBUG
+#undef LOG_INFO
+#undef LOG_ERROR
 #define LOG_DEBUG(...)   TRACE_DEBUG(Trace::Module::Core, __VA_ARGS__)
 #define LOG_INFO(...)    TRACE_INFO(Trace::Module::Core, __VA_ARGS__)
 #define LOG_WARNING(...) TRACE_WARN(Trace::Module::Core, __VA_ARGS__)

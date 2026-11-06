@@ -48,16 +48,16 @@ uint32_t MipsMemoryVM::RegModValue = 0;
 // ============================================================================
 // Memory Write Watch (debug-only, env-var driven)
 // ----------------------------------------------------------------------------
-// NOVA_WATCH_ADDR  : hex (KSEG0 / KSEG1 / physical) start address. Required.
-// NOVA_WATCH_LEN   : hex bytes of range, default 1.
-// NOVA_WATCH_FILE  : output path; default stderr.
-// NOVA_WATCH_FIRST : if "1", log only the FIRST write to each 8-byte aligned
+// NOVA64_WATCH_ADDR  : hex (KSEG0 / KSEG1 / physical) start address. Required.
+// NOVA64_WATCH_LEN   : hex bytes of range, default 1.
+// NOVA64_WATCH_FILE  : output path; default stderr.
+// NOVA64_WATCH_FIRST : if "1", log only the FIRST write to each 8-byte aligned
 //                    address (huge noise reduction; surfaces fresh writes).
-// NOVA_WATCH_VAL   : hex value filter; only log writes whose value matches.
-// NOVA_WATCH_MASK  : hex mask applied before comparing to NOVA_WATCH_VAL
+// NOVA64_WATCH_VAL   : hex value filter; only log writes whose value matches.
+// NOVA64_WATCH_MASK  : hex mask applied before comparing to NOVA64_WATCH_VAL
 //                    (default ~0). Useful for "only log writes that look like
 //                    pointers" (mask=0xF0000000 val=0x80000000) etc.
-// NOVA_DUMP_RDRAM  : path. If set, the full 8 MB RDRAM is dumped here at
+// NOVA64_DUMP_RDRAM  : path. If set, the full 8 MB RDRAM is dumped here at
 //                    process exit. Take two runs (good vs bad) and `fc /b`.
 // ============================================================================
 namespace {
@@ -80,11 +80,11 @@ const WatchConfig& GetWatchConfig()
 {
     static WatchConfig cfg = []() {
         WatchConfig c;
-        const char* addrEnv = std::getenv("NOVA_WATCH_ADDR");
+        const char* addrEnv = std::getenv("NOVA64_WATCH_ADDR");
         if (addrEnv == nullptr || *addrEnv == '\0') return c;
         uint64_t addr = std::strtoull(addrEnv, nullptr, 16);
         uint64_t len  = 1;
-        const char* lenEnv = std::getenv("NOVA_WATCH_LEN");
+        const char* lenEnv = std::getenv("NOVA64_WATCH_LEN");
         if (lenEnv != nullptr && *lenEnv != '\0')
             len = std::strtoull(lenEnv, nullptr, 16);
         if (len == 0) return c;
@@ -95,7 +95,7 @@ const WatchConfig& GetWatchConfig()
         c.pStart  = pStart;
         c.pEnd    = pEnd;
 
-        const char* firstEnv = std::getenv("NOVA_WATCH_FIRST");
+        const char* firstEnv = std::getenv("NOVA64_WATCH_FIRST");
         if (firstEnv != nullptr && firstEnv[0] == '1')
         {
             c.first_only = true;
@@ -104,22 +104,22 @@ const WatchConfig& GetWatchConfig()
             c.seen.assign((slots + 7) / 8, 0);
         }
 
-        const char* valEnv = std::getenv("NOVA_WATCH_VAL");
+        const char* valEnv = std::getenv("NOVA64_WATCH_VAL");
         if (valEnv != nullptr && *valEnv != '\0')
         {
             c.val_filter = true;
             c.val_match  = std::strtoull(valEnv, nullptr, 16);
-            const char* maskEnv = std::getenv("NOVA_WATCH_MASK");
+            const char* maskEnv = std::getenv("NOVA64_WATCH_MASK");
             if (maskEnv != nullptr && *maskEnv != '\0')
                 c.val_mask = std::strtoull(maskEnv, nullptr, 16);
         }
 
-        const char* fileEnv = std::getenv("NOVA_WATCH_FILE");
+        const char* fileEnv = std::getenv("NOVA64_WATCH_FILE");
         if (fileEnv != nullptr && *fileEnv != '\0')
             c.out = std::fopen(fileEnv, "w");
         if (c.out == nullptr) c.out = stderr;
         std::fprintf(c.out,
-                     "[NOVA_WATCH] active: phys [0x%08X .. 0x%08X) first=%d val_filter=%d match=0x%llX mask=0x%llX\n",
+                     "[NOVA64_WATCH] active: phys [0x%08X .. 0x%08X) first=%d val_filter=%d match=0x%llX mask=0x%llX\n",
                      c.pStart, c.pEnd,
                      c.first_only ? 1 : 0,
                      c.val_filter ? 1 : 0,
@@ -154,7 +154,7 @@ bool MarkAndCheckFirst(uint32_t pAddr)
 }
 
 // Set from SW_Memory/etc each call (idempotent) so WatchStore can dump the
-// instruction word at the writing PC for NOVA_WATCH_DUMP_INSN diagnostics,
+// instruction word at the writing PC for NOVA64_WATCH_DUMP_INSN diagnostics,
 // without threading an extra parameter through every store-instruction path.
 uint8_t* g_watchRdramPtr = nullptr;
 uint32_t g_watchRdramSize = 0;
@@ -170,17 +170,17 @@ inline void WatchStore(uint32_t pAddr, unsigned size, uint64_t value, uint64_t p
     if (cfg.first_only && !MarkAndCheckFirst(pAddr))
         return;
     std::fprintf(cfg.out,
-                 "[NOVA_WATCH] PC=%016llX  S%c phys=0x%08X val=0x%016llX\n",
+                 "[NOVA64_WATCH] PC=%016llX  S%c phys=0x%08X val=0x%016llX\n",
                  static_cast<unsigned long long>(pc),
                  size == 1 ? 'B' : size == 2 ? 'H' : size == 4 ? 'W' : 'D',
                  pAddr,
                  static_cast<unsigned long long>(value));
 
-    static const bool s_dumpInsn = std::getenv("NOVA_WATCH_DUMP_INSN") != nullptr;
+    static const bool s_dumpInsn = std::getenv("NOVA64_WATCH_DUMP_INSN") != nullptr;
     if (s_dumpInsn && g_watchRdramPtr) {
         uint32_t pcPhys = static_cast<uint32_t>(pc) & 0x1FFFFFFF;
         if (pcPhys + 24 <= g_watchRdramSize && pcPhys >= 20) {
-            std::fprintf(cfg.out, "[NOVA_WATCH]   insn context @0x%08X:", pcPhys);
+            std::fprintf(cfg.out, "[NOVA64_WATCH]   insn context @0x%08X:", pcPhys);
             for (int32_t off = -20; off <= 20; off += 4) {
                 uint32_t a = pcPhys + static_cast<uint32_t>(off);
                 uint32_t word = *reinterpret_cast<const uint32_t*>(g_watchRdramPtr + a);
@@ -204,7 +204,7 @@ void WatchDMA(uint32_t pAddr, uint32_t length, const char* source)
     uint32_t hitStart = pAddr      > cfg.pStart ? pAddr      : cfg.pStart;
     uint32_t hitEnd   = end        < cfg.pEnd   ? end        : cfg.pEnd;
     std::fprintf(cfg.out,
-                 "[NOVA_WATCH] DMA %-3s phys=0x%08X len=0x%X (hit 0x%08X..0x%08X)\n",
+                 "[NOVA64_WATCH] DMA %-3s phys=0x%08X len=0x%X (hit 0x%08X..0x%08X)\n",
                  source ? source : "?",
                  pAddr, length, hitStart, hitEnd);
     std::fflush(cfg.out);
@@ -288,7 +288,7 @@ bool MipsMemoryVM::Initialize()
         return false;
     }
 
-    // Register an atexit handler that dumps RDRAM to NOVA_DUMP_RDRAM if set.
+    // Register an atexit handler that dumps RDRAM to NOVA64_DUMP_RDRAM if set.
     // Capturing the pointer + size in static state lets us do it without a
     // reference back to MipsMemoryVM at exit time.
     {
@@ -301,7 +301,7 @@ bool MipsMemoryVM::Initialize()
         {
             s_registered = true;
             std::atexit([]() {
-                const char* path = std::getenv("NOVA_DUMP_RDRAM");
+                const char* path = std::getenv("NOVA64_DUMP_RDRAM");
                 if (path == nullptr || *path == '\0') return;
                 if (s_dumpPtr == nullptr || s_dumpSize == 0) return;
                 FILE* f = std::fopen(path, "wb");

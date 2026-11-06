@@ -3,7 +3,7 @@
  * @brief SI Interface Handler declarations and types.
  */
 #pragma once
-#include "MIPSYInterfaceHandler.hpp"
+#include "MIPSYinterfacehandler.hpp"
 #include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
 #include "../../common/Span.hpp"

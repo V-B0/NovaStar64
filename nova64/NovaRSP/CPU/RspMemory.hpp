@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "RspTypes.hpp"
+#include "RSPTypes.hpp"
 #include <cstdint>
 
 namespace Nova64::RSP {

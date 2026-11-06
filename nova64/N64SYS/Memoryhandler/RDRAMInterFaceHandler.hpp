@@ -3,7 +3,7 @@
  * @brief RDRAM Inter Face Handler declarations and types.
  */
 #pragma once
-#include "MemoryHandler.hpp"
+#include "Memoryhandler.hpp"
 #include "../../common/log.hpp"
 #include "../../common/Span.hpp"
 #include <cstdint>

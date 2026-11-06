@@ -10,7 +10,7 @@
 #include "RSPInterpreterOps.hpp"
 #include "RSPRegisters.hpp"
 #include "RspPipelineStage.hpp"
-#include "RspTypes.hpp"
+#include "RSPTypes.hpp"
 #include <cstdint>
 #include <cstddef>
 #include <memory>

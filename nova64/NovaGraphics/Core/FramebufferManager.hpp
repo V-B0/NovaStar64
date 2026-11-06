@@ -131,8 +131,6 @@ struct GPUFramebuffer {
     // no longer describes it. See FramebufferManager::RdramUnchanged.
     uint64_t rdramFingerprint = 0;
     bool     hasFingerprint   = false;
-    uint32_t drawCallsSinceSwitch = 0;   // DIAGNOSTIC: FlushBatch calls since this FB was last snapshotted/switched
-    uint32_t trianglesSinceSwitch = 0;   // DIAGNOSTIC: triangle count in those draw calls
     uint64_t lastUsedFrame = 0;
     uint64_t lastColorClearedFrame = 0;  // Last frame the color buffer was cleared (for overscan)
     FramebufferDesc desc;

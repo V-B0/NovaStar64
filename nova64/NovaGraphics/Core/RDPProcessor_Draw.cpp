@@ -171,18 +171,6 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     // address as an auxiliary color buffer, so only the real clear value should
     // be intercepted here.
     constexpr uint32_t kN64DepthClearFillColor = 0xFFFCFFFCu;
-    {
-        static const bool s_cvDbg = std::getenv("NOVA64_CANVAS_DBG") != nullptr;
-        if (s_cvDbg && sameColorDepth) {
-            std::fprintf(stderr, "[ZCLR] fill-to-zbuf addr=0x%06X raw=0x%08X size=%d rect=(%.0f,%.0f)-(%.0f,%.0f) intercept=%d\n",
-                         m_state.rdp.colorImage.address & 0x7FFFFF,
-                         m_state.rdp.fillColorRaw,
-                         static_cast<int>(m_state.rdp.colorImage.size),
-                         x0, y0, x1, y1,
-                         (m_state.rdp.fillColorRaw == kN64DepthClearFillColor &&
-                          m_state.rdp.colorImage.size == ImageSize::Bpp16) ? 1 : 0);
-        }
-    }
     if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
         m_state.rdp.colorImage.size == ImageSize::Bpp16 &&
         m_state.rdp.fillColorRaw == kN64DepthClearFillColor) {
@@ -280,36 +268,6 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
                        tri.edge.xh, tri.edge.xm, tri.edge.xl,
                        tri.edge.dxhDy, tri.edge.dxmDy, tri.edge.dxlDy,
                        (int)tri.hasShade, (int)tri.hasTexture, (int)tri.hasDepth);
-        }
-    }
-
-    // NOVA64_GLYPH_DUMP: dump small textured triangles (dialog-font-glyph
-    // candidates) with their texture T edge coefficients + tile size, to
-    // diagnose the vertically-flipped dialog font.
-    {
-        static const bool s_glyphDump = []() {
-            const char* v = std::getenv("NOVA64_GLYPH_DUMP");
-            return v && v[0] && v[0] != '0';
-        }();
-        if (s_glyphDump && tri.hasTexture) {
-            const auto& tl = m_state.rdp.tiles[tri.tileIndex & 7];
-            int th = (static_cast<int>(tl.th) - static_cast<int>(tl.tl)) >> 2; // texels
-            int twd = (static_cast<int>(tl.sh) - static_cast<int>(tl.sl)) >> 2;
-            float scrH = static_cast<float>(tri.edge.yl - tri.edge.yh);
-            if (th >= 0 && th <= 32 && twd >= 0 && twd <= 32 && scrH < 48.0f) {
-                static std::atomic<int> n{0};
-                if (n.fetch_add(1, std::memory_order_relaxed) < 400) {
-                    bool persp = (m_state.rdp.otherModeH & OTHERMODE_TEXTPERSP) != 0;
-                    std::fprintf(stderr,
-                        "[GLYPH] tile=%d texWxH=%dx%d scrY=[%.1f..%.1f] persp=%d "
-                        "S(base=%.1f dDe=%.3f dDx=%.3f) T(base=%.1f dDe=%.3f dDx=%.3f) "
-                        "tl_sl=%d tl_tl=%d fmt=%d siz=%d\n",
-                        tri.tileIndex, twd, th, (float)tri.edge.yh, (float)tri.edge.yl, (int)persp,
-                        (float)tri.texture.s, (float)tri.texture.dsDe, (float)tri.texture.dsDx,
-                        (float)tri.texture.t, (float)tri.texture.dtDe, (float)tri.texture.dtDx,
-                        (int)tl.sl, (int)tl.tl, (int)tl.format, (int)tl.size);
-                }
-            }
         }
     }
 
@@ -490,48 +448,6 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
 void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo) {
     if (v0 == v1 || v1 == v2 || v2 == v0) return;
     if (m_batch.IsFull()) FlushBatch();
-
-    // NOVA64_GLYPH_DUMP: settle which path draws in-game + dump small textured
-    // triangles' (screenY, T) so we can see if texture-T is inverted vs screen
-    // Y for the dialog font (the vertically-flipped glyphs).
-    {
-        static const bool s_glyphDump = []() {
-            const char* v = std::getenv("NOVA64_GLYPH_DUMP");
-            return v && v[0] && v[0] != '0';
-        }();
-        if (s_glyphDump) {
-            long curVI = g_presentIndex.load(std::memory_order_relaxed);
-            static std::atomic<long> hb{0};
-            long h = hb.fetch_add(1, std::memory_order_relaxed);
-            if ((h % 20000) == 0)
-                std::fprintf(stderr, "[HLETRI-HB] call=%ld VI=%ld\n", h, curVI);
-            // Only dump once we're past the intro (dialog appears ~VI 3500+),
-            // and only true glyph-sized tiles (font chars are <=16 px).
-            if (curVI >= 3000 && geo.texture.enabled) {
-                const auto& tile = m_state.rdp.tiles[geo.texture.tileIndex & 7];
-                int th = (static_cast<int>(tile.th) - static_cast<int>(tile.tl)) >> 2;
-                int tw = (static_cast<int>(tile.sh) - static_cast<int>(tile.sl)) >> 2;
-                if (th >= 4 && th <= 20 && tw >= 2 && tw <= 20) {
-                    static std::atomic<int> n{0};
-                    if (n.fetch_add(1, std::memory_order_relaxed) < 400) {
-                        auto sy = [&](int idx) {
-                            const auto& tv = geo.vertexBuffer[idx];
-                            if (tv.modifiedXY) return tv.screenY;
-                            float invW = (tv.position[3]!=0.0f)?1.0f/tv.position[3]:1.0f;
-                            return tv.position[1]*invW*geo.viewport.scaleY+geo.viewport.transY;
-                        };
-                        const auto& a=geo.vertexBuffer[v0]; const auto& b=geo.vertexBuffer[v1]; const auto& c=geo.vertexBuffer[v2];
-                        std::fprintf(stderr,
-                            "[GLYPH] VI=%ld tile=%d texWxH=%dx%d scaleT=%.3f "
-                            "v0(sy=%.1f T=%.3f) v1(sy=%.1f T=%.3f) v2(sy=%.1f T=%.3f)\n",
-                            g_presentIndex.load(std::memory_order_relaxed),
-                            geo.texture.tileIndex, tw, th, geo.texture.GetScaleTFloat(),
-                            sy(v0), a.texCoord[1], sy(v1), b.texCoord[1], sy(v2), c.texCoord[1]);
-                    }
-                }
-            }
-        }
-    }
 
     auto makeVert = [&](int idx) -> RenderBatch::Vertex {
         const auto& tv = geo.vertexBuffer[idx];
@@ -1418,7 +1334,7 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         mix((static_cast<uint64_t>(tile.format) << 8) | tile.size | (static_cast<uint64_t>(tile.palette) << 16) | (static_cast<uint64_t>(tlutType) << 24));
         mix((static_cast<uint64_t>(m_state.rdp.tmemLoadType[slot]) << 32) | m_state.rdp.tmemLoadDxt[slot]);
         mix((static_cast<uint64_t>(m_state.rdp.tmemLoadWidth[slot]) << 32) | (static_cast<uint64_t>(m_state.rdp.tmemLoadHeight[slot]) << 16) | m_state.rdp.tmemLoadTexWidth[slot]);
-        mix((static_cast<uint64_t>(tile.line) << 32) | (static_cast<uint32_t>(tile.sl) << 8) ^ static_cast<uint32_t>(tile.sh));
+        mix((static_cast<uint64_t>(tile.line) << 32) | ((static_cast<uint32_t>(tile.sl) << 8) ^ static_cast<uint32_t>(tile.sh)));
         mix((static_cast<uint64_t>(tile.maskS) << 24) | (static_cast<uint64_t>(tile.maskT) << 16) | (static_cast<uint64_t>(tile.clampS) << 8) | tile.clampT);
 
         auto memo = m_hiResIdMemo.find(memoKey);
