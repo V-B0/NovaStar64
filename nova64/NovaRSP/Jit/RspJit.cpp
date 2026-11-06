@@ -229,18 +229,24 @@ void RspJit::Run()
     ctx.regs   = &reg;
 
     uint32_t pc = spPc & 0xFFC;
+    BlockFn* table = m_Active->blocks.data();
+    uint64_t ran = 0;
     while (RSP_Running) {
-        BlockFn fn = Lookup(pc);
+        BlockFn fn = table[pc >> 2];
         if (!fn) {
-            // Something this recompiler can't handle. The interpreter picks up
-            // exactly where we are and finishes the task.
-            spPc = pc;
-            ++m_Stats.interpreterRuns;
-            m_System.ExecuteOps(0xFFFFFFFFu, 0xFFFFFFFFu);
-            return;
+            fn = Lookup(pc);          // compiles it
+            if (!fn) {
+                // Something this recompiler can't handle. The interpreter picks up
+                // exactly where we are and finishes the task.
+                spPc = pc;
+                ++m_Stats.interpreterRuns;
+                m_Stats.blocksRun += ran;
+                m_System.ExecuteOps(0xFFFFFFFFu, 0xFFFFFFFFu);
+                return;
+            }
         }
         pc = fn(&ctx) & 0xFFC;
-        ++m_Stats.blocksRun;
+        ++ran;
 
         if (m_ImemDirty) {
             // An SP DMA rewrote IMEM while the block ran: carry on with the code
@@ -248,9 +254,11 @@ void RspJit::Run()
             CodeSet* next = SelectSet(HashImem());
             if (next != m_Active) ++m_Stats.setSwitches;
             m_Active    = next;
+            table       = m_Active->blocks.data();
             m_ImemDirty = false;
         }
     }
+    m_Stats.blocksRun += ran;
     spPc = pc;
 }
 

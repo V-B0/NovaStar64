@@ -11,7 +11,7 @@ microcode to native code and runs it instead.
 | Recompiler runs on | AArch64 (Apple Silicon) and x86-64 |
 | Pick one | Launcher: Settings → Emulation → RSP engine. Or `--rsp-recompiler` / `--rsp-interpreter`, or `NOVA64_RSP_ENGINE=recompiler\|interpreter` |
 | Results | Identical to the interpreter's, down to every register, memory byte and flag (see [Verification](#verification)) |
-| Speed | The RSP itself runs about 4x faster (SM64 in LLE, M4 Pro: 5.2 s → 1.3 s per 2,400 frames; Majora's Mask 2.0 s → 0.5 s) |
+| Speed | The RSP itself runs about 5x faster (SM64 in LLE, M4 Pro: 5.2 s → 1.0 s per 2,400 frames; Majora's Mask 2.0 s → 0.5 s) |
 
 The rest of the cost of LLE is the RDP drawing what the RSP hands it, which this does not change. `NOVA64_RSP_TIME=1`
 prints the two separately. In HLE mode (the default rendering mode) the games tested never run the RSP engine at all,
@@ -85,6 +85,6 @@ self-test on every push.
 
 * The kernels use GCC/Clang vector types where they exist. Elsewhere (MSVC) they use `Lanes<>`
   (`RspSimdLanes.hpp`), the same operators written as plain loops, which is correct everywhere and about half as fast
-  (SM64 in LLE: the RSP takes 1.9 s instead of 1.1 s, against 5.2 s on the interpreter). `-DNOVA64_RSP_PORTABLE_KERNELS=ON`
+  (SM64 in LLE: the RSP takes 1.9 s instead of 1.0 s, against 5.2 s on the interpreter). `-DNOVA64_RSP_PORTABLE_KERNELS=ON`
   forces that path on a Clang machine so it can be run through `--rsp-selftest`; CI does this on macOS.
 * Platforms without an emitter (32-bit, RISC-V, ...) use the interpreter automatically.
