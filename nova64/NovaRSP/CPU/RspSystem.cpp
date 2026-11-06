@@ -648,6 +648,20 @@ struct RunTimer {
 RunTimer g_runTimer;
 }
 
+void CRSPSystem::ExecuteMfc0(uint32_t word)
+{
+    m_OpCode.Value = word;
+    m_Op.Cop0_MF();
+    m_Reg.m_GPR[0].UW = 0;
+}
+
+void CRSPSystem::ExecuteMtc0(uint32_t word)
+{
+    m_OpCode.Value = word;
+    m_Op.Cop0_MT();
+    m_Reg.m_GPR[0].UW = 0;
+}
+
 void CRSPSystem::Run(uint32_t cycles)
 {
     if (g_runTimer.enabled) {

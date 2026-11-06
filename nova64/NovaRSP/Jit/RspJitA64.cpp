@@ -95,7 +95,7 @@ private:
     {
         m_a.mov(a::x0, kSys);
         m_a.mov(a::w1, asmjit::Imm(word));
-        m_a.mov(a::x16, asmjit::Imm(reinterpret_cast<uint64_t>(&ExecuteOneOnInterpreter)));
+        m_a.mov(a::x16, asmjit::Imm(reinterpret_cast<uint64_t>(InterpreterHelperFor(word))));
         m_a.blr(a::x16);
     }
 

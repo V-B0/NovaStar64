@@ -106,7 +106,7 @@ private:
     {
         m_a.mov(kArg0, kSys);
         m_a.mov(kArg1.r32(), asmjit::Imm(word));
-        CallAbsolute(reinterpret_cast<const void*>(&ExecuteOneOnInterpreter));
+        CallAbsolute(reinterpret_cast<const void*>(InterpreterHelperFor(word)));
     }
 
     // eax = (gpr[base] + offset) & 0xFFF, the DMEM address a load or store uses.

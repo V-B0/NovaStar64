@@ -55,10 +55,32 @@ void PrintFallbacks()
 }
 } // namespace
 
-void ExecuteOneOnInterpreter(CRSPSystem* sys, uint32_t word)
+static void ExecuteOneOnInterpreter(CRSPSystem* sys, uint32_t word)
 {
     if (g_countFallbacks) ++g_fallbackCount[FallbackKey(word)];
     sys->ExecuteOne(word);
+}
+
+static void ExecuteMfc0OnInterpreter(CRSPSystem* sys, uint32_t word)
+{
+    if (g_countFallbacks) ++g_fallbackCount[FallbackKey(word)];
+    sys->ExecuteMfc0(word);
+}
+
+static void ExecuteMtc0OnInterpreter(CRSPSystem* sys, uint32_t word)
+{
+    if (g_countFallbacks) ++g_fallbackCount[FallbackKey(word)];
+    sys->ExecuteMtc0(word);
+}
+
+InterpreterHelper InterpreterHelperFor(uint32_t word)
+{
+    if ((word >> 26) == 0x10) {               // COP0
+        const uint32_t rs = (word >> 21) & 31;
+        if (rs == 0) return &ExecuteMfc0OnInterpreter;
+        if (rs == 4) return &ExecuteMtc0OnInterpreter;
+    }
+    return &ExecuteOneOnInterpreter;
 }
 
 bool RspJit::Available()

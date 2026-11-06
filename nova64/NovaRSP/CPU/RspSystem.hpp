@@ -100,6 +100,12 @@ public:
     /// Control-transfer instructions are not for this: they need the pipeline state.
     void      ExecuteOne(uint32_t word);
 
+    /// MFC0 and MTC0 without the opcode-table walk ExecuteOne does. They are the
+    /// only instructions the recompiler still hands to the interpreter in numbers
+    /// (the microcode polls and programs the SP and DPC registers constantly).
+    void      ExecuteMfc0(uint32_t word);
+    void      ExecuteMtc0(uint32_t word);
+
     void      SetEngine(RSPEngine engine) { m_Engine = engine; }
     [[nodiscard]] RSPEngine GetEngine() const { return m_Engine; }
 

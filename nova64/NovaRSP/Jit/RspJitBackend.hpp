@@ -70,8 +70,11 @@ public:
 /// The backend for this machine, or nullptr if there is none.
 std::unique_ptr<Backend> CreateBackend();
 
-/// Runs one instruction on the interpreter. Compiled code calls this for
-/// everything it doesn't translate itself.
-void ExecuteOneOnInterpreter(CRSPSystem* sys, uint32_t word);
+/// What compiled code calls to run one instruction on the interpreter.
+using InterpreterHelper = void (*)(CRSPSystem* sys, uint32_t word);
+
+/// The helper for `word`: a direct one for MFC0 and MTC0, which are executed constantly,
+/// and the general one (which finds the instruction through the opcode tables) otherwise.
+InterpreterHelper InterpreterHelperFor(uint32_t word);
 
 } // namespace Nova64::RSP::Jit
