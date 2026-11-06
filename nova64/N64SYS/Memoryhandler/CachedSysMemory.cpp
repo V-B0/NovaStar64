@@ -545,7 +545,7 @@ void CachedSysMemory::ProcessBufferManagerControl()
         // Get DMA parameters from ASIC registers
         uint32_t dmaAddress = regs.ASIC_CUR_ADDR & 0x00FFFFFF;  // 24-bit RDRAM address
         uint32_t sectorByte = regs.ASIC_SEC_BYTE & 0xFF;
-        uint32_t hostSecByte = regs.ASIC_HOST_SECBYTE & 0xFF;
+        [[maybe_unused]] uint32_t hostSecByte = regs.ASIC_HOST_SECBYTE & 0xFF;
         
         // Calculate transfer length (typically one block = 256 bytes)
         uint32_t blockLength = (bmCtl >> 16) & 0x7F;  // Block count in control register

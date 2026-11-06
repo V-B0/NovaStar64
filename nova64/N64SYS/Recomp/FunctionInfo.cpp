@@ -763,7 +763,7 @@ void FunctionManager::profile_all() {
     
     // Collect profiling data from all functions
     for (const auto& [id, entry] : functions_) {
-        const auto& stats = entry.function->statistics();
+        [[maybe_unused]] const auto& stats = entry.function->statistics();
         // Would aggregate profiling data
     }
 }

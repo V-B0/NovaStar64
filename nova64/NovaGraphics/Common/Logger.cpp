@@ -23,6 +23,7 @@
     #define NOMINMAX
     #include <windows.h>
 #else
+    #include <pthread.h>
     #include <unistd.h>
     #include <sys/syscall.h>
 #endif
@@ -216,8 +217,14 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line,
     entry.timestamp   = std::chrono::steady_clock::now();
     entry.frameNumber = m_frameNumber.load(std::memory_order_relaxed);
 
-#ifdef _WIN32
+#if defined(_WIN32)
     entry.threadId = GetCurrentThreadId();
+#elif defined(__APPLE__)
+    {
+        uint64_t tid = 0;   // syscall(SYS_gettid) is deprecated on macOS; this is the supported call
+        pthread_threadid_np(nullptr, &tid);
+        entry.threadId = static_cast<uint32_t>(tid);
+    }
 #else
     entry.threadId = static_cast<uint32_t>(syscall(SYS_gettid));
 #endif

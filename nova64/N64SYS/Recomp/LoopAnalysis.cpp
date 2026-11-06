@@ -897,7 +897,7 @@ void LoopAnalysis::SetupEnterSection(CodeSection* section, bool bRecursive)
 
     // Recursively process successor sections
     const auto& successors = section->successors();
-    for (const auto& succId : successors)
+    for ([[maybe_unused]] const auto& succId : successors)
     {
         // We would need to resolve SectionId to CodeSection* here
         // For now, the main analysis in CheckSectionRegisterUsage handles

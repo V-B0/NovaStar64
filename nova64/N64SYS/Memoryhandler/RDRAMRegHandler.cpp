@@ -13,7 +13,6 @@
 // Range: 0x03F00000 - 0x03FFFFFF
 constexpr uint32_t RDRAM_REGS_BASE = 0x03F00000;
 constexpr uint32_t RDRAM_REGS_END  = 0x03FFFFFF;
-constexpr uint32_t RDRAM_REGS_MASK = 0x000FFFFF; // 1MB Window
 
 RDRAMRegistersHandler::RDRAMRegistersHandler(CRegisters& registers, const Config& config)
     : m_registers(registers), m_config(config)
@@ -181,6 +180,7 @@ void RDRAMRegistersHandler::write_device_register(size_t device_index,
                  device.manufacturer = static_cast<RDRAM::Manufacturer>(temp);
              }
              break;
+        default: break;
     }
     
     log_device_access(device_index, reg, value, true);
@@ -219,6 +219,7 @@ void RDRAMRegistersHandler::log_device_access(size_t device_index,
         case RDRAM::DeviceRegister::MIN_INTERVAL: reg_name = "MIN_INTERVAL"; break;
         case RDRAM::DeviceRegister::ADDR_SELECT: reg_name = "ADDR_SELECT"; break;
         case RDRAM::DeviceRegister::DEVICE_MANUF: reg_name = "DEVICE_MANUF"; break;
+        default: break;
     }
     
     Log::debugf("RDRAMDev[%zu] %s %s: 0x%08X", device_index, op, reg_name, value);

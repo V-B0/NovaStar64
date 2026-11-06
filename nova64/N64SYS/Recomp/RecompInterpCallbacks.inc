@@ -1847,7 +1847,7 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
         float fval = static_cast<float>(fs);
         uint32_t result_bits;
         std::memcpy(&result_bits, &fval, 4);
-        uint32_t abs_bits = result_bits & 0x7FFFFFFFu;
+        [[maybe_unused]] uint32_t abs_bits = result_bits & 0x7FFFFFFFu;
         // Detect underflow: result is zero or denorm, but input was nonzero
         bool result_is_subnormal_or_zero = ((result_bits & 0x7F800000u) == 0);
         if (result_is_subnormal_or_zero && fs != 0.0) {

@@ -66,7 +66,7 @@ std::string Timestamp()
 
     char buffer[32];
     if (std::strftime(buffer, sizeof(buffer), "[%Y-%m-%d %H:%M:%S]", &local) == 0) {
-        return "[????-??-?? ??:??:??]";
+        return "[\?\?\?\?-\?\?-\?\? \?\?:\?\?:\?\?]";
     }
     return buffer;
 }
@@ -222,7 +222,7 @@ bool open_log_file(const std::string& filename, bool append)
     // Opening ReadWrite starts at offset 0, so appending has to seek past
     // whatever is already in the file.
     if (append) {
-        Logging::log_file.seek(0, FileSystem::SeekOrigin::End);
+        (void)Logging::log_file.seek(0, FileSystem::SeekOrigin::End);
     }
 
     state.fileOutput = true;

@@ -48,11 +48,6 @@ namespace MIMode {
 // ============================================================================
 
 namespace MIIntr {
-    constexpr uint32_t SP            = 0x01;    // SP interrupt
-    constexpr uint32_t SI            = 0x02;    // SI interrupt
-    constexpr uint32_t AI            = 0x04;    // AI interrupt
-    constexpr uint32_t VI            = 0x08;    // VI interrupt
-    constexpr uint32_t PI            = 0x10;    // PI interrupt
     constexpr uint32_t DP            = 0x20;    // DP interrupt
 }
 

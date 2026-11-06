@@ -244,6 +244,8 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC)
             *m_SP_STATUS_REG |= SPStatus::Halt;
             RSP_Running = 0;
             break;
+        default:   // the recompiler's pipeline stages never reach the interpreter
+            break;
         }
     }
 

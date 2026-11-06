@@ -108,13 +108,13 @@ private:
     // SP registers
     uint32_t*& m_sp_mem_addr;
     uint32_t*& m_sp_dram_addr;
-    uint32_t*& m_sp_rd_length;
-    uint32_t*& m_sp_wr_length;
+    [[maybe_unused]] uint32_t*& m_sp_rd_length;
+    [[maybe_unused]] uint32_t*& m_sp_wr_length;
     uint32_t*& m_sp_status;
-    uint32_t*& m_sp_dma_full;
-    uint32_t*& m_sp_dma_busy;
+    [[maybe_unused]] uint32_t*& m_sp_dma_full;
+    [[maybe_unused]] uint32_t*& m_sp_dma_busy;
     uint32_t*& m_sp_pc;
-    uint32_t*& m_sp_semaphore;
+    [[maybe_unused]] uint32_t*& m_sp_semaphore;
 
     // DPC registers
     uint32_t*& m_dpc_start;
@@ -127,7 +127,7 @@ private:
     uint32_t*& m_dpc_tmem;
 
     // Callbacks
-    void (*&m_CheckInterrupts)();
+    [[maybe_unused]] void (*&m_CheckInterrupts)();
     void (*&m_ProcessDList)();
     void (*&m_ProcessRdpList)();
     void (*&m_ProcessDListShadow)(); // Shadow HLE for RT geometry under LLE
@@ -142,8 +142,8 @@ private:
     // Settings
     bool m_AudioHle{false};
     bool m_GraphicsHle{false};
-    bool m_ForwardAudio{false};
-    bool m_ForwardGFX{false};
+    [[maybe_unused]] bool m_ForwardAudio{false};
+    [[maybe_unused]] bool m_ForwardGFX{false};
 
     // Task validation limits
     static constexpr uint32_t kMaxUcodeSize     = 0x2000;   // 8 KB max microcode text

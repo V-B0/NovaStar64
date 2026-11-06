@@ -177,13 +177,9 @@ private:
 
 // Present flags
 constexpr int32_t PRESENT_NONE   = 0;
-constexpr int32_t PRESENT_CONT   = 1;
 
 // Plugin type flags
 constexpr int32_t PLUGIN_NONE       = 1;
-constexpr int32_t PLUGIN_MEMPAK     = 2;
-constexpr int32_t PLUGIN_RUMBLE_PAK = 3;
-constexpr int32_t PLUGIN_TRAN_PAK   = 4;
 
 struct CONTROL {
     int32_t Present;

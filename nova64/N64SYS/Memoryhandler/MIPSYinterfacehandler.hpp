@@ -38,7 +38,7 @@ public:
     MIPSYInterface(const MIPSYInterface&) = delete;
     MIPSYInterface& operator=(const MIPSYInterface&) = delete;
     MIPSYInterface(MIPSYInterface&&) = default;
-    MIPSYInterface& operator=(MIPSYInterface&&) = default;
+    MIPSYInterface& operator=(MIPSYInterface&&) = delete;
     virtual ~MIPSYInterface() = default;
    
     uint32_t getInitMode() const { return *MI_INIT_MODE_REG; }

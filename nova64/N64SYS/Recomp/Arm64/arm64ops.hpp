@@ -154,7 +154,7 @@ private:
     using SymbolMap = std::unordered_map<std::string, SymbolInfo>;
     SymbolMap m_Symbols;
 
-    CodeBlock& m_CodeBlock;
+    [[maybe_unused]] CodeBlock& m_CodeBlock;
     Arm64EmitOptions m_Options;
 
     asmjit::Error m_LastError = asmjit::kErrorOk;

@@ -158,8 +158,8 @@ constexpr SAVE_CHIP_TYPE SAVE_CHIP_UNKNOWN = SAVE_CHIP_TYPE::Auto;
 #define LOG_ERROR(...)   TRACE_ERROR(Trace::Module::Core, __VA_ARGS__)
 
 CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSystem) :
-    m_EndEmulation(false),
     m_SaveUsing(SAVE_CHIP_UNKNOWN),
+    m_EndEmulation(false),
     m_SyncCPU(nullptr),
     m_InReset(false),
     m_NextTimer(0),
@@ -901,7 +901,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             // ── Libdragon ELF-in-ROM loading ────────────────────────
             isLibdragonElf = true;
             const uint8_t* elf = romData + elfOffset;
-            uint32_t elfSize = romSize - elfOffset;
+            [[maybe_unused]] uint32_t elfSize = romSize - elfOffset;
 
             // Helper to read a big-endian 32-bit value from the ELF.
             // The ROM is stored in host word order (each 32-bit word
@@ -910,7 +910,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
             // are NOT necessarily word-aligned relative to the ROM's
             // byte-swap grid.  Read individual bytes and reconstruct
             // big-endian manually.
-            auto readBE16 = [](const uint8_t* p) -> uint16_t {
+            [[maybe_unused]] auto readBE16 = [](const uint8_t* p) -> uint16_t {
                 // bytes in host-word-order ROM: within each 4-byte
                 // group the bytes are reversed on LE hosts.
                 // We'll just use the actual byte values.
@@ -918,7 +918,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory)
                 (void)wordOff;
                 return (static_cast<uint16_t>(p[0]) << 8) | p[1];
             };
-            auto readBE32 = [](const uint8_t* p) -> uint32_t {
+            [[maybe_unused]] auto readBE32 = [](const uint8_t* p) -> uint32_t {
                 return (static_cast<uint32_t>(p[0]) << 24) |
                        (static_cast<uint32_t>(p[1]) << 16) |
                        (static_cast<uint32_t>(p[2]) << 8) |

@@ -41,7 +41,6 @@ static constexpr uint64_t CIC_CRC_5167 = 0x000001053BC19870;
 static constexpr uint64_t CIC_CRC_8303 = 0x000000D2E53EF008;
 static constexpr uint64_t CIC_CRC_8401 = 0x000000D2E53EF39F;
 static constexpr uint64_t CIC_CRC_8501 = 0x000000D2E53E5DDA;
-static constexpr uint64_t CIC_CRC_MINI_IPL3 = 0x0000000AF3A34BC8;
 static constexpr uint64_t CIC_CRC_LIBDRAGON = 0x0000007c56242373;
 static constexpr uint64_t CIC_CRC_5101_ALECK64 = 0x000000A5F80BF620;
 

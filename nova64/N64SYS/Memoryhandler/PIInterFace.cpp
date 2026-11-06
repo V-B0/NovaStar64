@@ -45,7 +45,6 @@ namespace PI {
 
 constexpr uint32_t STATUS_DMA_BUSY  = 0x01;
 constexpr uint32_t STATUS_IO_BUSY   = 0x02;
-constexpr uint32_t STATUS_ERROR     = 0x04;
 constexpr uint32_t STATUS_INTERRUPT = 0x08;
 
 // PI Control Bits (write-only)

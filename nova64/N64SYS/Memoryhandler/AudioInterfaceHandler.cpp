@@ -20,7 +20,7 @@
 #define MI_INTR_AI_BIT    0x04
 
 // ── Audio flow diagnostics ──
-static uint32_t s_aiLenWriteCount = 0;
+[[maybe_unused]] static uint32_t s_aiLenWriteCount = 0;
 static uint32_t s_aiDmaCompleteCount = 0;
 static uint32_t s_aiDacRateWriteCount = 0;
 static uint32_t s_aiAudioInitCount = 0;

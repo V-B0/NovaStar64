@@ -50,8 +50,8 @@ PifRamHandler::PifRamHandler(
     m_system(system),
     m_mmu(mmu),
     m_registers(registers),
-    m_eeprom(eeprom),
     m_config(config),
+    m_eeprom(eeprom),
     m_cic_type(config.cic_type)
 {
     m_stats = {};
@@ -61,7 +61,7 @@ PifRamHandler::PifRamHandler(
     m_controllers[0].plugged_in = true;
 }
 
-PifRamHandler::~PifRamHandler() = default;
+PifRamHandler::~PifRamHandler() noexcept = default;
 
 // ============================================================================
 // Memory Handler Implementation

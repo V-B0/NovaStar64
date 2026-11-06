@@ -54,7 +54,7 @@ public:
 
 private:
     void* m_mutex;  ///< Platform-specific mutex
-    void* m_condition;  ///< Platform-specific condition variable (if needed)
+    [[maybe_unused]] void* m_condition;  ///< Platform-specific condition variable (if needed)
     std::atomic<uint32_t> m_ownerThreadId{0};  ///< Current owning thread
     std::atomic<uint32_t> m_recursionCount{0};  ///< Lock recursion count
 };

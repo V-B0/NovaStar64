@@ -326,8 +326,8 @@ void CEeprom::LoadEeprom()
                     // bytes that correspond to the EEPROM size so that the
                     // auto-detect on next load works correctly.
                     size_t initSize = m_Is16K ? sizeof(m_EEPROM) : 512;
-                    m_File.write(m_EEPROM, initSize);
-                    m_File.seek(0, FileSystem::SeekOrigin::Begin);
+                    (void)m_File.write(m_EEPROM, initSize);
+                    (void)m_File.seek(0, FileSystem::SeekOrigin::Begin);
                     Log::infof("Created new EEPROM save file: %s", fullPath.c_str());
                 } catch (...) {
                     Log::errorf("Failed to create EEPROM file: %s", fullPath.c_str());
@@ -435,7 +435,7 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line)
     // Write to file if not read-only
     if (!m_ReadOnly && m_File.is_open())
     {
-        m_File.seek(offset, FileSystem::SeekOrigin::Begin);
+        (void)m_File.seek(offset, FileSystem::SeekOrigin::Begin);
         size_t bytesWritten = m_File.write(Buffer, 8);
         
         if (bytesWritten != 8)

@@ -65,7 +65,7 @@ void GLTexturePool::Shutdown() {
 //  GL USAGE TRANSLATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-static GLenum TranslateBufferUsage(BufferUsage usage) {
+[[maybe_unused]] static GLenum TranslateBufferUsage(BufferUsage usage) {
     switch (usage) {
         case BufferUsage::Static:  return GL_STATIC_DRAW;
         case BufferUsage::Dynamic: return GL_DYNAMIC_DRAW;

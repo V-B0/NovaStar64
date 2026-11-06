@@ -100,11 +100,11 @@ const char* const CRegName::FPR_Ctrl[32] = {
 
 CRegisters::CRegisters(CN64System& System, CSystemEvents& SystemEvents)
     : CP0registers()
+    , m_FirstInterrupt(true)
     , m_System(System)
     , m_SystemEvents(SystemEvents)
     , m_SystemTimer(*System.GetSystemTimer())
     , m_TLB(*System.GetTLB())
-    , m_FirstInterrupt(true)
 {
     Init();
 }

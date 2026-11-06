@@ -310,7 +310,7 @@ bool CHle::Execute()
     m_AudioHle    = CRSPSettings::IsAudioHle();
     m_GraphicsHle = CRSPSettings::IsGraphicsHle();
 
-    uint32_t taskType = 0;
+    [[maybe_unused]] uint32_t taskType = 0;
     if (m_dmem) taskType = *u32(m_dmem, TaskOffset::Type);
 
     bool handled = false;

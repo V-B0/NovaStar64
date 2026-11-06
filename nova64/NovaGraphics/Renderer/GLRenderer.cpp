@@ -562,7 +562,7 @@ void GLAD_API_PTR GLRenderer::DebugCallback(GLenum source, GLenum type, GLuint i
     if (id == 131169 || id == 131185 || id == 131218 || id == 131204)
         return;
 
-    const char* typeStr = "Unknown";
+    [[maybe_unused]] const char* typeStr = "Unknown";
     switch (type) {
         case GL_DEBUG_TYPE_ERROR:               typeStr = "ERROR"; break;
         case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:  typeStr = "DEPRECATED"; break;

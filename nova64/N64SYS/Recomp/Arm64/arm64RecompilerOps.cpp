@@ -52,6 +52,18 @@
 
 #pragma STDC FENV_ACCESS ON
 
+// Where the program counter lives in CRegisters. CRegisters is not a standard-layout type, so
+// offsetof is technically conditionally-supported; every compiler we build with computes it,
+// and the generated code relies on such offsets for all the registers it touches.
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+static const int32_t kProgramCounterOffset = static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER));
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 namespace a64 = asmjit::a64;
 
 namespace Nova64 {
@@ -231,7 +243,7 @@ void ArmRecompilerOps::EmitPCUpdate()
     const int64_t pcVal = static_cast<int64_t>(static_cast<int32_t>(m_CurrentPC));
     m_Assembler->MovImm64(a64::x9, static_cast<uint64_t>(pcVal));
     a.str(a64::x9, a64::ptr(a64::x19,
-          static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))));
+          kProgramCounterOffset));
 }
 
 void ArmRecompilerOps::EmitSetPC(uint32_t addr)
@@ -240,7 +252,7 @@ void ArmRecompilerOps::EmitSetPC(uint32_t addr)
     const int64_t pcVal = static_cast<int64_t>(static_cast<int32_t>(addr));
     m_Assembler->MovImm64(a64::x9, static_cast<uint64_t>(pcVal));
     a.str(a64::x9, a64::ptr(a64::x19,
-          static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))));
+          kProgramCounterOffset));
 }
 
 void ArmRecompilerOps::BindPendingBranchLikelyLabel()

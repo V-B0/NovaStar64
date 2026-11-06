@@ -36,14 +36,9 @@ using PipelineStage = N64Types::PipelineStage;
 
 // Exception code shortcuts (ExceptionCode is enum class, but TriggerException takes uint32_t)
 namespace {
-    constexpr uint32_t EXC_INT     = static_cast<uint32_t>(ExceptionCode::EXC_INT);
-    constexpr uint32_t EXC_MOD     = static_cast<uint32_t>(ExceptionCode::EXC_MOD);
     constexpr uint32_t EXC_RMISS   = static_cast<uint32_t>(ExceptionCode::EXC_RMISS);
     constexpr uint32_t EXC_WMISS   = static_cast<uint32_t>(ExceptionCode::EXC_WMISS);
     constexpr uint32_t EXC_RADE    = static_cast<uint32_t>(ExceptionCode::EXC_RADE);
-    constexpr uint32_t EXC_WADE    = static_cast<uint32_t>(ExceptionCode::EXC_WADE);
-    constexpr uint32_t EXC_IBE     = static_cast<uint32_t>(ExceptionCode::EXC_IBE);
-    constexpr uint32_t EXC_DBE     = static_cast<uint32_t>(ExceptionCode::EXC_DBE);
     constexpr uint32_t EXC_SYSCALL = static_cast<uint32_t>(ExceptionCode::EXC_SYSCALL);
     constexpr uint32_t EXC_BREAK   = static_cast<uint32_t>(ExceptionCode::EXC_BREAK);
     constexpr uint32_t EXC_II      = static_cast<uint32_t>(ExceptionCode::EXC_II);
@@ -2548,7 +2543,7 @@ void R4300iInterpreter::COP1_S_CMP()
         unorded = false;
     }
 
-    int32_t condition = ((funct() & 4) && less) | ((funct() & 2) && equal) | ((funct() & 1) && unorded);
+    int32_t condition = ((funct() & 4) && less) || ((funct() & 2) && equal) || ((funct() & 1) && unorded);
     if (condition != 0)
     {
         m_FPCR[31] |= FPCSR_C;
@@ -2597,7 +2592,7 @@ void R4300iInterpreter::COP1_D_DIV()
     {
         static bool loggedDivD = false;
         if (!loggedDivD) {
-            double fsVal = *(double *)m_FPR_D[fs()];
+            [[maybe_unused]] double fsVal = *(double *)m_FPR_D[fs()];
             double ftVal = *(double *)m_FPR_D[ft()];
             uint64_t fsRaw = *(uint64_t *)m_FPR_D[fs()];
             uint64_t ftRaw = *(uint64_t *)m_FPR_UDW[ft()];
@@ -2805,7 +2800,7 @@ void R4300iInterpreter::COP1_D_CMP()
         unorded = false;
     }
 
-    int32_t condition = ((funct() & 4) && less) | ((funct() & 2) && equal) | ((funct() & 1) && unorded);
+    int32_t condition = ((funct() & 4) && less) || ((funct() & 2) && equal) || ((funct() & 1) && unorded);
     if (condition != 0)
     {
         m_FPCR[31] |= FPCSR_C;

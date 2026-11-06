@@ -190,7 +190,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
                                           warnedLo2{0}, warnedHi2{0};
             const uint8_t slot = opcode >> 5;   // 0-7
             const uint32_t bit  = 1u << (opcode & 31u);
-            std::atomic<uint32_t>* buckets[8] = {
+            [[maybe_unused]] std::atomic<uint32_t>* buckets[8] = {
                 &warnedLo, &warnedHi, &warnedLo2, &warnedHi2,
                 &warnedLo, &warnedHi, &warnedLo2, &warnedHi2 // opcode <=255, 8 buckets
             };

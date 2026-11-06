@@ -47,8 +47,8 @@ namespace {
 inline uint32_t mips_op(uint32_t instr)     { return (instr >> 26) & 0x3F; }
 inline uint32_t mips_rs(uint32_t instr)     { return (instr >> 21) & 0x1F; }
 inline uint32_t mips_rt(uint32_t instr)     { return (instr >> 16) & 0x1F; }
-inline uint32_t mips_rd(uint32_t instr)     { return (instr >> 11) & 0x1F; }
-inline uint32_t mips_sa(uint32_t instr)     { return (instr >>  6) & 0x1F; }
+[[maybe_unused]] inline uint32_t mips_rd(uint32_t instr)     { return (instr >> 11) & 0x1F; }
+[[maybe_unused]] inline uint32_t mips_sa(uint32_t instr)     { return (instr >>  6) & 0x1F; }
 inline uint32_t mips_funct(uint32_t instr)  { return  instr        & 0x3F; }
 inline int16_t  mips_offset(uint32_t instr) { return static_cast<int16_t>(instr & 0xFFFF); }
 inline uint32_t mips_target(uint32_t instr) { return  instr & 0x03FFFFFF; }
@@ -110,7 +110,6 @@ CodeBlock::CodeBlock(CodeBlock&& other) noexcept
     , end_address_(other.end_address_)
     , hash_(other.hash_)
     , flags_(other.flags_)
-    , config_(other.config_)
     , instructions_(std::move(other.instructions_))
     , sections_(std::move(other.sections_))
     , address_to_section_(std::move(other.address_to_section_))
@@ -120,6 +119,7 @@ CodeBlock::CodeBlock(CodeBlock&& other) noexcept
     , compiled_function_(other.compiled_function_)
     , memory_snapshot_(std::move(other.memory_snapshot_))
     , statistics_(other.statistics_)
+    , config_(other.config_)
     , code_log_(std::move(other.code_log_))
     , generated_code_cache_(std::move(other.generated_code_cache_))
 {

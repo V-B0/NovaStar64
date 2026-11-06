@@ -231,12 +231,12 @@ MipsMemoryVM::MipsMemoryVM(::CN64System& system, ::N64System::CTLB& tlb)
     , m_SPRegistersHandler(new SRegistersHandler(m_TLB.GetRegisters()))
     , m_VideoInterfaceHandler(new VideoInterfaceHandler(m_System, *this, m_TLB.GetRegisters()))
     , m_AudioInterfaceHandler(new AudioInterfaceHandler(m_System, m_TLB.GetRegisters()))
-    , m_MemoryReadMap(nullptr)
-    , m_MemoryWriteMap(nullptr)
-    , m_TLB_ReadMap(nullptr)
-    , m_TLB_WriteMap(nullptr)
     , m_RDRAM(nullptr)
     , m_AllocatedRdramSize(0)
+    , m_TLB_ReadMap(nullptr)
+    , m_TLB_WriteMap(nullptr)
+    , m_MemoryReadMap(nullptr)
+    , m_MemoryWriteMap(nullptr)
 {
 }
 
@@ -1149,7 +1149,7 @@ bool MipsMemoryVM::LB_PhysicalAddress(uint32_t pAddr, uint8_t& value)
     switch (pAddr & 0xFFF00000)
     {
     case 0x1FC00000:
-        m_PifRamHandler->Read32(readAddress, value32);
+        (void)m_PifRamHandler->Read32(readAddress, value32);
         break;
 
     default:
@@ -1200,7 +1200,7 @@ bool MipsMemoryVM::LH_PhysicalAddress(uint32_t pAddr, uint16_t& value)
     switch (pAddr & 0xFFF00000)
     {
     case 0x1FC00000:
-        m_PifRamHandler->Read32(readAddress, value32);
+        (void)m_PifRamHandler->Read32(readAddress, value32);
         break;
 
     default:
@@ -1248,7 +1248,7 @@ bool MipsMemoryVM::LW_PhysicalAddress(uint32_t pAddr, uint32_t& value)
     switch (pAddr & 0xFFF00000)
     {
     case 0x03F00000:
-        m_RDRAMRegistersHandler->Read32(pAddr, value);
+        (void)m_RDRAMRegistersHandler->Read32(pAddr, value);
         break;
     case 0x04000000:
         m_SPRegistersHandler->Read32(pAddr, value);
@@ -1260,22 +1260,22 @@ bool MipsMemoryVM::LW_PhysicalAddress(uint32_t pAddr, uint32_t& value)
         m_MIPSInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x04400000:
-        m_VideoInterfaceHandler->Read32(pAddr, value);
+        (void)m_VideoInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x04500000:
         m_AudioInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x04600000:
-        m_PeripheralInterfaceHandler->Read32(pAddr, value);
+        (void)m_PeripheralInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x04700000:
-        m_RDRAMInterfaceHandler->Read32(pAddr, value);
+        (void)m_RDRAMInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x04800000:
-        m_SerialInterfaceHandler->Read32(pAddr, value);
+        (void)m_SerialInterfaceHandler->Read32(pAddr, value);
         break;
     case 0x1FC00000:
-        m_PifRamHandler->Read32(pAddr, value);
+        (void)m_PifRamHandler->Read32(pAddr, value);
         break;
 
     default:
@@ -1285,11 +1285,11 @@ bool MipsMemoryVM::LW_PhysicalAddress(uint32_t pAddr, uint32_t& value)
         }
         else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
-            m_RomMemoryHandler->Read32(pAddr, value);
+            (void)m_RomMemoryHandler->Read32(pAddr, value);
         }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
-            m_RomMemoryHandler->Read32(pAddr, value);
+            (void)m_RomMemoryHandler->Read32(pAddr, value);
         }
         else
         {
@@ -1404,7 +1404,7 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
     case 0x1FC00000:
     {
         uint32_t shift = (3 - (pAddr & 3)) * 8;
-        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
+        (void)m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
@@ -1416,12 +1416,12 @@ bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value)
         else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
             uint32_t shift = (3 - (pAddr & 3)) * 8;
-            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
+            (void)m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
         }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
             uint32_t shift = (3 - (pAddr & 3)) * 8;
-            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
+            (void)m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFu << shift);
         }
         break;
     }
@@ -1461,7 +1461,7 @@ bool MipsMemoryVM::SH_PhysicalAddress(uint32_t pAddr, uint32_t value)
     case 0x1FC00000:
     {
         uint32_t shift = (2 - (pAddr & 2)) * 8;
-        m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
+        (void)m_PifRamHandler->Write32(pAddr & ~3, value << shift, 0xFFFFFFFFu);
         break;
     }
 
@@ -1469,12 +1469,12 @@ bool MipsMemoryVM::SH_PhysicalAddress(uint32_t pAddr, uint32_t value)
         if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
             uint32_t shift = (2 - (pAddr & 2)) * 8;
-            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
+            (void)m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
         }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
             uint32_t shift = (2 - (pAddr & 2)) * 8;
-            m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
+            (void)m_RomMemoryHandler->Write32(pAddr, value << shift, 0xFFFFu << shift);
         }
         break;
     }
@@ -1507,7 +1507,7 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     case 0x03F00000:
-        m_RDRAMRegistersHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_RDRAMRegistersHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     case 0x04000000:
@@ -1523,7 +1523,7 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     case 0x04400000:
-        m_VideoInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_VideoInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     case 0x04500000:
@@ -1531,19 +1531,19 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         break;
 
     case 0x04600000:
-        m_PeripheralInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_PeripheralInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     case 0x04700000:
-        m_RDRAMInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_RDRAMInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     case 0x04800000:
-        m_SerialInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_SerialInterfaceHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     case 0x1FC00000:
-        m_PifRamHandler->Write32(pAddr, value, 0xFFFFFFFF);
+        (void)m_PifRamHandler->Write32(pAddr, value, 0xFFFFFFFF);
         break;
 
     default:
@@ -1553,11 +1553,11 @@ bool MipsMemoryVM::SW_PhysicalAddress(uint32_t pAddr, uint32_t value)
         }
         else if (pAddr >= 0x08000000 && pAddr < 0x10000000)
         {
-            m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
+            (void)m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
         }
         else if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
-            m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
+            (void)m_RomMemoryHandler->Write32(pAddr, value, 0xFFFFFFFF);
         }
         break;
     }
@@ -1601,7 +1601,7 @@ bool MipsMemoryVM::SD_PhysicalAddress(uint32_t pAddr, uint64_t value)
     default:
         if (pAddr >= 0x10000000 && pAddr < 0x20000000)
         {
-            m_RomMemoryHandler->Write32(pAddr, static_cast<uint32_t>(value >> 32), 0xFFFFFFFF);
+            (void)m_RomMemoryHandler->Write32(pAddr, static_cast<uint32_t>(value >> 32), 0xFFFFFFFF);
         }
         break;
     }
@@ -1853,7 +1853,7 @@ bool MipsMemoryVM::MemoryBreakpoint()
 
 const char* MipsMemoryVM::LabelName(uint32_t address) const
 {
-    sprintf(m_strLabelName, "0x%08X", address);
+    snprintf(m_strLabelName, sizeof(m_strLabelName), "0x%08X", address);
     return m_strLabelName;
 }
 

@@ -52,7 +52,7 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
         if (ciWidth < 1.0f) ciWidth = 320.0f;
         float screenH = static_cast<float>(m_state.rdp.scissor.yl >> 2);
         if (screenH < 1.0f) screenH = 240.0f;
-        float rectW = rect.x1 - rect.x0;
+        [[maybe_unused]] float rectW = rect.x1 - rect.x0;
         float rectH = rect.y1 - rect.y0;
         bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
 
@@ -117,7 +117,7 @@ void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
         if (ciWidth < 1.0f) ciWidth = 320.0f;
         float screenH = static_cast<float>(m_state.rdp.scissor.yl >> 2);
         if (screenH < 1.0f) screenH = 240.0f;
-        float rectW = rect.x1 - rect.x0;
+        [[maybe_unused]] float rectW = rect.x1 - rect.x0;
         float rectH = rect.y1 - rect.y0;
         bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
 
@@ -300,7 +300,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     double xm = tri.edge.xm;
     double xl = tri.edge.xl;
     double dxhdy = tri.edge.dxhDy;
-    double dxmdy = tri.edge.dxmDy;
+    [[maybe_unused]] double dxmdy = tri.edge.dxmDy;
     double dxldy = tri.edge.dxlDy;
 
     // Attribute interpolation helper

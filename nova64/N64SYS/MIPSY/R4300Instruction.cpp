@@ -231,7 +231,7 @@ void R4300iInstruction::DecodeParam() const {
         case R4300_REGIMM: {
             uint8_t rs = RS(m_Instruction);
             uint8_t rt = RT(m_Instruction);
-            int32_t offset = SignExtend16(IMM16(m_Instruction));
+            [[maybe_unused]] int32_t offset = SignExtend16(IMM16(m_Instruction));
             uint32_t target = GetBranchTarget(m_Instruction, m_Address);
             
             switch (rt) {
@@ -257,7 +257,7 @@ void R4300iInstruction::DecodeParam() const {
         case R4300_BNE: {
             uint8_t rs = RS(m_Instruction);
             uint8_t rt = RT(m_Instruction);
-            int32_t offset = SignExtend16(IMM16(m_Instruction));
+            [[maybe_unused]] int32_t offset = SignExtend16(IMM16(m_Instruction));
             uint32_t target = GetBranchTarget(m_Instruction, m_Address);
             
             if (rs == 0 && rt == 0) {
@@ -550,7 +550,7 @@ R4300iInstruction::RegisterInfo R4300iInstruction::GetRegisterInfo() const {
         case R4300_COP0: {
             uint8_t rs = (m_Instruction >> 21) & 0x1F;
             uint8_t rt = RT(m_Instruction);
-            uint8_t rd = RD(m_Instruction);
+            [[maybe_unused]] uint8_t rd = RD(m_Instruction);
             
             // MFC0, DMFC0
             if (rs == 0x00 || rs == 0x01) {
@@ -566,8 +566,8 @@ R4300iInstruction::RegisterInfo R4300iInstruction::GetRegisterInfo() const {
         case R4300_COP1: {
             uint8_t fmt = COP1_FMT(m_Instruction);
             uint8_t ft = COP1_FT(m_Instruction);
-            uint8_t fs = COP1_FS(m_Instruction);
-            uint8_t fd = COP1_FD(m_Instruction);
+            [[maybe_unused]] uint8_t fs = COP1_FS(m_Instruction);
+            [[maybe_unused]] uint8_t fd = COP1_FD(m_Instruction);
             uint8_t funct = COP1_FUNCT(m_Instruction);
             
             // MFC1, DMFC1, CFC1

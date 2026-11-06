@@ -247,8 +247,8 @@ private:
     private:
         std::array<uint8_t, 0x8000> m_data{};  // 32KB controller pak
         bool m_present = false;
-        bool m_formatted = false;
-        uint16_t m_crc;
+        [[maybe_unused]] bool m_formatted = false;
+        [[maybe_unused]] uint16_t m_crc;
     };
     
     std::array<ControllerPak, 4> m_controller_paks;

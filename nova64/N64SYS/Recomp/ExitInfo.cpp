@@ -573,7 +573,7 @@ void ExitManager::profile_all_exits() {
     
     // Collect profiling data from all exits
     for (const auto& [id, exit] : exits_) {
-        const auto& stats = exit->statistics();
+        [[maybe_unused]] const auto& stats = exit->statistics();
         // Could aggregate or log this data
     }
 }
@@ -581,7 +581,7 @@ void ExitManager::profile_all_exits() {
 void ExitManager::reset_all_statistics() {
     std::shared_lock lock(mutex_);
     
-    for (auto& [id, exit] : exits_) {
+    for ([[maybe_unused]] auto& [id, exit] : exits_) {
         // Would need to add a reset method to ExitInfo
     }
 }

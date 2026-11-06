@@ -124,7 +124,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::initialize(int controller_index, const std::string& save_directory) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
 
         m_save_directory = save_directory;
         if (m_save_directory.empty()) {
@@ -153,7 +153,7 @@ namespace N64Controller {
     }
 
     void MemoryPakController::shutdown() {
-        for (int i = 0; i < MAX_CONTROLLERS; ++i) {
+        for (int i = 0; i < static_cast<int>(MAX_CONTROLLERS); ++i) {
             if (m_mempaks[i].is_initialized && m_mempaks[i].is_dirty) {
                 save_to_disk(i);
             }
@@ -161,7 +161,7 @@ namespace N64Controller {
     }
 
     std::vector<uint8_t> MemoryPakController::read(int controller_index, uint32_t address, size_t length) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return {};
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return {};
         const auto& mp = m_mempaks[controller_index];
         
         if (!mp.is_initialized) return {};
@@ -178,7 +178,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::write(int controller_index, uint32_t address, const std::vector<uint8_t>& data) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         auto& mp = m_mempaks[controller_index];
         
         if (!mp.is_initialized) return false;
@@ -196,7 +196,7 @@ namespace N64Controller {
 
     std::array<uint8_t, MEMPAK_PAGE_SIZE> MemoryPakController::read_page(int controller_index, uint32_t page) {
         std::array<uint8_t, MEMPAK_PAGE_SIZE> result{};
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return result;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return result;
         
         if (page >= MEMPAK_NUM_PAGES) return result;
 
@@ -206,7 +206,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::write_page(int controller_index, uint32_t page, const std::array<uint8_t, MEMPAK_PAGE_SIZE>& data) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         if (page >= MEMPAK_NUM_PAGES) return false;
 
         uint32_t address = page * MEMPAK_PAGE_SIZE;
@@ -216,7 +216,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::format(int controller_index) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         
         // Zero out memory
         m_mempaks[controller_index].memory.fill(0);
@@ -285,7 +285,7 @@ namespace N64Controller {
     // The iNode table (pages 5-6) tracks page allocation chains.
     
     bool MemoryPakController::load_save_file(int controller_index, const std::string& game_id, const std::string& save_name) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         auto& mp = m_mempaks[controller_index];
         if (!mp.is_initialized) return false;
         
@@ -312,7 +312,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::save_to_file(int controller_index, const std::string& game_id, const std::string& save_name) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         auto& mp = m_mempaks[controller_index];
         if (!mp.is_initialized) return false;
         
@@ -322,7 +322,7 @@ namespace N64Controller {
 
     std::vector<SaveFileInfo> MemoryPakController::list_save_files(int controller_index) const {
         std::vector<SaveFileInfo> result;
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return result;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return result;
         
         const auto& mp = m_mempaks[controller_index];
         if (!mp.is_initialized || !mp.status.formatted) return result;
@@ -382,7 +382,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::delete_save_file(int controller_index, const std::string& game_id, const std::string& save_name) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         auto& mp = m_mempaks[controller_index];
         if (!mp.is_initialized || !mp.status.formatted) return false;
         
@@ -426,7 +426,7 @@ namespace N64Controller {
     }
 
     bool MemoryPakController::verify_save_file(int controller_index, const std::string& game_id, const std::string& save_name) const {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         const auto& mp = m_mempaks[controller_index];
         if (!mp.is_initialized || !mp.status.formatted) return false;
         
@@ -467,22 +467,22 @@ namespace N64Controller {
 
     // Status
     MempakStatus MemoryPakController::get_status(int controller_index) const {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return {};
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return {};
         return m_mempaks[controller_index].status;
     }
 
     bool MemoryPakController::is_connected(int controller_index) const {
         // In this emulation, we assume paks are always "connectable" if initialized
-        return controller_index >= 0 && controller_index < MAX_CONTROLLERS;
+        return controller_index >= 0 && controller_index < static_cast<int>(MAX_CONTROLLERS);
     }
 
     bool MemoryPakController::is_formatted(int controller_index) const {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         return m_mempaks[controller_index].status.formatted;
     }
 
     size_t MemoryPakController::get_free_space(int controller_index) const {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return 0;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return 0;
         return m_mempaks[controller_index].status.free_pages * MEMPAK_PAGE_SIZE;
     }
 
@@ -533,7 +533,7 @@ namespace N64Controller {
     bool CMempak::Initialize(const std::string& base_path) {
         bool result = true;
         // Initialize all controllers
-        for (int i = 0; i < MAX_CONTROLLERS; ++i) {
+        for (int i = 0; i < static_cast<int>(MAX_CONTROLLERS); ++i) {
             if (!m_controller->initialize(i, base_path)) {
                 // If init fails, we just continue, maybe that controller has no pak
                 // result = false; 
@@ -598,7 +598,7 @@ namespace N64Controller {
     
     // Internal legacy methods - delegates to MemoryPakController
     void CMempak::LoadMempak(int32_t controller_index, bool create_if_missing) {
-        if (m_controller && controller_index >= 0 && controller_index < MAX_CONTROLLERS) {
+        if (m_controller && controller_index >= 0 && controller_index < static_cast<int>(MAX_CONTROLLERS)) {
             m_controller->initialize(controller_index, "");
             if (create_if_missing && !m_controller->is_formatted(controller_index)) {
                 m_controller->format(controller_index);
@@ -619,7 +619,7 @@ namespace N64Controller {
     }
     
     bool CMempak::load_legacy_mempak(int32_t controller_index) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         std::string path = get_mempak_filename(controller_index);
         std::ifstream file(path, std::ios::binary);
         if (!file.is_open()) return false;
@@ -631,7 +631,7 @@ namespace N64Controller {
     }
     
     bool CMempak::save_legacy_mempak(int32_t controller_index) {
-        if (controller_index < 0 || controller_index >= MAX_CONTROLLERS) return false;
+        if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
         std::string path = get_mempak_filename(controller_index);
         std::ofstream file(path, std::ios::binary | std::ios::trunc);
         if (!file.is_open()) return false;

@@ -18,7 +18,6 @@ namespace Disk {
 
 static constexpr uint32_t MAME_FORMAT_SIZE = 0x0435B0C0;
 static constexpr uint32_t SDK_FORMAT_SIZE = 0x03DEC800;
-static constexpr uint32_t READ_CHUNK_SIZE = 0x100000; // 1MB chunks for reading
 static constexpr uint32_t SECTORS_PER_BLOCK = 85;
 static constexpr uint32_t SYSTEM_LBAS = 24;
 static constexpr uint32_t DISKID_LBA = 14;
@@ -41,9 +40,6 @@ static constexpr uint16_t RAM_START_LBA[7] = {
 };
 
 // RAM sizes by disk type
-static constexpr uint32_t RAM_SIZES[7] = {
-    0x24A9DC0, 0x1C226C0, 0x1450F00, 0xD35680, 0x6CFD40, 0x1DA240, 0x0
-};
 
 // Virtual zone to LBA table [disk_type][vzone]
 static constexpr uint16_t VZONE_LBA_TBL[7][16] = {
@@ -195,7 +191,7 @@ void N64Disk::LoadDisk(const fs::path& filePath) {
     fs::path shadowPath = filePath;
     shadowPath.replace_extension(".ndr");
     
-    bool isShadowDisk = false;
+    [[maybe_unused]] bool isShadowDisk = false;
     if (fs::exists(shadowPath) && !AllocateAndLoadDiskImage(shadowPath)) {
         // Shadow file failed, try original
         UnloadDisk();

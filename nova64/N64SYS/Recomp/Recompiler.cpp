@@ -429,8 +429,8 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
             // Read the failing instruction to help debug
             uint32_t failInstr = 0;
             m_MMU.MemoryValue32(address, failInstr);
-            uint32_t failOp = (failInstr >> 26) & 0x3F;
-            uint32_t failFunct = failInstr & 0x3F;
+            [[maybe_unused]] uint32_t failOp = (failInstr >> 26) & 0x3F;
+            [[maybe_unused]] uint32_t failFunct = failInstr & 0x3F;
             Log::debugf("CRecompiler: CodeBlock analysis/codegen failed at 0x%08X (result=%d)",
                         address, static_cast<int>(compileResult));
             // Dump the internal log from CodeBlock for debugging
@@ -727,7 +727,7 @@ void CRecompiler::Execute_VirtualTable() {
 void CRecompiler::Execute_VirtualTable_Validate() {
     Log::info("CRecompiler: Executing with VirtualTable_Validate mode");
     
-    const uint32_t countPerOp = m_System.CountPerOp();
+    [[maybe_unused]] const uint32_t countPerOp = m_System.CountPerOp();
     int32_t& nextTimer = m_System.m_NextTimer;
     auto* systemTimer = m_System.m_SystemTimer.get();
     auto* systemEvents = m_System.m_SystemEvents.get();
@@ -819,7 +819,7 @@ void CRecompiler::Execute_VirtualTable_Validate() {
 void CRecompiler::Execute_MemoryChange() {
     Log::info("CRecompiler: Executing with MemoryChange mode");
     
-    const uint32_t countPerOp = m_System.CountPerOp();
+    [[maybe_unused]] const uint32_t countPerOp = m_System.CountPerOp();
     int32_t& nextTimer = m_System.m_NextTimer;
     auto* systemTimer = m_System.m_SystemTimer.get();
     auto* systemEvents = m_System.m_SystemEvents.get();
@@ -907,7 +907,7 @@ void CRecompiler::Execute_MemoryChange() {
 void CRecompiler::Execute_Lookup() {
     Log::info("CRecompiler: Executing with Lookup mode");
     
-    const uint32_t countPerOp = m_System.CountPerOp();
+    [[maybe_unused]] const uint32_t countPerOp = m_System.CountPerOp();
     int32_t& nextTimer = m_System.m_NextTimer;
     auto* systemTimer = m_System.m_SystemTimer.get();
     auto* systemEvents = m_System.m_SystemEvents.get();
@@ -986,7 +986,7 @@ void CRecompiler::Execute_Lookup() {
 void CRecompiler::Execute_Lookup_Validate() {
     Log::info("CRecompiler: Executing with Lookup_Validate mode");
     
-    const uint32_t countPerOp = m_System.CountPerOp();
+    [[maybe_unused]] const uint32_t countPerOp = m_System.CountPerOp();
     int32_t& nextTimer = m_System.m_NextTimer;
     auto* systemTimer = m_System.m_SystemTimer.get();
     auto* systemEvents = m_System.m_SystemEvents.get();

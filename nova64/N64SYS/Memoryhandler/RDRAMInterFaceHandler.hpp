@@ -122,8 +122,8 @@ private:
     RDRAMInterfaceHandler& operator=(const RDRAMInterfaceHandler&) = delete;
     RDRAMInterfaceHandler& operator=(RDRAMInterfaceHandler&&) = delete;
     
-    CRegisters& m_reg;
-    const uint64_t& m_pc;
+    [[maybe_unused]] CRegisters& m_reg;
+    [[maybe_unused]] const uint64_t& m_pc;
     
     // RDRAM interface registers
     std::array<uint32_t, static_cast<size_t>(RDRAM::Register::REGISTER_COUNT)> m_register_data{};

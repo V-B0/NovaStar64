@@ -152,7 +152,7 @@ private:
     void SPECIAL_DSRL32(CRegBase& Reg);
     void SPECIAL_DSRA32(CRegBase& Reg);
 
-    CodeBlock& m_CodeBlock;
+    [[maybe_unused]] CodeBlock& m_CodeBlock;
     CodeSection* m_EntrySection;
 
     // The command being analyzed
@@ -165,7 +165,7 @@ private:
 
     // PC during analysis walk
     uint32_t m_PC = 0;
-    uint32_t m_NextInstruction = 0;
+    [[maybe_unused]] uint32_t m_NextInstruction = 0;
     uint32_t m_Test = 0;
 
     // Result register sets

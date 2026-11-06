@@ -14,11 +14,9 @@ namespace N64System {
 // CP0 Register Indices
 using Reg = CRegisters::COP0Reg;
 constexpr auto CP0_INDEX = Reg::Index;
-constexpr auto CP0_RANDOM = Reg::Random;
 constexpr auto CP0_ENTRYLO0 = Reg::EntryLo0;
 constexpr auto CP0_ENTRYLO1 = Reg::EntryLo1;
 constexpr auto CP0_PAGEMASK = Reg::PageMask;
-constexpr auto CP0_WIRED = Reg::Wired;
 constexpr auto CP0_ENTRYHI = Reg::EntryHi;
 
 TranslationLookasideBuffer::TranslationLookasideBuffer()

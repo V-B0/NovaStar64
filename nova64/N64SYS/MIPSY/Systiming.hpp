@@ -94,7 +94,7 @@ public:
     
     // Allow moving
     SystemTimer(SystemTimer&&) noexcept = default;
-    SystemTimer& operator=(SystemTimer&&) noexcept = default;
+    SystemTimer& operator=(SystemTimer&&) = delete;
     
     // Timer management
     void set_timer(TimerType type, uint32_t cycles, bool relative = true);

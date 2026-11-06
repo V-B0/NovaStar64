@@ -482,7 +482,7 @@ int64_t File::seek(int64_t offset, SeekOrigin origin)
 
 void File::seek_to_begin()
 {
-    seek(0, SeekOrigin::Begin);
+    (void)seek(0, SeekOrigin::Begin);
 }
 
 int64_t File::seek_to_end()

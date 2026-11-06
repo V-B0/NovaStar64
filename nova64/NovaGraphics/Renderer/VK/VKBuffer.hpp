@@ -90,7 +90,7 @@ public:
 private:
     const VKContext* m_ctx;
     VKBufferStorage  m_storage{};
-    size_t           m_size;
+    [[maybe_unused]] size_t           m_size;
     size_t           m_count = 0;
     IndexType        m_indexType = IndexType::UInt16;
     BufferUsage      m_usage;

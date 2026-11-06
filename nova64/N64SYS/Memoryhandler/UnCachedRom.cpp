@@ -378,7 +378,7 @@ void UncachedRom::processDMATransfer()
     // Determine save handler based on game's save type
     // Both m_sram and m_flash_ram are always allocated; use m_SaveUsing to pick the right one.
     uint8_t* rdram = m_mmu.Rdram();
-    bool handled = false;
+    [[maybe_unused]] bool handled = false;
     
     if (rdram && dram_addr < 0x00800000 && cart_addr >= 0x08000000 && cart_addr < 0x08020000)
     {

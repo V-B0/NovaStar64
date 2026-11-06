@@ -42,7 +42,7 @@ RomMemoryHandler::RomMemoryHandler(
     }
 }
 
-RomMemoryHandler::~RomMemoryHandler() = default;
+RomMemoryHandler::~RomMemoryHandler() noexcept = default;
 
 // ----------------------------------------------------------------------------
 // Memory Handler Implementation

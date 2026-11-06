@@ -285,7 +285,7 @@ Mat4x4 MatTranspose(const Mat4x4& m) {
 
 Mat4x4 MatInverse(const Mat4x4& m) {
     // Cofactor expansion for 4x4 matrix inverse
-    const float* s = m.col[0].f; // raw pointer (column-major)
+    [[maybe_unused]] const float* s = m.col[0].f; // raw pointer (column-major)
     // We need row-major access, so let's build a temp
     float a[16];
     for (int c = 0; c < 4; c++)

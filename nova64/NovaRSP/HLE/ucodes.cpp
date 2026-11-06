@@ -340,7 +340,7 @@ static void NAUDIO_ADPCM(CHle* hle, uint32_t w1, uint32_t w2)
 
 static void NAUDIO_RESAMPLE(CHle* hle, uint32_t w1, uint32_t w2)
 {
-    auto& s = hle->alist_naudio();
+    [[maybe_unused]] auto& s = hle->alist_naudio();
     bool init  = (w1 >> 16) & A_INIT;
     bool flag2 = (w1 >> 16) & A_LOOP;
     uint16_t dmemo = static_cast<uint16_t>(w1);

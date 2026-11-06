@@ -24,12 +24,12 @@ SerialInterfaceHandler::SerialInterfaceHandler(
     CRegisters& registers,
     PifRamHandler& pif_handler,
     const Config& config)
-    : m_mmu(mmu),
+    : m_impl(std::make_unique<Impl>()),
+      m_mmu(mmu),
       m_registers(registers),
       m_pif_handler(pif_handler),
       m_config(config),
-      m_si_regs(registers.m_SerialInterface), // Link to global registers
-      m_impl(std::make_unique<Impl>())
+      m_si_regs(registers.m_SerialInterface) // Link to global registers
 {
     reset();
 }
@@ -261,14 +261,14 @@ void SerialInterfaceHandler::handle_status_register_write(uint32_t value, uint32
 bool SerialInterfaceHandler::read_from_pif(uint32_t pif_addr, uint8_t* buffer, size_t size) {
     // Forward to PifHandler
     for(size_t i=0; i<size; i++) {
-        m_pif_handler.Read8(pif_addr + i, buffer[i]);
+        (void)m_pif_handler.Read8(pif_addr + i, buffer[i]);
     }
     return true;
 }
 
 bool SerialInterfaceHandler::write_to_pif(uint32_t pif_addr, const uint8_t* buffer, size_t size) {
     for(size_t i=0; i<size; i++) {
-        m_pif_handler.Write8(pif_addr + i, buffer[i]);
+        (void)m_pif_handler.Write8(pif_addr + i, buffer[i]);
     }
     return true;
 }

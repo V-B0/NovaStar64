@@ -564,7 +564,7 @@ void CodeSection::analyze_data_dependencies()
         uint32_t last_read_idx = UINT32_MAX;
     };
     std::array<RegUse, 32> gpr_use{};
-    std::array<RegUse, 32> fpr_use{};
+    [[maybe_unused]] std::array<RegUse, 32> fpr_use{};
 
     for (size_t idx = 0; idx < instructions_.size(); ++idx)
     {
@@ -648,7 +648,7 @@ void CodeSection::determine_loops()
                     }
 
                     // Find the section and explore its successors
-                    auto section = find_existing_section(0); // placeholder
+                    [[maybe_unused]] auto section = find_existing_section(0); // placeholder
                     // Walk through the section graph looking for back-edges
                     // In a complete implementation, we'd use the SectionGraph
                 }
@@ -1904,7 +1904,7 @@ void SectionGraph::find_loops()
         if (target_it != nodes_.end() && source_it != nodes_.end())
         {
             // Check if target dominates source
-            uint32_t target_val = static_cast<uint32_t>(edge.target);
+            [[maybe_unused]] uint32_t target_val = static_cast<uint32_t>(edge.target);
             if (source_it->second.dominators.count(edge.target))
             {
                 // This is a back-edge => natural loop
@@ -1932,7 +1932,7 @@ void SectionGraph::compute_scc()
     std::vector<std::vector<NodeId>> components;
 
     // Reset DFS state
-    uint32_t counter = 0;
+    [[maybe_unused]] uint32_t counter = 0;
     for (auto& [id, node] : nodes_)
     {
         node.dfs_number = UINT32_MAX;

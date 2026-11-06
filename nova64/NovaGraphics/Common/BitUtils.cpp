@@ -150,7 +150,7 @@ static bool HasSSE42CRC() noexcept {
 }
 
 uint32_t CRC32_Fast(const void* data, size_t length, uint32_t seed) noexcept {
-    static const bool sHasHW = HasSSE42CRC();
+    [[maybe_unused]] static const bool sHasHW = HasSSE42CRC();
 
 #if defined(_MSC_VER) || defined(__SSE4_2__)
     if (sHasHW) {

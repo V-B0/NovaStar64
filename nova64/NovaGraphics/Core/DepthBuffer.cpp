@@ -83,7 +83,7 @@ float DepthConvert::N64ZToFloat(uint16_t z14) {
 
 uint16_t DepthConvert::FloatToN64Z(float depth) {
     depth = std::clamp(depth, 0.0f, 1.0f);
-    uint32_t target = static_cast<uint32_t>(depth * 65536.0f);
+    [[maybe_unused]] uint32_t target = static_cast<uint32_t>(depth * 65536.0f);
 
     // Binary search through the float table
     uint16_t lo = 0, hi = 0x3FFF;

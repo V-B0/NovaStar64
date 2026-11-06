@@ -1652,7 +1652,7 @@ private:
             uint8_t fogVal = m_boss.fogTable[fog + 128];
             (void)fogVal;
 
-            uint8_t cc = 0;
+            [[maybe_unused]] uint8_t cc = 0;
             if (x >= w)  cc |= 0x10;
             if (y >= w)  cc |= 0x20;
             if (z >= w)  cc |= 0x40;

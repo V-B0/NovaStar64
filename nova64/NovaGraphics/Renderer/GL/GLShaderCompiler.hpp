@@ -55,7 +55,7 @@ private:
     // Store GLProgram objects keyed by their GL handle so we can manage lifetimes
     std::unordered_map<uint32_t, std::unique_ptr<GLProgram>> m_programs;
 
-    Shader::ShaderHandle m_nextHandle = 1;
+    [[maybe_unused]] Shader::ShaderHandle m_nextHandle = 1;
     Shader::ShaderHandle m_boundProgram = Shader::INVALID_SHADER;
 };
 

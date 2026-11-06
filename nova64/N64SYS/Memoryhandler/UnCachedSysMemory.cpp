@@ -26,11 +26,9 @@ namespace SaveMemory {
     constexpr uint32_t REGION_MASK      = 0x1FFFFFFF;  // Physical address mask
     
     // SRAM constants
-    constexpr uint32_t SRAM_SIZE        = 0x88000;     // 544KB max (512KB + 32KB)
     constexpr uint32_t SRAM_MAX_OFFSET  = 0x88000;
     
     // FlashRAM constants
-    constexpr uint32_t FLASHRAM_SIZE    = 0x10000;     // 128KB
     constexpr uint32_t FLASHRAM_MAX_OFFSET = 0x10000;
     
     // Auto-detection threshold

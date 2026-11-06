@@ -233,7 +233,7 @@ public:
     RecompilerOpsBase(const RecompilerOpsBase&) = delete;
     RecompilerOpsBase& operator=(const RecompilerOpsBase&) = delete;
     RecompilerOpsBase(RecompilerOpsBase&&) = default;
-    RecompilerOpsBase& operator=(RecompilerOpsBase&&) = default;
+    RecompilerOpsBase& operator=(RecompilerOpsBase&&) = delete;
     
     // IRecompilerOps interface
     bool Initialize(RecompilerContext& context, CodeBlock& codeBlock) override final;

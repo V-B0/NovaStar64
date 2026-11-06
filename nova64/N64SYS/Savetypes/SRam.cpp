@@ -277,7 +277,7 @@ bool CSram::LoadSram()
     m_File.flush();
     
     // Seek back to beginning
-    m_File.seek(0, FileSystem::SeekOrigin::Begin);
+    (void)m_File.seek(0, FileSystem::SeekOrigin::Begin);
     
     Log::debugf("CSram::LoadSram - Created new SRAM file (%u bytes initialized to 0x00)", SRAM_SIZE);
     return true;

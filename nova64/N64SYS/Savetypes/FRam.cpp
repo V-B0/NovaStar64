@@ -114,7 +114,7 @@ void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
         // (a previous attempt) is also wrong because it stays stale or
         // zero across pure-read sequences and softcrashes new-file
         // creation when MM reads back a freshly-written page.
-        m_File.seek(StartOffset, FileSystem::SeekOrigin::Begin);
+        (void)m_File.seek(StartOffset, FileSystem::SeekOrigin::Begin);
         size_t bytesRead = m_File.read(FlipBuffer, len);
 
         // Fill any bytes the read could not satisfy (short file / past EOF)
@@ -247,8 +247,8 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value)
             {
                 // Align to sector boundary (16KB)
                 uint32_t sectorOffset = m_FlashRAM_Offset & ~(SECTOR_SIZE - 1);
-                m_File.seek(sectorOffset, FileSystem::SeekOrigin::Begin);
-                m_File.write(EraseSector.data(), SECTOR_SIZE);
+                (void)m_File.seek(sectorOffset, FileSystem::SeekOrigin::Begin);
+                (void)m_File.write(EraseSector.data(), SECTOR_SIZE);
                 m_File.flush();
                 Log::debugf("Flash RAM erase: 16KB sector at offset 0x%X", sectorOffset);
             }
@@ -327,7 +327,7 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value)
             }
             if (!m_ReadOnly)
             {
-                m_File.seek(m_FlashRAM_Offset, FileSystem::SeekOrigin::Begin);
+                (void)m_File.seek(m_FlashRAM_Offset, FileSystem::SeekOrigin::Begin);
                 size_t bytesWritten = m_File.write(m_PageBuffer, BLOCK_SIZE);
                 m_File.flush();
                 Log::infof("[FlashRAM] wrote %zu bytes to offset 0x%X", bytesWritten, m_FlashRAM_Offset);
@@ -404,10 +404,10 @@ bool CFlashRam::LoadFlashram()
                     // Write empty pages to fill entire Flash RAM
                     for (size_t i = 0; i < FLASHRAM_SIZE / sizeof(emptyPage); i++)
                     {
-                        m_File.write(emptyPage, sizeof(emptyPage));
+                        (void)m_File.write(emptyPage, sizeof(emptyPage));
                     }
                     
-                    m_File.seek(0, FileSystem::SeekOrigin::Begin);
+                    (void)m_File.seek(0, FileSystem::SeekOrigin::Begin);
                     m_File.flush();
                     
                     Log::infof("Created new Flash RAM save file: %s (%zu KB)", 
