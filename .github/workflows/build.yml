@@ -34,6 +34,11 @@ jobs:
         run: ./nova64/build/nova64 --help
       - name: RSP recompiler matches the interpreter
         run: ./nova64/build/nova64 --rsp-selftest --programs 4000
+      - name: ... with the portable vector kernels (the code path MSVC uses)
+        run: |
+          cmake -S nova64 -B nova64/build -DNOVA64_RSP_PORTABLE_KERNELS=ON
+          cmake --build nova64/build --parallel
+          ./nova64/build/nova64 --rsp-selftest --programs 4000
 
   windows:
     runs-on: windows-latest

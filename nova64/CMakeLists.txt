@@ -85,6 +85,14 @@ add_executable(nova64 ${NOVA64_SOURCES})
 # Only main.cpp reads the version, so only it is recompiled when it changes.
 set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS "NOVA64_VERSION=\"${NOVA64_VERSION}\"")
 
+# The RSP recompiler's vector kernels use compiler vector types where there are any (GCC,
+# Clang) and a portable stand-in elsewhere (MSVC). This switch forces the stand-in, so
+# that code path can be tested with `nova64 --rsp-selftest` on a machine with Clang.
+option(NOVA64_RSP_PORTABLE_KERNELS "Use the portable RSP vector kernels even where compiler vector types exist (testing)" OFF)
+if(NOVA64_RSP_PORTABLE_KERNELS)
+    set_source_files_properties(NovaRSP/Jit/RspJitKernels.cpp PROPERTIES COMPILE_DEFINITIONS NOVA_RSP_FORCE_LANES)
+endif()
+
 # A build you run from its own folder keeps its settings, games and saves right
 # there, so the marker file below goes next to the executable. An installed copy
 # has no such file and keeps them in the user's own data folder instead (see

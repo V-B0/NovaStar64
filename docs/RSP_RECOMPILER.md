@@ -39,11 +39,12 @@ for microcode HLE doesn't recognise.
   back to a microcode already seen costs a table lookup, not a recompile.
 * **What is translated natively.** Scalar arithmetic, shifts, loads, stores, branches and jumps are emitted as machine
   code. An unaligned load or store calls the interpreter for that one instruction.
-* **Vector instructions** call a *kernel* (`RspJitKernels.cpp`): the whole 8-lane operation written once with
-  compiler vector extensions, which becomes NEON or SSE.
-* **Everything else** (`MTC0`, `MFC0`, the rarer vector loads and stores, ...) calls `CRSPSystem::ExecuteOne`, which
-  runs that one instruction on the interpreter. So the recompiler is exact by construction and only gets faster as
-  more is translated. `NOVA64_RSP_JIT_STATS=1` lists what still goes through the interpreter, most frequent first.
+* **Vector instructions** (every computation, load and store) call a *kernel* (`RspJitKernels.cpp`): the whole
+  8-lane operation written once with compiler vector types, which become NEON or SSE.
+* **Everything else** (`MTC0`, `MFC0`, an unaligned scalar load or store) calls `CRSPSystem::ExecuteOne`, which runs
+  that one instruction on the interpreter. So the recompiler is exact by construction, and any instruction a future
+  change leaves untranslated is still correct. `NOVA64_RSP_JIT_STATS=1` lists what goes through the interpreter, most
+  frequent first.
 * **If a block can't be compiled** the interpreter finishes the task from that point.
 
 The recompiler only handles a run with no cycle budget (the normal case) and never runs while the RSP debugger is
@@ -72,7 +73,8 @@ self-test on every push.
 
 ## Adding to it
 
-* **A vector kernel.** Add the function to `RspJitKernels.cpp` and its entry to `Tables`. Read the interpreter's
+* **A vector kernel.** Add the function to `RspJitKernels.cpp` and its entry to `Tables`. Write it with the `V8s` /
+  `V8w` / `V8l` types and `Cvt`/`Bc`, not compiler builtins, so it works on both paths. Read the interpreter's
   version in `RSPInterpreterOps.cpp` first and match it exactly, quirks included; the interpreter stays as the
   reference. Run `--rsp-selftest` with a few seeds.
 * **A code emitter for another CPU.** Implement `Backend` (`RspJitBackend.hpp`): turn one `Block` into a function that
@@ -81,6 +83,8 @@ self-test on every push.
 
 ## Limits
 
-* The vector kernels use GCC/Clang vector extensions. A build with MSVC has no kernels, so vector instructions there
-  run on the interpreter (scalar code is still translated).
+* The kernels use GCC/Clang vector types where they exist. Elsewhere (MSVC) they use `Lanes<>`
+  (`RspSimdLanes.hpp`), the same operators written as plain loops, which is correct everywhere and about half as fast
+  (SM64 in LLE: the RSP takes 1.9 s instead of 1.1 s, against 5.2 s on the interpreter). `-DNOVA64_RSP_PORTABLE_KERNELS=ON`
+  forces that path on a Clang machine so it can be run through `--rsp-selftest`; CI does this on macOS.
 * Platforms without an emitter (32-bit, RISC-V, ...) use the interpreter automatically.
