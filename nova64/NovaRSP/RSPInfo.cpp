@@ -20,10 +20,6 @@
 
 namespace Nova64::RSP {
 
-#ifdef NOVA_RSP_RECOMPILER
-// Module-level recompiler memory (code buffers, jump tables)
-static RecompilerMemory s_RecompMem;
-#endif
 
 // Persistent HLE context — survives across DoRspCycles calls for audio continuity
 static std::unique_ptr<HLE::CHle> s_HleContext;
@@ -85,14 +81,6 @@ void RspRomOpened()
 
     // Create persistent HLE context (initializes audio output device, ucode state)
     s_HleContext = std::make_unique<HLE::CHle>(RSPSystem);
-
-#ifdef NOVA_RSP_RECOMPILER
-    // Allocate recompiler code buffers if using recompiler
-    if (CRSPSettings::CPUMethod() == RSPCpuMethod::RecompilerTasks)
-    {
-        AllocateRSPMemory(s_RecompMem);
-    }
-#endif
 }
 
 // ──────────────────────────────────────────────
@@ -106,11 +94,6 @@ void RspRomClosed()
 
     // Destroy HLE context (shuts down audio output, flushes buffers)
     s_HleContext.reset();
-
-#ifdef NOVA_RSP_RECOMPILER
-    // Free recompiler buffers
-    FreeRSPMemory(s_RecompMem);
-#endif
 }
 
 // ──────────────────────────────────────────────
@@ -120,16 +103,13 @@ void RspRomClosed()
 void FreeRSP()
 {
     s_HleContext.reset();
-#ifdef NOVA_RSP_RECOMPILER
-    FreeRSPMemory(s_RecompMem);
-#endif
     g_RSPDebugger = nullptr;
 }
 
 // ──────────────────────────────────────────────
 // DoRspCycles: main RSP execution entry point
 // Called when the RSP halt bit is cleared.
-// Tries HLE dispatch first; falls back to LLE interpreter.
+// Tries HLE dispatch first; otherwise runs the task on the RSP engine.
 // ──────────────────────────────────────────────
 
 uint32_t DoRspCycles(uint32_t cycles)
@@ -155,26 +135,11 @@ uint32_t DoRspCycles(uint32_t cycles)
             return cycles;
     }
 
-#ifdef NOVA_RSP_RECOMPILER
-    // Recompiler path (task-based JIT)
-    // NOTE: under MLE/LLE the recompiler buffer is intentionally not allocated
-    // by RspRomOpened (because CPUMethod was still HLE at ROM-open time, and
-    // the video plugin flipped it to RecompilerTasks afterwards). That's by
-    // design — the RSP recompiler hangs on F3D microcode (Phase 2 work).
-    // The call below harmlessly returns false when Code==nullptr, causing the
-    // interpreter fallback to handle graphics tasks instead.
-    if (method == RSPCpuMethod::RecompilerTasks)
-    {
-        const bool recompiled = RSPSystem.RunRecompiledTask(s_RecompMem);
-        if (recompiled)
-            return cycles;
-    }
-#endif
 
-    // Interpreter fallback — run until RSP halts (BREAK instruction).
-    // Under LLE this is the path that executes graphics microcode; it currently
-    // does not advance F3D far enough to emit RDP commands (Phase 2 work).
-    RSPSystem.ExecuteOps(cycles, static_cast<uint32_t>(-1));
+    // Run the task on the RSP engine until the RSP halts (BREAK). Under LLE this
+    // is what executes the graphics microcode.
+    RSPSystem.SetEngine(CRSPSettings::Engine());
+    RSPSystem.Run(cycles);
     return 0;
 }
 

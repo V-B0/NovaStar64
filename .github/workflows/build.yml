@@ -32,6 +32,8 @@ jobs:
         run: ./build.sh --yes
       - name: The program starts
         run: ./nova64/build/nova64 --help
+      - name: RSP recompiler matches the interpreter
+        run: ./nova64/build/nova64 --rsp-selftest --programs 4000
 
   windows:
     runs-on: windows-latest
@@ -45,6 +47,9 @@ jobs:
         run: |
           cmake -S nova64 -B nova64/build -G "Visual Studio 17 2022" -A x64
           cmake --build nova64/build --config RelWithDebInfo --parallel
+      - name: RSP recompiler matches the interpreter
+        shell: pwsh
+        run: nova64/build/RelWithDebInfo/nova64.exe --rsp-selftest --programs 4000
 
   linux:
     runs-on: ubuntu-24.04
@@ -61,3 +66,5 @@ jobs:
             libasound2-dev libpulse-dev libgl1-mesa-dev
       - name: Build
         run: ./build.sh --yes
+      - name: RSP recompiler matches the interpreter
+        run: ./nova64/build/nova64 --rsp-selftest --programs 4000

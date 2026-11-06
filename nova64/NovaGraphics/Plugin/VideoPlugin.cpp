@@ -141,13 +141,11 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         Nova64::RSP::CRSPSettings::SetGraphicsHle(wantGfxHle);
         Nova64::RSP::CRSPSettings::SetAudioHle(true); // keep audio HLE always
         if (!wantGfxHle) {
-            // LLE: keep method=RecompilerTasks so DoRspCycles still tries HLE
-            // first (which keeps audio HLE working). The RSP recompiler buffer
-            // is intentionally NOT allocated for LLE — RunRecompiledTask sees
-            // a null Code pointer and harmlessly returns false, letting the
-            // RSP interpreter handle graphics microcode.
+            // LLE: DoRspCycles still tries HLE first, which keeps audio HLE working,
+            // and runs the graphics microcode on the RSP engine (recompiler or
+            // interpreter, see CRSPSettings::Engine).
             Nova64::RSP::CRSPSettings::SetCPUMethod(
-                Nova64::RSP::RSPCpuMethod::RecompilerTasks);
+                Nova64::RSP::RSPCpuMethod::HleWithFallback);
         }
         LOG_INFO("MLE: renderingMode={} → graphicsHle={}",
                  static_cast<int>(mode), wantGfxHle ? "true" : "false");

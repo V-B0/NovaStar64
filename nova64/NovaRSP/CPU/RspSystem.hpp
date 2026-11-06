@@ -8,6 +8,7 @@
 
 #pragma once
 #include "RSPInterpreterOps.hpp"
+#include "RspEngine.hpp"
 #include "RSPRegisters.hpp"
 #include "RspPipelineStage.hpp"
 #include "RSPTypes.hpp"
@@ -19,15 +20,7 @@ namespace Nova64::RSP {
 
 // Forward declarations
 class RSPRegisterHandlerPlugin;
-struct RecompilerMemory;
 
-#ifdef NOVA_RSP_RECOMPILER
-namespace Recompiler {
-class CRSPRecompiler;
-class CRSPRecompilerOps;
-class RspCodeBlock;
-}
-#endif
 
 namespace HLE {
 class CHle;
@@ -71,13 +64,11 @@ struct RSP_INFO {
 // CRSPSystem - Central RSP subsystem
 // Owns interpreter, registers, recompiler, and HLE
 // ──────────────────────────────────────────────
+namespace Jit { class RspJit; }
+
 class CRSPSystem {
     friend class RSPOp;
-#ifdef NOVA_RSP_RECOMPILER
-    friend class Recompiler::CRSPRecompilerOps;
-    friend class Recompiler::CRSPRecompiler;
-    friend class Recompiler::RspCodeBlock;
-#endif
+    friend class Jit::RspJit;
     friend class CRDPLog;
     friend class RSPRegisterHandler;
     friend class RSPRegisterHandlerPlugin;
@@ -95,14 +86,23 @@ public:
     void RomClosed();
 
     // Execution
-    void ExecuteOps(uint32_t cycles, uint32_t targetPC);
+    void ExecuteOps(uint32_t cycles, uint32_t targetPC);   // the interpreter, always
 
-#ifdef NOVA_RSP_RECOMPILER
-    // Recompiler execution (task-based JIT)
-    // Compiles and runs the RSP block at current SP_PC.
-    // Returns true if execution succeeded, false if fallback needed.
-    bool RunRecompiledTask(RecompilerMemory& mem);
-#endif
+    /// Run until the RSP halts (BREAK or a halt request) or `cycles` instructions
+    /// have run, on whichever engine is selected. The recompiler only handles an
+    /// unlimited budget; anything else runs on the interpreter.
+    void Run(uint32_t cycles);
+
+    /// Forget a branch that was still waiting for its delay slot (used between unrelated programs).
+    void      ResetPipeline() { m_NextInstruction = PipelineStage::Normal; m_JumpTo = 0; }
+    /// Runs the instruction `word` on the interpreter, for code that only needs one
+    /// instruction's effect (the recompiler uses this for what it doesn't translate).
+    /// Control-transfer instructions are not for this: they need the pipeline state.
+    void      ExecuteOne(uint32_t word);
+
+    void      SetEngine(RSPEngine engine) { m_Engine = engine; }
+    [[nodiscard]] RSPEngine GetEngine() const { return m_Engine; }
+
 
     // Sync CPU support (for debugging / verification)
     void SetupSyncCPU();
@@ -140,14 +140,16 @@ private:
     static void NullProcessRdpList();
     static void NullCheckInterrupts();
 
+    void RunUntimed(uint32_t cycles);
+
+    RSPEngine m_Engine{RSPEngine::Interpreter};
+    std::unique_ptr<Jit::RspJit> m_Jit;
+
     // Sync CPU
     CRSPSystem* m_SyncSystem{nullptr};
     CRSPSystem* m_BaseSystem{nullptr};
 
     // Core components
-#ifdef NOVA_RSP_RECOMPILER
-    std::unique_ptr<Recompiler::CRSPRecompiler> m_Recompiler;
-#endif
     std::unique_ptr<RSPRegisterHandlerPlugin> m_RSPRegisterHandler;
     CRSPRegisters m_Reg;
     RSPOp         m_Op;

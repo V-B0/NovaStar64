@@ -22,23 +22,6 @@ inline constexpr uint32_t DMEM_MASK = 0x0FFF;
 inline constexpr uint32_t MaxMaps   = 32;
 
 // ──────────────────────────────────────────────
-// Recompiler code buffer management
-// ──────────────────────────────────────────────
-struct RecompilerMemory {
-    uint8_t*  Code{nullptr};           // Primary code buffer
-    uint8_t*  CodeSecondary{nullptr};  // Secondary code buffer
-    uint8_t*  Pos{nullptr};            // Current write position
-    void**    JumpTable{nullptr};      // PC → compiled code mapping
-    uint32_t  Table{0};
-};
-
-// ──────────────────────────────────────────────
-// Memory allocation/deallocation
-// ──────────────────────────────────────────────
-bool AllocateRSPMemory(RecompilerMemory& mem);
-void FreeRSPMemory(RecompilerMemory& mem);
-
-// ──────────────────────────────────────────────
 // Safe IMEM read (instruction fetch)
 // ──────────────────────────────────────────────
 inline void RSP_LW_IMEM(const uint8_t* imem, uint32_t addr, uint32_t* value) {

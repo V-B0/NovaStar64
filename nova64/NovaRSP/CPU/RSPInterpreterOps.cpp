@@ -6,6 +6,8 @@
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
 
+#include <chrono>
+#include <cstdlib>
 #include "RSPInterpreterOps.hpp"
 #include "RSPCpu.hpp"
 #include "RSPRegisters.hpp"
@@ -20,6 +22,11 @@
 #include <cstdint>
 
 namespace Nova64::RSP {
+
+// NOVA64_RSP_TIME=1 also splits out the time spent drawing the RDP command list the RSP hands over.
+uint64_t g_rspRdpNanos = 0;
+const bool g_rspTimeRdp = std::getenv("NOVA64_RSP_TIME") != nullptr;
+
 
 // ──────────────────────────────────────────────
 // Count leading zeros (portable C++20)
@@ -596,7 +603,14 @@ void RSPOp::Cop0_MT()
         }
         if (ProcessRdpList != nullptr)
         {
-            ProcessRdpList();
+            if (g_rspTimeRdp) {
+                const auto start = std::chrono::steady_clock::now();
+                ProcessRdpList();
+                g_rspRdpNanos += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                     std::chrono::steady_clock::now() - start).count());
+            } else {
+                ProcessRdpList();
+            }
         }
         break;
     }
@@ -1771,7 +1785,7 @@ void RSPOp::SWV()
     addr &= 0xFF8;
     for (uint8_t i = m_OpCode.del, n = static_cast<uint8_t>(16 + m_OpCode.del); i < n; i++, offset++)
     {
-        *(m_DMEM + ((addr + (offset & 0xF)) ^ 3)) = m_Vect[m_OpCode.vt].s8(15 - (i & 0xF));
+        *(m_DMEM + (((addr + (offset & 0xF)) ^ 3) & 0xFFF)) = m_Vect[m_OpCode.vt].s8(15 - (i & 0xF));
     }
 }
 

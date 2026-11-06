@@ -6,6 +6,8 @@
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
  */
 
+#include <cstdlib>
+#include <cstring>
 #include "RspSettings.hpp"
 #include "GameDB.hpp"
 #include "../../common/IniFile.hpp"
@@ -35,6 +37,8 @@ bool         CRSPSettings::s_IndividualBlock   = false;
 bool         CRSPSettings::s_UserGraphicsHleSet = false;
 bool         CRSPSettings::s_UserAudioHleSet    = false;
 bool         CRSPSettings::s_UserCPUMethodSet   = false;
+RSPEngine    CRSPSettings::s_Engine             = RSPEngine::Recompiler;
+bool         CRSPSettings::s_UserEngineSet      = false;
 
 // ──────────────────────────────────────────────
 // Initialize default settings
@@ -47,6 +51,14 @@ void CRSPSettings::InitializeRspSetting()
     if (!s_UserCPUMethodSet)   s_CPUMethod   = RSPCpuMethod::HighLevelEmulation;
     if (!s_UserGraphicsHleSet) s_GraphicsHle = true;
     if (!s_UserAudioHleSet)    s_AudioHle    = true;
+    if (!s_UserEngineSet) {
+        // NOVA64_RSP_ENGINE=recompiler|interpreter, for development and testing.
+        const char* v = std::getenv("NOVA64_RSP_ENGINE");
+        if (v && std::strcmp(v, "interpreter") == 0)
+            s_Engine = RSPEngine::Interpreter;
+        else if (v && (std::strcmp(v, "recompiler") == 0 || std::strcmp(v, "jit") == 0))
+            s_Engine = RSPEngine::Recompiler;
+    }
     s_Profiling        = false;
     s_LogAsmCode       = false;
     s_SyncCPU          = false;
@@ -77,13 +89,13 @@ void CRSPSettings::RefreshSettings()
         CIniFile config(configPath, true /* readOnly */, false /* don't create */);
         if (config.IsFileOpen())
         {
-            // CPU method: 0=Interpreter, 2=RecompilerTasks, 3=HLE
+            // CPU method: 0=Interpreter, 2=HleWithFallback, 3=HLE
             auto cpuMethod = config.GetNumber(kSection, "CPUMethod");
             if (cpuMethod.has_value())
             {
                 switch (cpuMethod.value()) {
                 case 0:  s_CPUMethod = RSPCpuMethod::Interpreter;        break;
-                case 2:  s_CPUMethod = RSPCpuMethod::RecompilerTasks;    break;
+                case 2:  s_CPUMethod = RSPCpuMethod::HleWithFallback;    break;
                 case 3:  s_CPUMethod = RSPCpuMethod::HighLevelEmulation; break;
                 default: s_CPUMethod = RSPCpuMethod::Interpreter;        break;
                 }
@@ -121,7 +133,7 @@ void CRSPSettings::RefreshSettings()
     // Validate CPU method regardless of config read
     switch (s_CPUMethod) {
     case RSPCpuMethod::Interpreter:
-    case RSPCpuMethod::RecompilerTasks:
+    case RSPCpuMethod::HleWithFallback:
     case RSPCpuMethod::HighLevelEmulation:
         break;
     default:
@@ -212,7 +224,7 @@ void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2)
             switch (overrides->cpuMethod.value())
             {
             case 0:  s_CPUMethod = RSPCpuMethod::Interpreter;        break;
-            case 2:  s_CPUMethod = RSPCpuMethod::RecompilerTasks;    break;
+            case 2:  s_CPUMethod = RSPCpuMethod::HleWithFallback;    break;
             case 3:  s_CPUMethod = RSPCpuMethod::HighLevelEmulation; break;
             default: break;
             }

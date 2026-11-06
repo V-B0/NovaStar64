@@ -8,13 +8,15 @@
 
 #include <new>
 #include "RspSystem.hpp"
+#include "../Jit/RspJit.hpp"
 #include "RSPCpu.hpp"
 #include "RSPRegisterHandler.hpp"
 #include "RspMemory.hpp"
 #include "../RSPDebugger.hpp"
 #include "../Settings/RspSettings.hpp"
-#include "../Recompiler/RspRecompilerCPU.hpp"
 #include "../../common/log.hpp"
+#include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -62,6 +64,7 @@ CRSPSystem::~CRSPSystem()
 // ──────────────────────────────────────────────
 void CRSPSystem::Reset(RSP_INFO& info)
 {
+    m_Jit.reset();   // compiled code holds this system's memory addresses
     m_Reg.Reset();
 
     m_HEADER = info.HEADER;
@@ -115,55 +118,12 @@ void CRSPSystem::Reset(RSP_INFO& info)
 void CRSPSystem::RomClosed()
 {
     // Per-game cleanup
-#ifdef NOVA_RSP_RECOMPILER
-    m_Recompiler.reset();
-#endif
 }
 
 // ──────────────────────────────────────────────
 // Recompiler Execution
 // ──────────────────────────────────────────────
 
-#ifdef NOVA_RSP_RECOMPILER
-bool CRSPSystem::RunRecompiledTask(RecompilerMemory& mem)
-{
-#if defined(__amd64__) || defined(_M_X64)
-    if (mem.Code == nullptr || mem.JumpTable == nullptr) return false;
-    if (m_SP_PC_REG == nullptr || m_IMEM == nullptr) return false;
-
-    uint32_t pc = (*m_SP_PC_REG) & 0xFFC;
-
-    // Create recompiler on first use
-    if (!m_Recompiler)
-    {
-        m_Recompiler = std::make_unique<Recompiler::CRSPRecompiler>(*this);
-    }
-
-    // Initialize assembler with the executable code buffer
-    m_Recompiler->EnsureAssembler(mem.Code, 0x100000);
-
-    // Check JumpTable for cached compiled code
-    void* compiled = mem.JumpTable[pc / 4];
-
-    if (compiled == nullptr)
-    {
-        // Compile the RSP block at current PC
-        Recompiler::RspCodeBlocks blocks;
-        compiled = m_Recompiler->CompileHLETask(pc, blocks, 0);
-        if (compiled == nullptr) return false;
-        mem.JumpTable[pc / 4] = compiled;
-    }
-
-    // Execute the compiled block
-    using CompiledFunc = void(*)();
-    reinterpret_cast<CompiledFunc>(compiled)();
-    return true;
-#else
-    (void)mem;
-    return false;
-#endif
-}
-#endif // NOVA_RSP_RECOMPILER
 
 // ──────────────────────────────────────────────
 // Main Execution Loop (Interpreter)
@@ -663,6 +623,56 @@ void CRSPSystem::GetProfilingStats(uint64_t& opsExecuted, uint64_t& cyclesUsed,
     cyclesUsed   = m_ProfileCyclesUsed;
     dmaTransfers = m_ProfileDMATransfers;
     breaks       = m_ProfileBreaks;
+}
+
+void CRSPSystem::ExecuteOne(uint32_t word)
+{
+    m_OpCode.Value = word;
+    (m_Op.*(m_Op.Jump_Opcode[m_OpCode.op]))();
+    m_Reg.m_GPR[0].UW = 0;   // $zero is hard-wired, as in ExecuteOps
+}
+
+extern uint64_t g_rspRdpNanos;   // RSPInterpreterOps.cpp
+
+namespace {
+// NOVA64_RSP_TIME=1: how long the RSP takes, to compare the engines.
+struct RunTimer {
+    bool     enabled = std::getenv("NOVA64_RSP_TIME") != nullptr;
+    uint64_t nanos = 0, runs = 0;
+    ~RunTimer() {
+        if (enabled)
+            std::fprintf(stderr, "[RSP time] %llu runs, %.1f ms total, of which %.1f ms is the RDP drawing what the RSP hands over, so %.1f ms is the RSP itself\n",
+                         static_cast<unsigned long long>(runs), nanos / 1e6, g_rspRdpNanos / 1e6, (nanos - g_rspRdpNanos) / 1e6);
+    }
+};
+RunTimer g_runTimer;
+}
+
+void CRSPSystem::Run(uint32_t cycles)
+{
+    if (g_runTimer.enabled) {
+        const auto start = std::chrono::steady_clock::now();
+        RunUntimed(cycles);
+        g_runTimer.nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now() - start).count();
+        ++g_runTimer.runs;
+        return;
+    }
+    RunUntimed(cycles);
+}
+
+void CRSPSystem::RunUntimed(uint32_t cycles)
+{
+    // The recompiler runs a task to its end; anything with a cycle budget, and any
+    // session with the RSP debugger attached, stays on the interpreter.
+    if (m_Engine == RSPEngine::Recompiler && cycles == 0xFFFFFFFFu &&
+        g_RSPDebugger == nullptr && Jit::RspJit::Available())
+    {
+        if (!m_Jit) m_Jit = std::make_unique<Jit::RspJit>(*this);
+        m_Jit->Run();
+        return;
+    }
+    ExecuteOps(cycles, 0xFFFFFFFFu);
 }
 
 } // namespace Nova64::RSP

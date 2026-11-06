@@ -3,6 +3,7 @@
  * @brief The game running inside the launcher: starting and stopping it, the
  *        game view, the pause menu with its save states, and the rewind bar.
  */
+#include "../NovaRSP/Settings/RspSettings.hpp"
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
 
@@ -139,6 +140,9 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     // "Automatic" must restore whatever the platform default was.
     static const bool kDefaultUseInterpreter = CN64System::s_UseInterpreter;
     CN64System::s_UseInterpreter = (m_launch.cpuCore == 0) ? kDefaultUseInterpreter : (m_launch.cpuCore == 1);
+
+    Nova64::RSP::CRSPSettings::SetEngine(m_launch.rspEngine == 1 ? Nova64::RSP::RSPEngine::Interpreter
+                                                                 : Nova64::RSP::RSPEngine::Recompiler);
 
     CN64System::ClearStopRequest();
     Nova64::Video::g_embeddedMode.store(true);

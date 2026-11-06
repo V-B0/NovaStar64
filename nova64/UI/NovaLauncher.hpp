@@ -85,6 +85,7 @@ struct LaunchOptions {
     int  speed            = 60;    ///< NTSC-equivalent: 30, 60, 120, or 0 = unlimited
     int  displayMode      = 0;     ///< 0 = play in the launcher window as it is, 1 = go fullscreen while playing
     int  cpuCore          = 0;     ///< 0 = platform default, 1 = interpreter, 2 = recompiler
+    int  rspEngine        = 0;     ///< RSP microcode: 0 = recompiler (faster; the interpreter where there isn't one), 1 = interpreter
     bool rewind           = true;
     bool pauseOnFocusLoss = false; ///< pause when another application becomes active
     bool showFps          = false;

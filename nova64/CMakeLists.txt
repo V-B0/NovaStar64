@@ -120,9 +120,6 @@ if(WIN32)
     # COM, and the common file dialog the launcher opens ROMs with
     target_link_libraries(nova64 PRIVATE ole32 uuid comdlg32)
 endif()
-if(NOVA_RSP_RECOMPILER)
-    target_compile_definitions(nova64 PRIVATE NOVA_RSP_RECOMPILER)
-endif()
 
 # macOS: ship MoltenVK (Vulkan-on-Metal) next to the binary. macOS has no system
 # Vulkan loader and its OpenGL caps at 4.1 (the renderer needs 4.6), so Vulkan via
@@ -165,11 +162,23 @@ else()
     # -Wunused-parameter is off too: the plugin interfaces have many methods that a given
     # implementation doesn't need, and 120 warnings about them hide the ones that matter.
     target_compile_options(nova64 PRIVATE -Wall -Wextra -Wno-missing-field-initializers -Wno-unused-parameter)
-    if(NOVA64_NATIVE_ARCH)
+    # The CPU being built FOR. On a Mac, CMAKE_SYSTEM_PROCESSOR is the CPU doing the
+    # build, which differs when -DCMAKE_OSX_ARCHITECTURES=x86_64 builds an Intel copy on
+    # Apple Silicon (handy for testing the x86-64 code under Rosetta).
+    set(NOVA64_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+    if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+        list(LENGTH CMAKE_OSX_ARCHITECTURES NOVA64_ARCH_COUNT)
+        if(NOVA64_ARCH_COUNT EQUAL 1)
+            set(NOVA64_TARGET_ARCH "${CMAKE_OSX_ARCHITECTURES}")
+        else()
+            set(NOVA64_TARGET_ARCH "universal")   # one flag can't suit both slices
+        endif()
+    endif()
+    if(NOVA64_NATIVE_ARCH AND NOVA64_TARGET_ARCH STREQUAL CMAKE_SYSTEM_PROCESSOR)
         set(NOVA64_ARCH_FLAG -march=native)
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    elseif(NOVA64_TARGET_ARCH MATCHES "^(x86_64|AMD64|amd64)$")
         set(NOVA64_ARCH_FLAG -march=x86-64-v2)    # SSE4.2: every x86-64 CPU since about 2009
-    elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+    elseif(APPLE AND NOVA64_TARGET_ARCH MATCHES "^(arm64|aarch64)$")
         set(NOVA64_ARCH_FLAG -mcpu=apple-m1)      # the oldest Apple Silicon; later ones run it too
     else()
         set(NOVA64_ARCH_FLAG "")

@@ -85,8 +85,14 @@ producing sound. `--headless` opens no window and does not take keyboard focus.
 
 Then, depending on what you touched:
 
-- **CPU or RSP execution** — test with both `--interpreter` and `--recompiler`,
-  and compare them with the state trace below.
+- **CPU execution** — test with both `--interpreter` and `--recompiler`, and
+  compare them with the state trace below.
+- **The RSP** (`NovaRSP/CPU/`, `NovaRSP/Jit/`) — run `nova64 --rsp-selftest`, which
+  checks the RSP recompiler against the interpreter on thousands of random
+  programs, and run it with a few `--seed` values. Anything you add to the
+  recompiler or change in an interpreter instruction has to keep it at 0 differences;
+  see [docs/RSP_RECOMPILER.md](docs/RSP_RECOMPILER.md). Then compare LLE frames
+  (`renderingMode = 1`) with `--rsp-interpreter` and the default.
 - **Graphics** — test with at least one ROM that actually exercises the path you
   changed, and compare frames before and after (`NOVA64_SHOT_EVERY=N` writes
   periodic screenshots).
@@ -403,6 +409,9 @@ one, add its row.
 | `NOVA64_RT_SUN=<x>` / `NOVA64_RT_BLUR=<px>` / `NOVA64_RT_SHADOW=<x>` / `NOVA64_RT_EXPOSURE=<x>` | Shadow softness, denoise radius, shadow strength and exposure |
 | `NOVA64_RT_REFL=0` | Turn the ray tracer's reflections off |
 | `NOVA64_LOG_LEVEL=<0-6>` | Override the log verbosity |
+| `NOVA64_RSP_ENGINE=recompiler\|interpreter` | Choose how the RSP runs microcode (the recompiler is the default; `--rsp-interpreter` and `--rsp-recompiler` do the same) |
+| `NOVA64_RSP_TIME=1` | At exit, print how long the RSP took, split from the RDP drawing it triggered |
+| `NOVA64_RSP_JIT_STATS=1` | At exit, print the recompiler's block counts and the instructions that still run on the interpreter, most frequent first |
 | `NOVA64_VIDEO_LOG=<file>` / `NOVA64_VIDEO_LOG_LEVEL=trace\|debug\|info\|warning\|error` | Also write the graphics plugin's log to a file, and choose how much it says (default `info`) |
 | `NOVA64_DEBUG_OUTPUT_MODE=1-7` | Show one shader input instead of the final colour: 1 texel 0, 2 shade, 3 primitive colour, 4 environment colour, 5 UV, 6 depth, 7 alpha |
 | `NOVA64_IGNORE_QUIT=1` | Ignore window-close events, so an unattended capture isn't ended by a stray one |

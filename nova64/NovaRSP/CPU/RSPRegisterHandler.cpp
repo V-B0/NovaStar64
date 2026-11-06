@@ -6,6 +6,7 @@
 #include "RSPRegisterHandler.hpp"
 #include "RspMemory.hpp"
 #include "RspSystem.hpp"
+#include "../Jit/RspJit.hpp"
 #include "RSPCpu.hpp"
 #include "../../common/log.hpp"
 #include <algorithm>
@@ -16,6 +17,45 @@ namespace Nova64::RSP {
 // ──────────────────────────────────────────────
 // Base RSP Register Handler
 // ──────────────────────────────────────────────
+
+namespace {
+
+// An SP DMA row can be longer than what is left of the 4 KB memory bank it starts in,
+// and its RDRAM side can run past the installed memory. The hardware wraps inside the
+// bank, so the copies below do too, and anything outside RDRAM reads as zero and
+// is not written. (Copying with a plain memcpy overran the bank and the RDRAM buffer.)
+void CopyRdramToSp(uint8_t* bank, uint32_t spOffset, const uint8_t* rdram, uint32_t rdramSize,
+                   uint32_t dramAddr, uint32_t length)
+{
+    while (length != 0)
+    {
+        const uint32_t run   = std::min(length, 0x1000u - spOffset);
+        const uint32_t avail = dramAddr < rdramSize ? rdramSize - dramAddr : 0;
+        const uint32_t n     = std::min(run, avail);
+        if (n != 0)   std::memcpy(bank + spOffset, rdram + dramAddr, n);
+        if (n < run)  std::memset(bank + spOffset + n, 0, run - n);
+        spOffset = (spOffset + run) & 0x0FFF;
+        dramAddr += run;
+        length   -= run;
+    }
+}
+
+void CopySpToRdram(uint8_t* rdram, uint32_t rdramSize, uint32_t dramAddr,
+                   const uint8_t* bank, uint32_t spOffset, uint32_t length)
+{
+    while (length != 0)
+    {
+        const uint32_t run   = std::min(length, 0x1000u - spOffset);
+        const uint32_t avail = dramAddr < rdramSize ? rdramSize - dramAddr : 0;
+        const uint32_t n     = std::min(run, avail);
+        if (n != 0)   std::memcpy(rdram + dramAddr, bank + spOffset, n);
+        spOffset = (spOffset + run) & 0x0FFF;
+        dramAddr += run;
+        length   -= run;
+    }
+}
+
+} // namespace
 
 RSPRegisterHandler::RSPRegisterHandler(
     uint32_t* signalProcessorInterface,
@@ -57,8 +97,7 @@ void RSPRegisterHandler::SP_DMA_READ()
 
     for (uint32_t c = 0; c < count; c++)
     {
-        const uint32_t copyLen = std::min(length, m_RdramSize - dramAddr);
-        std::memcpy(target + spOffset, m_Rdram + dramAddr, copyLen);
+        CopyRdramToSp(target, spOffset, m_Rdram, m_RdramSize, dramAddr, length);
 
         spOffset   = (spOffset + length) & 0x0FFF;
         dramAddr   = (dramAddr + length + skip) & 0x00FFFFF8;
@@ -91,8 +130,7 @@ void RSPRegisterHandler::SP_DMA_WRITE()
 
     for (uint32_t c = 0; c < count; c++)
     {
-        const uint32_t copyLen = std::min(length, m_RdramSize - dramAddr);
-        std::memcpy(m_Rdram + dramAddr, source + spOffset, copyLen);
+        CopySpToRdram(m_Rdram, m_RdramSize, dramAddr, source, spOffset, length);
 
         spOffset   = (spOffset + length) & 0x0FFF;
         dramAddr   = (dramAddr + length + skip) & 0x00FFFFF8;
@@ -235,7 +273,9 @@ void RSPRegisterHandlerPlugin::SetHalt()
 
 void RSPRegisterHandlerPlugin::DmaReadDone(uint32_t /*end*/)
 {
-    // Post-DMA read hook - could invalidate recompiler cache here
+    // A DMA into IMEM rewrites code the recompiler may have compiled.
+    if (m_System.m_Jit && m_System.m_SP_MEM_ADDR_REG && (*m_System.m_SP_MEM_ADDR_REG & 0x1000))
+        m_System.m_Jit->NotifyImemWritten();
 }
 
 } // namespace Nova64::RSP

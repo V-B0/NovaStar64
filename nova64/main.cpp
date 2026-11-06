@@ -8,6 +8,8 @@
 #include "N64SYS/N64Rom.hpp"
 #include "N64SYS/SysGlobals.hpp"
 #include "UI/NovaLauncher.hpp"
+#include "NovaRSP/Test/RspDiffTest.hpp"
+#include "NovaRSP/Settings/RspSettings.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -210,12 +212,39 @@ static void PrintUsage(const char* programName)
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
     std::printf("  --interpreter    Force interpreter mode (slower, but better for debugging)\n");
     std::printf("  --recompiler     Force the dynamic recompiler (JIT) instead of the interpreter\n");
+    std::printf("  --rsp-recompiler Run the RSP (graphics and audio microcode) on its recompiler (the default where there is one)\n");
+    std::printf("  --rsp-interpreter  Force the RSP interpreter\n");
     std::printf("  --headless       Run without opening a window (useful with --pipe)\n");
     std::printf("  --pipe <name>    Connect to a named pipe for IPC commands/framebuffer\n");
 }
 
+// `nova64 --rsp-selftest [--seed N] [--programs N] [--only N] [--length N] [--verbose]`
+// Runs random programs on the RSP interpreter and the RSP recompiler and compares the
+// results. A development tool: it needs no ROM and no window, and leaves no files behind.
+static int RunRspSelfTest(int argc, char* argv[])
+{
+    Nova64::RSP::Test::DiffTestOptions opt;
+    for (int i = 1; i < argc; i++)
+    {
+        auto number = [&](uint64_t& out) {
+            if (i + 1 < argc) out = std::strtoull(argv[++i], nullptr, 0);
+        };
+        uint64_t n = 0;
+        if (!std::strcmp(argv[i], "--seed"))          { number(n); opt.seed = n; }
+        else if (!std::strcmp(argv[i], "--programs")) { number(n); opt.programs = static_cast<uint32_t>(n); }
+        else if (!std::strcmp(argv[i], "--only"))     { number(n); opt.only = static_cast<uint32_t>(n); }
+        else if (!std::strcmp(argv[i], "--length"))   { number(n); opt.maxLength = static_cast<uint32_t>(n); }
+        else if (!std::strcmp(argv[i], "--verbose"))  { opt.verbose = true; }
+    }
+    return Nova64::RSP::Test::RunDifferentialTest(opt);
+}
+
 int main(int argc, char* argv[])
 {
+    for (int i = 1; i < argc; i++)
+        if (!std::strcmp(argv[i], "--rsp-selftest"))
+            return RunRspSelfTest(argc, argv);
+
     // Initialize logging
     LoggingConfig::set_min_level(Logging::Level::Info);
     LoggingConfig::enable_console_output(true);
@@ -316,6 +345,14 @@ int main(int argc, char* argv[])
         {
             CN64System::s_UseInterpreter = false;
             Log::info("Dynamic recompiler forced via CLI");
+        }
+        else if (std::strcmp(argv[i], "--rsp-recompiler") == 0)
+        {
+            Nova64::RSP::CRSPSettings::SetEngine(Nova64::RSP::RSPEngine::Recompiler);
+        }
+        else if (std::strcmp(argv[i], "--rsp-interpreter") == 0)
+        {
+            Nova64::RSP::CRSPSettings::SetEngine(Nova64::RSP::RSPEngine::Interpreter);
         }
         else if (std::strcmp(argv[i], "--headless") == 0)
         {

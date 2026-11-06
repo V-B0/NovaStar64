@@ -49,7 +49,6 @@ totals with `python3 nova64/scripts/measure-derivation.py`.
 | Area | Files | Lines | Notes |
 |---|---:|---:|---|
 | `N64SYS/Recomp/` | 34 | 21,633 | Dynamic recompiler: code blocks, sections, register allocation, x64 and ARM64 backends |
-| `NovaRSP/Recompiler/` | 18 | 10,511 | RSP recompiler incl. x64 vector codegen |
 | `NovaRSP/CPU/` | 18 | 5,984 | RSP interpreter, registers, memory |
 | `NovaRSP/HLE/` | 15 | 4,517 | HLE audio lists and microcode dispatch |
 | `N64SYS/Plugins/` | 4 | 1,788 | Zilmar-spec plugin interfaces |
@@ -58,7 +57,7 @@ totals with `python3 nova64/scripts/measure-derivation.py`.
 | `N64SYS/Interpreter/` | 1 | 503 | MIPS interpreter |
 | `common/` | 1 | 468 | Executable-memory allocation for the recompiler |
 | `NovaRSP/` (settings, debugger, info) | 7 | 725 | |
-| **Total** | **103** | **48,557** | |
+| **Total** | **85** | **38,046** | |
 
 `NovaGraphics/` (~55K lines), `UI/`, `NovaAudio/`, `NovaInput/` and `NovaLua/`
 contain no derived code. Keep it that way — see
@@ -116,11 +115,17 @@ HLE audio is the riskier half: it is not emulating documented hardware but
 reimplementing what specific Nintendo audio microcodes do, which is closer to
 behavioural reverse engineering. Budget accordingly.
 
-### 5. `N64SYS/Recomp/` and `NovaRSP/Recompiler/` (~32,400 lines)
+### 5. `N64SYS/Recomp/` (~21,600 lines)
 
-The largest and hardest tier — nearly two-thirds of the derived code. A dynamic
+The largest and hardest tier — more than half of the derived code. A dynamic
 recompiler with register allocation, block linking, and two backends is a
 substantial project in its own right.
+
+The RSP's recompiler has already been replaced this way: the Project64-derived one
+(x86-only, never completed) was deleted and `NovaRSP/Jit/` is a new, much smaller
+design with one shared front end and a code emitter per CPU. It is held to the
+interpreter by a randomised differential test (`nova64 --rsp-selftest`), the pattern
+this section recommends for the main CPU. See [RSP_RECOMPILER.md](RSP_RECOMPILER.md).
 
 Two observations that may change the calculus:
 

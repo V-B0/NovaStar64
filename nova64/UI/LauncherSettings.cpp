@@ -64,6 +64,7 @@ void LaunchOptions::Load(const std::string& path) {
         if      (key == "speed")             speed = v;
         else if (key == "displayMode")       displayMode = v;
         else if (key == "cpuCore")           cpuCore = v;
+        else if (key == "rspEngine")         rspEngine = v;
         else if (key == "rewind")            rewind = v != 0;
         else if (key == "pauseWhenInactive") pauseOnFocusLoss = v != 0;
         else if (key == "showFps")           showFps = v != 0;
@@ -74,6 +75,7 @@ void LaunchOptions::Load(const std::string& path) {
     // Older files also used 2, exclusive fullscreen; any fullscreen is 1 now.
     displayMode = (displayMode == 0) ? 0 : 1;
     if (cpuCore < 0 || cpuCore > 2) cpuCore = 0;
+    if (rspEngine < 0 || rspEngine > 1) rspEngine = 0;
     if (volume < 0 || volume > 100) volume = 100;
 }
 
@@ -82,6 +84,7 @@ void LaunchOptions::Save(const std::string& path) const {
     f << "speed = " << speed << "\n"
       << "displayMode = " << displayMode << "\n"
       << "cpuCore = " << cpuCore << "\n"
+      << "rspEngine = " << rspEngine << "\n"
       << "rewind = " << (rewind ? 1 : 0) << "\n"
       << "pauseWhenInactive = " << (pauseOnFocusLoss ? 1 : 0) << "\n"
       << "showFps = " << (showFps ? 1 : 0) << "\n"
@@ -452,6 +455,12 @@ void NovaLauncher::RenderSettingsTab() {
         if (ImGui::Combo("CPU core", &m_launch.cpuCore, kCores, 3)) SaveLaunchOptions();
         ImGui::TextDisabled("Automatic uses the recompiler on x86-64 and the interpreter on Apple Silicon,\n"
                             "where the recompiler is still incomplete.");
+
+        static const char* kRsp[] = {"Recompiler (faster)", "Interpreter"};
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::Combo("RSP engine", &m_launch.rspEngine, kRsp, 2)) SaveLaunchOptions();
+        ImGui::TextDisabled("Runs the graphics and audio microcode when it isn't emulated at a higher level\n"
+                            "(the LLE rendering mode). Both give identical results; applies to the next game.");
 
         ImGui::Spacing();
         ImGui::Separator();

@@ -19,9 +19,6 @@ class CRSPSystem;
 class CRSPRegisters;
 class RSPRegisterHandlerPlugin;
 
-#ifdef NOVA_RSP_RECOMPILER
-namespace Recompiler { class CRSPRecompilerOps; }
-#endif
 
 // ──────────────────────────────────────────────
 // RSP Interpreter - Executes all RSP opcodes
@@ -29,9 +26,6 @@ namespace Recompiler { class CRSPRecompilerOps; }
 // ──────────────────────────────────────────────
 class RSPOp {
     friend class CRSPSystem;
-#ifdef NOVA_RSP_RECOMPILER
-    friend class Recompiler::CRSPRecompilerOps;
-#endif
 
 public:
     explicit RSPOp(CRSPSystem& system);

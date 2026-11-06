@@ -440,16 +440,16 @@ general terms:
 
 | Subsystem | Files crediting Project64 | Lines in those files |
 |---|---|---|
-| `N64SYS/` | 51 of 127 (40%) | 31,306 of 62,909 (50%) |
-| `NovaRSP/` | 58 of 66 (88%) | 21,779 of 23,465 (93%) |
-| `NovaGraphics/` | 0 of 115 (0%) | 0 of 55,678 (0%) |
+| `N64SYS/` | 51 of 127 (40%) | 31,312 of 62,916 (50%) |
+| `NovaRSP/` | 39 of 59 (66%) | 11,164 of 15,587 (72%) |
+| `NovaGraphics/` | 0 of 115 (0%) | 0 of 55,279 (0%) |
 | `NovaAudio/` | 0 of 2 (0%) | 0 of 397 (0%) |
 | `NovaInput/` | 0 of 6 (0%) | 0 of 1,136 (0%) |
 | `NovaLua/` | 0 of 2 (0%) | 0 of 350 (0%) |
-| `UI/` | 0 of 13 (0%) | 0 of 3,190 (0%) |
+| `UI/` | 0 of 13 (0%) | 0 of 3,520 (0%) |
 | `common/` | 1 of 24 (4%) | 468 of 5,954 (8%) |
-| `main.cpp` | 0 of 1 (0%) | 0 of 346 (0%) |
-| **Total** | **110 of 356 (31%)** | **53,553 of 153,425 (35%)** |
+| `main.cpp` | 0 of 1 (0%) | 0 of 437 (0%) |
+| **Total** | **91 of 349 (26%)** | **42,944 of 145,576 (29%)** |
 
 A file counts if its header credits Project64, and is counted in full, so these
 figures are an upper bound on the derived code. Regenerate them with

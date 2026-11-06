@@ -89,7 +89,6 @@ set(NOVA64_SOURCES
     NovaRSP/CPU/RSPInstruction.cpp
     NovaRSP/CPU/RSPInterpreterOps.cpp
     NovaRSP/CPU/RspLog.cpp
-    NovaRSP/CPU/RspMemory.cpp
     NovaRSP/CPU/RSPRegisterHandler.cpp
     NovaRSP/CPU/RspSystem.cpp
 
@@ -106,7 +105,15 @@ set(NOVA64_SOURCES
     # NovaRSP - RSP plugin (settings / misc)
     NovaRSP/Settings/RspSettings.cpp
     NovaRSP/RSPDebugger.cpp
+
+    # NovaRSP - RSP recompiler (block-at-a-time; one code emitter per CPU)
+    NovaRSP/Jit/RspJit.cpp
+    NovaRSP/Jit/RspJitKernels.cpp
+    NovaRSP/Jit/RspJitA64.cpp
+    NovaRSP/Jit/RspJitX64.cpp
+    NovaRSP/Jit/RspJitNoBackend.cpp
     NovaRSP/RSPInfo.cpp
+    NovaRSP/Test/RspDiffTest.cpp
 
     # NovaInput - Keyboard and game controller input
     NovaInput/KeyboardInput.cpp
@@ -204,19 +211,3 @@ set(NOVA64_SOURCES
 
     main.cpp
 )
-
-# RSP JIT recompiler (Phase 2 — unfinished for F3D microcode; OFF by default)
-option(NOVA_RSP_RECOMPILER "Enable RSP JIT recompiler (Phase 2 work)" OFF)
-if(NOVA_RSP_RECOMPILER)
-    list(APPEND NOVA64_SOURCES
-        NovaRSP/Recompiler/RspAssembler.cpp
-        NovaRSP/Recompiler/RspCodeBlock.cpp
-        NovaRSP/Recompiler/RspProfiling.cpp
-        NovaRSP/Recompiler/RspRecompilerCPU.cpp
-        NovaRSP/Recompiler/RspRecompilerOps.cpp
-        NovaRSP/Recompiler/RspRegState.cpp
-        NovaRSP/Recompiler/x64/x64RspOps.cpp
-        NovaRSP/Recompiler/x64/x64RspRegInfo.cpp
-        NovaRSP/Recompiler/x64/x64RspVectorGen.cpp
-    )
-endif()
