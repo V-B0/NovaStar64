@@ -120,12 +120,10 @@ void TextureCache::Shutdown() {
 
 void TextureCache::BeginFrame() {
     m_frameCounter++;
-    // Release deferred-destroy zombies whose GPU lifetime has elapsed.
-    // After BeginFrame(N), VKBackend has already waited for Fence(N-2),
-    // so any GPU work that could have referenced a texture evicted at
-    // frame N-3 or earlier is guaranteed complete.
-    while (!m_zombies.empty() && m_zombies.front().safeDestroyFrame <= m_frameCounter) {
-        m_zombies.pop_front(); // unique_ptr destruction happens here — GPU is done
+    // Release deferred-destroy zombies whose last GPU frame has finished.
+    const uint64_t completed = m_renderer ? m_renderer->CompletedFrameSerial() : UINT64_MAX;
+    while (!m_zombies.empty() && m_zombies.front().retireSerial <= completed) {
+        m_zombies.pop_front(); // unique_ptr destruction happens here -- the GPU is done
     }
     // Periodic eviction — every 60 frames, clean stale textures
     if ((m_frameCounter & 0x3F) == 0) {
@@ -561,10 +559,7 @@ void TextureCache::InvalidateRange(uint32_t addressStart, uint32_t sizeBytes) {
             m_stats.currentEntries--;
             m_stats.evictions++;
             m_lruList.erase(it->second.lruIterator);
-            Zombie z;
-            z.gpuTex = std::move(it->second.texture.gpuTexture);
-            z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
-            m_zombies.push_back(std::move(z));
+            Retire(std::move(it->second.texture.gpuTexture));
             it = m_cache.erase(it);
         } else {
             ++it;
@@ -572,10 +567,22 @@ void TextureCache::InvalidateRange(uint32_t addressStart, uint32_t sizeBytes) {
     }
 }
 
+void TextureCache::Retire(std::unique_ptr<ITexture> tex) {
+    if (!tex) return;
+    Zombie z;
+    z.gpuTex = std::move(tex);
+    z.retireSerial = m_renderer ? m_renderer->FrameSerial() : 0;
+    m_zombies.push_back(std::move(z));
+}
+
 void TextureCache::InvalidateAll() {
     m_stats.evictions += m_stats.currentEntries;
     m_stats.currentEntries = 0;
     m_stats.currentBytes = 0;
+    // Same rule as EvictLRU: the GPU may still be executing frames that sample these
+    // textures, so they wait in the zombie queue instead of being destroyed here
+    // (clearing the cache directly destroyed them at once).
+    for (auto& entry : m_cache) Retire(std::move(entry.second.texture.gpuTexture));
     m_cache.clear();
     m_lruList.clear();
 }
@@ -596,10 +603,7 @@ void TextureCache::EvictStale(uint64_t currentFrame) {
                 m_stats.currentBytes -= cacheIt->second.texture.sizeBytes;
                 m_stats.currentEntries--;
                 m_stats.evictions++;
-                Zombie z;
-                z.gpuTex = std::move(cacheIt->second.texture.gpuTexture);
-                z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
-                m_zombies.push_back(std::move(z));
+                Retire(std::move(cacheIt->second.texture.gpuTexture));
                 m_cache.erase(cacheIt);
                 m_lruList.pop_back();
             } else {
@@ -624,13 +628,8 @@ void TextureCache::EvictLRU() {
         m_stats.currentBytes -= it->second.texture.sizeBytes;
         m_stats.currentEntries--;
         m_stats.evictions++;
-        // Defer GPU resource destruction: move to zombie queue so the texture's
-        // VkImageView stays valid until all in-flight GPU frames that might
-        // reference it have completed.
-        Zombie z;
-        z.gpuTex = std::move(it->second.texture.gpuTexture);
-        z.safeDestroyFrame = m_frameCounter + kZombieFrameDelay;
-        m_zombies.push_back(std::move(z));
+        // Defer GPU resource destruction (see Retire).
+        Retire(std::move(it->second.texture.gpuTexture));
         m_cache.erase(it);
     }
 }

@@ -367,6 +367,7 @@ public:
         DestroyCanvas();
         DestroyTransient();
         DestroyFrameResources();
+        VKTextureImpl::DestroySamplerCache(m_device.Get());
         m_swapchain.Destroy(m_device.Get());
         m_device.Destroy();
         if (m_surface) {
@@ -376,6 +377,13 @@ public:
         m_instance.Destroy();
         m_initialized = false;
     }
+
+    void WaitIdle() override {
+        if (m_device.Get()) m_device.WaitIdle();
+        m_completedSerial = m_frameSerial;
+    }
+    uint64_t FrameSerial() const override          { return m_frameSerial; }
+    uint64_t CompletedFrameSerial() const override { return m_completedSerial; }
 
     void BeginFrame() override {
         m_haveViewport = false;
@@ -410,6 +418,8 @@ public:
             m_skipPresent = true;
             return;
         }
+        // This slot's previous frame has finished, and so has everything submitted before it.
+        m_completedSerial = std::max(m_completedSerial, m_slotSerial[m_currentFrame]);
 
         VkResult r = VK_SUCCESS;
         if (m_offscreen) {
@@ -464,6 +474,7 @@ public:
         }
         m_skipPresent = false;
         m_frameRecording = true;
+        m_slotSerial[m_currentFrame] = ++m_frameSerial;
         m_midFrameReadbackDone = false;
         m_frameReadbackCount = 0;
         m_activeCanvasDirty = false;
@@ -2621,6 +2632,7 @@ private:
         }
         DestroyTransient();
         DestroyFrameResources();
+        VKTextureImpl::DestroySamplerCache(m_device.Get());
         m_swapchain.Destroy(m_device.Get());
         m_device.Destroy();
         if (m_surface) {
@@ -2639,6 +2651,7 @@ private:
         // manifests as crashes or validation errors on scene<->menu transitions
         // (where SetColorImage format changes can trigger a recreate mid-stream).
         vkDeviceWaitIdle(m_device.Get());
+        m_completedSerial = m_frameSerial;
         // Extent/format may change — drop the persistent canvas; EnsureCanvas
         // recreates it (empty) on the next BeginFrame.
         DestroyCanvas();
@@ -3475,6 +3488,12 @@ private:
     std::vector<PendingUpload> m_pendingUploads;
     uint32_t      m_currentImage = 0;
     bool          m_skipPresent  = false;
+    // GPU frame bookkeeping (IRenderer::FrameSerial). m_slotSerial[s] is the serial of the
+    // frame last recorded in frame slot s; once slot s's fence has been waited on, that
+    // frame and every earlier one is complete.
+    uint64_t      m_frameSerial     = 0;
+    uint64_t      m_completedSerial = 0;
+    uint64_t      m_slotSerial[kFramesInFlight] = {};
     // Has anything been DRAWN to the currently-active canvas since it became
     // active? Gates SaveSwapchainToCanvas so merely binding a buffer cannot
     // overwrite its stored content with the live frame.

@@ -598,6 +598,21 @@ public:
     virtual void EndFrame() = 0;
     virtual void Present() = 0;
 
+    // GPU frame bookkeeping, so a resource can be freed once no queued frame can still
+    // use it. FrameSerial() numbers the GPU frames begun so far (the one being recorded
+    // included); CompletedFrameSerial() is the newest frame the GPU is known to have
+    // finished. Something retired while frame N is current may be destroyed once
+    // CompletedFrameSerial() >= N. These count GPU frames, not video fields: a game that
+    // draws every third field has three fields (and three UpdateScreen calls) per frame.
+    // Backends whose API frees safely on its own (OpenGL) keep the defaults, which report
+    // everything complete.
+    virtual uint64_t FrameSerial() const { return 0; }
+    virtual uint64_t CompletedFrameSerial() const { return UINT64_MAX; }
+
+    /// Blocks until the GPU has finished everything submitted so far. Call before
+    /// destroying GPU objects at shutdown.
+    virtual void WaitIdle() {}
+
     // ─── Resource Creation ─────────────────────────────────────
     virtual std::unique_ptr<IVertexBuffer> CreateVertexBuffer(size_t sizeBytes, BufferUsage usage) = 0;
     virtual std::unique_ptr<IIndexBuffer> CreateIndexBuffer(size_t sizeBytes, BufferUsage usage) = 0;

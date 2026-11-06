@@ -411,6 +411,28 @@ in a fix, confirm the code runs at all — add a counter or a log line and watch
 fire, or `grep` for a call site. Removing a source file from the build and
 checking that it still links is a reliable deadness test.
 
+**GPU lifetimes count GPU frames, not video fields.** An evicted texture waited in a
+queue for "three frames" before being destroyed, but the queue was advanced once per
+video field (`UpdateScreen`), while the GPU only receives a frame when a display list is
+drawn: Majora's Mask draws every third field, so three fields is a third of a frame.
+Under load, a frame still executing on the GPU sampled a texture that had just been
+freed, and MoltenVK lost the device with `GPU Address Fault ... PageFault` followed by
+`VK_ERROR_DEVICE_LOST`, after which nothing is drawn. It showed up in plain Super Mario
+64 runs about two seconds in. It is a timing race, so it behaves oddly: it only happens
+when the emulator runs ahead of the GPU (`NOVA64_TURBO=1`, the launcher's Unlimited or
+Double speed, or a heavy scene), and every switch that slows or serialises the GPU hides
+it (`vkQueueWaitIdle` after each submit, a much longer queue delay) -- as does
+`MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=0`, which only changes how a stale reference
+misbehaves. Those are diagnostics, not fixes. The renderer now reports
+`FrameSerial()` and `CompletedFrameSerial()` (`IRenderer`), and `TextureCache::Retire`
+holds a texture until the frame that was current when it left the cache has finished.
+Anything else that destroys a GPU object the game may still be drawing with needs the
+same rule; a destructor that frees immediately is only safe for objects no frame can
+reference. To reproduce a fault of this kind deterministically, load a state into a cold
+cache and run uncapped:
+`NOVA64_STATE_LOAD_AT=30:0 NOVA64_TURBO=1 nova64 roms/MM --headless` (a Majora's Mask
+state in slot 0 sends it down the heavy path), and grep the log for `GPU Address Fault`.
+
 **The same GBI command can mean different things in different microcodes.**
 `G_POPMTX` carries `G_MTX_MODELVIEW` (0) in F3D and F3DEX, where it means "pop
 one matrix", but a count times 64 in F3DEX2. The shared handler used the F3DEX2

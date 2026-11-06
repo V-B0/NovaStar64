@@ -56,6 +56,10 @@ public:
     VkSampler   GetSampler() const { return m_sampler; }
     VkImageLayout GetLayout() const { return m_layout; }
 
+    /// Samplers are shared between textures with the same settings (a game has a few
+    /// dozen distinct ones, and thousands of textures). Call before the device is destroyed.
+    static void DestroySamplerCache(VkDevice device);
+
 private:
     bool CreateImageAndMemory();
     void CreateDefaultSampler();
@@ -70,7 +74,7 @@ private:
     VkImage        m_image   = VK_NULL_HANDLE;
     VkDeviceMemory m_memory  = VK_NULL_HANDLE;
     VkImageView    m_view    = VK_NULL_HANDLE;
-    VkSampler      m_sampler = VK_NULL_HANDLE;
+    VkSampler      m_sampler = VK_NULL_HANDLE;   // shared, owned by the sampler cache
     VkImageLayout  m_layout  = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 

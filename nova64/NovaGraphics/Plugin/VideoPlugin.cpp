@@ -416,6 +416,10 @@ void VideoPlugin::Shutdown() {
     LOG_INFO("NovaGraphics shutting down...");
     m_status = PluginStatus::ShuttingDown;
 
+    // The last frame may still be executing. Everything below destroys textures, shaders
+    // and buffers it can reference, so let it finish first.
+    if (m_renderer) m_renderer->WaitIdle();
+
     // Shut down ImGui debug UI
     g_imguiDebugUI.Shutdown();
 

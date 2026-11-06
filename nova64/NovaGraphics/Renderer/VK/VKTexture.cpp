@@ -2,6 +2,9 @@
  * @file VKTexture.cpp
  */
 // SPDX-License-Identifier: MIT
+#include <map>
+#include <array>
+#include <mutex>
 #include "VKTexture.hpp"
 #include "VKBuffer.hpp"  // staging buffer
 
@@ -163,7 +166,6 @@ VKTextureImpl::VKTextureImpl(const VKContext* ctx, const TextureDesc& desc)
 
 VKTextureImpl::~VKTextureImpl() {
     if (!m_ctx || !m_ctx->device) return;
-    if (m_sampler) vkDestroySampler(m_ctx->device, m_sampler, nullptr);
     if (m_view)    vkDestroyImageView(m_ctx->device, m_view, nullptr);
     if (m_image)   vkDestroyImage(m_ctx->device, m_image, nullptr);
     if (m_memory)  vkFreeMemory(m_ctx->device, m_memory, nullptr);
@@ -235,12 +237,22 @@ void VKTextureImpl::CreateDefaultSampler() {
     SetSampler(d);
 }
 
+namespace {
+std::mutex g_samplerMutex;
+std::map<std::array<uint32_t, 10>, VkSampler> g_samplerCache;
+
+inline uint32_t FloatBits(float f) { uint32_t u; std::memcpy(&u, &f, sizeof(u)); return u; }
+} // namespace
+
+void VKTextureImpl::DestroySamplerCache(VkDevice device) {
+    std::lock_guard<std::mutex> lock(g_samplerMutex);
+    for (auto& entry : g_samplerCache)
+        if (device && entry.second) vkDestroySampler(device, entry.second, nullptr);
+    g_samplerCache.clear();
+}
+
 void VKTextureImpl::SetSampler(const SamplerDesc& desc) {
     if (!m_ctx || !m_ctx->device) return;
-    if (m_sampler) {
-        vkDestroySampler(m_ctx->device, m_sampler, nullptr);
-        m_sampler = VK_NULL_HANDLE;
-    }
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     si.magFilter    = ToVkFilter(desc.magFilter);
     si.minFilter    = ToVkFilter(desc.minFilter);
@@ -256,9 +268,25 @@ void VKTextureImpl::SetSampler(const SamplerDesc& desc) {
     si.maxLod = static_cast<float>(m_mipLevels);
     si.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     si.unnormalizedCoordinates = VK_FALSE;
-    if (vkCreateSampler(m_ctx->device, &si, nullptr, &m_sampler) != VK_SUCCESS) {
-        Logger::Error("VKTexture: vkCreateSampler failed");
+
+    // One sampler per distinct set of settings, not one per texture.
+    const std::array<uint32_t, 10> key = {
+        static_cast<uint32_t>(si.magFilter), static_cast<uint32_t>(si.minFilter),
+        static_cast<uint32_t>(si.mipmapMode), static_cast<uint32_t>(si.addressModeU),
+        static_cast<uint32_t>(si.addressModeV), static_cast<uint32_t>(si.addressModeW),
+        FloatBits(si.mipLodBias), static_cast<uint32_t>(si.anisotropyEnable),
+        FloatBits(si.maxAnisotropy), FloatBits(si.maxLod) };
+    std::lock_guard<std::mutex> lock(g_samplerMutex);
+    auto it = g_samplerCache.find(key);
+    if (it == g_samplerCache.end()) {
+        VkSampler sampler = VK_NULL_HANDLE;
+        if (vkCreateSampler(m_ctx->device, &si, nullptr, &sampler) != VK_SUCCESS) {
+            Logger::Error("VKTexture: vkCreateSampler failed");
+            return;
+        }
+        it = g_samplerCache.emplace(key, sampler).first;
     }
+    m_sampler = it->second;
 }
 
 void VKTextureImpl::Upload(const void* data, size_t sizeBytes, uint32_t mipLevel) {

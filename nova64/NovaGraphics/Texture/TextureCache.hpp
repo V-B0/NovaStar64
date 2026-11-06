@@ -327,15 +327,16 @@ private:
     std::unordered_map<TextureKey, CacheEntry, TextureKeyHash> m_cache;
 
     // Deferred-destruction zombie queue.
-    // Textures evicted from the cache are held here for kZombieFrameDelay frames
-    // before their GPU resources are actually freed. This ensures any in-flight
-    // GPU command buffers that still reference the texture's VkImageView have
-    // completed before the view is destroyed (avoids GPU fault / TDR).
-    static constexpr uint64_t kZombieFrameDelay = 3; // kFramesInFlight + 1
+    // A texture leaving the cache may still be referenced by a GPU frame that is
+    // queued or running, so its GPU resources wait here until the renderer reports that
+    // frame finished (IRenderer::CompletedFrameSerial). Counting video fields instead
+    // was the bug: a game that draws every third field retired textures within a third
+    // of a GPU frame, and the device was lost with an address fault.
     struct Zombie {
         std::unique_ptr<ITexture> gpuTex;
-        uint64_t safeDestroyFrame; // m_frameCounter value at which it's safe to destroy
+        uint64_t retireSerial;   // IRenderer::FrameSerial() when it left the cache
     };
+    void Retire(std::unique_ptr<ITexture> tex);
     std::deque<Zombie> m_zombies;
 };
 
