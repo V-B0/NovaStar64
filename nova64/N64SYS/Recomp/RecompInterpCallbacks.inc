@@ -2114,7 +2114,7 @@ void Interp_RESERVED(CRegisters* regs, uint32_t /*opcVal*/) {
     regs->TriggerException(static_cast<uint32_t>(ExceptionCode::ReservedInstruction));
 }
 
-void Interp_SYNC(CRegisters* /*regs*/, uint32_t /*opcVal*/) {
+[[maybe_unused]] void Interp_SYNC(CRegisters* /*regs*/, uint32_t /*opcVal*/) {
     // SYNC is a memory barrier - no-op in our single-threaded interpreter context
 }
 
@@ -2229,59 +2229,59 @@ void Interp_TNEI(CRegisters* regs, uint32_t opcVal) {
 // These take 3 args: (CRegisters*, uint32_t opcVal, uint32_t pc)
 // They compute the branch target and set m_PROGRAM_COUNTER accordingly.
 
-void Interp_BEQ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BEQ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs == rt) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BNE_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BNE_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs != rt) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BLEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BLEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs <= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BGTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BGTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs > 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BLTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BLTZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs < 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BGEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BGEZ_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     SetPC(regs, (rs >= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BLTZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BLTZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, (rs < 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BGEZAL_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, (rs >= 0) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     SetPC(regs, pc);
     if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
@@ -2289,7 +2289,7 @@ void Interp_BC1F_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     SetPC(regs, (!fpCond) ? (pc + 4 + offset) : (pc + 8));
 }
 
-void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     SetPC(regs, pc);
     if (CheckCop1Unusable(regs)) return;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
@@ -2298,12 +2298,12 @@ void Interp_BC1T_Branch(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 }
 
 // Jump callbacks
-void Interp_J_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_J_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     SetPC(regs, target);
 }
 
-void Interp_JAL_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
+[[maybe_unused]] void Interp_JAL_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     uint32_t target = ((pc + 4) & 0xF0000000) | (mips_target(opcVal) << 2);
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
     SetPC(regs, target);

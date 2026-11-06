@@ -40,7 +40,7 @@ X64RegisterInfo X64RegisterInfo::GetInfo(X64RegisterType reg) {
         info.index = static_cast<uint8_t>(idx);
         // Volatile (caller-saved) on Windows x64: RAX, RCX, RDX, R8-R11
         bool isVolatile = (idx == 0 || idx == 1 || idx == 2 || idx == 3 ||
-                          idx >= 8 && idx <= 11);
+                          (idx >= 8 && idx <= 11));
         info.isCallerSaved = isVolatile;
         info.isCalleeSaved = !isVolatile;
         info.isVolatile = isVolatile;

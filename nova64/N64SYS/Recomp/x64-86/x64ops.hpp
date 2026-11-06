@@ -277,7 +277,7 @@ public:
         void Reset();
         
     private:
-        CX64Ops& m_Assembler;
+        [[maybe_unused]] CX64Ops& m_Assembler;
         std::array<bool, 16> m_GpUsed;    // General purpose registers
         std::array<bool, 16> m_XmmUsed;   // XMM registers
     };

@@ -52,6 +52,14 @@
 
 #pragma STDC FENV_ACCESS ON
 
+// The generated code addresses CRegisters members by their offset, and CRegisters is not a
+// standard-layout type, so offsetof is only conditionally supported. Every compiler we build
+// with computes it; the warning is silenced for this file.
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+
 // ==== BINARY-SEARCH DIAGNOSTIC FLAGS ====
 // Set to 1 to revert group to interpreter callbacks, 0 for inline x64
 #define FORCE_CALLBACK_SPECIAL 0   // All SPECIAL-format ALU/shift/logic
@@ -259,7 +267,7 @@ static void TriggerCop1UnusableException(CRegisters* regs) {
 }
 
 // Static helper called from emitted code when COP2 is accessed
-static void TriggerCop2UnusableException(CRegisters* regs) {
+[[maybe_unused]] static void TriggerCop2UnusableException(CRegisters* regs) {
     regs->TriggerException(11, 2); // EXC_CPU=11, Coprocessor=2
 }
 
@@ -338,13 +346,13 @@ static void TriggerCop3ReservedInstruction(CRegisters* regs, uint32_t compileAdd
 }
 
 // Static helper called from emitted code on integer overflow
-static void TriggerOverflowException(CRegisters* regs) {
+[[maybe_unused]] static void TriggerOverflowException(CRegisters* regs) {
     regs->TriggerException(12, 0); // EXC_OV=12
 }
 
 // Static helper: Check COP1 usable and trigger exception if not.
 // Returns 1 if exception was triggered (CU1=0), 0 if COP1 is usable.
-static uint32_t CheckCop1UsableAndTrigger(CRegisters* regs) {
+[[maybe_unused]] static uint32_t CheckCop1UsableAndTrigger(CRegisters* regs) {
     uint32_t statusVal = static_cast<uint32_t>(regs->STATUS_REGISTER.Value);
     if ((statusVal & 0x20000000) == 0) {
         regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
@@ -1519,7 +1527,6 @@ void CX64RecompilerOps::EmitStoreOperation(uint32_t size, bool is64Bit,
 
 void CX64RecompilerOps::EmitBranchCondition(ConditionType condition, asmjit::Label target)
 {
-    auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
 
     switch (condition) {
@@ -3288,5 +3295,9 @@ std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(
 
 } // namespace Recompiler
 } // namespace Nova64
+
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif // __amd64__ || _M_X64
