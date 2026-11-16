@@ -16,9 +16,7 @@ static uint32_t s_audioTaskCount = 0;
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// OSTask parsing from DMEM 0xFC0
-// ──────────────────────────────────────────────
+// --- OSTask parsing from DMEM 0xFC0 ---
 
 TaskInfo CTaskDispatcher::ParseTask(const uint8_t* dmem) {
     TaskInfo info{};
@@ -43,9 +41,7 @@ TaskInfo CTaskDispatcher::ParseTask(const uint8_t* dmem) {
     return info;
 }
 
-// ──────────────────────────────────────────────
-// CRC32 computation from DRAM
-// ──────────────────────────────────────────────
+// --- CRC32 computation from DRAM ---
 
 uint32_t CTaskDispatcher::ComputeUcodeCrc(CHle* hle, uint32_t addr, uint32_t size) {
     if (hle->dram() == nullptr || addr == 0 || size == 0) return 0;
@@ -63,9 +59,7 @@ uint32_t CTaskDispatcher::ComputeUcodeDataCrc(CHle* hle, uint32_t addr, uint32_t
     return Crc32(hle->dram() + masked, safe_size);
 }
 
-// ──────────────────────────────────────────────
-// Microcode identification
-// ──────────────────────────────────────────────
+// --- Microcode identification ---
 
 const MicrocodeEntry* CTaskDispatcher::IdentifyMicrocode(CHle* hle, const TaskInfo& task) {
     // Quick cache check: same ucode address as last time?
@@ -126,9 +120,7 @@ const MicrocodeEntry* CTaskDispatcher::IdentifyMicrocode(CHle* hle, const TaskIn
     return entry;
 }
 
-// ──────────────────────────────────────────────
-// Main dispatch entry point
-// ──────────────────────────────────────────────
+// --- Main dispatch entry point ---
 
 bool CTaskDispatcher::DispatchTask(CHle* hle) {
     if (hle->dmem() == nullptr) return false;
@@ -199,9 +191,7 @@ bool CTaskDispatcher::DispatchTask(CHle* hle) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Video task dispatch
-// ──────────────────────────────────────────────
+// --- Video task dispatch ---
 
 bool CTaskDispatcher::DispatchVideoTask(CHle* hle, const TaskInfo& task) {
     if (!hle->GraphicsHle()) {
@@ -223,9 +213,7 @@ bool CTaskDispatcher::DispatchVideoTask(CHle* hle, const TaskInfo& task) {
     return true;
 }
 
-// ──────────────────────────────────────────────
-// Audio task dispatch
-// ──────────────────────────────────────────────
+// --- Audio task dispatch ---
 
 // Signature-based audio microcode identification (from mupen64plus-rsp-hle).
 // Reads specific uint32 values from ucode_data in DRAM to identify the audio ABI.
@@ -327,9 +315,7 @@ bool CTaskDispatcher::DispatchAudioTask(CHle* hle, const TaskInfo& task, const M
     return false;
 }
 
-// ──────────────────────────────────────────────
-// JPEG task dispatch
-// ──────────────────────────────────────────────
+// --- JPEG task dispatch ---
 
 bool CTaskDispatcher::DispatchJpegTask(CHle* hle, const TaskInfo& /*task*/, const MicrocodeEntry* ucode) {
     if (ucode != nullptr && ucode->handler != nullptr) {
@@ -347,12 +333,10 @@ bool CTaskDispatcher::DispatchJpegTask(CHle* hle, const TaskInfo& /*task*/, cons
     return false;
 }
 
-// ──────────────────────────────────────────────
 // sum_bytes fallback detection
 // Matches mupen64plus-rsp-hle try_normal_task_detection():
 // when CRC lookup fails, sum the first half of microcode text
 // bytes to identify known RSP tasks by their byte signature.
-// ──────────────────────────────────────────────
 
 static void task_done_noop(CHle*) { /* StoreVe12: nothing to emulate */ }
 

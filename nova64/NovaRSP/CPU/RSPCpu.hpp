@@ -15,28 +15,20 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
 // Element broadcast / index tables
 // Used by vector ops: VT element selection
 // EleSpec[e][i] gives the element index to read from VT
-// ──────────────────────────────────────────────
 extern DWord64 EleSpec[16];
 extern DWord64 Indx[16];
 
-// ──────────────────────────────────────────────
-// Runtime state
-// ──────────────────────────────────────────────
+// --- Runtime state ---
 extern uint32_t RSP_Running;
 
-// ──────────────────────────────────────────────
 // Build / initialize RSP CPU subsystem
 // Populates element selection tables
-// ──────────────────────────────────────────────
 void Build_RSP();
 
-// ──────────────────────────────────────────────
-// Performance counters
-// ──────────────────────────────────────────────
+// --- Performance counters ---
 extern uint32_t Mfc0Count;
 extern uint32_t SemaphoreExit;
 

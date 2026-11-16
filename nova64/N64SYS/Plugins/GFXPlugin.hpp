@@ -51,9 +51,7 @@ class GFXPlugin : public PluginBase {
 public:
     virtual ~GFXPlugin() = default;
 
-    // ========================================================================
-    // Display Initialization
-    // ========================================================================
+    // --- Display Initialization ---
 
     /**
      * @brief Initialize display output
@@ -70,9 +68,7 @@ public:
      */
     virtual void ResizeDisplay(uint32_t width, uint32_t height) = 0;
 
-    // ========================================================================
-    // RDP Processing
-    // ========================================================================
+    // --- RDP Processing ---
 
     /**
      * @brief Process RDP display list
@@ -104,9 +100,7 @@ public:
      */
     virtual void UpdateRDPStatus() = 0;
 
-    // ========================================================================
-    // Video Interface
-    // ========================================================================
+    // --- Video Interface ---
 
     /**
      * @brief Update screen (called on VI interrupt)
@@ -145,9 +139,7 @@ public:
     virtual void WriteFrameBuffer(const uint8_t* src, uint32_t addr, uint32_t width, uint32_t height,
                                   uint32_t size) = 0;
 
-    // ========================================================================
-    // Status and Debugging
-    // ========================================================================
+    // --- Status and Debugging ---
 
     /**
      * @brief Check if frame is ready for display

@@ -25,9 +25,7 @@ constexpr uint32_t kRdramSize = 0x100000; // 1 MB is plenty for the DMA the prog
 
 void NullCallback() {}
 
-// ---------------------------------------------------------------------------
-// One complete RSP with its own memory, hardware registers and RDRAM.
-// ---------------------------------------------------------------------------
+// --- One complete RSP with its own memory, hardware registers and RDRAM ---
 class Rig {
 public:
     explicit Rig(Engine engine) : m_Engine(engine), m_Rdram(kRdramSize) {
@@ -193,9 +191,7 @@ private:
     std::unique_ptr<CRSPSystem> m_System;
 };
 
-// ---------------------------------------------------------------------------
-// Random program generator
-// ---------------------------------------------------------------------------
+// --- Random program generator ---
 class Generator {
 public:
     explicit Generator(uint64_t seed) : m_Rng(seed) {}

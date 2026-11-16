@@ -24,9 +24,7 @@
 
 namespace FileSystem {
 
-// =============================================================================
-// FileError implementation
-// =============================================================================
+// --- FileError implementation ---
 
 FileError FileError::from_last_error(const std::string& operation) {
 #ifdef _WIN32
@@ -39,9 +37,7 @@ FileError FileError::from_last_error(const std::string& operation) {
 
 const char* FileError::what() const noexcept { return std::system_error::what(); }
 
-// =============================================================================
-// FileImpl - pimpl implementation
-// =============================================================================
+// --- FileImpl - pimpl implementation ---
 
 class FileImpl {
 public:
@@ -121,9 +117,7 @@ public:
     }
 };
 
-// =============================================================================
-// File - Constructors / Destructor / Move
-// =============================================================================
+// --- File - Constructors / Destructor / Move ---
 
 File::File() : m_impl(std::make_unique<FileImpl>()) {}
 
@@ -136,9 +130,7 @@ File::~File() = default;
 File::File(File&& other) noexcept = default;
 File& File::operator=(File&& other) noexcept = default;
 
-// =============================================================================
-// File - Open / Close / State
-// =============================================================================
+// --- File - Open / Close / State ---
 
 void File::open(const std::string& filename, OpenMode mode, ShareMode share) {
     close();
@@ -245,9 +237,7 @@ void File::close() { m_impl->close_handle(); }
 
 bool File::is_open() const noexcept { return m_impl->is_open(); }
 
-// =============================================================================
-// File - Read operations
-// =============================================================================
+// --- File - Read operations ---
 
 size_t File::read(void* buffer, size_t count) {
     if (!is_open() || count == 0 || buffer == nullptr) {
@@ -307,9 +297,7 @@ std::string File::read_text() {
     return text;
 }
 
-// =============================================================================
-// File - Write operations
-// =============================================================================
+// --- File - Write operations ---
 
 size_t File::write(const void* buffer, size_t count) {
     if (!is_open() || count == 0 || buffer == nullptr) {
@@ -337,9 +325,7 @@ size_t File::write(const std::string& text) { return write(text.data(), text.siz
 
 size_t File::write(const std::vector<uint8_t>& data) { return write(data.data(), data.size()); }
 
-// =============================================================================
-// File - Seek / Position operations
-// =============================================================================
+// --- File - Seek / Position operations ---
 
 int64_t File::tell() const {
     if (!is_open()) {
@@ -399,9 +385,7 @@ void File::seek_to_begin() { (void)seek(0, SeekOrigin::Begin); }
 
 int64_t File::seek_to_end() { return seek(0, SeekOrigin::End); }
 
-// =============================================================================
-// File - Properties
-// =============================================================================
+// --- File - Properties ---
 
 int64_t File::size() const {
     if (!is_open()) {
@@ -477,9 +461,7 @@ NativeHandle File::native_handle() const {
 #endif
 }
 
-// =============================================================================
-// File - Error state
-// =============================================================================
+// --- File - Error state ---
 
 const std::error_code& File::last_error() const noexcept { return m_impl->lastError; }
 
@@ -487,9 +469,7 @@ void File::clear_error() noexcept { m_impl->clear_error(); }
 
 bool File::has_error() const noexcept { return static_cast<bool>(m_impl->lastError); }
 
-// =============================================================================
-// File - Metadata accessors
-// =============================================================================
+// --- File - Metadata accessors ---
 
 std::string File::filename() const { return m_impl->fileName; }
 
@@ -497,9 +477,7 @@ OpenMode File::open_mode() const { return m_impl->mode; }
 
 ShareMode File::share_mode() const { return m_impl->share; }
 
-// =============================================================================
-// File - Timestamps
-// =============================================================================
+// --- File - Timestamps ---
 
 std::chrono::system_clock::time_point File::get_last_write_time() const {
     if (!is_open()) {
@@ -564,9 +542,7 @@ void File::set_last_write_time(const std::chrono::system_clock::time_point& time
 #endif
 }
 
-// =============================================================================
-// File - Static utility methods
-// =============================================================================
+// --- File - Static utility methods ---
 
 bool File::exists(const std::string& filename) {
 #ifdef _WIN32

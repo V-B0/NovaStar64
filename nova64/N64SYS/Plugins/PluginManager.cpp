@@ -41,9 +41,7 @@ std::unique_ptr<RSPPlugin> CreateRSPPluginFromDLL(const std::string& path);
 
 namespace Plugins {
 
-// ============================================================================
-// Constructor / Destructor
-// ============================================================================
+// --- Constructor / Destructor ---
 
 PluginManager::PluginManager(CN64System& system) :
     m_System(system), m_Registers(nullptr), m_Memory(nullptr), m_PluginsInitialized(false), m_PluginsPaused(false) {
@@ -68,9 +66,7 @@ PluginManager::~PluginManager() {
     UnloadAllPlugins();
 }
 
-// ============================================================================
-// Plugin Loading
-// ============================================================================
+// --- Plugin Loading ---
 
 bool PluginManager::LoadAllPlugins() {
     Log::info("PluginManager: Loading all plugins");
@@ -190,9 +186,7 @@ void PluginManager::UnloadAllPlugins() {
 
 bool PluginManager::IsPluginLoaded(PluginType type) const { return GetPlugin(type) != nullptr; }
 
-// ============================================================================
-// Plugin Lifecycle
-// ============================================================================
+// --- Plugin Lifecycle ---
 
 bool PluginManager::InitializePlugins() {
     if (m_PluginsInitialized) {
@@ -320,9 +314,7 @@ void PluginManager::ResumePlugins() {
     m_PluginsPaused = false;
 }
 
-// ============================================================================
-// Plugin Access
-// ============================================================================
+// --- Plugin Access ---
 
 PluginBase* PluginManager::GetPlugin(PluginType type) const {
     switch (type) {
@@ -334,9 +326,7 @@ PluginBase* PluginManager::GetPlugin(PluginType type) const {
     }
 }
 
-// ============================================================================
-// Configuration
-// ============================================================================
+// --- Configuration ---
 
 bool PluginManager::LoadConfiguration(const std::string& configPath) {
     Log::infof("PluginManager: Loading configuration from %s", configPath.c_str());
@@ -442,9 +432,7 @@ void PluginManager::ShowPluginConfig(PluginType type) {
     }
 }
 
-// ============================================================================
-// Plugin Discovery
-// ============================================================================
+// --- Plugin Discovery ---
 
 std::vector<std::string> PluginManager::DiscoverPlugins(const std::string& directory) const {
     Log::infof("PluginManager: Discovering plugins in %s", directory.c_str());
@@ -495,9 +483,7 @@ PluginInfo PluginManager::GetPluginInfo(const std::string& path) const {
     return info;
 }
 
-// ============================================================================
-// Notifications
-// ============================================================================
+// --- Notifications ---
 
 void PluginManager::RegisterNotificationCallback(PluginNotificationCallback callback) {
     m_NotificationCallback = callback;
@@ -511,9 +497,7 @@ void PluginManager::NotifyPluginEvent(PluginType type, PluginNotification notifi
     }
 }
 
-// ============================================================================
-// Save States
-// ============================================================================
+// --- Save States ---
 
 bool PluginManager::SaveState(std::vector<uint8_t>& data) {
     Log::debug("PluginManager: Saving plugin states");
@@ -577,9 +561,7 @@ bool PluginManager::LoadState(const std::vector<uint8_t>& data) {
     return true;
 }
 
-// ============================================================================
-// Status
-// ============================================================================
+// --- Status ---
 
 bool PluginManager::AreRequiredPluginsLoaded() const {
     // Graphics and RSP are required, Audio and Input are optional
@@ -616,9 +598,7 @@ std::string PluginManager::GetStatusString() const {
     return status;
 }
 
-// ============================================================================
-// Internal Plugin Creation
-// ============================================================================
+// --- Internal Plugin Creation ---
 
 void PluginManager::CreateDefaultGraphicsPlugin() {
     Log::info("PluginManager: Creating NovaGraphics graphics plugin");

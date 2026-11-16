@@ -39,9 +39,7 @@
 
 namespace Nova64::Recompiler {
 
-// =============================================================================
-// RegisterState Implementation
-// =============================================================================
+// --- RegisterState Implementation ---
 
 std::string RegisterState::ToString() const {
     char buffer[256];
@@ -68,9 +66,7 @@ std::string RegisterState::ToString() const {
     return std::string(buffer);
 }
 
-// =============================================================================
-// RegisterSet Implementation
-// =============================================================================
+// --- RegisterSet Implementation ---
 
 void RegisterSet::CopyFrom(const RegisterSet& other) noexcept {
     // Copy all register states
@@ -193,9 +189,7 @@ std::string RegisterSet::RegisterToString(size_t regIndex) const {
     return std::string(buffer);
 }
 
-// =============================================================================
-// CRegBase Implementation
-// =============================================================================
+// --- CRegBase Implementation ---
 
 CRegBase::CRegBase() {
     // Initialize register set with default state
@@ -227,9 +221,7 @@ bool CRegBase::operator==(const CRegBase& right) const {
 
 bool CRegBase::operator!=(const CRegBase& right) const { return !(*this == right); }
 
-// =============================================================================
-// Legacy Interface Implementation
-// =============================================================================
+// --- Legacy Interface Implementation ---
 
 void CRegBase::SetMipsRegState(int32_t reg, REG_STATE state) noexcept {
     if (reg < 0 || reg >= static_cast<int32_t>(RegisterSet::NUM_GPR)) {
@@ -382,9 +374,7 @@ std::string CRegBase::RegisterToString(int32_t reg) const {
     return m_Registers.RegisterToString(static_cast<size_t>(reg));
 }
 
-// =============================================================================
-// Register State Analysis (creates dependencies on other components)
-// =============================================================================
+// --- Register State Analysis (creates dependencies on other components) ---
 
 namespace {
 
@@ -454,9 +444,7 @@ bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) 
 
 } // anonymous namespace
 
-// =============================================================================
-// Advanced Register Operations (with dependencies)
-// =============================================================================
+// --- Advanced Register Operations (with dependencies) ---
 
 /**
  * @brief Analyze register usage across a code section
@@ -536,9 +524,7 @@ void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase, 
     }
 }
 
-// =============================================================================
-// Module Initialization
-// =============================================================================
+// --- Module Initialization ---
 
 /**
  * @brief Initialize register base subsystem

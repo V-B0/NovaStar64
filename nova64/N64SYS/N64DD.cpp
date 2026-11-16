@@ -81,9 +81,7 @@ inline uint32_t BLOCKSIZE(uint8_t zone) { return SECTORSIZE_P[zone & 7] * SECTOR
 
 inline uint32_t TRACKSIZE(uint8_t zone) { return BLOCKSIZE(zone) * 2; }
 
-// ============================================================================
-// D64Data structure for D64 format handling
-// ============================================================================
+// --- D64Data structure for D64 format handling ---
 
 struct N64Disk::D64Data {
     bool initialized = false;
@@ -92,9 +90,7 @@ struct N64Disk::D64Data {
     uint16_t ramLbaEnd = 0;
 };
 
-// ============================================================================
-// DiskFile class for file I/O
-// ============================================================================
+// --- DiskFile class for file I/O ---
 
 class N64Disk::DiskFile {
 public:
@@ -152,9 +148,7 @@ private:
     fs::path m_Path;
 };
 
-// ============================================================================
-// N64Disk Implementation
-// ============================================================================
+// --- N64Disk Implementation ---
 
 N64Disk::N64Disk() :
     m_Image(std::make_unique<DiskImage>()), m_D64Data(std::make_unique<D64Data>()),
@@ -570,9 +564,7 @@ uint8_t* N64Disk::GetBuffer() {
     return m_Image->m_Data.data() + m_BufferAddress;
 }
 
-// ============================================================================
-// Private Helper Methods
-// ============================================================================
+// --- Private Helper Methods ---
 
 void N64Disk::DetectFormatAndGeometry() {
     if (!m_Image || m_Image->m_Data.empty()) {
@@ -1163,9 +1155,7 @@ uint16_t N64Disk::LBAToPhys(uint32_t lba) const {
     return track | (head << 12) | (block << 13);
 }
 
-// ============================================================================
-// DiskUtils Implementation
-// ============================================================================
+// --- DiskUtils Implementation ---
 
 namespace DiskUtils {
 

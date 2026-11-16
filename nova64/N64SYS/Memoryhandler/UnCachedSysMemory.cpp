@@ -35,9 +35,7 @@ constexpr uint32_t FLASHRAM_MAX_OFFSET = 0x10000;
 constexpr uint32_t AUTO_DETECT_THRESHOLD = 0x88000;
 } // namespace SaveMemory
 
-// ============================================================================
-// Constructor/Destructor
-// ============================================================================
+// --- Constructor/Destructor ---
 
 UnCachedSysMemory::UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64::MipsMemoryVM& mmu,
                                      bool savesReadOnly) :
@@ -46,9 +44,7 @@ UnCachedSysMemory::UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64
     Log::infof("UnCachedSysMemory: Initialized (saves %s)", savesReadOnly ? "read-only" : "read-write");
 }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
+// --- Read Operations ---
 
 bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
     // Calculate offset from save memory base
@@ -85,9 +81,7 @@ bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
     return true;
 }
 
-// ============================================================================
-// Write Operations
-// ============================================================================
+// --- Write Operations ---
 
 bool UnCachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     // Calculate offset from save memory base
@@ -128,9 +122,7 @@ bool UnCachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     return true;
 }
 
-// ============================================================================
-// DMA Operations
-// ============================================================================
+// --- DMA Operations ---
 
 bool UnCachedSysMemory::DMARead() {
     // PI DMA: Read from save memory to RDRAM
@@ -230,9 +222,7 @@ void UnCachedSysMemory::DMAWrite() {
     CompleteDMA(false);
 }
 
-// ============================================================================
-// Save Chip Type Detection
-// ============================================================================
+// --- Save Chip Type Detection ---
 
 void UnCachedSysMemory::AutoDetectSaveType(uint32_t offset) {
     // Auto-detect save chip based on access pattern
@@ -255,9 +245,7 @@ void UnCachedSysMemory::AutoDetectSaveType(uint32_t offset) {
                (detectedType == N64Types::SaveChipType::Sram) ? "SRAM" : "FlashRAM", offset);
 }
 
-// ============================================================================
-// SRAM Access
-// ============================================================================
+// --- SRAM Access ---
 
 uint32_t UnCachedSysMemory::ReadFromSRAM(uint32_t offset) {
     if (offset >= SaveMemory::SRAM_MAX_OFFSET) {
@@ -308,9 +296,7 @@ void UnCachedSysMemory::WriteToSRAM(uint32_t offset, uint32_t value, uint32_t ma
     Log::debugf("UnCachedSysMemory: SRAM write at offset 0x%X = 0x%08X", offset, value);
 }
 
-// ============================================================================
-// FlashRAM Access
-// ============================================================================
+// --- FlashRAM Access ---
 
 uint32_t UnCachedSysMemory::ReadFromFlashRAM(uint32_t addr) {
     // Read FlashRAM status register
@@ -328,9 +314,7 @@ void UnCachedSysMemory::WriteToFlashRAM(uint32_t value) {
     Log::debugf("UnCachedSysMemory: FlashRAM command = 0x%08X", value);
 }
 
-// ============================================================================
-// DMA Completion
-// ============================================================================
+// --- DMA Completion ---
 
 void UnCachedSysMemory::CompleteDMA(bool error) {
     // Clear DMA busy flag
@@ -350,9 +334,7 @@ void UnCachedSysMemory::CompleteDMA(bool error) {
     m_Reg.CheckInterrupts();
 }
 
-// ============================================================================
-// Save Access
-// ============================================================================
+// --- Save Access ---
 
 CSram& UnCachedSysMemory::GetSram() { return m_Sram; }
 

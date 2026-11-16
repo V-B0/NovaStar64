@@ -58,9 +58,7 @@ class AudioPlugin : public PluginBase {
 public:
     virtual ~AudioPlugin() = default;
 
-    // ========================================================================
-    // Audio Initialization
-    // ========================================================================
+    // --- Audio Initialization ---
 
     /**
      * @brief Initialize audio output
@@ -75,9 +73,7 @@ public:
      */
     virtual void SetAudioInfo(const AudioInfo& info) = 0;
 
-    // ========================================================================
-    // Audio Interface (AI) Processing
-    // ========================================================================
+    // --- Audio Interface (AI) Processing ---
 
     /**
      * @brief Process AI DMA transfer
@@ -103,9 +99,7 @@ public:
      */
     virtual void SetBitRate(uint32_t bitrate) = 0;
 
-    // ========================================================================
-    // Audio Buffer Management
-    // ========================================================================
+    // --- Audio Buffer Management ---
 
     /**
      * @brief Add samples to audio buffer
@@ -126,9 +120,7 @@ public:
      */
     virtual uint32_t GetBufferLevel() const = 0;
 
-    // ========================================================================
-    // Synchronization
-    // ========================================================================
+    // --- Synchronization ---
 
     /**
      * @brief Wait for audio buffer to have space
@@ -142,9 +134,7 @@ public:
      */
     virtual void SetSyncMode(bool sync) = 0;
 
-    // ========================================================================
-    // Volume Control
-    // ========================================================================
+    // --- Volume Control ---
 
     /**
      * @brief Set master volume

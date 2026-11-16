@@ -56,13 +56,11 @@ class CRegisters;
 
 namespace Nova64 {
 
-// ----------------------------------------------------------------------------
 // Memory Watch (debug-only).
 // Emits a log line whenever a DMA into RDRAM touches the configured range.
 // Configured via the same NOVA64_WATCH_ADDR/LEN/FILE environment variables as
 // the CPU store watch in Vmem.cpp. `source` is a short tag like "PI", "SP",
 // "SI", "DD", etc. for distinguishing the originator in the log output.
-// ----------------------------------------------------------------------------
 void WatchDMA(uint32_t pAddr, uint32_t length, const char* source);
 
 // Forward declarations
@@ -128,9 +126,7 @@ public:
      */
     void Reset(bool eraseMemory);
 
-    // ========================================================================
-    // Memory Region Access
-    // ========================================================================
+    // --- Memory Region Access ---
 
     /**
      * @brief Get pointer to RDRAM
@@ -173,9 +169,7 @@ public:
      */
     [[nodiscard]] CFlashRam& GetFlashRam();
 
-    // ========================================================================
-    // Memory Pointer Access
-    // ========================================================================
+    // --- Memory Pointer Access ---
 
     /**
      * @brief Get pointer to memory at virtual address
@@ -186,9 +180,7 @@ public:
      */
     [[nodiscard]] uint8_t* MemoryPtr(uint32_t vAddr, uint32_t size, bool read);
 
-    // ========================================================================
-    // Memory Read Operations (Debugger/Tools)
-    // ========================================================================
+    // --- Memory Read Operations (Debugger/Tools) ---
 
     /**
      * @brief Read 8-bit value from virtual address
@@ -222,9 +214,7 @@ public:
      */
     bool MemoryValue64(uint32_t vAddr, uint64_t& value);
 
-    // ========================================================================
-    // Memory Write Operations (Debugger/Tools)
-    // ========================================================================
+    // --- Memory Write Operations (Debugger/Tools) ---
 
     /**
      * @brief Write 8-bit value to virtual address
@@ -250,18 +240,14 @@ public:
      */
     bool UpdateMemoryValue32(uint32_t vAddr, uint32_t value);
 
-    // ========================================================================
-    // CPU Load Operations (64-bit virtual address)
-    // ========================================================================
+    // --- CPU Load Operations (64-bit virtual address) ---
 
     bool LB_Memory(uint64_t vAddr, uint8_t& value);
     bool LH_Memory(uint64_t vAddr, uint16_t& value);
     bool LW_Memory(uint64_t vAddr, uint32_t& value);
     bool LD_Memory(uint64_t vAddr, uint64_t& value);
 
-    // ========================================================================
-    // CPU Store Operations (64-bit virtual address)
-    // ========================================================================
+    // --- CPU Store Operations (64-bit virtual address) ---
 
     bool SB_Memory(uint64_t vAddr, uint32_t value);
     bool SH_Memory(uint64_t vAddr, uint32_t value);
@@ -274,9 +260,7 @@ public:
     // MI repeat store (handles the byte-fill when MI init mode is active)
     bool MI_RepeatStore(uint32_t pAddr, uint64_t busData, uint32_t patternSize, uint32_t byteOffset);
 
-    // ========================================================================
-    // Exception Handling
-    // ========================================================================
+    // --- Exception Handling ---
 
     /**
      * @brief Memory exception filter for SEH/signal handling
@@ -286,9 +270,7 @@ public:
      */
     int32_t MemoryFilter(uint32_t exptCode, void* exceptionPointer);
 
-    // ========================================================================
-    // Memory Map Management
-    // ========================================================================
+    // --- Memory Map Management ---
 
     /**
      * @brief Clear memory write map for recompiler invalidation
@@ -297,9 +279,7 @@ public:
      */
     void ClearMemoryWriteMap(uint32_t vAddr, uint32_t length);
 
-    // ========================================================================
-    // TLB Notification Functions
-    // ========================================================================
+    // --- TLB Notification Functions ---
 
     /**
      * @brief Notify that a TLB entry has been mapped
@@ -317,9 +297,7 @@ public:
      */
     void TLB_Unmaped(uint32_t vAddr, uint32_t len);
 
-    // ========================================================================
-    // Address Translation
-    // ========================================================================
+    // --- Address Translation ---
 
     /**
      * @brief Check if virtual address is valid
@@ -336,9 +314,7 @@ public:
      */
     [[nodiscard]] bool VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const;
 
-    // ========================================================================
-    // Debug Support
-    // ========================================================================
+    // --- Debug Support ---
 
     /**
      * @brief Get label name for address (for disassembly)
@@ -347,9 +323,7 @@ public:
      */
     [[nodiscard]] const char* LabelName(uint32_t address) const;
 
-    // ========================================================================
-    // Memory Handler Access
-    // ========================================================================
+    // --- Memory Handler Access ---
 
     [[nodiscard]] auto& AudioInterface() noexcept { return m_AudioInterfaceHandler; }
     [[nodiscard]] auto& VideoInterface() noexcept { return m_VideoInterfaceHandler; }
@@ -363,9 +337,7 @@ public:
     [[nodiscard]] auto& RDRAMInterface() noexcept { return m_RDRAMInterfaceHandler; }
     [[nodiscard]] auto& RDRAMRegisters() noexcept { return m_RDRAMRegistersHandler; }
 
-    // ========================================================================
-    // TLB Map Management
-    // ========================================================================
+    // --- TLB Map Management ---
 
     /**
      * @brief Update fast-path memory maps after a TLB entry is written.
@@ -407,58 +379,44 @@ private:
     friend class Recompiler::Arm::ArmRecompilerOps;
 #endif
 
-    // ========================================================================
-    // Internal Callbacks
-    // ========================================================================
+    // --- Internal Callbacks ---
 
     static void RdramChanged(MipsMemoryVM* self);
     static void ChangeMiIntrMask();
 
-    // ========================================================================
-    // Breakpoint Support
-    // ========================================================================
+    // --- Breakpoint Support ---
 
     bool MemoryBreakpoint();
 
-    // ========================================================================
-    // 32-bit Virtual Address Load Operations
-    // ========================================================================
+    // --- 32-bit Virtual Address Load Operations ---
 
     bool LB_VAddr32(uint32_t vAddr, uint8_t& value);
     bool LH_VAddr32(uint32_t vAddr, uint16_t& value);
     bool LW_VAddr32(uint32_t vAddr, uint32_t& value);
     bool LD_VAddr32(uint32_t vAddr, uint64_t& value);
 
-    // ========================================================================
-    // Physical Address Load Operations
-    // ========================================================================
+    // --- Physical Address Load Operations ---
 
     bool LB_PhysicalAddress(uint32_t pAddr, uint8_t& value);
     bool LH_PhysicalAddress(uint32_t pAddr, uint16_t& value);
     bool LW_PhysicalAddress(uint32_t pAddr, uint32_t& value);
     bool LD_PhysicalAddress(uint32_t pAddr, uint64_t& value);
 
-    // ========================================================================
-    // 32-bit Virtual Address Store Operations
-    // ========================================================================
+    // --- 32-bit Virtual Address Store Operations ---
 
     bool SB_VAddr32(uint32_t vAddr, uint32_t value);
     bool SH_VAddr32(uint32_t vAddr, uint32_t value);
     bool SW_VAddr32(uint32_t vAddr, uint32_t value);
     bool SD_VAddr32(uint32_t vAddr, uint64_t value);
 
-    // ========================================================================
-    // Physical Address Store Operations
-    // ========================================================================
+    // --- Physical Address Store Operations ---
 
     bool SB_PhysicalAddress(uint32_t pAddr, uint32_t value);
     bool SH_PhysicalAddress(uint32_t pAddr, uint32_t value);
     bool SW_PhysicalAddress(uint32_t pAddr, uint32_t value);
     bool SD_PhysicalAddress(uint32_t pAddr, uint64_t value);
 
-    // ========================================================================
-    // Platform-Specific Exception Filtering
-    // ========================================================================
+    // --- Platform-Specific Exception Filtering ---
 
 #if defined(__i386__) || defined(_M_IX86)
     struct X86_CONTEXT {
@@ -560,9 +518,7 @@ public:
 
     uint8_t* GetSmcPageBitmap() { return m_SmcPageBitmap; }
 
-    // ========================================================================
-    // IS-Viewer Debug Output (0x13FF0000)
-    // ========================================================================
+    // --- IS-Viewer Debug Output (0x13FF0000) ---
     static constexpr uint32_t IS_VIEWER_BASE = 0x13FF0000;
     static constexpr uint32_t IS_VIEWER_LENGTH = 0x13FF0014;
     static constexpr uint32_t IS_VIEWER_BUFFER = 0x13FF0020;
@@ -581,9 +537,7 @@ private:
     static uint32_t RegModValue;
 };
 
-// ============================================================================
-// N64 Memory Map Constants
-// ============================================================================
+// --- N64 Memory Map Constants ---
 
 namespace MemoryMap {
 

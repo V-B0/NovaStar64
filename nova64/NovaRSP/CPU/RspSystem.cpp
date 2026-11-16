@@ -30,9 +30,7 @@ namespace Nova64::RSP {
 // Global RSP system instance
 CRSPSystem RSPSystem;
 
-// ──────────────────────────────────────────────
-// Construction / Destruction
-// ──────────────────────────────────────────────
+// --- Construction / Destruction ---
 
 CRSPSystem::CRSPSystem() : m_Op(*this) {}
 
@@ -54,9 +52,7 @@ CRSPSystem::~CRSPSystem() {
     m_RSPRegisterHandler.reset();
 }
 
-// ──────────────────────────────────────────────
-// Reset: bind hardware register pointers
-// ──────────────────────────────────────────────
+// --- Reset: bind hardware register pointers ---
 void CRSPSystem::Reset(RSP_INFO& info) {
     m_Jit.reset(); // compiled code holds this system's memory addresses
     m_Reg.Reset();
@@ -110,13 +106,9 @@ void CRSPSystem::RomClosed() {
     // Per-game cleanup
 }
 
-// ──────────────────────────────────────────────
-// Recompiler Execution
-// ──────────────────────────────────────────────
+// --- Recompiler Execution ---
 
-// ──────────────────────────────────────────────
-// Main Execution Loop (Interpreter)
-// ──────────────────────────────────────────────
+// --- Main Execution Loop (Interpreter) ---
 void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
     RSP_Running = 1;
 
@@ -233,9 +225,7 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Sync CPU (interpreter verification mode)
-// ──────────────────────────────────────────────
+// --- Sync CPU (interpreter verification mode) ---
 
 void CRSPSystem::SetupSyncCPU() {
     if (m_SyncSystem == nullptr) {
@@ -380,9 +370,7 @@ void CRSPSystem::BasicSyncCheck() {
     }
 }
 
-// ──────────────────────────────────────────────
-// Aligned allocation (16-byte alignment for SIMD)
-// ──────────────────────────────────────────────
+// --- Aligned allocation (16-byte alignment for SIMD) ---
 
 void* CRSPSystem::operator new(size_t size) {
 #if defined(_WIN32)
@@ -404,18 +392,14 @@ void CRSPSystem::operator delete(void* ptr) {
 #endif
 }
 
-// ──────────────────────────────────────────────
-// Null callbacks (used before real ones are set)
-// ──────────────────────────────────────────────
+// --- Null callbacks (used before real ones are set) ---
 
 void CRSPSystem::NullProcessDList() {}
 void CRSPSystem::NullProcessRdpList() {}
 void CRSPSystem::NullCheckInterrupts() {}
 
-// ──────────────────────────────────────────────
 // DMA Transfer Helpers
 // SP ↔ RDRAM transfers as done by the hardware
-// ──────────────────────────────────────────────
 
 void CRSPSystem::SP_DMA_READ() {
     // DMA from RDRAM → IMEM/DMEM
@@ -486,9 +470,7 @@ void CRSPSystem::SP_DMA_WRITE() {
     if (m_SP_DMA_FULL_REG) *m_SP_DMA_FULL_REG = 0;
 }
 
-// ──────────────────────────────────────────────
-// Debug: dump sync state to buffer
-// ──────────────────────────────────────────────
+// --- Debug: dump sync state to buffer ---
 
 void CRSPSystem::DumpSyncState(char* buf, size_t bufSize) const {
     if (buf == nullptr || bufSize == 0) return;
@@ -526,9 +508,7 @@ void CRSPSystem::DumpSyncState(char* buf, size_t bufSize) const {
     if (m_SP_WR_LEN_REG) pos += std::snprintf(buf + pos, bufSize - pos, "  WR_LEN: 0x%08X\n", *m_SP_WR_LEN_REG);
 }
 
-// ──────────────────────────────────────────────
-// Execution profiling stats
-// ──────────────────────────────────────────────
+// --- Execution profiling stats ---
 
 void CRSPSystem::ResetProfilingStats() {
     m_ProfileOpsExecuted = 0;

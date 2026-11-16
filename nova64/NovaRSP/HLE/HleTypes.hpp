@@ -11,19 +11,15 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// HLE Boot microcode identification
-// ──────────────────────────────────────────────
+// --- HLE Boot microcode identification ---
 enum class HLETaskBooter : uint32_t {
     Unknown,
     Boot_B4C62BFC,
     Boot_CAB15710,
 };
 
-// ──────────────────────────────────────────────
 // Task Info structure (from DMEM 0xFC0)
 // Maps directly to the N64 OSTask structure layout
-// ──────────────────────────────────────────────
 struct TaskInfo {
     uint32_t Type;
     uint32_t Flags;
@@ -43,9 +39,7 @@ struct TaskInfo {
     uint32_t YieldDataSize;
 };
 
-// ──────────────────────────────────────────────
-// HLE Task Types
-// ──────────────────────────────────────────────
+// --- HLE Task Types ---
 enum class HLETaskType : uint32_t {
     Video = 1,
     Audio = 2,

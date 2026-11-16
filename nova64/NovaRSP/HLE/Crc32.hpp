@@ -13,9 +13,7 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// Compile-time CRC32 lookup table generation
-// ──────────────────────────────────────────────
+// --- Compile-time CRC32 lookup table generation ---
 
 namespace detail {
 
@@ -36,9 +34,7 @@ inline constexpr auto kCrc32Table = GenerateCrc32Table();
 
 } // namespace detail
 
-// ──────────────────────────────────────────────
-// CRC32 computation
-// ──────────────────────────────────────────────
+// --- CRC32 computation ---
 
 [[nodiscard]] inline uint32_t Crc32(const uint8_t* data, size_t length) noexcept {
     uint32_t crc = 0xFFFFFFFFu;

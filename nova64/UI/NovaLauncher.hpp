@@ -31,9 +31,7 @@ struct RomMetadata {
         cover; ///< picture shown on the game's card; a path relative to the data folder ("covers/..."), or empty
 };
 
-// -----------------------------------------------
-// Simulator node system
-// -----------------------------------------------
+// --- Simulator node system ---
 enum class SimNodeKind {
     N64Console,
     TV,

@@ -24,9 +24,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-// ============================================================================
-// MI Mode Register Bits
-// ============================================================================
+// --- MI Mode Register Bits ---
 
 namespace MIMode {
 constexpr uint32_t INIT = 0x0080;  // Init mode
@@ -43,17 +41,13 @@ constexpr uint32_t CLR_RDRAM = 0x1000;   // Clear RDRAM reg mode
 constexpr uint32_t SET_RDRAM = 0x2000;   // Set RDRAM reg mode
 } // namespace MIMode
 
-// ============================================================================
-// MI Interrupt Register Bits
-// ============================================================================
+// --- MI Interrupt Register Bits ---
 
 namespace MIIntr {
 constexpr uint32_t DP = 0x20; // DP interrupt
 }
 
-// ============================================================================
-// MI Interrupt Mask Register Bits
-// ============================================================================
+// --- MI Interrupt Mask Register Bits ---
 
 namespace MIMask {
 constexpr uint32_t SP = 0x01; // SP interrupt mask
@@ -100,9 +94,7 @@ MIPSYInterfaceHandler::MIPSYInterfaceHandler(CRegisters& reg) :
     *MI_MODE_REG = 0;
 }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
+// --- Read Operations ---
 
 bool MIPSYInterfaceHandler::Read32(uint32_t addr, uint32_t& val) {
     switch (addr & 0x1FFFFFFF) {
@@ -135,9 +127,7 @@ bool MIPSYInterfaceHandler::Read32(uint32_t addr, uint32_t& val) {
     return true;
 }
 
-// ============================================================================
-// Write Operations
-// ============================================================================
+// --- Write Operations ---
 
 bool MIPSYInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     uint32_t maskedVal = val & mask;
@@ -171,9 +161,7 @@ bool MIPSYInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask) 
     return true;
 }
 
-// ============================================================================
-// Mode Register Processing
-// ============================================================================
+// --- Mode Register Processing ---
 
 void MIPSYInterfaceHandler::ProcessModeWrite(uint32_t val) {
     // Update mode bits directly (lower 7 bits)
@@ -218,9 +206,7 @@ void MIPSYInterfaceHandler::ProcessModeWrite(uint32_t val) {
     }
 }
 
-// ============================================================================
-// Interrupt Mask Register Processing
-// ============================================================================
+// --- Interrupt Mask Register Processing ---
 
 void MIPSYInterfaceHandler::ProcessMaskWrite(uint32_t val) {
     // Process each interrupt mask control bit
@@ -282,9 +268,7 @@ void MIPSYInterfaceHandler::ProcessMaskWrite(uint32_t val) {
     m_Reg.CheckInterrupts();
 }
 
-// ============================================================================
-// Interrupt Management
-// ============================================================================
+// --- Interrupt Management ---
 
 void MIPSYInterfaceHandler::SetInterrupt(uint32_t interruptBit) {
     *MI_INTR_REG |= interruptBit;
@@ -315,9 +299,7 @@ bool MIPSYInterfaceHandler::IsInterruptPending() const { return (*MI_INTR_REG & 
 
 uint32_t MIPSYInterfaceHandler::GetPendingInterrupts() const { return *MI_INTR_REG & *MI_INTR_MASK_REG; }
 
-// ============================================================================
-// Status Queries
-// ============================================================================
+// --- Status Queries ---
 
 bool MIPSYInterfaceHandler::IsInitMode() const { return (*MI_MODE_REG & MIMode::INIT) != 0; }
 
@@ -325,9 +307,7 @@ bool MIPSYInterfaceHandler::IsEBusMode() const { return (*MI_MODE_REG & MIMode::
 
 bool MIPSYInterfaceHandler::IsRDRAMRegMode() const { return (*MI_MODE_REG & MIMode::RDRAM) != 0; }
 
-// ============================================================================
-// Reset
-// ============================================================================
+// --- Reset ---
 
 void MIPSYInterfaceHandler::Reset() {
     WriteLog(LogLevel::Info, "MIPSYInterface: Reset");

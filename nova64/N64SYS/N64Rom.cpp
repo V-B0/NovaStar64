@@ -44,9 +44,7 @@ static constexpr uint64_t CIC_CRC_8501 = 0x000000D2E53E5DDA;
 static constexpr uint64_t CIC_CRC_LIBDRAGON = 0x0000007c56242373;
 static constexpr uint64_t CIC_CRC_5101_ALECK64 = 0x000000A5F80BF620;
 
-// ============================================================================
-// RomImage Implementation
-// ============================================================================
+// --- RomImage Implementation ---
 
 bool RomImage::IsPal() const noexcept {
     switch (m_Country) {
@@ -68,9 +66,7 @@ bool RomImage::IsNtsc() const noexcept {
     }
 }
 
-// ============================================================================
-// N64Rom Implementation
-// ============================================================================
+// --- N64Rom Implementation ---
 
 N64Rom::N64Rom() : m_Image(std::make_unique<RomImage>()) {}
 
@@ -284,7 +280,6 @@ void N64Rom::ClearRomSettingID() {
     // Clear any saved ROM settings
 }
 
-// ============================================================================
 void N64Rom::DetectFormatAndByteSwap() {
     if (!m_Image || m_Image->m_Data.size() < 4) {
         return;
@@ -477,9 +472,7 @@ bool N64Rom::IsValidRomImage(const uint8_t* test) noexcept {
     }
 }
 
-// ============================================================================
-// ROM CRC Calculation
-// ============================================================================
+// --- ROM CRC Calculation ---
 
 void N64Rom::CalculateRomCrc() {
     if (!IsLoaded() || m_Image->m_Data.size() < 0x101000) {

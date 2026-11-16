@@ -15,9 +15,7 @@
 
 namespace Nova64::Video {
 
-// ──────────────────────────────────────────────────────────────
-//  Anti-aliasing modes
-// ──────────────────────────────────────────────────────────────
+// --- Anti-aliasing modes ---
 enum class AAMode : uint8_t {
     None = 0,
     MSAA2x,
@@ -27,9 +25,7 @@ enum class AAMode : uint8_t {
     SMAA,
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Texture filtering
-// ──────────────────────────────────────────────────────────────
+// --- Texture filtering ---
 enum class TextureFilterMode : uint8_t {
     Point = 0, // Nearest neighbor (N64 accurate)
     Bilinear,
@@ -40,9 +36,7 @@ enum class TextureFilterMode : uint8_t {
     Aniso16x,
 };
 
-// ──────────────────────────────────────────────────────────────
-//  HiRes texture pack format
-// ──────────────────────────────────────────────────────────────
+// --- HiRes texture pack format ---
 enum class HiResFormat : uint8_t {
     None = 0,
     RiceFormat, // Legacy Rice-format packs
@@ -50,9 +44,7 @@ enum class HiResFormat : uint8_t {
     DDS,        // DirectDraw Surface (compressed)
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Aspect ratio option
-// ──────────────────────────────────────────────────────────────
+// --- Aspect ratio option ---
 enum class AspectRatio : uint8_t {
     Native4_3 = 0,
     Stretch16_9,
@@ -60,9 +52,7 @@ enum class AspectRatio : uint8_t {
     Auto,
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Post-processing filter
-// ──────────────────────────────────────────────────────────────
+// --- Post-processing filter ---
 enum class PostFilter : uint8_t {
     None = 0,
     GammaCorrection,
@@ -71,7 +61,6 @@ enum class PostFilter : uint8_t {
     Sharpen,
 };
 
-// ──────────────────────────────────────────────────────────────
 //  Rendering mode (MLE pivot)
 //
 //  HLE  — Graphics microcode runs in NovaGraphics/Microcode handlers.
@@ -81,7 +70,6 @@ enum class PostFilter : uint8_t {
 //         HLE handlers remain as shadow taps for widescreen / texture-pack /
 //         RT world-space recovery (see MLEDirector).
 //  Auto — Audio HLE + Graphics LLE (use LLE for visuals, keep HLE for audio).
-// ──────────────────────────────────────────────────────────────
 enum class RenderingMode : uint8_t {
     HLE = 0,
     LLE = 1,

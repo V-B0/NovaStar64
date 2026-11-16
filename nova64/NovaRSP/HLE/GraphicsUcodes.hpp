@@ -12,9 +12,7 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// Graphics Microcode Types
-// ──────────────────────────────────────────────
+// --- Graphics Microcode Types ---
 enum class GfxUcodeType : uint8_t {
     Unknown = 0,
 
@@ -46,9 +44,7 @@ enum class GfxUcodeType : uint8_t {
     Turbo3D, // Turbo3D (Extreme-G)
 };
 
-// ──────────────────────────────────────────────
-// F3D / F3DEX Command Opcodes (GBI 1.0)
-// ──────────────────────────────────────────────
+// --- F3D / F3DEX Command Opcodes (GBI 1.0) ---
 namespace F3D {
 inline constexpr uint8_t NOOP = 0x00;
 inline constexpr uint8_t MTX = 0x01;
@@ -105,9 +101,7 @@ inline constexpr uint8_t TEXRECT_FLIP = 0xE5;
 inline constexpr uint8_t TEXRECT = 0xE4;
 } // namespace F3D
 
-// ──────────────────────────────────────────────
-// F3DEX Command Opcodes (GBI 1.x extended)
-// ──────────────────────────────────────────────
+// --- F3DEX Command Opcodes (GBI 1.x extended) ---
 namespace F3DEX {
 inline constexpr uint8_t NOOP = 0x00;
 inline constexpr uint8_t MTX = 0x01;
@@ -170,10 +164,8 @@ inline constexpr uint8_t TEXRECT_FLIP = F3D::TEXRECT_FLIP;
 inline constexpr uint8_t TEXRECT = F3D::TEXRECT;
 } // namespace F3DEX
 
-// ──────────────────────────────────────────────
 // F3DEX2 Command Opcodes (GBI 2.0)
 // Major opcode reassignment from F3DEX
-// ──────────────────────────────────────────────
 namespace F3DEX2 {
 inline constexpr uint8_t NOOP = 0x00;
 inline constexpr uint8_t VTX = 0x01;
@@ -236,9 +228,7 @@ inline constexpr uint8_t SPECIAL_2 = 0xD4;
 inline constexpr uint8_t SPECIAL_3 = 0xD3;
 } // namespace F3DEX2
 
-// ──────────────────────────────────────────────
-// N64 Geometry Mode Flags
-// ──────────────────────────────────────────────
+// --- N64 Geometry Mode Flags ---
 namespace GeometryMode {
 // GBI 1 (F3D/F3DEX) — INTERNAL (translated) values used by the Video Plugin.
 // Raw GBI1 commands use different bit positions: CULL_FRONT=0x1000, CULL_BACK=0x2000.
@@ -274,9 +264,7 @@ inline constexpr uint32_t G2_SHADING_SMOOTH = 0x00200000;
 inline constexpr uint32_t G2_CLIPPING = 0x00800000;
 } // namespace GeometryMode
 
-// ──────────────────────────────────────────────
-// MoveWord indices
-// ──────────────────────────────────────────────
+// --- MoveWord indices ---
 namespace MoveWord {
 inline constexpr uint8_t MATRIX = 0x00;
 inline constexpr uint8_t NUMLIGHT = 0x02;
@@ -288,9 +276,7 @@ inline constexpr uint8_t FORCEMTX = 0x0C;
 inline constexpr uint8_t PERSPNORM = 0x0E;
 } // namespace MoveWord
 
-// ──────────────────────────────────────────────
-// MoveMem indices
-// ──────────────────────────────────────────────
+// --- MoveMem indices ---
 namespace MoveMem {
 // F3D / F3DEX
 inline constexpr uint8_t VIEWPORT = 0x80;
@@ -304,9 +290,7 @@ inline constexpr uint8_t V2_LIGHT = 0x0A;
 inline constexpr uint8_t V2_MATRIX = 0x0E;
 } // namespace MoveMem
 
-// ──────────────────────────────────────────────
-// Texture Image format / size
-// ──────────────────────────────────────────────
+// --- Texture Image format / size ---
 namespace TexFormat {
 inline constexpr uint8_t RGBA = 0;
 inline constexpr uint8_t YUV = 1;
@@ -322,9 +306,7 @@ inline constexpr uint8_t Bpp16 = 2;
 inline constexpr uint8_t Bpp32 = 3;
 } // namespace TexSize
 
-// ──────────────────────────────────────────────
-// OtherMode bit positions (H = high, L = low)
-// ──────────────────────────────────────────────
+// --- OtherMode bit positions (H = high, L = low) ---
 namespace OtherModeH {
 inline constexpr uint32_t BLEND_MASK = 0x00000001;
 inline constexpr uint32_t ALPHA_DITHER = 0x00000030;
@@ -346,9 +328,7 @@ inline constexpr uint32_t ZSRC_SEL = 0x00000004;
 inline constexpr uint32_t RENDERMODE = 0xFFFFFFF8;
 } // namespace OtherModeL
 
-// ──────────────────────────────────────────────
-// Cycle type from OtherMode
-// ──────────────────────────────────────────────
+// --- Cycle type from OtherMode ---
 namespace CycleType {
 inline constexpr uint32_t Mode1 = 0;
 inline constexpr uint32_t Mode2 = 1;
@@ -356,16 +336,12 @@ inline constexpr uint32_t Copy = 2;
 inline constexpr uint32_t Fill = 3;
 } // namespace CycleType
 
-// ──────────────────────────────────────────────
 // NOTE: The graphics microcode CRC database was removed from this
 // RSP-layer header. The single canonical CRC database lives in:
 //   NovaGraphics/Microcode/MicrocodeRegistry.cpp  (MicrocodeRegistry::InitializeDatabase)
 // All graphics ucode detection goes through MicrocodeDispatcher → MicrocodeRegistry.
-// ──────────────────────────────────────────────
 
-// ──────────────────────────────────────────────
-// Helper: is this a GBI2 microcode?
-// ──────────────────────────────────────────────
+// --- Helper: is this a GBI2 microcode? ---
 [[nodiscard]] inline constexpr bool IsGBI2(GfxUcodeType type) noexcept {
     switch (type) {
     case GfxUcodeType::F3DEX2:

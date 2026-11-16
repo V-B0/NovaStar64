@@ -36,9 +36,7 @@ inline uint32_t CurrentThreadId32() noexcept {
 }
 } // namespace
 
-// ============================================================
-// RecursiveMutex
-// ============================================================
+// --- RecursiveMutex ---
 
 RecursiveMutex::RecursiveMutex() : m_mutex(nullptr), m_condition(nullptr) {
 #ifdef _WIN32

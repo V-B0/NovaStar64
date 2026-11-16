@@ -21,9 +21,7 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// =============================================================================
-// CX64Ops::RegisterAllocator
-// =============================================================================
+// --- CX64Ops::RegisterAllocator ---
 
 CX64Ops::RegisterAllocator::RegisterAllocator(CX64Ops& assembler) : m_Assembler(assembler) {
     m_GpUsed.fill(false);
@@ -98,9 +96,7 @@ void CX64Ops::RegisterAllocator::Reset() {
     m_GpUsed[4] = true; // RSP reserved
 }
 
-// =============================================================================
-// CX64Ops Construction / Destruction
-// =============================================================================
+// --- CX64Ops Construction / Destruction ---
 
 CX64Ops::CX64Ops(CodeBlock& codeBlock, EmitOptions options) :
     asmjit::x86::Assembler(), asmjit::Logger(), m_CodeBlock(codeBlock), m_Options(std::move(options)),
@@ -140,9 +136,7 @@ CX64Ops& CX64Ops::operator=(CX64Ops&& other) noexcept {
     return *this;
 }
 
-// =============================================================================
-// Initialization
-// =============================================================================
+// --- Initialization ---
 
 bool CX64Ops::Initialize(asmjit::CodeHolder& codeHolder) {
     m_CodeHolder = &codeHolder;
@@ -165,9 +159,7 @@ void CX64Ops::InitializeSymbols() {
     m_LabelSymbols.clear();
 }
 
-// =============================================================================
-// Symbol Management
-// =============================================================================
+// --- Symbol Management ---
 
 asmjit::Label CX64Ops::DefineSymbol(std::string_view name, bool isExported) {
     auto label = asmjit::x86::Assembler::new_label();
@@ -196,9 +188,7 @@ bool CX64Ops::ResolveSymbol(std::string_view name, uint64_t address) {
     return true;
 }
 
-// =============================================================================
-// Logging
-// =============================================================================
+// --- Logging ---
 
 void CX64Ops::SetLogOutput(std::ostream& output) noexcept { m_LogOutput = &output; }
 
@@ -230,9 +220,7 @@ std::string CX64Ops::GenerateDisassembly() const {
     return oss.str();
 }
 
-// =============================================================================
-// Code Generation Helpers
-// =============================================================================
+// --- Code Generation Helpers ---
 
 void CX64Ops::EmitPrologue(uint32_t stackSize, uint32_t preserveRegs) {
     using namespace asmjit::x86;
@@ -410,9 +398,7 @@ void CX64Ops::EmitSafeStore(const asmjit::x86::Mem& dest, asmjit::x86::Gp src, u
     m_Stats.instructionsEmitted++;
 }
 
-// =============================================================================
-// Error Handling
-// =============================================================================
+// --- Error Handling ---
 
 void CX64Ops::HandleError(asmjit::Error error, std::string_view context) {
     m_LastError = error;

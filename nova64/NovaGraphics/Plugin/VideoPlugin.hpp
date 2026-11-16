@@ -33,16 +33,12 @@
 
 namespace Nova64::Video {
 
-// ──────────────────────────────────────────────────────────────────
-//  Plugin status
-// ──────────────────────────────────────────────────────────────────
+// --- Plugin status ---
 enum class PluginStatus { Uninitialized, Initialized, Running, Paused, Error, ShuttingDown };
 
 const char* PluginStatusName(PluginStatus status);
 
-// ──────────────────────────────────────────────────────────────────
-//  System info passed from emulator core
-// ──────────────────────────────────────────────────────────────────
+// --- System info passed from emulator core ---
 struct SystemInfo {
     uint8_t* rdram = nullptr;
     uint32_t rdramSize = 0; // 4MB or 8MB
@@ -72,9 +68,7 @@ struct SystemInfo {
     bool isPAL = false;
 };
 
-// ──────────────────────────────────────────────────────────────────
-//  Callback function types
-// ──────────────────────────────────────────────────────────────────
+// --- Callback function types ---
 using CheckInterruptsFunc = std::function<void()>;
 using ProcessDListFunc = std::function<void()>;
 using ProcessRDPListFunc = std::function<void()>;
@@ -82,9 +76,7 @@ using ShowCFBFunc = std::function<void()>;
 using ViStatusChangedFunc = std::function<void()>;
 using ViWidthChangedFunc = std::function<void()>;
 
-// ──────────────────────────────────────────────────────────────────
-//  Plugin callbacks
-// ──────────────────────────────────────────────────────────────────
+// --- Plugin callbacks ---
 struct PluginCallbacks {
     CheckInterruptsFunc checkInterrupts;
     ProcessDListFunc processDList;
@@ -94,9 +86,7 @@ struct PluginCallbacks {
     ViWidthChangedFunc viWidthChanged;
 };
 
-// ──────────────────────────────────────────────────────────────────
-//  Frame statistics from plugin
-// ──────────────────────────────────────────────────────────────────
+// --- Frame statistics from plugin ---
 struct PluginFrameStats {
     uint32_t dlistCount = 0;
     uint32_t rdpCommandCount = 0;

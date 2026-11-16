@@ -19,9 +19,7 @@
 #include <unistd.h>
 #endif
 
-// =============================================================================
-// Internal Helper Functions
-// =============================================================================
+// --- Internal Helper Functions ---
 
 namespace {
 
@@ -79,9 +77,7 @@ bool TranslateFromOsProtection(DWORD osProtection, MEM_PROTECTION& memProtection
 
 } // anonymous namespace
 
-// =============================================================================
-// Basic Memory Management Functions
-// =============================================================================
+// --- Basic Memory Management Functions ---
 
 void* AllocateAddressSpace(size_t size, void* base_address) {
 #if PLATFORM_WINDOWS
@@ -196,9 +192,7 @@ bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection, MEM_PR
 #endif
 }
 
-// =============================================================================
-// Extended Memory Management API
-// =============================================================================
+// --- Extended Memory Management API ---
 
 namespace MemoryManagement {
 

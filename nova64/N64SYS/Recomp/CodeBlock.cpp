@@ -38,10 +38,8 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// ============================================================================
 // Inline helpers for safe MIPS instruction field extraction
 // (Avoids reliance on bitfield struct ordering which can be compiler-dependent)
-// ============================================================================
 namespace {
 
 inline uint32_t mips_op(uint32_t instr) { return (instr >> 26) & 0x3F; }
@@ -57,9 +55,7 @@ inline uint32_t mips_ft(uint32_t instr) { return mips_rt(instr); }  // COP1 ft =
 
 } // anonymous namespace
 
-// ============================================================================
-// Construction / Destruction
-// ============================================================================
+// --- Construction / Destruction ---
 
 CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& config,
                      asmjit::JitRuntime* shared_runtime) :
@@ -140,9 +136,7 @@ CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept {
     return *this;
 }
 
-// ============================================================================
-// Compilation
-// ============================================================================
+// --- Compilation ---
 
 CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -226,9 +220,7 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
     return reinterpret_cast<uintptr_t>(compiled_function_);
 }
 
-// ============================================================================
-// Analysis - Block Level
-// ============================================================================
+// --- Analysis - Block Level ---
 
 std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block() {
     if (!memory_) {
@@ -324,10 +316,8 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
     return bb;
 }
 
-// ============================================================================
 // Analysis - Instruction Level
 // Ported from Project64's CCodeBlock::AnalyzeInstruction
-// ============================================================================
 
 bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult& result,
                                     BasicBlockInfo& /*current_block*/) {
@@ -363,9 +353,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
     auto check_perm_loop = [&](uint32_t target_pc) -> bool { return target_pc == pc; };
 
     switch (op) {
-    // =================================================================
-    // SPECIAL (opcode 0x00) - R-type instructions
-    // =================================================================
+    // --- SPECIAL (opcode 0x00) - R-type instructions ---
     case R4300_SPECIAL:
         switch (funct) {
         // Arithmetic / Logic / Shift - no control flow effect
@@ -434,9 +422,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         }
         break;
 
-    // =================================================================
-    // REGIMM (opcode 0x01) - Branch on register value
-    // =================================================================
+    // --- REGIMM (opcode 0x01) - Branch on register value ---
     case R4300_REGIMM:
         switch (rt) {
         case R4300_R_BLTZ:
@@ -499,9 +485,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         }
         break;
 
-    // =================================================================
-    // J (opcode 0x02) - Unconditional Jump
-    // =================================================================
+    // --- J (opcode 0x02) - Unconditional Jump ---
     case R4300_J: {
         uint32_t tgt = (pc & 0xF0000000) | (target_field << 2);
         bool perm = (tgt == pc);
@@ -513,14 +497,10 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         break;
     }
 
-    // =================================================================
-    // JAL (opcode 0x03) - Jump And Link (function call ends block)
-    // =================================================================
+    // --- JAL (opcode 0x03) - Jump And Link (function call ends block) ---
     case R4300_JAL: result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true); break;
 
-    // =================================================================
-    // BEQ (opcode 0x04)
-    // =================================================================
+    // --- BEQ (opcode 0x04) ---
     case R4300_BEQ: {
         uint32_t tgt = branch_target();
         bool perm = check_perm_loop(tgt);
@@ -533,9 +513,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         break;
     }
 
-    // =================================================================
-    // BNE / BLEZ / BGTZ (opcodes 0x05-0x07) - conditional branches
-    // =================================================================
+    // --- BNE / BLEZ / BGTZ (opcodes 0x05-0x07) - conditional branches ---
     case R4300_BNE:
     case R4300_BLEZ:
     case R4300_BGTZ: {
@@ -549,9 +527,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         break;
     }
 
-    // =================================================================
-    // Arithmetic Immediate - no control flow
-    // =================================================================
+    // --- Arithmetic Immediate - no control flow ---
     case R4300_ADDI:
     case R4300_ADDIU:
     case R4300_SLTI:
@@ -565,9 +541,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
     case R4300_LDL:
     case R4300_LDR:    break;
 
-    // =================================================================
-    // Load / Store - no control flow
-    // =================================================================
+    // --- Load / Store - no control flow ---
     case R4300_LB:
     case R4300_LH:
     case R4300_LWL:
@@ -593,9 +567,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
     case R4300_SDC1:
     case R4300_SD:    result.flags = result.flags | BlockFlags::HasMemoryOps; break;
 
-    // =================================================================
-    // COP0 (opcode 0x10)
-    // =================================================================
+    // --- COP0 (opcode 0x10) ---
     case R4300_COP0:
         switch (rs) {
         case R4300_COP0_MT:
@@ -626,9 +598,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         }
         break;
 
-    // =================================================================
-    // COP1 (opcode 0x11) - Floating Point
-    // =================================================================
+    // --- COP1 (opcode 0x11) - Floating Point ---
     case R4300_COP1: {
         uint32_t fmt_field = mips_fmt(opcode);
         switch (fmt_field) {
@@ -678,9 +648,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         break;
     }
 
-    // =================================================================
-    // Likely Branch Variants
-    // =================================================================
+    // --- Likely Branch Variants ---
     case R4300_BEQL: {
         uint32_t tgt = branch_target();
         bool perm = check_perm_loop(tgt);
@@ -705,9 +673,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
         break;
     }
 
-    // =================================================================
-    // Default: Unknown Opcode
-    // =================================================================
+    // --- Default: Unknown Opcode ---
     default:
         // Known invalid/special instruction patterns that end block
         if (opcode == 0x7C1C97C0 || opcode == 0xF1F3F5F7) {
@@ -723,9 +689,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
     return true;
 }
 
-// ============================================================================
-// Code Generation
-// ============================================================================
+// --- Code Generation ---
 
 bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptions& /*options*/) {
     if (!code_holder_ || !system_ || !registers_) {
@@ -734,11 +698,9 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
     }
 
 #if defined(__amd64__) || defined(_M_X64)
-    // ----------------------------------------------------------------
     // x64 path – use CX64RecompilerOps callback-based compilation.
     // Each MIPS instruction is translated to a small piece of x64 code
     // that calls an interpreter callback (Interp_XXX) at runtime.
-    // ----------------------------------------------------------------
 
     // Build a RecompilerContext from our system pointers
     auto* mem = system_->GetMemory();
@@ -856,9 +818,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
     return true;
 
 #elif defined(__i386__) || defined(_M_IX86)
-    // ----------------------------------------------------------------
-    // x86 32-bit path – use X86RecompilerOps (PJ64-style native codegen).
-    // ----------------------------------------------------------------
+    // --- x86 32-bit path – use X86RecompilerOps (PJ64-style native codegen) ---
     using namespace Nova64::Recompiler::x86;
 
     auto* mem = system_->GetMemory();
@@ -914,10 +874,8 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
     return true;
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    // ----------------------------------------------------------------
     // ARM64 path – use ArmRecompilerOps (partial native codegen).
     // Integer ALU / shifts / mul are native; loads/stores/FPU use fallback.
-    // ----------------------------------------------------------------
     using namespace Nova64::Recompiler::Arm;
 
     auto* mem = system_->GetMemory();
@@ -994,9 +952,7 @@ bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/) {
     return true;
 }
 
-// ============================================================================
-// CodeGenerator Implementation
-// ============================================================================
+// --- CodeGenerator Implementation ---
 
 CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const AnalysisResult& analysis,
                                         const Config& config) :
@@ -1051,9 +1007,7 @@ void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/) {}
 
 void CodeBlock::CodeGenerator::spill_dirty_registers() {}
 
-// ============================================================================
-// Instruction Access
-// ============================================================================
+// --- Instruction Access ---
 
 std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const {
     if (address < start_address_ || address > end_address_) {
@@ -1069,9 +1023,7 @@ std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const {
     return instructions_[index];
 }
 
-// ============================================================================
-// Memory Snapshot (Self-Modifying Code Detection)
-// ============================================================================
+// --- Memory Snapshot (Self-Modifying Code Detection) ---
 
 bool CodeBlock::verify_memory_snapshot() const {
     if (!memory_ || instructions_.empty()) {
@@ -1098,9 +1050,7 @@ void CodeBlock::update_memory_snapshot() {
     }
 }
 
-// ============================================================================
-// Debug Information
-// ============================================================================
+// --- Debug Information ---
 
 std::string CodeBlock::disassembly() const {
     std::string result;
@@ -1124,9 +1074,7 @@ std::string CodeBlock::control_flow_graph() const {
     return result;
 }
 
-// ============================================================================
-// Linking and Patching
-// ============================================================================
+// --- Linking and Patching ---
 
 bool CodeBlock::link_to(CodeBlock& /*target*/, uint32_t /*branch_address*/) {
     // Block linking - stub until section linking is operational
@@ -1137,9 +1085,7 @@ void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/)
     // Patch a previously compiled branch to point to a new address
 }
 
-// ============================================================================
-// Serialization
-// ============================================================================
+// --- Serialization ---
 
 CodeBlock::SerializedBlock CodeBlock::serialize() const {
     SerializedBlock data;
@@ -1167,9 +1113,7 @@ bool CodeBlock::deserialize(const SerializedBlock& data) {
     return true;
 }
 
-// ============================================================================
-// Hashing
-// ============================================================================
+// --- Hashing ---
 
 BlockHash CodeBlock::calculate_hash() const noexcept {
     if (instructions_.empty()) {
@@ -1189,18 +1133,14 @@ uint64_t CodeBlock::calculate_fast_hash() const noexcept { return calculate_hash
 
 void CodeBlock::update_hash() { hash_ = calculate_hash(); }
 
-// ============================================================================
-// Error Handling (asmjit::ErrorHandler override)
-// ============================================================================
+// --- Error Handling (asmjit::ErrorHandler override) ---
 
 void CodeBlock::handleError(asmjit::Error err, const char* message, asmjit::BaseEmitter* /*origin*/) {
     log_error(std::string("AsmJit error: ") + (message ? message : "unknown") + " (" +
               std::to_string(static_cast<uint32_t>(err)) + ")");
 }
 
-// ============================================================================
-// Logging Helpers
-// ============================================================================
+// --- Logging Helpers ---
 
 void CodeBlock::log_compilation(const std::string& message) {
     if (config_.enable_logging) {
@@ -1210,9 +1150,7 @@ void CodeBlock::log_compilation(const std::string& message) {
 
 void CodeBlock::log_error(const std::string& message) { code_log_ += "[ERROR] " + message + "\n"; }
 
-// ============================================================================
-// CodeBlockCache Implementation
-// ============================================================================
+// --- CodeBlockCache Implementation ---
 
 CodeBlockCache::CodeBlockCache(const Config& config) : config_(config) {}
 
@@ -1387,9 +1325,7 @@ bool CodeBlockCache::should_promote(uint32_t address) const {
     return it->second.access_count > 100 && !it->second.is_hot;
 }
 
-// ============================================================================
-// CodeBlockFactory Implementation
-// ============================================================================
+// --- CodeBlockFactory Implementation ---
 
 std::unique_ptr<CodeBlock> CodeBlockFactory::create_block(N64System& system, uint32_t address, OptimizationLevel level,
                                                           const ProfileData* /*profile*/) {

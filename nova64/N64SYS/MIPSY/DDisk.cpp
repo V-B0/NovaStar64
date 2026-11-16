@@ -19,9 +19,7 @@ uint32_t dd_current = 0;
 
 DiskController g_DiskController;
 
-// ============================================================================
-// DiskController Implementation
-// ============================================================================
+// --- DiskController Implementation ---
 
 void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
     // Reset transient status flags at start of new command
@@ -269,9 +267,7 @@ void DiskController::ProcessGapSector() {
     // Stub
 }
 
-// ============================================================================
-// Global Function Implementations
-// ============================================================================
+// --- Global Function Implementations ---
 
 void DiskCommandExecute() {
     // Map global `dd_current` to command execution

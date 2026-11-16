@@ -121,9 +121,7 @@ CachedSysMemory::CachedSysMemory(CRegisters& reg, N64::Rom::N64Rom& ddRom) :
     m_C2Buffer.fill(0);
 }
 
-// ============================================================================
-// Initialization
-// ============================================================================
+// --- Initialization ---
 
 void CachedSysMemory::InitializeDiskInterface() {
     DiskInterfaceReg regs(m_DiskInterface);
@@ -162,9 +160,7 @@ void CachedSysMemory::InitializeDiskInterface() {
     }
 }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
+// --- Read Operations ---
 
 bool CachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
     // Check if 64DD is enabled
@@ -230,9 +226,7 @@ bool CachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
     return true;
 }
 
-// ============================================================================
-// Write Operations
-// ============================================================================
+// --- Write Operations ---
 
 bool CachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     // Check if 64DD is enabled
@@ -281,9 +275,7 @@ bool CachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     return true;
 }
 
-// ============================================================================
-// Disk Command Processing
-// ============================================================================
+// --- Disk Command Processing ---
 
 void CachedSysMemory::ProcessDiskCommand() {
     DiskInterfaceReg regs(m_DiskInterface);
@@ -416,9 +408,7 @@ void CachedSysMemory::CompleteCommand(bool error) {
     m_Reg.CheckInterrupts();
 }
 
-// ============================================================================
-// Buffer Manager Control
-// ============================================================================
+// --- Buffer Manager Control ---
 
 void CachedSysMemory::ProcessBufferManagerControl() {
     DiskInterfaceReg regs(m_DiskInterface);
@@ -474,9 +464,7 @@ void CachedSysMemory::ProcessBufferManagerControl() {
     }
 }
 
-// ============================================================================
-// Sequencer Control
-// ============================================================================
+// --- Sequencer Control ---
 
 void CachedSysMemory::ProcessSequencerControl() {
     DiskInterfaceReg regs(m_DiskInterface);
@@ -512,9 +500,7 @@ void CachedSysMemory::ProcessSequencerControl() {
     }
 }
 
-// ============================================================================
-// Disk Position Management
-// ============================================================================
+// --- Disk Position Management ---
 
 void CachedSysMemory::UpdateDiskPosition() {
     // Simulate disk rotation - update current sector
@@ -532,9 +518,7 @@ void CachedSysMemory::UpdateDiskPosition() {
     regs.ASIC_CUR_SECTOR = m_CurrentSector;
 }
 
-// ============================================================================
-// Reset Operations
-// ============================================================================
+// --- Reset Operations ---
 
 void CachedSysMemory::PerformHardReset() {
     Log::infof("64DD: Hard reset");
@@ -544,9 +528,7 @@ void CachedSysMemory::PerformHardReset() {
     }
 }
 
-// ============================================================================
-// DMA Operations
-// ============================================================================
+// --- DMA Operations ---
 
 void CachedSysMemory::SetRDRAM(uint8_t* rdram, uint32_t size) {
     m_RDRAM = rdram;

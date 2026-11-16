@@ -12,9 +12,7 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// =============================================================================
-// PlatformImpl - PImpl for platform-specific data
-// =============================================================================
+// --- PlatformImpl - PImpl for platform-specific data ---
 
 class CRegInfo::PlatformImpl {
 public:
@@ -23,9 +21,7 @@ public:
     PlatformImpl() : detectedPlatform(CRegInfo::DetectPlatform()) {}
 };
 
-// =============================================================================
-// CRegInfo Implementation
-// =============================================================================
+// --- CRegInfo Implementation ---
 
 CRegInfo::CRegInfo(std::unique_ptr<IRegisterAllocator> allocator) : m_Allocator(std::move(allocator)) {}
 
@@ -215,9 +211,7 @@ void CRegInfo::RestoreRegisterState(RegisterSet& /*regSet*/) {
     // Stub - state restoration
 }
 
-// =============================================================================
-// Static methods
-// =============================================================================
+// --- Static methods ---
 
 PlatformType CRegInfo::DetectPlatform() noexcept {
 #if defined(NOVA64_ARCH_X64) || defined(_M_X64) || defined(__x86_64__)
@@ -261,9 +255,7 @@ std::unique_ptr<CRegInfo> CRegInfo::CreateForPlatform(PlatformType /*platform*/)
     return std::make_unique<CRegInfo>();
 }
 
-// =============================================================================
-// Free functions
-// =============================================================================
+// --- Free functions ---
 
 static PlatformInfo s_CurrentPlatformInfo(CRegInfo::DetectPlatform(),
 #if defined(_M_X64) || defined(__x86_64__)
@@ -281,16 +273,12 @@ const PlatformInfo& GetCurrentPlatformInfo() noexcept { return s_CurrentPlatform
 
 bool CheckPlatformFeature(std::string_view /*feature*/) noexcept { return false; }
 
-// =============================================================================
-// UnsupportedPlatformException
-// =============================================================================
+// --- UnsupportedPlatformException ---
 
 UnsupportedPlatformException::UnsupportedPlatformException(PlatformType platform) :
     std::runtime_error("Unsupported platform: " + CRegInfo::GetPlatformDescription(platform)), m_Platform(platform) {}
 
-// =============================================================================
-// RegisterCustomPlatform (stub)
-// =============================================================================
+// --- RegisterCustomPlatform (stub) ---
 
 void RegisterCustomPlatform(PlatformType /*type*/, std::function<std::unique_ptr<IRegInfo>()> /*factory*/) {
     // Custom platform registration - stub for now

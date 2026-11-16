@@ -1282,9 +1282,7 @@ void VideoPlugin::ShowCFB() {
     LOG_DEBUG("ShowCFB: displayed origin=0x{:06X} {}x{}", m_viOrigin, m_viWidth, outHeight);
 }
 
-// ─────────────────────────────────────────────────────────────────
-//  Shared VI framebuffer decode + blit helper
-// ─────────────────────────────────────────────────────────────────
+// --- Shared VI framebuffer decode + blit helper ---
 
 void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t fbWidth, uint32_t fbHeight) {
     if (!m_sysInfo.rdram || !m_viBlitProgram || fbWidth == 0 || fbHeight == 0) return;

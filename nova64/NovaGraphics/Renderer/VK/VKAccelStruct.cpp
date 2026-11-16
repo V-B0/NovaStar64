@@ -13,9 +13,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 static VkDeviceAddress GetBufferDeviceAddress(VkDevice device, VkBuffer buffer) {
     VkBufferDeviceAddressInfo info{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
@@ -43,9 +41,7 @@ static bool AllocScratchBuffer(const VKContext& ctx, VkDeviceSize size, VKBuffer
                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKBlas
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKBlas ---
 
 bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* vertices, uint32_t vertexCount,
                    const uint32_t* indices, uint32_t indexCount) {
@@ -186,9 +182,7 @@ void VKBlas::Destroy() {
     m_device = VK_NULL_HANDLE;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKTlas
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKTlas ---
 
 bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<TlasInstance>& instances) {
     if (!ctx.device || instances.empty()) return false;

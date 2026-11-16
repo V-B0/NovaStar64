@@ -78,9 +78,7 @@ public:
     PluginManager(PluginManager&&) = delete;
     PluginManager& operator=(PluginManager&&) = delete;
 
-    // ========================================================================
-    // Plugin Loading
-    // ========================================================================
+    // --- Plugin Loading ---
 
     /**
      * @brief Load all plugins from configuration
@@ -114,9 +112,7 @@ public:
      */
     bool IsPluginLoaded(PluginType type) const;
 
-    // ========================================================================
-    // Plugin Lifecycle
-    // ========================================================================
+    // --- Plugin Lifecycle ---
 
     /**
      * @brief Initialize all loaded plugins
@@ -144,9 +140,7 @@ public:
      */
     void ResumePlugins();
 
-    // ========================================================================
-    // Plugin Access
-    // ========================================================================
+    // --- Plugin Access ---
 
     /**
      * @brief Get graphics plugin
@@ -179,9 +173,7 @@ public:
      */
     PluginBase* GetPlugin(PluginType type) const;
 
-    // ========================================================================
-    // Configuration
-    // ========================================================================
+    // --- Configuration ---
 
     /**
      * @brief Load plugin configuration from file
@@ -217,9 +209,7 @@ public:
      */
     void ShowPluginConfig(PluginType type);
 
-    // ========================================================================
-    // Plugin Discovery
-    // ========================================================================
+    // --- Plugin Discovery ---
 
     /**
      * @brief Discover available plugins in directory
@@ -235,9 +225,7 @@ public:
      */
     PluginInfo GetPluginInfo(const std::string& path) const;
 
-    // ========================================================================
-    // Notifications
-    // ========================================================================
+    // --- Notifications ---
 
     /**
      * @brief Register callback for plugin notifications
@@ -250,9 +238,7 @@ public:
      */
     void ClearNotificationCallback();
 
-    // ========================================================================
-    // Save States
-    // ========================================================================
+    // --- Save States ---
 
     /**
      * @brief Save all plugin states
@@ -268,9 +254,7 @@ public:
      */
     bool LoadState(const std::vector<uint8_t>& data);
 
-    // ========================================================================
-    // Status
-    // ========================================================================
+    // --- Status ---
 
     /**
      * @brief Check if all required plugins are loaded
@@ -285,9 +269,7 @@ public:
     std::string GetStatusString() const;
 
 private:
-    // ========================================================================
-    // Internal Plugin Creation
-    // ========================================================================
+    // --- Internal Plugin Creation ---
 
     /**
      * @brief Create default graphics plugin

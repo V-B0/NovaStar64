@@ -14,9 +14,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// CPU trace log implementation
-// ──────────────────────────────────────────────
+// --- CPU trace log implementation ---
 
 static FILE* s_CpuLogFile = nullptr;
 
@@ -44,9 +42,7 @@ void CPU_Message(const char* message, ...) {
     std::fflush(s_CpuLogFile);
 }
 
-// ──────────────────────────────────────────────
-// RDP Log - Opaque implementation
-// ──────────────────────────────────────────────
+// --- RDP Log - Opaque implementation ---
 
 class CRDPLog::LogImpl {
 public:

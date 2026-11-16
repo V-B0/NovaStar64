@@ -22,9 +22,7 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// =============================================================================
-// X64RegisterInfo static lookup
-// =============================================================================
+// --- X64RegisterInfo static lookup ---
 
 X64RegisterInfo X64RegisterInfo::GetInfo(X64RegisterType reg) {
     X64RegisterInfo info;
@@ -56,9 +54,7 @@ X64RegisterInfo X64RegisterInfo::GetInfo(X64RegisterType reg) {
     return info;
 }
 
-// =============================================================================
-// RegisterMappingInfo
-// =============================================================================
+// --- RegisterMappingInfo ---
 
 std::string RegisterMappingInfo::ToString() const {
     std::ostringstream oss;
@@ -70,9 +66,7 @@ std::string RegisterMappingInfo::ToString() const {
     return oss.str();
 }
 
-// =============================================================================
-// CX64RegInfo Construction / Destruction
-// =============================================================================
+// --- CX64RegInfo Construction / Destruction ---
 
 CX64RegInfo::CX64RegInfo(CodeBlock& codeBlock, CX64Ops& assembler,
                          std::unique_ptr<IRegisterAllocationStrategy> strategy) :
@@ -128,9 +122,7 @@ bool CX64RegInfo::operator==(const CX64RegInfo& other) const noexcept {
     return true;
 }
 
-// =============================================================================
-// Register Mapping
-// =============================================================================
+// --- Register Mapping ---
 
 X64RegisterType CX64RegInfo::MapRegister(uint32_t mipsReg, RegisterWidth width, bool isSigned,
                                          X64RegisterType preferredReg) {
@@ -212,9 +204,7 @@ bool CX64RegInfo::IsHostRegisterUsed(X64RegisterType hostReg) const noexcept {
     return m_HostRegistersUsed.test(static_cast<size_t>(hostReg));
 }
 
-// =============================================================================
-// Spill / Reload / Flush
-// =============================================================================
+// --- Spill / Reload / Flush ---
 
 void CX64RegInfo::SpillRegister(uint32_t mipsReg) {
     if (mipsReg >= 32 || !m_MipsToHost[mipsReg].has_value()) return;
@@ -259,9 +249,7 @@ void CX64RegInfo::FlushRegisters(bool writeBack) {
     }
 }
 
-// =============================================================================
-// Allocation
-// =============================================================================
+// --- Allocation ---
 
 X64RegisterType CX64RegInfo::AllocateHostRegister(X64RegisterClass regClass, X64RegisterType preferredReg) {
     X64RegisterType reg = FindFreeRegister(regClass, preferredReg);
@@ -300,9 +288,7 @@ void CX64RegInfo::UnlockRegister(uint32_t mipsReg) {
     }
 }
 
-// =============================================================================
-// State Management
-// =============================================================================
+// --- State Management ---
 
 void CX64RegInfo::SaveState() {
     SavedState state;
@@ -358,9 +344,7 @@ void CX64RegInfo::SynchronizeWith(const CX64RegInfo& other) {
     }
 }
 
-// =============================================================================
-// Query / Statistics
-// =============================================================================
+// --- Query / Statistics ---
 
 size_t CX64RegInfo::GetMappedRegisterCount() const noexcept {
     size_t count = 0;
@@ -427,9 +411,7 @@ void CX64RegInfo::SetAllocationStrategy(std::unique_ptr<IRegisterAllocationStrat
     m_AllocationStrategy = std::move(strategy);
 }
 
-// =============================================================================
-// Internal Helpers
-// =============================================================================
+// --- Internal Helpers ---
 
 void CX64RegInfo::WriteBackRegister(uint32_t mipsReg) {
     if (!m_MipsToHost[mipsReg].has_value() || !m_Assembler) return;
@@ -535,9 +517,7 @@ void CX64RegInfo::RemoveMapping(uint32_t mipsReg) {
     m_MipsToHost[mipsReg] = std::nullopt;
 }
 
-// =============================================================================
-// Allocation Strategies
-// =============================================================================
+// --- Allocation Strategies ---
 
 LinearScanAllocator::LinearScanAllocator(CX64RegInfo& regInfo) : m_RegInfo(regInfo) { m_RegisterUsageCount.fill(0); }
 

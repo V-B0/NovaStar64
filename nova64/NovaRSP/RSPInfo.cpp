@@ -23,11 +23,9 @@ namespace Nova64::RSP {
 // Persistent HLE context — survives across DoRspCycles calls for audio continuity
 static std::unique_ptr<HLE::CHle> s_HleContext;
 
-// ──────────────────────────────────────────────
 // Initialize RSP with hardware register pointers
 // Called by the main system after N64 memory is
 // allocated and SP interface is set up
-// ──────────────────────────────────────────────
 
 void InitializeRSP(RSP_INFO& rspInfo) {
     // Bind system to hardware registers
@@ -40,20 +38,16 @@ void InitializeRSP(RSP_INFO& rspInfo) {
     Build_RSP();
 }
 
-// ──────────────────────────────────────────────
 // Called when RSP plugin is loaded (one-time)
 // Sets up global state and default settings
-// ──────────────────────────────────────────────
 
 void RspPluginLoaded() {
     CRSPSettings::InitializeRspSetting();
     g_RSPDebugger = nullptr;
 }
 
-// ──────────────────────────────────────────────
 // Called when a ROM is opened
 // Allocates recompiler memory and prepares per-game state
-// ──────────────────────────────────────────────
 
 void RspRomOpened() {
     CRSPSettings::SetRomOpen(true);
@@ -74,10 +68,8 @@ void RspRomOpened() {
     s_HleContext = std::make_unique<HLE::CHle>(RSPSystem);
 }
 
-// ──────────────────────────────────────────────
 // Called when a ROM is closed
 // Frees per-game RSP resources
-// ──────────────────────────────────────────────
 
 void RspRomClosed() {
     CRSPSettings::SetRomOpen(false);
@@ -86,20 +78,16 @@ void RspRomClosed() {
     s_HleContext.reset();
 }
 
-// ──────────────────────────────────────────────
-// Free all RSP resources (module unload)
-// ──────────────────────────────────────────────
+// --- Free all RSP resources (module unload) ---
 
 void FreeRSP() {
     s_HleContext.reset();
     g_RSPDebugger = nullptr;
 }
 
-// ──────────────────────────────────────────────
 // DoRspCycles: main RSP execution entry point
 // Called when the RSP halt bit is cleared.
 // Tries HLE dispatch first; otherwise runs the task on the RSP engine.
-// ──────────────────────────────────────────────
 
 uint32_t DoRspCycles(uint32_t cycles) {
     const auto method = CRSPSettings::CPUMethod();

@@ -24,13 +24,11 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
 // Endian-aware buffer access helpers (mupen64plus compatible)
 // alist_buffer now stores raw DRAM byte order (memcpy'd).
 // S=1 on LE: pair-swap 16-bit indices within 32-bit words.
 // S8=3 on LE: byte-swap within 32-bit words.
 // S16=2 on LE: pair-swap byte addresses within 32-bit words.
-// ──────────────────────────────────────────────
 #ifdef __BIG_ENDIAN__
 static constexpr unsigned S = 0;
 static constexpr unsigned S8 = 0;
@@ -56,9 +54,7 @@ static inline int16_t* sample(CHle* hle, unsigned pos) {
     return reinterpret_cast<int16_t*>(hle->alist_buffer()) + ((pos ^ S) & 0xFFF);
 }
 
-// ──────────────────────────────────────────────
-// Audio command list dispatcher
-// ──────────────────────────────────────────────
+// --- Audio command list dispatcher ---
 
 void alist_process(CHle* hle, const AcmdCallback abi[], unsigned int abi_size) {
     if (hle->dram() == nullptr) return;
@@ -85,9 +81,7 @@ void alist_process(CHle* hle, const AcmdCallback abi[], unsigned int abi_size) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Segment address resolution
-// ──────────────────────────────────────────────
+// --- Segment address resolution ---
 
 uint32_t alist_get_address(CHle* hle, uint32_t so, const uint32_t* segments, size_t n) {
     // Upper 4 bits = segment index, lower 28 bits = offset
@@ -105,9 +99,7 @@ void alist_set_address(CHle* /*hle*/, uint32_t so, uint32_t* segments, size_t n)
     if (seg < n) segments[seg] = addr;
 }
 
-// ──────────────────────────────────────────────
-// Basic DMEM operations
-// ──────────────────────────────────────────────
+// --- Basic DMEM operations ---
 
 void alist_clear(CHle* hle, uint16_t dmem, uint16_t count) {
     uint8_t* buf = hle->alist_buffer();
@@ -217,9 +209,7 @@ void alist_interleave(CHle* hle, uint16_t dmemo, uint16_t left, uint16_t right, 
     }
 }
 
-// ──────────────────────────────────────────────
-// Ramp helpers (matching mupen64plus alist.c)
-// ──────────────────────────────────────────────
+// --- Ramp helpers (matching mupen64plus alist.c) ---
 namespace {
 struct ramp_t {
     int64_t value;
@@ -246,9 +236,7 @@ inline void alist_envmix_mix_n(size_t n, int16_t** dst, const int16_t* gains, in
 }
 } // anonymous namespace
 
-// ──────────────────────────────────────────────
-// Envelope mixing (exponential) — port of mupen64plus alist_envmix_exp
-// ──────────────────────────────────────────────
+// --- Envelope mixing (exponential) — port of mupen64plus alist_envmix_exp ---
 
 void alist_envmix_exp(CHle* hle, bool init, bool aux, uint16_t dmem_dl, uint16_t dmem_dr, uint16_t dmem_wl,
                       uint16_t dmem_wr, uint16_t dmemi, uint16_t count, int16_t dry, int16_t wet, const int16_t* vol,
@@ -341,9 +329,7 @@ void alist_envmix_exp(CHle* hle, bool init, bool aux, uint16_t dmem_dl, uint16_t
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
-// ──────────────────────────────────────────────
-// Envelope mixing (GoldenEye GE) — port of mupen64plus alist_envmix_ge
-// ──────────────────────────────────────────────
+// --- Envelope mixing (GoldenEye GE) — port of mupen64plus alist_envmix_ge ---
 
 void alist_envmix_ge(CHle* hle, bool init, bool aux, uint16_t dmem_dl, uint16_t dmem_dr, uint16_t dmem_wl,
                      uint16_t dmem_wr, uint16_t dmemi, uint16_t count, int16_t dry, int16_t wet, const int16_t* vol,
@@ -412,9 +398,7 @@ void alist_envmix_ge(CHle* hle, bool init, bool aux, uint16_t dmem_dl, uint16_t 
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
-// ──────────────────────────────────────────────
-// Envelope mixing (linear ramp) — port of mupen64plus alist_envmix_lin
-// ──────────────────────────────────────────────
+// --- Envelope mixing (linear ramp) — port of mupen64plus alist_envmix_lin ---
 
 void alist_envmix_lin(CHle* hle, bool init, uint16_t dmem_dl, uint16_t dmem_dr, uint16_t dmem_wl, uint16_t dmem_wr,
                       uint16_t dmemi, uint16_t count, int16_t dry, int16_t wet, const int16_t* vol,
@@ -481,9 +465,7 @@ void alist_envmix_lin(CHle* hle, bool init, uint16_t dmem_dl, uint16_t dmem_dr, 
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(save_buffer), address, 40);
 }
 
-// ──────────────────────────────────────────────
-// Envelope mixing (NEAD variant)
-// ──────────────────────────────────────────────
+// --- Envelope mixing (NEAD variant) ---
 
 void alist_envmix_nead(CHle* hle, bool swap_wet_LR, uint16_t dmem_dl, uint16_t dmem_dr, uint16_t dmem_wl,
                        uint16_t dmem_wr, uint16_t dmemi, unsigned count, uint16_t* env_values, uint16_t* env_steps,
@@ -536,9 +518,7 @@ void alist_envmix_nead(CHle* hle, bool swap_wet_LR, uint16_t dmem_dl, uint16_t d
     }
 }
 
-// ──────────────────────────────────────────────
-// Mix / multiply / add
-// ──────────────────────────────────────────────
+// --- Mix / multiply / add ---
 
 void alist_mix(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t gain) {
     uint8_t* buf = hle->alist_buffer();
@@ -585,9 +565,7 @@ void alist_add(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count) {
     }
 }
 
-// ──────────────────────────────────────────────
-// ADPCM decode
-// ──────────────────────────────────────────────
+// --- ADPCM decode ---
 
 void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample, uint16_t dmemo, uint16_t dmemi,
                  uint16_t count, const int16_t* codebook, uint32_t loop_address, uint32_t last_frame_address) {
@@ -649,9 +627,7 @@ void alist_adpcm(CHle* hle, bool init, bool loop, bool two_bit_per_sample, uint1
     dram_store_u16(hle, reinterpret_cast<const uint16_t*>(last_frame), last_frame_address, 16);
 }
 
-// ──────────────────────────────────────────────
-// Resampling
-// ──────────────────────────────────────────────
+// --- Resampling ---
 
 void alist_resample(CHle* hle, bool init, bool flag2, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint32_t pitch,
                     uint32_t address) {
@@ -702,9 +678,7 @@ void alist_resample(CHle* hle, bool init, bool flag2, uint16_t dmemo, uint16_t d
     (void)flag2;
 }
 
-// ──────────────────────────────────────────────
-// Pole filter (IIR)
-// ──────────────────────────────────────────────
+// --- Pole filter (IIR) ---
 
 void alist_polef(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t gain, int16_t* table,
                  uint32_t address) {
@@ -755,9 +729,7 @@ void alist_polef(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t 
     dram_store_u32(hle, reinterpret_cast<uint32_t*>(dst - 4), address, 2);
 }
 
-// ──────────────────────────────────────────────
-// IIR filter
-// ──────────────────────────────────────────────
+// --- IIR filter ---
 
 void alist_iirf(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t* table,
                 uint32_t address) {
@@ -805,9 +777,7 @@ void alist_iirf(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t c
     dram_store_u16(hle, reinterpret_cast<uint16_t*>(&ibuf[(index - 1) & 3]), address + 10, 1);
 }
 
-// ──────────────────────────────────────────────
-// Zero-order hold resample
-// ──────────────────────────────────────────────
+// --- Zero-order hold resample ---
 
 void alist_resample_zoh(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint32_t pitch,
                         uint32_t pitch_accu) {
@@ -824,9 +794,7 @@ void alist_resample_zoh(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t coun
     }
 }
 
-// ──────────────────────────────────────────────
-// Generic filter
-// ──────────────────────────────────────────────
+// --- Generic filter ---
 
 void alist_filter(CHle* hle, uint16_t dmem, uint16_t count, uint32_t address, const uint32_t* lut_address) {
     uint8_t* buf = hle->alist_buffer();
@@ -947,9 +915,7 @@ void alist_filter(CHle* hle, uint16_t dmem, uint16_t count, uint32_t address, co
     std::memcpy(buf + dmem, outbuff, count);
 }
 
-// ──────────────────────────────────────────────
-// De-interleave (stereo → separate L/R)
-// ──────────────────────────────────────────────
+// --- De-interleave (stereo → separate L/R) ---
 
 void alist_deinterleave(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t dmem_src, uint16_t count) {
     uint8_t* buf = hle->alist_buffer();
@@ -967,9 +933,7 @@ void alist_deinterleave(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint
     }
 }
 
-// ──────────────────────────────────────────────
-// Dynamic range compressor (soft-knee limiter)
-// ──────────────────────────────────────────────
+// --- Dynamic range compressor (soft-knee limiter) ---
 
 void alist_compress(CHle* hle, uint16_t dmem, uint16_t count, int16_t threshold, int16_t ratio, int16_t attack,
                     int16_t release) {
@@ -1012,9 +976,7 @@ void alist_compress(CHle* hle, uint16_t dmem, uint16_t count, int16_t threshold,
     }
 }
 
-// ──────────────────────────────────────────────
-// Chorus effect (modulated delay line)
-// ──────────────────────────────────────────────
+// --- Chorus effect (modulated delay line) ---
 
 void alist_chorus(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t delay_base, uint16_t depth,
                   uint16_t rate_hz, int16_t wet_gain) {
@@ -1058,9 +1020,7 @@ void alist_chorus(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uin
     }
 }
 
-// ──────────────────────────────────────────────
-// Simple delay line (echo / feedback)
-// ──────────────────────────────────────────────
+// --- Simple delay line (echo / feedback) ---
 
 void alist_delay(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t delay_samples, int16_t feedback,
                  int16_t wet_gain) {
@@ -1092,9 +1052,7 @@ void alist_delay(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint
     }
 }
 
-// ──────────────────────────────────────────────
-// High-pass / Low-pass single-pole IIR
-// ──────────────────────────────────────────────
+// --- High-pass / Low-pass single-pole IIR ---
 
 void alist_hilopass(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t cutoff_coeff, FilterType type,
                     uint32_t state_address) {
@@ -1137,9 +1095,7 @@ void alist_hilopass(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, i
     }
 }
 
-// ──────────────────────────────────────────────
-// Stereo pan with crossfade
-// ──────────────────────────────────────────────
+// --- Stereo pan with crossfade ---
 
 void alist_pan(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t count, int16_t pan_left,
                int16_t pan_right) {
@@ -1161,9 +1117,7 @@ void alist_pan(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t coun
     }
 }
 
-// ──────────────────────────────────────────────
-// DC offset removal (single-pole high-pass at ~20 Hz)
-// ──────────────────────────────────────────────
+// --- DC offset removal (single-pole high-pass at ~20 Hz) ---
 
 void alist_dc_remove(CHle* hle, uint16_t dmem, uint16_t count, uint32_t state_address) {
     uint8_t* buf = hle->alist_buffer();

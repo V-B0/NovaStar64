@@ -9,9 +9,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// RSP Hardware Register indices (COP0 mapping)
-// ──────────────────────────────────────────────
+// --- RSP Hardware Register indices (COP0 mapping) ---
 enum class RSPRegister : uint32_t {
     MemAddr = 0,   // SP_MEM_ADDR_REG
     DramAddr = 1,  // SP_DRAM_ADDR_REG
@@ -22,12 +20,10 @@ enum class RSPRegister : uint32_t {
     PC = 6,        // SP_PC_REG (mapped at 0x04080000)
 };
 
-// ──────────────────────────────────────────────
 // DMA Length Register encoding
 // Bits [0:11]  = Length (actual = value + 1)
 // Bits [12:19] = Count  (actual = value + 1)
 // Bits [20:31] = Skip   (bytes to skip between rows)
-// ──────────────────────────────────────────────
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4201)
@@ -54,10 +50,8 @@ union DMALengthReg {
 #pragma warning(pop)
 #endif
 
-// ──────────────────────────────────────────────
 // Abstract RSP Register Handler
 // Manages SP interface registers and DMA transfers
-// ──────────────────────────────────────────────
 class RSPRegisterHandler {
 public:
     RSPRegisterHandler(uint32_t* signalProcessorInterface, uint8_t*& rdram, const uint32_t& rdramSize, uint8_t* imem,
@@ -103,9 +97,7 @@ protected:
     bool m_IgnoreWrites{false};
 };
 
-// ──────────────────────────────────────────────
-// Concrete handler for plugin-style integration
-// ──────────────────────────────────────────────
+// --- Concrete handler for plugin-style integration ---
 class CRSPSystem;
 
 class RSPRegisterHandlerPlugin : public RSPRegisterHandler {

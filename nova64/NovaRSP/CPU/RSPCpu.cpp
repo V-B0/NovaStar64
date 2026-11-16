@@ -15,16 +15,13 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Global tables & state
-// ──────────────────────────────────────────────
+// --- Global tables & state ---
 DWord64 EleSpec[16];
 DWord64 Indx[16];
 uint32_t RSP_Running = 0;
 uint32_t Mfc0Count = 0;
 uint32_t SemaphoreExit = 0;
 
-// ──────────────────────────────────────────────
 // Build_RSP - Populate element selection tables
 //
 // EleSpec[e][i] gives the *element index* to read from VT
@@ -35,7 +32,6 @@ uint32_t SemaphoreExit = 0;
 // For e = 2..3    : broadcast pairs
 // For e = 4..7    : broadcast quads
 // For e = 8..15   : single-element broadcast
-// ──────────────────────────────────────────────
 void Build_RSP() {
     // Identity mapping for Indx
     for (int e = 0; e < 16; e++) {
@@ -81,10 +77,8 @@ void Build_RSP() {
         }
     }
 
-    // ──────────────────────────────────────────────
     // Copy hardware-accurate ROM tables (512 entries each)
     // These are burned into the RSP silicon and verified against n64-systemtest.
-    // ──────────────────────────────────────────────
     auto& reg = RSPSystem.Registers();
     std::memcpy(reg.m_Reciprocals, RcpRom, sizeof(RcpRom));
     std::memcpy(reg.m_InverseSquareRoots, RsqRom, sizeof(RsqRom));

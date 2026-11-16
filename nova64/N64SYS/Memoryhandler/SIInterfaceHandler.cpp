@@ -107,9 +107,7 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
     return true;
 }
 
-// ----------------------------------------------------------------------------
-// Implemented Helper Methods
-// ----------------------------------------------------------------------------
+// --- Implemented Helper Methods ---
 
 void SerialInterfaceHandler::process_dma_cycles(uint64_t current_cycle) {
     if (m_dma_state.active && m_dma_state.is_complete(current_cycle)) {

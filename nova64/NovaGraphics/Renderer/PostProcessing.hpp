@@ -18,9 +18,7 @@
 
 namespace Nova64::Video {
 
-// ──────────────────────────────────────────────────────────────
-//  Post-processing effect types
-// ──────────────────────────────────────────────────────────────
+// --- Post-processing effect types ---
 
 enum class PostEffectType : uint8_t {
     GammaCorrection,
@@ -38,9 +36,7 @@ enum class PostEffectType : uint8_t {
     Vignette,
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Effect parameters
-// ──────────────────────────────────────────────────────────────
+// --- Effect parameters ---
 
 struct GammaParams {
     float gamma = 2.2f;
@@ -106,9 +102,7 @@ struct VignetteParams {
     float smoothness = 0.5f;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Post-effect base
-// ──────────────────────────────────────────────────────────────
+// --- Post-effect base ---
 
 class PostEffect {
 public:
@@ -125,9 +119,7 @@ protected:
     bool m_enabled = true;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Gamma correction effect
-// ──────────────────────────────────────────────────────────────
+// --- Gamma correction effect ---
 
 class GammaEffect : public PostEffect {
 public:
@@ -145,9 +137,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  FXAA effect
-// ──────────────────────────────────────────────────────────────
+// --- FXAA effect ---
 
 class FXAAEffect : public PostEffect {
 public:
@@ -165,9 +155,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Bloom effect (multi-pass)
-// ──────────────────────────────────────────────────────────────
+// --- Bloom effect (multi-pass) ---
 
 class BloomEffect : public PostEffect {
 public:
@@ -195,9 +183,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  CRT filter
-// ──────────────────────────────────────────────────────────────
+// --- CRT filter ---
 
 class CRTEffect : public PostEffect {
 public:
@@ -215,9 +201,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Sharpen effect
-// ──────────────────────────────────────────────────────────────
+// --- Sharpen effect ---
 
 class SharpenEffect : public PostEffect {
 public:
@@ -235,9 +219,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Chromatic Aberration effect
-// ──────────────────────────────────────────────────────────────
+// --- Chromatic Aberration effect ---
 
 class ChromaticAberrationEffect : public PostEffect {
 public:
@@ -255,9 +237,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Film Grain effect
-// ──────────────────────────────────────────────────────────────
+// --- Film Grain effect ---
 
 class FilmGrainEffect : public PostEffect {
 public:
@@ -277,9 +257,7 @@ private:
     uint32_t m_frameCount = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Dithering effect
-// ──────────────────────────────────────────────────────────────
+// --- Dithering effect ---
 
 class DitheringEffect : public PostEffect {
 public:
@@ -295,9 +273,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Color Grading effect
-// ──────────────────────────────────────────────────────────────
+// --- Color Grading effect ---
 
 class ColorGradingEffect : public PostEffect {
 public:
@@ -315,9 +291,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Depth of Field effect
-// ──────────────────────────────────────────────────────────────
+// --- Depth of Field effect ---
 
 struct DepthOfFieldParams {
     float focalDistance = 0.5f;
@@ -343,9 +317,7 @@ private:
     uint32_t m_depthTex = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Motion Blur effect
-// ──────────────────────────────────────────────────────────────
+// --- Motion Blur effect ---
 
 struct MotionBlurParams {
     float strength = 0.5f;
@@ -371,9 +343,7 @@ private:
     int m_height = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Vignette effect
-// ──────────────────────────────────────────────────────────────
+// --- Vignette effect ---
 
 class VignetteEffect : public PostEffect {
 public:
@@ -391,9 +361,7 @@ private:
     uint32_t m_vbo = 0;
 };
 
-// ──────────────────────────────────────────────────────────────
-//  SMAA effect (edge-detect + blend)
-// ──────────────────────────────────────────────────────────────
+// --- SMAA effect (edge-detect + blend) ---
 
 class SMAAEffect : public PostEffect {
 public:

@@ -14,9 +14,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Base RSP Register Handler
-// ──────────────────────────────────────────────
+// --- Base RSP Register Handler ---
 
 namespace {
 
@@ -62,10 +60,8 @@ RSPRegisterHandler::RSPRegisterHandler(uint32_t* signalProcessorInterface, uint8
     SP_DMA_BUSY_REG(signalProcessorInterface[6]), SP_SEMAPHORE_REG(signalProcessorInterface[7]),
     SP_PC_REG(signalProcessorInterface[8]), m_Rdram(rdram), m_RdramSize(rdramSize), m_IMEM(imem), m_DMEM(dmem) {}
 
-// ──────────────────────────────────────────────
 // SP DMA Read: RDRAM → SP memory (IMEM/DMEM)
 // Triggered by writing to SP_RD_LEN_REG
-// ──────────────────────────────────────────────
 void RSPRegisterHandler::SP_DMA_READ() {
     const uint32_t spAddr = SP_MEM_ADDR_REG & 0x1FF8;
     uint32_t dramAddr = SP_DRAM_ADDR_REG & 0x00FFFFF8;
@@ -94,10 +90,8 @@ void RSPRegisterHandler::SP_DMA_READ() {
     DmaReadDone(dramAddr);
 }
 
-// ──────────────────────────────────────────────
 // SP DMA Write: SP memory (IMEM/DMEM) → RDRAM
 // Triggered by writing to SP_WR_LEN_REG
-// ──────────────────────────────────────────────
 void RSPRegisterHandler::SP_DMA_WRITE() {
     const uint32_t spAddr = SP_MEM_ADDR_REG & 0x1FF8;
     uint32_t dramAddr = SP_DRAM_ADDR_REG & 0x00FFFFF8;
@@ -120,9 +114,7 @@ void RSPRegisterHandler::SP_DMA_WRITE() {
     SP_WR_LEN_REG.Value = 0xFF8 | (SP_WR_LEN_REG.Value & 0xFF800000);
 }
 
-// ──────────────────────────────────────────────
-// Register read
-// ──────────────────────────────────────────────
+// --- Register read ---
 uint32_t RSPRegisterHandler::ReadReg(RSPRegister reg) const {
     switch (reg) {
     case RSPRegister::MemAddr:   return SP_MEM_ADDR_REG;
@@ -141,9 +133,7 @@ uint32_t RSPRegisterHandler::ReadReg(RSPRegister reg) const {
     }
 }
 
-// ──────────────────────────────────────────────
-// Register write with side effects
-// ──────────────────────────────────────────────
+// --- Register write with side effects ---
 void RSPRegisterHandler::WriteReg(RSPRegister reg, uint32_t value) {
     if (m_IgnoreWrites) return;
 
@@ -203,9 +193,7 @@ void RSPRegisterHandler::WriteReg(RSPRegister reg, uint32_t value) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Plugin-style concrete handler
-// ──────────────────────────────────────────────
+// --- Plugin-style concrete handler ---
 
 RSPRegisterHandlerPlugin::RSPRegisterHandlerPlugin(CRSPSystem& system) :
     RSPRegisterHandler(system.m_SP_MEM_ADDR_REG, system.m_RDRAM, system.m_RdramSize, system.m_IMEM, system.m_DMEM),

@@ -279,9 +279,7 @@ size_t TranslationLookasideBuffer::RandomIndexGenerator::next() {
     return counter--;
 }
 
-// ============================================================================
-// Legacy CTLB Implementation
-// ============================================================================
+// --- Legacy CTLB Implementation ---
 
 CTLB::CTLB(Nova64::MipsMemoryVM& MMU, CRegisters& Reg, CRecompiler*& Recomp) :
     m_PrivilegeMode(PrivilegeMode::Kernel), m_AddressSize32bit(true), m_MMU(&MMU), m_Reg(&Reg), m_Recomp(Recomp) {

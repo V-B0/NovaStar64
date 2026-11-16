@@ -57,9 +57,7 @@ constexpr auto PIPELINE_STAGE_PERMLOOP_DELAY_DONE = PipelineStage::PermanentLoop
 constexpr uint32_t FPCSR_C = FPCSRFlags::C;
 } // namespace
 
-// ============================================================================
-// Static Data
-// ============================================================================
+// --- Static Data ---
 
 const uint32_t R4300iInterpreter::SWL_MASK[4] = {0x00000000, 0xFF000000, 0xFFFF0000, 0xFFFFFF00};
 const uint32_t R4300iInterpreter::SWR_MASK[4] = {0x00FFFFFF, 0x0000FFFF, 0x000000FF, 0x00000000};
@@ -71,9 +69,7 @@ const int32_t R4300iInterpreter::SWR_SHIFT[4] = {24, 16, 8, 0};
 const int32_t R4300iInterpreter::LWL_SHIFT[4] = {0, 8, 16, 24};
 const int32_t R4300iInterpreter::LWR_SHIFT[4] = {24, 16, 8, 0};
 
-// ============================================================================
-// Constructor / Destructor
-// ============================================================================
+// --- Constructor / Destructor ---
 
 R4300iInterpreter::R4300iInterpreter(CN64System& system, bool force32bit) :
     m_System(system), m_Reg(*system.m_Registers), m_TLB(*system.m_TLB), m_MMU(*system.m_Memory),
@@ -129,9 +125,7 @@ R4300iInterpreter::R4300iInterpreter(CN64System& system, bool force32bit) :
 
 R4300iInterpreter::~R4300iInterpreter() {}
 
-// ============================================================================
-// Execution
-// ============================================================================
+// --- Execution ---
 
 void R4300iInterpreter::ExecuteCPU() {
     Log::info("=== R4300i Interpreter starting CPU execution ===");
@@ -301,9 +295,7 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles) {
     m_System.m_SystemTimer->UpdateTimers();
 }
 
-// ============================================================================
-// Dispatch Functions
-// ============================================================================
+// --- Dispatch Functions ---
 
 void R4300iInterpreter::SPECIAL() { (this->*Jump_Special[funct()])(); }
 
@@ -329,9 +321,7 @@ void R4300iInterpreter::COP1_W() { (this->*Jump_CoP1_W[funct()])(); }
 
 void R4300iInterpreter::COP1_L() { (this->*Jump_CoP1_L[funct()])(); }
 
-// ============================================================================
-// Build Interpreter (Dispatch Tables)
-// ============================================================================
+// --- Build Interpreter (Dispatch Tables) ---
 
 void R4300iInterpreter::BuildInterpreter(bool Force32bit) {
     Jump_Opcode[0] = &R4300iInterpreter::SPECIAL;
@@ -653,9 +643,7 @@ void R4300iInterpreter::BuildInterpreter(bool Force32bit) {
     for (int i = 7; i < 32; i++) Jump_CoP2[i] = &R4300iInterpreter::CPO2_INVALID_OP;
 }
 
-// ============================================================================
-// Primary Opcode Functions
-// ============================================================================
+// --- Primary Opcode Functions ---
 
 void R4300iInterpreter::J() { m_System.DelayedJump((m_PROGRAM_COUNTER & 0xFFFFFFFFF0000000ULL) + (target() << 2)); }
 
@@ -781,9 +769,7 @@ void R4300iInterpreter::DADDI() {
 
 void R4300iInterpreter::DADDIU() { m_GPR[rt()].DW = m_GPR[rs()].DW + (int64_t)((int16_t)immediate()); }
 
-// ============================================================================
-// Load Instructions
-// ============================================================================
+// --- Load Instructions ---
 
 static uint64_t LDL_MASK[8] = {
     0, 0xFF, 0xFFFF, 0xFFFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFULL, 0xFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFULL};
@@ -1048,9 +1034,7 @@ void R4300iInterpreter::LD_32() {
     m_MMU.LD_Memory(Address, m_GPR[rt()].UDW);
 }
 
-// ============================================================================
-// Store Instructions
-// ============================================================================
+// --- Store Instructions ---
 
 void R4300iInterpreter::SB() {
     uint64_t Address = m_GPR[base()].DW + (int16_t)offset();
@@ -1299,9 +1283,7 @@ void R4300iInterpreter::SD_32() {
     m_MMU.SD_Memory(Address, m_GPR[rt()].UDW);
 }
 
-// ============================================================================
-// R4300i SPECIAL Opcodes
-// ============================================================================
+// --- R4300i SPECIAL Opcodes ---
 
 void R4300iInterpreter::SPECIAL_SLL() { m_GPR[rd()].DW = (m_GPR[rt()].W[0] << sa()); }
 
@@ -1546,9 +1528,7 @@ void R4300iInterpreter::SPECIAL_DSRL32() { m_GPR[rd()].UDW = (m_GPR[rt()].UDW >>
 
 void R4300iInterpreter::SPECIAL_DSRA32() { m_GPR[rd()].DW = (m_GPR[rt()].DW >> (sa() + 32)); }
 
-// ============================================================================
-// R4300i REGIMM Opcodes
-// ============================================================================
+// --- R4300i REGIMM Opcodes ---
 
 void R4300iInterpreter::REGIMM_BLTZ() {
     if (m_GPR[rs()].DW < 0) {
@@ -1666,9 +1646,7 @@ void R4300iInterpreter::REGIMM_TNEI() {
     }
 }
 
-// ============================================================================
-// COP0 Functions
-// ============================================================================
+// --- COP0 Functions ---
 
 void R4300iInterpreter::COP0_MF() { m_GPR[rt()].DW = (int32_t)m_Reg.Cop0_MF((CRegisters::COP0Reg)rd()); }
 
@@ -1713,9 +1691,7 @@ void R4300iInterpreter::COP0_CO_WAIT() {
     // in the recompiler and interpreter loop handle fast-forwarding the timer.
 }
 
-// ============================================================================
-// COP1 Functions
-// ============================================================================
+// --- COP1 Functions ---
 
 void R4300iInterpreter::CPO1_UNIMPLEMENTED_OP() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
@@ -1820,9 +1796,7 @@ void R4300iInterpreter::COP1_BCTL() {
     }
 }
 
-// ============================================================================
-// COP1: Single Precision Functions
-// ============================================================================
+// --- COP1: Single Precision Functions ---
 
 void R4300iInterpreter::COP1_S_ADD() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
@@ -2129,9 +2103,7 @@ void R4300iInterpreter::COP1_S_CMP() {
     }
 }
 
-// ============================================================================
-// COP1: Double Precision Functions
-// ============================================================================
+// --- COP1: Double Precision Functions ---
 
 void R4300iInterpreter::COP1_D_ADD() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
@@ -2469,9 +2441,7 @@ void R4300iInterpreter::COP1_D_CMP() {
     }
 }
 
-// ============================================================================
-// COP1: Word Functions
-// ============================================================================
+// --- COP1: Word Functions ---
 
 void R4300iInterpreter::COP1_W_CVT_S() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
@@ -2495,9 +2465,7 @@ void R4300iInterpreter::COP1_W_CVT_D() {
     *m_FPR_UDW[fd()] = *(uint64_t*)&Result;
 }
 
-// ============================================================================
-// COP1: Long Functions
-// ============================================================================
+// --- COP1: Long Functions ---
 
 void R4300iInterpreter::COP1_L_CVT_S() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
@@ -2535,9 +2503,7 @@ void R4300iInterpreter::COP1_L_CVT_D() {
     *m_FPR_UDW[fd()] = Result.v;
 }
 
-// ============================================================================
-// COP2 Functions
-// ============================================================================
+// --- COP2 Functions ---
 
 void R4300iInterpreter::CPO2_INVALID_OP() {
     m_Reg.TriggerException(m_Reg.STATUS_REGISTER.CU2 == 0 ? EXC_CPU : EXC_II, 2);
@@ -2591,9 +2557,7 @@ void R4300iInterpreter::COP2_CT() {
     }
 }
 
-// ============================================================================
-// Error Handling
-// ============================================================================
+// --- Error Handling ---
 
 void R4300iInterpreter::ReservedInstruction() { m_Reg.TriggerException(EXC_II); }
 
@@ -2606,9 +2570,7 @@ void R4300iInterpreter::UnknownOpcode() {
     m_Reg.TriggerException(EXC_II);
 }
 
-// ============================================================================
-// FPU Helper Functions
-// ============================================================================
+// --- FPU Helper Functions ---
 
 bool R4300iInterpreter::TestCop1UsableException() {
     if (m_Reg.STATUS_REGISTER.CU1 == 0) {
@@ -2991,9 +2953,7 @@ bool R4300iInterpreter::SetFPUException() {
     return Res;
 }
 
-// ============================================================================
-// Instruction Memory Management
-// ============================================================================
+// --- Instruction Memory Management ---
 
 void R4300iInterpreter::UpdateInstructionMemory() {
     if (m_InstructionRegion != (m_PROGRAM_COUNTER & ~0xFFFULL)) {

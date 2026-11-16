@@ -23,9 +23,7 @@
 
 namespace Plugins {
 
-// ============================================================================
-// DefaultRSPPlugin — Null/stub implementation
-// ============================================================================
+// --- DefaultRSPPlugin — Null/stub implementation ---
 
 class DefaultRSPPlugin final : public RSPPlugin {
 public:
@@ -112,9 +110,7 @@ private:
     uint32_t m_PC = 0;
 };
 
-// ============================================================================
-// DynLibRSPPlugin — DLL-backed implementation (Project64 DLL compatibility)
-// ============================================================================
+// --- DynLibRSPPlugin — DLL-backed implementation (Project64 DLL compatibility) ---
 
 #ifdef _WIN32
 #define CALL __cdecl
@@ -404,9 +400,7 @@ private:
     RSPRomOpen m_fnRomOpen = nullptr;
 };
 
-// ============================================================================
-// Factory functions
-// ============================================================================
+// --- Factory functions ---
 
 std::unique_ptr<RSPPlugin> CreateDefaultRSPPlugin() { return std::make_unique<DefaultRSPPlugin>(); }
 

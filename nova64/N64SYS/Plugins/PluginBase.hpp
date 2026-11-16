@@ -57,9 +57,7 @@ class PluginBase {
 public:
     virtual ~PluginBase() = default;
 
-    // ========================================================================
-    // Plugin Information
-    // ========================================================================
+    // --- Plugin Information ---
 
     /**
      * @brief Get plugin information
@@ -67,9 +65,7 @@ public:
      */
     virtual PluginInfo GetPluginInfo() const = 0;
 
-    // ========================================================================
-    // Lifecycle Management
-    // ========================================================================
+    // --- Lifecycle Management ---
 
     /**
      * @brief Initialize plugin with system reference
@@ -99,9 +95,7 @@ public:
      */
     virtual void Resume() = 0;
 
-    // ========================================================================
-    // Configuration
-    // ========================================================================
+    // --- Configuration ---
 
     /**
      * @brief Check if plugin is properly initialized
@@ -115,9 +109,7 @@ public:
      */
     virtual void ShowConfigDialog(void* hwndParent) = 0;
 
-    // ========================================================================
-    // Save States
-    // ========================================================================
+    // --- Save States ---
 
     /**
      * @brief Save plugin state

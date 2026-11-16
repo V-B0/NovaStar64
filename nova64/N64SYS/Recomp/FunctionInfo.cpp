@@ -32,9 +32,7 @@
 
 namespace Nova64::Recompiler {
 
-// ============================================================================
-// CompiledFunction Implementation
-// ============================================================================
+// --- CompiledFunction Implementation ---
 
 CompiledFunction::CompiledFunction(Recompiler& recompiler, uint32_t entry_pc, const Config& config) :
     recompiler_(recompiler), id_(static_cast<FunctionId>(0)) // Will be set by manager
@@ -582,9 +580,7 @@ void CompiledFunction::log_compilation(const std::string& message) {
 
 void CompiledFunction::set_status(CompilationStatus status) { status_ = status; }
 
-// ============================================================================
-// FunctionManager Implementation
-// ============================================================================
+// --- FunctionManager Implementation ---
 
 FunctionManager::FunctionManager(Recompiler& recompiler, const Config& config) :
     recompiler_(recompiler), config_(config) {
@@ -1024,9 +1020,7 @@ std::unique_ptr<CompiledFunction> FunctionManager::fuse_functions_impl(FunctionI
     return nullptr;
 }
 
-// ============================================================================
-// FunctionAnalyzer Implementation
-// ============================================================================
+// --- FunctionAnalyzer Implementation ---
 
 FunctionAnalyzer::FunctionAnalyzer() {}
 

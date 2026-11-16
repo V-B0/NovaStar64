@@ -76,10 +76,8 @@ int CN64System::s_FullscreenMode = 0; // Default: windowed
 bool CN64System::s_HeadlessMode = false;
 std::string CN64System::s_PipeName = "";
 
-// ──────────────────────────────────────────────
 // RSP callback wrappers (static functions matching RSP_INFO signatures)
 // These bridge the N64System → RSP interface
-// ──────────────────────────────────────────────
 
 static void RSP_CheckInterrupts() {
     if (g_System && g_System->GetRegisters()) {
@@ -743,12 +741,10 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         // header entry point, then jumps there.  HLE boot must replicate this.
         entryPoint = headerEntryPoint;
 
-        // ================================================================
         // Detect libdragon ROMs: scan from ROM[0x1000] for ELF magic.
         // nust64 embeds the raw ELF file starting around ROM[0x1900].
         // The libdragon IPL3 parses ELF program headers and loads each
         // PT_LOAD segment to its correct virtual address.
-        // ================================================================
         uint32_t elfOffset = 0;
         for (uint32_t scan = 0x1000; scan < romSize - 4 && scan < 0x4000; scan += 0x100) {
             // Check for ELF magic: 7F 45 4C 46 (big-endian, not byte-swapped)
@@ -1054,11 +1050,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         m_SyncCPU->Reset(bInitReg, ClearMemory);
     }
 
-    // ──────────────────────────────────────────
     // Initialize RSP subsystem
     // Wire hardware register pointers so the RSP
     // can read/write SP, MI, and DPC registers
-    // ──────────────────────────────────────────
     // Use Vmem's SP handler — it's the one that receives actual game writes
     // (DMA, SP_STATUS, etc). MainSYS's m_SPRegistersHandler is a separate
     // instance whose DMEM/IMEM never get game data.
@@ -1120,11 +1114,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         Log::info("RSP subsystem initialized and wired to hardware registers");
     }
 
-    // ──────────────────────────────────────────────────────────────────
     // Initialize graphics window BEFORE plugins (plugins need it)
     // Only create on first call — warm resets must not destroy the window
     // or plugin, as that would lose all rendering state.
-    // ──────────────────────────────────────────────────────────────────
     // A game drawn inside the launcher has no window of its own: the video
     // plugin renders offscreen or into a hidden window. A window made here would
     // also be made off the main thread, which macOS doesn't allow.
@@ -1170,11 +1162,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
 
     bool windowReady = m_WindowManager && m_WindowManager->IsInitialized();
 
-    // ──────────────────────────────────────────
     // Initialize PluginManager and load plugins
     // Only create once — subsequent Reset() calls should reset the
     // existing plugin, not destroy and recreate it.
-    // ──────────────────────────────────────────
     if (!m_PluginManager) {
         m_PluginManager = std::make_unique<Plugins::PluginManager>(*this);
         m_PluginManager->LoadPlugin(Plugins::PluginType::Graphics);

@@ -26,9 +26,7 @@
 
 namespace Plugins {
 
-// ============================================================================
-// DefaultInputPlugin — Null/stub implementation
-// ============================================================================
+// --- DefaultInputPlugin — Null/stub implementation ---
 
 class DefaultInputPlugin final : public InputPlugin {
 public:
@@ -145,9 +143,7 @@ private:
     std::array<ControllerState, 4> m_Controllers;
 };
 
-// ============================================================================
-// DynLibInputPlugin — DLL-backed implementation (Project64 DLL compatibility)
-// ============================================================================
+// --- DynLibInputPlugin — DLL-backed implementation (Project64 DLL compatibility) ---
 
 /**
  * Controller plugin data structures matching N64 plugin spec.
@@ -407,9 +403,7 @@ private:
     void(CALL* m_fnDllConfig)(void*) = nullptr;
 };
 
-// ============================================================================
-// Factory functions
-// ============================================================================
+// --- Factory functions ---
 
 std::unique_ptr<InputPlugin> CreateDefaultInputPlugin() { return std::make_unique<DefaultInputPlugin>(); }
 

@@ -37,9 +37,7 @@ RomMemoryHandler::RomMemoryHandler(CN64System& system, CRegisters& registers, N6
 
 RomMemoryHandler::~RomMemoryHandler() noexcept = default;
 
-// ----------------------------------------------------------------------------
-// Memory Handler Implementation
-// ----------------------------------------------------------------------------
+// --- Memory Handler Implementation ---
 
 bool RomMemoryHandler::Read32(uint32_t address, uint32_t& value) {
     if (m_latch_active) {

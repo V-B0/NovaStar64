@@ -48,9 +48,7 @@
 #include <windows.h>
 #endif
 
-// =============================================================================
-// SEH wrapper for safe JIT code execution (MSVC/Windows only)
-// =============================================================================
+// --- SEH wrapper for safe JIT code execution (MSVC/Windows only) ---
 // __try/__except cannot be used in functions with C++ objects that have
 // non-trivial destructors (MSVC restriction), so this must be a standalone
 // function.
@@ -78,9 +76,7 @@ namespace Nova64::Recompiler {
 std::atomic<uint64_t> g_CompileCount{0};
 std::atomic<uint64_t> g_CompileTimeNs{0};
 
-// =============================================================================
-// CRecompiler Implementation
-// =============================================================================
+// --- CRecompiler Implementation ---
 
 CRecompiler::CRecompiler(::CN64System& system, std::atomic<bool>& endEmulation) :
     m_System(system), m_MMU(*system.GetMemory()), m_Reg(*system.GetRegisters()), m_TLB(*system.GetTLB()),
@@ -359,9 +355,7 @@ void CRecompiler::ResetLog() {
     Log::info("CRecompiler: Log reset");
 }
 
-// =============================================================================
-// Core Compilation
-// =============================================================================
+// --- Core Compilation ---
 
 CCompiledFunc* CRecompiler::CompileCode() {
     uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
@@ -476,9 +470,7 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     return compiledFunc;
 }
 
-// =============================================================================
-// Execution Engine Implementations
-// =============================================================================
+// --- Execution Engine Implementations ---
 
 void CRecompiler::Execute_VirtualTable() {
     Log::info("CRecompiler: Executing with VirtualTable mode");
@@ -559,7 +551,6 @@ void CRecompiler::Execute_VirtualTable() {
             }
         }
 
-        // ================================================================
         // FAST PATH: For forward branches and fallthrough, skip timer/event
         // processing entirely and immediately execute the next block.
         // Timer/events are only checked on backward branches or TestTimer,
@@ -567,7 +558,6 @@ void CRecompiler::Execute_VirtualTable() {
         // for backward branches (target < branch_addr + 4) or TestTimer.
         // This eliminates ~150-300ns of per-block overhead for the common
         // case (forward flow), which dominates with ~300K blocks/frame.
-        // ================================================================
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
 
@@ -598,10 +588,8 @@ void CRecompiler::Execute_VirtualTable() {
             }
         }
 
-        // ================================================================
         // SLOW PATH: Backward branch, self-loop, or TestTimer.
         // Process idle detection, timers, events, and frame limit.
-        // ================================================================
         static uint64_t slowPathCounter = 0;
         if ((++slowPathCounter % 10000) == 0) {
             // Log::infof("CRecompiler: SLOW PATH PC=0x%08X (nextTimer=%d testTimer=%d EXL=%d IE=%d pend=%x)",
@@ -1021,9 +1009,7 @@ void CRecompiler::Execute_Lookup_Validate() {
     }
 }
 
-// =============================================================================
-// Interpreter Fallback
-// =============================================================================
+// --- Interpreter Fallback ---
 
 void CRecompiler::FallbackToInterpreter() {
     Log::info("CRecompiler: Falling back to interpreter for remaining execution");
@@ -1042,9 +1028,7 @@ void CRecompiler::InterpretSingleInstruction() {
     ++m_Stats.interpretedFallbacks;
 }
 
-// =============================================================================
-// Helper Methods
-// =============================================================================
+// --- Helper Methods ---
 
 void CRecompiler::ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reason) {
     // Find all functions whose code overlaps [start, end) using block address ranges.

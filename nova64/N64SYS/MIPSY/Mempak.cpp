@@ -16,9 +16,7 @@ namespace fs = std::filesystem;
 
 namespace N64Controller {
 
-// ==========================================================
-// MempakUtils Implementation
-// ==========================================================
+// --- MempakUtils Implementation ---
 
 namespace MempakUtils {
 
@@ -102,9 +100,7 @@ bool verify_checksum(const uint8_t* data, size_t length, uint32_t expected_check
 }
 } // namespace MempakUtils
 
-// ==========================================================
-// MemoryPakController Implementation
-// ==========================================================
+// --- MemoryPakController Implementation ---
 
 MemoryPakController::MemoryPakController() {
     // Initialize default states
@@ -514,9 +510,7 @@ const uint8_t* MemoryPakController::get_memory_pointer(int controller_index, uin
     return m_mempaks[controller_index].memory.data() + address;
 }
 
-// ==========================================================
-// CMempak (Legacy) Implementation
-// ==========================================================
+// --- CMempak (Legacy) Implementation ---
 
 CMempak::CMempak() {
     m_controller = std::make_unique<MemoryPakController>();
@@ -632,9 +626,7 @@ bool CMempak::save_legacy_mempak(int32_t controller_index) {
     return file.good();
 }
 
-// ==========================================================
-// MemoryPakFactory Implementation
-// ==========================================================
+// --- MemoryPakFactory Implementation ---
 
 std::unique_ptr<MemoryPakController> MemoryPakFactory::create_controller() {
     return std::make_unique<MemoryPakController>();

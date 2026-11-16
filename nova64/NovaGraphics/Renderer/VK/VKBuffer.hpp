@@ -52,7 +52,6 @@ void DestroyBufferStorage(const VKContext& ctx, VKBufferStorage& s);
 bool UploadDeviceLocal(const VKContext& ctx, VKBufferStorage& dst, VkDeviceSize dstOffset, const void* data,
                        VkDeviceSize size);
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 class VKVertexBufferImpl final : public IVertexBuffer {
 public:

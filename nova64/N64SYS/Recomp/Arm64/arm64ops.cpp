@@ -17,9 +17,7 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// =============================================================================
-// Construction / Destruction
-// =============================================================================
+// --- Construction / Destruction ---
 
 CArm64Ops::CArm64Ops(CodeBlock& codeBlock, Arm64EmitOptions options) :
     asmjit::a64::Assembler(), asmjit::Logger(), m_CodeBlock(codeBlock), m_Options(std::move(options)) {
@@ -28,9 +26,7 @@ CArm64Ops::CArm64Ops(CodeBlock& codeBlock, Arm64EmitOptions options) :
 
 CArm64Ops::~CArm64Ops() { Log::debug("CArm64Ops: Destroyed"); }
 
-// =============================================================================
-// Initialization
-// =============================================================================
+// --- Initialization ---
 
 bool CArm64Ops::Initialize(asmjit::CodeHolder& codeHolder) {
     m_CodeHolder = &codeHolder;
@@ -48,9 +44,7 @@ bool CArm64Ops::Initialize(asmjit::CodeHolder& codeHolder) {
     return true;
 }
 
-// =============================================================================
-// Symbol Management
-// =============================================================================
+// --- Symbol Management ---
 
 asmjit::Label CArm64Ops::DefineSymbol(std::string_view name, bool isExported) {
     auto label = asmjit::a64::Assembler::new_label();
@@ -68,9 +62,7 @@ asmjit::Label CArm64Ops::DefineSymbol(std::string_view name, bool isExported) {
     return label;
 }
 
-// =============================================================================
-// Logging
-// =============================================================================
+// --- Logging ---
 
 asmjit::Error CArm64Ops::_log(const char* data, size_t size) noexcept {
     if (size == SIZE_MAX) {
@@ -83,9 +75,7 @@ asmjit::Error CArm64Ops::_log(const char* data, size_t size) noexcept {
     return asmjit::kErrorOk;
 }
 
-// =============================================================================
-// Code Generation Helpers
-// =============================================================================
+// --- Code Generation Helpers ---
 
 void CArm64Ops::MovImm64(const asmjit::a64::Gp& dst, uint64_t value) {
     // AsmJit's a64 Assembler synthesises the optimal MOVZ/MOVK (or MOV-bitmask)
@@ -109,9 +99,7 @@ void CArm64Ops::EmitCall(void* target, bool isTailCall) {
     }
 }
 
-// =============================================================================
-// Error Handling
-// =============================================================================
+// --- Error Handling ---
 
 void CArm64Ops::HandleError(asmjit::Error error, std::string_view context) {
     m_LastError = error;

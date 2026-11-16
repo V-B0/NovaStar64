@@ -23,9 +23,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKBlas  —  Bottom-Level Acceleration Structure
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKBlas  —  Bottom-Level Acceleration Structure ---
 
 class VKBlas {
 public:
@@ -64,9 +62,7 @@ private:
     VkDeviceAddress m_deviceAddress = 0;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKTlas  —  Top-Level Acceleration Structure
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKTlas  —  Top-Level Acceleration Structure ---
 
 struct TlasInstance {
     VkDeviceAddress blasDeviceAddress;

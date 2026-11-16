@@ -39,9 +39,7 @@
 
 namespace PI {
 
-// ============================================================================
-// PI Status Register Bits
-// ============================================================================
+// --- PI Status Register Bits ---
 
 constexpr uint32_t STATUS_DMA_BUSY = 0x01;
 constexpr uint32_t STATUS_IO_BUSY = 0x02;
@@ -54,9 +52,7 @@ constexpr uint32_t CTRL_CLR_INTR = 0x02;
 // MI Interrupt bits
 constexpr uint32_t MI_INTR_PI = 0x10;
 
-// ============================================================================
-// Memory Regions
-// ============================================================================
+// --- Memory Regions ---
 
 constexpr uint32_t ROM_START = 0x10000000;
 constexpr uint32_t ROM_END = 0x1FBFFFFF;
@@ -92,9 +88,7 @@ PeripheralInterfaceHandler::PeripheralInterfaceHandler(CN64System& system, Nova6
 
 PeripheralInterfaceHandler::~PeripheralInterfaceHandler() { Log::infof("PIInterface: Destroyed"); }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
+// --- Read Operations ---
 
 bool PeripheralInterfaceHandler::Read32(uint32_t addr, uint32_t& val) {
     switch (addr & 0x1FFFFFFF) {
@@ -127,9 +121,7 @@ bool PeripheralInterfaceHandler::Read32(uint32_t addr, uint32_t& val) {
     return true;
 }
 
-// ============================================================================
-// Write Operations
-// ============================================================================
+// --- Write Operations ---
 
 bool PeripheralInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     uint32_t maskedVal = val & mask;
@@ -213,9 +205,7 @@ bool PeripheralInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t m
     return true;
 }
 
-// ============================================================================
-// Status Register Processing
-// ============================================================================
+// --- Status Register Processing ---
 
 void PeripheralInterfaceHandler::ProcessStatusWrite(uint32_t val) {
     if (val & CTRL_CLR_INTR) {
@@ -233,9 +223,7 @@ void PeripheralInterfaceHandler::ProcessStatusWrite(uint32_t val) {
     }
 }
 
-// ============================================================================
-// DMA Read (Cart -> RDRAM)
-// ============================================================================
+// --- DMA Read (Cart -> RDRAM) ---
 
 void PeripheralInterfaceHandler::HandleDMARead() {
     if (!m_dma_used) {
@@ -329,9 +317,7 @@ void PeripheralInterfaceHandler::HandleDMARead() {
     CompleteDMA();
 }
 
-// ============================================================================
-// DMA Write (RDRAM -> Cart)
-// ============================================================================
+// --- DMA Write (RDRAM -> Cart) ---
 
 void PeripheralInterfaceHandler::HandleDMAWrite() {
     if (!m_dma_used) {
@@ -407,9 +393,7 @@ void PeripheralInterfaceHandler::HandleDMAWrite() {
     CompleteDMA();
 }
 
-// ============================================================================
-// Standard DMA Read Implementation (Cart -> RDRAM)
-// ============================================================================
+// --- Standard DMA Read Implementation (Cart -> RDRAM) ---
 
 void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length) {
     uint8_t* rdram = m_mmu.Rdram();
@@ -501,9 +485,7 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
     m_system.GetSystemTimer()->set_timer(N64System::TimerType::PiTimer, cycles < 100 ? 100 : cycles, false);
 }
 
-// ============================================================================
-// 64DD IPL ROM DMA Read
-// ============================================================================
+// --- 64DD IPL ROM DMA Read ---
 
 void PeripheralInterfaceHandler::PerformDDIPLDMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length) {
     Log::debugf("PIInterface: DMA Read from 64DD IPL ROM");
@@ -537,9 +519,7 @@ void PeripheralInterfaceHandler::PerformDDIPLDMARead(uint32_t dramAddr, uint32_t
     CompleteDMA();
 }
 
-// ============================================================================
-// Read Block Helper
-// ============================================================================
+// --- Read Block Helper ---
 
 void PeripheralInterfaceHandler::ReadBlock(uint32_t addr, uint8_t* block, uint32_t blockLen) {
     N64Rom* rom = m_system.GetRom();
@@ -589,9 +569,7 @@ void PeripheralInterfaceHandler::ReadBlock(uint32_t addr, uint8_t* block, uint32
     }
 }
 
-// ============================================================================
-// DMA Completion
-// ============================================================================
+// --- DMA Completion ---
 
 void PeripheralInterfaceHandler::CompleteDMA() {
     m_pi_regs.PI_STATUS_REG &= ~STATUS_DMA_BUSY;
@@ -606,9 +584,7 @@ void PeripheralInterfaceHandler::CompleteDMA() {
     Log::debugf("PIInterface: DMA Complete");
 }
 
-// ============================================================================
-// First DMA Handler (CIC chip initialization)
-// ============================================================================
+// --- First DMA Handler (CIC chip initialization) ---
 
 void PeripheralInterfaceHandler::OnFirstDMA() {
     Log::infof("PIInterface: First DMA - Initializing CIC chip emulation");
@@ -633,9 +609,7 @@ void PeripheralInterfaceHandler::OnFirstDMA() {
     Log::debugf("PIInterface: Wrote RDRAM size (0x%08X) to offset 0x%X", rdramSize, offset);
 }
 
-// ============================================================================
-// Reset
-// ============================================================================
+// --- Reset ---
 
 void PeripheralInterfaceHandler::reset() {
     Log::infof("PIInterface: Reset");

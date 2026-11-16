@@ -24,9 +24,7 @@
 #include <cfenv>
 #include <cstdlib>
 
-// ============================================================================
-// Register Name Tables
-// ============================================================================
+// --- Register Name Tables ---
 
 const char* const CRegName::GPR[32] = {"R0", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2",
                                        "T3", "T4", "T5", "T6", "T7", "S0", "S1", "S2", "S3", "S4", "S5",
@@ -58,9 +56,7 @@ const char* const CRegName::FPR_Ctrl[32] = {
     "Unknown",  "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "Unknown",
     "Unknown",  "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "Unknown", "FCSR"};
 
-// ============================================================================
-// CRegisters Implementation
-// ============================================================================
+// --- CRegisters Implementation ---
 
 CRegisters::CRegisters(CN64System& System, CSystemEvents& SystemEvents) :
     CP0registers(), m_FirstInterrupt(true), m_System(System), m_SystemEvents(SystemEvents),
@@ -265,9 +261,7 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU) {
     m_TLB.COP0StatusChanged();
 }
 
-// ============================================================================
-// COP0 Register Access
-// ============================================================================
+// --- COP0 Register Access ---
 
 uint64_t& CRegisters::GetCop0RegRef(COP0Reg reg) { return m_CP0[static_cast<uint8_t>(reg)]; }
 
@@ -397,9 +391,7 @@ void CRegisters::Cop0_MT(COP0Reg Reg, uint64_t Value) {
     }
 }
 
-// ============================================================================
-// COP1 (FPU) Register Access
-// ============================================================================
+// --- COP1 (FPU) Register Access ---
 
 void CRegisters::Cop1_CT(uint32_t Reg, uint32_t Value) {
     if (Reg == 31) {
@@ -418,17 +410,13 @@ void CRegisters::Cop1_CT(uint32_t Reg, uint32_t Value) {
     }
 }
 
-// ============================================================================
-// COP2 Register Access (RCP vector unit - not used on N64 CPU)
-// ============================================================================
+// --- COP2 Register Access (RCP vector unit - not used on N64 CPU) ---
 
 uint64_t CRegisters::Cop2_MF(uint32_t /*Reg*/) { return m_CP2Latch; }
 
 void CRegisters::Cop2_MT(uint32_t /*Reg*/, uint64_t Value) { m_CP2Latch = Value; }
 
-// ============================================================================
-// Interrupt Handling
-// ============================================================================
+// --- Interrupt Handling ---
 
 void CRegisters::CheckInterrupts() {
     uint32_t MI_INTR_REG_Value = m_Mips_Interface[2]; // MI_INTR_REG
@@ -471,9 +459,7 @@ bool CRegisters::DoIntrException() {
     return true;
 }
 
-// ============================================================================
-// Exception Handling
-// ============================================================================
+// --- Exception Handling ---
 
 void CRegisters::DoAddressError(uint64_t BadVaddr, bool FromRead) {
     TriggerAddressException(BadVaddr, FromRead ? static_cast<uint32_t>(ExceptionCode::EXC_RADE)
@@ -582,9 +568,7 @@ void CRegisters::TriggerException(uint32_t ExceptionCode, uint32_t Coprocessor) 
     }
 }
 
-// ============================================================================
-// FPU Location Fixing
-// ============================================================================
+// --- FPU Location Fixing ---
 
 void CRegisters::FixFpuLocations() {
     for (uint8_t i = 0; i < 32; i++) {

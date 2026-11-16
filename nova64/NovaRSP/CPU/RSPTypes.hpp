@@ -20,9 +20,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Multi-view scalar word (like PJ64 UWORD32)
-// ──────────────────────────────────────────────
+// --- Multi-view scalar word (like PJ64 UWORD32) ---
 union Word32 {
     int32_t W;
     uint32_t UW;
@@ -36,9 +34,7 @@ union Word32 {
     constexpr explicit Word32(int32_t v) : W(v) {}
 };
 
-// ──────────────────────────────────────────────
-// Multi-view 64-bit doubleword
-// ──────────────────────────────────────────────
+// --- Multi-view 64-bit doubleword ---
 union DWord64 {
     int64_t DW;
     uint64_t UDW;
@@ -54,11 +50,9 @@ union DWord64 {
     constexpr explicit DWord64(int64_t v) : DW(v) {}
 };
 
-// ──────────────────────────────────────────────
 // RSP Accumulator - 48-bit per element, 8 elements
 // x64: stored as 6 × uint64_t (3 pairs of 8×16-bit lanes: High, Mid, Low)
 // x86: stored as 8 × UDWORD
-// ──────────────────────────────────────────────
 class alignas(16) RSPAccumulator {
 public:
     RSPAccumulator() { Reset(); }
@@ -129,9 +123,7 @@ private:
     alignas(16) uint64_t m_Low[2]{};  // Accumulator low  (8 × 16-bit)
 };
 
-// ──────────────────────────────────────────────
-// RSP Vector Register - 128 bits = 8 × 16-bit elements
-// ──────────────────────────────────────────────
+// --- RSP Vector Register - 128 bits = 8 × 16-bit elements ---
 class alignas(16) RSPVector {
 public:
     RSPVector() { std::memset(m_Data, 0, sizeof(m_Data)); }
@@ -175,11 +167,9 @@ private:
     alignas(16) uint64_t m_Data[2];
 };
 
-// ──────────────────────────────────────────────
 // RSP Flag Register - 8 element boolean flags
 // x64: stored as 8 × uint16_t (SIMD-friendly)
 // Packed format: 8-bit for serialization
-// ──────────────────────────────────────────────
 class alignas(16) RSPFlag {
 public:
     RSPFlag() { Clear(); }

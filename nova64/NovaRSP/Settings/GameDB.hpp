@@ -12,9 +12,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Per-game override flags
-// ──────────────────────────────────────────────
+// --- Per-game override flags ---
 struct GameOverrides {
     const char* name{nullptr};
     std::optional<bool> graphicsHle;   // Override graphics HLE on/off
@@ -22,16 +20,13 @@ struct GameOverrides {
     std::optional<uint32_t> cpuMethod; // Override CPU method (0=interp, 2=recomp, 3=HLE)
 };
 
-// ──────────────────────────────────────────────
-// Game database entry: CRC1 + CRC2 → overrides
-// ──────────────────────────────────────────────
+// --- Game database entry: CRC1 + CRC2 → overrides ---
 struct GameDBEntry {
     uint32_t crc1;
     uint32_t crc2;
     GameOverrides overrides;
 };
 
-// ──────────────────────────────────────────────
 // Known game overrides
 //
 // Games that need specific RSP settings to work correctly.
@@ -41,7 +36,6 @@ struct GameDBEntry {
 //   - Audio-only HLE: Games where graphics HLE causes issues
 //   - LLE required: Games with custom RSP microcodes
 //   - Full HLE safe: Games known to work with both audio + graphics HLE
-// ──────────────────────────────────────────────
 
 inline constexpr GameDBEntry kGameDatabase[] = {
     // ── Games needing LLE for audio (custom audio microcodes) ──
@@ -104,10 +98,8 @@ inline constexpr GameDBEntry kGameDatabase[] = {
 
 inline constexpr size_t kGameDatabaseSize = sizeof(kGameDatabase) / sizeof(kGameDatabase[0]);
 
-// ──────────────────────────────────────────────
 // Lookup function
 // Returns nullptr if no match found
-// ──────────────────────────────────────────────
 inline const GameOverrides* LookupGameOverrides(uint32_t crc1, uint32_t crc2) {
     for (size_t i = 0; i < kGameDatabaseSize; ++i) {
         if (kGameDatabase[i].crc1 == crc1 && kGameDatabase[i].crc2 == crc2) return &kGameDatabase[i].overrides;

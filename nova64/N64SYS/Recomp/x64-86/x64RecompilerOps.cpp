@@ -66,7 +66,6 @@
 #define FORCE_CALLBACK_IMM     0 // All immediate-format ALU/logic
 #define FORCE_CALLBACK_BRANCH  0 // All conditional branches (BEQ,BNE,etc.)
 #define FORCE_CALLBACK_JUMP    0 // J, JAL
-// ========================================
 
 namespace Nova64 {
 namespace Recompiler {
@@ -74,9 +73,7 @@ namespace Recompiler {
 // Shared VR4300 interpreter callbacks (see RecompInterpCallbacks.inc).
 #include "../RecompInterpCallbacks.inc"
 
-// =============================================================================
-// x64 Code Emission Helpers
-// =============================================================================
+// --- x64 Code Emission Helpers ---
 // These private methods of CX64RecompilerOps emit x64 machine code using
 // AsmJit that, at runtime, will call the appropriate interpreter callback.
 
@@ -408,9 +405,7 @@ void CX64RecompilerOps::EmitPCUpdate() {
     }
 }
 
-// =============================================================================
-// Construction / Destruction
-// =============================================================================
+// --- Construction / Destruction ---
 
 CX64RecompilerOps::CX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) :
     IRecompilerOps(), m_Context(context), m_CodeBlock(codeBlock), m_Assembler(std::make_unique<CX64Ops>(codeBlock)),
@@ -424,9 +419,7 @@ CX64RecompilerOps::~CX64RecompilerOps() {
     Log::debugf("CX64RecompilerOps: Destroyed - translated %zu instructions", m_Stats.instructionsTranslated);
 }
 
-// =============================================================================
-// IRecompilerOps Interface - Setup & Teardown
-// =============================================================================
+// --- IRecompilerOps Interface - Setup & Teardown ---
 
 bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBlock) {
     m_Assembler = std::make_unique<CX64Ops>(codeBlock);
@@ -447,9 +440,7 @@ void CX64RecompilerOps::Cleanup() {
     Log::debug("CX64RecompilerOps: Cleaned up");
 }
 
-// =============================================================================
-// IRecompilerOps Interface - Code Generation
-// =============================================================================
+// --- IRecompilerOps Interface - Code Generation ---
 
 bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     R4300iOps op = ctx.opcode;
@@ -1075,9 +1066,7 @@ bool CX64RecompilerOps::CompileSystemCall(const InstructionContext& ctx) { retur
 
 bool CX64RecompilerOps::CompileBreak(const InstructionContext& ctx) { return CompileInstruction(ctx); }
 
-// =============================================================================
-// IRecompilerOps Interface - Register Management
-// =============================================================================
+// --- IRecompilerOps Interface - Register Management ---
 
 void CX64RecompilerOps::LoadRegister(uint32_t regIndex, bool is64Bit) {
     if (regIndex >= 32 || regIndex == 0) return;
@@ -1092,9 +1081,7 @@ void CX64RecompilerOps::StoreRegister(uint32_t regIndex, bool /*is64Bit*/) {
 
 void CX64RecompilerOps::FlushRegisters() { m_RegisterSet->FlushRegisters(true); }
 
-// =============================================================================
-// IRecompilerOps Interface - Memory Operations
-// =============================================================================
+// --- IRecompilerOps Interface - Memory Operations ---
 
 bool CX64RecompilerOps::CompileLoad(const InstructionContext& ctx, uint32_t /*size*/, bool /*isSigned*/,
                                     bool /*is64Bit*/) {
@@ -1105,9 +1092,7 @@ bool CX64RecompilerOps::CompileStore(const InstructionContext& ctx, uint32_t /*s
     return CompileInstruction(ctx);
 }
 
-// =============================================================================
-// IRecompilerOps Interface - Floating-Point Operations
-// =============================================================================
+// --- IRecompilerOps Interface - Floating-Point Operations ---
 
 bool CX64RecompilerOps::CompileFloatingPointOperation(const InstructionContext& ctx) { return CompileInstruction(ctx); }
 
@@ -1115,17 +1100,13 @@ bool CX64RecompilerOps::CompileFloatingPointBranch(const InstructionContext& ctx
     return CompileInstruction(ctx);
 }
 
-// =============================================================================
-// IRecompilerOps Interface - Coprocessor Operations
-// =============================================================================
+// --- IRecompilerOps Interface - Coprocessor Operations ---
 
 bool CX64RecompilerOps::CompileCoprocessorOperation(const InstructionContext& ctx, uint32_t /*coprocessor*/) {
     return CompileInstruction(ctx);
 }
 
-// =============================================================================
-// IRecompilerOps Interface - Debug and Query
-// =============================================================================
+// --- IRecompilerOps Interface - Debug and Query ---
 
 void CX64RecompilerOps::GenerateDebugComment(std::string_view comment) { m_Assembler->AddComment(comment); }
 
@@ -1146,15 +1127,11 @@ size_t CX64RecompilerOps::GetCodeSizeEstimate(const InstructionContext& /*ctx*/)
     return 32;
 }
 
-// =============================================================================
-// Extended Interface - Optimization
-// =============================================================================
+// --- Extended Interface - Optimization ---
 
 void CX64RecompilerOps::SetOptimizationLevel(OptimizationLevel level) noexcept { m_OptimizationLevel = level; }
 
-// =============================================================================
-// Extended Interface - Control Flow Management
-// =============================================================================
+// --- Extended Interface - Control Flow Management ---
 
 void CX64RecompilerOps::EnterCodeBlock() {
     auto& a = m_Assembler->GetAssembler();
@@ -1238,9 +1215,7 @@ void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo) {
     ExitCodeBlock(ExitReason::JumpRegister);
 }
 
-// =============================================================================
-// Extended Interface - Register State Management
-// =============================================================================
+// --- Extended Interface - Register State Management ---
 
 void CX64RecompilerOps::SynchronizeRegisterState(const CX64RegInfo& other) { m_RegisterSet->SynchronizeWith(other); }
 
@@ -1254,17 +1229,13 @@ void CX64RecompilerOps::SaveRegisterState() { m_RegisterSet->SaveState(); }
 
 void CX64RecompilerOps::RestoreRegisterState() { m_RegisterSet->RestoreState(); }
 
-// =============================================================================
-// Extended Interface - Disassembly & Validation
-// =============================================================================
+// --- Extended Interface - Disassembly & Validation ---
 
 std::string CX64RecompilerOps::GenerateDisassembly() const { return m_Assembler->GenerateDisassembly(); }
 
 bool CX64RecompilerOps::ValidateGeneratedCode() const { return !m_Assembler->HasError(); }
 
-// =============================================================================
-// Private - Instruction Handler Initialization
-// =============================================================================
+// --- Private - Instruction Handler Initialization ---
 
 void CX64RecompilerOps::InitializeInstructionHandlers() {
     // The dispatch is handled directly in CompileInstruction via switch/case
@@ -1272,9 +1243,7 @@ void CX64RecompilerOps::InitializeInstructionHandlers() {
     Log::debug("CX64RecompilerOps: Instruction handlers initialized");
 }
 
-// =============================================================================
-// Private - Instruction Translation Dispatch
-// =============================================================================
+// --- Private - Instruction Translation Dispatch ---
 
 TranslationResult CX64RecompilerOps::TranslateInstruction(const TranslationContext& ctx) {
     switch (ctx.opcode.Rtype.op) {
@@ -1308,9 +1277,7 @@ TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationC
     return TranslationResult::Success;
 }
 
-// =============================================================================
-// Private - Category Handlers (using TranslationContext)
-// =============================================================================
+// --- Private - Category Handlers (using TranslationContext) ---
 
 TranslationResult CX64RecompilerOps::HandleArithmetic(const TranslationContext& ctx) {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ADDIU), ctx.opcode.Value);
@@ -1362,9 +1329,7 @@ TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContex
     return TranslationResult::Success;
 }
 
-// =============================================================================
-// Private - Individual Handle* Methods (TranslationContext variants)
-// =============================================================================
+// --- Private - Individual Handle* Methods (TranslationContext variants) ---
 // These delegate to the bare-name methods since both emit the same code.
 
 #define DEFINE_HANDLE_SPECIAL(name, callback)                                                                          \
@@ -1566,9 +1531,7 @@ TranslationResult CX64RecompilerOps::HandleSDC1(const TranslationContext& ctx) {
     return TranslationResult::Success;
 }
 
-// =============================================================================
-// Private - Helper Methods
-// =============================================================================
+// --- Private - Helper Methods ---
 
 void CX64RecompilerOps::EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, asmjit::x86::Gp dest,
                                           const asmjit::x86::Mem& src) {
@@ -1611,9 +1574,7 @@ void CX64RecompilerOps::EmitBreak() {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
 }
 
-// =============================================================================
-// Private - Register Allocation and Management
-// =============================================================================
+// --- Private - Register Allocation and Management ---
 
 void CX64RecompilerOps::AllocateRegister(uint32_t regIndex, bool is64Bit) {
     if (regIndex >= 32 || regIndex == 0) return;
@@ -1636,9 +1597,7 @@ void CX64RecompilerOps::ReloadRegister(uint32_t regIndex) {
     m_RegisterSet->ReloadRegister(regIndex);
 }
 
-// =============================================================================
-// Private - Memory Access Helpers
-// =============================================================================
+// --- Private - Memory Access Helpers ---
 
 asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_t offset, uint32_t size,
                                                         bool /*is64Bit*/) {
@@ -1653,9 +1612,7 @@ void CX64RecompilerOps::EmitMemoryBoundsCheck(uint32_t /*address*/) {
     // Bounds checking is handled within the memory callbacks (MMU TLB lookup)
 }
 
-// =============================================================================
-// Private - Optimization Helpers
-// =============================================================================
+// --- Private - Optimization Helpers ---
 
 void CX64RecompilerOps::OptimizeCurrentBlock() {
     if (m_OptimizationLevel >= OptimizationLevel::Basic) {
@@ -1686,9 +1643,7 @@ void CX64RecompilerOps::RedundantMoveElimination(){
     // Remove mov reg, reg instructions and unnecessary register shuffling
 }
 
-// =============================================================================
-// Private - Branch Comparison Instructions (True JIT - Inline x64)
-// =============================================================================
+// --- Private - Branch Comparison Instructions (True JIT - Inline x64) ---
 
 // JIT offset helpers (used here and in SPECIAL/Immediate sections below)
 #ifndef JIT_GPR
@@ -1958,9 +1913,7 @@ DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BGEZALL, Interp_BGEZALL_BranchLikely)
 DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BC1FL, Interp_BC1FL_BranchLikely)
 DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BC1TL, Interp_BC1TL_BranchLikely)
 
-// =============================================================================
-// Private - Jump Instructions (True JIT - Inline x64)
-// =============================================================================
+// --- Private - Jump Instructions (True JIT - Inline x64) ---
 
 void CX64RecompilerOps::J() {
     if (!m_CurrentContext) return;
@@ -2003,9 +1956,7 @@ void CX64RecompilerOps::JAL() {
     m_BlockEnded = true;
 }
 
-// =============================================================================
-// Private - Immediate Arithmetic Instructions (True JIT - Inline x64)
-// =============================================================================
+// --- Private - Immediate Arithmetic Instructions (True JIT - Inline x64) ---
 
 void CX64RecompilerOps::ADDI() {
     if (!m_CurrentContext) return;
@@ -2203,9 +2154,7 @@ void CX64RecompilerOps::DADDIU() {
     m_Stats.categories.arithmetic++;
 }
 
-// =============================================================================
-// Private - Load Instructions
-// =============================================================================
+// --- Private - Load Instructions ---
 
 #define DEFINE_LOAD(name, callback)                                                                                    \
     void CX64RecompilerOps::name() {                                                                                   \
@@ -2295,9 +2244,7 @@ void CX64RecompilerOps::LW() {
     m_Stats.categories.memory++;
 }
 
-// =============================================================================
-// Private - Store Instructions
-// =============================================================================
+// --- Private - Store Instructions ---
 
 #define DEFINE_STORE(name, callback)                                                                                   \
     void CX64RecompilerOps::name() {                                                                                   \
@@ -2400,9 +2347,7 @@ void CX64RecompilerOps::CACHE() {
     m_Stats.instructionsTranslated++;
 }
 
-// =============================================================================
-// Private - SPECIAL Format Instructions (True JIT - Inline x64)
-// =============================================================================
+// --- Private - SPECIAL Format Instructions (True JIT - Inline x64) ---
 
 // --- 32-bit Shift Instructions ---
 
@@ -3156,9 +3101,7 @@ void CX64RecompilerOps::SPECIAL_SYNC() {
     m_Stats.instructionsTranslated++;
 }
 
-// =============================================================================
-// Private - COP0 Instructions
-// =============================================================================
+// --- Private - COP0 Instructions ---
 
 void CX64RecompilerOps::COP0_MF() {
     if (!m_CurrentContext) return;
@@ -3272,9 +3215,7 @@ void CX64RecompilerOps::COP0_CO_WAIT() {
     m_BlockEnded = true;
 }
 
-// =============================================================================
-// Private - COP1 (FPU) Instructions
-// =============================================================================
+// --- Private - COP1 (FPU) Instructions ---
 
 void CX64RecompilerOps::COP1_MF() {
     if (!m_CurrentContext) return;
@@ -3461,9 +3402,7 @@ void CX64RecompilerOps::COP1_L_CVT_D() {
     m_Stats.floatingPointOps++;
 }
 
-// =============================================================================
-// Private - Unknown Instruction Handler
-// =============================================================================
+// --- Private - Unknown Instruction Handler ---
 
 void CX64RecompilerOps::UnknownOpcode() {
     uint32_t opcVal = m_CurrentContext ? m_CurrentContext->opcode.Value : 0;
@@ -3473,9 +3412,7 @@ void CX64RecompilerOps::UnknownOpcode() {
     m_BlockEnded = true;
 }
 
-// =============================================================================
-// Factory Function
-// =============================================================================
+// --- Factory Function ---
 
 std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) {
     return std::make_unique<CX64RecompilerOps>(context, codeBlock);

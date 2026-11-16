@@ -14,17 +14,13 @@ namespace Nova64::RSP {
 
 class CRSPSystem;
 
-// ──────────────────────────────────────────────
-// CPU execution trace logging
-// ──────────────────────────────────────────────
+// --- CPU execution trace logging ---
 void StartCPULog();
 void StopCPULog();
 void CPU_Message(const char* message, ...);
 
-// ──────────────────────────────────────────────
 // RDP Command Logger
 // Logs display list commands, COP0 register access
-// ──────────────────────────────────────────────
 class CRDPLog {
 public:
     explicit CRDPLog(CRSPSystem& system);

@@ -14,9 +14,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// SP Status Register bit definitions (read)
-// ──────────────────────────────────────────────
+// --- SP Status Register bit definitions (read) ---
 namespace SPStatus {
 inline constexpr uint32_t Halt = 0x0001;       // Bit  0: RSP halted
 inline constexpr uint32_t Broke = 0x0002;      // Bit  1: RSP hit BREAK
@@ -35,9 +33,7 @@ inline constexpr uint32_t Signal6 = 0x2000;    // Bit 13: Signal 6
 inline constexpr uint32_t Signal7 = 0x4000;    // Bit 14: Signal 7
 } // namespace SPStatus
 
-// ──────────────────────────────────────────────
-// SP Status Register write bits (clear/set pairs)
-// ──────────────────────────────────────────────
+// --- SP Status Register write bits (clear/set pairs) ---
 namespace SPWrite {
 inline constexpr uint32_t ClrHalt = 0x00001;
 inline constexpr uint32_t SetHalt = 0x00002;
@@ -66,9 +62,7 @@ inline constexpr uint32_t ClrSignal7 = 0x800000;
 inline constexpr uint32_t SetSignal7 = 0x1000000;
 } // namespace SPWrite
 
-// ──────────────────────────────────────────────
-// DPC Status bits
-// ──────────────────────────────────────────────
+// --- DPC Status bits ---
 namespace DPCWrite {
 inline constexpr uint32_t ClrXbusDmemDma = 0x0001;
 inline constexpr uint32_t SetXbusDmemDma = 0x0002;
@@ -99,9 +93,7 @@ inline constexpr uint32_t StartValid = 0x400;
 // MI interrupt bit for SP
 inline constexpr uint32_t MI_INTR_SP = 0x01;
 
-// ──────────────────────────────────────────────
-// Named GPR references for readability
-// ──────────────────────────────────────────────
+// --- Named GPR references for readability ---
 class CGPRRegisters {
 public:
     explicit CGPRRegisters(Word32 (&gpr)[32]) :
@@ -151,9 +143,7 @@ private:
     CGPRRegisters() = delete;
 };
 
-// ──────────────────────────────────────────────
-// Complete RSP register file
-// ──────────────────────────────────────────────
+// --- Complete RSP register file ---
 class CRSPRegisters {
 public:
     CRSPRegisters() { Reset(); }

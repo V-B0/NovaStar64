@@ -16,14 +16,10 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Helper: GPR name from register index
-// ──────────────────────────────────────────────
+// --- Helper: GPR name from register index ---
 static inline const char* GPR_Name(uint32_t reg) { return (reg < 32) ? GPR_Names[reg] : "???"; }
 
-// ──────────────────────────────────────────────
-// Construction / Copy
-// ──────────────────────────────────────────────
+// --- Construction / Copy ---
 
 RSPInstruction::RSPInstruction(uint32_t address, uint32_t instruction) :
     m_Address(address), m_Instruction(RSPOpcode(instruction)) {}
@@ -63,9 +59,7 @@ RSPInstruction& RSPInstruction::operator=(const RSPInstruction& other) {
     return *this;
 }
 
-// ──────────────────────────────────────────────
-// Address / Target Queries
-// ──────────────────────────────────────────────
+// --- Address / Target Queries ---
 
 uint32_t RSPInstruction::ConditionalBranchTarget() const {
     return (m_Address + (static_cast<int16_t>(m_Instruction.offset) << 2) + 4) & 0x1FFC;
@@ -75,9 +69,7 @@ uint32_t RSPInstruction::JumpTarget() const { return (m_Instruction.target << 2)
 
 uint32_t RSPInstruction::StaticCallTarget() const { return JumpTarget(); }
 
-// ──────────────────────────────────────────────
-// Classification Queries
-// ──────────────────────────────────────────────
+// --- Classification Queries ---
 
 bool RSPInstruction::IsJump() const { return m_Instruction.op == RSP_J; }
 
@@ -183,9 +175,7 @@ bool RSPInstruction::IsNop() const {
     return m_Instruction.op == RSP_SPECIAL && m_Instruction.funct == RSP_SPECIAL_SLL && m_Instruction.rd == 0;
 }
 
-// ──────────────────────────────────────────────
-// Lazy-Analyzed Accessors
-// ──────────────────────────────────────────────
+// --- Lazy-Analyzed Accessors ---
 
 bool RSPInstruction::IsVectorOp() const {
     if (!m_Analyzed) AnalyzeInstruction();
@@ -257,9 +247,7 @@ uint32_t RSPInstruction::SourceReg1() const {
     return m_SourceReg1;
 }
 
-// ──────────────────────────────────────────────
-// Disassembly Accessors
-// ──────────────────────────────────────────────
+// --- Disassembly Accessors ---
 
 const char* RSPInstruction::Name() const {
     if (m_Name[0] == '\0') DecodeName();
@@ -509,10 +497,8 @@ void RSPInstruction::AnalyzeInstruction() const {
     }
 }
 
-// ──────────────────────────────────────────────
 // Vector computational sub-analysis
 // Extracted for readability (called from AnalyzeInstruction)
-// ──────────────────────────────────────────────
 void RSPInstruction::AnalyzeVectorOp() const {
     switch (m_Instruction.funct) {
     case RSP_VECTOR_VNOP: m_Flag = RSPInstructionFlag::Vector; break;
@@ -645,9 +631,7 @@ void RSPInstruction::AnalyzeVectorOp() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// COP2 scalar sub-analysis (MF/CF/MT/CT)
-// ──────────────────────────────────────────────
+// --- COP2 scalar sub-analysis (MF/CF/MT/CT) ---
 void RSPInstruction::AnalyzeCop2ScalarOp() const {
     switch (m_Instruction.rs) {
     case RSP_COP2_CT:
@@ -822,9 +806,7 @@ void RSPInstruction::DecodeName() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// SPECIAL function disassembly
-// ──────────────────────────────────────────────
+// --- SPECIAL function disassembly ---
 void RSPInstruction::DecodeSpecialName() const {
     switch (m_Instruction.funct) {
     case RSP_SPECIAL_SLL:
@@ -931,9 +913,7 @@ void RSPInstruction::DecodeSpecialName() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// REGIMM disassembly
-// ──────────────────────────────────────────────
+// --- REGIMM disassembly ---
 void RSPInstruction::DecodeRegImmName() const {
     switch (m_Instruction.rt) {
     case RSP_REGIMM_BLTZ:
@@ -971,9 +951,7 @@ void RSPInstruction::DecodeRegImmName() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// COP0 disassembly
-// ──────────────────────────────────────────────
+// --- COP0 disassembly ---
 void RSPInstruction::DecodeCop0Name() const {
     switch (m_Instruction.rs) {
     case RSP_COP0_MF:
@@ -991,9 +969,7 @@ void RSPInstruction::DecodeCop0Name() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// COP2 disassembly (scalar moves + vector ops)
-// ──────────────────────────────────────────────
+// --- COP2 disassembly (scalar moves + vector ops) ---
 void RSPInstruction::DecodeCop2Name() const {
     if ((m_Instruction.rs & 0x10) == 0) {
         // Scalar COP2 moves
@@ -1367,9 +1343,7 @@ void RSPInstruction::DecodeCop2Name() const {
     }
 }
 
-// ──────────────────────────────────────────────
-// Vector Load/Store COP2 disassembly
-// ──────────────────────────────────────────────
+// --- Vector Load/Store COP2 disassembly ---
 void RSPInstruction::DecodeLSC2Name(char loadStoreIdent) const {
     // Offset shift depends on element size
     static constexpr int shiftTable[] = {0, 1, 2, 3, 4, 4, 3, 3, 4, 4, 4, 4};
@@ -1392,9 +1366,7 @@ void RSPInstruction::DecodeLSC2Name(char loadStoreIdent) const {
                   scaledOffset, GPR_Name(m_Instruction.base));
 }
 
-// ──────────────────────────────────────────────
-// Element specifier string (for vector disassembly)
-// ──────────────────────────────────────────────
+// --- Element specifier string (for vector disassembly) ---
 const char* RSPInstruction::ElementSpecifier(uint32_t element) {
     static constexpr const char* table[] = {
         "",     "",     " [0q]", " [1q]", " [0h]", " [1h]", " [2h]", " [3h]",

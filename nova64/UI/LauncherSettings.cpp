@@ -50,9 +50,7 @@ std::string KeyName(int scancode) {
 
 } // namespace
 
-// ============================================================
-// LaunchOptions
-// ============================================================
+// --- LaunchOptions ---
 void LaunchOptions::Load(const std::string& path) {
     std::ifstream f(path);
     std::string line;
@@ -94,9 +92,7 @@ void LaunchOptions::Save(const std::string& path) const {
       << "muted = " << (muted ? 1 : 0) << "\n";
 }
 
-// ============================================================
-// Load / save
-// ============================================================
+// --- Load / save ---
 void NovaLauncher::LoadSettings() {
     m_gfx.LoadFromFile(detail::kGraphicsPath);
     m_launch.Load(detail::kLauncherPath);
@@ -143,9 +139,7 @@ void NovaLauncher::SetTurbo(bool enabled) {
     if (g_System) g_System->SetSpeed(speed);
 }
 
-// ============================================================
-// Controls
-// ============================================================
+// --- Controls ---
 bool NovaLauncher::HandleRebindEvent(const SDL_Event& event) {
     if (m_rebindTarget < 0) return false;
     if (event.type != SDL_KEYDOWN && event.type != SDL_KEYUP) return false;
@@ -219,9 +213,7 @@ void NovaLauncher::RenderInputSettingsWidget() {
     }
 }
 
-// ============================================================
-// Settings tab
-// ============================================================
+// --- Settings tab ---
 namespace {
 
 void Hint(const char* text) {

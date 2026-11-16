@@ -30,9 +30,7 @@ namespace fs = std::filesystem;
 
 namespace NovaUI {
 
-// ============================================================
-// Shared helpers
-// ============================================================
+// --- Shared helpers ---
 namespace detail {
 
 std::string PickRomFileNative() {
@@ -226,9 +224,7 @@ std::string Trim(const char* s) {
 
 } // namespace
 
-// ============================================================
-// Library
-// ============================================================
+// --- Library ---
 void NovaLauncher::LoadLibrary() {
     m_library.clear();
 
@@ -316,9 +312,7 @@ void NovaLauncher::OpenRomWithPicker() {
     PlayRom(picked, title.empty() ? fs::path(picked).stem().string() : title);
 }
 
-// ============================================================
-// Cover pictures
-// ============================================================
+// --- Cover pictures ---
 namespace {
 
 // Big pictures are shrunk on load: a card shows one at a few hundred pixels, and a
@@ -435,9 +429,7 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, float width) {
     return clicked;
 }
 
-// ============================================================
-// Games tab
-// ============================================================
+// --- Games tab ---
 void NovaLauncher::RenderGamesTab() {
     const ImVec4 kWarn(0.75f, 0.25f, 0.15f, 1.0f);
 

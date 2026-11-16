@@ -69,18 +69,14 @@ namespace a64 = asmjit::a64;
 namespace Nova64 {
 namespace Recompiler {
 
-// =============================================================================
-// Shared VR4300 interpreter callbacks (same source of truth as the x64 backend)
-// =============================================================================
+// --- Shared VR4300 interpreter callbacks (same source of truth as the x64 backend) ---
 // Brings in: the `using MIPS_DWORD/ExceptionCode` aliases, CheckCop1Unusable,
 // and the anonymous-namespace Interp_* callbacks + helpers.  They land in
 // Nova64::Recompiler scope, so ArmRecompilerOps (nested below) reaches them by
 // ordinary unqualified lookup, exactly as CX64RecompilerOps does.
 #include "../RecompInterpCallbacks.inc"
 
-// =============================================================================
-// COP2 / COP3 / reserved helpers
-// =============================================================================
+// --- COP2 / COP3 / reserved helpers ---
 // The x64 backend keeps these next to its code emitter (they are not part of
 // the shared callback block), so the AArch64 backend provides its own copies.
 namespace {
@@ -130,9 +126,7 @@ void Arm_Trigger_Cop3RI(CRegisters* regs, uint32_t compileAddr) {
 
 namespace Arm {
 
-// =============================================================================
-// Construction
-// =============================================================================
+// --- Construction ---
 
 ArmRecompilerOps::ArmRecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) :
     m_Context(context), m_CodeBlock(codeBlock), m_Assembler(std::make_unique<CArm64Ops>(codeBlock)),
@@ -144,9 +138,7 @@ ArmRecompilerOps::ArmRecompilerOps(RecompilerContext& context, CodeBlock& codeBl
 
 ArmRecompilerOps::~ArmRecompilerOps() = default;
 
-// =============================================================================
-// Block prologue / epilogue
-// =============================================================================
+// --- Block prologue / epilogue ---
 
 void ArmRecompilerOps::EnterCodeBlock() {
     auto& a = m_Assembler->GetAssembler();
@@ -185,9 +177,7 @@ void ArmRecompilerOps::ExitCodeBlock() {
     m_BlockEnded = true;
 }
 
-// =============================================================================
-// Housekeeping primitives
-// =============================================================================
+// --- Housekeeping primitives ---
 
 void ArmRecompilerOps::EmitTimerDecrement() {
     auto& a = m_Assembler->GetAssembler();
@@ -246,9 +236,7 @@ void ArmRecompilerOps::BindPendingBranchLikelyLabel() {
     m_HasPendingBranchLikelySkip = false;
 }
 
-// =============================================================================
-// Native callback emitters (AAPCS64: integer args x0,x1,x2,x3; return x0/w0)
-// =============================================================================
+// --- Native callback emitters (AAPCS64: integer args x0,x1,x2,x3; return x0/w0) ---
 
 void ArmRecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
     EmitPCUpdate();
@@ -339,9 +327,7 @@ void ArmRecompilerOps::EmitBranchLikelyCallback(void* callback, uint32_t opcVal,
     a.b_eq(m_BranchLikelySkipLabel);
 }
 
-// =============================================================================
-// Per-instruction translation
-// =============================================================================
+// --- Per-instruction translation ---
 
 bool ArmRecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     const R4300iOps op = ctx.opcode;

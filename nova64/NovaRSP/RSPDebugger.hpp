@@ -11,10 +11,8 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
 // RSP Debugger Abstract Interface
 // Implement this to hook into RSP execution events
-// ──────────────────────────────────────────────
 class IRSPDebugger {
 public:
     virtual ~IRSPDebugger() = default;

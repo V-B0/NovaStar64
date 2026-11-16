@@ -88,9 +88,7 @@ Tab TabFromName(const std::string& name) {
 
 } // namespace
 
-// ============================================================
-// Construction
-// ============================================================
+// --- Construction ---
 NovaLauncher::NovaLauncher() {
     // Unattended runs, for checking the launcher without a person at the keyboard:
     //   NOVA64_UI_SHOT=/tmp/ui.png NOVA64_UI_TAB=settings/controls
@@ -149,9 +147,7 @@ NovaLauncher::NovaLauncher() {
 
 NovaLauncher::~NovaLauncher() { StopEmbedded(); }
 
-// ============================================================
-// Window animation
-// ============================================================
+// --- Window animation ---
 void NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
     constexpr float kStep = 0.08f;
     switch (m_animState) {
@@ -178,9 +174,7 @@ void NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
     }
 }
 
-// ============================================================
-// Main loop
-// ============================================================
+// --- Main loop ---
 void NovaLauncher::Run() {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) return;
     NovaInput::Gamepads::Instance().Init();
@@ -401,9 +395,7 @@ void NovaLauncher::Run() {
     SDL_Quit();
 }
 
-// ============================================================
-// Layout
-// ============================================================
+// --- Layout ---
 void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));

@@ -15,9 +15,7 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// Static assertions validating constexpr helpers
-// ──────────────────────────────────────────────
+// --- Static assertions validating constexpr helpers ---
 
 // clamp_s16 boundary tests
 static_assert(clamp_s16(0) == 0);

@@ -18,25 +18,17 @@ namespace Nova64::RSP::HLE {
 
 class CHle;
 
-// ──────────────────────────────────────────────
-// Audio command callback type
-// ──────────────────────────────────────────────
+// --- Audio command callback type ---
 using AcmdCallback = void (*)(CHle* hle, uint32_t w1, uint32_t w2);
 
-// ──────────────────────────────────────────────
-// Core audio list processing
-// ──────────────────────────────────────────────
+// --- Core audio list processing ---
 void alist_process(CHle* hle, const AcmdCallback abi[], unsigned int abi_size);
 
-// ──────────────────────────────────────────────
-// Segment address resolution
-// ──────────────────────────────────────────────
+// --- Segment address resolution ---
 uint32_t alist_get_address(CHle* hle, uint32_t so, const uint32_t* segments, size_t n);
 void alist_set_address(CHle* hle, uint32_t so, uint32_t* segments, size_t n);
 
-// ──────────────────────────────────────────────
-// Audio buffer operations
-// ──────────────────────────────────────────────
+// --- Audio buffer operations ---
 void alist_clear(CHle* hle, uint16_t dmem, uint16_t count);
 void alist_load(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count);
 void alist_save(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count);
@@ -46,9 +38,7 @@ void alist_repeat64(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint8_t count);
 void alist_copy_blocks(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t block_size, uint8_t count);
 void alist_interleave(CHle* hle, uint16_t dmemo, uint16_t left, uint16_t right, uint16_t count);
 
-// ──────────────────────────────────────────────
-// Envelope mixing operations
-// ──────────────────────────────────────────────
+// --- Envelope mixing operations ---
 void alist_envmix_exp(CHle* hle, bool init, bool aux, uint16_t dmem_dl, uint16_t dmem_dr, uint16_t dmem_wl,
                       uint16_t dmem_wr, uint16_t dmemi, uint16_t count, int16_t dry, int16_t wet, const int16_t* vol,
                       const int16_t* target, const int32_t* rate, uint32_t address);
@@ -65,9 +55,7 @@ void alist_envmix_nead(CHle* hle, bool swap_wet_LR, uint16_t dmem_dl, uint16_t d
                        uint16_t dmem_wr, uint16_t dmemi, unsigned count, uint16_t* env_values, uint16_t* env_steps,
                        const int16_t* xors);
 
-// ──────────────────────────────────────────────
-// DSP operations
-// ──────────────────────────────────────────────
+// --- DSP operations ---
 void alist_mix(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t gain);
 void alist_multQ44(CHle* hle, uint16_t dmem, uint16_t count, int8_t gain);
 void alist_add(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count);
@@ -87,9 +75,7 @@ void alist_resample_zoh(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t coun
 
 void alist_filter(CHle* hle, uint16_t dmem, uint16_t count, uint32_t address, const uint32_t* lut_address);
 
-// ──────────────────────────────────────────────
-// Extended DSP operations
-// ──────────────────────────────────────────────
+// --- Extended DSP operations ---
 
 // De-interleave stereo to separate L/R buffers
 void alist_deinterleave(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t dmem_src, uint16_t count);
@@ -117,9 +103,7 @@ void alist_pan(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t coun
 // DC offset removal
 void alist_dc_remove(CHle* hle, uint16_t dmem, uint16_t count, uint32_t state_address);
 
-// ──────────────────────────────────────────────
-// Audio flags
-// ──────────────────────────────────────────────
+// --- Audio flags ---
 inline constexpr uint32_t A_INIT = 0x01;
 inline constexpr uint32_t A_CONTINUE = 0x00;
 inline constexpr uint32_t A_LOOP = 0x02;

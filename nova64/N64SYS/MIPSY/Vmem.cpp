@@ -27,9 +27,7 @@
 #include <windows.h>
 #endif
 
-// ============================================================================
-// Exception Code Constants (used by TriggerAddressException)
-// ============================================================================
+// --- Exception Code Constants (used by TriggerAddressException) ---
 
 constexpr uint32_t EXC_RADE = 4;  // Read Address Error
 constexpr uint32_t EXC_WADE = 5;  // Write Address Error
@@ -45,9 +43,7 @@ namespace Nova64 {
 // Static member initialization
 uint32_t MipsMemoryVM::RegModValue = 0;
 
-// ============================================================================
-// Memory Write Watch (debug-only, env-var driven)
-// ----------------------------------------------------------------------------
+// --- Memory Write Watch (debug-only, env-var driven) ---
 // NOVA64_WATCH_ADDR  : hex (KSEG0 / KSEG1 / physical) start address. Required.
 // NOVA64_WATCH_LEN   : hex bytes of range, default 1.
 // NOVA64_WATCH_FILE  : output path; default stderr.
@@ -59,7 +55,6 @@ uint32_t MipsMemoryVM::RegModValue = 0;
 //                    pointers" (mask=0xF0000000 val=0x80000000) etc.
 // NOVA64_DUMP_RDRAM  : path. If set, the full 8 MB RDRAM is dumped here at
 //                    process exit. Take two runs (good vs bad) and `fc /b`.
-// ============================================================================
 namespace {
 
 struct WatchConfig {
@@ -191,9 +186,7 @@ void WatchDMA(uint32_t pAddr, uint32_t length, const char* source) {
     std::fflush(cfg.out);
 }
 
-// ============================================================================
-// Constructor / Destructor
-// ============================================================================
+// --- Constructor / Destructor ---
 
 MipsMemoryVM::MipsMemoryVM(::CN64System& system, ::N64System::CTLB& tlb) :
     m_System(system), m_TLB(tlb), m_Eeprom(std::make_unique<CEeprom>()), m_Sram(std::make_unique<CSram>(false)),
@@ -229,9 +222,7 @@ MipsMemoryVM::~MipsMemoryVM() {
     FreeMemory();
 }
 
-// ============================================================================
-// Initialization
-// ============================================================================
+// --- Initialization ---
 
 bool MipsMemoryVM::Initialize() {
     if (m_RDRAM != nullptr) {
@@ -392,9 +383,7 @@ void MipsMemoryVM::FreeMemory() {
     }
 }
 
-// ============================================================================
-// TLB Map Management
-// ============================================================================
+// --- TLB Map Management ---
 
 void MipsMemoryVM::RemoveTLBMapping(uint64_t entryHi, uint64_t pageMask) {
     if (!m_TLB_ReadMap || !m_MemoryReadMap) return;
@@ -465,9 +454,7 @@ void MipsMemoryVM::ApplyTLBMapping(uint64_t entryHi, uint64_t pageMask, uint64_t
     }
 }
 
-// ============================================================================
-// Memory Region Access
-// ============================================================================
+// --- Memory Region Access ---
 
 uint8_t* MipsMemoryVM::Dmem() { return m_SPRegistersHandler->Dmem(); }
 
@@ -477,9 +464,7 @@ CSram& MipsMemoryVM::GetSram() { return *m_Sram; }
 
 CFlashRam& MipsMemoryVM::GetFlashRam() { return *m_FlashRam; }
 
-// ============================================================================
-// Memory Pointer Access
-// ============================================================================
+// --- Memory Pointer Access ---
 
 uint8_t* MipsMemoryVM::MemoryPtr(uint32_t vAddr, uint32_t size, bool read) {
     if (m_TLB_ReadMap[vAddr >> 12] == static_cast<uint32_t>(-1)) {
@@ -511,9 +496,7 @@ uint8_t* MipsMemoryVM::MemoryPtr(uint32_t vAddr, uint32_t size, bool read) {
     return nullptr;
 }
 
-// ============================================================================
-// Memory Read Operations (Debugger/Tools)
-// ============================================================================
+// --- Memory Read Operations (Debugger/Tools) ---
 
 bool MipsMemoryVM::MemoryValue8(uint32_t vAddr, uint8_t& value) {
     uint8_t* ptr = MemoryPtr(vAddr ^ 3, 1, true);
@@ -553,9 +536,7 @@ bool MipsMemoryVM::MemoryValue64(uint32_t vAddr, uint64_t& value) {
     return true;
 }
 
-// ============================================================================
-// Memory Write Operations (Debugger/Tools)
-// ============================================================================
+// --- Memory Write Operations (Debugger/Tools) ---
 
 bool MipsMemoryVM::UpdateMemoryValue8(uint32_t vAddr, uint8_t value) {
     uint8_t* ptr = MemoryPtr(vAddr ^ 3, 1, false);
@@ -584,9 +565,7 @@ bool MipsMemoryVM::UpdateMemoryValue32(uint32_t vAddr, uint32_t value) {
     return true;
 }
 
-// ============================================================================
-// CPU Load Operations (64-bit virtual address)
-// ============================================================================
+// --- CPU Load Operations (64-bit virtual address) ---
 
 bool MipsMemoryVM::LB_Memory(uint64_t vAddr, uint8_t& value) {
     // Check for 64-bit address mode
@@ -688,9 +667,7 @@ bool MipsMemoryVM::LD_Memory(uint64_t vAddr, uint64_t& value) {
     return LD_VAddr32(vAddr32, value);
 }
 
-// ============================================================================
-// MI Repeat Mode Support
-// ============================================================================
+// --- MI Repeat Mode Support ---
 
 void MipsMemoryVM::SetMIRepeatMode(bool active) {
     // When MI init mode is set, invalidate KSEG1 (uncached) RDRAM WriteMap pages
@@ -742,9 +719,7 @@ bool MipsMemoryVM::MI_RepeatStore(uint32_t pAddr, uint64_t busData, uint32_t pat
     return true;
 }
 
-// ============================================================================
-// CPU Store Operations (64-bit virtual address)
-// ============================================================================
+// --- CPU Store Operations (64-bit virtual address) ---
 
 bool MipsMemoryVM::SB_Memory(uint64_t vAddr, uint32_t value) {
     // Check for 64-bit address mode
@@ -938,9 +913,7 @@ bool MipsMemoryVM::SD_Memory(uint64_t vAddr, uint64_t value) {
     return SD_VAddr32(vAddr32, value);
 }
 
-// ============================================================================
-// 32-bit Virtual Address Load Operations
-// ============================================================================
+// --- 32-bit Virtual Address Load Operations ---
 
 bool MipsMemoryVM::LB_VAddr32(uint32_t vAddr, uint8_t& value) {
     uint32_t baseAddress = m_TLB_ReadMap[vAddr >> 12];
@@ -978,9 +951,7 @@ bool MipsMemoryVM::LD_VAddr32(uint32_t vAddr, uint64_t& value) {
     return LD_PhysicalAddress(baseAddress + vAddr, value);
 }
 
-// ============================================================================
-// Physical Address Load Operations
-// ============================================================================
+// --- Physical Address Load Operations ---
 
 bool MipsMemoryVM::LB_PhysicalAddress(uint32_t pAddr, uint8_t& value) {
     uint32_t readAddress = pAddr & ~3;
@@ -1101,9 +1072,7 @@ bool MipsMemoryVM::LD_PhysicalAddress(uint32_t pAddr, uint64_t& value) {
     return false;
 }
 
-// ============================================================================
-// 32-bit Virtual Address Store Operations
-// ============================================================================
+// --- 32-bit Virtual Address Store Operations ---
 
 bool MipsMemoryVM::SB_VAddr32(uint32_t vAddr, uint32_t value) {
     uint32_t baseAddress = m_TLB_WriteMap[vAddr >> 12];
@@ -1141,9 +1110,7 @@ bool MipsMemoryVM::SD_VAddr32(uint32_t vAddr, uint64_t value) {
     return SD_PhysicalAddress(baseAddress + vAddr, value);
 }
 
-// ============================================================================
-// Physical Address Store Operations
-// ============================================================================
+// --- Physical Address Store Operations ---
 
 bool MipsMemoryVM::SB_PhysicalAddress(uint32_t pAddr, uint32_t value) {
     switch (pAddr & 0xFFF00000) {
@@ -1330,9 +1297,7 @@ bool MipsMemoryVM::SD_PhysicalAddress(uint32_t pAddr, uint64_t value) {
     return true;
 }
 
-// ============================================================================
-// IS-Viewer Debug Output
-// ============================================================================
+// --- IS-Viewer Debug Output ---
 
 void MipsMemoryVM::ISViewer_Write32(uint32_t pAddr, uint32_t value) {
     if (pAddr == IS_VIEWER_LENGTH) {
@@ -1374,9 +1339,7 @@ void MipsMemoryVM::ISViewer_WriteByte(uint32_t pAddr, uint8_t value) {
     }
 }
 
-// ============================================================================
-// Address Translation
-// ============================================================================
+// --- Address Translation ---
 
 bool MipsMemoryVM::ValidVaddr(uint32_t vAddr) const { return m_TLB_ReadMap[vAddr >> 12] != static_cast<uint32_t>(-1); }
 
@@ -1388,9 +1351,7 @@ bool MipsMemoryVM::VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const {
     return true;
 }
 
-// ============================================================================
-// TLB Notification Functions
-// ============================================================================
+// --- TLB Notification Functions ---
 
 void MipsMemoryVM::TLB_Mapped(uint32_t vAddr, uint32_t len, uint32_t pAddr, bool readOnly) {
     uint64_t vEnd = static_cast<uint64_t>(vAddr) + len;
@@ -1448,9 +1409,7 @@ void MipsMemoryVM::TLB_Unmaped(uint32_t vAddr, uint32_t len) {
     }
 }
 
-// ============================================================================
-// Memory Map Management
-// ============================================================================
+// --- Memory Map Management ---
 
 void MipsMemoryVM::ClearMemoryWriteMap(uint32_t vAddr, uint32_t length) {
     uint32_t baseAddress = m_TLB_WriteMap[vAddr >> 12];
@@ -1465,9 +1424,7 @@ void MipsMemoryVM::ClearMemoryWriteMap(uint32_t vAddr, uint32_t length) {
     }
 }
 
-// ============================================================================
-// Exception Filter
-// ============================================================================
+// --- Exception Filter ---
 
 int32_t MipsMemoryVM::MemoryFilter(uint32_t exptCode, void* exceptionPointer) {
 #if defined(_WIN32)
@@ -1529,18 +1486,14 @@ bool MipsMemoryVM::MemoryBreakpoint() {
     return false;
 }
 
-// ============================================================================
-// Debug Support
-// ============================================================================
+// --- Debug Support ---
 
 const char* MipsMemoryVM::LabelName(uint32_t address) const {
     snprintf(m_strLabelName, sizeof(m_strLabelName), "0x%08X", address);
     return m_strLabelName;
 }
 
-// ============================================================================
-// Static Callbacks
-// ============================================================================
+// --- Static Callbacks ---
 
 void MipsMemoryVM::RdramChanged(MipsMemoryVM* self) {
     if (self == nullptr || self->m_RDRAMRegistersHandler == nullptr) {
@@ -1597,9 +1550,7 @@ void MipsMemoryVM::ChangeMiIntrMask() {
     RegModValue = 0;
 }
 
-// ============================================================================
-// Platform-Specific Exception Handlers
-// ============================================================================
+// --- Platform-Specific Exception Handlers ---
 
 #if defined(__amd64__) || defined(_M_X64)
 bool MipsMemoryVM::FilterX64Exception(uint32_t memAddress, X64_CONTEXT& context) {

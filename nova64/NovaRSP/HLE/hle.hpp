@@ -17,10 +17,8 @@ class CRSPSystem;
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
 // CHle - High-Level Emulation engine
 // Dispatches RSP tasks to audio/video HLE handlers
-// ──────────────────────────────────────────────
 class CHle {
 public:
     explicit CHle(CRSPSystem& system);

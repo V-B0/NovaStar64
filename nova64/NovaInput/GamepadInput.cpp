@@ -183,9 +183,7 @@ std::string PadBindingName(const PadBinding& binding) {
     }
 }
 
-// ============================================================================
-// ControllerSettings
-// ============================================================================
+// --- ControllerSettings ---
 
 void ControllerSettings::ResetBindings() {
     for (size_t i = 0; i < kN64InputCount; ++i) {
@@ -269,9 +267,7 @@ bool ControllerSettings::SaveToFile(const std::string& path) const {
     return static_cast<bool>(file);
 }
 
-// ============================================================================
-// Stick
-// ============================================================================
+// --- Stick ---
 
 void StickToN64(float x, float y, int deadzonePercent, int rangePercent, int8_t& outX, int8_t& outY) {
     outX = outY = 0;
@@ -300,9 +296,7 @@ void StickToN64(float x, float y, int deadzonePercent, int rangePercent, int8_t&
     outY = static_cast<int8_t>(std::lround(std::clamp(ny, -limit, limit)));
 }
 
-// ============================================================================
-// Gamepads
-// ============================================================================
+// --- Gamepads ---
 
 Gamepads& Gamepads::Instance() {
     static Gamepads s_instance;

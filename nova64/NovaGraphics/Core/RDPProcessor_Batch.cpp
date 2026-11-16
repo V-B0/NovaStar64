@@ -230,9 +230,7 @@ void RDPProcessor::FlushBatch() {
         m_renderer->SetViewport(vp);
     }
 
-    // =======================================================================
-    //  2. Iterate draw calls, set state, and draw
-    // =======================================================================
+    // --- 2. Iterate draw calls, set state, and draw ---
 
     // Compute N64 screen dimensions for the ortho projection.
     // CRITICAL: must use the active color framebuffer dimensions, NOT the

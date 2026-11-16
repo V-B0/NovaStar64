@@ -19,9 +19,7 @@ constexpr uint32_t RI_BASE_ADDRESS = 0x04700000;
 constexpr uint32_t RI_END_ADDRESS = 0x0470001C;
 } // namespace
 
-// ============================================================================
-// RDRAMInterfaceHandler Implementation
-// ============================================================================
+// --- RDRAMInterfaceHandler Implementation ---
 
 RDRAMInterfaceHandler::RDRAMInterfaceHandler(CRegisters& reg) :
     m_reg(reg), m_pc(reg.m_PROGRAM_COUNTER), m_regs(m_register_data) {

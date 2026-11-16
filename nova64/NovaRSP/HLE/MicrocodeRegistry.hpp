@@ -15,9 +15,7 @@ namespace Nova64::RSP::HLE {
 
 class CHle;
 
-// ──────────────────────────────────────────────
-// Microcode categories
-// ──────────────────────────────────────────────
+// --- Microcode categories ---
 enum class UcodeType : uint8_t {
     Unknown = 0,
 
@@ -56,14 +54,10 @@ enum class UcodeType : uint8_t {
     CICx105, // CIC x105 bootstrap
 };
 
-// ──────────────────────────────────────────────
-// Audio handler function pointer type
-// ──────────────────────────────────────────────
+// --- Audio handler function pointer type ---
 using UcodeHandler = void (*)(CHle*);
 
-// ──────────────────────────────────────────────
-// Microcode registry entry
-// ──────────────────────────────────────────────
+// --- Microcode registry entry ---
 struct MicrocodeEntry {
     uint32_t ucode_crc;      // CRC32 of ucode data
     uint32_t ucode_data_crc; // CRC32 of ucode data segment (0 = don't check)
@@ -72,10 +66,8 @@ struct MicrocodeEntry {
     std::string_view name;
 };
 
-// ──────────────────────────────────────────────
 // Known microcode database
 // CRC values from Project64's RSP HLE and Mupen64Plus HLE RSP
-// ──────────────────────────────────────────────
 inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
     // ── Standard Audio ABI ──
     {0x1DC6CB36, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard 1.0"},
@@ -135,18 +127,14 @@ inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
 
 inline constexpr size_t kMicrocodeCount = sizeof(kMicrocodeDatabase) / sizeof(kMicrocodeDatabase[0]);
 
-// ──────────────────────────────────────────────
 // Boot ROM identification checksums
 // (Legacy additive checksums of first 44 IMEM words)
-// ──────────────────────────────────────────────
 namespace BootChecksum {
 inline constexpr uint32_t Standard = 0xB4C62BFC;  // Standard boot microcode
 inline constexpr uint32_t Alternate = 0xCAB15710; // Alternate boot microcode (CIC-specific)
 } // namespace BootChecksum
 
-// ──────────────────────────────────────────────
-// Lookup functions
-// ──────────────────────────────────────────────
+// --- Lookup functions ---
 
 // Find a microcode entry by CRC32
 [[nodiscard]] inline const MicrocodeEntry* FindMicrocode(uint32_t crc) noexcept {

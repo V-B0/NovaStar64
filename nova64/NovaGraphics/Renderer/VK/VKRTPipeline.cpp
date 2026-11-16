@@ -15,9 +15,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Build
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Build ---
 
 bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* rmissSrc, const char* rchitSrc) {
     if (!ctx.device || !rgenSrc || !rmissSrc || !rchitSrc) return false;
@@ -197,9 +195,7 @@ cleanup:
     return false;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  BuildSBT
-// ─────────────────────────────────────────────────────────────────────────────
+// --- BuildSBT ---
 
 bool VKRTPipeline::BuildSBT(const VKContext& ctx, uint32_t groupCount) {
     // Query RT pipeline properties for handle alignment.
@@ -269,9 +265,7 @@ bool VKRTPipeline::BuildSBT(const VKContext& ctx, uint32_t groupCount) {
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Dispatch
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Dispatch ---
 
 void VKRTPipeline::Dispatch(VkCommandBuffer cmd, void* tlas, void* outputView, uint32_t w, uint32_t h) {
     if (!m_pipeline || !tlas || !outputView || w == 0 || h == 0) return;
@@ -318,9 +312,7 @@ void VKRTPipeline::Dispatch(VkCommandBuffer cmd, void* tlas, void* outputView, u
     vkCmdTraceRaysKHR(cmd, &m_rgenRegion, &m_missRegion, &m_hitRegion, &m_callRegion, w, h, 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Destroy
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Destroy ---
 
 void VKRTPipeline::Destroy() {
     if (!m_device) return;

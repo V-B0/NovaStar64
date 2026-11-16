@@ -17,9 +17,7 @@ namespace Nova64::RSP::HLE {
 
 class CHle;
 
-// ──────────────────────────────────────────────
-// Cached microcode identification
-// ──────────────────────────────────────────────
+// --- Cached microcode identification ---
 struct MicrocodeCache {
     uint32_t ucode_crc{0};
     uint32_t data_crc{0};
@@ -27,10 +25,8 @@ struct MicrocodeCache {
     bool valid{false};
 };
 
-// ──────────────────────────────────────────────
 // CTaskDispatcher
 // Identifies RSP microcodes and routes tasks to HLE handlers
-// ──────────────────────────────────────────────
 class CTaskDispatcher {
 public:
     CTaskDispatcher() = default;

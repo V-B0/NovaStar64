@@ -17,9 +17,7 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
-// Construction / Destruction
-// ──────────────────────────────────────────────
+// --- Construction / Destruction ---
 
 CHle::CHle(CRSPSystem& system) :
     m_dram(system.m_RDRAM), m_dram_size(system.m_RdramSize), m_dmem(system.m_DMEM), m_imem(system.m_IMEM),
@@ -47,9 +45,7 @@ CHle::CHle(CRSPSystem& system) :
 
 CHle::~CHle() = default;
 
-// ──────────────────────────────────────────────
-// Logging
-// ──────────────────────────────────────────────
+// --- Logging ---
 
 void CHle::VerboseMessage(const char* message, ...) {
 #ifndef NDEBUG
@@ -81,9 +77,7 @@ void CHle::ErrorMessage(const char* message, ...) {
     std::fputc('\n', stderr);
 }
 
-// ──────────────────────────────────────────────
-// RSP control
-// ──────────────────────────────────────────────
+// --- RSP control ---
 
 void CHle::rsp_break(uint32_t setbits) {
     // Feed audio device before halting RSP (ensures processed audio reaches output)
@@ -123,9 +117,7 @@ void CHle::rsp_break(uint32_t setbits) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Task detection and dispatching
-// ──────────────────────────────────────────────
+// --- Task detection and dispatching ---
 
 bool CHle::is_task() {
     if (m_dmem == nullptr) return false;
@@ -245,9 +237,7 @@ void CHle::QueueAudioOutput(const int16_t* samples, uint32_t count) { m_audioOut
 
 void CHle::FeedAudioDevice() { m_audioOutput.FeedDevice(); }
 
-// ──────────────────────────────────────────────
-// Main HLE execution entry point
-// ──────────────────────────────────────────────
+// --- Main HLE execution entry point ---
 bool CHle::Execute() {
     const auto start_time = std::chrono::steady_clock::now();
 

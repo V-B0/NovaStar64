@@ -13,9 +13,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Instruction classification flags
-// ──────────────────────────────────────────────
+// --- Instruction classification flags ---
 enum class RSPInstructionFlag : uint8_t {
     Unknown,
     Branch,
@@ -37,10 +35,8 @@ enum class RSPInstructionFlag : uint8_t {
     InvalidOpcode,
 };
 
-// ──────────────────────────────────────────────
 // Decoded RSP instruction with analysis metadata
 // Used by the recompiler for optimization decisions
-// ──────────────────────────────────────────────
 class RSPInstruction {
 public:
     static constexpr uint32_t UNUSED_OPERAND = ~0u;

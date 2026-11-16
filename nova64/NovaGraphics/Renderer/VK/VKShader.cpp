@@ -104,7 +104,6 @@ std::vector<uint32_t> CompileGLSLtoSPIRV(ShaderStage stage, const std::string& s
     return spirv;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 VKShaderProgramImpl::VKShaderProgramImpl(const VKContext* ctx) : m_ctx(ctx) { GlslangInitProcess(); }
 

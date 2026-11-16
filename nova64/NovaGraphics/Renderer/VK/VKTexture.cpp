@@ -14,9 +14,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Format mapping
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Format mapping ---
 
 VkFormat ToVkFormat(TextureFormat f) {
     switch (f) {
@@ -63,9 +61,7 @@ uint32_t BytesPerPixel(TextureFormat f) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 namespace {
 
@@ -132,9 +128,7 @@ void TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkImageAspectFlag
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKTextureImpl
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKTextureImpl ---
 
 VKTextureImpl::VKTextureImpl(const VKContext* ctx, const TextureDesc& desc) :
     m_ctx(ctx), m_w(desc.width), m_h(desc.height), m_mipLevels(desc.mipLevels ? desc.mipLevels : 1),

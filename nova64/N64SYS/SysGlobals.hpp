@@ -21,9 +21,7 @@ using N64Types::CountryCode;
 using N64Types::SystemType;
 // Add others if needed by IsPalCountry implementation
 
-// ============================================================================
-// Namespace Forward Declarations
-// ============================================================================
+// --- Namespace Forward Declarations ---
 
 namespace N64 {
 // ROM handling (N64Rom.hpp)
@@ -105,9 +103,7 @@ struct TlbEntry;
 class CTLB;
 } // namespace N64System
 
-// ============================================================================
-// Memory Handler Forward Declarations
-// ============================================================================
+// --- Memory Handler Forward Declarations ---
 
 class CRomMemHandler;
 class CCachedRom;
@@ -125,17 +121,13 @@ class CSPRegistersHandler;
 class CVideoInterfaceHandler;
 class CDebugConsoleOut;
 
-// ============================================================================
-// Save Type Forward Declarations
-// ============================================================================
+// --- Save Type Forward Declarations ---
 
 class CSRAM;
 class CFlashRAM;
 class CEeprom;
 
-// ============================================================================
-// Controller/Accessory Forward Declarations
-// ============================================================================
+// --- Controller/Accessory Forward Declarations ---
 
 class CDDisk;
 class CGBCart;
@@ -143,23 +135,17 @@ class CMemPak;
 class CRumblePak;
 class CTransferPak;
 
-// ============================================================================
-// Enhancement Forward Declarations
-// ============================================================================
+// --- Enhancement Forward Declarations ---
 
 class CEnhancement;
 class CEnhancementFile;
 class CEnhancementList;
 
-// ============================================================================
-// Instruction Handling Forward Declarations
-// ============================================================================
+// --- Instruction Handling Forward Declarations ---
 
 class R4300iInstruction;
 
-// ============================================================================
-// Common Enumerations (from Types.hpp)
-// ============================================================================
+// --- Common Enumerations (from Types.hpp) ---
 
 namespace N64Types {
 
@@ -187,15 +173,11 @@ enum class ExceptionCode : uint8_t {
     XTLB_Refill = 31
 };
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
+// --- Helper Functions ---
 
 // Helper functions removed to avoid redefinition (present in Types.hpp)
 
-// ============================================================================
-// String Conversion Functions (implemented in SysGlobals.cpp)
-// ============================================================================
+// --- String Conversion Functions (implemented in SysGlobals.cpp) ---
 
 std::string to_string(CpuType type);
 std::string to_string(CicChip chip);
@@ -205,9 +187,7 @@ std::string to_string(PauseType type);
 std::string to_string(ExceptionCode code);
 std::string to_string(PipelineStage stage);
 
-// ============================================================================
-// Formatting Utilities (implemented in SysGlobals.cpp)
-// ============================================================================
+// --- Formatting Utilities (implemented in SysGlobals.cpp) ---
 
 /**
  * @brief Format a 32-bit address as hex string
@@ -244,9 +224,7 @@ std::string FormatHex64(uint64_t value);
  */
 std::string FormatSize(size_t bytes);
 
-// ============================================================================
-// Memory Utilities (implemented in SysGlobals.cpp)
-// ============================================================================
+// --- Memory Utilities (implemented in SysGlobals.cpp) ---
 
 /**
  * @brief Get the name of the memory region for an address
@@ -275,9 +253,7 @@ bool IsTlbMappedAddress(uint32_t address);
 
 } // namespace N64Types
 
-// ============================================================================
-// Common Data Types (from Types.hpp)
-// ============================================================================
+// --- Common Data Types (from Types.hpp) ---
 
 /**
  * @union MIPS_WORD
@@ -318,9 +294,7 @@ union MIPS_DWORD {
     explicit MIPS_DWORD(int64_t val) : DW(val) {}
 };
 
-// ============================================================================
-// Common Type Aliases
-// ============================================================================
+// --- Common Type Aliases ---
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -339,9 +313,7 @@ using f64 = double;
 using VAddr = uint64_t;
 using PAddr = uint32_t;
 
-// ============================================================================
-// Common Constants
-// ============================================================================
+// --- Common Constants ---
 
 namespace N64Constants {
 
@@ -392,9 +364,7 @@ constexpr uint32_t VI_REFRESH_RATE_PAL = 50;
 
 } // namespace N64Constants
 
-// ============================================================================
-// Utility Macros
-// ============================================================================
+// --- Utility Macros ---
 
 // Compile-time array size
 template <typename T, size_t N> constexpr size_t ArraySize(T (&)[N]) noexcept { return N; }

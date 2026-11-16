@@ -11,10 +11,8 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
 // Pipeline stage tracking for branch delay slots
 // and execution control flow
-// ──────────────────────────────────────────────
 enum class PipelineStage : uint32_t {
     Normal = 0,
 

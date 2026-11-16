@@ -19,10 +19,8 @@ class CRSPSystem;
 class CRSPRegisters;
 class RSPRegisterHandlerPlugin;
 
-// ──────────────────────────────────────────────
 // RSP Interpreter - Executes all RSP opcodes
 // Function pointer tables for O(1) opcode dispatch
-// ──────────────────────────────────────────────
 class RSPOp {
     friend class CRSPSystem;
 

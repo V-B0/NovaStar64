@@ -58,9 +58,7 @@
 
 namespace Nova64::Video::RT {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Pass 1 — TRACE (half resolution)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Pass 1 — TRACE (half resolution) ---
 inline const char* kRTTraceSrc = R"GLSL(
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -503,9 +501,7 @@ void main() {
 }
 )GLSL";
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Pass 2 — DENOISE (half resolution)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Pass 2 — DENOISE (half resolution) ---
 inline const char* kRTDenoiseSrc = R"GLSL(
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -627,9 +623,7 @@ void main() {
 }
 )GLSL";
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Pass 3 — COMPOSITE (full resolution)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Pass 3 — COMPOSITE (full resolution) ---
 inline const char* kRTCompositeSrc = R"GLSL(
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;

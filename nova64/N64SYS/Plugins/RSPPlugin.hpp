@@ -62,9 +62,7 @@ class RSPPlugin : public PluginBase {
 public:
     virtual ~RSPPlugin() = default;
 
-    // ========================================================================
-    // RSP Initialization
-    // ========================================================================
+    // --- RSP Initialization ---
 
     /**
      * @brief Initialize RSP emulation
@@ -79,9 +77,7 @@ public:
      */
     virtual void SetCPUType(bool useLLE) = 0;
 
-    // ========================================================================
-    // RSP Execution
-    // ========================================================================
+    // --- RSP Execution ---
 
     /**
      * @brief Execute RSP task
@@ -101,9 +97,7 @@ public:
      */
     virtual void BreakRSP() = 0;
 
-    // ========================================================================
-    // DMA Operations
-    // ========================================================================
+    // --- DMA Operations ---
 
     /**
      * @brief Process SP DMA read (RDRAM -> DMEM/IMEM)
@@ -115,9 +109,7 @@ public:
      */
     virtual void ProcessSPDMAWrite() = 0;
 
-    // ========================================================================
-    // Status and Control
-    // ========================================================================
+    // --- Status and Control ---
 
     /**
      * @brief Get RSP program counter

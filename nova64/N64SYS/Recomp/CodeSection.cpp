@@ -43,9 +43,7 @@
 
 using namespace Nova64::Recompiler;
 
-// =============================================================================
-// RegisterEntryState Implementation
-// =============================================================================
+// --- RegisterEntryState Implementation ---
 
 bool RegisterEntryState::operator==(const RegisterEntryState& other) const {
     for (size_t i = 0; i < 32; ++i) {
@@ -173,9 +171,7 @@ std::string RegisterEntryState::to_string() const {
     return oss.str();
 }
 
-// =============================================================================
-// CodeSection Construction / Destruction
-// =============================================================================
+// --- CodeSection Construction / Destruction ---
 
 CodeSection::CodeSection(CodeBlock* parent_block, uint32_t entry_pc, SectionId id, bool allow_linking,
                          const Config& config) :
@@ -246,9 +242,7 @@ CodeSection& CodeSection::operator=(CodeSection&& other) noexcept {
     return *this;
 }
 
-// =============================================================================
-// Setup and Configuration
-// =============================================================================
+// --- Setup and Configuration ---
 
 void CodeSection::set_delay_slot() {
     flags_ = flags_ | SectionFlags::HasDelaySlot;
@@ -302,9 +296,7 @@ void CodeSection::set_continue_target(uint32_t branch_pc, uint32_t target_pc) {
                    std::format("{:08X}", target_pc));
 }
 
-// =============================================================================
-// Code Generation (adapted from P64's GenerateNativeCode)
-// =============================================================================
+// --- Code Generation (adapted from P64's GenerateNativeCode) ---
 
 CodeSection::GenerationResult CodeSection::generate_native_code() {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -360,9 +352,7 @@ CodeSection::GenerationResult CodeSection::generate_native_code() {
     return GenerationResult::Success;
 }
 
-// =============================================================================
-// Section Linkage (adapted from P64's GenerateSectionLinkage)
-// =============================================================================
+// --- Section Linkage (adapted from P64's GenerateSectionLinkage) ---
 
 bool CodeSection::generate_linkage() {
     log_generation("Generating linkage for section 0x" + std::format("{:08X}", metadata_.entry_pc));
@@ -424,9 +414,7 @@ bool CodeSection::generate_linkage() {
     return true;
 }
 
-// =============================================================================
-// Section Inlining
-// =============================================================================
+// --- Section Inlining ---
 
 bool CodeSection::inline_section(const CodeSection& source) {
     if (!has_flag(source.flags(), SectionFlags::Compiled)) {
@@ -451,9 +439,7 @@ bool CodeSection::inline_section(const CodeSection& source) {
     return true;
 }
 
-// =============================================================================
-// Control Flow Analysis (adapted from P64's DetermineLoop / analysis)
-// =============================================================================
+// --- Control Flow Analysis (adapted from P64's DetermineLoop / analysis) ---
 
 void CodeSection::analyze_control_flow() {
     log_generation("Analyzing control flow...");
@@ -611,9 +597,7 @@ void CodeSection::compute_dominance_tree() {
     log_generation("Immediate dominator: section " + std::to_string(static_cast<uint32_t>(candidate)));
 }
 
-// =============================================================================
-// Section Query and Navigation
-// =============================================================================
+// --- Section Query and Navigation ---
 
 std::optional<CodeSection*> CodeSection::find_existing_section(uint32_t address) {
     // Search through all sections in the parent block
@@ -680,9 +664,7 @@ bool CodeSection::post_dominates(SectionId target) const {
     return false;
 }
 
-// =============================================================================
-// Parent / Child Management (adapted from P64's AddParent / UnlinkParent)
-// =============================================================================
+// --- Parent / Child Management (adapted from P64's AddParent / UnlinkParent) ---
 
 void CodeSection::add_parent(CodeSection* parent) {
     if (!parent) {
@@ -806,9 +788,7 @@ void CodeSection::add_child(CodeSection* child) {
     child->add_parent(this);
 }
 
-// =============================================================================
-// Register State Management
-// =============================================================================
+// --- Register State Management ---
 
 void CodeSection::capture_entry_state() {
     // Capture the current CPU register state as the entry state for this section
@@ -884,9 +864,7 @@ void CodeSection::update_register_state(const RegisterEntryState& new_state) {
     log_generation("Register entry state updated");
 }
 
-// =============================================================================
-// Optimization Passes
-// =============================================================================
+// --- Optimization Passes ---
 
 void CodeSection::apply_optimizations() {
     if (instructions_.empty()) {
@@ -1077,9 +1055,7 @@ bool CodeSection::schedule_instructions() {
     return changed;
 }
 
-// =============================================================================
-// Debug and Information
-// =============================================================================
+// --- Debug and Information ---
 
 std::string CodeSection::get_disassembly() const {
     std::ostringstream oss;
@@ -1133,9 +1109,7 @@ std::string CodeSection::get_register_state_string() const {
     return oss.str();
 }
 
-// =============================================================================
-// Patch Point Management
-// =============================================================================
+// --- Patch Point Management ---
 
 void CodeSection::add_patch_point(uint32_t mips_address, asmjit::Label label) {
     PatchPoint pp;
@@ -1168,9 +1142,7 @@ bool CodeSection::resolve_patch_points() {
     return all_resolved;
 }
 
-// =============================================================================
-// Private Implementation Helpers
-// =============================================================================
+// --- Private Implementation Helpers ---
 
 void CodeSection::handleError(asmjit::Error error, const char* message, asmjit::BaseEmitter* /*origin*/) {
     log_generation("AsmJit error " + std::to_string(static_cast<int>(error)) + ": " +
@@ -1357,9 +1329,7 @@ void CodeSection::update_flags() {
     }
 }
 
-// =============================================================================
-// Optimization sub-passes (private)
-// =============================================================================
+// --- Optimization sub-passes (private) ---
 
 void CodeSection::apply_peephole_optimizations() {
     // Simple pattern-matching optimizations on instruction pairs
@@ -1395,9 +1365,7 @@ void CodeSection::apply_global_optimizations() {
     schedule_instructions();
 }
 
-// =============================================================================
-// CodeGenerator Implementation (nested class)
-// =============================================================================
+// --- CodeGenerator Implementation (nested class) ---
 
 CodeSection::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const AnalysisResult& analysis,
                                           const RegisterEntryState& entry_state) :
@@ -1476,9 +1444,7 @@ bool CodeSection::CodeGenerator::generate_delay_slot(uint32_t address, uint32_t 
     return generate_instruction(address, opcode);
 }
 
-// =============================================================================
-// SectionGraph Implementation
-// =============================================================================
+// --- SectionGraph Implementation ---
 
 SectionGraph::SectionGraph() = default;
 SectionGraph::~SectionGraph() = default;

@@ -21,9 +21,7 @@ DisplayProcessorHandler::DisplayProcessorHandler(CRegisters& reg, Plugins::GFXPl
     Log::info("DisplayProcessorHandler: Initialized");
 }
 
-// ============================================================================
-// Read Operations
-// ============================================================================
+// --- Read Operations ---
 
 bool DisplayProcessorHandler::Read32(uint32_t addr, uint32_t& val) {
     using namespace DPCRegisters;
@@ -77,9 +75,7 @@ bool DisplayProcessorHandler::Read32(uint32_t addr, uint32_t& val) {
     return true;
 }
 
-// ============================================================================
-// Write Operations
-// ============================================================================
+// --- Write Operations ---
 
 bool DisplayProcessorHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
     using namespace DPCRegisters;
@@ -137,9 +133,7 @@ bool DisplayProcessorHandler::Write32(uint32_t addr, uint32_t val, uint32_t mask
     return true;
 }
 
-// ============================================================================
-// Status Command Processing
-// ============================================================================
+// --- Status Command Processing ---
 
 void DisplayProcessorHandler::ProcessStatusCommand(uint32_t cmd) {
     using namespace DPCRegisters;
@@ -212,9 +206,7 @@ void DisplayProcessorHandler::ProcessStatusCommand(uint32_t cmd) {
     }
 }
 
-// ============================================================================
-// Display List Processing
-// ============================================================================
+// --- Display List Processing ---
 
 void DisplayProcessorHandler::ProcessDisplayList() {
     using namespace DPCRegisters;
@@ -290,9 +282,7 @@ void DisplayProcessorHandler::ProcessDisplayList() {
     Log::debug("DisplayProcessorHandler: Display list processing complete");
 }
 
-// ============================================================================
-// Plugin Management
-// ============================================================================
+// --- Plugin Management ---
 
 void DisplayProcessorHandler::SetGraphicsPlugin(Plugins::GFXPlugin* plugin) {
     m_GfxPlugin = plugin;
@@ -306,9 +296,7 @@ void DisplayProcessorHandler::SetGraphicsPlugin(Plugins::GFXPlugin* plugin) {
 
 Plugins::GFXPlugin* DisplayProcessorHandler::GetGraphicsPlugin() const { return m_GfxPlugin; }
 
-// ============================================================================
-// Status Queries
-// ============================================================================
+// --- Status Queries ---
 
 bool DisplayProcessorHandler::IsProcessing() const { return m_ProcessingDList; }
 
@@ -327,9 +315,7 @@ uint32_t DisplayProcessorHandler::GetStatus() const {
     return m_Registers[DPC_STATUS];
 }
 
-// ============================================================================
-// Reset
-// ============================================================================
+// --- Reset ---
 
 void DisplayProcessorHandler::Reset() {
     using namespace DPCRegisters;

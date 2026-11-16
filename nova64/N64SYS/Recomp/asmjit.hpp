@@ -292,9 +292,7 @@ template <> struct hash<asmjit::Label> {
 
 #endif // NOVA64_ASMJIT_ENABLED
 
-// =============================================================================
-// Type Aliases - Simplify common AsmJit types (work with both real and stub)
-// =============================================================================
+// --- Type Aliases - Simplify common AsmJit types (work with both real and stub) ---
 
 namespace Nova64 {
 namespace Recomp {
@@ -348,9 +346,7 @@ using Vec = asmjit::arm::Vec;
 using Mem = asmjit::arm::Mem;
 #endif
 
-// =============================================================================
-// Error Handling Helper
-// =============================================================================
+// --- Error Handling Helper ---
 
 /**
  * @class AsmJitErrorHandler
@@ -390,9 +386,7 @@ private:
     std::string m_lastMessage;
 };
 
-// =============================================================================
-// Code Buffer Manager
-// =============================================================================
+// --- Code Buffer Manager ---
 
 /**
  * @class CodeBufferInfo
@@ -413,9 +407,7 @@ struct CodeBufferInfo {
     [[nodiscard]] size_t getUsedPercentage() const noexcept { return capacity > 0 ? (codeSize * 100) / capacity : 0; }
 };
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
+// --- Helper Functions ---
 
 /**
  * @brief Get human-readable error message for AsmJit error code
@@ -449,9 +441,7 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
     return false;
 }
 
-// =============================================================================
-// Architecture Information
-// =============================================================================
+// --- Architecture Information ---
 
 /**
  * @brief Get current target architecture as string
@@ -489,9 +479,7 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 } // namespace Recomp
 } // namespace Nova64
 
-// =============================================================================
-// Convenience Macros
-// =============================================================================
+// --- Convenience Macros ---
 
 // Error checking macros
 #define ASMJIT_CHECK(expr)                                                                                             \

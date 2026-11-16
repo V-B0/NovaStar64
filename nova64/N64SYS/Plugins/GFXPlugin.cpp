@@ -24,9 +24,7 @@
 
 namespace Plugins {
 
-// ============================================================================
-// DefaultGFXPlugin — Null/stub implementation
-// ============================================================================
+// --- DefaultGFXPlugin — Null/stub implementation ---
 
 class DefaultGFXPlugin final : public GFXPlugin {
 public:
@@ -110,9 +108,7 @@ private:
     bool m_Initialized = false;
 };
 
-// ============================================================================
-// DynLibGFXPlugin — DLL-backed implementation (Project64 DLL compatibility)
-// ============================================================================
+// --- DynLibGFXPlugin — DLL-backed implementation (Project64 DLL compatibility) ---
 
 /**
  * GFX_INFO structure passed to InitiateGFX in the plugin DLL.
@@ -441,9 +437,7 @@ private:
     void(CALL* m_fnDllConfig)(void*) = nullptr;
 };
 
-// ============================================================================
-// Factory function
-// ============================================================================
+// --- Factory function ---
 
 std::unique_ptr<GFXPlugin> CreateDefaultGFXPlugin() { return std::make_unique<DefaultGFXPlugin>(); }
 

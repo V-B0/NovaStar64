@@ -11,10 +11,8 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
 // RSP Instruction Word - Bitfield Union
 // Mirrors N64 RSP MIPS instruction encoding
-// ──────────────────────────────────────────────
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4201) // nameless struct/union
@@ -90,9 +88,7 @@ union RSPOpcode {
 #pragma warning(pop)
 #endif
 
-// ──────────────────────────────────────────────
-// Primary Opcodes
-// ──────────────────────────────────────────────
+// --- Primary Opcodes ---
 enum RSPOpCodes : uint32_t {
     RSP_SPECIAL = 0,
     RSP_REGIMM = 1,
@@ -125,9 +121,7 @@ enum RSPOpCodes : uint32_t {
     RSP_SC2 = 58,
 };
 
-// ──────────────────────────────────────────────
-// SPECIAL function codes
-// ──────────────────────────────────────────────
+// --- SPECIAL function codes ---
 enum RSPSpecialCodes : uint32_t {
     RSP_SPECIAL_SLL = 0,
     RSP_SPECIAL_SRL = 2,
@@ -150,9 +144,7 @@ enum RSPSpecialCodes : uint32_t {
     RSP_SPECIAL_SLTU = 43,
 };
 
-// ──────────────────────────────────────────────
-// REGIMM codes
-// ──────────────────────────────────────────────
+// --- REGIMM codes ---
 enum RSPRegImmOpCodes : uint32_t {
     RSP_REGIMM_BLTZ = 0,
     RSP_REGIMM_BGEZ = 1,
@@ -160,17 +152,13 @@ enum RSPRegImmOpCodes : uint32_t {
     RSP_REGIMM_BGEZAL = 17,
 };
 
-// ──────────────────────────────────────────────
-// COP0 sub-opcodes
-// ──────────────────────────────────────────────
+// --- COP0 sub-opcodes ---
 enum RSPCOP0OpCodes : uint32_t {
     RSP_COP0_MF = 0,
     RSP_COP0_MT = 4,
 };
 
-// ──────────────────────────────────────────────
-// COP2 sub-opcodes (vector unit)
-// ──────────────────────────────────────────────
+// --- COP2 sub-opcodes (vector unit) ---
 enum RSPCOP2OpCodes : uint32_t {
     RSP_COP2_MF = 0, // Move From Vector
     RSP_COP2_CF = 2, // Move Control From (flags)
@@ -178,9 +166,7 @@ enum RSPCOP2OpCodes : uint32_t {
     RSP_COP2_CT = 6, // Move Control To (flags)
 };
 
-// ──────────────────────────────────────────────
-// Vector computational opcodes
-// ──────────────────────────────────────────────
+// --- Vector computational opcodes ---
 enum RSPVectorOpCodes : uint32_t {
     // Multiply operations
     RSP_VECTOR_VMULF = 0, // Signed frac multiply
@@ -261,9 +247,7 @@ enum RSPVectorOpCodes : uint32_t {
     RSP_VECTOR_VNULL = 63,
 };
 
-// ──────────────────────────────────────────────
-// Load/Store COP2 opcodes (vector memory)
-// ──────────────────────────────────────────────
+// --- Load/Store COP2 opcodes (vector memory) ---
 enum RSPLSC2OpCodes : uint32_t {
     RSP_LSC2_BV = 0,  // Byte
     RSP_LSC2_SV = 1,  // Short (halfword)
@@ -279,9 +263,7 @@ enum RSPLSC2OpCodes : uint32_t {
     RSP_LSC2_TV = 11, // Transpose
 };
 
-// ──────────────────────────────────────────────
-// GPR name strings
-// ──────────────────────────────────────────────
+// --- GPR name strings ---
 inline constexpr const char* GPR_Names[32] = {
     "R0", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
     "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "T8", "T9", "K0", "K1", "GP", "SP", "S8", "RA",

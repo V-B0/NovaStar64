@@ -27,9 +27,7 @@ namespace Nova64::RSP {
 uint64_t g_rspRdpNanos = 0;
 const bool g_rspTimeRdp = std::getenv("NOVA64_RSP_TIME") != nullptr;
 
-// ──────────────────────────────────────────────
-// Count leading zeros (portable C++20)
-// ──────────────────────────────────────────────
+// --- Count leading zeros (portable C++20) ---
 static inline uint32_t clz32(uint32_t val) {
 #if __cpp_lib_bitops >= 201907L
     return val ? static_cast<uint32_t>(std::countl_zero(val)) : 32;

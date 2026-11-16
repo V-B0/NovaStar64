@@ -31,9 +31,7 @@ extern CN64System* g_System;
 
 namespace Nova64::Recompiler {
 
-// ============================================================================
-// Construction / Destruction
-// ============================================================================
+// --- Construction / Destruction ---
 
 LoopAnalysis::LoopAnalysis(CodeBlock& codeBlock, CodeSection* entrySection) :
     m_CodeBlock(codeBlock), m_EntrySection(entrySection), m_PipelineStage(N64Types::PipelineStage::Normal), m_PC(0),
@@ -57,9 +55,7 @@ LoopAnalysis::~LoopAnalysis() {
     m_EnterRegSets.clear();
 }
 
-// ============================================================================
-// Section Register Set Accessors
-// ============================================================================
+// --- Section Register Set Accessors ---
 
 void LoopAnalysis::SetJumpRegSet(CodeSection* section, const CRegBase& Reg) {
     auto it = m_JumpRegSets.find(section);
@@ -103,9 +99,7 @@ const CRegBase* LoopAnalysis::GetContinueRegSet(CodeSection* section) const {
     return (it != m_ContinueRegSets.end()) ? it->second : nullptr;
 }
 
-// ============================================================================
-// CheckLoopRegisterUsage - Main entry point
-// ============================================================================
+// --- CheckLoopRegisterUsage - Main entry point ---
 
 bool LoopAnalysis::CheckLoopRegisterUsage() {
     if (m_EntrySection == nullptr) {
@@ -140,9 +134,7 @@ bool LoopAnalysis::CheckLoopRegisterUsage() {
     return true;
 }
 
-// ============================================================================
-// CheckSectionRegisterUsage - Walk a section's instructions
-// ============================================================================
+// --- CheckSectionRegisterUsage - Walk a section's instructions ---
 
 bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
     if (section == nullptr) {
@@ -733,9 +725,7 @@ bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
     return true;
 }
 
-// ============================================================================
-// SetupEnterSection - Build entry register set from analysis
-// ============================================================================
+// --- SetupEnterSection - Build entry register set from analysis ---
 
 void LoopAnalysis::SetupEnterSection(CodeSection* section, bool bRecursive) {
     if (section == nullptr) {
@@ -778,9 +768,7 @@ void LoopAnalysis::SetupEnterSection(CodeSection* section, bool bRecursive) {
     }
 }
 
-// ============================================================================
-// SetupRegisterForLoop - Configure register states for loop optimization
-// ============================================================================
+// --- SetupRegisterForLoop - Configure register states for loop optimization ---
 
 void LoopAnalysis::SetupRegisterForLoop(CodeSection* section) {
     if (section == nullptr) {
@@ -811,9 +799,7 @@ void LoopAnalysis::SetupRegisterForLoop(CodeSection* section) {
     }
 }
 
-// ============================================================================
-// SyncRegState - Synchronize register states between two register sets
-// ============================================================================
+// --- SyncRegState - Synchronize register states between two register sets ---
 
 bool LoopAnalysis::SyncRegState(CRegBase& RegSet, const CRegBase& SyncReg) {
     bool changed = false;
@@ -875,9 +861,7 @@ bool LoopAnalysis::SyncRegState(CRegBase& RegSet, const CRegBase& SyncReg) {
     return changed;
 }
 
-// ============================================================================
-// SPECIAL Instruction Handlers
-// ============================================================================
+// --- SPECIAL Instruction Handlers ---
 
 // SLL: rd = rt << sa (32-bit shift, sign-extended result)
 void LoopAnalysis::SPECIAL_SLL(CRegBase& Reg) {

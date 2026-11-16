@@ -21,9 +21,7 @@
 
 namespace Nova64::Video {
 
-// ──────────────────────────────────────────────────────────────
-//  Single RDP tile descriptor (mirrors hardware state)
-// ──────────────────────────────────────────────────────────────
+// --- Single RDP tile descriptor (mirrors hardware state) ---
 struct TileDescriptor {
     // From SetTile command
     uint8_t format = 0;    // 0=RGBA, 1=YUV, 2=CI, 3=IA, 4=I
@@ -86,9 +84,7 @@ struct TileDescriptor {
     bool operator!=(const TileDescriptor& o) const { return !(*this == o); }
 };
 
-// ──────────────────────────────────────────────────────────────
-//  Scissor rectangle (11.2 fixed-point as stored by RDP)
-// ──────────────────────────────────────────────────────────────
+// --- Scissor rectangle (11.2 fixed-point as stored by RDP) ---
 struct ScissorRect {
     int32_t xh = 0;   // Upper-left X (11.2 fixed)
     int32_t yh = 0;   // Upper-left Y (11.2 fixed)

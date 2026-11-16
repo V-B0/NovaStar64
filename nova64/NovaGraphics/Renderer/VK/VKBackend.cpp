@@ -70,12 +70,10 @@ static bool ForensicEnabled() {
     return enabled;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 //  DynPipelineKey — shader + blend factors + depth state
 //  Used to cache VkPipelines that differ only in blend/depth mode.
 //  blendColor (the dynamic blend constant) is NOT included — it is set via
 //  vkCmdSetBlendConstants every draw so it doesn't affect the pipeline.
-// ─────────────────────────────────────────────────────────────────────────────
 struct DynPipelineKey {
     void* shaderPtr = nullptr;
     uint8_t blendEnabled = 0;
@@ -108,9 +106,7 @@ struct DynPipelineKeyHash {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  IsVulkanAvailable — real probe via volk
-// ─────────────────────────────────────────────────────────────────────────────
+// --- IsVulkanAvailable — real probe via volk ---
 
 bool IsVulkanAvailable() {
     static int cached = -1; // -1 unknown, 0 no, 1 yes
@@ -134,9 +130,7 @@ bool IsVulkanAvailable() {
     return cached == 1;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Stub resources (Stage 2+ will replace these with real implementations)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Stub resources (Stage 2+ will replace these with real implementations) ---
 
 namespace {
 

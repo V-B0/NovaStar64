@@ -75,9 +75,7 @@ class InputPlugin : public PluginBase {
 public:
     virtual ~InputPlugin() = default;
 
-    // ========================================================================
-    // Input Initialization
-    // ========================================================================
+    // --- Input Initialization ---
 
     /**
      * @brief Initialize input system
@@ -92,9 +90,7 @@ public:
      */
     virtual void SetFocus(bool focus) = 0;
 
-    // ========================================================================
-    // Controller Management
-    // ========================================================================
+    // --- Controller Management ---
 
     /**
      * @brief Get number of connected controllers
@@ -122,9 +118,7 @@ public:
      */
     virtual void UpdateControllers() = 0;
 
-    // ========================================================================
-    // PIF/SI Processing
-    // ========================================================================
+    // --- PIF/SI Processing ---
 
     /**
      * @brief Process PIF RAM command
@@ -154,9 +148,7 @@ public:
      */
     virtual void SetControllerData(uint32_t controller, const uint8_t* data) = 0;
 
-    // ========================================================================
-    // Pak Accessories
-    // ========================================================================
+    // --- Pak Accessories ---
 
     /**
      * @brief Read from controller pak
@@ -185,9 +177,7 @@ public:
      */
     virtual void SetRumble(uint32_t controller, uint8_t strength) = 0;
 
-    // ========================================================================
-    // Configuration
-    // ========================================================================
+    // --- Configuration ---
 
     /**
      * @brief Open controller configuration dialog

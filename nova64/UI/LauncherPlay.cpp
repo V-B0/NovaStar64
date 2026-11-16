@@ -80,9 +80,7 @@ void DrawThumbnail(ThumbnailTextures& textures, const std::shared_ptr<const Nova
 
 } // namespace
 
-// ============================================================
-// Thumbnail textures
-// ============================================================
+// --- Thumbnail textures ---
 uint32_t ThumbnailTextures::Get(const std::shared_ptr<const Nova64::StateThumbnail>& thumbnail) {
     if (!thumbnail || thumbnail->width <= 0 || thumbnail->height <= 0 ||
         thumbnail->rgba.size() < static_cast<size_t>(thumbnail->width) * static_cast<size_t>(thumbnail->height) * 4) {
@@ -116,9 +114,7 @@ void ThumbnailTextures::Clear() {
     m_entries.clear();
 }
 
-// ============================================================
-// Starting and stopping
-// ============================================================
+// --- Starting and stopping ---
 void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     StopEmbedded();
     if (path.empty()) return;
@@ -247,9 +243,7 @@ void NovaLauncher::ShowStatus(const std::string& text) {
     m_statusUntil = SDL_GetTicks() + 4000;
 }
 
-// ============================================================
-// Pause and rewind
-// ============================================================
+// --- Pause and rewind ---
 bool NovaLauncher::HandleGameKey(int scancode, bool repeat) {
     if (m_rewindOpen) {
         switch (scancode) {
@@ -385,9 +379,7 @@ void NovaLauncher::SyncStateLists() {
     m_thumbnails.DropUnused();
 }
 
-// ============================================================
-// Drawing
-// ============================================================
+// --- Drawing ---
 
 // Uploads the pixels the video plugin handed over into the launcher's texture.
 void NovaLauncher::UploadFromPixelBuf() {

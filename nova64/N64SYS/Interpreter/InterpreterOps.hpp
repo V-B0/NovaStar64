@@ -92,9 +92,7 @@ private:
      */
     void BuildInterpreter(bool force32bit);
 
-    // ========================================================================
-    // Opcode Dispatch Functions
-    // ========================================================================
+    // --- Opcode Dispatch Functions ---
 
     void SPECIAL();
     void REGIMM();
@@ -109,9 +107,7 @@ private:
     void COP1_W();
     void COP1_L();
 
-    // ========================================================================
-    // Primary Opcode Functions
-    // ========================================================================
+    // --- Primary Opcode Functions ---
 
     void J();
     void JAL();
@@ -134,9 +130,7 @@ private:
     void DADDI();
     void DADDIU();
 
-    // ========================================================================
-    // Load Instructions (64-bit and 32-bit versions)
-    // ========================================================================
+    // --- Load Instructions (64-bit and 32-bit versions) ---
 
     void LDL();
     void LDR();
@@ -167,9 +161,7 @@ private:
     void LD();
     void LD_32();
 
-    // ========================================================================
-    // Store Instructions (64-bit and 32-bit versions)
-    // ========================================================================
+    // --- Store Instructions (64-bit and 32-bit versions) ---
 
     void SB();
     void SB_32();
@@ -196,15 +188,11 @@ private:
     void SD();
     void SD_32();
 
-    // ========================================================================
-    // Cache Operations
-    // ========================================================================
+    // --- Cache Operations ---
 
     void CACHE();
 
-    // ========================================================================
-    // R4300i SPECIAL Opcodes
-    // ========================================================================
+    // --- R4300i SPECIAL Opcodes ---
 
     void SPECIAL_SLL();
     void SPECIAL_SRL();
@@ -259,9 +247,7 @@ private:
     void SPECIAL_DSRL32();
     void SPECIAL_DSRA32();
 
-    // ========================================================================
-    // R4300i REGIMM Opcodes
-    // ========================================================================
+    // --- R4300i REGIMM Opcodes ---
 
     void REGIMM_BLTZ();
     void REGIMM_BGEZ();
@@ -278,9 +264,7 @@ private:
     void REGIMM_TLTIU();
     void REGIMM_TNEI();
 
-    // ========================================================================
-    // COP0 Functions
-    // ========================================================================
+    // --- COP0 Functions ---
 
     void COP0_MF();
     void COP0_DMF();
@@ -295,9 +279,7 @@ private:
     void COP0_CO_ERET();
     void COP0_CO_WAIT();
 
-    // ========================================================================
-    // COP1 Functions
-    // ========================================================================
+    // --- COP1 Functions ---
 
     void CPO1_UNIMPLEMENTED_OP();
     void COP1_MF();
@@ -313,9 +295,7 @@ private:
     void COP1_BCFL();
     void COP1_BCTL();
 
-    // ========================================================================
-    // COP1 Single Precision Functions
-    // ========================================================================
+    // --- COP1 Single Precision Functions ---
 
     void COP1_S_ADD();
     void COP1_S_SUB();
@@ -338,9 +318,7 @@ private:
     void COP1_S_CVT_L();
     void COP1_S_CMP();
 
-    // ========================================================================
-    // COP1 Double Precision Functions
-    // ========================================================================
+    // --- COP1 Double Precision Functions ---
 
     void COP1_D_ADD();
     void COP1_D_SUB();
@@ -363,23 +341,17 @@ private:
     void COP1_D_CVT_L();
     void COP1_D_CMP();
 
-    // ========================================================================
-    // COP1 Word Functions
-    // ========================================================================
+    // --- COP1 Word Functions ---
 
     void COP1_W_CVT_S();
     void COP1_W_CVT_D();
 
-    // ========================================================================
-    // COP1 Long Functions
-    // ========================================================================
+    // --- COP1 Long Functions ---
 
     void COP1_L_CVT_S();
     void COP1_L_CVT_D();
 
-    // ========================================================================
-    // COP2 Functions
-    // ========================================================================
+    // --- COP2 Functions ---
 
     void CPO2_INVALID_OP();
     void COP2_MF();
@@ -389,16 +361,12 @@ private:
     void COP2_DMT();
     void COP2_CT();
 
-    // ========================================================================
-    // Error Handling
-    // ========================================================================
+    // --- Error Handling ---
 
     void ReservedInstruction();
     void UnknownOpcode();
 
-    // ========================================================================
-    // FPU Helper Functions
-    // ========================================================================
+    // --- FPU Helper Functions ---
 
     bool TestCop1UsableException();
     bool CheckFPUInput32(const uint32_t& value);
@@ -414,11 +382,9 @@ private:
     bool SetFPUException();
     void UpdateInstructionMemory();
 
-    // ========================================================================
     // Opcode field access helpers
     // These adapt the R4300iOps union fields to flat-style access
     // matching Project64's m_Opcode.rs, m_Opcode.rt, etc.
-    // ========================================================================
 
     // Note: Itype and Jtype fields are correct. Rtype/Ftype/Memtype have
     // incorrect field naming (bit positions don't match MIPS standard).
@@ -471,9 +437,7 @@ private:
     uint8_t* m_InstructionMemory;
     uint32_t* m_InstructionPtr;
 
-    // ========================================================================
-    // Dispatch Tables
-    // ========================================================================
+    // --- Dispatch Tables ---
 
     OpcodeFunc Jump_Opcode[64];
     OpcodeFunc Jump_Special[64];
@@ -488,9 +452,7 @@ private:
     OpcodeFunc Jump_CoP1_L[64];
     OpcodeFunc Jump_CoP2[32];
 
-    // ========================================================================
-    // Static Data - Shift/mask tables for unaligned memory access
-    // ========================================================================
+    // --- Static Data - Shift/mask tables for unaligned memory access ---
 
     static const uint32_t SWL_MASK[4];
     static const uint32_t SWR_MASK[4];

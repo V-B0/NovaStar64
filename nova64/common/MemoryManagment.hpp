@@ -75,9 +75,7 @@ bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection);
  */
 bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection, MEM_PROTECTION& oldProtection);
 
-// =============================================================================
-// Extended Memory Management API
-// =============================================================================
+// --- Extended Memory Management API ---
 
 namespace MemoryManagement {
 

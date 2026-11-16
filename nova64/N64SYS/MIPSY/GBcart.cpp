@@ -16,9 +16,7 @@ namespace GameBoy {
 // Helper for current time
 static std::time_t get_current_time() { return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()); }
 
-// ======================================================================================
-// MBC1 Implementation
-// ======================================================================================
+// --- MBC1 Implementation ---
 
 uint8_t MBC1Controller::read(uint16_t address) const {
     if (address < 0x4000) {
@@ -109,9 +107,7 @@ void MBC1Controller::reset() {
     cartridge.set_ram_bank(0);
 }
 
-// ======================================================================================
-// MBC3 Implementation (with RTC)
-// ======================================================================================
+// --- MBC3 Implementation (with RTC) ---
 
 MBC3Controller::MBC3Controller(Cartridge& cart) : MemoryBankController(cart) { reset(); }
 
@@ -279,9 +275,7 @@ void MBC3Controller::reset() {
 
 void MBC3Controller::update_rtc() { update_rtc_time(); }
 
-// ======================================================================================
-// MBC5 Implementation
-// ======================================================================================
+// --- MBC5 Implementation ---
 
 uint8_t MBC5Controller::read(uint16_t address) const {
     if (address < 0x4000) {
@@ -334,9 +328,7 @@ void MBC5Controller::reset() {
     cartridge.set_ram_bank(0);
 }
 
-// ======================================================================================
-// Cartridge Implementation
-// ======================================================================================
+// --- Cartridge Implementation ---
 
 Cartridge::Cartridge() {
     // Basic initialization
@@ -553,9 +545,7 @@ std::string Cartridge::get_info_string() const {
 
 } // namespace GameBoy
 
-// ======================================================================================
-// C Interface
-// ======================================================================================
+// --- C Interface ---
 
 // Opaque struct definition for C
 struct gb_cart {
@@ -621,9 +611,7 @@ void write_gb_cart(struct gb_cart* gb_cart, uint16_t address, const uint8_t* dat
 
 } // extern "C"
 
-// =============================================================================
-// Cartridge bank access methods (used by MBC controllers)
-// =============================================================================
+// --- Cartridge bank access methods (used by MBC controllers) ---
 
 uint8_t GameBoy::Cartridge::read_rom_bank(uint16_t bank, uint16_t offset) const {
     size_t address = static_cast<size_t>(bank) * 0x4000 + offset;

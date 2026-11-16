@@ -53,9 +53,7 @@ PifRamHandler::PifRamHandler(CN64System& system, Nova64::MipsMemoryVM& mmu, CReg
 
 PifRamHandler::~PifRamHandler() noexcept = default;
 
-// ============================================================================
-// Memory Handler Implementation
-// ============================================================================
+// --- Memory Handler Implementation ---
 
 bool PifRamHandler::Read32(uint32_t address, uint32_t& value) {
     address &= 0x1FFFFFFF;
@@ -144,9 +142,7 @@ bool PifRamHandler::Write8(uint32_t address, uint8_t value) {
     return false;
 }
 
-// ============================================================================
-// DMA Operations
-// ============================================================================
+// --- DMA Operations ---
 
 void PifRamHandler::dma_read() {
     // RDRAM <- PIF_RAM  (P64: PifRamHandler::DMA_READ)
@@ -239,14 +235,10 @@ void PifRamHandler::dma_write() {
     }
 }
 
-// ============================================================================
-// Command Processing
-// ============================================================================
+// --- Command Processing ---
 
-// ============================================================================
 // PIF ControlRead — called before DMA_READ  (matches P64's ControlRead)
 // Processes read-type commands (0x01 ReadButtons) to fill response data
-// ============================================================================
 void PifRamHandler::pif_control_read() {
     if (m_pif_ram[0x3F] == 0x02) return;
 
@@ -292,15 +284,11 @@ void PifRamHandler::pif_control_read() {
     }
 }
 
-// ============================================================================
-// Legacy wrapper — called from Write32 when 0x1FC007FC is written
-// ============================================================================
+// --- Legacy wrapper — called from Write32 when 0x1FC007FC is written ---
 void PifRamHandler::process_pif_commands() { pif_control_write(); }
 
-// ============================================================================
 // PIF ControlWrite — called after DMA_WRITE  (matches P64's ControlWrite)
 // Processes system control commands (CIC, etc.) and JoyBus write commands
-// ============================================================================
 void PifRamHandler::pif_control_write() {
     constexpr int CHALLENGE_LENGTH = 0x20;
 
@@ -388,9 +376,7 @@ void PifRamHandler::pif_control_write() {
     m_pif_ram[0x3F] = 0;
 }
 
-// ============================================================================
-// Controller Processing
-// ============================================================================
+// --- Controller Processing ---
 
 // [Deleted duplicate process_controller_command]
 
@@ -413,9 +399,7 @@ void PifRamHandler::process_eeprom_command(Common::Span<uint8_t> command) {
     }
 }
 
-// ============================================================================
-// Callbacks & Updates
-// ============================================================================
+// --- Callbacks & Updates ---
 
 void PifRamHandler::reset() {
     std::memset(m_pif_ram.data(), 0, m_pif_ram.size());
@@ -466,9 +450,7 @@ void PifRamHandler::reset() {
                m_pif_ram[38], m_pif_ram[39], static_cast<int>(m_cic_type));
 }
 
-// ============================================================================
-// CIC-NUS-6105 Challenge/Response  (exact copy of P64's CicNus6105)
-// ============================================================================
+// --- CIC-NUS-6105 Challenge/Response  (exact copy of P64's CicNus6105) ---
 void PifRamHandler::CicNus6105(const char* Challenge, char* Response, int Length) {
     static const char lut0[0x10] = {
         0x4, 0x7, 0xA, 0x7, 0xE, 0x5, 0xE, 0x1, 0xC, 0xF, 0x8, 0xF, 0x6, 0x3, 0x6, 0x9,
@@ -502,9 +484,7 @@ void PifRamHandler::cic_nus_6105_challenge(Common::Span<const uint8_t> challenge
     for (size_t i = 0; i < len; i++) response[i] = (uint8_t)rsp[i];
 }
 
-// ============================================================================
-// Accessors & Stubs
-// ============================================================================
+// --- Accessors & Stubs ---
 
 void PifRamHandler::set_controller_state(size_t port, const PIF::ControllerState& state) {
     if (port < m_controllers.size()) m_controllers[port] = state;
@@ -547,9 +527,7 @@ uint32_t PifRamHandler::pif_address_to_index(uint32_t address) const { return ad
 void PifRamHandler::log_pif_command(const std::string& description, Common::Span<const uint8_t> data) {}
 void PifRamHandler::on_system_reset() {}
 
-// ============================================================================
-// Controller Pak Implementation
-// ============================================================================
+// --- Controller Pak Implementation ---
 
 namespace {
 uint8_t calculate_mempak_crc(const uint8_t* data) {
@@ -626,11 +604,9 @@ void PifRamHandler::PakWrite(int channel, uint32_t address, const uint8_t* data)
 }
 
 // Controller helpers
-// ============================================================================
 // ReadControllerCommand — called during ControlRead (DMA_READ path)
 // Command format: [TX_LEN] [RX_LEN] [CMD] [TX_DATA...] [RX_DATA...]
 // Matches P64's ReadControllerCommand
-// ============================================================================
 void PifRamHandler::ReadControllerCommand(int channel, uint8_t* Command) {
     switch (Command[2]) {
     case 0x01: // Read buttons
@@ -671,11 +647,9 @@ void PifRamHandler::ReadControllerCommand(int channel, uint8_t* Command) {
     }
 }
 
-// ============================================================================
 // ProcessControllerCommand — called during ControlWrite (DMA_WRITE path)
 // Handles controller identification, button reads, and pak access
 // Matches P64's ProcessControllerCommand
-// ============================================================================
 void PifRamHandler::ProcessControllerCommand(int channel, uint8_t* Command) {
     switch (Command[2]) {
     case 0x00: // Check / info

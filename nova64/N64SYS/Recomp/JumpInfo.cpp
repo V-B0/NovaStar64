@@ -43,9 +43,7 @@ static std::string GetExitReasonName(ExitReason reason) { return std::to_string(
 // Note: Some CCodeBlock methods are used but require the full definition
 // These will be moved to inline implementations or use simpler accessors
 
-// =============================================================================
-// CJumpInfo Implementation
-// =============================================================================
+// --- CJumpInfo Implementation ---
 
 CJumpInfo::CJumpInfo(CodeBlock& codeBlock) :
     m_JumpPC(0), m_TargetPC(0), m_LinkAddress(std::nullopt), m_Type(JumpType::Unknown), m_CanFallThrough(false),

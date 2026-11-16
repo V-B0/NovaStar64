@@ -11,9 +11,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// RSP Module Lifecycle
-// ──────────────────────────────────────────────
+// --- RSP Module Lifecycle ---
 
 // Initialize RSP system with hardware register pointers
 void InitializeRSP(RSP_INFO& rspInfo);

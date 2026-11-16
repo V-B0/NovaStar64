@@ -17,9 +17,7 @@
 
 namespace Nova64::Video::RT {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  SceneVertex  —  one world-space vertex captured from the RSP
-// ─────────────────────────────────────────────────────────────────────────────
+// --- SceneVertex  —  one world-space vertex captured from the RSP ---
 
 struct SceneVertex {
     float worldPos[3]; // Object-space position × ModelView matrix
@@ -28,9 +26,7 @@ struct SceneVertex {
     float color[4];    // Vertex color / shade (RGBA 0-1)
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  SceneLighting  —  the lights the game had set when a triangle was drawn
-// ─────────────────────────────────────────────────────────────────────────────
+// --- SceneLighting  —  the lights the game had set when a triangle was drawn ---
 
 /// One light as the game set it, in EYE space (the space the RT scene lives in).
 struct SceneLight {
@@ -50,9 +46,7 @@ struct SceneLighting {
     SceneLight local;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  SceneTriangle  —  one renderable triangle with material identity
-// ─────────────────────────────────────────────────────────────────────────────
+// --- SceneTriangle  —  one renderable triangle with material identity ---
 
 struct SceneTriangle {
     SceneVertex v[3];
@@ -81,9 +75,7 @@ struct SceneTriangle {
     uint8_t localLight = 0xFF;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ISceneGeometryConsumer  —  sink for world-space triangles
-// ─────────────────────────────────────────────────────────────────────────────
+// --- ISceneGeometryConsumer  —  sink for world-space triangles ---
 
 class ISceneGeometryConsumer {
 public:
@@ -116,9 +108,7 @@ public:
     virtual void SetLighting(const SceneLighting& lighting) { (void)lighting; }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  NullGeometryConsumer  —  safe no-op default (used before RT backend inits)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- NullGeometryConsumer  —  safe no-op default (used before RT backend inits) ---
 
 class NullGeometryConsumer final : public ISceneGeometryConsumer {
 public:
@@ -126,9 +116,7 @@ public:
     void SubmitTriangles(const SceneTriangle*, uint32_t) override {}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  SceneFrameData  —  accumulated triangles for one frame (used by RTSceneManager)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- SceneFrameData  —  accumulated triangles for one frame (used by RTSceneManager) ---
 
 struct SceneFrameData {
     std::vector<SceneTriangle> triangles;

@@ -11,9 +11,7 @@
 
 namespace N64Types {
 
-// ============================================================================
-// String Conversion Functions
-// ============================================================================
+// --- String Conversion Functions ---
 
 std::string to_string(CpuType type) {
     switch (type) {
@@ -144,9 +142,7 @@ std::string to_string(PipelineStage stage) {
     }
 }
 
-// ============================================================================
-// Formatting Utilities
-// ============================================================================
+// --- Formatting Utilities ---
 
 std::string FormatAddress(uint32_t address) {
     std::ostringstream oss;
@@ -200,9 +196,7 @@ std::string FormatSize(size_t bytes) {
     return oss.str();
 }
 
-// ============================================================================
-// Memory Utilities
-// ============================================================================
+// --- Memory Utilities ---
 
 std::string GetMemoryRegionName(uint32_t address) {
     uint32_t paddr = address & 0x1FFFFFFF;

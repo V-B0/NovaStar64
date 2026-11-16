@@ -31,9 +31,7 @@
 
 namespace Nova64::Video::RT {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RTSceneManager
-// ─────────────────────────────────────────────────────────────────────────────
+// --- RTSceneManager ---
 
 class RTSceneManager final : public ISceneGeometryConsumer {
 public:
@@ -280,9 +278,7 @@ private:
 
 } // namespace Nova64::Video::RT
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RTSceneManager::BuildAS  —  inline implementation
-// ─────────────────────────────────────────────────────────────────────────────
+// --- RTSceneManager::BuildAS  —  inline implementation ---
 
 #include <cstring>
 

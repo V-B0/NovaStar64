@@ -118,7 +118,6 @@ constexpr int uTexCvgAlpha = 612; // uIntBits3.y: when 1, multiply combined.a by
 constexpr int uTexHiRes = 616;    // uIntBits3.z: bit 0 = texture 0, bit 1 = texture 1 is a texture-pack picture
 } // namespace N64UBOOff
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 class VKShaderCompiler final : public Shader::IShaderCompiler {
 public:

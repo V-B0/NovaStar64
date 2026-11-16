@@ -35,18 +35,14 @@
 
 namespace Nova64::Video {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  MLELevel  —  rendering path classification
-// ─────────────────────────────────────────────────────────────────────────────
+// --- MLELevel  —  rendering path classification ---
 enum class MLELevel : uint8_t {
     HLE_Fast = 0,     // Rasterise with current GL/VK pipeline, no accuracy pass
     HLE_Accurate = 1, // Full combiner/blender accuracy via GL/VK shaders
     LLE = 2,          // True RDP emulation (fallback to HLE_Accurate for now)
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RenderBatch metadata (minimal view for the director)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- RenderBatch metadata (minimal view for the director) ---
 struct BatchInfo {
     uint32_t drawCallCount = 0;
     uint32_t triangleCount = 0;
@@ -63,9 +59,7 @@ struct BatchInfo {
     bool hasTranslucent = false; // Any triangle with ALPHA_CVG_SEL/blending
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  MLEDirector
-// ─────────────────────────────────────────────────────────────────────────────
+// --- MLEDirector ---
 class MLEDirector {
 public:
     MLEDirector() = default;

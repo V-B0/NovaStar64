@@ -11,9 +11,7 @@
 #include <cstdint>
 #include <cstddef>
 
-// =============================================================================
-// Platform Detection
-// =============================================================================
+// --- Platform Detection ---
 
 #if defined(_WIN32) || defined(_WIN64)
 #define PLATFORM_WINDOWS 1
@@ -33,9 +31,7 @@
 #error "Unsupported platform"
 #endif
 
-// =============================================================================
-// Architecture Detection
-// =============================================================================
+// --- Architecture Detection ---
 
 #if defined(_M_X64) || defined(__x86_64__)
 #define ARCH_X64   1
@@ -55,9 +51,7 @@
 #define ARCH_ARM64 0
 #endif
 
-// =============================================================================
-// Compiler Detection
-// =============================================================================
+// --- Compiler Detection ---
 
 #if defined(_MSC_VER)
 #define COMPILER_MSVC  1
@@ -77,9 +71,7 @@
 #define COMPILER_CLANG 0
 #endif
 
-// =============================================================================
-// Function Attributes
-// =============================================================================
+// --- Function Attributes ---
 
 #if COMPILER_MSVC
 #define FORCE_INLINE  __forceinline
@@ -101,9 +93,7 @@
 #define IMPORT
 #endif
 
-// =============================================================================
-// Debug Break
-// =============================================================================
+// --- Debug Break ---
 
 #if COMPILER_MSVC
 #define DEBUG_BREAK() __debugbreak()
@@ -121,9 +111,7 @@
 #define DEBUG_BREAK() raise(SIGTRAP)
 #endif
 
-// =============================================================================
-// POSIX Compatibility Layer
-// =============================================================================
+// --- POSIX Compatibility Layer ---
 
 #ifndef _WIN32
 #include <alloca.h>
@@ -139,9 +127,7 @@
 
 #endif // !_WIN32
 
-// =============================================================================
-// Utility Macros
-// =============================================================================
+// --- Utility Macros ---
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

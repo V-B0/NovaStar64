@@ -35,9 +35,7 @@
 
 namespace Nova64::Recompiler {
 
-// =============================================================================
-// ExecutableMemoryDeleter Implementation
-// =============================================================================
+// --- ExecutableMemoryDeleter Implementation ---
 
 void ExecutableMemoryDeleter::operator()(uint8_t* ptr) const {
     if (!ptr) {
@@ -55,9 +53,7 @@ void ExecutableMemoryDeleter::operator()(uint8_t* ptr) const {
     Log::debug("RecompilerMemory: Released executable memory");
 }
 
-// =============================================================================
-// Construction & Destruction
-// =============================================================================
+// --- Construction & Destruction ---
 
 CRecompMemory::CRecompMemory(uint32_t initialSize) :
     m_Buffer(nullptr), m_WritePosition(nullptr), m_CurrentSize(0), m_OldWritePosition(nullptr) {
@@ -147,9 +143,7 @@ CRecompMemory& CRecompMemory::operator=(CRecompMemory&& other) noexcept {
     return *this;
 }
 
-// =============================================================================
-// Buffer Allocation
-// =============================================================================
+// --- Buffer Allocation ---
 
 std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> CRecompMemory::AllocateBuffer(uint32_t size) {
     if (size == 0) {
@@ -214,9 +208,7 @@ std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> CRecompMemory::AllocateBuffe
 #endif
 }
 
-// =============================================================================
-// Buffer Growth
-// =============================================================================
+// --- Buffer Growth ---
 
 bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
     // Calculate new size - either double current size or add minimum required
@@ -294,9 +286,7 @@ bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
     return true;
 }
 
-// =============================================================================
-// Memory Usage & Statistics
-// =============================================================================
+// --- Memory Usage & Statistics ---
 
 void CRecompMemory::ShowMemoryUsage() const {
     uint32_t used = GetUsedMemory();

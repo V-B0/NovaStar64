@@ -30,9 +30,7 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// ============================================================================
-// ExitRegisterState Implementation
-// ============================================================================
+// --- ExitRegisterState Implementation ---
 
 bool ExitRegisterState::operator==(const ExitRegisterState& other) const {
     // Compare all register snapshots
@@ -106,9 +104,7 @@ std::string ExitRegisterState::to_string() const {
     return oss.str();
 }
 
-// ============================================================================
-// ExceptionInfo Implementation
-// ============================================================================
+// --- ExceptionInfo Implementation ---
 
 std::string ExceptionInfo::description() const {
     std::ostringstream oss;
@@ -131,9 +127,7 @@ bool ExceptionInfo::requires_rollback() const {
            reason == ExitReason::BusErrorInstruction || reason == ExitReason::BusErrorData;
 }
 
-// ============================================================================
-// BranchPrediction Implementation
-// ============================================================================
+// --- BranchPrediction Implementation ---
 
 void BranchPrediction::update(bool actually_taken, uint32_t actual_target) {
     ++training_count;
@@ -158,9 +152,7 @@ void BranchPrediction::update(bool actually_taken, uint32_t actual_target) {
     }
 }
 
-// ============================================================================
-// ExitInfo Implementation
-// ============================================================================
+// --- ExitInfo Implementation ---
 
 ExitInfo::ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config) :
     parent_block_(parent_block), id_(id), config_(config) {
@@ -431,9 +423,7 @@ void ExitInfo::apply_speculative_optimization() {
     }
 }
 
-// ============================================================================
-// ExitManager Implementation
-// ============================================================================
+// --- ExitManager Implementation ---
 
 ExitManager::ExitManager(CodeBlock& parent_block, size_t initial_capacity) : parent_block_(parent_block) {
     exits_.reserve(initial_capacity);
@@ -735,9 +725,7 @@ void ExitManager::rebuild_indexes() {
     }
 }
 
-// ============================================================================
-// ExitPredictor Implementation
-// ============================================================================
+// --- ExitPredictor Implementation ---
 
 ExitPredictor::ExitPredictor(size_t history_size) : max_history_size_(history_size) {}
 

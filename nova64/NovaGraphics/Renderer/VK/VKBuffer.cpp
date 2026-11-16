@@ -10,9 +10,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Storage helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Storage helpers ---
 
 bool CreateBufferStorage(const VKContext& ctx, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props,
                          VKBufferStorage& out) {
@@ -121,9 +119,7 @@ bool UploadDeviceLocal(const VKContext& ctx, VKBufferStorage& dst, VkDeviceSize 
     return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Helper: pick memory props + extra usage based on BufferUsage
-// ─────────────────────────────────────────────────────────────────────────────
+// --- Helper: pick memory props + extra usage based on BufferUsage ---
 
 namespace {
 
@@ -156,9 +152,7 @@ bool DoUpload(const VKContext& ctx, VKBufferStorage& s, BufferUsage usage, const
 
 } // namespace
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKVertexBufferImpl
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKVertexBufferImpl ---
 
 VKVertexBufferImpl::VKVertexBufferImpl(const VKContext* ctx, size_t size, BufferUsage usage) :
     m_ctx(ctx), m_size(size), m_usage(usage) {
@@ -178,9 +172,7 @@ void VKVertexBufferImpl::Update(const void* data, size_t offset, size_t sizeByte
     DoUpload(*m_ctx, m_storage, m_usage, data, sizeBytes, offset);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKIndexBufferImpl
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKIndexBufferImpl ---
 
 VKIndexBufferImpl::VKIndexBufferImpl(const VKContext* ctx, size_t size, BufferUsage usage) :
     m_ctx(ctx), m_size(size), m_usage(usage) {
@@ -202,9 +194,7 @@ void VKIndexBufferImpl::Update(const void* data, size_t offset, size_t sizeBytes
     DoUpload(*m_ctx, m_storage, m_usage, data, sizeBytes, offset);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VKUniformBufferImpl  (always HOST_VISIBLE + persistently mapped)
-// ─────────────────────────────────────────────────────────────────────────────
+// --- VKUniformBufferImpl  (always HOST_VISIBLE + persistently mapped) ---
 
 VKUniformBufferImpl::VKUniformBufferImpl(const VKContext* ctx, size_t size) : m_ctx(ctx), m_size(size) {
     CreateBufferStorage(*m_ctx, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,

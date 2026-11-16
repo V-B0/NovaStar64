@@ -22,12 +22,10 @@
 
 namespace Nova64::RSP::HLE {
 
-// ──────────────────────────────────────────────
 // CIC x105 boot microcode
 // Used during IPL3 stage of CIC-NUS-6105 games (Banjo-Tooie, Zelda OoT/MM,
 // Perfect Dark, ...). The RSP performs DMA transactions needed for booting.
 // Reference: Mupen64Plus mupen64plus-rsp-hle/src/cicx105.c
-// ──────────────────────────────────────────────
 
 void cicx105_ucode(CHle* hle) {
     uint8_t* imem = hle->imem();
@@ -771,11 +769,9 @@ void alist_process_nead_ac(CHle* hle) { alist_process(hle, NEAD_ABI_OOT, 24); }
 // MP3 microcode task
 // ══════════════════════════════════════════════
 
-// ──────────────────────────────────────────────
 // MP3 quantization scale factors (N64 RSP variant)
 // The N64's MP3 ucode uses a custom 14-bit quantization
 // table derived from MPEG-1 Layer III, stored in DMEM.
-// ──────────────────────────────────────────────
 
 static constexpr int32_t MP3_QUANT_LUT[16] = {0, 1, 3, 5, 7, 9, 15, 23, 31, 47, 63, 95, 127, 191, 255, 383};
 
@@ -866,11 +862,9 @@ void mp3_task(CHle* hle, unsigned int index, uint32_t address) {
 // Musyx microcodes
 // ══════════════════════════════════════════════
 
-// ──────────────────────────────────────────────
 // Musyx voice data structure
 // Factor5's Musyx audio engine uses a per-voice
 // parameter block stored in RDRAM.
-// ──────────────────────────────────────────────
 
 struct MusyxVoice {
     uint32_t sample_addr;   // RDRAM address of sample data

@@ -16,9 +16,7 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// Static member definitions
-// ──────────────────────────────────────────────
+// --- Static member definitions ---
 
 bool CRSPSettings::s_DebuggingEnabled = false;
 bool CRSPSettings::s_RomOpen = false;
@@ -40,9 +38,7 @@ bool CRSPSettings::s_UserCPUMethodSet = false;
 RSPEngine CRSPSettings::s_Engine = RSPEngine::Recompiler;
 bool CRSPSettings::s_UserEngineSet = false;
 
-// ──────────────────────────────────────────────
-// Initialize default settings
-// ──────────────────────────────────────────────
+// --- Initialize default settings ---
 
 void CRSPSettings::InitializeRspSetting() {
     // Respect sticky user overrides set before this point (e.g. video plugin
@@ -70,10 +66,8 @@ void CRSPSettings::InitializeRspSetting() {
     s_RomOpen = false;
 }
 
-// ──────────────────────────────────────────────
 // Refresh settings from config
 // Reads from CSettings or IniFile if available
-// ──────────────────────────────────────────────
 
 void CRSPSettings::RefreshSettings() {
     // Attempt to read RSP settings from config file
@@ -133,9 +127,7 @@ void CRSPSettings::RefreshSettings() {
     }
 }
 
-// ──────────────────────────────────────────────
-// ROM open/close state
-// ──────────────────────────────────────────────
+// --- ROM open/close state ---
 
 void CRSPSettings::SetRomOpen(bool opened) {
     s_RomOpen = opened;
@@ -144,9 +136,7 @@ void CRSPSettings::SetRomOpen(bool opened) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Per-game overrides from ROM CRC database
-// ──────────────────────────────────────────────
+// --- Per-game overrides from ROM CRC database ---
 
 void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2) {
     const GameOverrides* overrides = LookupGameOverrides(crc1, crc2);
@@ -201,9 +191,7 @@ void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2) {
     }
 }
 
-// ──────────────────────────────────────────────
-// Debug toggle
-// ──────────────────────────────────────────────
+// --- Debug toggle ---
 
 void CRSPSettings::EnableDebugging(bool enabled) { s_DebuggingEnabled = enabled; }
 

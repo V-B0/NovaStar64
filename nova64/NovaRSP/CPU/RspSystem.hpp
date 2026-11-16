@@ -25,10 +25,8 @@ namespace HLE {
 class CHle;
 }
 
-// ──────────────────────────────────────────────
 // RSP Info structure (passed from main system)
 // Mirrors N64's RSP_INFO plugin spec
-// ──────────────────────────────────────────────
 struct RSP_INFO {
     uint8_t* HEADER;
     uint8_t* RDRAM;
@@ -59,10 +57,8 @@ struct RSP_INFO {
     void (*ProcessDListShadow)(); // Optional: shadow HLE for RT geometry under LLE
 };
 
-// ──────────────────────────────────────────────
 // CRSPSystem - Central RSP subsystem
 // Owns interpreter, registers, recompiler, and HLE
-// ──────────────────────────────────────────────
 namespace Jit {
 class RspJit;
 }

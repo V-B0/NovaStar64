@@ -34,9 +34,7 @@ bool AtInstructionBoundary(const CN64System& system) {
 
 } // namespace
 
-// ============================================================================
-// CN64System
-// ============================================================================
+// --- CN64System ---
 
 void CN64System::SerializeMachineState(Nova64::StateArchive& ar) {
     CRegisters& reg = *m_Registers;
@@ -117,9 +115,7 @@ void CN64System::FinishStateLoad() {
 
 namespace Nova64 {
 
-// ============================================================================
-// Snapshots
-// ============================================================================
+// --- Snapshots ---
 
 bool CaptureMachineState(CN64System& system, MachineSnapshot& out, const MachineSnapshot* previous) {
     MipsMemoryVM* memory = system.GetMemory();
@@ -203,9 +199,7 @@ bool GetRomHeader(const CN64System& system, RomHeader& out) {
     return true;
 }
 
-// ============================================================================
-// Files
-// ============================================================================
+// --- Files ---
 //
 //   "N64S"  u32 version (2)
 //   64-byte ROM header          i64 time saved

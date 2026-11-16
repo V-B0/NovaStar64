@@ -20,9 +20,7 @@
 // Global frame counter for interrupt diagnostics
 uint64_t g_vi_frame_count = 0;
 
-// ===================================
-// Helper Macros / Constants
-// ===================================
+// --- Helper Macros / Constants ---
 
 #define VI_STATUS_REG  0x00
 #define VI_ORIGIN_REG  0x04
@@ -39,9 +37,7 @@ uint64_t g_vi_frame_count = 0;
 #define VI_X_SCALE_REG 0x30
 #define VI_Y_SCALE_REG 0x34
 
-// ===================================
-// Implementation
-// ===================================
+// --- Implementation ---
 
 VideoInterfaceHandler::VideoInterfaceHandler(CN64System& system, Nova64::MipsMemoryVM& mmu, CRegisters& registers,
                                              const Config& config) :
@@ -288,9 +284,7 @@ void VideoInterfaceHandler::begin_frame() {
 
 void VideoInterfaceHandler::end_frame() { m_stats.total_frames++; }
 
-// ===================================
-// Additional Helper Methods
-// ===================================
+// --- Additional Helper Methods ---
 
 void VideoInterfaceHandler::update_scanline() {
     uint32_t current_half = m_video_state.half_line;

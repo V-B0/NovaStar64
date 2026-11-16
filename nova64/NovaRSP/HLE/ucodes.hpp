@@ -17,19 +17,13 @@ namespace Nova64::RSP::HLE {
 
 class CHle;
 
-// ──────────────────────────────────────────────
-// CIC x105 microcode (boot)
-// ──────────────────────────────────────────────
+// --- CIC x105 microcode (boot) ---
 void cicx105_ucode(CHle* hle);
 
-// ──────────────────────────────────────────────
-// Audio segment count
-// ──────────────────────────────────────────────
+// --- Audio segment count ---
 inline constexpr uint32_t N_SEGMENTS = 16;
 
-// ──────────────────────────────────────────────
-// Audio List State Structures
-// ──────────────────────────────────────────────
+// --- Audio List State Structures ---
 struct AlistAudio {
     uint32_t segments[N_SEGMENTS]{};
     uint16_t in{0}, out{0}, count{0};
@@ -61,9 +55,7 @@ struct AlistNead {
     uint32_t filter_lut_address[2]{};
 };
 
-// ──────────────────────────────────────────────
-// Audio processing functions
-// ──────────────────────────────────────────────
+// --- Audio processing functions ---
 
 // Standard audio processing
 void alist_process_audio(CHle* hle);

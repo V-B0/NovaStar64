@@ -13,19 +13,15 @@
 
 namespace Nova64::RSP {
 
-// ──────────────────────────────────────────────
-// RSP CPU execution method
-// ──────────────────────────────────────────────
+// --- RSP CPU execution method ---
 enum class RSPCpuMethod : uint32_t {
     Interpreter = 0,
     HleWithFallback = 2, // known microcode as HLE first, anything else on the RSP engine (LLE rendering uses this)
     HighLevelEmulation = 3,
 };
 
-// ──────────────────────────────────────────────
 // RSP Settings - Static configuration singleton
 // Thread-safe reads, single-writer pattern
-// ──────────────────────────────────────────────
 class CRSPSettings {
 public:
     CRSPSettings() = default;

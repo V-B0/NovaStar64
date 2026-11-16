@@ -23,9 +23,7 @@
 
 namespace Plugins {
 
-// ============================================================================
-// DefaultAudioPlugin — Null/stub implementation
-// ============================================================================
+// --- DefaultAudioPlugin — Null/stub implementation ---
 
 class DefaultAudioPlugin final : public AudioPlugin {
 public:
@@ -94,9 +92,7 @@ private:
     bool m_Playing = false;
 };
 
-// ============================================================================
-// DynLibAudioPlugin — DLL-backed implementation (Project64 DLL compatibility)
-// ============================================================================
+// --- DynLibAudioPlugin — DLL-backed implementation (Project64 DLL compatibility) ---
 
 /**
  * AUDIO_INFO structure passed to InitiateAudio in the plugin DLL.
@@ -330,9 +326,7 @@ private:
     void(CALL* m_fnDllConfig)(void*) = nullptr;
 };
 
-// ============================================================================
-// Factory functions
-// ============================================================================
+// --- Factory functions ---
 
 std::unique_ptr<AudioPlugin> CreateDefaultAudioPlugin() { return std::make_unique<DefaultAudioPlugin>(); }
 

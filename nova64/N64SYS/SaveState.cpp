@@ -90,9 +90,7 @@ StateService& StateService::Instance() {
     return instance;
 }
 
-// ============================================================================
-// Launcher thread
-// ============================================================================
+// --- Launcher thread ---
 
 void StateService::BeginSession(const std::string& romPath) {
     std::string stem = fs::path(romPath).stem().string();
@@ -173,9 +171,7 @@ std::string StateService::LastMessage(uint64_t& sequence) const {
     return m_message;
 }
 
-// ============================================================================
-// Emulator thread
-// ============================================================================
+// --- Emulator thread ---
 
 bool StateService::NeedsService(uint64_t frame) const {
     if (!m_sessionActive.load(std::memory_order_relaxed)) return false;
