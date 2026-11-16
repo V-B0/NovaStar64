@@ -2,7 +2,7 @@
  * @file UiKit.hpp
  * @brief The launcher's look: a pixel-art interface drawn from five colours, a 5x7 bitmap font and 16x16 sprites.
  *
- * The art lives in assets/ui/*.aseprite (edit it in Aseprite, then run scripts/ui-art/export.sh); the
+ * The art lives in assets/ui/ as .aseprite files (edit them in Aseprite, then run scripts/ui-art/export.sh); the
  * exported PNG sheets are compiled into the program. Everything is drawn by whole numbers of "art
  * pixels" (Px() display pixels each) and never smoothed, so it stays crisp at any display scale.
  * Everything the launcher draws that is not plain Dear ImGui lives here, so the pages only say what they show.
