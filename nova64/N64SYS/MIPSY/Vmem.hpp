@@ -39,14 +39,7 @@
 // Forward declarations from global namespace
 class CN64System;
 
-// using DPCRegisters::DisplayProcessorHandler; // Global
 using PI::PeripheralInterfaceHandler;
-// using PIF::PifRamHandler; // Global
-// using RDRAM::RDRAMInterfaceHandler; // Global
-// using RDRAM::RDRAMRegistersHandler; // Global
-// using SI::SerialInterfaceHandler; // Global
-// using VI::VideoInterfaceHandler; // Global
-// using AI::AudioInterfaceHandler; // Global
 
 // Forward declarations from N64System namespace
 namespace N64System {
@@ -64,9 +57,6 @@ namespace Nova64 {
 void WatchDMA(uint32_t pAddr, uint32_t length, const char* source);
 
 // Forward declarations
-// using N64System = ::CN64System;
-// using Registers = ::CRegisters;
-// using TLB = ::N64System::CTLB;
 class N64Rom;
 
 namespace Recompiler {
@@ -105,12 +95,8 @@ public:
      */
     MipsMemoryVM(::CN64System& system, ::N64System::CTLB& tlb);
 
-    /**
-     * @brief Destructor
-     */
     ~MipsMemoryVM();
 
-    // Delete copy operations
     MipsMemoryVM(const MipsMemoryVM&) = delete;
     MipsMemoryVM& operator=(const MipsMemoryVM&) = delete;
 
@@ -463,9 +449,6 @@ private:
     static bool FilterArmException(uint32_t memAddress, void* context);
 #endif
 
-    /**
-     * @brief Free allocated memory
-     */
     void FreeMemory();
 
     // System references

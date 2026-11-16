@@ -1,6 +1,6 @@
 /**
  * @file GBcart.hpp
- * @brief G Bcart declarations and types.
+ * @brief Game Boy cartridge model for the Transfer Pak: cartridge header types, MBC1/MBC3/MBC5 mappers and the real-time clock.
  */
 #pragma once
 
@@ -15,7 +15,6 @@
 
 namespace GameBoy {
 
-// Forward declarations
 class Cartridge;
 
 // Cartridge types (MBC chips)
@@ -50,7 +49,7 @@ enum class CartridgeType : uint8_t {
     HUC1_RAM_BATTERY = 0xFF
 };
 
-// ROM sizes in bytes (from cartridge header)
+// ROM size codes (cartridge header byte 0x148)
 enum class ROMSize : uint8_t {
     SIZE_32KB = 0x00,  // No ROM banking
     SIZE_64KB = 0x01,  // 4 banks
@@ -66,7 +65,7 @@ enum class ROMSize : uint8_t {
     SIZE_1_5MB = 0x54  // 96 banks
 };
 
-// RAM sizes in bytes (from cartridge header)
+// RAM size codes (cartridge header byte 0x149)
 enum class RAMSize : uint8_t {
     NONE = 0x00,
     SIZE_2KB = 0x01,   // Unused
@@ -97,10 +96,8 @@ struct RTCData {
         days_high = (days_high & 0xFE) | static_cast<uint8_t>((days >> 8) & 0x01);
     }
 
-    // Check if RTC is halted
     bool is_halted() const { return (days_high & 0x40) != 0; }
 
-    // Set halt flag
     void set_halted(bool halted) {
         if (halted) {
             days_high |= 0x40;
@@ -109,10 +106,8 @@ struct RTCData {
         }
     }
 
-    // Check for day counter carry
     bool has_carry() const { return (days_high & 0x80) != 0; }
 
-    // Set carry flag
     void set_carry(bool carry) {
         if (carry) {
             days_high |= 0x80;
@@ -140,7 +135,6 @@ public:
     virtual void update_rtc() {} // Only for MBC3 with RTC
 };
 
-// MBC1 implementation
 class MBC1Controller : public MemoryBankController {
 private:
     bool ram_enabled = false;
@@ -179,7 +173,6 @@ public:
     void update_rtc() override;
 };
 
-// MBC5 implementation
 class MBC5Controller : public MemoryBankController {
 private:
     bool ram_enabled = false;
@@ -194,7 +187,6 @@ public:
     void reset() override;
 };
 
-// Main cartridge class
 class Cartridge {
 private:
     // ROM data
@@ -224,18 +216,15 @@ private:
     bool has_battery = false;
     std::string save_file_path;
 
-    // Helper methods
     void detect_cartridge_type();
     void parse_header();
     void create_mbc_controller();
     size_t get_ram_bank_count() const;
 
 public:
-    // Constructor/Destructor
     Cartridge();
     ~Cartridge();
 
-    // No copying
     Cartridge(const Cartridge&) = delete;
     Cartridge& operator=(const Cartridge&) = delete;
 
@@ -296,7 +285,6 @@ private:
     void write_ram_bank(uint8_t bank, uint16_t offset, uint8_t value);
 };
 
-// Utility functions
 namespace CartridgeUtils {
 constexpr size_t rom_size_from_code(uint8_t code) {
     switch (code) {
@@ -349,7 +337,7 @@ constexpr bool cartridge_has_rumble(CartridgeType type) {
 
 } // namespace GameBoy
 
-// Legacy C-style interface (for compatibility)
+// Handle-style C interface around GameBoy::Cartridge.
 extern "C" {
 struct gb_cart;
 

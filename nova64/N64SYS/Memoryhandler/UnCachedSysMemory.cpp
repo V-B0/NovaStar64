@@ -47,7 +47,6 @@ UnCachedSysMemory::UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64
 // --- Read Operations ---
 
 bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
-    // Calculate offset from save memory base
     uint32_t offset = (addr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
 
     // Auto-detect save chip type on first access
@@ -55,7 +54,6 @@ bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
         AutoDetectSaveType(offset);
     }
 
-    // Check if offset is within valid range
     if (offset > SaveMemory::SRAM_MAX_OFFSET) {
         // Beyond valid save memory range - return open bus
         val = ((offset & 0xFFFF) << 16) | (offset & 0xFFFF);
@@ -63,7 +61,6 @@ bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
         return true;
     }
 
-    // Handle read based on save chip type
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
 
     switch (saveType) {
@@ -84,7 +81,6 @@ bool UnCachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
 // --- Write Operations ---
 
 bool UnCachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
-    // Calculate offset from save memory base
     uint32_t offset = (addr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
 
     // Auto-detect save chip type on first access
@@ -92,19 +88,16 @@ bool UnCachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
         AutoDetectSaveType(offset);
     }
 
-    // Check if offset is within valid range
     if (offset > SaveMemory::FLASHRAM_MAX_OFFSET) {
         // Beyond FlashRAM range - ignore write
         return true;
     }
 
-    // Check if saves are read-only
     if (m_SavesReadOnly) {
         Log::debugf("UnCachedSysMemory: Write blocked (read-only mode) at 0x%08X", addr);
         return true;
     }
 
-    // Handle write based on save chip type
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
 
     switch (saveType) {
@@ -154,7 +147,6 @@ bool UnCachedSysMemory::DMARead() {
         return false;
     }
 
-    // Perform DMA based on save type
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
 
     if (saveType == N64Types::SaveChipType::Sram) {
@@ -167,7 +159,6 @@ bool UnCachedSysMemory::DMARead() {
         return false;
     }
 
-    // Complete DMA with interrupt
     CompleteDMA(false);
     return true;
 }
@@ -190,7 +181,6 @@ void UnCachedSysMemory::DMAWrite() {
         AutoDetectSaveType(offset);
     }
 
-    // Check if saves are read-only
     if (m_SavesReadOnly) {
         Log::warningf("UnCachedSysMemory: DMA write blocked (read-only mode)");
         CompleteDMA(false);
@@ -205,7 +195,6 @@ void UnCachedSysMemory::DMAWrite() {
         return;
     }
 
-    // Perform DMA based on save type
     N64Types::SaveChipType saveType = m_System.m_SaveUsing;
 
     if (saveType == N64Types::SaveChipType::Sram) {
@@ -218,16 +207,14 @@ void UnCachedSysMemory::DMAWrite() {
         return;
     }
 
-    // Complete DMA with interrupt
     CompleteDMA(false);
 }
 
 // --- Save Chip Type Detection ---
 
 void UnCachedSysMemory::AutoDetectSaveType(uint32_t offset) {
-    // Auto-detect save chip based on access pattern
-    // - SRAM: typically accessed at offsets > 0x10000
-    // - FlashRAM: typically accessed at offsets < 0x10000
+    // Auto-detect the save chip from the access offset: offsets at or above AUTO_DETECT_THRESHOLD
+    // suggest SRAM, smaller offsets suggest FlashRAM.
 
     N64Types::SaveChipType detectedType;
 
@@ -253,7 +240,6 @@ uint32_t UnCachedSysMemory::ReadFromSRAM(uint32_t offset) {
         return ((offset & 0xFFFF) << 16) | (offset & 0xFFFF);
     }
 
-    // Read 4 bytes from SRAM
     uint8_t data[4] = {0};
     m_Sram.DmaFromSram(data, offset, 4);
 
@@ -278,19 +264,16 @@ void UnCachedSysMemory::WriteToSRAM(uint32_t offset, uint32_t value, uint32_t ma
     data[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
     data[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
 
-    // Apply mask if needed (for partial writes)
     if (mask != 0xFFFFFFFF) {
         uint8_t existingData[4];
         m_Sram.DmaFromSram(existingData, offset, 4);
 
-        // Apply mask per byte
         for (int i = 0; i < 4; i++) {
             uint8_t byteMask = static_cast<uint8_t>((mask >> (i * 8)) & 0xFF);
             data[i] = (data[i] & byteMask) | (existingData[i] & ~byteMask);
         }
     }
 
-    // Write 4 bytes to SRAM
     m_Sram.DmaToSram(data, offset, 4);
 
     Log::debugf("UnCachedSysMemory: SRAM write at offset 0x%X = 0x%08X", offset, value);
@@ -299,7 +282,6 @@ void UnCachedSysMemory::WriteToSRAM(uint32_t offset, uint32_t value, uint32_t ma
 // --- FlashRAM Access ---
 
 uint32_t UnCachedSysMemory::ReadFromFlashRAM(uint32_t addr) {
-    // Read FlashRAM status register
     uint32_t value = m_FlashRam.ReadFromFlashStatus(addr);
 
     Log::debugf("UnCachedSysMemory: FlashRAM read at 0x%08X = 0x%08X", addr, value);
@@ -308,7 +290,6 @@ uint32_t UnCachedSysMemory::ReadFromFlashRAM(uint32_t addr) {
 }
 
 void UnCachedSysMemory::WriteToFlashRAM(uint32_t value) {
-    // Write FlashRAM command
     m_FlashRam.WriteToFlashCommand(value);
 
     Log::debugf("UnCachedSysMemory: FlashRAM command = 0x%08X", value);
@@ -317,19 +298,15 @@ void UnCachedSysMemory::WriteToFlashRAM(uint32_t value) {
 // --- DMA Completion ---
 
 void UnCachedSysMemory::CompleteDMA(bool error) {
-    // Clear DMA busy flag
     m_Reg.m_Peripheral_Interface[0] &= ~0x01; // PI_STATUS_REG &= ~PI_STATUS_DMA_BUSY
 
     if (error) {
-        // Set error flag
         m_Reg.m_Peripheral_Interface[0] |= 0x04; // PI_STATUS_REG |= PI_STATUS_ERROR
         Log::errorf("UnCachedSysMemory: DMA completed with error");
     } else {
-        // Set interrupt flag
         m_Reg.m_Peripheral_Interface[0] |= 0x08; // PI_STATUS_REG |= PI_STATUS_INTERRUPT
     }
 
-    // Trigger PI interrupt
     m_Reg.m_Mips_Interface[2] |= 0x10; // MI_INTR_REG |= MI_INTR_PI
     m_Reg.CheckInterrupts();
 }

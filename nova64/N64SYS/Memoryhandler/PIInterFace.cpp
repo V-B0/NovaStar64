@@ -82,7 +82,6 @@ PeripheralInterfaceHandler::PeripheralInterfaceHandler(CN64System& system, Nova6
     m_config(config), m_pi_regs(m_pi_registers_array) {
     Log::infof("PIInterface: Initialized");
 
-    // Initialize default bus timing
     reset();
 }
 
@@ -209,7 +208,6 @@ bool PeripheralInterfaceHandler::Write32(uint32_t addr, uint32_t val, uint32_t m
 
 void PeripheralInterfaceHandler::ProcessStatusWrite(uint32_t val) {
     if (val & CTRL_CLR_INTR) {
-        // Clear PI interrupt
         m_registers.m_Mips_Interface[2] &= ~MI_INTR_PI;
         m_pi_regs.PI_STATUS_REG &= ~STATUS_INTERRUPT;
         m_registers.CheckInterrupts();
@@ -218,7 +216,6 @@ void PeripheralInterfaceHandler::ProcessStatusWrite(uint32_t val) {
     }
 
     if (val & CTRL_SET_RESET) {
-        // Reset PI (not commonly used)
         Log::debugf("PIInterface: PI reset requested");
     }
 }
@@ -239,7 +236,6 @@ void PeripheralInterfaceHandler::HandleDMARead() {
 
     m_stats.dma_reads++;
 
-    // Validate RDRAM bounds
     if (dramAddr + length > m_mmu.RdramSize()) {
         Log::errorf("PIInterface: DMA Read out of RDRAM bounds");
         m_stats.dma_errors++;
@@ -368,7 +364,6 @@ void PeripheralInterfaceHandler::HandleDMAWrite() {
         uint32_t copyLen =
             static_cast<uint32_t>(std::min(static_cast<size_t>(length), static_cast<size_t>(romSize - romOffset)));
 
-        // Copy from RDRAM to ROM
         for (uint32_t i = 0; i < copyLen; i++) {
             romData[((romOffset + i) ^ 3)] = rdram[((dramAddr + i) ^ 3)];
         }
@@ -473,7 +468,7 @@ void PeripheralInterfaceHandler::PerformStandardDMARead(uint32_t dramAddr, uint3
 
     // Invalidate any recompiler blocks that overlap this DMA target range
     // so stale compiled code is discarded after ROM-to-RDRAM copies.
-    // Use the saved start address, NOT dramAddr (which has been advanced
+    // Use the saved start address, not dramAddr (which has been advanced
     // past the end of the transfer by the copy loop above).
     m_system.NotifyDMAToRDRAM(dramStart, transferLen);
 
@@ -575,7 +570,6 @@ void PeripheralInterfaceHandler::CompleteDMA() {
     m_pi_regs.PI_STATUS_REG &= ~STATUS_DMA_BUSY;
     m_pi_regs.PI_STATUS_REG |= STATUS_INTERRUPT;
 
-    // Set MI interrupt
     m_registers.m_Mips_Interface[2] |= MI_INTR_PI;
     m_registers.CheckInterrupts();
 
@@ -614,11 +608,9 @@ void PeripheralInterfaceHandler::OnFirstDMA() {
 void PeripheralInterfaceHandler::reset() {
     Log::infof("PIInterface: Reset");
 
-    // Clear all registers
     // Clear PI registers
     m_pi_registers_array.fill(0);
 
-    // Set initial values
     m_pi_regs.PI_RD_LEN_REG = 0x7F;
     m_pi_regs.PI_WR_LEN_REG = 0x7F;
     m_pi_regs.PI_STATUS_REG = 0;

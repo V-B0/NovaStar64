@@ -32,11 +32,6 @@ class N64Rom;
  */
 class CachedSysMemory : public MemoryHandler {
 public:
-    /**
-     * @brief Constructor
-     * @param reg Register interface
-     * @param ddRom 64DD IPL ROM interface
-     */
     CachedSysMemory(CRegisters& reg, N64::Rom::N64Rom& ddRom);
 
     /**

@@ -1,6 +1,6 @@
 /**
  * @file TLB.hpp
- * @brief TLB declarations and types.
+ * @brief TLB declarations: entry and fast-lookup types, TranslationLookasideBuffer, and the CTLB class used by the CPU core.
  */
 #pragma once
 
@@ -15,7 +15,6 @@
 #include "../../common/log.hpp"
 #include "Register.hpp"
 
-// Global Forward declarations
 class CRegisters;
 class CRecompiler;
 namespace Nova64 {
@@ -28,10 +27,8 @@ class MipsMemoryVM;
 
 namespace N64System {
 
-// Forward declarations
 using CMipsMemoryVM = ::Nova64::MipsMemoryVM;
 
-// Import global classes
 using ::CGameSettings;
 using ::CRecompiler;
 using ::CRegisters;
@@ -80,7 +77,6 @@ struct TlbEntry {
     bool random = false;  // Whether this is a random entry
     bool probed = false;  // Whether this entry was probed
 
-    // TLB fields
     struct PageMask {
         uint32_t mask = 0;                                 // Page mask (4KB - 16MB pages)
         uint32_t size() const { return (mask + 1) << 12; } // Page size in bytes
@@ -105,7 +101,6 @@ struct TlbEntry {
         uint32_t get_physical_address() const { return pfn << 12; }
     } entry_lo0, entry_lo1;
 
-    // Helper methods
     bool is_global() const { return entry_lo0.global && entry_lo1.global; }
     bool is_valid_for_mode(PrivilegeMode mode) const;
     bool matches_virtual_address(uint64_t vaddr, uint8_t asid) const;
@@ -138,10 +133,8 @@ struct FastTlbEntry {
     bool random = false;         // Random flag
     bool probed = false;         // Probed flag
 
-    // Check if virtual address is in range
     bool contains_virtual_address(uint32_t vaddr) const { return vaddr >= virtual_start && vaddr <= virtual_end; }
 
-    // Translate virtual address to physical
     std::optional<uint32_t> translate(uint32_t vaddr) const {
         if (!contains_virtual_address(vaddr)) {
             return std::nullopt;
@@ -150,7 +143,6 @@ struct FastTlbEntry {
     }
 };
 
-// TLB exception types
 enum class TlbException : uint8_t {
     None,
     TlbMiss,      // TLB miss (no matching entry)
@@ -161,7 +153,6 @@ enum class TlbException : uint8_t {
     BusError      // Bus error
 };
 
-// TLB translation result
 struct TlbTranslationResult {
     uint32_t physical_address = 0;
     MemorySegment segment = MemorySegment::Unused;
@@ -174,13 +165,11 @@ struct TlbTranslationResult {
     std::string exception_string() const;
 };
 
-// Main TLB controller class
 class TranslationLookasideBuffer {
 public:
     static constexpr size_t TLB_ENTRY_COUNT = 32;      // MIPS R4300 has 32 TLB entries
     static constexpr size_t FAST_TLB_ENTRY_COUNT = 64; // Fast TLB cache entries
 
-    // Constructor/Destructor
     TranslationLookasideBuffer(Nova64::MipsMemoryVM& mmu, CRegisters& registers, CRecompiler* recompiler);
     TranslationLookasideBuffer(); // Default constructor for MainSYS
     ~TranslationLookasideBuffer();
@@ -189,11 +178,9 @@ public:
 
     void Initialize(Nova64::MipsMemoryVM* mmu, CRegisters* registers, CRecompiler* recompiler);
 
-    // No copying
     TranslationLookasideBuffer(const TranslationLookasideBuffer&) = delete;
     TranslationLookasideBuffer& operator=(const TranslationLookasideBuffer&) = delete;
 
-    // Allow moving
     TranslationLookasideBuffer(TranslationLookasideBuffer&&) noexcept = default;
     TranslationLookasideBuffer& operator=(TranslationLookasideBuffer&&) noexcept = default;
 
@@ -256,7 +243,6 @@ public:
     void invalidate_fast_tlb_entry(size_t index);
 
 private:
-    // Internal helper methods
     void setup_tlb_entry(size_t index, bool random);
     void unmap_tlb_range(uint32_t virtual_address, uint32_t length);
     MemorySegment get_memory_segment(uint64_t virtual_address) const;
@@ -283,7 +269,7 @@ private:
     CRegisters* registers = nullptr;
     CRecompiler* recompiler = nullptr;
 
-    // Fast TLR hash table for quicker lookups
+    // Fast TLB hash table for quicker lookups
     static constexpr size_t FAST_TLB_HASH_SIZE = 256;
     std::array<std::vector<size_t>, FAST_TLB_HASH_SIZE> fast_tlb_hash;
 
@@ -307,21 +293,19 @@ private:
     RandomIndexGenerator random_generator{TLB_ENTRY_COUNT};
 };
 
-// Legacy CTLB class (for compatibility)
+// The TLB class used by the CPU core and the memory system.
 class CTLB {
 public:
     struct TLB_ENTRY {
         bool EntryDefined;
 
-        // These would be the actual COP0 types from the original code
-        // For now, we'll use placeholder types
+        // Minimal local copies of the COP0 register types; only the raw value is stored.
         struct COP0PageMask {
             uint64_t Value;
         } PageMask;
         struct COP0EntryHi {
             uint64_t Value;
         } EntryHi;
-        // struct COP0EntryLo { uint64_t Value; }; // Use global definition if available, or define local
         struct LocalCOP0EntryLo {
             uint64_t Value;
         };
@@ -378,7 +362,6 @@ public:
     void SerializeState(Nova64::StateArchive& ar);
 
 private:
-    // CTLB();  // Removed conflicting private default constructor
     CTLB(const CTLB&);
     CTLB& operator=(const CTLB&);
 
@@ -395,7 +378,6 @@ private:
     FASTTLB m_FastTlb[64];
 };
 
-// TLB utility functions
 namespace TlbUtils {
 // Page size calculations
 constexpr uint32_t get_page_size(uint32_t page_mask) {
@@ -432,7 +414,6 @@ std::string format_address(uint64_t address);
 std::string format_tlb_entry(const TlbEntry& entry);
 } // namespace TlbUtils
 
-// Global TLB manager (optional)
 class TlbManager {
 public:
     static TlbManager& instance();
@@ -456,12 +437,9 @@ private:
 
 } // namespace N64System
 
-// Global TLB access
 namespace GlobalTlb {
-// Get the main TLB instance
 N64System::TranslationLookasideBuffer& get_main_tlb();
 
-// Create a new TLB instance
 std::unique_ptr<N64System::TranslationLookasideBuffer>
 create_tlb(Nova64::MipsMemoryVM& mmu, N64System::CRegisters& registers, N64System::CRecompiler* recompiler);
 } // namespace GlobalTlb

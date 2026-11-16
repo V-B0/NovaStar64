@@ -1,6 +1,6 @@
 /**
  * @file PluginManager.cpp
- * @brief Plugin Manager Implementation
+ * @brief Plugin manager: loading, lifecycle, configuration, discovery and save states of the graphics, audio, input and RSP plugins.
  */
 
 #include "PluginManager.hpp"
@@ -47,7 +47,6 @@ PluginManager::PluginManager(CN64System& system) :
     m_System(system), m_Registers(nullptr), m_Memory(nullptr), m_PluginsInitialized(false), m_PluginsPaused(false) {
     Log::info("PluginManager: Created");
 
-    // Initialize plugin configs with default types
     m_GraphicsConfig.Type = PluginType::Graphics;
     m_GraphicsConfig.Name = "Default Graphics";
 
@@ -73,7 +72,6 @@ bool PluginManager::LoadAllPlugins() {
 
     bool success = true;
 
-    // Load each plugin type
     if (!LoadPlugin(PluginType::Graphics)) {
         Log::error("PluginManager: Failed to load graphics plugin");
         success = false;
@@ -106,7 +104,6 @@ bool PluginManager::LoadAllPlugins() {
 bool PluginManager::LoadPlugin(PluginType type, const std::string& path) {
     Log::infof("PluginManager: Loading plugin type %d", static_cast<int>(type));
 
-    // Unload existing plugin of this type
     UnloadPlugin(type);
 
     std::string pluginPath = path.empty() ? GetDefaultPluginPath(type) : path;
@@ -198,7 +195,6 @@ bool PluginManager::InitializePlugins() {
 
     bool success = true;
 
-    // Initialize each plugin
     if (m_GraphicsPlugin) {
         if (!m_GraphicsPlugin->Initialize(&m_System)) {
             Log::error("PluginManager: Graphics plugin initialization failed");
@@ -340,25 +336,21 @@ bool PluginManager::LoadConfiguration(const std::string& configPath) {
 
     CIniFile ini(configPath);
 
-    // Load Graphics plugin config
     m_GraphicsConfig.Path = ini.GetString("Graphics", "Plugin", "");
     m_GraphicsConfig.Name = ini.GetString("Graphics", "Name", "Default Graphics");
     m_GraphicsConfig.ConfigFile = ini.GetString("Graphics", "ConfigFile", "");
     m_GraphicsConfig.Enabled = ini.GetBool("Graphics", "Enabled", true);
 
-    // Load Audio plugin config
     m_AudioConfig.Path = ini.GetString("Audio", "Plugin", "");
     m_AudioConfig.Name = ini.GetString("Audio", "Name", "Default Audio");
     m_AudioConfig.ConfigFile = ini.GetString("Audio", "ConfigFile", "");
     m_AudioConfig.Enabled = ini.GetBool("Audio", "Enabled", true);
 
-    // Load Input plugin config
     m_InputConfig.Path = ini.GetString("Input", "Plugin", "");
     m_InputConfig.Name = ini.GetString("Input", "Name", "Default Input");
     m_InputConfig.ConfigFile = ini.GetString("Input", "ConfigFile", "");
     m_InputConfig.Enabled = ini.GetBool("Input", "Enabled", true);
 
-    // Load RSP plugin config
     m_RSPConfig.Path = ini.GetString("RSP", "Plugin", "");
     m_RSPConfig.Name = ini.GetString("RSP", "Name", "Default RSP");
     m_RSPConfig.ConfigFile = ini.GetString("RSP", "ConfigFile", "");
@@ -373,31 +365,26 @@ bool PluginManager::SaveConfiguration(const std::string& configPath) const {
 
     CIniFile ini(configPath);
 
-    // Save Graphics plugin config
     ini.SetString("Graphics", "Plugin", m_GraphicsConfig.Path);
     ini.SetString("Graphics", "Name", m_GraphicsConfig.Name);
     ini.SetString("Graphics", "ConfigFile", m_GraphicsConfig.ConfigFile);
     ini.SetBool("Graphics", "Enabled", m_GraphicsConfig.Enabled);
 
-    // Save Audio plugin config
     ini.SetString("Audio", "Plugin", m_AudioConfig.Path);
     ini.SetString("Audio", "Name", m_AudioConfig.Name);
     ini.SetString("Audio", "ConfigFile", m_AudioConfig.ConfigFile);
     ini.SetBool("Audio", "Enabled", m_AudioConfig.Enabled);
 
-    // Save Input plugin config
     ini.SetString("Input", "Plugin", m_InputConfig.Path);
     ini.SetString("Input", "Name", m_InputConfig.Name);
     ini.SetString("Input", "ConfigFile", m_InputConfig.ConfigFile);
     ini.SetBool("Input", "Enabled", m_InputConfig.Enabled);
 
-    // Save RSP plugin config
     ini.SetString("RSP", "Plugin", m_RSPConfig.Path);
     ini.SetString("RSP", "Name", m_RSPConfig.Name);
     ini.SetString("RSP", "ConfigFile", m_RSPConfig.ConfigFile);
     ini.SetBool("RSP", "Enabled", m_RSPConfig.Enabled);
 
-    // Write to disk
     ini.Flush();
 
     Log::info("PluginManager: Configuration saved successfully");

@@ -1,6 +1,6 @@
 /**
  * @file VideoInterfaceHandler.cpp
- * @brief Video Interface Handler implementation.
+ * @brief Video Interface (VI) register handler: VI_CURRENT derived from the VI timer, the interrupt line, field serration and per-frame processing.
  */
 #include "VideoInterfaceHandler.hpp"
 #include "../StateArchive.hpp"
@@ -42,8 +42,7 @@ uint64_t g_vi_frame_count = 0;
 VideoInterfaceHandler::VideoInterfaceHandler(CN64System& system, Nova64::MipsMemoryVM& mmu, CRegisters& registers,
                                              const Config& config) :
     m_system(system), m_mmu(mmu), m_sys_regs(registers), m_system_timer(*system.GetSystemTimer()), m_config(config),
-    m_plugins(nullptr) // Initialize plugins later or via system
-{
+    m_plugins(nullptr) {
     reset();
 }
 
@@ -51,15 +50,13 @@ VideoInterfaceHandler::~VideoInterfaceHandler() = default;
 
 void VideoInterfaceHandler::reset() {
     m_registers.fill(0);
-    // Set some defaults
     m_vi_regs.status() = 0;
     m_vi_regs.origin() = 0;
     m_vi_regs.width() = 320;
     m_vi_regs.v_intr() = 0x3FF; // Default interrupt line
-    m_vi_regs.v_sync() = 0x20C; // NTSC default roughly
+    m_vi_regs.v_sync() = 0x20C; // NTSC default
     m_vi_regs.h_sync() = 0;
 
-    // Reset state
     m_video_state = {};
     m_stats = {};
 
@@ -184,23 +181,19 @@ void VideoInterfaceHandler::handle_v_intr_register_write(uint32_t value, uint32_
 void VideoInterfaceHandler::update_half_line() {
     m_video_state.half_line++;
 
-    // Wrap around based on V_SYNC
-    // V_SYNC register holds total half-lines per frame
-    // Note: V_SYNC is typically ~525 for NTSC.
+    // Wrap around at V_SYNC, the total number of half-lines per frame (~525 for NTSC).
 
     uint32_t v_sync = m_vi_regs.v_sync();
-    if (v_sync == 0) v_sync = 0x20C; // Safety default
+    if (v_sync == 0) v_sync = 0x20C; // use the NTSC value until V_SYNC is written
 
     if (m_video_state.half_line >= v_sync) {
         m_video_state.half_line = 0;
-        end_frame(); // Frame end processing
+        end_frame();
         begin_frame();
     }
 
-    // Check Interrupt
     check_vi_interrupt();
 
-    // Update scanline number
     m_video_state.current_scanline = m_video_state.half_line >> 1;
 }
 
@@ -218,12 +211,10 @@ void VideoInterfaceHandler::generate_vi_interrupt() {
     m_sys_regs.m_Mips_Interface[2] |= 0x08;
     m_sys_regs.CheckInterrupts();
 
-    // If callback is set, call it
     if (m_interrupt_callback) {
         m_interrupt_callback();
     }
 }
-//    Format: 15 entries × 8 bytes (msg queue ptr + msg)
 void VideoInterfaceHandler::on_frame_timer() {
     // Called once per frame by the system timer.
     // Toggle field serration each frame (P64: m_FieldSerration ^= 1)
@@ -234,13 +225,11 @@ void VideoInterfaceHandler::on_frame_timer() {
 
     generate_vi_interrupt();
 
-    // NOTE: UpdateScreen is called by CN64System::RefreshScreen() which is invoked
-    // by Systiming.cpp immediately after on_frame_timer(). Calling it again here
-    // would result in two SwapBuffers per VI tick: the first renders content, the
-    // second renders with a reset m_hleRenderedThisFrame flag and shows black.
-    // That alternation (content / black / content / black) is the black/white flicker.
+    // UpdateScreen is called by CN64System::RefreshScreen(), which Systiming.cpp invokes right
+    // after on_frame_timer(). Calling it here as well would swap buffers twice per VI tick: the
+    // first swap renders content, the second renders with a reset m_hleRenderedThisFrame flag and
+    // shows black, so the screen would alternate between content and black (visible flicker).
 
-    // Advance frame counters
     m_stats.total_frames++;
     g_vi_frame_count = m_stats.total_frames;
 }
@@ -279,7 +268,7 @@ VideoInterfaceHandler::VideoMode VideoInterfaceHandler::get_current_video_mode()
 }
 
 void VideoInterfaceHandler::begin_frame() {
-    m_video_state.frame_start_time = 0; // Capture time
+    m_video_state.frame_start_time = 0; // the frame start time is not tracked
 }
 
 void VideoInterfaceHandler::end_frame() { m_stats.total_frames++; }
@@ -289,7 +278,6 @@ void VideoInterfaceHandler::end_frame() { m_stats.total_frames++; }
 void VideoInterfaceHandler::update_scanline() {
     uint32_t current_half = m_video_state.half_line;
 
-    // Check V-Blank status
     uint32_t v_start = m_vi_regs.v_start() >> 16;
     uint32_t v_end = m_vi_regs.v_start() & 0xFFFF;
 
@@ -299,20 +287,13 @@ void VideoInterfaceHandler::update_scanline() {
 
     m_video_state.vblank_active = vblank;
 
-    // H-Blank check (simplified)
-    // Would require horizontal counter relative to H_SYNC
-    // For now we assume H-Blank at start of line
+    // H-Blank is not modelled (it would need a horizontal counter relative to H_SYNC).
     m_video_state.hblank_active = false;
 }
 
 void VideoInterfaceHandler::wait_for_vblank() {
-    // Spin until vblank is active
-    // In emulation, this might pause the thread, but we should be careful about blocking
-    // For now, simpler implementation:
-    if (!m_video_state.vblank_active) {
-        // Yield to let other threads process if we are multithreaded
-        // Or just return if we can't block safely
-    }
+    // Does not block.
+    if (!m_video_state.vblank_active) {}
 }
 
 void VideoInterfaceHandler::detect_video_mode_change() {
@@ -339,15 +320,12 @@ void VideoInterfaceHandler::apply_video_mode(const VideoMode& mode) {
 }
 
 void VideoInterfaceHandler::limit_frame_rate() {
-    // If not using sync, return
-    // Logic depends on system timer being accurate
-    // We defer to SystemTimer sync for now
+    // Frame pacing is delegated to the system timer's real-time sync.
     m_system_timer.sync_to_real_time();
 }
 
 void VideoInterfaceHandler::update_frame_timing() {
-    // Calculate FPS and stats
-    // This should be called at end_frame
+    // Not implemented: no frame timing statistics are collected.
 }
 
 std::string VideoInterfaceHandler::get_video_info() const {
@@ -370,26 +348,21 @@ std::string VideoInterfaceHandler::get_register_dump() const {
 }
 
 void VideoInterfaceHandler::save_state(std::ostream& os) const {
-    // Save registers
     os.write(reinterpret_cast<const char*>(m_registers.data()), m_registers.size() * sizeof(uint32_t));
 
-    // Save state
     os.write(reinterpret_cast<const char*>(&m_video_state), sizeof(VideoState));
     os.write(reinterpret_cast<const char*>(&m_stats), sizeof(Statistics));
 }
 
 void VideoInterfaceHandler::load_state(std::istream& is) {
-    // Load registers
     is.read(reinterpret_cast<char*>(m_registers.data()), m_registers.size() * sizeof(uint32_t));
 
-    // Load state
     is.read(reinterpret_cast<char*>(&m_video_state), sizeof(VideoState));
     is.read(reinterpret_cast<char*>(&m_stats), sizeof(Statistics));
 }
 
 uint32_t VideoInterfaceHandler::calculate_scanline_time() const {
-    // N64 Clock / (H_SYNC period usually)
-    // Simplified:
+    // Simplified: a fixed number of cycles per scanline for the region.
     return is_ntsc_mode() ? 1524 : 1568; // Roughly cycles per scanline
 }
 
@@ -398,15 +371,13 @@ uint32_t VideoInterfaceHandler::calculate_vblank_start() const { return (m_vi_re
 uint32_t VideoInterfaceHandler::calculate_vblank_end() const { return (m_vi_regs.v_start() >> 16); }
 
 bool VideoInterfaceHandler::is_ntsc_mode() const {
-    // Usually determined by V_SYNC count
-    // NTSC ~525, PAL ~625
+    // NTSC has ~525 half-lines and PAL ~625, so anything under 600 counts as NTSC.
     return m_vi_regs.v_sync() < 600;
 }
 
 bool VideoInterfaceHandler::is_pal_mode() const { return !is_ntsc_mode(); }
 
 bool VideoInterfaceHandler::validate_framebuffer_address(uint32_t address) const {
-    // Basic RDRAM check
     return address < 0x00800000; // 8MB RDRAM
 }
 
@@ -419,7 +390,7 @@ void VideoInterfaceHandler::log_register_access(uint32_t address, uint32_t value
 }
 
 void VideoInterfaceHandler::log_frame_statistics() const {
-    // Log once per second typically
+    // Not implemented.
 }
 
 void VideoInterfaceHandler::on_system_reset() { reset(); }

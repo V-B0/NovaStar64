@@ -35,8 +35,6 @@ static constexpr uint32_t SECTORSIZE_P[8] = {232, 216, 208, 192, 176, 160, 144, 
 // RAM start LBA by disk type (0-6)
 static constexpr uint16_t RAM_START_LBA[7] = {0x5A2, 0x7C6, 0x9EA, 0xC0E, 0xE32, 0x1010, 0x10DC};
 
-// RAM sizes by disk type
-
 // Virtual zone to LBA table [disk_type][vzone]
 static constexpr uint16_t VZONE_LBA_TBL[7][16] = {{0x0124, 0x0248, 0x035A, 0x046C, 0x057E, 0x0690, 0x07A2, 0x08B4,
                                                    0x09C6, 0x0AD8, 0x0BEA, 0x0CFC, 0x0E0E, 0x0F20, 0x1032, 0x10DC},
@@ -76,7 +74,6 @@ static constexpr uint32_t MAME_START_OFFSET[16] = {
     0x00000000, 0x005F15E0, 0x00B79D00, 0x010801A0, 0x01523EC0, 0x019B8B60, 0x01DF3680, 0x021CA6E0,
     0x02539320, 0x02AEBC40, 0x03030FC0, 0x03509FC0, 0x03985500, 0x03D9C000, 0x04148700, 0x04499880};
 
-// Block size calculation macro-like inline
 inline uint32_t BLOCKSIZE(uint8_t zone) { return SECTORSIZE_P[zone & 7] * SECTORS_PER_BLOCK; }
 
 inline uint32_t TRACKSIZE(uint8_t zone) { return BLOCKSIZE(zone) * 2; }
@@ -185,11 +182,9 @@ void N64Disk::LoadDisk(const fs::path& filePath) {
 
     m_Image->m_FilePath = filePath;
 
-    // Calculate disk identifier
     uint32_t crc1 = CalculateChecksum();
     uint32_t crc2 = ~crc1;
 
-    // Extract ROM name from disk ID
     auto diskId = GetIdentifier();
     if (!diskId.empty() && diskId.size >= 4) {
         char romName[5] = {0};
@@ -205,24 +200,18 @@ void N64Disk::LoadDisk(const fs::path& filePath) {
         m_Image->m_RomName = romName;
     }
 
-    // Set identifier string
     char identBuf[32];
     std::snprintf(identBuf, sizeof(identBuf), "%08X-%08X-C:%X", crc1, crc2, diskId.empty() ? 0 : diskId.data[0]);
     m_Image->m_Identifier = identBuf;
 
-    // Detect country code
     m_Image->m_Country = DetectCountryCode();
 
-    // Generate LBA to physical table
     GenerateLBATable();
 
-    // Initialize D64 data if needed
     InitializeD64Data();
 
-    // Detect RAM address
     DetectRamArea();
 
-    // Try to load RAM save file
     LoadDiskRAMImage();
 
     // No need to save if disk type is 6 (no RAM area)
@@ -409,7 +398,6 @@ uint32_t N64Disk::AddressToOffset(const DiskAddress& address) const {
     uint32_t offset = 0;
 
     if (m_Image->m_Format == DiskFormat::MAME) {
-        // MAME format calculation
         uint32_t trOff = 0;
         uint16_t ddZone = 0;
 
@@ -442,11 +430,9 @@ uint32_t N64Disk::AddressToOffset(const DiskAddress& address) const {
         offset =
             MAME_START_OFFSET[ddZone] + trOff * TRACKSIZE(ddZone) + block * BLOCKSIZE(ddZone) + sector * sectorSize;
     } else if (m_Image->m_Format == DiskFormat::SDK) {
-        // SDK format calculation
         uint16_t lba = AddressToLBA(address);
         offset = LBAToByte(0, lba) + sector * sectorSize;
     } else {
-        // D64 format calculation
         uint16_t lba = AddressToLBA(address);
         uint16_t romLbaEnd = m_D64Data ? m_D64Data->romLbaEnd : static_cast<uint16_t>(0);
         uint16_t ramLbaStart = m_D64Data ? m_D64Data->ramLbaStart : static_cast<uint16_t>(0);
@@ -531,7 +517,6 @@ bool N64Disk::VerifyIntegrity() const {
         return false;
     }
 
-    // Verify system area
     auto sysArea = GetSystemArea();
     if (sysArea.empty()) {
         return false;
@@ -541,13 +526,11 @@ bool N64Disk::VerifyIntegrity() const {
 }
 
 void N64Disk::SaveDiskSettings(bool temporary) {
-    // Save disk settings to emulator configuration
-    // This would typically save to a settings system
-    // For now, just store the identification locally
+    // Disk settings are not persisted.
 }
 
 void N64Disk::ClearDiskSettings() noexcept {
-    // Clear any saved disk settings
+    // Nothing to clear: disk settings are not persisted.
 }
 
 const uint8_t* N64Disk::GetBuffer() const {
@@ -594,7 +577,6 @@ void N64Disk::ParseHeader() {
         return;
     }
 
-    // Extract disk type
     uint8_t diskType = sysData.data[5] & 0x0F;
     if (diskType <= 6) {
         m_Image->m_Type = DiskType::Retail;
@@ -632,8 +614,6 @@ void N64Disk::DetectSystemArea() {
                 }
             }
         }
-
-        // Handle disk ID
 
         for (int i = 2; i > 0; i--) {
             if (IsSystemSectorValid(DISKID_LBA + i, 0xE8)) {
@@ -955,7 +935,6 @@ bool N64Disk::AllocateAndLoadDiskImage(const fs::path& filePath) {
         // Allocate with full RAM area
         AllocateImage(0x200 + romSize + fullRamSize);
 
-        // Read file
         m_DiskFile->SeekToBegin();
         size_t totalRead = 0;
         const size_t chunkSize = 1024 * 1024;
@@ -1111,22 +1090,18 @@ uint16_t N64Disk::LBAToPhys(uint32_t lba) const {
     uint16_t vzone = static_cast<uint16_t>(LBAToVZone(lba));
     uint16_t pzone = VZoneToPZone(vzone, diskType);
 
-    // Get disk head
     uint16_t head = (pzone > 7) ? 1 : 0;
 
-    // Get disk zone
     uint16_t diskZone = pzone;
     if (diskZone > 7) {
         diskZone = pzone - 7;
     }
 
-    // Get virtual zone LBA start
     uint16_t vzoneLba = 0;
     if (vzone != 0) {
         vzoneLba = VZONE_LBA_TBL[diskType][vzone - 1];
     }
 
-    // Calculate physical track
     uint16_t track = static_cast<uint16_t>((lba - vzoneLba) >> 1);
 
     // Get the start track from current zone

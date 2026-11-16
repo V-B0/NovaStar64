@@ -359,7 +359,7 @@ private:
             }
         }
 
-        // Plugin cross-callbacks (stubs until full plugin system wiring)
+        // Plugin cross-callbacks are stubs.
         info.CheckInterrupts = StubCheckInterrupts;
         info.ProcessDList = StubProcessDList;
         info.ProcessAList = StubProcessAList;

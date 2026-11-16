@@ -67,29 +67,22 @@ CRegisters::CRegisters(CN64System& System, CSystemEvents& SystemEvents) :
 void CRegisters::Init() {
     m_FirstInterrupt = true;
 
-    // Clear all general purpose registers
     m_GPR.fill(0);
 
-    // Clear COP0 registers
     m_CP0.fill(0);
 
-    // Clear floating point registers
     m_FPR.fill(0);
     m_FPCR.fill(0);
     m_FPCR[0] = 0xA00; // FPU revision register
 
-    // Clear latches
     m_CP0Latch = 0;
     m_CP2Latch = 0;
 
-    // Clear HI/LO registers
     m_HI = 0;
     m_LO = 0;
 
-    // Clear LL bit
     m_LLBit = 0;
 
-    // Reset system registers
     m_RDRAM_Interface.fill(0);
     m_RDRAM_Registers.fill(0);
     m_Mips_Interface.fill(0);
@@ -105,7 +98,6 @@ void CRegisters::Init() {
     m_GfxIntrReg = 0;
     m_RspIntrReg = 0;
 
-    // Initialize RDRAM Interface registers
     m_RDRAM_Interface[0] = 0x0E;       // RI_MODE_REG
     m_RDRAM_Interface[1] = 0x40;       // RI_CONFIG_REG
     m_RDRAM_Interface[3] = 0x14;       // RI_SELECT_REG
@@ -424,7 +416,6 @@ void CRegisters::CheckInterrupts() {
     MI_INTR_REG_Value |= (m_RspIntrReg & MIFlags::INTR_SP);
     MI_INTR_REG_Value |= (m_GfxIntrReg & MIFlags::INTR_DP);
 
-    // Check if any enabled interrupts are pending
     if ((m_Mips_Interface[3] & MI_INTR_REG_Value) != 0) // MI_INTR_MASK_REG
     {
         CAUSE_REGISTER.PendingInterrupts |= COP0Flags::CAUSE_IP2;
@@ -436,13 +427,11 @@ void CRegisters::CheckInterrupts() {
 
     COP0Status STATUS_REGISTER_Value = STATUS_REGISTER;
 
-    // Check if interrupts are enabled
     if (STATUS_REGISTER_Value.InterruptEnable == 0 || STATUS_REGISTER_Value.ExceptionLevel != 0 ||
         STATUS_REGISTER_Value.ErrorLevel != 0) {
         return;
     }
 
-    // Check if there are pending interrupts to service
     if ((STATUS_REGISTER_Value.Value & CAUSE_REGISTER.Value & 0xFF00) != 0) {
         m_SystemEvents.QueueEvent(SysEvent_ExecuteInterrupt);
     }

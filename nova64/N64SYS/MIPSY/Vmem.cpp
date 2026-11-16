@@ -4,7 +4,6 @@
  * 
  * Implementation of MipsMemoryVM class providing virtual-to-physical 
  * address translation and memory access for the MIPS R4300i CPU.
- * 
  */
 
 #include "Vmem.hpp"
@@ -34,20 +33,18 @@ constexpr uint32_t EXC_WADE = 5;  // Write Address Error
 constexpr uint32_t EXC_RMISS = 2; // Read TLB Miss
 constexpr uint32_t EXC_WMISS = 3; // Write TLB Miss
 
-// External global ROM instance
 extern N64Rom* g_Rom;
 extern CN64System* g_System;
 
 namespace Nova64 {
 
-// Static member initialization
 uint32_t MipsMemoryVM::RegModValue = 0;
 
 // --- Memory Write Watch (debug-only, env-var driven) ---
 // NOVA64_WATCH_ADDR  : hex (KSEG0 / KSEG1 / physical) start address. Required.
 // NOVA64_WATCH_LEN   : hex bytes of range, default 1.
 // NOVA64_WATCH_FILE  : output path; default stderr.
-// NOVA64_WATCH_FIRST : if "1", log only the FIRST write to each 8-byte aligned
+// NOVA64_WATCH_FIRST : if "1", log only the first write to each 8-byte aligned
 //                    address (huge noise reduction; surfaces fresh writes).
 // NOVA64_WATCH_VAL   : hex value filter; only log writes whose value matches.
 // NOVA64_WATCH_MASK  : hex mask applied before comparing to NOVA64_WATCH_VAL
@@ -90,7 +87,6 @@ const WatchConfig& GetWatchConfig() {
         const char* firstEnv = std::getenv("NOVA64_WATCH_FIRST");
         if (firstEnv != nullptr && firstEnv[0] == '1') {
             c.first_only = true;
-            // One bit per 8-byte slot.
             size_t slots = (static_cast<size_t>(pEnd - pStart) + 7) / 8;
             c.seen.assign((slots + 7) / 8, 0);
         }
@@ -240,7 +236,6 @@ bool MipsMemoryVM::Initialize() {
     // Default to 8MB RDRAM (0x800000)
     m_AllocatedRdramSize = 0x800000;
 
-    // Commit the RDRAM memory
     if (CommitMemory(m_RDRAM, m_AllocatedRdramSize, MEM_READWRITE) == nullptr) {
         Logging::log(Logging::Level::Error, "Failed to commit RDRAM memory");
         FreeMemory();
@@ -589,7 +584,6 @@ bool MipsMemoryVM::LB_Memory(uint64_t vAddr, uint8_t& value) {
 }
 
 bool MipsMemoryVM::LH_Memory(uint64_t vAddr, uint16_t& value) {
-    // Check alignment
     if ((vAddr & 1) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_RADE);
         return false;
@@ -616,7 +610,6 @@ bool MipsMemoryVM::LH_Memory(uint64_t vAddr, uint16_t& value) {
 }
 
 bool MipsMemoryVM::LW_Memory(uint64_t vAddr, uint32_t& value) {
-    // Check alignment
     if ((vAddr & 3) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_RADE);
         return false;
@@ -639,7 +632,6 @@ bool MipsMemoryVM::LW_Memory(uint64_t vAddr, uint32_t& value) {
 }
 
 bool MipsMemoryVM::LD_Memory(uint64_t vAddr, uint64_t& value) {
-    // Check alignment
     if ((vAddr & 7) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_RADE);
         return false;
@@ -765,7 +757,6 @@ bool MipsMemoryVM::SB_Memory(uint64_t vAddr, uint32_t value) {
 }
 
 bool MipsMemoryVM::SH_Memory(uint64_t vAddr, uint32_t value) {
-    // Check alignment
     if ((vAddr & 1) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_WADE);
         return false;
@@ -814,7 +805,6 @@ bool MipsMemoryVM::SH_Memory(uint64_t vAddr, uint32_t value) {
 }
 
 bool MipsMemoryVM::SW_Memory(uint64_t vAddr, uint32_t value) {
-    // Check alignment
     if ((vAddr & 3) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_WADE);
         return false;
@@ -861,7 +851,6 @@ bool MipsMemoryVM::SW_Memory(uint64_t vAddr, uint32_t value) {
 }
 
 bool MipsMemoryVM::SD_Memory(uint64_t vAddr, uint64_t value) {
-    // Check alignment
     if ((vAddr & 7) != 0) {
         m_System.GetRegisters()->TriggerAddressException(vAddr, EXC_WADE);
         return false;
@@ -1474,15 +1463,14 @@ int32_t MipsMemoryVM::MemoryFilter(uint32_t exptCode, void* exceptionPointer) {
 #endif
     }
 #endif
-    // Platform-specific exception handling would go here
-    // For now, return 0 to indicate exception was not handled
+    // No platform-specific fault handling: report the exception as unhandled.
     (void)exptCode;
     (void)exceptionPointer;
     return 0;
 }
 
 bool MipsMemoryVM::MemoryBreakpoint() {
-    // Breakpoint handling for debugger
+    // There is no memory breakpoint support; this never reports a hit.
     return false;
 }
 
@@ -1510,7 +1498,6 @@ void MipsMemoryVM::RdramChanged(MipsMemoryVM* self) {
                  newSize);
         Logging::log(Logging::Level::Info, buffer);
 
-        // Handle memory commitment changes
         if (newSize > self->m_AllocatedRdramSize) {
             // Expansion: Commit new memory
             if (CommitMemory(self->m_RDRAM + self->m_AllocatedRdramSize, newSize - self->m_AllocatedRdramSize,
@@ -1523,7 +1510,6 @@ void MipsMemoryVM::RdramChanged(MipsMemoryVM* self) {
             DecommitMemory(self->m_RDRAM + newSize, self->m_AllocatedRdramSize - newSize);
         }
 
-        // Update size
         self->m_AllocatedRdramSize = newSize;
 
         // Update SP RDRAM pointers
@@ -1546,7 +1532,6 @@ void MipsMemoryVM::ChangeMiIntrMask() {
         }
     }
 
-    // Reset the modification value
     RegModValue = 0;
 }
 
@@ -1554,17 +1539,8 @@ void MipsMemoryVM::ChangeMiIntrMask() {
 
 #if defined(__amd64__) || defined(_M_X64)
 bool MipsMemoryVM::FilterX64Exception(uint32_t memAddress, X64_CONTEXT& context) {
-    // Exception-based lazy TLB mapping for the x64 recompiler
-    // When the recompiler generates direct memory accesses, an access violation
-    // triggers this filter which should:
-    // 1. Check if the faulting address is within the RDRAM virtual mapping
-    // 2. Look up the TLB entry for the faulting virtual address
-    // 3. Map the physical page and update the page table
-    // 4. Resume execution at the faulting instruction
-
-    // Currently returns false (unhandled) since the recompiler is not yet implemented.
-    // A full implementation would use VirtualAlloc/mmap to commit pages on demand
-    // and patch the recompiler's memory mapping table.
+    // Lazy TLB mapping of a faulting recompiler memory access is not implemented: the fault is
+    // logged and reported as unhandled.
 
     Log::debugf("FilterX64Exception: Access violation at 0x%08X, RIP=0x%016llX", memAddress,
                 context.Rip ? *context.Rip : 0);
@@ -1574,8 +1550,8 @@ bool MipsMemoryVM::FilterX64Exception(uint32_t memAddress, X64_CONTEXT& context)
 
 #if defined(__i386__) || defined(_M_IX86)
 bool MipsMemoryVM::FilterX86Exception(uint32_t memAddress, X86_CONTEXT& context) {
-    // Exception-based lazy TLB mapping for the x86 recompiler
-    // Same concept as x64 version but for 32-bit targets
+    // Lazy TLB mapping of a faulting recompiler memory access is not implemented: the fault is
+    // logged and reported as unhandled.
 
     Log::debugf("FilterX86Exception: Access violation at 0x%08X, EIP=0x%08X", memAddress,
                 context.Eip ? *context.Eip : 0);

@@ -1,6 +1,6 @@
 /**
  * @file Mempak.hpp
- * @brief Mempak declarations and types.
+ * @brief Memory Pak declarations: controller storage, note-table types, the CMempak wrapper and file helpers.
  */
 #pragma once
 
@@ -22,7 +22,7 @@ constexpr size_t MEMPAK_TOTAL_SIZE = MEMPAK_PAGE_SIZE * MEMPAK_NUM_PAGES; // 32K
 constexpr size_t MAX_CONTROLLERS = 4;                                     // N64 supports 4 controllers
 constexpr size_t MAX_SAVE_FILES = 16;                                     // Maximum save files per mempak
 
-// EEPROM commands
+// Memory pak command codes.
 enum class MempakCommand : uint8_t {
     ReadPage = 0x00,
     WritePage = 0x01,
@@ -44,7 +44,6 @@ struct SaveFileInfo {
     uint64_t timestamp;    // Last modification timestamp
 };
 
-// Memory Pak status
 struct MempakStatus {
     bool formatted;          // Whether the mempak is formatted
     bool write_protected;    // Whether writing is disabled
@@ -70,18 +69,14 @@ struct MempakStatus {
     }
 };
 
-// Memory Pak controller class
 class MemoryPakController {
 public:
-    // Constructor/Destructor
     MemoryPakController();
     ~MemoryPakController();
 
-    // No copying
     MemoryPakController(const MemoryPakController&) = delete;
     MemoryPakController& operator=(const MemoryPakController&) = delete;
 
-    // Allow moving
     MemoryPakController(MemoryPakController&&) noexcept = default;
     MemoryPakController& operator=(MemoryPakController&&) noexcept = default;
 
@@ -118,7 +113,6 @@ public:
     static uint32_t calculate_crc32(const uint8_t* data, size_t length);
 
 private:
-    // Internal data structures
     struct ControllerMemoryPak {
         std::array<uint8_t, MEMPAK_TOTAL_SIZE> memory{}; // Memory content
         MempakStatus status{};                           // Current status
@@ -138,7 +132,6 @@ private:
     std::array<ControllerMemoryPak, MAX_CONTROLLERS> m_mempaks;
     std::string m_save_directory;
 
-    // Internal helper methods
     bool load_from_disk(int controller_index);
     bool save_to_disk(int controller_index);
     void create_default_filesystem(int controller_index);
@@ -158,7 +151,7 @@ private:
     const uint8_t* get_memory_pointer(int controller_index, uint32_t address) const;
 };
 
-// Legacy C-style interface (for compatibility with existing code)
+// Wrapper with the original CMempak API; delegates to MemoryPakController.
 class CMempak {
 public:
     CMempak();
@@ -167,10 +160,8 @@ public:
     void ReadFrom(int32_t controller_index, uint32_t address, uint8_t* data);
     void WriteTo(int32_t controller_index, uint32_t address, uint8_t* data);
 
-    // Static utility method (kept for compatibility)
     static uint8_t CalculateCrc(uint8_t* data_to_crc);
 
-    // Additional modern methods
     bool Initialize(const std::string& base_path = "saves/");
     void Cleanup();
     bool IsFormatted(int32_t controller_index) const;
@@ -179,7 +170,6 @@ private:
     CMempak(const CMempak&) = delete;
     CMempak& operator=(const CMempak&) = delete;
 
-    // Internal data
     std::unique_ptr<MemoryPakController> m_controller;
 
     // Legacy internal methods
@@ -190,16 +180,13 @@ private:
     std::array<bool, MAX_CONTROLLERS> m_formatted{};
     std::array<bool, MAX_CONTROLLERS> m_save_exists{};
 
-    // File handles would be here, but we'll use std::fstream instead
     std::array<std::fstream, MAX_CONTROLLERS> m_file_handles;
 
-    // Helper methods for legacy compatibility
     std::string get_mempak_filename(int32_t controller_index) const;
     bool load_legacy_mempak(int32_t controller_index);
     bool save_legacy_mempak(int32_t controller_index);
 };
 
-// Utility namespace for Memory Pak operations
 namespace MempakUtils {
 // Validation functions
 bool validate_mempak_data(const uint8_t* data, size_t size);
@@ -229,40 +216,31 @@ constexpr uint32_t page_to_address(uint32_t page) { return page * MEMPAK_PAGE_SI
 constexpr uint32_t get_page_offset(uint32_t address) { return address % MEMPAK_PAGE_SIZE; }
 } // namespace MempakUtils
 
-// Factory for creating memory pak instances
 class MemoryPakFactory {
 public:
-    // Create a new memory pak controller
     static std::unique_ptr<MemoryPakController> create_controller();
 
-    // Create a legacy CMempak instance
     static std::unique_ptr<CMempak> create_legacy_mempak();
 
-    // Detect memory pak type from data
     static bool detect_mempak_type(const uint8_t* data, size_t size);
 
     // Format a memory pak with standard Nintendo format
     static std::vector<uint8_t> create_formatted_mempak();
 
-    // Create a memory pak from a save file
     static std::vector<uint8_t> create_mempak_from_save(const std::string& save_file_path);
 
-    // Extract save files from a memory pak image
     static std::vector<SaveFileInfo> extract_save_files(const uint8_t* mempak_data, size_t size);
 };
 
 } // namespace N64Controller
 
 namespace GlobalMemoryPak {
-// Get the global memory pak controller instance
 N64Controller::MemoryPakController& get_controller();
 
-// Initialize the global controller
 bool initialize(const std::string& save_directory = "saves/");
 
 // Shutdown and save all memory paks
 void shutdown();
 
-// Legacy global instance (for compatibility)
 extern N64Controller::CMempak g_legacy_mempak;
 } // namespace GlobalMemoryPak

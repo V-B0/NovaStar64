@@ -38,7 +38,6 @@ static inline uint8_t IntToBCD(int32_t value) {
     return static_cast<uint8_t>(((value / 10) << 4) | (value % 10));
 }
 
-// CEeprom default constructor
 CEeprom::CEeprom(void) : m_ReadOnly(false), m_Is16K(false) { std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM)); }
 
 CEeprom::CEeprom(bool ReadOnly) : m_ReadOnly(ReadOnly), m_Is16K(false) {
@@ -57,17 +56,15 @@ CEeprom::~CEeprom() {
     }
 }
 
-// Main EEPROM command processor
 void CEeprom::EepromCommand(uint8_t* Command) {
     if (!Command) {
         Log::error("EEPROM command called with null pointer");
         return;
     }
 
-    // NOTE: Do NOT set m_SaveUsing here.  EEPROM is accessed through PIF/SI
-    // (channel 4) and is independent of the SRAM/FlashRAM save type at
-    // 0x08000000.  Setting m_SaveUsing = Eeprom4K here would prevent
-    // UnCachedSysMemory from auto-detecting FlashRAM when OOT V1.2 (or any
+    // m_SaveUsing is deliberately not set here: EEPROM is accessed through the PIF/SI (channel 4)
+    // and is independent of the SRAM/FlashRAM save type at 0x08000000. Setting m_SaveUsing =
+    // Eeprom4K here would stop UnCachedSysMemory from auto-detecting FlashRAM when OOT V1.2 (or any
     // FlashRAM game) later accesses the cart domain-2 region.
     extern CN64System* g_System;
 
@@ -93,7 +90,6 @@ void CEeprom::EepromCommand(uint8_t* Command) {
     }
 }
 
-// Handle EEPROM status check command
 void CEeprom::HandleStatusCommand(uint8_t* Command) {
     // EEPROM responds with device type through PIF channel 4.
     // 0x80 = 4K EEPROM (512 bytes), 0xC0 = 16K EEPROM (2048 bytes).
@@ -119,9 +115,7 @@ void CEeprom::HandleStatusCommand(uint8_t* Command) {
     }
 }
 
-// Handle EEPROM read command
 void CEeprom::HandleReadCommand(uint8_t* Command) {
-    // Validate command format
     if (Command[0] != 2) {
         Log::warningf("EEPROM read command: unexpected byte 0 = %d (expected 2)", Command[0]);
         ProcessingError(Command);
@@ -137,9 +131,7 @@ void CEeprom::HandleReadCommand(uint8_t* Command) {
     Log::debugf("EEPROM read: line %d", line);
 }
 
-// Handle EEPROM write command
 void CEeprom::HandleWriteCommand(uint8_t* Command) {
-    // Validate command format
     if (Command[0] != 10) {
         Log::warningf("EEPROM write command: unexpected byte 0 = %d (expected 10)", Command[0]);
         ProcessingError(Command);
@@ -155,7 +147,6 @@ void CEeprom::HandleWriteCommand(uint8_t* Command) {
     Log::debugf("EEPROM write: line %d", line);
 }
 
-// Handle RTC status query
 void CEeprom::HandleRTCStatusCommand(uint8_t* Command) {
     // RTC is present
     Command[3] = 0x00;
@@ -165,7 +156,6 @@ void CEeprom::HandleRTCStatusCommand(uint8_t* Command) {
     Log::debug("RTC status query");
 }
 
-// Handle RTC read command
 void CEeprom::HandleRTCReadCommand(uint8_t* Command) {
     const uint8_t block = Command[3];
 
@@ -215,17 +205,13 @@ void CEeprom::HandleRTCReadCommand(uint8_t* Command) {
     }
 }
 
-// Handle RTC write command (unimplemented)
 void CEeprom::HandleRTCWriteCommand(uint8_t* Command) {
     Log::warning("RTC write command: not implemented");
-    // RTC writes are not commonly used and not implemented
     (void)Command;
 }
 
-// Load EEPROM data from file
 void CEeprom::LoadEeprom() {
     extern CN64System* g_System;
-    // Initialize to unprogrammed state
     std::memset(m_EEPROM, 0xFF, sizeof(m_EEPROM));
 
     if (!g_System) {
@@ -249,10 +235,8 @@ void CEeprom::LoadEeprom() {
     std::string fileName = gameName + ".eep";
     std::string fullPath = savePath + "/" + fileName;
 
-    // Create save directory if it doesn't exist
     std::filesystem::create_directories(savePath);
 
-    // Try to open the file
     FileSystem::OpenMode openMode =
         m_ReadOnly ? FileSystem::OpenMode::Read : (FileSystem::OpenMode::Read | FileSystem::OpenMode::Write);
 
@@ -301,7 +285,6 @@ void CEeprom::LoadEeprom() {
     }
 }
 
-// Read 8 bytes from EEPROM at specified line
 void CEeprom::ReadFrom(uint8_t* Buffer, int32_t line) {
     if (!Buffer) {
         Log::error("ReadFrom called with null buffer");
@@ -310,12 +293,10 @@ void CEeprom::ReadFrom(uint8_t* Buffer, int32_t line) {
 
     std::lock_guard<std::mutex> lock(m_FileMutex);
 
-    // Ensure EEPROM is loaded
     if (!m_File.is_open()) {
         LoadEeprom();
     }
 
-    // Validate line number
     const int32_t maxLines = sizeof(m_EEPROM) / 8;
     if (line < 0 || line >= maxLines) {
         Log::errorf("EEPROM read: invalid line %d (max %d)", line, maxLines - 1);
@@ -323,12 +304,10 @@ void CEeprom::ReadFrom(uint8_t* Buffer, int32_t line) {
         return;
     }
 
-    // Copy 8 bytes from EEPROM
     const int32_t offset = line * 8;
     std::memcpy(Buffer, &m_EEPROM[offset], 8);
 }
 
-// Write 8 bytes to EEPROM at specified line
 void CEeprom::WriteTo(uint8_t* Buffer, int32_t line) {
     if (!Buffer) {
         Log::error("WriteTo called with null buffer");
@@ -337,19 +316,16 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line) {
 
     std::lock_guard<std::mutex> lock(m_FileMutex);
 
-    // Ensure EEPROM is loaded
     if (!m_File.is_open()) {
         LoadEeprom();
     }
 
-    // Validate line number
     const int32_t maxLines = sizeof(m_EEPROM) / 8;
     if (line < 0 || line >= maxLines) {
         Log::errorf("EEPROM write: invalid line %d (max %d)", line, maxLines - 1);
         return;
     }
 
-    // Update EEPROM memory
     const int32_t offset = line * 8;
     std::memcpy(&m_EEPROM[offset], Buffer, 8);
 
@@ -371,7 +347,6 @@ void CEeprom::WriteTo(uint8_t* Buffer, int32_t line) {
     }
 }
 
-// Handle processing errors
 void CEeprom::ProcessingError(uint8_t* Command) {
     if (Command) {
         Log::warningf("EEPROM command processing error: [%02X %02X %02X %02X]", Command[0], Command[1], Command[2],

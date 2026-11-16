@@ -20,7 +20,6 @@
 
 #include "PluginBase.hpp"
 
-// Forward declarations
 class CRegisters;
 namespace Nova64 {
 class MipsMemoryVM;
@@ -67,9 +66,6 @@ public:
      */
     explicit PluginManager(CN64System& system);
 
-    /**
-     * @brief Destructor - unloads all plugins
-     */
     ~PluginManager();
 
     // Disable copy/move
@@ -100,9 +96,6 @@ public:
      */
     void UnloadPlugin(PluginType type);
 
-    /**
-     * @brief Unload all plugins
-     */
     void UnloadAllPlugins();
 
     /**
@@ -120,24 +113,12 @@ public:
      */
     bool InitializePlugins();
 
-    /**
-     * @brief Shutdown all plugins
-     */
     void ShutdownPlugins();
 
-    /**
-     * @brief Reset all plugins to initial state
-     */
     void ResetPlugins();
 
-    /**
-     * @brief Pause all plugins
-     */
     void PausePlugins();
 
-    /**
-     * @brief Resume all plugins from pause
-     */
     void ResumePlugins();
 
     // --- Plugin Access ---
@@ -233,9 +214,6 @@ public:
      */
     void RegisterNotificationCallback(PluginNotificationCallback callback);
 
-    /**
-     * @brief Clear notification callback
-     */
     void ClearNotificationCallback();
 
     // --- Save States ---
@@ -271,24 +249,12 @@ public:
 private:
     // --- Internal Plugin Creation ---
 
-    /**
-     * @brief Create default graphics plugin
-     */
     void CreateDefaultGraphicsPlugin();
 
-    /**
-     * @brief Create default audio plugin
-     */
     void CreateDefaultAudioPlugin();
 
-    /**
-     * @brief Create default input plugin
-     */
     void CreateDefaultInputPlugin();
 
-    /**
-     * @brief Create default RSP plugin
-     */
     void CreateDefaultRSPPlugin();
 
     /**
@@ -299,14 +265,8 @@ private:
      */
     std::unique_ptr<PluginBase> LoadPluginFromFile(const std::string& path, PluginType type);
 
-    /**
-     * @brief Notify listeners of plugin event
-     */
     void NotifyPluginEvent(PluginType type, PluginNotification notification, const std::string& message = "");
 
-    /**
-     * @brief Get default plugin path for type
-     */
     std::string GetDefaultPluginPath(PluginType type) const;
 
     CN64System& m_System;

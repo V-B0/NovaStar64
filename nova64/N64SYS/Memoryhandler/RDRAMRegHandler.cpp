@@ -1,6 +1,6 @@
 /**
  * @file RDRAMRegHandler.cpp
- * @brief RDRAM Reg Handler implementation.
+ * @brief RDRAM device register handler (0x03F00000-0x03FFFFFF): per-device configuration, delay, mode and refresh registers.
  */
 #include "RDRAMRegHandler.hpp"
 #include "../MainSYS.hpp"
@@ -49,7 +49,6 @@ std::pair<size_t, RDRAM::DeviceRegister> RDRAMRegistersHandler::decode_device_ad
     size_t device_index = (offset >> 13) & 0x7; // Support up to 8 devices
     uint32_t reg_offset = offset & 0x3FC;
 
-    // Map offset to Enum
     RDRAM::DeviceRegister reg = RDRAM::DeviceRegister::CONFIG; // Default
 
     switch (reg_offset) {
@@ -75,7 +74,6 @@ bool RDRAMRegistersHandler::Read32(uint32_t address, uint32_t& value) {
 
     auto [idx, reg] = decode_device_address(address);
 
-    // Bounds check
     if (idx >= m_devices.size()) {
         value = 0;
         return true;
@@ -133,7 +131,6 @@ void RDRAMRegistersHandler::write_device_register(size_t device_index, RDRAM::De
                                                   uint32_t mask) {
     auto& device = m_devices[device_index];
 
-    // Update helper
     auto update = [&](uint32_t& target) { target = (target & ~mask) | (value & mask); };
 
     switch (reg) {
@@ -170,8 +167,7 @@ void RDRAMRegistersHandler::handle_mode_register_write(size_t device_index, uint
 }
 
 void RDRAMRegistersHandler::handle_config_register_write(size_t device_index, uint32_t value, uint32_t mask) {
-    // Implementation for config changes if needed
-    // e.g. mapping refresh rate bits
+    // No side effects are modelled for configuration writes.
 }
 
 void RDRAMRegistersHandler::log_device_access(size_t device_index, RDRAM::DeviceRegister reg, uint32_t value,
@@ -199,7 +195,6 @@ void RDRAMRegistersHandler::log_device_access(size_t device_index, RDRAM::Device
     Log::debugf("RDRAMDev[%zu] %s %s: 0x%08X", device_index, op, reg_name, value);
 }
 
-// Power management implementation
 void RDRAMRegistersHandler::update_device_power_state(size_t device_index) {
     auto& device = m_devices[device_index];
     bool self_refresh = (device.mode & static_cast<uint32_t>(RDRAM::DeviceMode::SELF_REFRESH));
@@ -236,10 +231,8 @@ void RDRAMRegistersHandler::exit_power_down(size_t device_index) {
 void RDRAMRegistersHandler::enable_expansion_pak(bool enable) {
     m_expansion_pak_enabled = enable;
     if (m_device_count < 8 && enable) {
-        // Typically extends memory map to 8MB
-        // Standard console has 4MB (devices 0-1 usually, or 0-3 depending on chip size)
-        // Expansion Pak adds another 4MB.
-        m_device_count = 8; // Assuming 8x 1MB or similar, just enabling full slots
+        // The Expansion Pak adds 4MB to the standard console's 4MB, extending the memory map to 8MB.
+        m_device_count = 8; // all eight device slots
         initialize_devices();
     }
 }
@@ -255,9 +248,8 @@ const RDRAM::DeviceState& RDRAMRegistersHandler::get_device_state(size_t index) 
     return m_devices[0];
 }
 
-// Timing
 uint32_t RDRAMRegistersHandler::calculate_device_delay(size_t device_index) const {
-    // Return delay in basic cycles based on Type
+    // Fixed delay: the device type is not considered.
     return 10;
 }
 
@@ -267,7 +259,6 @@ uint32_t RDRAMRegistersHandler::calculate_refresh_rate(size_t device_index) cons
     return m_devices[device_index].refresh_interval * 4;
 }
 
-// Debug Info
 std::string RDRAMRegistersHandler::get_device_info(size_t index) const {
     if (index >= m_devices.size()) return "Invalid Device";
 

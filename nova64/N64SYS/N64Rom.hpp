@@ -2,9 +2,8 @@
  * @file N64Rom.hpp
  * @brief N64 ROM image loading, management, and metadata extraction
  * 
- * Handles loading ROM images from disk (including ZIP archives), 
- * extracting metadata (CIC chip, country code, etc.), and providing
- * access to the ROM data for the emulator.
+ * Loads ROM images from disk (ZIP archives are not supported), extracts metadata (CIC chip,
+ * country code, etc.), and provides access to the ROM data for the emulator.
  */
 
 #pragma once
@@ -126,35 +125,17 @@ public:
     RomImage(RomImage&&) = default;
     RomImage& operator=(RomImage&&) = default;
 
-    /**
-     * @brief Get raw pointer to ROM data
-     */
     const uint8_t* Data() const noexcept { return m_Data.data(); }
     uint8_t* Data() noexcept { return m_Data.data(); }
 
-    /**
-     * @brief Get size of ROM data
-     */
     size_t Size() const noexcept { return m_Data.size(); }
 
-    /**
-     * @brief Check if ROM image is loaded
-     */
     bool IsLoaded() const noexcept { return !m_Data.empty(); }
 
-    /**
-     * @brief Get ROM format
-     */
     RomFormat GetFormat() const noexcept { return m_Format; }
 
-    /**
-     * @brief Get country code
-     */
     CountryCode GetCountry() const noexcept { return m_Country; }
 
-    /**
-     * @brief Get CIC chip type
-     */
     CICChip GetCICChip() const noexcept { return m_CICChip; }
 
     /**
@@ -162,34 +143,16 @@ public:
      */
     const std::string& GetRomName() const noexcept { return m_RomName; }
 
-    /**
-     * @brief Get file name
-     */
     const std::string& GetFileName() const noexcept { return m_FileName; }
 
-    /**
-     * @brief Get file path
-     */
     const fs::path& GetFilePath() const noexcept { return m_FilePath; }
 
-    /**
-     * @brief Get MD5 hash
-     */
     const std::string& GetMD5() const noexcept { return m_MD5; }
 
-    /**
-     * @brief Check if ROM is PAL region
-     */
     bool IsPal() const noexcept;
 
-    /**
-     * @brief Check if ROM is NTSC region
-     */
     bool IsNtsc() const noexcept;
 
-    /**
-     * @brief Check if ROM is 64DD IPL
-     */
     bool IsDDIPL() const noexcept { return m_IsDDIPL; }
 
 private:
@@ -228,9 +191,6 @@ private:
  */
 class N64Rom final {
 public:
-    /**
-     * @brief Construct an empty ROM manager
-     */
     N64Rom();
     ~N64Rom();
 
@@ -257,9 +217,6 @@ public:
      */
     void LoadIPL(const fs::path& filePath, bool loadBootCodeOnly = false);
 
-    /**
-     * @brief Unload current ROM image
-     */
     void UnloadRom() noexcept;
 
     /**
@@ -270,39 +227,18 @@ public:
     static constexpr bool IsValidRom(const std::array<uint8_t, 4>& testBytes) noexcept;
 
     // ROM information
-    /**
-     * @brief Check if ROM is loaded
-     */
     bool IsLoaded() const noexcept { return m_Image && m_Image->IsLoaded(); }
 
-    /**
-     * @brief Get loaded ROM image
-     */
     const RomImage& GetImage() const;
 
-    /**
-     * @brief Get ROM format
-     */
     RomFormat GetFormat() const;
 
-    /**
-     * @brief Get ROM size
-     */
     size_t GetSize() const;
 
-    /**
-     * @brief Get ROM header data
-     */
     DataView GetHeader() const;
 
-    /**
-     * @brief Get boot code section
-     */
     DataView GetBootCode() const;
 
-    /**
-     * @brief Get raw pointer to ROM data
-     */
     const uint8_t* GetRomAddress() const;
     uint8_t* GetRomAddress();
 

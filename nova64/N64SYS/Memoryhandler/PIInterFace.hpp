@@ -1,6 +1,6 @@
 /**
  * @file PIInterFace.hpp
- * @brief PI Inter Face declarations and types.
+ * @brief Peripheral Interface (PI) handler declarations: register indices, bus domain timing, DMA state and PeripheralInterfaceHandler.
  */
 #pragma once
 #include "../../common/log.hpp"
@@ -13,7 +13,6 @@
 #include <string>
 #include <memory>
 
-// Forward declarations
 class CN64System;
 class CRegisters;
 namespace Nova64 {
@@ -132,7 +131,6 @@ public:
     void set_reset_callback(SystemEventCallback callback);
     void set_game_state_loaded_callback(SystemEventCallback callback);
 
-    // Additional public methods
     [[nodiscard]] bool is_dma_active() const { return m_dma_state.active; }
     [[nodiscard]] const DMAState& get_dma_state() const { return m_dma_state; }
     void force_dma_completion();
@@ -201,7 +199,6 @@ private:
     // Log file (optional)
     std::unique_ptr<class FileSystem::File> m_log_file;
 
-    // Internal methods
     void HandleDMARead();
     void HandleDMAWrite();
     void ProcessStatusWrite(uint32_t val);

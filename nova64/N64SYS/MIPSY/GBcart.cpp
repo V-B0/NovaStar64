@@ -1,6 +1,6 @@
 /**
  * @file GBcart.cpp
- * @brief G Bcart implementation.
+ * @brief Game Boy cartridge emulation for the Transfer Pak: header parsing, MBC1/MBC3 (with RTC)/MBC5 mappers, battery RAM and a C interface.
  */
 #include "GBcart.hpp"
 #include <fstream>
@@ -13,16 +13,13 @@
 
 namespace GameBoy {
 
-// Helper for current time
 static std::time_t get_current_time() { return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()); }
 
 // --- MBC1 Implementation ---
 
 uint8_t MBC1Controller::read(uint16_t address) const {
     if (address < 0x4000) {
-        // Bank 0 (Fixed)
-        // Note: In "Advanced" banking mode (Mode 1), this can theoretically be switched for large ROMs,
-        // but standard behavior treats this as Bank 0.
+        // Fixed bank 0. MBC1's advanced banking mode (mode 1) can remap this region on large ROMs; that is not modelled.
         return cartridge.read_rom_bank(0, address);
     } else if (address < 0x8000) {
         // Bank 1-N (Switchable)
@@ -30,8 +27,7 @@ uint8_t MBC1Controller::read(uint16_t address) const {
         // MBC1 translates bank 0 to 1
         if (bank == 0) bank = 1;
 
-        // Mask based on actual ROM size (handled by mask inside read_rom_safe usually,
-        // but strict MBC1 masking depends on wiring).
+        // read_rom_bank wraps addresses past the end of the ROM; real MBC1 masking depends on the board wiring.
         return cartridge.read_rom_bank(bank, address - 0x4000);
     } else if (address >= 0xA000 && address < 0xC000) {
         if (!ram_enabled) return 0xFF;
@@ -57,27 +53,24 @@ void MBC1Controller::write(uint16_t address, uint8_t value) {
         if (bank_low == 0) bank_low = 1; // 0 translates to 1
 
         uint16_t current = cartridge.get_rom_bank();
-        current &= ~0x1F; // Clear low 5 bits
+        current &= ~0x1F;
         current |= bank_low;
         cartridge.set_rom_bank(current);
     } else if (address < 0x6000) {
         // RAM Bank Number / ROM Bank Number (High 2 bits) (0x4000-0x5FFF)
         uint8_t val = value & 0x03;
 
-        // This write updates TWO potential registers.
-        // 1. The RAM Bank register (used if mode=1)
+        // This write updates both the RAM bank register (used in mode 1) and the upper ROM bank bits (used for ROMs of 1MB or more).
         cartridge.set_ram_bank(val);
 
-        // 2. The High bits of ROM Bank (used if rom >= 1MB)
         uint16_t current = cartridge.get_rom_bank();
-        current &= ~(0x03 << 5); // Clear bits 5 and 6
+        current &= ~(0x03 << 5);
         current |= (val << 5);
         cartridge.set_rom_bank(current);
     } else if (address < 0x8000) {
         // Banking Mode Select (0x6000-0x7FFF)
         banking_mode = (value & 0x01);
     } else if (address >= 0xA000 && address < 0xC000) {
-        // RAM Write
         if (!ram_enabled) return;
 
         uint8_t bank = cartridge.get_ram_bank();
@@ -102,7 +95,6 @@ void MBC1Controller::load_state(const std::vector<uint8_t>& buffer, size_t& offs
 void MBC1Controller::reset() {
     ram_enabled = false;
     banking_mode = false;
-    // MBC1 defaults
     cartridge.set_rom_bank(1);
     cartridge.set_ram_bank(0);
 }
@@ -127,9 +119,7 @@ void MBC3Controller::update_rtc_time() {
 
     std::time_t delta = now - last_rtc_update;
     if (delta > 0) {
-        // Increment RTC by delta seconds
-        // Simplified logic: convert RTC to seconds, add delta, convert back?
-        // Or ripple add.
+        // Advance the clock one second at a time, rippling carries into minutes, hours and days.
         long remaining = static_cast<long>(delta);
         while (remaining > 0) {
             current_rtc.seconds++;
@@ -144,7 +134,7 @@ void MBC3Controller::update_rtc_time() {
                         uint16_t days = current_rtc.get_days();
                         days++;
                         if (days > 0x1FF) {
-                            days = 0; // Overflow resets days? Or just carry?
+                            days = 0; // 9-bit day counter overflow wraps to 0 and sets the carry flag
                             current_rtc.set_carry(true);
                         }
                         current_rtc.set_days(days);
@@ -168,7 +158,6 @@ uint8_t MBC3Controller::read(uint16_t address) const {
         if (!ram_rtc_enabled) return 0xFF;
 
         if (rtc_register >= 0x08 && rtc_register <= 0x0C) {
-            // Read from RTC
             const RTCData& src = rtc_latched ? latched_rtc : current_rtc;
             switch (rtc_register) {
             case 0x08: return src.seconds;
@@ -179,7 +168,6 @@ uint8_t MBC3Controller::read(uint16_t address) const {
             default:   return 0xFF;
             }
         } else {
-            // Read from RAM
             return cartridge.read_ram_bank(cartridge.get_ram_bank(), address - 0xA000);
         }
     }
@@ -207,23 +195,16 @@ void MBC3Controller::write(uint16_t address, uint8_t value) {
         // Latch Clock Data (Write 0 then 1 to latch)
         static uint8_t last_latch_val = 0xFF;
         if (last_latch_val == 0x00 && value == 0x01) {
-            // Latch current time
+            // Writing 0 then 1 latches the current time; reads use latched_rtc while rtc_latched is set.
             latched_rtc = current_rtc;
-            rtc_latched = !rtc_latched; // Toggle latch? Or usually just capture?
-            // Behavior: "Writing 0 then 1 latches the current time into RTC registers"
-            // Usually it stays latched until unlatched? Or just copies once?
-            // It copies current time to latched_registers. Future reads read latched state until unlatched?
-            // Simplified: Copy now. Reads use latched_rtc if rtc_latched is true.
+            rtc_latched = !rtc_latched;
             rtc_latched = true;
         }
-        // Some docs suggest latching is transient or needs 0->1 transition.
         last_latch_val = value;
     } else if (address >= 0xA000 && address < 0xC000) {
         if (!ram_rtc_enabled) return;
 
         if (rtc_register >= 0x08 && rtc_register <= 0x0C) {
-            // Write to RTC
-            // Modifying registers likely clears sub-second counter or updates current time
             switch (rtc_register) {
             case 0x08: current_rtc.seconds = value; break;
             case 0x09: current_rtc.minutes = value; break;
@@ -234,7 +215,6 @@ void MBC3Controller::write(uint16_t address, uint8_t value) {
             // Update timestamp so we don't overwrite this change on next update
             last_rtc_update = get_current_time();
         } else {
-            // Write to RAM
             cartridge.write_ram_bank(cartridge.get_ram_bank(), address - 0xA000, value);
         }
     }
@@ -244,7 +224,6 @@ void MBC3Controller::save_state(std::vector<uint8_t>& buffer) const {
     buffer.push_back(ram_rtc_enabled ? 1 : 0);
     buffer.push_back(rtc_register);
     buffer.push_back(rtc_latched ? 1 : 0);
-    // Serialize RTC struct
     const uint8_t* p = reinterpret_cast<const uint8_t*>(&current_rtc);
     buffer.insert(buffer.end(), p, p + sizeof(RTCData));
 }
@@ -258,7 +237,7 @@ void MBC3Controller::load_state(const std::vector<uint8_t>& buffer, size_t& offs
         std::memcpy(&current_rtc, &buffer[offset], sizeof(RTCData));
         offset += sizeof(RTCData);
 
-        last_rtc_update = 0; // Reset delta tracking
+        last_rtc_update = 0; // 0 means no previous timestamp, so the next update does not advance the clock
     }
 }
 
@@ -330,9 +309,7 @@ void MBC5Controller::reset() {
 
 // --- Cartridge Implementation ---
 
-Cartridge::Cartridge() {
-    // Basic initialization
-}
+Cartridge::Cartridge() {}
 
 Cartridge::~Cartridge() {
     if (!save_file_path.empty() && has_battery) {
@@ -356,25 +333,23 @@ bool Cartridge::load_from_file(const std::string& file_path) {
 }
 
 bool Cartridge::load_from_data(const std::vector<uint8_t>& data) {
-    rom_data = data; // Copy data
+    rom_data = data;
     rom_size = rom_data.size();
 
-    // Safety check just in case
+    // The cartridge header occupies 0x100-0x14F.
     if (rom_size < 0x150) return false;
 
     parse_header();
     detect_cartridge_type();
 
-    // Setup RAM
     size_t required_ram = CartridgeUtils::ram_size_from_code(rom_data[0x149]);
-    // Specialized MBC2 handling - 512x4 bits (internal), but here we alloc 512 bytes
+    // MBC2 has 512 x 4 bits of built-in RAM, stored here as 512 bytes.
     if (type == CartridgeType::MBC2 || type == CartridgeType::MBC2_BATTERY) {
         required_ram = 512;
     }
     ram_data.resize(required_ram, 0);
     ram_size = required_ram;
 
-    // Check battery
     has_battery = CartridgeUtils::cartridge_has_battery(type);
 
     create_mbc_controller();
@@ -387,9 +362,6 @@ void Cartridge::parse_header() {
     char title_buf[17] = {0};
     std::memcpy(title_buf, &rom_data[0x134], 16);
     title = std::string(title_buf);
-
-    // Game Code (CGB)
-    // ... logic omitted for brevity, user generic parsing
 
     // CGB Flag at 0x143
     supports_color = (rom_data[0x143] == 0x80 || rom_data[0x143] == 0xC0);
@@ -457,7 +429,7 @@ void Cartridge::write(uint16_t address, uint8_t value) {
     if (mbc) {
         mbc->write(address, value);
     } else {
-        // Handle RAM write for ROM_ONLY (if RAM exists, rare)
+        // ROM-only cartridges can still carry RAM (rare).
         if (address >= 0xA000 && address < 0xC000) {
             if (ram_size > 0 && (address - 0xA000) < ram_size) {
                 ram_data[address - 0xA000] = value;
@@ -472,20 +444,10 @@ void Cartridge::update() {
     }
 }
 
-// Helpers for MBC classes
 void Cartridge::set_rom_bank(uint16_t bank) { current_rom_bank = bank; }
 
 void Cartridge::set_ram_bank(uint8_t bank) { current_ram_bank = bank; }
 
-// Internal safe reads
-// Note: These are NOT part of the header interface but needed for the implementation logic
-// if I want to deduplicate checks. But since they are not in header,
-// I will implement the logic inside read_rom_safe inline or add private methods if header allows.
-// The header does NOT declare private helpers for read_rom_bank.
-// However, the header declares `get_rom_pointer()` and `get_rom_bank_size()`.
-// I'll stick to using raw pointer access which is fast.
-
-// File I/O for RAM
 bool Cartridge::save_ram_to_file() const {
     if (!has_battery || ram_data.empty() || save_file_path.empty()) return false;
 
@@ -500,7 +462,7 @@ bool Cartridge::load_ram_from_file() {
     if (save_file_path.empty()) return false;
 
     std::ifstream file(save_file_path, std::ios::binary);
-    if (!file.is_open()) return false; // No save file aka new game
+    if (!file.is_open()) return false; // No save file yet: a new game
 
     file.read(reinterpret_cast<char*>(ram_data.data()), ram_data.size());
     return true;
@@ -533,16 +495,6 @@ std::string Cartridge::get_info_string() const {
     return ss.str();
 }
 
-// Added internal helper methods to avoid repetitive code in MBCs
-// Since these are not in the header, I interpret calls like "read_rom_bank" in my MBC impl
-// as direct pointer arithmetic on the private members (via friend access).
-
-// Helper implementations for use inside MBCs:
-// (These represent the logic I used above)
-// uint8_t read_rom_bank(uint16_t bank, uint16_t offset) -> rom_data[bank * 0x4000 + offset]
-// uint8_t read_ram_bank(uint8_t bank, uint16_t offset) -> ram_data[bank * 0x2000 + offset]
-// void write_ram_bank(uint8_t bank, uint16_t offset, uint8_t val) -> ram_data[...] = val
-
 } // namespace GameBoy
 
 // --- C Interface ---
@@ -555,24 +507,18 @@ struct gb_cart {
 extern "C" {
 
 bool init_gb_cart(struct gb_cart* gb_cart, const char* gb_file) {
-    // Note: The caller must have allocated memory for 'gb_cart' struct
-    // OR 'gb_cart' is treated as a handle.
-    // Given the ambiguity and likely usage pattern in this project:
-    // We assume gb_cart is a valid pointer to storage large enough for our struct.
+    // The caller provides the storage for the gb_cart struct; it is constructed in place below.
 
     if (!gb_cart || !gb_file) return false;
 
-    // We use placement new to construct the unique_ptr in the provided memory
-    // This assumes the caller knows sizeof(gb_cart) which is dangerous if opacity is true.
-    // However, if this is a pointer, maybe we can just assign?
-    // Safety fallback: If this is used by C++, it's fine. If C, it's risky.
+    // Placement new builds the wrapper in the caller's storage; release_gb_cart destroys it without freeing the memory.
 
     new (gb_cart) struct gb_cart();
     gb_cart->impl = std::make_unique<GameBoy::Cartridge>();
 
     bool result = gb_cart->impl->load_from_file(gb_file);
     if (result) {
-        // Attempt to load save
+        // Battery RAM is kept next to the ROM as <rom file>.sav.
         std::string save_path = std::string(gb_file) + ".sav";
         gb_cart->impl->set_save_file_path(save_path);
         gb_cart->impl->load_ram_from_file();
@@ -585,9 +531,9 @@ void release_gb_cart(struct gb_cart* gb_cart) {
         // Save RAM before destroy
         if (gb_cart->impl) {
             gb_cart->impl->save_ram_to_file();
-            gb_cart->impl.reset(); // Destroy Cartridge
+            gb_cart->impl.reset();
         }
-        gb_cart->~gb_cart();       // Destruct wrapper
+        gb_cart->~gb_cart();
     }
 }
 

@@ -19,7 +19,6 @@
 #include "Register.hpp"
 #include "../Types.hpp"
 
-// Forward declarations
 class CN64System;
 class CRegisters;
 class RomMemoryHandler;
@@ -31,7 +30,6 @@ class StateArchive;
 
 namespace N64System {
 
-// Timer type enumeration
 enum class TimerType : uint8_t {
     Unknown = 0,
     Compare,          // CPU compare timer
@@ -51,7 +49,6 @@ enum class TimerType : uint8_t {
     MaxTimers         // Total number of timer types
 };
 
-// Timer details structure
 struct TimerDetails {
     bool active;                    // Whether the timer is active
     uint64_t cycles_to_fire;        // Cycles until timer fires
@@ -83,18 +80,14 @@ private:
     TimePoint start_time;
 };
 
-// Main system timer class
 class SystemTimer {
 public:
-    // Constructor/Destructor
     SystemTimer(CN64System& system);
     ~SystemTimer();
 
-    // No copying
     SystemTimer(const SystemTimer&) = delete;
     SystemTimer& operator=(const SystemTimer&) = delete;
 
-    // Allow moving
     SystemTimer(SystemTimer&&) noexcept = default;
     SystemTimer& operator=(SystemTimer&&) = delete;
 
@@ -206,7 +199,6 @@ private:
     };
 };
 
-// Timer manager for global timer access
 class TimerManager {
 public:
     static TimerManager& instance();
@@ -239,9 +231,7 @@ private:
     uint64_t master_cycles = 0;
 };
 
-// Utility functions for timer operations
 namespace TimerUtils {
-// Timer type conversion
 constexpr const char* timer_type_to_string(TimerType type) {
     switch (type) {
     case TimerType::Compare:          return "Compare";
@@ -262,7 +252,6 @@ constexpr const char* timer_type_to_string(TimerType type) {
     }
 }
 
-// Timer frequency conversion
 constexpr uint32_t get_timer_frequency(TimerType type) {
     switch (type) {
     case TimerType::ViTimer:          return SystemTimer::VI_CLOCK_FREQUENCY;
@@ -273,7 +262,6 @@ constexpr uint32_t get_timer_frequency(TimerType type) {
     }
 }
 
-// Calculate timer values
 constexpr uint32_t calculate_timer_value(uint32_t frequency, double seconds) {
     return static_cast<uint32_t>(static_cast<double>(frequency) * seconds);
 }

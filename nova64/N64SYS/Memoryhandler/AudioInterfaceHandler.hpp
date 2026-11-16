@@ -1,6 +1,6 @@
 /**
  * @file AudioInterfaceHandler.hpp
- * @brief Audio Interface Handler declarations and types.
+ * @brief Audio Interface (AI) handler declarations: register indices, status bits and the DMA FIFO state.
  */
 #pragma once
 
@@ -12,7 +12,6 @@
 #include <array>
 #include <memory>
 
-// Forward declarations
 class CN64System;
 class CRegisters;
 namespace N64System {
@@ -83,7 +82,6 @@ public:
     void UpdateAudio();
     uint32_t CalculateCycles(uint32_t len);
 
-    // helper to get frequency
     uint32_t GetFrequency() const;
 
     // Audio output (SDL2 queue-mode, see NovaRSP/HLE/AudioOutput.cpp)
@@ -105,7 +103,6 @@ private:
     std::array<uint32_t, static_cast<size_t>(AI::Register::REGISTER_COUNT)> m_registers;
     AudioInterfaceReg m_ai_regs{m_registers};
 
-    // State
     uint32_t m_current_dma_len = 0;
     uint32_t m_current_dma_addr = 0;
 

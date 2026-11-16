@@ -42,24 +42,20 @@ CFlashRam::~CFlashRam() {
     m_FlashRamPointer = nullptr;
 }
 
-// DMA from Flash RAM to RDRAM
 void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len) {
     if (!dest) {
         Log::error("DmaFromFlashram: null destination pointer");
         return;
     }
 
-    // BUG-FIX: any code path that returns early without writing to `dest`
-    // leaves whatever was previously in RDRAM. MM's libultra interprets
-    // that as the saved game state, and a zeroed/garbage Save Context
-    // means "max hearts = 0" → Link instant-dies after the first
-    // cutscene, plus saving appears to fail. Pre-fill the destination
-    // with 0xFF (FlashRAM erased state) up front so every error path is
-    // safe.
+    // Pre-fill the destination with 0xFF (FlashRAM erased state) so that every early return leaves
+    // defined data. If `dest` kept its previous RDRAM contents, MM's libultra would read them as the
+    // saved game state, and a zeroed or garbage Save Context means "max hearts = 0": Link dies right
+    // after the first cutscene and saving appears to fail.
     if (len > 0) std::memset(dest, 0xFF, static_cast<size_t>(len));
 
-    // Off-stack buffer (was 64 KB on the stack — fragile under deep PI
-    // call stacks). Single-threaded access, so static is fine.
+    // 64 KB buffer kept off the stack (deep PI call stacks make a stack buffer fragile); access is
+    // single-threaded, so static is fine.
     static uint8_t FlipBuffer[0x10000];
 
     switch (m_FlashFlag) {
@@ -136,7 +132,6 @@ void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
     }
 }
 
-// DMA from RDRAM to Flash RAM
 void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len) {
     if (!Source) {
         Log::error("DmaToFlashram: null source pointer");
@@ -150,13 +145,11 @@ void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len)
             return;
         }
 
-        // Pre-fill with 0xFF (erased state). Real N64 FlashRAM is
-        // page-oriented: every write programs a full 128-byte page, and
-        // any cells not driven by the DMA stay in the erased (0xFF) state
-        // they were left in by the preceding 0x78/0xD2 erase pass. The
-        // previous memset(0) here would corrupt those cells to 0x00 and
-        // break MM new-file creation (which relies on the trailing tail
-        // of partially-filled pages reading back as 0xFF after save).
+        // Pre-fill with 0xFF (erased state). Real N64 FlashRAM is page-oriented: every write
+        // programs a full 128-byte page, and cells not driven by the DMA stay in the erased (0xFF)
+        // state left by the preceding 0x78/0xD2 erase pass. Filling with 0 would corrupt those cells
+        // and break MM new-file creation, which relies on the tail of partially-filled pages reading
+        // back as 0xFF after a save.
         std::memset(m_PageBuffer, 0xFF, sizeof(m_PageBuffer));
 
         // Copy from source (already in N64 byte order)
@@ -170,7 +163,6 @@ void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len)
     }
 }
 
-// Read Flash RAM status register
 uint32_t CFlashRam::ReadFromFlashStatus(uint32_t PAddr) {
     switch (PAddr) {
     case 0x08000000: return static_cast<uint32_t>(m_FlashStatus >> 32);
@@ -181,7 +173,6 @@ uint32_t CFlashRam::ReadFromFlashStatus(uint32_t PAddr) {
     return static_cast<uint32_t>(m_FlashStatus >> 32);
 }
 
-// Write Flash RAM command register
 void CFlashRam::WriteToFlashCommand(uint32_t Value) {
     Log::infof("[FlashRAM] command 0x%08X (mode=%d, off=0x%X)", Value, m_FlashFlag, m_FlashRAM_Offset);
     switch (Value & 0xFF000000) {
@@ -236,12 +227,10 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value) {
         break;
 
     case 0xE1000000: // Set status mode
-        // BUG-FIX: do NOT clobber m_FlashStatus here. Real hardware
-        // preserves the status word across mode switches so the game
-        // can poll the result of a previous 0xD2 (write/erase complete)
-        // by issuing 0xE1 followed by a STATUS-mode DMA read. The
-        // previous unconditional reset was eating our operation-complete
-        // bits and causing libultra's save thread to stall.
+        // m_FlashStatus is not reset here: real hardware preserves the status word across mode
+        // switches so the game can poll the result of a previous 0xD2 (write/erase complete) by
+        // issuing 0xE1 followed by a STATUS-mode DMA read. An unconditional reset ate the
+        // operation-complete bits and stalled libultra's save thread.
         m_FlashFlag = FLASHRAM_MODE_STATUS;
         if (m_FlashStatus == 0) m_FlashStatus = 0x1111800100C2001E; // initial idle status
         Log::debug("Flash RAM: status mode");
@@ -296,7 +285,6 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value) {
     }
 }
 
-// Load Flash RAM from file
 bool CFlashRam::LoadFlashram() {
     extern CN64System* g_System;
 
@@ -321,10 +309,8 @@ bool CFlashRam::LoadFlashram() {
     std::string fileName = gameName + ".fla";
     std::string fullPath = savePath + "/" + fileName;
 
-    // Create save directory if it doesn't exist
     std::filesystem::create_directories(savePath);
 
-    // Try to open the file
     FileSystem::OpenMode openMode =
         m_ReadOnly ? FileSystem::OpenMode::Read : (FileSystem::OpenMode::Read | FileSystem::OpenMode::Write);
 

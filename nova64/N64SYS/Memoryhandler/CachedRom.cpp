@@ -39,10 +39,6 @@ constexpr uint32_t ASIC_TEST_REG = 0x05000598;
 constexpr uint32_t ASIC_TEST_PIN_SEL = 0x050005A0;
 } // namespace DDRegAddr
 
-/**
- * @brief Constructor for DiskInterfaceReg base class
- * @param DiskInterface Pointer to disk interface register storage
- */
 DiskInterfaceReg::DiskInterfaceReg(uint32_t* DiskInterface) :
     ASIC_DATA(DiskInterface[0]), ASIC_MISC_REG(DiskInterface[1]), ASIC_STATUS(DiskInterface[2]),
     ASIC_CMD(DiskInterface[3]), ASIC_CUR_TK(DiskInterface[4]), ASIC_BM_STATUS(DiskInterface[5]),
@@ -60,12 +56,6 @@ CachedRom::CachedRom(CRegisters& Reg, uint32_t* diskRegs) :
     m_C2Buffer.fill(0);
 }
 
-/**
- * @brief Read from 64DD disk interface register
- * @param Address Register address
- * @param Value Output value
- * @return true if read successful
- */
 bool CachedRom::Read32(uint32_t Address, uint32_t& Value) {
     switch (Address) {
     case DDRegAddr::ASIC_DATA: Value = ASIC_DATA; break;
@@ -118,13 +108,6 @@ bool CachedRom::Read32(uint32_t Address, uint32_t& Value) {
     return true;
 }
 
-/**
- * @brief Write to 64DD disk interface register
- * @param Address Register address
- * @param Value Value to write
- * @param Mask Write mask
- * @return true if write successful
- */
 bool CachedRom::Write32(uint32_t Address, uint32_t Value, uint32_t Mask) {
     Value &= Mask;
 
@@ -175,10 +158,7 @@ bool CachedRom::Write32(uint32_t Address, uint32_t Value, uint32_t Mask) {
     return true;
 }
 
-/**
- * @brief Process disk command
- * @param Command Command value written to ASIC_CMD
- */
+// Handles a command written to ASIC_CMD.
 void CachedRom::ProcessCommand(uint32_t Command) {
     uint32_t cmdType = (Command >> 24) & 0xFF;
 
@@ -247,10 +227,7 @@ void CachedRom::ProcessCommand(uint32_t Command) {
     }
 }
 
-/**
- * @brief Process buffer manager control
- * @param Control Control value written to ASIC_BM_CTL
- */
+// Handles a control value written to ASIC_BM_CTL.
 void CachedRom::ProcessBMControl(uint32_t Control) {
     if (Control & static_cast<uint32_t>(DDBMControl::START)) {
         ASIC_BM_STATUS |= static_cast<uint32_t>(DDBMStatus::RUNNING);
@@ -281,9 +258,6 @@ void CachedRom::ProcessBMControl(uint32_t Control) {
     }
 }
 
-/**
- * @brief Perform hard reset of disk interface
- */
 void CachedRom::HardReset() {
     ASIC_DATA = 0;
     ASIC_MISC_REG = 0;
@@ -324,9 +298,6 @@ void CachedRom::HardReset() {
     m_DiskSize = 0;
 }
 
-/**
- * @brief Read sector from disk
- */
 bool CachedRom::ReadDiskSector(uint32_t sector, uint8_t* buffer, uint32_t length) {
     if (!m_DiskData || sector * 512 >= m_DiskSize) {
         return false;
@@ -339,9 +310,6 @@ bool CachedRom::ReadDiskSector(uint32_t sector, uint8_t* buffer, uint32_t length
     return true;
 }
 
-/**
- * @brief Write sector to disk
- */
 bool CachedRom::WriteDiskSector(uint32_t sector, const uint8_t* buffer, uint32_t length) {
     if (!m_DiskData || sector * 512 >= m_DiskSize) {
         return false;
@@ -350,9 +318,6 @@ bool CachedRom::WriteDiskSector(uint32_t sector, const uint8_t* buffer, uint32_t
     return false;
 }
 
-/**
- * @brief Start DMA read operation
- */
 void CachedRom::StartDMARead() {
     if (!m_RDRAM || !IsDiskPresent()) {
         ASIC_STATUS |= static_cast<uint32_t>(DDStatus::BUFFER_ERROR);
@@ -374,9 +339,6 @@ void CachedRom::StartDMARead() {
     ASIC_STATUS |= static_cast<uint32_t>(DDStatus::DATA_REQUEST);
 }
 
-/**
- * @brief Start DMA write operation
- */
 void CachedRom::StartDMAWrite() {
     if (!m_RDRAM || !IsDiskPresent()) {
         ASIC_STATUS |= static_cast<uint32_t>(DDStatus::BUFFER_ERROR);
@@ -398,9 +360,6 @@ void CachedRom::StartDMAWrite() {
     ASIC_STATUS |= static_cast<uint32_t>(DDStatus::DATA_REQUEST);
 }
 
-/**
- * @brief Process active DMA transfer
- */
 void CachedRom::ProcessDMA() {
     if (!m_DMAActive) {
         return;
@@ -445,9 +404,6 @@ void CachedRom::ProcessDMA() {
     }
 }
 
-/**
- * @brief Complete DMA transfer
- */
 void CachedRom::CompleteDMA() {
     m_DMAActive = false;
     m_C2BufferOffset = 0;
@@ -464,9 +420,6 @@ void CachedRom::CompleteDMA() {
     }
 }
 
-/**
- * @brief Load sector from disk into C2 buffer
- */
 void CachedRom::LoadSectorToC2Buffer(uint32_t sector) {
     if (!m_DiskData) {
         ASIC_STATUS |= static_cast<uint32_t>(DDStatus::MECHANICAL_ERROR);
@@ -488,14 +441,8 @@ void CachedRom::LoadSectorToC2Buffer(uint32_t sector) {
     }
 }
 
-/**
- * @brief Flush C2 buffer to disk
- */
 void CachedRom::FlushC2BufferToDisk(uint32_t sector) { (void)sector; }
 
-/**
- * @brief Update function called periodically
- */
 void CachedRom::Update() {
     if (m_DMAActive) {
         ProcessDMA();
@@ -508,18 +455,12 @@ void CachedRom::Update() {
     }
 }
 
-/**
- * @brief Trigger disk interrupt
- */
 void CachedRom::TriggerInterrupt() {
     if (m_InterruptCallback) {
         m_InterruptCallback();
     }
 }
 
-/**
- * @brief Check if RDRAM address is valid
- */
 bool CachedRom::IsRDRAMAddressValid(uint32_t address, uint32_t length) const {
     if (!m_RDRAM || m_RDRAMSize == 0) {
         return false;
@@ -536,9 +477,6 @@ bool CachedRom::IsRDRAMAddressValid(uint32_t address, uint32_t length) const {
     return true;
 }
 
-/**
- * @brief Calculate sector number from current track/sector position
- */
 uint32_t CachedRom::CalculateSectorFromPosition() const { return (ASIC_CUR_TK * 85) + ASIC_CUR_SECTOR; }
 
 } // namespace DD64

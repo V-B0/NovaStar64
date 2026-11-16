@@ -1,5 +1,5 @@
 /**
- * @file MIPSYinterfacehandler.cpp
+ * @file MIPSYInterfaceHandler.cpp
  * @brief MIPS Interface (MI) Register Handler Implementation
  * 
  * Handles the MIPS Interface registers which control:
@@ -86,11 +86,9 @@ MIPSYInterfaceHandler::MIPSYInterfaceHandler(CRegisters& reg) :
     // Set initial version (0x02020102 is typical)
     *MI_VERSION_REG = 0x02020102;
 
-    // Clear interrupt state
     *MI_INTR_REG = 0;
     *MI_INTR_MASK_REG = 0;
 
-    // Set default mode
     *MI_MODE_REG = 0;
 }
 
@@ -167,7 +165,6 @@ void MIPSYInterfaceHandler::ProcessModeWrite(uint32_t val) {
     // Update mode bits directly (lower 7 bits)
     *MI_MODE_REG = (*MI_MODE_REG & ~0x7F) | (val & 0x7F);
 
-    // Process control bits
     if (val & MIMode::CLR_INIT) {
         *MI_MODE_REG &= ~MIMode::INIT;
         if (auto* mem = m_Reg.GetSystem().GetMemory()) mem->SetMIRepeatMode(false);
@@ -209,7 +206,6 @@ void MIPSYInterfaceHandler::ProcessModeWrite(uint32_t val) {
 // --- Interrupt Mask Register Processing ---
 
 void MIPSYInterfaceHandler::ProcessMaskWrite(uint32_t val) {
-    // Process each interrupt mask control bit
     if (val & MIMask::CLR_SP) {
         *MI_INTR_MASK_REG &= ~MIMask::SP;
         WriteLog(LogLevel::Trace, "MIPSYInterface: Clear SP interrupt mask");
@@ -276,7 +272,6 @@ void MIPSYInterfaceHandler::SetInterrupt(uint32_t interruptBit) {
     WriteLog(LogLevel::Debug, "MIPSYInterface: Set interrupt bit 0x%02X (INTR=0x%02X, MASK=0x%02X)", interruptBit,
              *MI_INTR_REG, *MI_INTR_MASK_REG);
 
-    // Trigger interrupt check
     m_Reg.CheckInterrupts();
 }
 
@@ -291,7 +286,6 @@ void MIPSYInterfaceHandler::ClearInterrupt(uint32_t interruptBit) {
     WriteLog(LogLevel::Debug, "MIPSYInterface: Clear interrupt bit 0x%02X (INTR=0x%02X, MASK=0x%02X)", interruptBit,
              *MI_INTR_REG, *MI_INTR_MASK_REG);
 
-    // Recheck interrupts
     m_Reg.CheckInterrupts();
 }
 
@@ -313,7 +307,7 @@ void MIPSYInterfaceHandler::Reset() {
     WriteLog(LogLevel::Info, "MIPSYInterface: Reset");
 
     *MI_MODE_REG = 0;
-    *MI_VERSION_REG = 0x02020102; // Standard version
+    *MI_VERSION_REG = 0x02020102;
     *MI_INTR_REG = 0;
     *MI_INTR_MASK_REG = 0;
 

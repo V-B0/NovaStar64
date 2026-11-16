@@ -1,6 +1,6 @@
 /**
  * @file RDRAMInterFaceHandler.cpp
- * @brief RDRAM Inter Face Handler implementation.
+ * @brief RDRAM Interface (RI) register handler (0x04700000-0x0470001C).
  */
 #include "RDRAMInterFaceHandler.hpp"
 #include "../StateArchive.hpp"
@@ -14,7 +14,6 @@
 
 // Use simple register offsets for RDRAM interface registers (0x04700000 base)
 namespace {
-// Base address for RDRAM Interface
 constexpr uint32_t RI_BASE_ADDRESS = 0x04700000;
 constexpr uint32_t RI_END_ADDRESS = 0x0470001C;
 } // namespace
@@ -57,7 +56,6 @@ bool RDRAMInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
     default:
         value = 0;
         Log::debugf("RDRAMInterface: Read from unknown address 0x%08X", address);
-        // Breakpoint equivalent?
         return true;
     }
 
@@ -65,7 +63,6 @@ bool RDRAMInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
 }
 
 bool RDRAMInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t mask) {
-    // Update value helper
     auto update = [&](uint32_t& reg) { reg = (reg & ~mask) | (value & mask); };
 
     uint32_t offset = address & 0x1FFFFFFF;
@@ -92,20 +89,15 @@ bool RDRAMInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
     return true;
 }
 
-// Specific register handling bits
 void RDRAMInterfaceHandler::handle_config_write(uint32_t value, uint32_t mask) {
-    // RI_CONFIG: 0x04700004
-    // Used by games to configure SDRAM type/size implicitly.
-    // Logging changes can help identify memory mapping issues.
+    // RI_CONFIG (0x04700004): games use it to configure the SDRAM type and size implicitly. Writes
+    // have no side effects here.
 }
 
 void RDRAMInterfaceHandler::handle_mode_write(uint32_t value, uint32_t mask) {
-    // RI_MODE: 0x04700000
-    // Bit 0: RESET - If set, reset RI interface?
-    // Bit 1: STOP - Stop clock?
+    // RI_MODE (0x04700000): bit 0 is RESET, bit 1 is STOP.
     if (value & 0x01) {
-        // Reset requested
-        // In a full hardware sim, we might clear other RI regs here
+        // A reset request is only logged; the other RI registers are left as they are.
         Log::info("RDRAMInterface: RI_MODE Reset bit set");
     }
 }

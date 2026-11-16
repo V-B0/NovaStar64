@@ -82,7 +82,6 @@ void N64Rom::LoadRom(const fs::path& filePath, bool loadBootCodeOnly) {
     std::string ext = filePath.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-    // Check if it's a zip file
     if (ext == ".zip") {
         LoadFromZip(filePath, loadBootCodeOnly);
     } else {
@@ -92,10 +91,8 @@ void N64Rom::LoadRom(const fs::path& filePath, bool loadBootCodeOnly) {
     m_Image->m_FilePath = filePath;
     m_Image->m_FileName = filePath.filename().string();
 
-    // Parse header and extract metadata
     ParseHeader();
 
-    // Detect CIC chip
     CalculateCICChip();
 
     // Calculate MD5 if loading full ROM
@@ -271,13 +268,11 @@ void N64Rom::CleanRomName(std::string& romName, bool byteswap) {
 }
 
 void N64Rom::SaveRomSettingID(bool temp) {
-    // Save ROM settings to emulator configuration
-    // This would typically save to a settings system
-    // For now, this is a placeholder
+    // ROM settings are not persisted.
 }
 
 void N64Rom::ClearRomSettingID() {
-    // Clear any saved ROM settings
+    // Nothing to clear: ROM settings are not persisted.
 }
 
 void N64Rom::DetectFormatAndByteSwap() {
@@ -288,18 +283,18 @@ void N64Rom::DetectFormatAndByteSwap() {
     uint32_t magic = *reinterpret_cast<uint32_t*>(m_Image->m_Data.data());
 
     switch (magic) {
-    case 0x40123780:   // Big endian - native N64 format (read as LE: 0x80371240 -> 0x40123780)
+    case 0x40123780:   // Big endian (.z64): bytes 80 37 12 40
         m_Image->m_Format = RomFormat::BigEndian;
         ByteSwapN64(); // Convert to host order (40 12 37 80)
         break;
 
-    case 0x12408037:   // Byte swapped (V64) (read as LE: 0x37804012 -> 0x12408037)
+    case 0x12408037:   // Byte swapped (.v64): bytes 37 80 40 12
         m_Image->m_Format = RomFormat::ByteSwapped;
         ByteSwapV64(); // Convert to Big Endian (80 37 12 40)
         ByteSwapN64(); // Convert to host order (40 12 37 80)
         break;
 
-    case 0x80371240: // Little endian (N64) (read as LE: 0x40123780 -> 0x80371240)
+    case 0x80371240: // Little endian (.n64): bytes 40 12 37 80
         m_Image->m_Format = RomFormat::LittleEndian;
         // No swap needed, already in host order (40 12 37 80)
         break;
@@ -326,7 +321,6 @@ void N64Rom::ParseHeader() {
     }
     m_Image->m_RomName = name;
 
-    // Clean the ROM name
     CleanRomName(m_Image->m_RomName, false);
 
     // If name is empty, use filename
@@ -378,7 +372,6 @@ void N64Rom::LoadFromFile(const fs::path& filePath, bool loadBootCodeOnly) {
         throw RomError(RomError::Type::ReadError, "Failed to open ROM file: " + filePath.string());
     }
 
-    // Get file size
     file.seekg(0, std::ios::end);
     size_t fileSize = static_cast<size_t>(file.tellg());
     file.seekg(0, std::ios::beg);
@@ -397,7 +390,6 @@ void N64Rom::LoadFromFile(const fs::path& filePath, bool loadBootCodeOnly) {
     size_t loadSize = loadBootCodeOnly ? BOOT_CODE_SIZE : fileSize;
     loadSize = std::min(loadSize, fileSize);
 
-    // Allocate memory
     if (!AllocateImage(loadSize)) {
         throw RomError(RomError::Type::OutOfMemory, "Failed to allocate memory for ROM");
     }
@@ -421,14 +413,11 @@ void N64Rom::LoadFromFile(const fs::path& filePath, bool loadBootCodeOnly) {
         totalRead += toRead;
     }
 
-    // Byte swap if needed
     DetectFormatAndByteSwap();
 }
 
 void N64Rom::LoadFromZip(const fs::path& filePath, bool loadBootCodeOnly) {
-    // Basic zip support would go here
-    // For now, throw an error indicating zip support is not implemented
-    // In a full implementation, you would use a library like zlib/minizip
+    // ZIP archives are not supported; the ROM has to be extracted first.
     throw RomError(RomError::Type::ZipError, "ZIP file support not yet implemented. Extract the ROM first.");
 }
 
@@ -463,9 +452,9 @@ bool N64Rom::IsValidRomImage(const uint8_t* test) noexcept {
     uint32_t magic = *reinterpret_cast<const uint32_t*>(test);
 
     switch (magic) {
-    case 0x40123780: // Little endian
-    case 0x12408037: // Byte swapped
-    case 0x80371240: // Big endian
+    case 0x40123780: // Big endian (.z64)
+    case 0x12408037: // Byte swapped (.v64)
+    case 0x80371240: // Little endian (.n64)
     case 0x40072780: // 64DD IPL
         return true;
     default: return false;

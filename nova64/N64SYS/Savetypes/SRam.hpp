@@ -1,6 +1,6 @@
 /**
  * @file SRam.hpp
- * @brief S Ram declarations and types.
+ * @brief SRAM save chip declarations: 32 KB battery RAM accessed by PI DMA.
  *
  * Derived from Project64 (https://github.com/project64/project64),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.

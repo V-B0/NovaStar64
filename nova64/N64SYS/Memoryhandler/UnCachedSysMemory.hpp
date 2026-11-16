@@ -12,7 +12,6 @@
 #include "../Savetypes/SRam.hpp"
 #include "../Savetypes/FRam.hpp"
 
-// Forward declarations
 class CN64System;
 class CRegisters;
 namespace Nova64 {
@@ -32,13 +31,6 @@ class MipsMemoryVM;
  */
 class UnCachedSysMemory : public MemoryHandler {
 public:
-    /**
-     * @brief Constructor
-     * @param system Reference to N64 system
-     * @param reg Register interface
-     * @param mmu Memory management unit
-     * @param savesReadOnly If true, prevent writes to save memory
-     */
     UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64::MipsMemoryVM& mmu, bool savesReadOnly);
 
     /**
@@ -69,16 +61,8 @@ public:
      */
     void DMAWrite();
 
-    /**
-     * @brief Get SRAM interface
-     * @return Reference to SRAM handler
-     */
     CSram& GetSram();
 
-    /**
-     * @brief Get FlashRAM interface
-     * @return Reference to FlashRAM handler
-     */
     CFlashRam& GetFlashRam();
 
 private:
@@ -96,7 +80,6 @@ private:
     // DMA completion
     void CompleteDMA(bool error);
 
-    // Delete copy operations
     UnCachedSysMemory(const UnCachedSysMemory&) = delete;
     UnCachedSysMemory& operator=(const UnCachedSysMemory&) = delete;
 

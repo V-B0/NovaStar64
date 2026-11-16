@@ -18,11 +18,7 @@
 #include <cstdio>
 #include <algorithm>
 
-// Use MainSYS accessor
-// extern CN64System* g_System;
-
 namespace {
-// Helper to log byte arrays
 std::string bytes_to_string(Common::Span<const uint8_t> data) {
     std::string result;
     char buffer[4];
@@ -34,11 +30,8 @@ std::string bytes_to_string(Common::Span<const uint8_t> data) {
 }
 } // namespace
 
-// Implement the PIMPL class if we were strictly following it,
-// but since members are in the header, we'll use them directly.
-class PifRamHandler::Impl {
-    // Placeholder if needed
-};
+// Unused PIMPL stub: the members live in the header.
+class PifRamHandler::Impl {};
 
 PifRamHandler::PifRamHandler(CN64System& system, Nova64::MipsMemoryVM& mmu, CRegisters& registers, CEeprom& eeprom,
                              const Config& config) :
@@ -58,12 +51,9 @@ PifRamHandler::~PifRamHandler() noexcept = default;
 bool PifRamHandler::Read32(uint32_t address, uint32_t& value) {
     address &= 0x1FFFFFFF;
 
-    // PIF ROM (0x1FC00000 - 0x1FC007BF)
-    // The boot ROM is usually handled by CachedRom/UncachedRom, but PIF RAM handles requests here?
-    // The provided code says: if (Address < 0x1FC007C0) Value = 0;
+    // PIF ROM (0x1FC00000 - 0x1FC007BF): reads return 0.
 
     if (address < PIF::PIF_RAM_START) {
-        // Accessing PIF ROM
         value = 0;
         return true;
     }
@@ -71,9 +61,7 @@ bool PifRamHandler::Read32(uint32_t address, uint32_t& value) {
     // PIF RAM (0x1FC007C0 - 0x1FC007FF)
     if (address < 0x1FC00800) {
         uint32_t offset = address - PIF::PIF_RAM_START;
-        // Read 32 bits from byte array. N64 is Big Endian. Host is likely Little Endian.
-        // m_pif_ram is array<uint8_t>.
-        // We construct the word.
+        // PIF RAM is a byte array; build the big-endian word.
         uint32_t word = (m_pif_ram[offset] << 24) | (m_pif_ram[offset + 1] << 16) | (m_pif_ram[offset + 2] << 8) |
                         (m_pif_ram[offset + 3]);
 
@@ -96,15 +84,11 @@ bool PifRamHandler::Write32(uint32_t address, uint32_t value, uint32_t mask) {
     if (address < 0x1FC00800) {
         uint32_t offset = address - PIF::PIF_RAM_START;
 
-        // Handle masking
-        // Get current value
         uint32_t current = (m_pif_ram[offset] << 24) | (m_pif_ram[offset + 1] << 16) | (m_pif_ram[offset + 2] << 8) |
                            (m_pif_ram[offset + 3]);
 
-        // Update value
         uint32_t newValue = (current & ~mask) | (value & mask);
 
-        // Write back bytes
         m_pif_ram[offset] = (newValue >> 24) & 0xFF;
         m_pif_ram[offset + 1] = (newValue >> 16) & 0xFF;
         m_pif_ram[offset + 2] = (newValue >> 8) & 0xFF;
@@ -121,7 +105,6 @@ bool PifRamHandler::Write32(uint32_t address, uint32_t value, uint32_t mask) {
 }
 
 bool PifRamHandler::Read8(uint32_t address, uint8_t& value) {
-    // Similar logic for 8-bit access
     address &= 0x1FFFFFFF;
     if (address >= PIF::PIF_RAM_START && address < 0x1FC00800) {
         value = m_pif_ram[address - PIF::PIF_RAM_START];
@@ -378,8 +361,6 @@ void PifRamHandler::pif_control_write() {
 
 // --- Controller Processing ---
 
-// [Deleted duplicate process_controller_command]
-
 void PifRamHandler::process_eeprom_command(Common::Span<uint8_t> command) {
     // EEPROM is usually on channel 4
     if (command.empty()) return;
@@ -473,7 +454,7 @@ void PifRamHandler::CicNus6105(const char* Challenge, char* Response, int Length
     }
 }
 
-// Keep old method as wrapper for backward compatibility
+// Span-based wrapper around CicNus6105().
 void PifRamHandler::cic_nus_6105_challenge(Common::Span<const uint8_t> challenge, Common::Span<uint8_t> response) {
     size_t len = std::min(challenge.size(), response.size());
     if (len > 30) len = 30;

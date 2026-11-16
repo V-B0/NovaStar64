@@ -1,6 +1,6 @@
 /**
  * @file R4300Instruction.hpp
- * @brief R4300Instruction declarations and types.
+ * @brief Decoded view of one MIPS R4300i instruction: disassembly, register usage and delay-slot hazards.
  */
 #pragma once
 #include <string>
@@ -26,6 +26,7 @@ public:
 
     std::string GetFullString() const { return GetName() + " " + GetParam(); }
 
+    /// General-purpose registers read and written (0xFFFFFFFF = none) and whether HI/LO are touched.
     struct RegisterInfo {
         uint32_t read1 = 0xFFFFFFFF;
         uint32_t read2 = 0xFFFFFFFF;
@@ -38,6 +39,7 @@ public:
 
     RegisterInfo GetRegisterInfo() const;
 
+    /// True if the instruction in the delay slot writes a register (or HI/LO, or the FP condition) that this instruction reads.
     bool AffectedByDelaySlot(uint32_t delaySlotInstruction) const;
 
 private:

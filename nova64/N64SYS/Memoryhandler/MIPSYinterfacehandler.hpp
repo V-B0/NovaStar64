@@ -1,6 +1,6 @@
 /**
- * @file MIPSYInterfaceHandler.hpp
- * @brief MIPSY Interface Handler declarations and types.
+ * @file MIPSYinterfacehandler.hpp
+ * @brief MIPS Interface (MI) handler declarations: mode, interrupt status and interrupt mask registers.
  */
 #pragma once
 #include <cstdint>
@@ -69,5 +69,5 @@ private:
 
 public:
     CRegisters& m_Reg;
-    uint64_t& m_PC; // This was here, maybe from earlier edit or original file.
+    uint64_t& m_PC;
 };

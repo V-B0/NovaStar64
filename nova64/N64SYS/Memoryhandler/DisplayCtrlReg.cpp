@@ -140,37 +140,31 @@ void DisplayProcessorHandler::ProcessStatusCommand(uint32_t cmd) {
 
     uint32_t& status = m_Registers[DPC_STATUS];
 
-    // Clear XBUS DMEM DMA
     if (isCommandSet(cmd, DPCCommand::CLR_XBUS_DMEM_DMA)) {
         status &= ~static_cast<uint32_t>(DPCStatus::XBUS_DMEM_DMA);
         Log::debugf("DisplayProcessorHandler: Clear XBUS DMEM DMA");
     }
 
-    // Set XBUS DMEM DMA
     if (isCommandSet(cmd, DPCCommand::SET_XBUS_DMEM_DMA)) {
         status |= static_cast<uint32_t>(DPCStatus::XBUS_DMEM_DMA);
         Log::debugf("DisplayProcessorHandler: Set XBUS DMEM DMA");
     }
 
-    // Clear Freeze
     if (isCommandSet(cmd, DPCCommand::CLR_FREEZE)) {
         status &= ~static_cast<uint32_t>(DPCStatus::FREEZE);
         Log::debugf("DisplayProcessorHandler: Clear Freeze");
     }
 
-    // Set Freeze
     if (isCommandSet(cmd, DPCCommand::SET_FREEZE)) {
         status |= static_cast<uint32_t>(DPCStatus::FREEZE);
         Log::debugf("DisplayProcessorHandler: Set Freeze");
     }
 
-    // Clear Flush
     if (isCommandSet(cmd, DPCCommand::CLR_FLUSH)) {
         status &= ~static_cast<uint32_t>(DPCStatus::FLUSH);
         Log::debugf("DisplayProcessorHandler: Clear Flush");
     }
 
-    // Set Flush
     if (isCommandSet(cmd, DPCCommand::SET_FLUSH)) {
         status |= static_cast<uint32_t>(DPCStatus::FLUSH);
         Log::debugf("DisplayProcessorHandler: Set Flush");
@@ -181,25 +175,21 @@ void DisplayProcessorHandler::ProcessStatusCommand(uint32_t cmd) {
         }
     }
 
-    // Clear TMEM counter
     if (isCommandSet(cmd, DPCCommand::CLR_TMEM_CTR)) {
         m_Registers[DPC_TMEM] = 0;
         Log::debugf("DisplayProcessorHandler: Clear TMEM counter");
     }
 
-    // Clear Pipe counter
     if (isCommandSet(cmd, DPCCommand::CLR_PIPE_CTR)) {
         m_Registers[DPC_PIPEBUSY] = 0;
         Log::debugf("DisplayProcessorHandler: Clear Pipe counter");
     }
 
-    // Clear CMD counter
     if (isCommandSet(cmd, DPCCommand::CLR_CMD_CTR)) {
         m_Registers[DPC_BUFBUSY] = 0;
         Log::debugf("DisplayProcessorHandler: Clear CMD counter");
     }
 
-    // Clear Clock counter
     if (isCommandSet(cmd, DPCCommand::CLR_CLOCK_CTR)) {
         m_Registers[DPC_CLOCK] = 0;
         Log::debugf("DisplayProcessorHandler: Clear Clock counter");
@@ -228,7 +218,6 @@ void DisplayProcessorHandler::ProcessDisplayList() {
     Log::debugf("DisplayProcessorHandler: Processing display list: 0x%08X - 0x%08X (length=0x%X)", current, end,
                 length);
 
-    // Set busy flags
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::PIPE_BUSY);
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::START_GCLK);
     m_Registers[DPC_STATUS] |= static_cast<uint32_t>(DPCStatus::CMD_BUSY);
@@ -257,7 +246,6 @@ void DisplayProcessorHandler::ProcessDisplayList() {
         m_GfxPlugin->UpdateRDPStatus();
     }
 
-    // Update current register to end
     m_Registers[DPC_CURRENT] = end;
 
     // Clear busy flags - pipeline is no longer active after processing completes
@@ -272,7 +260,6 @@ void DisplayProcessorHandler::ProcessDisplayList() {
 
     m_ProcessingDList = false;
 
-    // Increment counters
     m_Registers[DPC_CLOCK]++;
     m_Registers[DPC_BUFBUSY]++;
 
@@ -322,7 +309,6 @@ void DisplayProcessorHandler::Reset() {
 
     Log::info("DisplayProcessorHandler: Reset");
 
-    // Clear all registers
     std::memset(m_Registers, 0, sizeof(uint32_t) * REGISTER_COUNT);
 
     // Set initial status (ready, not busy)

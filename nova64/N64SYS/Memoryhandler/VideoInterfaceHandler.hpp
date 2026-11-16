@@ -1,6 +1,6 @@
 /**
  * @file VideoInterfaceHandler.hpp
- * @brief Video Interface Handler declarations and types.
+ * @brief Video Interface (VI) handler declarations: register offsets and helpers, VideoInterfaceReg and VideoInterfaceHandler.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -12,7 +12,6 @@
 #include <memory>
 #include <functional>
 
-// Forward declarations
 namespace Nova64 {
 class MipsMemoryVM;
 class StateArchive;
@@ -25,7 +24,6 @@ class SystemTimer;
 class CN64System;
 
 namespace VI {
-// Video modes
 enum class ColorDepth : uint32_t {
     PIXEL_SIZE_16BIT = 0, // 16-bit RGB (5-5-5-1)
     PIXEL_SIZE_32BIT = 1  // 32-bit RGBA (8-8-8-8)
@@ -108,10 +106,9 @@ constexpr Serrate get_serrate(uint32_t status) { return static_cast<Serrate>((st
 constexpr AA_Mode get_aa_mode(uint32_t status) { return static_cast<AA_Mode>((status >> 8) & 0x3); }
 } // namespace VI
 
-// Modern register interface
+// Register wrapper with named accessors
 class VideoInterfaceReg {
 public:
-    // Accessor methods
     uint32_t& status() { return m_registers[static_cast<size_t>(VI::Register::STATUS) >> 2]; }
     uint32_t& origin() { return m_registers[static_cast<size_t>(VI::Register::ORIGIN) >> 2]; }
     uint32_t& width() { return m_registers[static_cast<size_t>(VI::Register::WIDTH) >> 2]; }
@@ -149,7 +146,6 @@ public:
     uint32_t x_scale() const { return m_registers[static_cast<size_t>(VI::Register::X_SCALE) >> 2]; }
     uint32_t y_scale() const { return m_registers[static_cast<size_t>(VI::Register::Y_SCALE) >> 2]; }
 
-    // Helper methods
     VI::ColorDepth get_color_depth() const { return VI::get_color_depth(status()); }
 
     VI::GammaDither get_gamma_dither() const { return VI::get_gamma_dither(status()); }
@@ -199,7 +195,6 @@ private:
     VideoInterfaceReg& operator=(const VideoInterfaceReg&) = delete;
 };
 
-// Main handler class
 class VideoInterfaceHandler final : public MemoryHandler {
 public:
     struct Config {
@@ -304,7 +299,6 @@ public:
     void set_mode_change_callback(ModeChangeCallback callback);
 
 private:
-    // Delete copy and move operations
     VideoInterfaceHandler() = delete;
     VideoInterfaceHandler(const VideoInterfaceHandler&) = delete;
     VideoInterfaceHandler(VideoInterfaceHandler&&) = delete;
@@ -349,7 +343,6 @@ private:
     InterruptCallback m_interrupt_callback;
     ModeChangeCallback m_mode_change_callback;
 
-    // Internal methods
     void handle_status_register_write(uint32_t value, uint32_t mask);
     void handle_origin_register_write(uint32_t value, uint32_t mask);
     void handle_v_intr_register_write(uint32_t value, uint32_t mask);

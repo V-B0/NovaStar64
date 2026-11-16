@@ -23,7 +23,6 @@ constexpr uint32_t MI_INTR_SP = 0x01;
 constexpr uint32_t MI_INTR_DP = 0x20;
 } // namespace
 
-// Constructor for SPRegisters base class
 SPRegisters::SPRegisters(SRegistersHandler* SignalProcessorInterface) :
     SP_MEM_ADDR(reinterpret_cast<uint32_t&>(SignalProcessorInterface->m_SPRegs[0])),
     SP_DRAM_ADDR(reinterpret_cast<uint32_t&>(SignalProcessorInterface->m_SPRegs[1])),
@@ -36,12 +35,6 @@ SPRegisters::SPRegisters(SRegistersHandler* SignalProcessorInterface) :
     SP_PC(reinterpret_cast<uint32_t&>(SignalProcessorInterface->m_SPRegs[8])),
     SP_IBIST(reinterpret_cast<uint32_t&>(SignalProcessorInterface->m_SPRegs[9])) {}
 
-/**
- * @brief Read from SP register
- * @param Address Register address
- * @param Value Output value
- * @return true if read successful
- */
 bool SRegistersHandler::Read32(uint32_t Address, uint32_t& Value) {
     // Handle DMEM/IMEM reads (0x04000000-0x04001FFF)
     // Matching P64: CPU can directly read RSP memory
@@ -85,13 +78,6 @@ bool SRegistersHandler::Read32(uint32_t Address, uint32_t& Value) {
     return true;
 }
 
-/**
- * @brief Write to SP register
- * @param Address Register address
- * @param Value Value to write
- * @param Mask Write mask
- * @return true if write successful
- */
 bool SRegistersHandler::Write32(uint32_t Address, uint32_t Value, uint32_t Mask) {
     uint32_t MaskedValue = Value & Mask;
 
@@ -157,7 +143,6 @@ bool SRegistersHandler::Write32(uint32_t Address, uint32_t Value, uint32_t Mask)
 void SRegistersHandler::SP_DMA_READ() {
     if (!m_RDRAM) return;
 
-    // Set DMA busy flag
     SP_STATUS |= SPStatus::DMA_BUSY;
 
     // Matching P64: Use pending addresses with proper alignment
@@ -240,7 +225,6 @@ void SRegistersHandler::SP_DMA_READ() {
 void SRegistersHandler::SP_DMA_WRITE() {
     if (!m_RDRAM) return;
 
-    // Set DMA busy flag
     SP_STATUS |= SPStatus::DMA_BUSY;
 
     // Matching P64: Use pending addresses with proper alignment
@@ -320,17 +304,16 @@ void SRegistersHandler::SP_DMA_WRITE() {
  * The status register uses a bit-pair system where writing specific
  * bits can either set or clear various status flags.
  * 
- * IMPORTANT: All flag changes must be applied to SP_STATUS BEFORE
- * triggering ClearHalt(). On real N64 hardware, the write is atomic —
- * the RSP doesn't start until the full register update completes.
- * If ClearHalt runs before SET_INTR_BREAK is applied, rsp_break()
- * won't see IntrBreak and won't generate the SP interrupt.
+ * All flag changes must be applied to SP_STATUS before ClearHalt() runs. On real hardware the
+ * write is atomic: the RSP does not start until the full register update completes. If ClearHalt()
+ * ran before SET_INTR_BREAK was applied, rsp_break() would not see IntrBreak and would not raise
+ * the SP interrupt.
  */
 void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
     bool shouldClearHalt = false;
     bool shouldSetHalt = false;
 
-    // ── Phase 1: Apply all SET/CLR flags to SP_STATUS atomically ──
+    // Phase 1: apply all SET/CLR flags to SP_STATUS atomically.
 
     // Halt control (defer actual halt/unhalt until after all flags applied)
     // P64: CLR only if SET is not also set, and vice versa
@@ -378,7 +361,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::INTR_BREAK;
     }
 
-    // Signal 0
     if ((Value & SPStatusWrite::CLR_SIG0) && !(Value & SPStatusWrite::SET_SIG0)) {
         SP_STATUS &= ~SPStatus::SIG0;
     }
@@ -386,7 +368,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG0;
     }
 
-    // Signal 1
     if ((Value & SPStatusWrite::CLR_SIG1) && !(Value & SPStatusWrite::SET_SIG1)) {
         SP_STATUS &= ~SPStatus::SIG1;
     }
@@ -394,7 +375,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG1;
     }
 
-    // Signal 2
     if ((Value & SPStatusWrite::CLR_SIG2) && !(Value & SPStatusWrite::SET_SIG2)) {
         SP_STATUS &= ~SPStatus::SIG2;
     }
@@ -402,7 +382,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG2;
     }
 
-    // Signal 3
     if ((Value & SPStatusWrite::CLR_SIG3) && !(Value & SPStatusWrite::SET_SIG3)) {
         SP_STATUS &= ~SPStatus::SIG3;
     }
@@ -410,7 +389,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG3;
     }
 
-    // Signal 4
     if ((Value & SPStatusWrite::CLR_SIG4) && !(Value & SPStatusWrite::SET_SIG4)) {
         SP_STATUS &= ~SPStatus::SIG4;
     }
@@ -418,7 +396,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG4;
     }
 
-    // Signal 5
     if ((Value & SPStatusWrite::CLR_SIG5) && !(Value & SPStatusWrite::SET_SIG5)) {
         SP_STATUS &= ~SPStatus::SIG5;
     }
@@ -426,7 +403,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG5;
     }
 
-    // Signal 6
     if ((Value & SPStatusWrite::CLR_SIG6) && !(Value & SPStatusWrite::SET_SIG6)) {
         SP_STATUS &= ~SPStatus::SIG6;
     }
@@ -434,7 +410,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG6;
     }
 
-    // Signal 7
     if ((Value & SPStatusWrite::CLR_SIG7) && !(Value & SPStatusWrite::SET_SIG7)) {
         SP_STATUS &= ~SPStatus::SIG7;
     }
@@ -442,7 +417,7 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
         SP_STATUS |= SPStatus::SIG7;
     }
 
-    // ── Phase 2: Now that ALL flags are applied, trigger halt/unhalt ──
+    // Phase 2: now that all flags are applied, trigger halt/unhalt.
     // This ensures rsp_break() sees the correct IntrBreak state.
     if (shouldSetHalt) {
         SetHalt();
@@ -456,7 +431,6 @@ void SRegistersHandler::ProcessStatusWrite(uint32_t Value) {
  * @brief Clear RSP interrupt
  * 
  * Clears the SP interrupt bit in the MI_INTR register.
- * In a full implementation, this would interact with the MIPS interface.
  */
 void SRegistersHandler::ClearSPInterrupt() {
     m_Reg.m_RspIntrReg &= ~MI_INTR_SP;
@@ -479,12 +453,11 @@ void SRegistersHandler::SetSPInterrupt() {
 /**
  * @brief Halt the RSP
  * 
- * Called when the RSP is halted. In a full emulator, this would
- * stop RSP execution.
+ * Called when the RSP is halted. Nothing needs to stop: the RSP only runs synchronously inside
+ * ClearHalt().
  */
 void SRegistersHandler::SetHalt() {
-    // RSP execution should stop
-    // In a full implementation, this would signal the RSP execution thread
+    // Nothing to do: RSP execution is synchronous inside ClearHalt().
 }
 
 /**
@@ -501,7 +474,7 @@ void SRegistersHandler::ClearHalt() {
     }
     s_inClearHalt = true;
 
-    // Set defer flag so that RSP HLE code (ProcessDList, rsp_break) does NOT
+    // Set defer flag so that RSP HLE code (ProcessDList, rsp_break) does not
     // set MI_INTR bits or call CheckInterrupts synchronously. Instead they
     // accumulate bits in m_deferred_mi_intr for the RspTimer to apply later.
     m_Reg.m_defer_hle_interrupts = true;
@@ -558,42 +531,23 @@ void SRegistersHandler::ClearHalt() {
         m_Reg.SetTestTimer();
     }
 
-    // Log::infof("RSPTRACE ClearHalt finishing with pendingBits=0x%08X MI_INTR_REG=0x%08X MASK=0x%08X", pendingBits, m_Reg.m_Mips_Interface[2], m_Reg.m_Mips_Interface[3]);
     s_inClearHalt = false;
 }
 
-/**
- * @brief DMA read completion callback
- * @param End End address of DMA transfer
- * 
- * Called when a DMA read operation completes.
- */
-void SRegistersHandler::DmaReadDone(uint32_t End) {
-    // Clear DMA busy status
-    SP_STATUS &= ~SPStatus::DMA_BUSY;
-}
+void SRegistersHandler::DmaReadDone(uint32_t End) { SP_STATUS &= ~SPStatus::DMA_BUSY; }
 
-/**
- * @brief System reset
- * 
- * Resets all SP registers to their power-on state.
- */
 void SRegistersHandler::SystemReset() {
-    // Clear all registers
     std::memset(m_SPRegs, 0, sizeof(m_SPRegs));
 
-    // Clear memories
     std::memset(m_IMEM, 0, sizeof(m_IMEM));
     std::memset(m_DMEM, 0, sizeof(m_DMEM));
 
-    // Initialize status register to halted state
     SP_STATUS = SPStatus::HALT;
 
     // P64: SP_RD_LEN and SP_WR_LEN reset to 0xFF8
     SP_RD_LEN = 0x00000FF8;
     SP_WR_LEN = 0x00000FF8;
 
-    // Reset pending addresses
     m_PendingSPMemAddr = 0;
     m_PendingSPDramAddr = 0;
 }

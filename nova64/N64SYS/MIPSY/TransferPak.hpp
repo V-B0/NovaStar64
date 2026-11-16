@@ -1,6 +1,6 @@
 /**
  * @file TransferPak.hpp
- * @brief Transfer Pak declarations and types.
+ * @brief Transfer Pak declarations: register window, access modes, status, the controller, its manager and the static wrapper API.
  */
 #pragma once
 
@@ -13,7 +13,6 @@
 #include <vector>
 #include <array>
 
-// Forward declaration of GameBoy cartridge class
 namespace GameBoy {
 class Cartridge;
 }
@@ -43,7 +42,6 @@ enum class TransferPakBank : uint8_t {
     Bank3 = 3  // Unused/Reserved
 };
 
-// Transfer Pak status
 struct TransferPakStatus {
     bool enabled = false;             // Whether Transfer Pak is enabled
     bool cartridge_inserted = false;  // Whether a Game Boy cartridge is inserted
@@ -99,7 +97,6 @@ struct TransferPakStatus {
     }
 };
 
-// Transfer Pak register addresses
 namespace TransferPakRegisters {
 constexpr uint16_t ENABLE_REGISTER = 0x8000; // Transfer Pak enable/access mode
 constexpr uint16_t BANK_REGISTER = 0x8001;   // Current bank selection
@@ -111,18 +108,14 @@ constexpr uint16_t REGISTER_END = 0x8003;
 constexpr uint16_t REGISTER_SIZE = REGISTER_END - REGISTER_START + 1;
 } // namespace TransferPakRegisters
 
-// Main Transfer Pak controller class
 class TransferPakController {
 public:
-    // Constructor/Destructor
     TransferPakController();
     ~TransferPakController();
 
-    // No copying
     TransferPakController(const TransferPakController&) = delete;
     TransferPakController& operator=(const TransferPakController&) = delete;
 
-    // Allow moving
     TransferPakController(TransferPakController&&) noexcept = default;
     TransferPakController& operator=(TransferPakController&&) noexcept = default;
 
@@ -175,7 +168,6 @@ public:
     void load_state(const SaveState& state);
 
 private:
-    // Internal helper methods
     TransferPakRegion get_region(uint16_t address) const;
     uint32_t translate_address(uint16_t address) const;
 
@@ -187,7 +179,6 @@ private:
 
     void update_access_mode();
 
-    // Internal state
     TransferPakStatus status;
     std::unique_ptr<GameBoy::Cartridge> cartridge;
 
@@ -247,14 +238,12 @@ private:
     TransferPakManager();
     ~TransferPakManager();
 
-    // No copying
     TransferPakManager(const TransferPakManager&) = delete;
     TransferPakManager& operator=(const TransferPakManager&) = delete;
 
     std::array<std::unique_ptr<TransferPakController>, MAX_CONTROLLERS> controller;
 };
 
-// Utility functions for Transfer Pak operations
 namespace TransferPakUtils {
 // Address validation and translation
 constexpr bool is_valid_address(uint16_t address) {
@@ -298,21 +287,19 @@ constexpr bool is_mode_8bit(TransferPakAccessMode mode) { return mode == Transfe
 constexpr bool is_mode_16bit(TransferPakAccessMode mode) { return mode == TransferPakAccessMode::Mode0; }
 } // namespace TransferPakUtils
 
-// Legacy C-style struct (for compatibility)
+// Plain-struct state kept for the static Transferpak API.
 struct transferpak {
     unsigned int enabled;
     unsigned int bank;
     unsigned int access_mode;
     unsigned int access_mode_changed;
 
-    // Original used struct gb_cart
-    // We'll use a pointer to the modern class instead
     GameBoy::Cartridge* gb_cart;
 
     transferpak() : enabled(0), bank(0), access_mode(0), access_mode_changed(0), gb_cart(nullptr) {}
 };
 
-// Legacy static class (for compatibility)
+// Static wrapper API over the controller and the manager.
 class Transferpak {
 public:
     // Static initialization and cleanup
@@ -342,14 +329,13 @@ private:
     Transferpak() = delete;
     ~Transferpak() = delete;
 
-    // No copying
     Transferpak(const Transferpak&) = delete;
     Transferpak& operator=(const Transferpak&) = delete;
 
     // Internal legacy state
     static transferpak legacy_state;
 
-    // Modern controller (for migration)
+    // Controller behind the static API
     static std::unique_ptr<TransferPakController> modern_controller;
 
     // Manager for multiple controllers
@@ -358,18 +344,14 @@ private:
 
 } // namespace N64Controller
 
-// Global Transfer Pak access
 namespace GlobalTransferPak {
-// Get the Transfer Pak manager
 N64Controller::TransferPakManager& get_manager();
 
 // Quick access to controller 0
 N64Controller::TransferPakController& get_controller();
 N64Controller::TransferPakController& get_controller(size_t index);
 
-// Initialize all Transfer Paks
 bool initialize();
 
-// Cleanup all Transfer Paks
 void release();
 } // namespace GlobalTransferPak

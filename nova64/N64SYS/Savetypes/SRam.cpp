@@ -1,6 +1,6 @@
 /**
  * @file SRam.cpp
- * @brief S Ram implementation.
+ * @brief SRAM save chip: 32 KB battery RAM backed by a save file and accessed by PI DMA.
  */
 #include "SRam.hpp"
 #include "../../common/log.hpp"
@@ -18,13 +18,11 @@ static constexpr uint32_t SRAM_SIZE = 32 * 1024; // 32 KB
 extern CN64System* g_System;
 extern N64::Rom::N64Rom* g_Rom;
 
-// Constructor - Initialize SRAM
 CSram::CSram(bool ReadOnly) : m_ReadOnly(ReadOnly) {
     Log::debugf("CSram constructor (ReadOnly: %s)", ReadOnly ? "true" : "false");
     LoadSram();
 }
 
-// Destructor - Close file if open
 CSram::~CSram() {
     Log::debug("CSram destructor");
 
@@ -34,7 +32,6 @@ CSram::~CSram() {
     }
 }
 
-// DMA from SRAM to emulated memory
 void CSram::DmaFromSram(uint8_t* dest, int32_t StartOffset, uint32_t len) {
     if (!dest) {
         Log::debugf("CSram::DmaFromSram - NULL destination pointer");
@@ -71,7 +68,6 @@ void CSram::DmaFromSram(uint8_t* dest, int32_t StartOffset, uint32_t len) {
         return;
     }
 
-    // Seek to offset and read
     if (!m_File.seek(offset, FileSystem::SeekOrigin::Begin)) {
         Log::debugf("CSram::DmaFromSram - Seek failed to offset %u", offset);
         std::memset(dest, 0x00, len);
@@ -95,7 +91,6 @@ void CSram::DmaFromSram(uint8_t* dest, int32_t StartOffset, uint32_t len) {
     }
 }
 
-// DMA to SRAM from emulated memory
 void CSram::DmaToSram(uint8_t* Source, int32_t StartOffset, uint32_t len) {
     if (!Source) {
         Log::debugf("CSram::DmaToSram - NULL source pointer");
@@ -135,7 +130,6 @@ void CSram::DmaToSram(uint8_t* Source, int32_t StartOffset, uint32_t len) {
         return;
     }
 
-    // Seek to offset and write
     if (!m_File.seek(offset, FileSystem::SeekOrigin::Begin)) {
         Log::debugf("CSram::DmaToSram - Seek failed to offset %u", offset);
         return;
@@ -154,11 +148,9 @@ void CSram::DmaToSram(uint8_t* Source, int32_t StartOffset, uint32_t len) {
     }
 }
 
-// Load or create SRAM file
 bool CSram::LoadSram() {
     Log::debug("CSram::LoadSram - Loading SRAM file");
 
-    // Get save file path
     if (!g_System) {
         Log::debugf("CSram::LoadSram - No system instance");
         return false;
@@ -181,7 +173,6 @@ bool CSram::LoadSram() {
     }
     std::string fileName = romName + ".sra";
 
-    // Ensure save directory exists
     std::filesystem::create_directories(savePath);
 
     std::string fullPath = (std::filesystem::path(savePath) / fileName).string();
@@ -222,7 +213,6 @@ bool CSram::LoadSram() {
     }
 
     // Initialize SRAM to 0x00 (unlike EEPROM/FlashRAM which use 0xFF)
-    // SRAM typically initializes to 0x00
     constexpr size_t BUFFER_SIZE = 1024;
     uint8_t buffer[BUFFER_SIZE];
     std::memset(buffer, 0x00, BUFFER_SIZE);
@@ -243,7 +233,6 @@ bool CSram::LoadSram() {
 
     m_File.flush();
 
-    // Seek back to beginning
     (void)m_File.seek(0, FileSystem::SeekOrigin::Begin);
 
     Log::debugf("CSram::LoadSram - Created new SRAM file (%u bytes initialized to 0x00)", SRAM_SIZE);

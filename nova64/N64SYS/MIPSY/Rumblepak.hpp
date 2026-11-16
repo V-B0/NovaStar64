@@ -1,6 +1,6 @@
 /**
  * @file Rumblepak.hpp
- * @brief Rumblepak declarations and types.
+ * @brief Rumble Pak interface: reads and writes of the pak's motor register.
  */
 #pragma once
 #include <cstdint>

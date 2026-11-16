@@ -1,6 +1,6 @@
 /**
  * @file TLB.cpp
- * @brief TLB implementation.
+ * @brief MIPS R4300i TLB: probe/read/write operations, address translation and save-state I/O, in TranslationLookasideBuffer and the CTLB class.
  */
 #include "TLB.hpp"
 #include "../StateArchive.hpp"
@@ -68,7 +68,6 @@ void TranslationLookasideBuffer::on_privilege_mode_changed(PrivilegeMode new_mod
 void TranslationLookasideBuffer::probe() {
     if (!registers) return;
 
-    // Get EntryHi values
     uint64_t entry_hi_val = registers->Cop0_MF(CP0_ENTRYHI);
     COP0EntryHi entry_hi;
     entry_hi.Value = entry_hi_val;
@@ -86,7 +85,6 @@ void TranslationLookasideBuffer::probe() {
         uint32_t entry_vpn2 = entry.entry_hi.vpn2 & ~page_mask;
 
         if (masked_vpn2 == entry_vpn2 && (entry.global || entry.entry_hi.asid == asid)) {
-            // Match found
             registers->Cop0_MT(CP0_INDEX, static_cast<uint32_t>(i));
             match_found = true;
             break;
@@ -111,7 +109,6 @@ void TranslationLookasideBuffer::read_entry() {
 
     const auto& entry = tlb_entries[index];
 
-    // Write PageMask
     COP0PageMask page_mask;
     page_mask.Mask = entry.page_mask.mask;
     registers->Cop0_MT(CP0_PAGEMASK, page_mask.Value);
@@ -315,7 +312,6 @@ void CTLB::Reset(bool InvalidateTLB) {
 void CTLB::Probe() {
     if (!m_Reg) return;
 
-    // Get EntryHi values
     uint64_t entry_hi_val = m_Reg->Cop0_MF(Reg::EntryHi);
 
     // Extract R, VPN2 and ASID
@@ -343,7 +339,6 @@ void CTLB::Probe() {
         uint8_t entry_asid = static_cast<uint8_t>(entry.EntryHi.Value & 0xFF);
 
         if (masked_vpn2 == masked_entry_vpn2 && (global || entry_asid == asid)) {
-            // Match found
             m_Reg->Cop0_MT(Reg::Index, static_cast<uint32_t>(i));
             match_found = true;
             break;
@@ -469,7 +464,6 @@ bool CTLB::AddressDefined(uint64_t VAddr, bool& Dirty) {
         uint8_t entry_asid = static_cast<uint8_t>(entry.EntryHi.Value & 0xFF);
 
         if (masked_vpn_req == masked_vpn_ent && (global || entry_asid == current_asid)) {
-            // Match found
             uint32_t offset_mask = (mask << 12) | 0xFFF;
             uint32_t select_mask = (offset_mask + 1);
 
@@ -602,16 +596,13 @@ bool CTLB::VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused) {
 }
 
 bool CTLB::PAddrToVAddr(uint32_t PAddr, uint32_t& VAddr, uint32_t& Index) {
-    // Reverse lookup - mostly useful for debugger or analyzing code
-    // Check KSEG0
+    // Reverse lookup of a physical address; addresses below 0x20000000 map directly through KSEG0.
     if (PAddr < 0x20000000) {
         VAddr = 0x80000000 + PAddr;
         return true;
     }
 
-    // Check TLB
-    // We can't easily reverse check all TLB entries because masking makes it n-to-1 potentially?
-    // Actually we can check if PAddr falls into a page.
+    // Search the entries for a page whose physical range contains PAddr.
 
     for (int i = 0; i < 32; ++i) {
         const auto& entry = m_tlb[i];
@@ -624,7 +615,6 @@ bool CTLB::PAddrToVAddr(uint32_t PAddr, uint32_t& VAddr, uint32_t& Index) {
         if (entry.EntryLo0.Value & 2) { // Valid
             uint32_t pfn0 = static_cast<uint32_t>((entry.EntryLo0.Value >> 6) & 0xFFFFF);
             uint32_t phys_base0 = (pfn0 & ~mask) << 12;
-            // Size of page = offset_mask + 1
             uint32_t size = offset_mask + 1;
 
             if (PAddr >= phys_base0 && PAddr < phys_base0 + size) {
@@ -633,11 +623,7 @@ bool CTLB::PAddrToVAddr(uint32_t PAddr, uint32_t& VAddr, uint32_t& Index) {
                 uint32_t vpn2 = static_cast<uint32_t>((entry.EntryHi.Value >> 13) & 0x7FFFF);
                 uint32_t vbase = (vpn2 & ~mask) << 13; // VPN2 is bit 13
 
-                // Even page is lower part of VPN2 pair?
-                // Virtual Address Reconstruction:
-                // VAddr = (VPN2 << 13) | Offset?
-                // But VPN2 covers 2 pages.
-                // Even page corresponds to bit (select_mask) == 0.
+                // The even page is the lower half of the VPN2 pair (select bit clear).
 
                 VAddr = vbase | offset;
                 Index = i;

@@ -1,6 +1,6 @@
 /**
  * @file RDRAMRegHandler.hpp
- * @brief RDRAM Reg Handler declarations and types.
+ * @brief RDRAM device register handler declarations: device state, register accessors and RDRAMRegistersHandler.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -10,7 +10,6 @@
 #include <array>
 #include <string>
 
-// Forward declarations
 class CRegisters;
 
 namespace RDRAM {

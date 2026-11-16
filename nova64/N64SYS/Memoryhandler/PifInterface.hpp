@@ -1,6 +1,6 @@
 /**
  * @file PifInterface.hpp
- * @brief Pif Interface declarations and types.
+ * @brief PIF (Peripheral Interface) and JoyBus handler declarations: controller state, CIC types, PIF RAM command processing and the Controller Pak.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -13,7 +13,6 @@
 #include <memory>
 #include <functional>
 
-// Forward declarations
 class CN64System;
 namespace Nova64 {
 class MipsMemoryVM;
@@ -95,7 +94,6 @@ public:
     [[nodiscard]] bool Read32(uint32_t address, uint32_t& value) override;
     [[nodiscard]] bool Write32(uint32_t address, uint32_t value, uint32_t mask) override;
 
-    // 8-bit access for PIF (common)
     [[nodiscard]] bool Read8(uint32_t address, uint8_t& value) override;
     [[nodiscard]] bool Write8(uint32_t address, uint8_t value) override;
 
@@ -149,7 +147,6 @@ public:
     void set_system_reset_callback(SystemResetCallback callback);
 
 private:
-    // Delete copy and move operations
     PifRamHandler() = delete;
     PifRamHandler(const PifRamHandler&) = delete;
     PifRamHandler(PifRamHandler&&) = delete;
@@ -210,7 +207,7 @@ private:
     void PakRead(int channel, uint32_t address, uint8_t* data);
     void PakWrite(int channel, uint32_t address, const uint8_t* data);
 
-    // Legacy / unused — kept for compile compat
+    // Declared but not defined.
     void process_controller_command(size_t port, Common::Span<uint8_t> command);
     void process_eeprom_command(Common::Span<uint8_t> command);
 

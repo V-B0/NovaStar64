@@ -1,6 +1,6 @@
 /**
  * @file RDRAMInterFaceHandler.hpp
- * @brief RDRAM Inter Face Handler declarations and types.
+ * @brief RDRAM Interface (RI) handler declarations: register offsets, flag enums and RDRAMInterfaceHandler.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <array>
 
-// Forward declaration
 class CRegisters;
 namespace Nova64 {
 class StateArchive;
@@ -30,11 +29,7 @@ enum class Register : uint32_t {
 };
 
 // RDRAM configuration flags (RI_CONFIG)
-enum class ConfigFlags : uint32_t {
-    // Standard RI definitions can go here
-    ENABLE = 0x00000001,
-    RESET = 0x00000002
-};
+enum class ConfigFlags : uint32_t { ENABLE = 0x00000001, RESET = 0x00000002 };
 
 // Mode register flags (RI_MODE)
 enum class ModeFlags : uint32_t {
@@ -42,13 +37,12 @@ enum class ModeFlags : uint32_t {
     STOP = 0x00000002,
 };
 
-// Helper functions
 constexpr bool has_flag(uint32_t reg, ConfigFlags flag) { return (reg & static_cast<uint32_t>(flag)) != 0; }
 
 constexpr bool has_flag(uint32_t reg, ModeFlags flag) { return (reg & static_cast<uint32_t>(flag)) != 0; }
 } // namespace RDRAM
 
-// Register interface class (optional)
+// Register interface class
 class RDRAMInterfaceReg {
 public:
     // Accessor methods
@@ -86,7 +80,6 @@ private:
     RDRAMInterfaceReg& operator=(const RDRAMInterfaceReg&) = delete;
 };
 
-// Main handler class
 class RDRAMInterfaceHandler final : public MemoryHandler {
 public:
     explicit RDRAMInterfaceHandler(CRegisters& reg);
@@ -109,7 +102,6 @@ public:
     const RDRAMInterfaceReg& registers() const { return m_regs; }
 
 private:
-    // Delete copy and move operations
     RDRAMInterfaceHandler() = delete;
     RDRAMInterfaceHandler(const RDRAMInterfaceHandler&) = delete;
     RDRAMInterfaceHandler(RDRAMInterfaceHandler&&) = delete;
@@ -123,7 +115,6 @@ private:
     std::array<uint32_t, static_cast<size_t>(RDRAM::Register::REGISTER_COUNT)> m_register_data{};
     RDRAMInterfaceReg m_regs{m_register_data};
 
-    // State
     bool m_initialized = false;
 
     // Helper methods

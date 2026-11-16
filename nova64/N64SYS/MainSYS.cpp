@@ -54,12 +54,10 @@
 #include <algorithm>
 #include <cctype>
 
-// Using directives for Trace namespace
 using Trace::ModuleID;
 using Trace::Severity;
 using Trace::SourceLocation;
 
-// Using directives for N64 ROM and Disk classes
 using N64::Disk::N64Disk;
 using N64::Rom::N64Rom;
 
@@ -72,7 +70,7 @@ std::atomic<bool> CN64System::s_StopRequested{false};
 int CN64System::s_WindowWidth = 1280;
 int CN64System::s_WindowHeight = 960;
 int CN64System::s_InternalResScale = 0;
-int CN64System::s_FullscreenMode = 0; // Default: windowed
+int CN64System::s_FullscreenMode = 0;
 bool CN64System::s_HeadlessMode = false;
 std::string CN64System::s_PipeName = "";
 
@@ -88,14 +86,12 @@ static void RSP_CheckInterrupts() {
 static void RSP_ProcessDList() {
     // Called by RSP HLE when a video (GFX) task is detected.
     // Forward to the GFX plugin's ProcessDList.
-    // Log::info("RSPTRACE ProcessDList enter");
     if (g_System && g_System->GetPluginManager()) {
         auto* gfx = g_System->GetPluginManager()->GetGraphicsPlugin();
         if (gfx) {
             gfx->ProcessDList(0, 0);
         }
     }
-    // Log::info("RSPTRACE ProcessDList exit");
 
     // Signal DP (Display Processor) completion interrupt.
     // After HLE processes the display list, the RDP is "done".
@@ -142,7 +138,7 @@ N64Disk* g_Disk = nullptr;
 using SAVE_CHIP_TYPE = N64Types::SaveChipType;
 constexpr SAVE_CHIP_TYPE SAVE_CHIP_UNKNOWN = SAVE_CHIP_TYPE::Auto;
 
-// Helper macro for logging - uses existing TRACE_* macros
+// Logging macros over the TRACE_* macros.
 #undef LOG_DEBUG
 #undef LOG_INFO
 #undef LOG_ERROR
@@ -160,7 +156,6 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     Log::debugf("CN64System constructor (seed: %u, ReadOnly: %s, Sync: %s)", randomizer_seed,
                 SavesReadOnly ? "true" : "false", SyncSystem ? "true" : "false");
 
-    // Initialize components
     m_SystemEvents = std::make_unique<CSystemEvents>(*this);
     m_TLB = std::make_unique<N64System::CTLB>();
     m_Registers = std::make_unique<CRegisters>(*this, *m_SystemEvents);
@@ -172,14 +167,11 @@ CN64System::CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSy
     // Re-initialize TLB with memory pointer now that MipsMemoryVM is created
     if (m_TLB) m_TLB->Initialize(GetMemory(), GetRegisters(), nullptr);
 
-    // RDRAM
     m_RDRAMInterfaceHandler = std::make_unique<RDRAMInterfaceHandler>(*m_Registers);
     m_RDRAMRegistersHandler = std::make_unique<RDRAMRegistersHandler>(*m_Registers, RDRAMRegistersHandler::Config{});
 
-    // MIPS Interface
     m_MIPSInterfaceHandler = std::make_unique<MIPSYInterfaceHandler>(*m_Registers);
 
-    // SP Registers
     m_SPRegistersHandler = std::make_unique<SRegistersHandler>(*m_Registers);
 
     m_DDRegisters.fill(0);
@@ -225,10 +217,8 @@ bool CN64System::LoadFileImage(const char* FileLoc) {
 
     CloseSystem();
 
-    // Mark the ROM as loading
     LOG_DEBUG("Mark ROM as loading");
 
-    // Try to load the passed N64 ROM
     if (g_Rom == nullptr) {
         LOG_DEBUG("Allocating global ROM object");
         g_Rom = new N64Rom();
@@ -243,7 +233,6 @@ bool CN64System::LoadFileImage(const char* FileLoc) {
         // Save-chip override is applied on the live CN64System instance in RunLoadedImage().
 
         if (g_Rom->GetImage().IsDDIPL()) {
-            // 64DD IPL
             if (g_DDRom == nullptr) {
                 g_DDRom = new N64Rom();
             }
@@ -271,10 +260,8 @@ bool CN64System::LoadFileImageIPL(const char* FileLoc) {
 
     CloseSystem();
 
-    // Mark the N64DD IPL as loading
     LOG_DEBUG("Mark N64DD IPL as loading");
 
-    // Try to load the passed N64DD IPL
     if (g_DDRom == nullptr) {
         LOG_DEBUG("Allocating global N64DD IPL object");
         g_DDRom = new N64Rom();
@@ -286,7 +273,6 @@ bool CN64System::LoadFileImageIPL(const char* FileLoc) {
     try {
         g_DDRom->LoadIPL(FileLoc);
         if (!g_DDRom->GetImage().IsDDIPL()) {
-            // If not 64DD IPL then it's wrong
             LOG_ERROR("LoadN64ImageIPL failed - not a 64DD IPL (\"{}\")", FileLoc);
             delete g_DDRom;
             g_DDRom = nullptr;
@@ -313,10 +299,8 @@ bool CN64System::LoadDiskImage(const char* FileLoc, const bool Expansion) {
 
     CloseSystem();
 
-    // Mark the disk as loading
     LOG_DEBUG("Mark disk as loading");
 
-    // Try to load the passed N64 disk
     if (g_Disk == nullptr) {
         LOG_DEBUG("Allocating global disk object");
         g_Disk = new N64Disk();
@@ -373,14 +357,10 @@ bool CN64System::RunDiskImage(const char* FileLoc) {
         return false;
     }
 
-    // Select IPL ROM based on disk country code
-    // The N64DD requires a matching IPL ROM (Japanese or US retail/dev)
+    // A 64DD disk needs an IPL ROM; without one only a warning is logged and the boot fails.
     if (g_Disk != nullptr) {
-        // If a DDRom (IPL) isn't already loaded, we need one
         if (g_DDRom == nullptr || !g_DDRom->IsLoaded()) {
             LOG_WARNING("No 64DD IPL ROM loaded. N64DD disk requires an IPL ROM.");
-            // In a full implementation, this would search known IPL paths
-            // or prompt the user. For now, log and continue - will fail at boot.
         }
     }
 
@@ -452,7 +432,6 @@ void CN64System::RunLoadedImage(uint64_t frameLimit) {
         }
         Log::info("Memory system initialized (8MB RDRAM)");
 
-        // Set frame limit if specified
         if (frameLimit > 0) {
             g_BaseSystem->SetFrameLimit(frameLimit);
             Log::infof("Frame limit applied: %llu frames", (unsigned long long)frameLimit);
@@ -470,7 +449,7 @@ void CN64System::RunLoadedImage(uint64_t frameLimit) {
 
         g_BaseSystem->DumpRegisters();
 
-        // If window was initialized AND we are NOT in embedded mode, run the
+        // If window was initialized and we are not in embedded mode, run the
         // interactive event loop (polls SDL window events, exits when window closes).
         // In embedded mode the launcher owns the event loop, so we just start the
         // CPU thread and return immediately — the launcher will call CloseSystem().
@@ -500,7 +479,6 @@ void CN64System::RunLoadedImage(uint64_t frameLimit) {
 }
 
 void CN64System::RunInteractiveLoop() {
-    // Start CPU in background thread
     StartEmulation(true);
 
     Log::info("Interactive mode: CPU running in background thread, processing window events");
@@ -510,14 +488,12 @@ void CN64System::RunInteractiveLoop() {
         const int EVENT_POLL_INTERVAL_MS = 16; // ~60 Hz
 
         while (m_WindowManager->ProcessEvents()) {
-            // Window is still open and valid
 #ifdef _WIN32
             Sleep(EVENT_POLL_INTERVAL_MS);
 #else
             usleep(EVENT_POLL_INTERVAL_MS * 1000);
 #endif
 
-            // Check if CPU emulation has ended
             if (m_EndEmulation) {
                 Log::info("CPU emulation has ended");
                 break;
@@ -526,7 +502,6 @@ void CN64System::RunInteractiveLoop() {
 
         Log::info("Window closed or quit requested, stopping emulation");
 
-        // Stop the CPU thread if still running
         EndEmulation();
         CloseCpu();
     }
@@ -634,7 +609,6 @@ void CN64System::StartEmulationThread() {
         CloseCpu();
     }
 
-    // Create and start thread
     m_thread = new CThread(reinterpret_cast<CThread::CTHREAD_START_ROUTINE>(StartThreadWrapper));
 
     if (m_thread) {
@@ -663,12 +637,11 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
     Log::debugf("Reset (InitReg: %s, ClearMemory: %s)", bInitReg ? "true" : "false", ClearMemory ? "true" : "false");
 
     m_InReset = true;
-    m_EndEmulation = false; // Reset stop flag if set
+    m_EndEmulation = false;
 
     m_CyclesToSkip = 0;
     m_SyncCount = 0;
 
-    // Reset Memory
     if (m_Memory) {
         m_Memory->Reset(ClearMemory);
 
@@ -680,16 +653,12 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                 // direct pointer, so a block copy beats per-byte virtual writes.
                 uint8_t* dmem = m_Memory->Dmem();
                 if (dmem) {
-                    // The PIF executes bootcode which copies 0x40-0x1000 from ROM to SP DMEM 0x40.
-                    // dmem points to 0xA4000000.
-                    // ROM data is in big-endian (.z64) format. Memory is in host byte order
-                    // (each 32-bit word byte-swapped on little-endian hosts).
-                    // We must byte-swap each 32-bit word during the copy.
+                    // The PIF bootcode copies ROM[0x40..0x1000] to SP DMEM 0x40 (dmem points at 0xA4000000).
                     size_t copySize = (bootCode.size <= 0xFC0) ? bootCode.size : 0xFC0;
                     const uint8_t* src = bootCode.begin();
                     uint8_t* dst = dmem + 0x40;
-                    // ROM data is already in host (LE) word order after DetectFormatAndByteSwap.
-                    // DMEM also uses host word order for *(uint32_t*) access.
+                    // ROM and DMEM are both in host word order (the ROM was swapped on load by
+                    // DetectFormatAndByteSwap), so a plain copy is correct.
                     std::memcpy(dst, src, copySize);
                     // Clear the OSTask area (DMEM 0xFC0-0xFFF) to prevent bootcode data
                     // from being misinterpreted as a valid RSP task by HLE dispatch.
@@ -751,7 +720,6 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
             // ROM data is in host word order after DetectFormatAndByteSwap,
             // so bytes within each 32-bit word are reversed on LE hosts.
             uint32_t word = *reinterpret_cast<const uint32_t*>(romData + scan);
-            // ELF magic as uint32 in host order
             if (word == 0x7F454C46 || word == 0x464C457F) // BE or LE host
             {
                 elfOffset = scan;
@@ -761,22 +729,12 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         }
 
         if (elfOffset != 0 && rdram && romData) {
-            // ── Libdragon ELF-in-ROM loading ────────────────────────
+            // Libdragon ELF-in-ROM loading.
             isLibdragonElf = true;
             const uint8_t* elf = romData + elfOffset;
             [[maybe_unused]] uint32_t elfSize = romSize - elfOffset;
 
-            // Helper to read a big-endian 32-bit value from the ELF.
-            // The ROM is stored in host word order (each 32-bit word
-            // byte-swapped from big-endian).  The ELF sits at an
-            // arbitrary offset inside the ROM, so its header fields
-            // are NOT necessarily word-aligned relative to the ROM's
-            // byte-swap grid.  Read individual bytes and reconstruct
-            // big-endian manually.
             [[maybe_unused]] auto readBE16 = [](const uint8_t* p) -> uint16_t {
-                // bytes in host-word-order ROM: within each 4-byte
-                // group the bytes are reversed on LE hosts.
-                // We'll just use the actual byte values.
                 uint32_t wordOff = reinterpret_cast<uintptr_t>(p) & 3;
                 (void)wordOff;
                 return (static_cast<uint16_t>(p[0]) << 8) | p[1];
@@ -786,15 +744,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                        (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
             };
 
-            // But wait — the ROM data has been byte-swapped per 32-bit
-            // word during ROM loading (DetectFormatAndByteSwap).  So
-            // the bytes within each 4-byte group at romData are in LE
-            // order on a LE host.  To read big-endian ELF fields we
-            // must un-swap: for a field at ROM offset O, the original
-            // .z64 byte at O is now at romData[(O & ~3) | (3 - (O & 3))]
-            // on a little-endian host.
-            // Simpler: just read the uint32 word and extract bytes in
-            // big-endian order by shifting.
+            // The ROM was byte-swapped per 32-bit word when it was loaded (DetectFormatAndByteSwap)
+            // and the ELF sits at an arbitrary offset, so its big-endian fields are read through
+            // elfByte(): it takes the host-order word that contains the byte and shifts it out.
             auto elfByte = [&](uint32_t off) -> uint8_t {
                 // Read the 32-bit host-order word that contains 'off',
                 // then pick the big-endian byte within it.
@@ -835,14 +787,8 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                 if (pAddr + p_filesz > rdramSize) continue; // out of range
                 if (elfOffset + p_offset + p_filesz > romSize) continue;
 
-                // Copy segment data from ROM ELF to RDRAM.
-                // The source is raw byte data that was already byte-swapped
-                // per-word during ROM load.  We need to un-swap it to get
-                // the original big-endian bytes, then write to RDRAM (which
-                // also stores data in host word order).  Since both source
-                // and destination use the same per-word byte order, a plain
-                // memcpy is correct as long as we copy whole words.
-                // For simplicity, copy word-by-word.
+                // Copy the segment from the ROM's ELF image to RDRAM. Source and destination share the
+                // same per-word byte order, so a plain memcpy is correct.
                 const uint8_t* src = romData + elfOffset + p_offset;
                 uint8_t* dst = rdram + pAddr;
                 std::memcpy(dst, src, p_filesz);
@@ -869,7 +815,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                 *reinterpret_cast<uint32_t*>(dmem + 0x0C) = (elfOffset >> 8) << 16;
             }
         } else {
-            // ── Standard Nintendo IPL3 boot ─────────────────────────
+            // Standard Nintendo IPL3 boot.
             // IPL3 copies 1MB from ROM[0x1000] to RDRAM at the physical
             // address derived from the header entry point (offset 0x08).
             uint32_t dramBase = headerEntryPoint & 0x1FFFFFFF; // KSEG0/1 → physical
@@ -972,14 +918,12 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                        cicSeed);
         }
 
-        // NOTE: CIC-6105 IMEM bootstrap is NOT needed for HLE boot.
-        // HLE boot skips IPL3 entirely (PC goes directly to entryPoint=0x80000400).
-        // The bootstrap code at IMEM 0xA4001000 is only used by IPL3's CRC jump.
-        // Leaving IMEM clean allows non_task_dispatching() to correctly detect
-        // CIC x105 RSP tasks via IMEM checksum when the game loads them.
+        // CIC-6105 IMEM bootstrap is not needed for HLE boot: IPL3 is skipped entirely (PC goes
+        // straight to entryPoint=0x80000400) and the bootstrap code at IMEM 0xA4001000 is only used
+        // by IPL3's CRC jump. Leaving IMEM clean lets non_task_dispatching() detect CIC x105 RSP
+        // tasks through the IMEM checksum when the game loads them.
     }
 
-    // Reset Registers
     if (bInitReg && m_Registers && m_Memory) {
         m_Registers->Reset(bInitReg, *m_Memory);
 
@@ -997,8 +941,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
                 m_Registers->m_GPR[11] = 0xFFFFFFFFA4000040;
             } else if (cicChip == N64::Rom::CICChip::CIC_NUS_6103) {
                 // 6103 (e.g. Diddy Kong Racing)
-                m_Registers->m_GPR[11] =
-                    0xFFFFFFFFA4000040; // Depending on requirements, default to 6105 behavior for now
+                m_Registers->m_GPR[11] = 0xFFFFFFFFA4000040; // same as CIC-6105
             }
         }
     }
@@ -1019,29 +962,25 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         }
     }
 
-    // Reset components
     if (m_SystemTimer) m_SystemTimer->reset();
     if (m_SystemEvents) m_SystemEvents->DeleteAllEvents();
     if (m_TLB) m_TLB->Initialize(m_Memory.get(), m_Registers.get(), nullptr);
     if (m_MIPSInterfaceHandler) m_MIPSInterfaceHandler->Reset();
 
-    // Set up the initial VI timer. The VR4300 runs at 93.75 MHz in both regions,
-    // and Count increments once every 2 CPU cycles, so Count ticks per field is
-    // (93,750,000 / fieldRate) / 2: NTSC 60 Hz -> 781,250, PAL 50 Hz -> 937,500.
-    // SystemTimer's `period`/`cycles_to_fire` are already Count-tick units (see
-    // update_compare_timer()'s "distance IS the timer period"), so viIncrement
-    // must be passed as-is -- multiplying by CountPerOp() here double-counted
-    // the /2 already baked into viIncrement, scheduling VI at half the correct
-    // rate in Count-tick terms. Wall-clock pacing in RefreshScreen() still held
-    // real VI delivery at 60fps, so the game looked and moved normally, but its
-    // own Count-based real-time reads (osGetTime()-style timers -- minigame
-    // countdowns, event timers) saw Count advancing 2x too fast.
+    // Set up the initial VI timer. The VR4300 runs at 93.75 MHz in both regions, and Count
+    // increments once every 2 CPU cycles, so Count ticks per field is (93,750,000 / fieldRate) / 2:
+    // NTSC 60 Hz -> 781,250, PAL 50 Hz -> 937,500. SystemTimer's `period`/`cycles_to_fire` are
+    // already in Count-tick units (see update_compare_timer()), so viIncrement is passed as-is.
+    // Multiplying it by CountPerOp() would double-count the /2 already in viIncrement and schedule
+    // VI at half the correct rate in Count-tick terms. Wall-clock pacing in RefreshScreen() would
+    // still hold real VI delivery at 60 fps, so the game would look normal, but its Count-based
+    // real-time reads (osGetTime()-style timers such as minigame countdowns) would see Count
+    // advancing twice as fast.
     if (m_SystemTimer) {
         const bool isPal = GetRom() && GetRom()->IsLoaded() && GetRom()->GetImage().IsPal();
         const uint32_t viIncrement = isPal ? 937500u : 781250u;
         m_SystemTimer->set_timer_periodic(N64System::TimerType::ViTimer, viIncrement);
         Log::infof("VI timer: %s field rate (%u Count ticks/field)", isPal ? "PAL 50Hz" : "NTSC 60Hz", viIncrement);
-        // Set up initial Compare timer based on Count/Compare registers
         m_SystemTimer->update_compare_timer();
         Log::debug("VI timer and Compare timer initialized");
     }
@@ -1050,12 +989,9 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         m_SyncCPU->Reset(bInitReg, ClearMemory);
     }
 
-    // Initialize RSP subsystem
-    // Wire hardware register pointers so the RSP
-    // can read/write SP, MI, and DPC registers
-    // Use Vmem's SP handler — it's the one that receives actual game writes
-    // (DMA, SP_STATUS, etc). MainSYS's m_SPRegistersHandler is a separate
-    // instance whose DMEM/IMEM never get game data.
+    // Wire the RSP's hardware register pointers (SP, MI and DPC registers). Vmem's SP handler is
+    // used because it receives the actual game writes (DMA, SP_STATUS, ...); MainSYS's
+    // m_SPRegistersHandler is a separate instance whose DMEM/IMEM never get game data.
     auto* spHandler = m_Memory ? m_Memory->SPRegisters() : nullptr;
     if (spHandler && m_Registers && m_Memory) {
         // One-time RSP plugin init (sets up settings, debugger)
@@ -1114,7 +1050,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         Log::info("RSP subsystem initialized and wired to hardware registers");
     }
 
-    // Initialize graphics window BEFORE plugins (plugins need it)
+    // Initialize the graphics window before the plugins (they need it).
     // Only create on first call — warm resets must not destroy the window
     // or plugin, as that would lose all rendering state.
     // A game drawn inside the launcher has no window of its own: the video
@@ -1141,7 +1077,7 @@ void CN64System::Reset(bool bInitReg, bool ClearMemory) {
         graphicsConfig.LoadFromFile("settings/NovaGraphics.ini");
         windowConfig.backendType = graphicsConfig.backendType;
 
-        // Fullscreen mode: borderless fullscreen by default to bypass DWM compositor stalls
+        // Fullscreen mode: 1 is borderless (bypasses DWM compositor stalls), 2 is exclusive.
         if (s_FullscreenMode == 2) {
             windowConfig.fullscreen = true;
             windowConfig.borderless = false; // Exclusive fullscreen
@@ -1213,14 +1149,12 @@ bool CN64System::SetActiveSystem(bool bActive) {
     LOG_DEBUG("SetActiveSystem: {}", bActive ? "true" : "false");
 
     if (bActive) {
-        // Set this system as active
         if (g_System != nullptr && g_System != this) {
             LOG_WARNING("Another system is already active");
             return false;
         }
         g_System = this;
     } else {
-        // Deactivate this system
         if (g_System == this) {
             g_System = nullptr;
         }
@@ -1266,9 +1200,8 @@ void CN64System::ExecuteRecompiler() {
 
 void CN64System::ExecuteSyncCPU() {
     LOG_DEBUG("ExecuteSyncCPU");
-    // Sync CPU mode validates recompiler output against interpreter results.
-    // Full lockstep comparison requires single-step hooks in the recompiler;
-    // for now fall back to interpreter execution which is always correct.
+    // Sync CPU mode is meant to validate recompiler output against the interpreter, which needs
+    // single-step hooks in the recompiler; without them it runs the interpreter alone.
     LOG_WARNING("SyncCPU: lockstep comparison not yet available, falling back to interpreter");
     ExecuteInterpret();
 }
@@ -1287,7 +1220,7 @@ void CN64System::CpuStopped() {
 
 bool CN64System::IsFrameLimitReached() const {
     if (m_MaxFrames == 0) {
-        return false; // No limit
+        return false;
     }
 
     uint64_t currentFrames = GetCurrentFrameCount();
@@ -1426,10 +1359,9 @@ void CN64System::RefreshScreen() {
         if (!m_FramePaceInitialized) {
             m_FramePaceStart = clock::now();
             m_FramePaceInitialized = true;
-            // NOTE: timeBeginPeriod(1) was here previously but caused +2-5ms latency
-            // in OpenGL driver / scheduler overhead system-wide. With it removed,
-            // sleep precision relies on default ~15.6ms quanta, but our spin loop
-            // at the end of pace closes the gap to <1us.
+            // timeBeginPeriod(1) is deliberately not used: it added 2-5 ms of latency in the OpenGL
+            // driver and scheduler system-wide. Sleep precision relies on the default ~15.6 ms
+            // quantum, and the spin loop at the end of the pace closes the gap to under 1 us.
         } else {
             m_FramePaceStart += targetDuration;
             auto now = clock::now();
@@ -1494,13 +1426,11 @@ void CN64System::RefreshScreen() {
     }
     profileFrameStart = std::chrono::steady_clock::now();
 
-    // [SM64-FIX] Workaround for orphaned __osSiAccessQueue at 0x80367158.
-    // SM64's game thread (id=5, pri=10) blocks forever during init_controllers
-    // waiting on this queue, because an SI/PIF interrupt timing race during
-    // boot causes the credit message to never be posted. We detect that exact
-    // pattern (idle-thread PC + queue state + waiter signature) and post the
-    // missing credit + re-attach the thread to the active queue.
-    // See repo memory /memories/repo/sm64-blackscreen-fix-verified.md.
+    // Workaround for an orphaned __osSiAccessQueue at 0x80367158 in SM64. The game thread (id=5,
+    // pri=10) blocks forever during init_controllers waiting on this queue, because an SI/PIF
+    // interrupt timing race during boot means the credit message is never posted. The exact
+    // pattern (idle-thread PC + queue state + waiter signature) is detected, the missing credit
+    // is posted and the thread is re-attached to the active queue.
     if (m_Registers && m_Memory && m_Memory->Rdram()) {
         uint32_t curPc = static_cast<uint32_t>(m_Registers->m_PROGRAM_COUNTER);
         if (curPc == 0x80246DD8u) // SM64 idle thread boot loop
@@ -1623,10 +1553,8 @@ void CN64System::DumpRegisters() {
     Log::info("──────────────────────────────────────────────");
 }
 
-// Default execution mode.  The dynamic recompiler currently has a native
-// backend only for x86-64 (and x86).  On AArch64/other hosts the recompiler
-// backend is still being brought up, so default to the always-correct
-// interpreter there.  This can be overridden at runtime via SetUseInterpreter().
+// Default execution mode: the recompiler on x86-64 and x86 hosts, the interpreter on all other
+// hosts. SetUseInterpreter() overrides it at runtime.
 #if defined(__amd64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 bool CN64System::s_UseInterpreter = false;
 #else

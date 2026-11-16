@@ -1,6 +1,6 @@
 /**
  * @file Mempak.cpp
- * @brief Mempak implementation.
+ * @brief Memory Pak storage: save-file I/O, note table and iNode handling, CRC-8, and the CMempak wrapper.
  */
 #include "Mempak.hpp"
 
@@ -23,7 +23,6 @@ namespace MempakUtils {
 bool validate_mempak_data(const uint8_t* data, size_t size) { return data != nullptr && size == MEMPAK_TOTAL_SIZE; }
 
 bool validate_save_structure(const SaveFileInfo& save_info) {
-    // Basic validation
     return !save_info.game_name.empty() && save_info.page_count > 0;
 }
 
@@ -94,8 +93,7 @@ uint32_t crc32(const uint8_t* data, size_t length) {
 }
 
 bool verify_checksum(const uint8_t* data, size_t length, uint32_t expected_checksum) {
-    // This is generic; specific implementation might depend on context
-    // Assuming CRC32 for general verification unless specified otherwise
+    // Uses CRC-32.
     return crc32(data, length) == expected_checksum;
 }
 } // namespace MempakUtils
@@ -103,7 +101,6 @@ bool verify_checksum(const uint8_t* data, size_t length, uint32_t expected_check
 // --- MemoryPakController Implementation ---
 
 MemoryPakController::MemoryPakController() {
-    // Initialize default states
     for (auto& mp : m_mempaks) {
         mp.status.manufacturer_id = 0x01; // Nintendo
         mp.status.device_id = 0x01;       // Mempak
@@ -123,7 +120,6 @@ bool MemoryPakController::initialize(int controller_index, const std::string& sa
         m_save_directory = "saves/";
     }
 
-    // Create directory if it doesn't exist
     try {
         if (!fs::exists(m_save_directory)) {
             fs::create_directories(m_save_directory);
@@ -135,7 +131,7 @@ bool MemoryPakController::initialize(int controller_index, const std::string& sa
     m_mempaks[controller_index].file_path = MempakUtils::generate_mempak_filename(controller_index, m_save_directory);
 
     if (!load_from_disk(controller_index)) {
-        // If load fails (e.g. file doesn't exist), format/create new
+        // No usable file: create a freshly formatted pak.
         format(controller_index);
         save_to_disk(controller_index);
     }
@@ -157,7 +153,7 @@ std::vector<uint8_t> MemoryPakController::read(int controller_index, uint32_t ad
     const auto& mp = m_mempaks[controller_index];
 
     if (!mp.is_initialized) return {};
-    if (address >= MEMPAK_TOTAL_SIZE) return {}; // Out of bounds
+    if (address >= MEMPAK_TOTAL_SIZE) return {};
 
     size_t actual_length = length;
     if (address + length > MEMPAK_TOTAL_SIZE) {
@@ -211,31 +207,18 @@ bool MemoryPakController::write_page(int controller_index, uint32_t page,
 bool MemoryPakController::format(int controller_index) {
     if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return false;
 
-    // Zero out memory
     m_mempaks[controller_index].memory.fill(0);
 
-    // Setup basic header (Page 0) - This is a rough approximation of a formatted pak
-    // Real N64 Mempak format involves ID area, Label area, Inode table.
-    // For standard emulator compatibility, 0x00 or 0xFF fill is often sufficient,
-    // but creating a valid filesystem structure allows games to recognize it immediately.
-
-    // NOTE: A full filesystem implementation is complex.
-    // We will stick to zero-filled for now as many emulators do,
-    // letting games format it if they detect it's invalid.
-    // However, we mark it as dirty.
+    // The pak is left zero-filled instead of being given a valid filesystem; games detect the
+    // invalid ID area and format it themselves.
 
     m_mempaks[controller_index].is_dirty = true;
     m_mempaks[controller_index].status.formatted = true;
     m_mempaks[controller_index].status.free_pages = MEMPAK_NUM_PAGES - 5; // 5 reserved pages
 
-    // Minimal Header Logic (Optional):
-    // 0-32 bytes: Label
-    // ...
-
     return true;
 }
 
-// Storage I/O
 bool MemoryPakController::load_from_disk(int controller_index) {
     auto& mp = m_mempaks[controller_index];
     std::ifstream file(mp.file_path, std::ios::binary);
@@ -243,13 +226,8 @@ bool MemoryPakController::load_from_disk(int controller_index) {
 
     file.read(reinterpret_cast<char*>(mp.memory.data()), MEMPAK_TOTAL_SIZE);
     if (file.gcount() != MEMPAK_TOTAL_SIZE) {
-        // File might be smaller or empty, handle gracefully?
-        // For now, if read fails partial, we keep what we have (rest 0)
+        // A short file is accepted; the unread remainder keeps its existing contents.
     }
-
-    // Check if actually formatted (heuristic)
-    // If all zeros, might be unformatted?
-    // We assume loaded successfully.
 
     mp.is_dirty = false;
     return true;
@@ -266,7 +244,7 @@ bool MemoryPakController::save_to_disk(int controller_index) {
 }
 
 // Save File Management
-// The N64 memory pak uses a custom filesystem with a note table (iNode) at pages 3-4.
+// The N64 memory pak uses a custom filesystem with a note table at pages 3-4.
 // Each "note" (save file) has a 32-byte entry containing:
 //   - Game code (4 bytes)
 //   - Publisher code (2 bytes)
@@ -297,7 +275,6 @@ bool MemoryPakController::load_save_file(int controller_index, const std::string
         std::memcpy(gameCode, &mp.memory[offset], 4);
 
         if (game_id == gameCode) {
-            // Found matching entry
             return true;
         }
     }
@@ -321,7 +298,6 @@ std::vector<SaveFileInfo> MemoryPakController::list_save_files(int controller_in
     const auto& mp = m_mempaks[controller_index];
     if (!mp.is_initialized || !mp.status.formatted) return result;
 
-    // Parse note table at offset 0x300
     constexpr uint32_t NOTE_TABLE_OFFSET = 0x300;
     constexpr uint32_t NOTE_ENTRY_SIZE = 32;
     constexpr uint32_t MAX_NOTES = 16;
@@ -409,7 +385,6 @@ bool MemoryPakController::delete_save_file(int controller_index, const std::stri
                 currentPage = nextPage;
             }
 
-            // Clear the note entry
             std::memset(&mp.memory[offset], 0, NOTE_ENTRY_SIZE);
             mp.is_dirty = true;
 
@@ -461,14 +436,13 @@ bool MemoryPakController::verify_save_file(int controller_index, const std::stri
     return false;
 }
 
-// Status
 MempakStatus MemoryPakController::get_status(int controller_index) const {
     if (controller_index < 0 || controller_index >= static_cast<int>(MAX_CONTROLLERS)) return {};
     return m_mempaks[controller_index].status;
 }
 
 bool MemoryPakController::is_connected(int controller_index) const {
-    // In this emulation, we assume paks are always "connectable" if initialized
+    // Any valid controller index counts as connected.
     return controller_index >= 0 && controller_index < static_cast<int>(MAX_CONTROLLERS);
 }
 
@@ -482,7 +456,6 @@ size_t MemoryPakController::get_free_space(int controller_index) const {
     return m_mempaks[controller_index].status.free_pages * MEMPAK_PAGE_SIZE;
 }
 
-// Static CRC
 uint8_t MemoryPakController::calculate_crc(const uint8_t* data, size_t length) {
     return MempakUtils::crc8(data, length);
 }
@@ -491,7 +464,6 @@ uint32_t MemoryPakController::calculate_crc32(const uint8_t* data, size_t length
     return MempakUtils::crc32(data, length);
 }
 
-// Private helpers
 bool MemoryPakController::is_valid_address(int controller_index, uint32_t address, size_t length) const {
     return address + length <= MEMPAK_TOTAL_SIZE;
 }
@@ -514,7 +486,6 @@ const uint8_t* MemoryPakController::get_memory_pointer(int controller_index, uin
 
 CMempak::CMempak() {
     m_controller = std::make_unique<MemoryPakController>();
-    // Initialize memory arrays to 0
     for (auto& arr : m_mempak_memory) {
         arr.fill(0);
     }
@@ -524,16 +495,12 @@ CMempak::CMempak() {
 
 bool CMempak::Initialize(const std::string& base_path) {
     bool result = true;
-    // Initialize all controllers
     for (int i = 0; i < static_cast<int>(MAX_CONTROLLERS); ++i) {
         if (!m_controller->initialize(i, base_path)) {
-            // If init fails, we just continue, maybe that controller has no pak
-            // result = false;
+            // An init failure is ignored so the remaining controllers still initialise.
         }
 
-        // Sync legacy memory
-        // This is inefficient but necessary if we maintain two memory structures
-        // Ideally, remove m_mempak_memory and use m_controller->read()
+        // Mirror the pak contents into the legacy m_mempak_memory array.
         auto page0 = m_controller->read(i, 0, MEMPAK_TOTAL_SIZE);
         if (page0.size() == MEMPAK_TOTAL_SIZE) {
             std::memcpy(m_mempak_memory[i].data(), page0.data(), MEMPAK_TOTAL_SIZE);
@@ -545,16 +512,7 @@ bool CMempak::Initialize(const std::string& base_path) {
 void CMempak::Cleanup() { m_controller->shutdown(); }
 
 void CMempak::ReadFrom(int32_t controller_index, uint32_t address, uint8_t* data) {
-    // Legacy reads 32 bytes usually? The signature is uint8_t* data, but size is unknown.
-    // Assuming Joybus 32-byte chunks or single byte?
-    // Most N64 emulators use 32 byte block reads.
-    // However, the function signature `ReadFrom(..., uint8_t* data)` is ambiguous without length.
-    // Standard Joybus read is 32 bytes (0x20).
-
-    // Let's assume the callers know what they are doing and standard 32 bytes.
-    // OR, check if there's a convention.
-
-    // Access the controller
+    // The interface carries no length, so a fixed 32-byte Joybus block is transferred.
     std::vector<uint8_t> read_data = m_controller->read(controller_index, address, 32);
     if (!read_data.empty()) {
         std::memcpy(data, read_data.data(), read_data.size());
@@ -565,7 +523,7 @@ void CMempak::ReadFrom(int32_t controller_index, uint32_t address, uint8_t* data
 }
 
 void CMempak::WriteTo(int32_t controller_index, uint32_t address, uint8_t* data) {
-    // Assume 32 bytes
+    // Joybus mempak transfers are 32 bytes.
     std::vector<uint8_t> vec_data(data, data + 32);
     m_controller->write(controller_index, address, vec_data);
 
@@ -582,7 +540,7 @@ void CMempak::Format(int32_t controller_index) {
     m_mempak_memory[controller_index].fill(0);
 }
 
-// Internal legacy methods - delegates to MemoryPakController
+// These delegate to MemoryPakController.
 void CMempak::LoadMempak(int32_t controller_index, bool create_if_missing) {
     if (m_controller && controller_index >= 0 && controller_index < static_cast<int>(MAX_CONTROLLERS)) {
         m_controller->initialize(controller_index, "");
@@ -600,7 +558,6 @@ void CMempak::LoadMempak(int32_t controller_index, bool create_if_missing) {
 }
 
 std::string CMempak::get_mempak_filename(int32_t controller_index) const {
-    // Return the expected filename for this controller's mempak
     return std::string("Mempak") + std::to_string(controller_index) + ".mpk";
 }
 
@@ -639,9 +596,7 @@ bool MemoryPakFactory::detect_mempak_type(const uint8_t* data, size_t size) { re
 std::vector<uint8_t> MemoryPakFactory::create_formatted_mempak() {
     std::vector<uint8_t> data(MEMPAK_TOTAL_SIZE, 0);
 
-    // Initialize N64 mempak filesystem header
-    // Page 0: ID area - repeated 4 times (32 bytes each = 128 bytes per repetition)
-    // Contains manufacturer ID, device ID, etc.
+    // Page 0 is the ID area: four 32-byte blocks, each starting with a manufacturer and a device ID byte.
     for (int rep = 0; rep < 4; rep++) {
         uint32_t base = rep * 32;
         data[base + 0] = 0x81; // Manufacturer (Nintendo)
@@ -662,7 +617,6 @@ std::vector<uint8_t> MemoryPakFactory::create_formatted_mempak() {
 }
 
 std::vector<uint8_t> MemoryPakFactory::create_mempak_from_save(const std::string& save_file_path) {
-    // Load raw mempak data from a .mpk file
     std::ifstream file(save_file_path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         return create_formatted_mempak();

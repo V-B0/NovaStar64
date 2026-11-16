@@ -127,10 +127,9 @@ void SystemTimer::update_timers(uint32_t cycles_executed) {
         }
     }
 
-    // NOTE: Do NOT call update_compare_timer() here.
-    // Compare timer is only recalculated when CP0 Compare is written (MTC0).
-    // Calling it every update_timers() causes an infinite re-scheduling loop
-    // where Compare fires at distance=0, re-schedules for 1 cycle, fires again, etc.
+    // update_compare_timer() is deliberately not called here: Compare is only rescheduled when
+    // CP0 Compare is written (MTC0). Calling it on every update would reschedule Compare at
+    // distance 0 and fire it again and again.
 }
 
 void SystemTimer::fire_timer(TimerType type) {
@@ -145,7 +144,7 @@ void SystemTimer::fire_timer(TimerType type) {
         }
         break;
     case TimerType::ViTimer:
-        // VI interrupt: Use proper VI_INTR/VI_CURRENT comparison.
+        // VI frame timer: the VI handler runs the frame update, then the screen is refreshed.
         {
             static int viCount = 0;
             viCount++;
@@ -161,7 +160,6 @@ void SystemTimer::fire_timer(TimerType type) {
         system.RefreshScreen();
         break;
     case TimerType::AiTimerInterrupt:
-        // Audio interrupt
         if (registers) {
             registers->m_Mips_Interface[2] |= MIFlags::INTR_AI; // MI_INTR_REG |= AI bit
             registers->CheckInterrupts();
@@ -175,7 +173,7 @@ void SystemTimer::fire_timer(TimerType type) {
             if (mem && mem->PeripheralInterface()) {
                 mem->PeripheralInterface()->CompleteDMA();
             } else if (registers) {
-                // Fallback: direct register manipulation (less correct)
+                // Fallback: set the interrupt directly in the registers.
                 registers->m_Mips_Interface[2] |= MIFlags::INTR_PI;
                 registers->m_Peripheral_Interface[3] = 0;
                 registers->CheckInterrupts();
@@ -191,11 +189,9 @@ void SystemTimer::fire_timer(TimerType type) {
         }
         break;
     case TimerType::RspTimer:
-        // Fires at the block boundary after ClearHalt.
-        // Re-set the DP bit here because the game's CLR_DP_INTR cleanup
-        // (which clears OLD DP interrupts) runs within the same block and
-        // wipes out the DP bit that ClearHalt set. By re-setting it here,
-        // the DP interrupt survives past the cleanup code.
+        // Fires at the block boundary after ClearHalt. The game's CLR_DP_INTR cleanup (which
+        // clears old DP interrupts) runs in the same block and would wipe the DP bit that
+        // ClearHalt set, so the bit is set again here.
         if (registers) {
             if (registers->m_DpFreshFromHLE) {
                 registers->m_GfxIntrReg |= MIFlags::INTR_DP;
@@ -248,7 +244,6 @@ void SystemTimer::update_compare_timer() {
     uint32_t cycles = distance;
     if (cycles == 0) cycles = 1; // Prevent immediate re-fire
 
-    // Set (or update) the Compare timer
     set_timer(TimerType::Compare, cycles, false);
 }
 
@@ -332,11 +327,9 @@ void SystemTimer::TimerDone() {
             registers->COUNT_REGISTER += elapsed;
         }
 
-        // Decrement all timer counters and fire expired ones
         update_timers(elapsed);
     }
 
-    // Set m_NextTimer to the next shortest timer and sync last_update_cycles
     update_next_timer();
 }
 

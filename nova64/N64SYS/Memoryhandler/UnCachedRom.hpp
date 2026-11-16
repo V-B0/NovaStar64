@@ -1,6 +1,6 @@
 /**
  * @file UnCachedRom.hpp
- * @brief Un Cached Rom declarations and types.
+ * @brief Uncached cartridge ROM and save memory handler declarations: ROM reads, the write latch and SRAM/FlashRAM DMA.
  */
 #pragma once
 #include "Memoryhandler.hpp"

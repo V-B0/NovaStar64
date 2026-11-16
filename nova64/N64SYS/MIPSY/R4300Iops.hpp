@@ -1,6 +1,6 @@
 /**
  * @file R4300Iops.hpp
- * @brief R4300Iops declarations and types.
+ * @brief MIPS R4300i instruction word layouts and opcode enumerations.
  */
 #pragma once
 
@@ -31,7 +31,7 @@ union R4300iOps {
         unsigned op : 6;
     } Jtype;
 
-    struct { //Float type
+    struct { // Float type
         unsigned op : 6;
         unsigned base : 5;
         unsigned ft : 5;
@@ -40,7 +40,7 @@ union R4300iOps {
         unsigned funct : 6;
     } Ftype;
 
-    struct { //MEMORY TYPE
+    struct { // Memory type
         unsigned op : 6;
         unsigned base : 5;
         unsigned rt : 5;
@@ -54,7 +54,7 @@ union R4300iOps {
     } SYScallType;
 };
 
-enum R4300iopInstr { //R4300I OPCODE INSTRUCTIONS
+enum R4300iopInstr { // Primary opcodes
     R4300_SPECIAL = 0X00,
     R4300_REGIMM = 0X01,
     R4300_J = 0X02,
@@ -83,7 +83,7 @@ enum R4300iopInstr { //R4300I OPCODE INSTRUCTIONS
     R4300_DADDIU = 0X19,
     R4300_LDL = 0X1A,
     R4300_LDR = 0X1B,
-    R4300_RES = 0X1C, //Reserved
+    R4300_RES = 0X1C, // Reserved
     R4300_LB = 0X20,
     R4300_LH = 0X21,
     R4300_LWL = 0X22,
@@ -114,7 +114,7 @@ enum R4300iopInstr { //R4300I OPCODE INSTRUCTIONS
 
 };
 
-enum R4300iOpSpecInstr { //R4300i SPECIAL OPCODE INSTRUCTIONS
+enum R4300iOpSpecInstr { // SPECIAL function codes
     R4300_S_SLL = 0X00,
     R4300_S_SRL = 0X02,
     R4300_S_SRA = 0X03,
@@ -169,7 +169,7 @@ enum R4300iOpSpecInstr { //R4300i SPECIAL OPCODE INSTRUCTIONS
     R4300_S_DSRA32 = 0X3F
 };
 
-enum R4300iRegImmopsInstr { // R4300i REGIMM OPCODE INSTRUCTIONS
+enum R4300iRegImmopsInstr { // REGIMM opcodes
     R4300_R_BLTZ = 0X00,
     R4300_R_BGEZ = 0X01,
     R4300_R_BLTZL = 0X02,
@@ -187,14 +187,14 @@ enum R4300iRegImmopsInstr { // R4300i REGIMM OPCODE INSTRUCTIONS
 
 };
 
-enum R4300iCop0OpsInstr { // R4300i COP0 OPCODE INSTRUCTIONS
+enum R4300iCop0OpsInstr { // COP0 opcodes
     R4300_COP0_MF = 0X00,
     R4300_COP0_DMF = 0X01,
     R4300_COP0_MT = 0X04,
     R4300_COP0_DMT = 0X05
 };
 
-enum R4300iCop0C0OpsInstr { // R4300i COP0 C0 OPCODE INSTRUCTIONS
+enum R4300iCop0C0OpsInstr { // COP0 C0 opcodes
     R4300_COP0_C0_TLBR = 0X01,
     R4300_COP0_C0_TLBWI = 0X02,
     R4300_COP0_C0_TLBWR = 0X06,
@@ -203,7 +203,7 @@ enum R4300iCop0C0OpsInstr { // R4300i COP0 C0 OPCODE INSTRUCTIONS
     R4300_COP0_C0_WAIT = 0X20
 };
 
-enum R4300iCop1OpsInstr { // R4300i COP1 OPCODE INSTRUCTIONS
+enum R4300iCop1OpsInstr { // COP1 opcodes
     R4300_COP1_MF = 0X00,
     R4300_COP1_DMF = 0X01,
     R4300_COP1_CF = 0X02,
@@ -217,14 +217,14 @@ enum R4300iCop1OpsInstr { // R4300i COP1 OPCODE INSTRUCTIONS
     R4300_COP1_L = 0X15
 };
 
-enum R4300iCop1BCOpsInstr { // R4300i COP1 BC OPCODE INSTRUCTIONS
+enum R4300iCop1BCOpsInstr { // COP1 BC opcodes
     R4300_COP1_BC_BC = 0X00,
     R4300_COP1_BC_BCT = 0X01,
     R4300_COP1_BC_BCFL = 0X02,
     R4300_COP1_BC_BCFT = 0X03
 };
 
-enum R4300iFPUOpsInstr { // R4300i FPU OPCODE INSTRUCTIONS
+enum R4300iFPUOpsInstr { // FPU opcodes
     R4300_FPU_ADD = 0X00,
     R4300_FPU_SUB = 0X01,
     R4300_FPU_MUL = 0X02,
@@ -263,7 +263,7 @@ enum R4300iFPUOpsInstr { // R4300i FPU OPCODE INSTRUCTIONS
     R4300_FPU_C_NGT = 0X3F
 };
 
-enum R4300iCop2opsInstr { // R4300i COP2 OPCODE INSTRUCTIONS
+enum R4300iCop2opsInstr { // COP2 opcodes
     R4300_COP2_MF = 0X00,
     R4300_COP2_DMF = 0X01,
     R4300_COP2_CF = 0X02,

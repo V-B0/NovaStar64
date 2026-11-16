@@ -1,6 +1,6 @@
 /**
  * @file TransferPak.cpp
- * @brief Transfer Pak implementation.
+ * @brief Transfer Pak controller: the register window (enable, bank, power, status) and access to the inserted Game Boy cartridge.
  */
 #include "TransferPak.hpp"
 #include "GBcart.hpp"
@@ -102,31 +102,9 @@ bool TransferPakController::write_register(uint16_t address, uint8_t data) {
 }
 
 bool TransferPakController::read_gameboy_memory(uint16_t address, uint8_t& data) const {
-    // Basic mapping:
-    // If bank0, map 0-0x3FFF to GB 0-0x3FFF?
-    // Transfer pak maps GB space into N64 0x8000-0xFFFF window via banks.
-    // Address input to this function is 0x0000-0xFFFF (offset in PAK memory space?)
-    // Usually calls come with offset from 0xC000 or similar.
-    // Assuming address is 0-0xFFFF relative to Transfer Pak base.
-
-    // Transfer pak space is usually 32KB window.
-    // 0x0000-0x7FFF is Bank 0 (Fixed GB ROM 0-0x3FFF repeated?)
-    // Actually TP has a window.
-
-    // Simplification: Ask cartridge directly.
-    // But cartridge expects 16-bit address.
-
-    // We'll pass the address directly for now, assuming caller handles bank mapping offsets if needed,
-    // or we use status.current_bank for the switchable part.
-
-    // If address is in switchable area:
+    // The address goes straight to the cartridge, whose mapper does the bank switching; the
+    // Transfer Pak bank register is not applied here.
     if (address >= 0x4000 && address < 0x8000) {
-        // Bank 1 mapped here?
-        // This depends on the specific N64-side mapping which is complex.
-        // We'll trust the cartridge implementation to handle a flat address space query
-        // or we need to map based on `status.current_bank`.
-
-        // For this implementation, we just proxy to cartridge.
         data = cartridge->read(address);
         return true;
     }

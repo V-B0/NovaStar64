@@ -1,6 +1,6 @@
 /**
  * @file DisplayCtrlReg.hpp
- * @brief Display Ctrl Reg declarations and types.
+ * @brief RDP command (DPC) register handler: DPC command and register-index enums and DisplayProcessorHandler.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -8,7 +8,6 @@
 #include <array>
 #include <span>
 
-// Forward declarations
 class CRegisters;
 namespace Nova64 {
 class StateArchive;
@@ -18,7 +17,6 @@ class GFXPlugin;
 }
 
 namespace DPCRegisters {
-// Use enum classes for type safety
 enum class DPCCommand : uint32_t {
     CLR_XBUS_DMEM_DMA = 0x0001,
     SET_XBUS_DMEM_DMA = 0x0002,
@@ -87,7 +85,6 @@ public:
     /// Get a mutable pointer to a specific DPC register (for plugin wiring)
     [[nodiscard]] uint32_t* GetRegisterPtr(DPCRegisters::RegisterIndex index) noexcept { return &m_Registers[index]; }
 
-    // Reset
     void Reset();
 
     /// Save states and rewind (see StateArchive.hpp).
@@ -105,7 +102,6 @@ private:
     uint32_t* m_Registers;
     uint8_t* m_DMEM = nullptr;
 
-    // State
     bool m_ProcessingDList;
     bool m_pendingPipelineClear = false;
     uint32_t m_DListStart;

@@ -12,17 +12,11 @@
 #include <cstring>
 #include <sstream>
 
-/**
- * @brief Constructor
- */
 UncachedRom::UncachedRom(CN64System& system, CRegisters& registers, Nova64::MipsMemoryVM& mmu, const Config& config) :
     m_system(system), m_registers(registers), m_mmu(mmu), m_config(config),
     m_sram(std::make_unique<CSram>(config.saves_read_only)),
     m_flash_ram(std::make_unique<CFlashRam>(config.saves_read_only)) {}
 
-/**
- * @brief Read 32-bit value from uncached ROM region
- */
 bool UncachedRom::Read32(uint32_t address, uint32_t& value) {
     m_stats.read_count++;
 
@@ -55,7 +49,6 @@ bool UncachedRom::Read32(uint32_t address, uint32_t& value) {
                 return true;
             }
         }
-        // Read actual ROM data
         N64Rom* rom = m_system.GetRom();
         if (rom && rom->IsLoaded()) {
             uint32_t offset = address & 0x0FFFFFFF; // Strip ROM base (0x10000000)
@@ -77,9 +70,6 @@ bool UncachedRom::Read32(uint32_t address, uint32_t& value) {
     }
 }
 
-/**
- * @brief Write 32-bit value to uncached ROM region
- */
 bool UncachedRom::Write32(uint32_t address, uint32_t value, uint32_t mask) {
     m_stats.write_count++;
 
@@ -116,9 +106,6 @@ bool UncachedRom::Write32(uint32_t address, uint32_t value, uint32_t mask) {
     }
 }
 
-/**
- * @brief Perform DMA read operation
- */
 bool UncachedRom::DMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length) {
     m_stats.dma_operations++;
 
@@ -132,9 +119,6 @@ bool UncachedRom::DMARead(uint32_t dramAddr, uint32_t cartAddr, uint32_t length)
     return true;
 }
 
-/**
- * @brief Perform DMA write operation
- */
 bool UncachedRom::DMAWrite(uint32_t dramAddr, uint32_t cartAddr, uint32_t length) {
     m_stats.dma_operations++;
 
@@ -147,9 +131,6 @@ bool UncachedRom::DMAWrite(uint32_t dramAddr, uint32_t cartAddr, uint32_t length
     return true;
 }
 
-/**
- * @brief Reset handler state
- */
 void UncachedRom::reset() {
     m_dma_state = DMAState{};
     m_dma_start_cycle = 0;
@@ -157,9 +138,6 @@ void UncachedRom::reset() {
     m_stats = Stats{};
 }
 
-/**
- * @brief Save state to stream
- */
 bool UncachedRom::saveState(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&m_dma_state), sizeof(m_dma_state));
     os.write(reinterpret_cast<const char*>(&m_dma_start_cycle), sizeof(m_dma_start_cycle));
@@ -167,9 +145,6 @@ bool UncachedRom::saveState(std::ostream& os) const {
     return os.good();
 }
 
-/**
- * @brief Load state from stream
- */
 bool UncachedRom::loadState(std::istream& is) {
     is.read(reinterpret_cast<char*>(&m_dma_state), sizeof(m_dma_state));
     is.read(reinterpret_cast<char*>(&m_dma_start_cycle), sizeof(m_dma_start_cycle));
@@ -177,9 +152,6 @@ bool UncachedRom::loadState(std::istream& is) {
     return is.good();
 }
 
-/**
- * @brief Dump state for debugging
- */
 std::string UncachedRom::dumpState() const {
     std::ostringstream oss;
     oss << "UncachedRom State:\n";
@@ -194,23 +166,18 @@ std::string UncachedRom::dumpState() const {
     return oss.str();
 }
 
-/**
- * @brief Get memory map information
- */
 std::string UncachedRom::getMemoryMap() const {
     return "Uncached ROM: 0x10000000-0x1FBFFFFF\n"
            "  SRAM: 0x08000000-0x0800FFFF (via PI)\n"
            "  FlashRAM: 0x08000000-0x08010000 (via PI)\n";
 }
 
-// Private helper methods
-
 UncachedRom::MemoryRegion UncachedRom::decodeRegion(uint32_t address) const {
     if (address >= 0x10000000 && address < 0x1FC00000) return MemoryRegion::ROM;
     if (address >= 0x08000000 && address < 0x08020000) {
         // SRAM and FlashRAM share the same address range (0x08000000).
         // The FlashRAM command/status register is at 0x08000000 (same as SRAM data).
-        // Key insight: SRAM games ONLY use DMA for save access, never I/O (Read32/Write32).
+        // Key fact: SRAM games only use DMA for save access, never I/O (Read32/Write32).
         // Any I/O access to this range is a FlashRAM command/status register access.
         // Always route I/O through FLASH_RAM to enable proper auto-detection,
         // even if processDMATransfer already guessed SRAM from an earlier DMA.
@@ -353,7 +320,6 @@ void UncachedRom::completeDMA() {
     m_registers.m_Peripheral_Interface[PI::Register::PI_STATUS] &= ~0x3; // Clear DMA Busy
     m_registers.m_Peripheral_Interface[PI::Register::PI_STATUS] |= 0x8;  // Set Interrupt
 
-    // Set MI interrupt
-    m_registers.m_Mips_Interface[2] |= 0x10; // MI_INTR_PI
+    m_registers.m_Mips_Interface[2] |= 0x10;                             // MI_INTR_PI
     m_registers.CheckInterrupts();
 }

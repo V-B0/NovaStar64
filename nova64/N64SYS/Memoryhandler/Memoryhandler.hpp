@@ -1,10 +1,12 @@
 /**
  * @file Memoryhandler.hpp
- * @brief Memoryhandler declarations and types.
+ * @brief Interface for memory-mapped hardware regions.
  */
 #pragma once
 #include <cstdint>
 
+/// A memory-mapped hardware region. Read32/Write32 are mandatory; the 8- and
+/// 64-bit accesses report "unhandled" (false) unless a handler overrides them.
 class MemoryHandler {
 public:
     virtual ~MemoryHandler() = default;

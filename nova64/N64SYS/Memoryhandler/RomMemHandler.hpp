@@ -1,6 +1,6 @@
 /**
  * @file RomMemHandler.hpp
- * @brief Rom Mem Handler declarations and types.
+ * @brief ROM memory handler declarations: ROM regions, mirroring and access modes, write patches and the read latch.
  */
 #pragma once
 #include "Memoryhandler.hpp"
@@ -12,7 +12,6 @@
 #include <memory>
 #include <functional>
 
-// Forward declarations
 class CRegisters;
 namespace N64 {
 namespace Rom {
@@ -70,7 +69,6 @@ public:
     [[nodiscard]] bool Read32(uint32_t address, uint32_t& value) override;
     [[nodiscard]] bool Write32(uint32_t address, uint32_t value, uint32_t mask) override;
 
-    // Additional access methods
     [[nodiscard]] bool Read8(uint32_t address, uint8_t& value) override;
     [[nodiscard]] bool Read16(uint32_t address, uint16_t& value);
     [[nodiscard]] bool ReadBytes(uint32_t address, void* buffer, size_t size);
@@ -121,7 +119,6 @@ public:
     void set_write_callback(WriteCallback callback);
 
 private:
-    // Delete copy and move operations
     RomMemoryHandler() = delete;
     RomMemoryHandler(const RomMemoryHandler&) = delete;
     RomMemoryHandler(RomMemoryHandler&&) = delete;

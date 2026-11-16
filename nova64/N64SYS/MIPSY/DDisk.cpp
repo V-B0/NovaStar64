@@ -1,6 +1,6 @@
 /**
  * @file DDisk.cpp
- * @brief D Disk implementation.
+ * @brief 64DD disk controller model: command dispatch, track and sector seeking, and sector, block and DMA transfers.
  */
 #include "DDisk.hpp"
 #include <cstring>
@@ -9,7 +9,6 @@
 
 namespace DiskDrive {
 
-// Global variables definition
 bool dd_write = false;
 bool dd_reset_hold = false;
 uint32_t dd_track_offset = 0;
@@ -22,16 +21,14 @@ DiskController g_DiskController;
 // --- DiskController Implementation ---
 
 void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
-    // Reset transient status flags at start of new command
     status.command_complete = false;
     status.error = false;
 
-    // Most commands require logic, some might set busy
     status.busy = true;
 
     switch (command) {
     case DiskCommand::Seek:
-        // Parameter is typically the target track (or cylinder)
+        // The parameter is the target track.
         if (SeekToTrack(parameter)) {
             status.seek_complete = true;
         } else {
@@ -46,9 +43,7 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
         }
         current_mode = DiskMode::Reading;
         // Uses current_track/current_sector set by previous Seek commands
-        if (ReadSector(current_track, current_sector)) {
-            // Read success
-        }
+        if (ReadSector(current_track, current_sector)) {}
         break;
 
     case DiskCommand::WriteSector:
@@ -57,9 +52,7 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
             break;
         }
         current_mode = DiskMode::Writing;
-        if (WriteSector(current_track, current_sector)) {
-            // Write success
-        }
+        if (WriteSector(current_track, current_sector)) {}
         break;
 
     case DiskCommand::Reset: Reset(); break;
@@ -68,10 +61,7 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
 
     case DiskCommand::MotorOff: MotorOff(); break;
 
-    case DiskCommand::CheckDisk:
-        // Just checks status, effectively
-        UpdateStatus();
-        break;
+    case DiskCommand::CheckDisk: UpdateStatus(); break;
 
     case DiskCommand::GetStatus:
         // Return status (handled by caller reading status register)
@@ -103,8 +93,7 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
     status.busy = false;
     status.command_complete = true;
 
-    // Revert mode to idle unless operation is ongoing (like DMA or continuous read)
-    // For this simple implementation, we revert immediately
+    // Commands complete synchronously, so the controller is idle again on return.
     current_mode = DiskMode::Idle;
 }
 
@@ -112,7 +101,6 @@ void DiskController::Reset() {
     current_mode = DiskMode::Idle;
     current_zone = DiskZone::Zone0;
 
-    // Reset status bits
     status = {};
     status.disk_present = true; // Assume disk is inserted for emulation
     status.motor_on = false;
@@ -192,14 +180,13 @@ void DiskController::StartDMA(uint32_t address, uint32_t length, bool is_write) 
     dma_length = length;
     dma_active = true;
 
-    // In this implementation, we process DMA lazily or immediately
     ProcessDMA();
 }
 
 void DiskController::ProcessDMA() {
     if (!dma_active) return;
 
-    // Transfer completes instantly for now
+    // The transfer is modelled as completing instantly.
     dma_active = false;
     dma_length = 0;
     status.command_complete = true;
@@ -237,9 +224,8 @@ bool DiskController::IsValidTrackSector(DiskZone zone, uint32_t track, uint32_t 
     return (track < info.tracks_in_zone) && (sector < info.sectors_per_track);
 }
 
-// Internal Private Helpers
 void DiskController::UpdateBufferPointers() {
-    // Stub
+    // Not modelled.
 }
 
 bool DiskController::TransferSector(bool is_write) {
@@ -248,12 +234,12 @@ bool DiskController::TransferSector(bool is_write) {
 }
 
 void DiskController::UpdateStatus() {
-    // Logic to ensure status flags are consistent can go here
+    // Not modelled.
 }
 
 void DiskController::HandleError() {
     status.error = true;
-    status.busy = false; // Stop if error
+    status.busy = false;
 }
 
 void DiskController::MotorOn() {
@@ -264,29 +250,28 @@ void DiskController::MotorOn() {
 void DiskController::MotorOff() { status.motor_on = false; }
 
 void DiskController::ProcessGapSector() {
-    // Stub
+    // Not modelled.
 }
 
 // --- Global Function Implementations ---
 
 void DiskCommandExecute() {
-    // Map global `dd_current` to command execution
-    // Assuming `dd_current` holds the command ID
+    // dd_current holds the command ID.
     g_DiskController.ExecuteCommand(static_cast<DiskCommand>(dd_current));
 }
 
 void DiskReset() { g_DiskController.Reset(); }
 
 void DiskBMControl() {
-    // Stub
+    // Not modelled.
 }
 
 void DiskGapSectorCheck() {
-    // Stub
+    // Not modelled.
 }
 
 void DiskBMUpdate() {
-    // Stub
+    // Not modelled.
 }
 
 bool DiskBMReadWrite(bool write) {

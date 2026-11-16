@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <cstring>
 
-// 64DD ASIC register addresses (relative to 0x05000000)
+// 64DD ASIC register addresses (physical)
 namespace ASIC {
 constexpr uint32_t DATA = 0x05000500;         // Data register
 constexpr uint32_t MISC_REG = 0x05000504;     // Miscellaneous register
@@ -109,8 +109,8 @@ CachedSysMemory::CachedSysMemory(CRegisters& reg, N64::Rom::N64Rom& ddRom) :
     m_Reg(reg), m_DDRom(ddRom), m_DiskInterface(reg.m_DiskInterface.data()), m_DiskEnabled(false), m_DiskPresent(false),
     m_CurrentTrack(0), m_CurrentSector(0), m_CommandActive(false), m_SequencerActive(false), m_SequencerRemaining(0),
     m_RDRAM(nullptr), m_RDRAMSize(0) {
-    // Check if this is a 64DD IPL ROM
-    m_DiskEnabled = ddRom.IsLoaded(); // Temporary fix for IsDDIPL
+    // The 64DD is enabled when an IPL ROM is loaded.
+    m_DiskEnabled = ddRom.IsLoaded();
 
     if (m_DiskEnabled) {
         Log::info("CachedSysMemory: 64DD disk interface enabled");
@@ -163,7 +163,6 @@ void CachedSysMemory::InitializeDiskInterface() {
 // --- Read Operations ---
 
 bool CachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
-    // Check if 64DD is enabled
     if (!m_DiskEnabled) {
         // Return open bus value
         val = (addr << 16) | (addr & 0xFFFF);
@@ -172,7 +171,6 @@ bool CachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
 
     DiskInterfaceReg regs(m_DiskInterface);
 
-    // Decode ASIC register address
     switch (addr & 0x1FFFFFFF) {
     case ASIC::DATA: val = regs.ASIC_DATA; break;
 
@@ -229,14 +227,12 @@ bool CachedSysMemory::Read32(uint32_t addr, uint32_t& val) {
 // --- Write Operations ---
 
 bool CachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
-    // Check if 64DD is enabled
     if (!m_DiskEnabled) {
         return true; // Silently ignore writes when disabled
     }
 
     DiskInterfaceReg regs(m_DiskInterface);
 
-    // Decode ASIC register address
     switch (addr & 0x1FFFFFFF) {
     case ASIC::DATA: regs.ASIC_DATA = (regs.ASIC_DATA & ~mask) | (val & mask); break;
 
@@ -281,7 +277,6 @@ void CachedSysMemory::ProcessDiskCommand() {
     DiskInterfaceReg regs(m_DiskInterface);
     uint32_t cmd = regs.ASIC_CMD & 0xFF;
 
-    // Mark as busy
     regs.ASIC_STATUS |= ASIC::STATUS_BUSY;
     m_CommandActive = true;
 
@@ -315,11 +310,9 @@ void CachedSysMemory::CommandSeek() {
 
     Log::debugf("64DD: Seek to track %u", targetTrack);
 
-    // Update current track
     m_CurrentTrack = targetTrack;
     regs.ASIC_CUR_TK = targetTrack;
 
-    // Seek complete
     CompleteCommand(false);
 }
 
@@ -390,16 +383,13 @@ void CachedSysMemory::CommandReadID() {
 void CachedSysMemory::CompleteCommand(bool error) {
     DiskInterfaceReg regs(m_DiskInterface);
 
-    // Clear busy flag
     regs.ASIC_STATUS &= ~ASIC::STATUS_BUSY;
     m_CommandActive = false;
 
     if (error) {
-        // Set error flag
         regs.ASIC_BM_STATUS |= ASIC::STATUS_BM_ERROR;
     }
 
-    // Generate mechanical interrupt
     regs.ASIC_STATUS |= ASIC::STATUS_MECHA_INT;
 
     // Trigger MI interrupt (disk uses PI interrupt line)
@@ -415,7 +405,6 @@ void CachedSysMemory::ProcessBufferManagerControl() {
     uint32_t bmCtl = regs.ASIC_BM_CTL;
 
     if (bmCtl & ASIC::BM_CTL_RESET) {
-        // Reset buffer manager
         Log::debugf("64DD: Buffer manager reset");
         regs.ASIC_BM_STATUS = 0;
         regs.ASIC_BM_CTL &= ~ASIC::BM_CTL_RESET;
@@ -423,7 +412,6 @@ void CachedSysMemory::ProcessBufferManagerControl() {
     }
 
     if (bmCtl & ASIC::BM_CTL_START) {
-        // Start DMA transfer
         bool isWrite = (bmCtl & ASIC::BM_CTL_MODE_WRITE) != 0;
 
         Log::debugf("64DD: Start buffer manager %s", isWrite ? "write" : "read");
@@ -438,7 +426,6 @@ void CachedSysMemory::ProcessBufferManagerControl() {
         if (blockLength == 0) blockLength = 1;
         uint32_t transferLength = blockLength * 256;
 
-        // Perform DMA transfer
         if (isWrite) {
             // DMA Write: RDRAM -> C2 buffer -> Disk
             PerformDMAWrite(dmaAddress, transferLength, sectorByte);
@@ -447,11 +434,9 @@ void CachedSysMemory::ProcessBufferManagerControl() {
             PerformDMARead(dmaAddress, transferLength, sectorByte);
         }
 
-        // Mark transfer complete
         regs.ASIC_STATUS |= ASIC::STATUS_C2_TRANSFER;
         regs.ASIC_BM_STATUS |= ASIC::BM_CTL_BLOCK;
 
-        // Generate BM interrupt
         regs.ASIC_STATUS |= ASIC::STATUS_BM_INT;
 
         // Trigger interrupt to CPU
@@ -459,7 +444,6 @@ void CachedSysMemory::ProcessBufferManagerControl() {
         m_Reg.m_Mips_Interface[2] |= 0x10;
         m_Reg.CheckInterrupts();
 
-        // Clear start flag
         regs.ASIC_BM_CTL &= ~ASIC::BM_CTL_START;
     }
 }
@@ -479,9 +463,7 @@ void CachedSysMemory::ProcessSequencerControl() {
 
         Log::debugf("64DD: Sequencer start - %u sectors, auto=%d", sectorCount, autoIncrement);
 
-        // Process multi-sector operation
         if (sectorCount > 0) {
-            // Update sequencer status
             regs.ASIC_SEQ_STATUS = sectorCount; // Remaining sectors
 
             // Start first sector operation
@@ -495,7 +477,6 @@ void CachedSysMemory::ProcessSequencerControl() {
             }
         }
 
-        // Clear enable bit
         regs.ASIC_SEQ_CTL &= ~0x00010000;
     }
 }
@@ -541,7 +522,6 @@ void CachedSysMemory::PerformDMARead(uint32_t rdramAddr, uint32_t length, uint32
         return;
     }
 
-    // Validate RDRAM address
     if (rdramAddr + length > m_RDRAMSize) {
         Log::errorf("64DD: DMA read failed - invalid RDRAM address 0x%08X (size 0x%X)", rdramAddr, length);
         return;
@@ -565,13 +545,11 @@ void CachedSysMemory::PerformDMAWrite(uint32_t rdramAddr, uint32_t length, uint3
         return;
     }
 
-    // Validate RDRAM address
     if (rdramAddr + length > m_RDRAMSize) {
         Log::errorf("64DD: DMA write failed - invalid RDRAM address 0x%08X (size 0x%X)", rdramAddr, length);
         return;
     }
 
-    // Copy from RDRAM to C2 buffer
     uint32_t bufferOffset = sectorOffset % 32768;
     uint32_t bytesToCopy = (bufferOffset + length > 32768) ? (32768 - bufferOffset) : length;
 
@@ -579,7 +557,6 @@ void CachedSysMemory::PerformDMAWrite(uint32_t rdramAddr, uint32_t length, uint3
 
     Log::debugf("64DD: DMA write - RDRAM[0x%08X] -> C2[0x%04X] (%u bytes)", rdramAddr, bufferOffset, bytesToCopy);
 
-    // Flush C2 buffer to disk image
     FlushC2BufferToSector();
 }
 
@@ -590,7 +567,6 @@ void CachedSysMemory::LoadCurrentSectorToC2Buffer() {
     const uint32_t sectorsPerTrack = 85;
     uint32_t absoluteSector = (m_CurrentTrack * sectorsPerTrack) + m_CurrentSector;
 
-    // Load sector data from disk image
     const uint8_t* diskData = m_DDRom.GetRomAddress();
     size_t diskSize = m_DDRom.GetSize();
 
@@ -606,7 +582,6 @@ void CachedSysMemory::LoadCurrentSectorToC2Buffer() {
     uint32_t offset = absoluteSector * sectorSize;
 
     if (offset >= diskSize) {
-        // Sector beyond disk size
         Log::debugf("64DD: Sector %u beyond disk size (offset 0x%X, size 0x%zX)", absoluteSector, offset, diskSize);
         m_C2Buffer.fill(0);
 
@@ -629,11 +604,9 @@ void CachedSysMemory::LoadCurrentSectorToC2Buffer() {
 }
 
 void CachedSysMemory::FlushC2BufferToSector() {
-    // Calculate absolute sector from track/sector position
     const uint32_t sectorsPerTrack = 85;
     uint32_t absoluteSector = (m_CurrentTrack * sectorsPerTrack) + m_CurrentSector;
 
-    // Get writable pointer to disk image
     uint8_t* diskData = m_DDRom.GetRomAddress();
     size_t diskSize = m_DDRom.GetSize();
 
@@ -644,7 +617,6 @@ void CachedSysMemory::FlushC2BufferToSector() {
         return;
     }
 
-    // Calculate sector offset in disk image
     const uint32_t sectorSize = 512;
     uint32_t offset = absoluteSector * sectorSize;
 

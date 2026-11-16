@@ -101,7 +101,6 @@ struct DiskGeometry {
     static constexpr uint32_t COUNTRY_USA = 0x2263EE56;
     static constexpr uint32_t COUNTRY_DEV = 0x00000000;
 
-    // Calculate derived values
     static constexpr uint32_t BlockSize(uint8_t zone) noexcept { return SECTOR_SIZES[zone] * SECTORS_PER_BLOCK; }
 
     static constexpr uint32_t TrackSize(uint8_t zone) noexcept { return BlockSize(zone) * BLOCKS_PER_TRACK; }
@@ -143,50 +142,23 @@ public:
     DiskImage(DiskImage&&) = default;
     DiskImage& operator=(DiskImage&&) = default;
 
-    /**
-     * @brief Get raw pointer to disk data
-     */
     const uint8_t* Data() const noexcept { return m_Data.data(); }
     uint8_t* Data() noexcept { return m_Data.data(); }
 
-    /**
-     * @brief Get size of disk data
-     */
     size_t Size() const noexcept { return m_Data.size(); }
 
-    /**
-     * @brief Check if disk image is loaded
-     */
     bool IsLoaded() const noexcept { return !m_Data.empty(); }
 
-    /**
-     * @brief Get disk format
-     */
     DiskFormat GetFormat() const noexcept { return m_Format; }
 
-    /**
-     * @brief Get disk type
-     */
     DiskType GetType() const noexcept { return m_Type; }
 
-    /**
-     * @brief Get country code
-     */
     CountryCode GetCountry() const noexcept { return m_Country; }
 
-    /**
-     * @brief Get disk identifier
-     */
     const std::string& GetIdentifier() const noexcept { return m_Identifier; }
 
-    /**
-     * @brief Get ROM name
-     */
     const std::string& GetRomName() const noexcept { return m_RomName; }
 
-    /**
-     * @brief Get file path
-     */
     const fs::path& GetFilePath() const noexcept { return m_FilePath; }
 
 private:
@@ -232,9 +204,6 @@ private:
  */
 class N64Disk final {
 public:
-    /**
-     * @brief Construct an empty disk manager
-     */
     N64Disk();
     ~N64Disk();
 
@@ -266,12 +235,8 @@ public:
      */
     void SwapDisk(const fs::path& filePath);
 
-    /**
-     * @brief Unload current disk image
-     */
     void UnloadDisk() noexcept;
 
-    // Helper functions needed by CPP
     DiskType GetDiskType() const;
     uint8_t GetZoneForTrack(uint16_t track, uint16_t head) const;
     uint32_t LBAToVZone(uint32_t lba) const;
@@ -288,19 +253,10 @@ public:
     static bool IsValidDisk(const uint8_t* data, size_t size) noexcept;
 
     // Disk information
-    /**
-     * @brief Check if disk is loaded
-     */
     bool IsLoaded() const noexcept { return m_Image && m_Image->IsLoaded(); }
 
-    /**
-     * @brief Get loaded disk image
-     */
     const DiskImage& GetImage() const;
 
-    /**
-     * @brief Get disk format
-     */
     DiskFormat GetFormat() const;
 
     /**
@@ -313,24 +269,12 @@ public:
      */
     DataView GetHeader() const;
 
-    /**
-     * @brief Get disk identifier section
-     */
     DataView GetIdentifier() const;
 
-    /**
-     * @brief Get disk ROM section
-     */
     DataView GetRomSection() const;
 
-    /**
-     * @brief Get disk RAM section
-     */
     DataView GetRamSection() const;
 
-    /**
-     * @brief Get system area section
-     */
     DataView GetSystemArea() const;
 
     // Disk operations
@@ -376,15 +320,9 @@ public:
      */
     void SaveDiskSettings(bool temporary = false);
 
-    /**
-     * @brief Clear saved disk settings
-     */
     void ClearDiskSettings() noexcept;
 
     // Buffer management
-    /**
-     * @brief Get current buffer address
-     */
     uint32_t GetBufferAddress() const noexcept { return m_BufferAddress; }
 
     /**
@@ -393,14 +331,8 @@ public:
      */
     void SetBufferAddress(uint32_t address) noexcept { m_BufferAddress = address; }
 
-    /**
-     * @brief Get pointer to buffer area
-     */
     const uint8_t* GetBuffer() const;
 
-    /**
-     * @brief Get mutable pointer to buffer area
-     */
     uint8_t* GetBuffer();
 
 private:
@@ -425,7 +357,7 @@ private:
     void AllocateImage(size_t size);
     void AllocateHeader();
 
-    // Conversion tables (moved to implementation)
+    // Conversion tables
     struct ConversionTables {
         static const std::array<std::array<uint16_t, 16>, 7>& GetVZoneLBATable();
         static const std::array<std::array<uint8_t, 16>, 7>& GetVZonePZoneTable();
@@ -448,10 +380,7 @@ private:
 
     // Helper methods
     bool AllocateAndLoadDiskImage(const fs::path& filePath);
-    bool LoadDiskRAMImage(); // Fixed signature
-
-    // Cache
-    // m_LBAToPhysTable removed (duplicate)
+    bool LoadDiskRAMImage();
 
     // D64-specific data
     struct D64Data;
@@ -465,36 +394,17 @@ private:
     std::optional<DiskError> m_LastError;
 };
 
-// Helper functions
 namespace DiskUtils {
-/**
-     * @brief Detect disk format from data
-     */
 DiskFormat DetectFormat(const uint8_t* data, size_t size) noexcept;
 
-/**
-     * @brief Get expected size for a format
-     */
 size_t GetExpectedSize(DiskFormat format) noexcept;
 
-/**
-     * @brief Calculate CRC32 of data
-     */
 uint32_t CalculateCRC32(const uint8_t* data, size_t size) noexcept;
 
-/**
-     * @brief Byte swap disk data (endian conversion)
-     */
 void ByteSwapDisk(uint8_t* data, size_t size, DiskFormat format);
 
-/**
-     * @brief Extract ROM name from disk header
-     */
 std::string ExtractRomName(const uint8_t* header);
 
-/**
-     * @brief Extract identifier from disk
-     */
 std::string ExtractIdentifier(const uint8_t* diskData, size_t size);
 } // namespace DiskUtils
 

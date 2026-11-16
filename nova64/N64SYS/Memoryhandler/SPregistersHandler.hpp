@@ -16,14 +16,13 @@
 #include <cstring>
 #include <algorithm>
 
-// Forward declarations
 class CRegisters;
 namespace Nova64 {
 class MipsMemoryVM;
 class StateArchive;
 } // namespace Nova64
 
-// SP Register Addresses (relative to 0x04040000)
+// SP register addresses (physical)
 namespace SPRegAddr {
 constexpr uint32_t SP_MEM_ADDR = 0x04040000;
 constexpr uint32_t SP_DRAM_ADDR = 0x04040004;

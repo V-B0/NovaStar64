@@ -1,6 +1,6 @@
 /**
  * @file Register.hpp
- * @brief Register declarations and types.
+ * @brief CPU, COP0 and FPU register layouts, flag constants and the CRegisters class holding CPU and hardware register state.
  *
  * Derived from Project64 (https://github.com/project64/project64),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
@@ -51,7 +51,6 @@ union COP0EntryLo {
         uint32_t : 32; // Bits 32-63 (Reserved)
     };
 
-    // Constructor for initialization
     COP0EntryLo() : Value(0) {}
 };
 
@@ -60,7 +59,7 @@ union COP0PageMask {
 
     struct {
         uint64_t : 13;      // Bits 0-12: Reserved
-        uint64_t Mask : 12; // Bits 13-24: Page mask (should be 12 bits)
+        uint64_t Mask : 12; // Bits 13-24: Page mask
         uint64_t : 39;      // Bits 25-63: Reserved
     };
 
@@ -70,11 +69,10 @@ union COP0PageMask {
 union COP0EntryHi {
     uint64_t Value;
 
-    // Accessor methods
     uint32_t ASID() const { return static_cast<uint32_t>(Value & 0xFF); }
-    uint32_t VPN2() const { return static_cast<uint32_t>((Value >> 13) & 0x7FFFFFF); } // Fixed: 27 bits, not 32
-    uint32_t FILL() const { return static_cast<uint32_t>((Value >> 32) & 0x3FFFF); }   // Fixed: 18 bits
-    uint32_t R() const { return static_cast<uint32_t>((Value >> 62) & 0x3); }          // Fixed: bits 62-63
+    uint32_t VPN2() const { return static_cast<uint32_t>((Value >> 13) & 0x7FFFFFF); } // Bits 13-39
+    uint32_t FILL() const { return static_cast<uint32_t>((Value >> 32) & 0x3FFFF); }   // Bits 32-49
+    uint32_t R() const { return static_cast<uint32_t>((Value >> 62) & 0x3); }          // Bits 62-63
 
     void SetFromAddress(uint64_t address) {
         // Preserve ASID (bits [7:0]), set VPN2+R+Fill from faulting address
@@ -85,10 +83,10 @@ union COP0EntryHi {
     struct {
         uint64_t ASID : 8;  // Bits 0-7: Address Space ID
         uint64_t : 5;       // Bits 8-12: Reserved
-        uint64_t VPN2 : 27; // Bits 13-39: Virtual Page Number (27 bits, not 32)
+        uint64_t VPN2 : 27; // Bits 13-39: Virtual Page Number
         uint64_t FILL : 18; // Bits 40-57: Fill bits (implementation dependent)
-        uint64_t R : 2;     // Bits 58-59: Region bits (should be bits 62-63)
-        uint64_t : 4;       // Bits 60-63: Should be R bits in correct position
+        uint64_t R : 2;     // Bits 58-59: Region bits (the hardware position is bits 62-63, see R())
+        uint64_t : 4;       // Bits 60-63: Unused in this layout
     } Raw;
 
     COP0EntryHi() : Value(0) {}
@@ -451,10 +449,8 @@ namespace Nova64 {
 class MipsMemoryVM;
 }
 
-// Fix 19: Major refactor of CRegisters class - use composition instead of inheritance
 class CRegisters : public CP0registers {
 public:
-    // COP0 register enum
     enum class COP0Reg : uint8_t {
         Index = 0,
         Random = 1,
@@ -484,7 +480,6 @@ public:
 
     CRegisters(CN64System& System, CSystemEvents& SystemEvents);
 
-    // Public methods
     void Init();
     void CheckInterrupts();
     void DoAddressError(uint64_t BadVaddr, bool FromRead);
@@ -511,7 +506,7 @@ public:
     // Called by SP DMA Write (DMEM/IMEM→RDRAM) and SMC detection paths.
     void InvalidateRecompCode(uint32_t physAddr, uint32_t length);
 
-    // Deferred RSP interrupt delivery: when true, RSP HLE code should NOT set
+    // Deferred RSP interrupt delivery: when true, RSP HLE code should not set
     // MI_INTR bits or call CheckInterrupts. Instead, accumulate bits in
     // m_deferred_mi_intr for the RspTimer to apply later.
     bool m_defer_hle_interrupts{false};
@@ -526,7 +521,6 @@ public:
     // General registers - use std::array for bounds safety
     uint64_t m_PROGRAM_COUNTER;
     std::array<MipsRegisterType, 32> m_GPR;
-    // std::array<uint64_t, 32> m_CP0; // Moved to CP0registers
     uint64_t m_CP0Latch;
     uint64_t m_CP2Latch;
     MipsRegisterType m_HI;
@@ -537,7 +531,7 @@ public:
     std::array<uint32_t, 32> m_FPCR;
     std::array<MipsRegisterType, 32> m_FPR;
 
-    // Fix 20: Remove pointer arrays - use union for type punning
+    // Union for type punning between the integer and floating-point views
     union FPReg {
         uint32_t u32;
         uint64_t u64;
@@ -546,7 +540,7 @@ public:
         MipsRegisterType dword;
         FPReg() { u64 = 0; }
     };
-    std::array<FPReg, 32> m_FPR_Union; // Single unified FP register array
+    std::array<FPReg, 32> m_FPR_Union;
 
     // Memory-mapped N64 registers
     std::array<uint32_t, 10> m_RDRAM_Registers;
@@ -566,7 +560,7 @@ public:
     bool m_DpFreshFromHLE = false; // Protect DP bit from first CLR_DP_INTR after HLE task
 
 private:
-    // Private constructor to prevent copying
+    // Not default-constructible or copyable (holds references to the system objects)
     CRegisters() = delete;
     CRegisters(const CRegisters&) = delete;
     CRegisters& operator=(const CRegisters&) = delete;

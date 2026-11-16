@@ -1,12 +1,12 @@
 /**
  * @file SIInterfaceHandler.cpp
- * @brief SI Interface Handler implementation.
+ * @brief Serial Interface (SI) register handler (0x04800000-0x0480001C): DMA address registers, status and DMA requests to the PIF.
  */
 #include "SIInterfaceHandler.hpp"
 #include "../StateArchive.hpp"
 #include "PifInterface.hpp"
 #include "../MIPSY/Register.hpp" // For CRegisters definition
-#include "../MIPSY/Mempak.hpp"   // If needed
+#include "../MIPSY/Mempak.hpp"
 #include <iomanip>
 #include <sstream>
 
@@ -67,7 +67,6 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
         log_register_access(address, value, true);
     }
 
-    // Helper to update register with mask
     auto update = [mask, value](uint32_t& reg) { reg = (reg & ~mask) | (value & mask); };
 
     switch (offset) {
@@ -91,13 +90,11 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
         constexpr uint32_t MI_INTR_SI_MASK = 0x02;
         m_registers.m_Mips_Interface[2] &= ~MI_INTR_SI_MASK;
 
-        // Clear SI Status Interrupt Bit
         m_si_regs.set_interrupt(false);
 
-        // Trigger interrupt check
         m_registers.CheckInterrupts();
 
-        m_stats.register_writes++; // Counting this as a generic write
+        m_stats.register_writes++;
     } break;
 
     default: break;
@@ -123,7 +120,6 @@ void SerialInterfaceHandler::force_dma_completion() {
     }
 }
 
-// Helpers for HPP
 bool SerialInterfaceHandler::is_si_register_address(uint32_t address) const {
     return (address >= SI_BASE_ADDR && address <= SI_END_ADDR); // P64 does limited range
 }
@@ -158,7 +154,6 @@ std::string SerialInterfaceHandler::get_register_dump() const {
 
 void SerialInterfaceHandler::on_system_reset() { reset(); }
 
-// Private methods
 void SerialInterfaceHandler::handle_dma_read() {
     // PIF -> DRAM
     if (!validate_dma_address(m_si_regs.dram_addr())) return;
@@ -168,7 +163,7 @@ void SerialInterfaceHandler::handle_dma_read() {
     m_stats.dma_reads++;
 
     // SI interrupt is delivered by the PIF handler's SiTimer (~900 cycles)
-    // to match real hardware timing.  Do NOT also fire it here — that
+    // to match real hardware timing.  Do not also fire it here — that
     // causes a spurious double interrupt.
 
     log_dma_complete({true, true, m_si_regs.dram_addr(), 0});
@@ -182,14 +177,14 @@ void SerialInterfaceHandler::handle_dma_write() {
     m_stats.dma_writes++;
 
     // SI interrupt is delivered by the PIF handler's SiTimer (~900 cycles)
-    // to match real hardware timing.  Do NOT also fire it here — that
+    // to match real hardware timing.  Do not also fire it here — that
     // causes a spurious double interrupt.
 
     log_dma_complete({true, false, m_si_regs.dram_addr(), 0});
 }
 
 void SerialInterfaceHandler::process_dma_transfer() {
-    // Logic moved to handle_dma_... for instant execution
+    // DMA is executed instantly in handle_dma_read() and handle_dma_write().
 }
 
 void SerialInterfaceHandler::complete_dma_transfer() {
@@ -198,7 +193,6 @@ void SerialInterfaceHandler::complete_dma_transfer() {
 }
 
 void SerialInterfaceHandler::trigger_si_interrupt() {
-    // Example logic if needed for delayed interrupt
     constexpr uint32_t MI_INTR_SI_MASK = 0x02;
     m_registers.m_Mips_Interface[2] |= MI_INTR_SI_MASK;
     m_si_regs.set_interrupt(true);
@@ -206,9 +200,7 @@ void SerialInterfaceHandler::trigger_si_interrupt() {
 }
 
 bool SerialInterfaceHandler::validate_dma_address(uint32_t dram_addr) const {
-    // Must be 8-byte aligned? 64-byte?
-    // SI DMA is 64 bytes.
-    // Address masking usually applies
+    // Every address is accepted; no alignment is enforced.
     return true;
 }
 
@@ -233,7 +225,6 @@ void SerialInterfaceHandler::handle_status_register_write(uint32_t value, uint32
 }
 
 bool SerialInterfaceHandler::read_from_pif(uint32_t pif_addr, uint8_t* buffer, size_t size) {
-    // Forward to PifHandler
     for (size_t i = 0; i < size; i++) {
         (void)m_pif_handler.Read8(pif_addr + i, buffer[i]);
     }
@@ -248,9 +239,7 @@ bool SerialInterfaceHandler::write_to_pif(uint32_t pif_addr, const uint8_t* buff
 }
 
 bool SerialInterfaceHandler::read_from_rdram(uint32_t dram_addr, uint8_t* buffer, size_t size) {
-    // Requires direct memory access.
-    // Usually via MipsMemoryVM or directly if we have pointer.
-    // Stub for now as PifHandler does it internally via its own method
+    // Not implemented: the PIF handler accesses RDRAM itself during DMA.
     return false;
 }
 

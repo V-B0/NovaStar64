@@ -1,6 +1,6 @@
 /**
  * @file FRam.hpp
- * @brief F Ram declarations and types.
+ * @brief FlashRAM save chip: command and status registers, and DMA to and from the save file.
  *
  * Derived from Project64 (https://github.com/project64/project64),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.

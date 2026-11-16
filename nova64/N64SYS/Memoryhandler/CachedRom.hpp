@@ -1,6 +1,6 @@
 /**
  * @file CachedRom.hpp
- * @brief Cached Rom declarations and types.
+ * @brief 64DD disk interface (ASIC) handler: disk command processing, DMA and the C2 sector buffer.
  *
  * Derived from Project64 (https://github.com/project64/project64),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
@@ -87,7 +87,6 @@ public:
 };
 class CachedRom : public MemoryHandler, private DiskInterfaceReg {
 public:
-    // Member definitions need CRegisters
     CachedRom(CRegisters& Reg, uint32_t* diskRegs);
 
     ~CachedRom() = default;
@@ -179,8 +178,6 @@ private:
     bool IsRDRAMAddressValid(uint32_t address, uint32_t length) const;
     uint32_t CalculateSectorFromPosition() const;
 
-    // Delete with = delete
-    // CachedRom() = delete;
     CachedRom(const CachedRom&) = delete;
     CachedRom& operator=(const CachedRom&) = delete;
 };

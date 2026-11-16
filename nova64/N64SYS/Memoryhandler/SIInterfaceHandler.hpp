@@ -1,6 +1,6 @@
 /**
  * @file SIInterfaceHandler.hpp
- * @brief SI Interface Handler declarations and types.
+ * @brief Serial Interface (SI) handler declarations: register indices, status flags and SerialInterfaceHandler.
  */
 #pragma once
 #include "MIPSYinterfacehandler.hpp"
@@ -200,7 +200,6 @@ private:
     // Timing
     uint64_t m_last_cycle_update = 0;
 
-    // Internal methods
     void handle_dma_read();
     void handle_dma_write();
     void process_dma_transfer();

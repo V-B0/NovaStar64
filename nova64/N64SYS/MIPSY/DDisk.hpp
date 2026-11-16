@@ -1,6 +1,6 @@
 /**
  * @file DDisk.hpp
- * @brief D Disk declarations and types.
+ * @brief 64DD disk controller declarations: modes, zones, commands, status flags and disk geometry.
  */
 #pragma once
 
@@ -9,7 +9,6 @@
 
 namespace DiskDrive {
 
-// Disk drive operating modes
 enum class DiskMode : uint8_t { Idle, Reading, Writing, Seeking, Error };
 
 // Disk zones (DD uses 16 zones)
@@ -32,7 +31,6 @@ enum class DiskZone : uint8_t {
     Zone15
 };
 
-// Disk commands
 enum class DiskCommand : uint8_t {
     Seek = 0x00,
     ReadSector = 0x01,
@@ -47,7 +45,6 @@ enum class DiskCommand : uint8_t {
     WriteBlock = 0x0A
 };
 
-// Disk status flags
 struct DiskStatus {
     bool busy : 1;
     bool error : 1;
@@ -71,7 +68,6 @@ constexpr std::size_t BYTES_PER_SECTOR = 128; // 64DD uses 128-byte sectors
 constexpr std::size_t SECTORS_PER_TRACK = SECTORS_PER_BLOCK * BLOCKS_PER_TRACK;
 constexpr std::size_t TRACKS_PER_DISK = 3175; // Standard 64DD disk
 
-// Zone configuration data
 struct ZoneInfo {
     uint32_t sectors_per_track;
     uint32_t tracks_in_zone;
@@ -99,7 +95,6 @@ constexpr ZoneInfo ZONE_TABLE[16] = {
     {112, 114, 0x04149200}  // Zone 15
 };
 
-// Disk controller state
 class DiskController {
 private:
     DiskMode current_mode = DiskMode::Idle;
@@ -164,13 +159,11 @@ public:
     bool SeekToTrack(uint32_t track);
     bool SeekToSector(uint32_t track, uint32_t sector);
 
-    // Helper methods
     static const ZoneInfo& GetZoneInfo(DiskZone zone);
     static uint32_t CalculatePhysicalOffset(DiskZone zone, uint32_t track, uint32_t sector);
     static bool IsValidTrackSector(DiskZone zone, uint32_t track, uint32_t sector);
 
 private:
-    // Internal helper methods
     void UpdateBufferPointers();
     bool TransferSector(bool is_write);
     void UpdateStatus();
@@ -184,7 +177,6 @@ private:
     void ProcessGapSector();
 };
 
-// Global disk controller instance (optional - could be managed elsewhere)
 extern DiskController g_DiskController;
 
 void DiskCommandExecute();

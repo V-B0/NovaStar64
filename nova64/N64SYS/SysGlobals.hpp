@@ -19,7 +19,6 @@
 
 using N64Types::CountryCode;
 using N64Types::SystemType;
-// Add others if needed by IsPalCountry implementation
 
 // --- Namespace Forward Declarations ---
 
@@ -173,10 +172,6 @@ enum class ExceptionCode : uint8_t {
     XTLB_Refill = 31
 };
 
-// --- Helper Functions ---
-
-// Helper functions removed to avoid redefinition (present in Types.hpp)
-
 // --- String Conversion Functions (implemented in SysGlobals.cpp) ---
 
 std::string to_string(CpuType type);
@@ -189,51 +184,24 @@ std::string to_string(PipelineStage stage);
 
 // --- Formatting Utilities (implemented in SysGlobals.cpp) ---
 
-/**
- * @brief Format a 32-bit address as hex string
- */
 std::string FormatAddress(uint32_t address);
 
-/**
- * @brief Format a 64-bit address as hex string
- */
 std::string FormatAddress64(uint64_t address);
 
-/**
- * @brief Format an 8-bit value as hex string
- */
 std::string FormatHex8(uint8_t value);
 
-/**
- * @brief Format a 16-bit value as hex string
- */
 std::string FormatHex16(uint16_t value);
 
-/**
- * @brief Format a 32-bit value as hex string
- */
 std::string FormatHex32(uint32_t value);
 
-/**
- * @brief Format a 64-bit value as hex string
- */
 std::string FormatHex64(uint64_t value);
 
-/**
- * @brief Format a byte size as human-readable string
- */
 std::string FormatSize(size_t bytes);
 
 // --- Memory Utilities (implemented in SysGlobals.cpp) ---
 
-/**
- * @brief Get the name of the memory region for an address
- */
 std::string GetMemoryRegionName(uint32_t address);
 
-/**
- * @brief Check if address is valid RDRAM
- */
 bool IsValidRdramAddress(uint32_t address, uint32_t rdramSize);
 
 /**
@@ -246,9 +214,6 @@ bool IsCachedAddress(uint32_t address);
  */
 bool IsUncachedAddress(uint32_t address);
 
-/**
- * @brief Check if address requires TLB mapping
- */
 bool IsTlbMappedAddress(uint32_t address);
 
 } // namespace N64Types
@@ -376,7 +341,7 @@ template <typename T, size_t N> constexpr size_t ArraySize(T (&)[N]) noexcept { 
 constexpr uint32_t BIT(uint32_t n) { return 1u << n; }
 constexpr uint64_t BIT64(uint32_t n) { return 1ull << n; }
 
-// Address conversion macros
+// Address conversion helpers
 constexpr uint32_t VAddrToPAddr(uint32_t vaddr) { return vaddr & 0x1FFFFFFF; }
 
 constexpr uint32_t PAddrToKSEG0(uint32_t paddr) { return paddr | N64Constants::KSEG0_BASE; }

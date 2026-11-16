@@ -1,6 +1,6 @@
 /**
  * @file RomMemHandler.cpp
- * @brief Rom Mem Handler implementation.
+ * @brief ROM memory handler: cartridge ROM reads (8, 16, 32-bit and bulk), the read latch and temporary ROM write patches.
  */
 #include "RomMemHandler.hpp"
 #include "../N64Rom.hpp"
@@ -16,14 +16,13 @@ using namespace ROM;
 RomMemoryHandler::RomMemoryHandler(CN64System& system, CRegisters& registers, N64::Rom::N64Rom& rom,
                                    const Config& config) :
     m_system(system), m_registers(registers), m_rom(rom), m_config(config) {
-    // Initialize ROM data span
     if (m_rom.IsLoaded()) {
         const uint8_t* data = m_rom.GetRomAddress();
         size_t size = m_rom.GetSize();
         // Since span requires non-null, ensure data is valid or size is 0
         if (data && size > 0) {
             m_rom_data = Common::Span<const uint8_t>(data, size);
-            m_rom_mask = static_cast<uint32_t>(size - 1); // Simple mask for PoT sizes?
+            m_rom_mask = static_cast<uint32_t>(size - 1); // size - 1; only a valid mask for power-of-two sizes
             m_rom_size = size;
         } else {
             m_rom_size = 0;
@@ -103,11 +102,10 @@ uint32_t RomMemoryHandler::read_rom_32(uint32_t address) const {
     return 0;
 }
 
-// Implement other interface methods (read8, read16, bytes...)
 bool RomMemoryHandler::Read8(uint32_t address, uint8_t& value) {
     if (m_latch_active) {
         // Latching usually only returns 32-bit word, but for byte access:
-        value = static_cast<uint8_t>(m_latch_value >> 24); // Return MSB? Or irrelevant?
+        value = static_cast<uint8_t>(m_latch_value >> 24); // the latched word's most significant byte
         // Behavior undefined in P64 snippet, but standard rules apply.
         rom_write_decayed();
         return true;
@@ -122,7 +120,7 @@ bool RomMemoryHandler::Read8(uint32_t address, uint8_t& value) {
 
 bool RomMemoryHandler::ReadBytes(uint32_t address, void* buffer, size_t size) {
     if (!buffer) return false;
-    // Check latch? Usually bulk read ignores latch.
+    // Bulk reads ignore the latch.
 
     if (is_rom_address(address)) {
         uint32_t offset = address & 0x0FFFFFFF;
@@ -208,7 +206,7 @@ void RomMemoryHandler::reset() {
     m_stats = {};
 }
 
-void RomMemoryHandler::on_system_reset() { reset(); } // Alias
+void RomMemoryHandler::on_system_reset() { reset(); }
 void RomMemoryHandler::on_game_state_loaded() { reset(); }
 
 void RomMemoryHandler::save_state(std::ostream& os) const {

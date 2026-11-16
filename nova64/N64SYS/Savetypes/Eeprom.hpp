@@ -1,6 +1,6 @@
 /**
  * @file Eeprom.hpp
- * @brief Eeprom declarations and types.
+ * @brief EEPROM (4K/16K) and RTC save chip handler for PIF channel 4 commands.
  */
 #pragma once
 #include <cstdint>

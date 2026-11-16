@@ -1,6 +1,6 @@
 /**
  * @file MainSYS.hpp
- * @brief Main N64 System emulation core
+ * @brief CN64System: the emulated machine's top-level object (components, run loop, ROM and disk loading, frame pacing).
  */
 
 #pragma once
@@ -37,7 +37,6 @@ class WindowManager;
 }
 } // namespace Nova64
 
-// Forward declarations
 namespace N64 {
 namespace Rom {
 class N64Rom;
@@ -61,7 +60,6 @@ class MipsMemoryVM;
 class StateArchive;
 } // namespace Nova64
 
-// System event enumeration
 enum SystemEvent {
     SysEvent_CloseCPU,
     SysEvent_ResetCPU_Soft,
@@ -72,14 +70,11 @@ enum SystemEvent {
     SysEvent_ServiceStates ///< save states, rewind and the launcher's pause
 };
 
-// Main N64 System class
 class CN64System {
 public:
-    // Constructor and destructor
     CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSystem);
     virtual ~CN64System();
 
-    // Save chip type
     N64Types::SaveChipType m_SaveUsing;
 
     // Static methods for ROM/Disk loading
@@ -105,7 +100,6 @@ public:
     N64Rom* GetDDRom() const;
     N64Disk* GetDisk() const;
 
-    // Control Ref
     std::atomic<bool>& GetEndEmulationRef() { return m_EndEmulation; }
 
     // CPU timing - cycles per opcode (configurable for speed hacks)
@@ -146,7 +140,6 @@ public:
     Plugins::PluginManager* GetPluginManager() const { return m_PluginManager.get(); }
     Nova64::Video::WindowManager* GetWindowManager() const { return m_WindowManager.get(); }
 
-    // Instance methods
     void CloseCpu();
     void ExternalEvent(SystemEvent action);
     void StartEmulation(bool NewThread);
@@ -179,14 +172,12 @@ public:
     static void ClearStopRequest() { s_StopRequested.store(false); }
     static std::atomic<bool> s_StopRequested;
 
-    // Delete copy/move semantics
     CN64System(const CN64System&) = delete;
     CN64System(CN64System&&) = delete;
     CN64System& operator=(const CN64System&) = delete;
     CN64System& operator=(CN64System&&) = delete;
 
 private:
-    // Internal methods
     void StartEmulation2(bool NewThread);
     void StartEmulationThread();
     void ExecuteRecompiler();
