@@ -16,8 +16,6 @@ Worth a look first, because a real bug is worth more than tidy code.
 | Where | What looks wrong |
 |---|---|
 | `NovaGraphics/Plugin/NovaGraphicsGFXPlugin.cpp:360` | `VI__X_SCALE_REG` and `VI__Y_SCALE_REG` index VI registers 10 and 12; X scale is register 12 and Y scale 13 (10 is V_START) |
-| `NovaGraphics/Common/ClipMath.cpp:509` | `ShouldCullTriangle`: the winding convention for "front face" and which sign `cull back` culls look inconsistent |
-| `NovaGraphics/Common/ClipMath.cpp:355` | `ComputeGuardBandFlags` hard-codes 320x240, so guard bands for other resolutions are wrong |
 | `NovaGraphics/Core/DepthBuffer.cpp:31` | The comment's step table is the reverse of what the code builds (`1 << (shift + 2)` with shifts `{6,5,4,3,2,1,0,0}`) |
 | `NovaGraphics/Core/RDPProcessor_Texture.cpp:94` | Described as 10.2 fixed point, but the code divides by 1024 |
 | `NovaGraphics/Microcode/Microcode.hpp:105` | `GBI1::G_LINE3D = 0xB6` collides with `G_CLEARGEOMETRYMODE = 0xB6` |
@@ -30,15 +28,11 @@ Worth a look first, because a real bug is worth more than tidy code.
 | `NovaGraphics/Core/RDPCommand.cpp` | `RDPCommandBuffer::Push` can write past capacity after the overflow reset |
 | `NovaRSP/CPU/RspSystem.cpp:175` | The 5-million-instruction runaway guard only advances while the LLE trace is on, so it does nothing otherwise |
 | `NovaRSP/HLE/hle.cpp` | A task that fails fast audio dispatch is identified and counted twice |
-| `NovaRSP/HLE/alist.cpp:999` | `alist_chorus` LFO arithmetic does not centre on zero as intended (only reachable if the function is used, see Dead code) |
-| `N64SYS/Recomp/ExitInfo.cpp:237` | `predicted_taken = execution_count > execution_count / 2` is always true above 10 |
 | `N64SYS/Recomp/x64-86/x64RegInfo.cpp:40` | The volatile-register mask treats RBX as volatile, against its own comment |
 | `N64SYS/Recomp/CodeBlock.cpp:742` | When an instruction fails to compile it is silently skipped (an old comment claimed a NOP was emitted) |
 | `N64SYS/Recomp/CodeSection.cpp:1122` | `result.has_loop = result.has_loop;` |
-| `N64SYS/MIPSY/GBcart.cpp:196` | `last_latch_val` is a function-local static, so every MBC3 cartridge shares it; and `rtc_latched` is toggled then immediately overwritten |
 | `N64SYS/MIPSY/Register.hpp` | `COP0EntryHi::Raw` disagrees with its accessors (bit positions of R and FILL) |
 | `N64SYS/Memoryhandler/UnCachedSysMemory.cpp:35` | `AUTO_DETECT_THRESHOLD` equals `SRAM_MAX_OFFSET`, so the SRAM auto-detect path looks unreachable |
-| `N64SYS/MIPSY/Mempak.cpp` | Note table and iNode table offsets do not match the real Controller Pak layout (module is unused today) |
 | `N64SYS/MainSYS.cpp:1437` | A hard-coded Super Mario 64 workaround (a PC and RDRAM addresses) for an SI/PIF boot-timing race; the race itself is not fixed |
 | `common/DynamicLibrary.hpp` | `RTLD_*` values use glibc's numbers but are passed straight to `dlopen`; wrong on macOS |
 | `common/LockGuard.hpp` | `ScopedLock::operator=(ScopedLock&&)` assigns through a reference whose assignment is deleted (would not compile if used) |
@@ -48,46 +42,31 @@ Worth a look first, because a real bug is worth more than tidy code.
 
 ## Dead code
 
-Candidates for deletion, in rough order of size.
+Most of it is gone. Two commits removed about 25,000 lines: functions and classes that nothing reaches
+(found by linking with dead-stripping on both CPUs, then located exactly with libclang), whole modules
+(the Controller Pak, Transfer Pak, Game Boy cartridge, Rumble Pak and disk-drive classes, the recompiler's
+`FunctionInfo`, `JumpInfo` and `SectionInfo`, `RspLog`, `Common/Memory`), the `FORCE_CALLBACK_*` x86-64
+translation family, unused RSP analysis and audio effects, geometry and SIMD helpers, and the constants and
+fields only they used. See the two "Remove ... dead code" commits.
 
-**N64SYS**
-- `MIPSY/DDisk.*`, `MIPSY/Mempak.*`, `MIPSY/TransferPak.*`, `MIPSY/GBcart.*`, `MIPSY/Rumblepak.*`:
-  only included, never used, as far as a search shows. Check what the launcher's Simulator page relies on first.
-- `MIPSY/TLB.*`: `TranslationLookasideBuffer`, `TlbManager`, `GlobalTlb`, `TlbUtils` (`CTLB` is the live class).
-- `MIPSY/Systiming.hpp`: `CSystemTimer` is declared but never defined; `TimerManager` and friends unused.
-- `Recomp/FunctionInfo.*`, `Recomp/JumpInfo.*`, most of `Recomp/FunctionMap`, `Recomp/RegBase.cpp` (three
-  functions), `RecompilerOpsBase`/`CreatePlatformRecompilerOps`, `CodeSection::generate_native_code`,
-  `find_existing_section`, and the `TranslateInstruction`/`Handle*` family in `x64RecompilerOps.cpp`
-  (lines 1239-1330) are unreachable. `schedule_instructions` swaps instructions with no hazard
-  checks, so it must never be reached.
-- `Recomp/x64-86/x64RecompilerOps.cpp:63`: the `FORCE_CALLBACK_*` bisecting switches (all 0).
-- `Recomp/CodeBlock.cpp`: a 32-bit x86 path that includes headers which do not exist.
-- `Memoryhandler`: no-op persistence stubs (`SaveDiskSettings`, `SaveRomSettingID` and similar), and three
-  different 64DD models (`CachedSysMemory`, `DDisk`, `N64DD`).
+What is still there, because it is part of something that is still used or needs a decision:
 
-**NovaGraphics**
-- `Common/Memory.*` (allocators, `LeakDetector`), most of `Common/ClipMath` (only `ClipTriangle` is used),
-  `Common/VectorMath` helpers, the unused `CRC32_SIMD`, and the AVX-512 detection with no kernels.
-- `Renderer/GL/GLShaderProgram.*`: `GLProgramPipeline`, `ShaderIncludeManager`, `ShaderPreprocessor`,
-  `ShaderHotReloader`.
-- `Renderer`: `IsOpenGL46Available`, `GenerateLODCode`, `GenerateDetailSharpenCode`, empty `ResetStats`/`OnFrameBegin`.
-- `Core`: `RDPCommandBuffer` (only `Reset` is called), `NeedsBatchFlush`, `FORCE_RED_DEBUG`, an
-  `if (false && ...)` block of about 20 lines in `RDPProcessor_Batch.cpp:1749`, unused decoder helpers.
-- `Plugin/VideoPlugin.cpp`: `IsFramebufferValid`, `EnableWireframe`, `EnableTextureDebug`, `LockRender`, `DumpFrameInfo`.
-- `Compat/GameDatabase.cpp`: the `GAME_CRC`/`GAME_HACK` macros, defined and undefined at once.
+- `common/trace.*`: the trace system has no sink registered anywhere, so `WriteTrace` (used in
+  `Thread.cpp`) and `TRACE_ERROR`/`TRACE_WARN` log nowhere. Either connect it to the logger or remove it.
+- `Renderer/GL/GLShaderProgram.*`: `GLProgramPipeline`, `ShaderIncludeManager`, `ShaderPreprocessor` and
+  `ShaderHotReloader` are unused, and `GLProgram::Reflect` too, but the file also holds live classes.
+- The recompiler's section graph (`CodeSection`, `SectionGraph`) is only partly reached; the rest of the
+  Project64-derived analysis may be removed once it is clear the new design will not use it.
+- `MIPSY/TLB.*` still holds `TranslationLookasideBuffer`, `GlobalTlb` and `TlbUtils` next to the live `CTLB`;
+  `MIPSY/Systiming.*` has unused timer helpers; `N64DD.cpp` is only partly used.
+- `Common/SIMDMath`, `VectorMath` and `BitUtils` still hold helpers nothing calls, and `stb_image` is the whole
+  library compiled in.
+- Items found by search but not yet confirmed dead: `RDPCommandBuffer` (only `Reset` is called),
+  `NeedsBatchFlush`, the `DEBUG_DISABLE_*` switches.
 
-**NovaRSP**
-- `HLE/alist.cpp` 918-1153 (about 230 lines): `alist_deinterleave`, `alist_compress`, `alist_chorus`,
-  `alist_delay`, `alist_hilopass`, `alist_pan`, `alist_dc_remove`.
-- `CPU/RspLog.*`, `CPU/RspClamp.hpp` (duplicates `HLE/arithmetics.hpp`), the profiling counters and sync-CPU
-  group in `CPU/RspSystem.cpp`, `RSPInfo.hpp`'s `RspRomClosed`/`FreeRSP`, several `RspSettings` getters.
-- `HLE`: `Crc32::AdditiveChecksum`, `IsAudioUcode`/`IsGraphicsUcode`, `HLETaskBooter`, two identical CRC helpers
-  in `TaskDispatcher.cpp`, write-only counters.
-
-**common**
-- The trace system has no sinks registered anywhere, so `WriteTrace` and `TRACE_ERROR`/`TRACE_WARN` log
-  nowhere; `FileTraceSink`, `ConsoleTraceSink`, `MemoryTraceSink`, `TRACE_LOG`, `TRACE_IF` are unused.
-  `Logging::Logger` is an empty stub. `DynLibHandle` is unused.
+To find what is left, link a build with `-Wl,-dead_strip -Wl,-map,<file>` and read the "Dead Stripped
+Symbols" section; a function that was inlined everywhere looks dead there too, so check each one against
+a build before deleting it.
 
 ## Debug output left in
 

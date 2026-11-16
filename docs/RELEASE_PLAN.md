@@ -36,9 +36,11 @@ Dead code and leftovers
 
 - [ ] Diagnostic switches left from past bisecting removed (`FORCE_CALLBACK_*` in the x64
       recompiler, other `#if 0` and `#ifdef` debug blocks)
-- [ ] Dead code deleted in batches (the list is in [CLEANUP_FINDINGS.md](CLEANUP_FINDINGS.md)):
-      each batch confirmed with the linker map, a clean build on every CPU, the RSP selftest and
-      unchanged frames from the three test games
+- [x] Dead code deleted in two rounds, about 25,000 lines: each confirmed with the linker map on both CPUs,
+      a clean build with no warnings, the RSP selftest, unchanged frames from the three test games and
+      unchanged saved states at a fixed field
+- [ ] What is left of the dead code, listed in [CLEANUP_FINDINGS.md](CLEANUP_FINDINGS.md): the trace system,
+      parts of the GL shader helper, the recompiler's section graph
 - [ ] The suspected bugs in CLEANUP_FINDINGS.md triaged: reproduce, fix or close each one, with a test
       where a test is possible
 - [ ] About 100 raw `printf`/`std::cout`/`fprintf(stderr)` calls routed through the logger
