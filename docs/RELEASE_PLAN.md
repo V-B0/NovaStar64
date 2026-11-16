@@ -1,0 +1,168 @@
+# Release plan: 0.1.0
+
+What stands between the current tree and a first public release, in the order it should be
+done. `[x]` is finished, `[ ]` is open. Each step is small enough to be one commit and says how
+it is verified.
+
+How changes are checked in this plan:
+
+- **Formatting and comment-only changes** are proven harmless by compiling every source file to
+  assembly before and after and requiring identical output (apart from `__LINE__` constants).
+- **Code changes** are checked with the RSP differential selftest (`nova64 --rsp-selftest`) and
+  by comparing frames of Super Mario 64, Ocarina of Time and Majora's Mask against the previous
+  build (`NOVA64_SHOT_*`, see CONTRIBUTING.md).
+- **Anything that touches only one platform** (Windows, Linux) waits for CI, because only macOS
+  has been built and run so far.
+
+---
+
+## 1. Code hygiene
+
+Formatting and structure
+
+- [x] One style for the whole tree: `.clang-format`, `.editorconfig`, every C++ file formatted
+- [x] `.git-blame-ignore-revs` so the formatting commit does not hide authorship in `git blame`
+- [x] Decorative banner comments (`// =====`) collapsed to one-line section headings
+- [x] Comment review of every file: comments that restate code, stale status notes and
+      commented-out code removed; hardware notes and every attribution kept; every file has a header.
+      Checked three ways: identical compiled output on AArch64 and x86-64, identical code tokens in
+      all 351 files, and no credit to another project lost (see the commit messages)
+- [ ] Header and source file names agree in case (`MIPSYinterfacehandler.hpp`, `file.hpp`,
+      `Timestamp.hpp` do not match their `.cpp`); rename with `git mv` and fix includes
+- [ ] Unused includes removed and forward declarations used in headers (shorter rebuilds)
+- [ ] CMake: formatting check target (`clang-format --dry-run -Werror`) and the same check in CI
+
+Dead code and leftovers
+
+- [ ] Diagnostic switches left from past bisecting removed (`FORCE_CALLBACK_*` in the x64
+      recompiler, other `#if 0` and `#ifdef` debug blocks)
+- [ ] Dead code deleted in batches (the list is in [CLEANUP_FINDINGS.md](CLEANUP_FINDINGS.md)):
+      each batch confirmed with the linker map, a clean build on every CPU, the RSP selftest and
+      unchanged frames from the three test games
+- [ ] The suspected bugs in CLEANUP_FINDINGS.md triaged: reproduce, fix or close each one, with a test
+      where a test is possible
+- [ ] About 100 raw `printf`/`std::cout`/`fprintf(stderr)` calls routed through the logger
+      (keep the command-line output of `main.cpp` and the selftest)
+- [ ] The dozens of `NOVA64_*` environment variables audited: keep the documented ones, drop the
+      one-off traces, document the rest in CONTRIBUTING.md
+- [ ] Remaining `TODO`/`HACK` markers (6) resolved or written up as issues
+- [ ] Magic numbers in the hottest and least clear places given names
+
+Correctness and robustness
+
+- [ ] `-ffast-math` in `Release` makes Clang reject the recompilers' `#pragma STDC FENV_ACCESS ON`,
+      so a plain `-DCMAKE_BUILD_TYPE=Release` build fails; `/fp:fast` is on for MSVC. Decide the
+      floating-point flags for emulation code and make every build type compile
+- [ ] Compiler warnings kept at zero: `-Wall -Wextra -Wshadow` and `-Werror` in CI on all three
+      platforms (currently zero on macOS ARM64 and x86-64)
+- [ ] AddressSanitizer and UndefinedBehaviorSanitizer runs of the selftest and of the three
+      games; fix what they find
+- [ ] `clang-tidy` with a small, agreed set of checks (`bugprone-*`, `performance-*`, selected
+      `modernize-*`); fix real findings, do not mass-rewrite
+- [ ] Oversized files split along existing seams: `VKBackend.cpp` (3.7k lines),
+      `InterpreterOps.cpp` (3.5k), `x64RecompilerOps.cpp` (3.3k), `ShaderGenerator.cpp` (2.6k),
+      `RecompInterpCallbacks.inc` (2.5k), `CodeSection.cpp` (2.4k), `RDPProcessor_Batch.cpp` (2.1k)
+- [ ] Naming conventions written down in CONTRIBUTING.md (the Project64-derived code keeps its
+      own style; new code follows the stated one)
+
+## 2. Tests and continuous integration
+
+- [x] RSP differential selftest (random programs, interpreter versus recompiler)
+- [ ] CTest wired up so `ctest` runs the selftest and any unit tests
+- [ ] A few unit tests where they are cheap: byte-swapping and ROM format detection, CRC, save
+      type detection, TLB translation, PIF/CIC handling, settings parsing
+- [ ] Golden-frame check for the three games (local only: it needs ROMs, which are not in the
+      repository), scripted and documented
+- [ ] CI jobs for macOS (ARM64 and Intel), Windows, Linux; Debug and RelWithDebInfo; ccache
+- [ ] First CI run read through and every Windows/Linux failure fixed
+- [ ] Nightly build uploading artifacts
+- [ ] Badges (build status, licence) in the README
+
+## 3. Repository and documentation
+
+- [ ] README rewritten to be short: what it is, status table, download, build, screenshots
+- [ ] `docs/ARCHITECTURE.md`: modules (N64SYS, NovaRSP, NovaGraphics, UI), data flow of a frame,
+      where Project64-derived code lives
+- [ ] `CHANGELOG.md` (Keep a Changelog), starting with 0.1.0
+- [ ] `SECURITY.md` (how to report a vulnerability) and `CODE_OF_CONDUCT.md`
+- [ ] Issue templates (bug report with log and system info, game compatibility report) and a
+      pull-request template
+- [ ] `THIRD_PARTY_NOTICES.md`: SDL2, Dear ImGui, asmjit, Lua, nlohmann/json, stb, volk, glslang,
+      rcheevos, MoltenVK, Berkeley SoftFloat, Roboto, plus the Project64 and Mupen64Plus-derived
+      code; the same list reachable from an About dialog in the launcher
+- [ ] `docs/COMPATIBILITY.md` generated from the game database
+- [ ] `docs/` links checked, every claim in the README checked against the code
+- [ ] GitHub repository settings: description, topics, social preview image, branch protection,
+      Discussions
+- [ ] Decide whether the 10 MB MoltenVK library stays in the repository or is fetched
+
+## 4. Launcher and in-game UI
+
+- [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
+- [ ] Pixel-art look, the same language as FluxCore: five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
+      5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed
+- [ ] The art drawn in Aseprite: `.aseprite` files in `assets/ui/` are the sources, exported PNG sheets are
+      what the build embeds (the build never needs Aseprite), and a script re-exports them
+- [ ] Icons: home, games, settings, scripts, memory, achievements, simulator, play, stop, rewind, add, edit,
+      remove, folder, cover picture, search, check, warning, info, chevrons and the window controls
+- [ ] Window controls drawn as proper minimise/maximise/close glyphs instead of `_ [] x`
+- [ ] Sidebar with an icon per page, a clear selected state and the version at the bottom
+- [ ] Button hierarchy: one primary action per screen, quiet secondary buttons, a distinct
+      destructive style, with hover, pressed and disabled states
+- [ ] Settings as aligned forms: labels on the left, grouped in cards, helper text in one style
+- [ ] Game library: cover cards with generated artwork when a game has no cover, a play overlay
+      on hover, search, sort, last played and play time, a context menu
+- [ ] Home page: continue-playing row, recent games, quick actions, a drag-and-drop area
+- [ ] Empty and error states with an actionable message: no games, Vulkan or MoltenVK missing,
+      shader compile failure, unreadable ROM
+- [ ] Notifications for saves, rewinds and errors; keyboard and controller focus clearly visible
+- [ ] Pause menu and rewind strip visual pass; save-state slots with thumbnails
+- [ ] Colour palette reviewed for contrast (WCAG AA) and a light/dark choice
+- [ ] Font-size setting and a high-contrast option
+- [ ] First-run welcome: pick a game folder, test the controller
+- [ ] About dialog: version, build, licences, links
+- [ ] Before/after screenshots of every page for the README and the video
+
+## 5. Release engineering
+
+- [ ] Versioning policy (SemVer), `VERSION` as the single source, tag-driven release workflow
+- [ ] macOS: Developer ID signing, notarisation and stapling (needs an Apple Developer account);
+      decide between a universal binary and separate ARM64 and Intel downloads
+- [ ] macOS disk image artwork (background, icon placement)
+- [ ] Windows: build and run on a real machine, installer and portable zip, SmartScreen note or
+      code signing
+- [ ] Linux: AppImage (or Flatpak), Vulkan loader and SDL requirements documented
+- [ ] Release notes generated from the changelog; checksums published with every file
+- [ ] Crash handling: a log and a "copy diagnostics" button that does not include personal paths
+- [ ] Privacy statement in the README: no telemetry and no network connections (the code has no
+      sockets or HTTP at all; the achievements tab is a placeholder). Re-check before each release
+- [ ] Pre-release checklist: clean checkout builds, fresh-home first run, upgrade keeps saves,
+      uninstall keeps saves
+- [ ] Dry run on a throwaway tag and a draft release before the real one
+
+## 6. Video footage
+
+- [x] Game audio can be recorded (`NOVA64_AUDIO_DUMP=<file.wav>`)
+- [x] A generator for input that looks played by a person (smoothed stick, reaction lag, uneven taps)
+- [ ] Capture setup: fixed window size and scale, 60 fps, a tidy data folder name so no
+      personal or temporary path shows on screen
+- [ ] Input that looks played by a person: smoothed stick curves, reaction delays, small
+      corrections, pauses; the same seed gives the same take, several takes per scene
+- [ ] Launcher footage with a natural cursor: eased paths, slight overshoot, click feedback
+- [ ] Shot list: first launch, library, adding a game, settings, three games in play, pause menu
+      and rewind, resolution and filtering options, high-level versus low-level graphics,
+      the RSP recompiler (selftest in the terminal, speed-up), the developer tools (memory
+      viewer, scripts, simulator), a one-command build, the download page
+- [ ] Rough cut, then a polished edit with titles and callouts
+- [ ] Decide on music and any voice-over (licences for music; a voice or text-only captions)
+
+---
+
+## Decisions that are yours
+
+1. **Game footage.** Videos of commercial games are normal for emulator showcases but carry a
+   takedown risk on some platforms. Your call whether to show all three games or keep to short
+   clips.
+2. **App icon.** The current icon stays unless you want it redrawn.
+3. **macOS signing.** Needs your Apple Developer account; nothing can be notarised without it.
+4. **Repository visibility and the release date** (public repository, tag `v0.1.0`).
