@@ -121,10 +121,6 @@ std::optional<int32_t> CIniFile::GetNumber(std::string_view section, std::string
     return out;
 }
 
-int32_t CIniFile::GetNumber(std::string_view section, std::string_view key, int32_t defaultValue) const {
-    return GetNumber(section, key).value_or(defaultValue);
-}
-
 std::optional<bool> CIniFile::GetBool(std::string_view section, std::string_view key) const {
     const std::string* v = Find(section, key);
     if (!v) return std::nullopt;
@@ -138,10 +134,6 @@ std::optional<bool> CIniFile::GetBool(std::string_view section, std::string_view
     return std::nullopt;
 }
 
-bool CIniFile::GetBool(std::string_view section, std::string_view key, bool defaultValue) const {
-    return GetBool(section, key).value_or(defaultValue);
-}
-
 void CIniFile::SetString(std::string_view section, std::string_view key, std::string_view value) {
     if (m_readOnly) return;
 
@@ -150,10 +142,6 @@ void CIniFile::SetString(std::string_view section, std::string_view key, std::st
 
     slot = std::string{value};
     m_dirty = true;
-}
-
-void CIniFile::SetBool(std::string_view section, std::string_view key, bool value) {
-    SetString(section, key, value ? "1" : "0");
 }
 
 bool CIniFile::Flush() {

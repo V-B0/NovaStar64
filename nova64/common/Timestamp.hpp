@@ -15,8 +15,6 @@ class HighResolutionTimestamp {
 public:
     HighResolutionTimestamp();
 
-    static uint64_t GetFrequency();
-
     // Comparison
     bool operator==(const HighResolutionTimestamp& other) const;
     bool operator<(const HighResolutionTimestamp& other) const;

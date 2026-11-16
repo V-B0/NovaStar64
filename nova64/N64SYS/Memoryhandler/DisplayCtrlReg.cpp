@@ -281,14 +281,7 @@ void DisplayProcessorHandler::SetGraphicsPlugin(Plugins::GFXPlugin* plugin) {
     }
 }
 
-Plugins::GFXPlugin* DisplayProcessorHandler::GetGraphicsPlugin() const { return m_GfxPlugin; }
-
 // --- Status Queries ---
-
-uint32_t DisplayProcessorHandler::GetStatus() const {
-    using namespace DPCRegisters;
-    return m_Registers[DPC_STATUS];
-}
 
 // --- Reset ---
 

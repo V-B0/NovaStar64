@@ -78,39 +78,7 @@ std::string ExitRegisterState::to_string() const {
 
 // --- ExceptionInfo Implementation ---
 
-std::string ExceptionInfo::description() const {
-    std::ostringstream oss;
-    oss << "Exception at stage " << static_cast<int>(stage);
-    oss << ", reason: " << static_cast<int>(reason);
-    if (virtual_address != 0) {
-        oss << ", vaddr: 0x" << std::hex << virtual_address;
-    }
-    return oss.str();
-}
-
 // --- BranchPrediction Implementation ---
-
-void BranchPrediction::update(bool actually_taken, uint32_t actual_target) {
-    ++training_count;
-
-    // Update prediction using a simple adaptive mechanism
-    const double learning_rate = 0.1;
-
-    if (actually_taken == predicted_taken) {
-        // Correct prediction - increase confidence
-        confidence = std::min(1.0, confidence + learning_rate);
-    } else {
-        // Wrong prediction - decrease confidence and flip
-        confidence = std::max(0.0, confidence - learning_rate * 2.0);
-        if (confidence < 0.5) {
-            predicted_taken = actually_taken;
-        }
-    }
-
-    if (actually_taken && actual_target != 0) {
-        predicted_target = actual_target;
-    }
-}
 
 // --- ExitInfo Implementation ---
 
@@ -154,53 +122,6 @@ ExitInfo& ExitInfo::operator=(ExitInfo&& other) noexcept {
     return *this;
 }
 
-void ExitInfo::record_execution(uint64_t cycles) {
-    stats_.record_execution(cycles);
-
-    update_probability();
-
-    // Track execution history for profiling
-    if (config_.enable_profiling && execution_history_.size() < 1024) {
-        execution_history_.push_back(target_pc_);
-    }
-
-    if (stats_.is_hot()) {
-        flags_ = flags_ | ExitFlags::Hot;
-    } else if (stats_.is_cold()) {
-        flags_ = flags_ | ExitFlags::Cold;
-    }
-}
-
-bool ExitInfo::can_inline() const {
-    if (!stats_.is_hot()) return false;
-    if (has_flag(flags_, ExitFlags::ExceptionPossible)) return false;
-    if (category_ == ExitCategory::Exception) return false;
-
-    return true;
-}
-
-bool ExitInfo::validate() const {
-    if (target_pc_ == 0 && reason_ != ExitReason::NormalBlockEnd) {
-        return false;
-    }
-
-    if (category_ == ExitCategory::Exception && !exception_info_) {
-        return false;
-    }
-
-    return true;
-}
-
-void ExitInfo::update_flags() {
-    if (reason_ == ExitReason::ConditionalBranchTaken || reason_ == ExitReason::ConditionalBranchNotTaken) {
-        flags_ = flags_ | ExitFlags::DelaySlot;
-    }
-
-    if (static_cast<uint16_t>(reason_) >= 0x0100 && static_cast<uint16_t>(reason_) < 0x0200) {
-        flags_ = flags_ | ExitFlags::ExceptionPossible;
-    }
-}
-
 void ExitInfo::update_probability() {
     // Approximation: the parent block's total execution count is not available.
     if (stats_.execution_count > 0) {
@@ -223,33 +144,6 @@ void ExitManager::clear() {
     label_to_exit_id_.clear();
 }
 
-ExitManager::ManagerStats ExitManager::statistics() const {
-    std::shared_lock lock(mutex_);
-
-    ManagerStats stats;
-    stats.total_exits = exits_.size();
-
-    for (const auto& [id, exit] : exits_) {
-        if (exit->category() == ExitCategory::Normal) {
-            ++stats.normal_exits;
-        } else if (exit->category() == ExitCategory::Exception) {
-            ++stats.exception_exits;
-        }
-
-        if (exit->is_hot()) ++stats.hot_exits;
-        if (exit->is_cold()) ++stats.cold_exits;
-        if (exit->is_likely()) ++stats.linked_exits;
-
-        stats.total_executions += exit->statistics().execution_count;
-    }
-
-    if (stats.total_exits > 0) {
-        stats.average_exits_per_block = 1.0; // Block count is not available here
-    }
-
-    return stats;
-}
-
 std::string ExitManager::ManagerStats::to_string() const {
     std::ostringstream oss;
     oss << "Exit Manager Statistics:\n";
@@ -261,33 +155,9 @@ std::string ExitManager::ManagerStats::to_string() const {
     return oss.str();
 }
 
-ExitId ExitManager::generate_id() {
-    static std::atomic<uint32_t> next_id{1};
-    return static_cast<ExitId>(next_id.fetch_add(1));
-}
-
 // --- ExitPredictor Implementation ---
 
 ExitPredictor::ExitPredictor(size_t history_size) : max_history_size_(history_size) {}
-
-ExitPredictor::PredictorStats ExitPredictor::statistics() const {
-    std::shared_lock lock(mutex_);
-
-    PredictorStats stats;
-    stats.branches_tracked = branch_histories_.size();
-
-    for (const auto& [pc, history] : branch_histories_) {
-        // Taken probability stands in for accuracy, which is not tracked.
-        stats.branch_accuracies[pc] = history.taken_probability();
-    }
-
-    return stats;
-}
-
-void ExitPredictor::reset_statistics() {
-    std::unique_lock lock(mutex_);
-    branch_histories_.clear();
-}
 
 std::string ExitPredictor::PredictorStats::to_string() const {
     std::ostringstream oss;

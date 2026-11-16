@@ -241,9 +241,6 @@ public:
 
     // --- Display List Processing ---
 
-    /// Process a display list from RDRAM
-    void ProcessDList(uint32_t startAddress, uint32_t endAddress);
-
     /// Process native RDP commands (from DPC registers)
     void ProcessRDPCommand(uint64_t command);
 
@@ -287,9 +284,6 @@ public:
 
     void FlushBatch();
 
-    /// Check if state change requires a batch flush
-    bool NeedsBatchFlush(const DrawCall& newCall) const;
-
     // --- State Access ---
 
     const RDPState& GetRDPState() const { return m_state.rdp; }
@@ -297,9 +291,6 @@ public:
     const VideoState& GetVideoState() const { return m_state; }
     VideoState& GetVideoStateMutable() { return m_state; }
     const RDPProcessorStats& GetStats() const { return m_stats; }
-
-    /// Get current framebuffer info
-    void GetFrameBufferInfo(FrameBufferInfo* info, int maxBuffers) const;
 
     bool ReadFrameBuffer(uint32_t address, uint32_t size, void* data);
 

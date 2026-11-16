@@ -100,7 +100,6 @@ SIMDLevel DetectSIMDLevel() {
 }
 
 // --- Mat4x4 static methods ---
-Mat4x4 Mat4x4::Identity() { return Mat4x4(); }
 
 Mat4x4 Mat4x4::Zero() {
     Mat4x4 m;
@@ -143,20 +142,6 @@ float Length3(const Vec4f& v) { return std::sqrt(Dot3(v, v)); }
 
 float Length4(const Vec4f& v) { return std::sqrt(Dot4(v, v)); }
 
-Vec4f Normalize3(const Vec4f& v) {
-    float len = Length3(v);
-    if (len < 1e-10f) return Vec4f(0.0f);
-    float inv = 1.0f / len;
-    return Vec4f(v[0] * inv, v[1] * inv, v[2] * inv, v[3]);
-}
-
-Vec4f Normalize4(const Vec4f& v) {
-    float len = Length4(v);
-    if (len < 1e-10f) return Vec4f(0.0f);
-    float inv = 1.0f / len;
-    return Vec4f(v[0] * inv, v[1] * inv, v[2] * inv, v[3] * inv);
-}
-
 Vec4f Lerp(const Vec4f& a, const Vec4f& b, float t) {
     float ot = 1.0f - t;
     return Vec4f(a[0] * ot + b[0] * t, a[1] * ot + b[1] * t, a[2] * ot + b[2] * t, a[3] * ot + b[3] * t);
@@ -169,28 +154,6 @@ Vec4f Min(const Vec4f& a, const Vec4f& b) {
 Vec4f Max(const Vec4f& a, const Vec4f& b) {
     return Vec4f(std::max(a[0], b[0]), std::max(a[1], b[1]), std::max(a[2], b[2]), std::max(a[3], b[3]));
 }
-
-Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi) { return Min(Max(v, lo), hi); }
-
-Vec4f Abs(const Vec4f& v) { return Vec4f(std::fabs(v[0]), std::fabs(v[1]), std::fabs(v[2]), std::fabs(v[3])); }
-
-Vec4f Negate(const Vec4f& v) { return Vec4f(-v[0], -v[1], -v[2], -v[3]); }
-
-Vec4f Reciprocal(const Vec4f& v) {
-    return Vec4f(v[0] != 0.0f ? 1.0f / v[0] : 0.0f, v[1] != 0.0f ? 1.0f / v[1] : 0.0f,
-                 v[2] != 0.0f ? 1.0f / v[2] : 0.0f, v[3] != 0.0f ? 1.0f / v[3] : 0.0f);
-}
-
-Vec4f ReciprocalSqrt(const Vec4f& v) {
-    return Vec4f(v[0] > 0.0f ? 1.0f / std::sqrt(v[0]) : 0.0f, v[1] > 0.0f ? 1.0f / std::sqrt(v[1]) : 0.0f,
-                 v[2] > 0.0f ? 1.0f / std::sqrt(v[2]) : 0.0f, v[3] > 0.0f ? 1.0f / std::sqrt(v[3]) : 0.0f);
-}
-
-Vec4f Floor(const Vec4f& v) { return Vec4f(std::floor(v[0]), std::floor(v[1]), std::floor(v[2]), std::floor(v[3])); }
-
-Vec4f Ceil(const Vec4f& v) { return Vec4f(std::ceil(v[0]), std::ceil(v[1]), std::ceil(v[2]), std::ceil(v[3])); }
-
-Vec4f Round(const Vec4f& v) { return Vec4f(std::round(v[0]), std::round(v[1]), std::round(v[2]), std::round(v[3])); }
 
 // --- Scalar Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b) {
@@ -266,11 +229,6 @@ Vec4i MulLoI(const Vec4i& a, const Vec4i& b) { return Vec4i(a[0] * b[0], a[1] * 
 Vec4i ShiftLeftI(const Vec4i& a, int bits) { return Vec4i(a[0] << bits, a[1] << bits, a[2] << bits, a[3] << bits); }
 
 Vec4i ShiftRightI(const Vec4i& a, int bits) { return Vec4i(a[0] >> bits, a[1] >> bits, a[2] >> bits, a[3] >> bits); }
-
-Vec4i ShiftRightLogI(const Vec4i& a, int bits) {
-    return Vec4i((int32_t)((uint32_t)a[0] >> bits), (int32_t)((uint32_t)a[1] >> bits),
-                 (int32_t)((uint32_t)a[2] >> bits), (int32_t)((uint32_t)a[3] >> bits));
-}
 
 Vec4i AndI(const Vec4i& a, const Vec4i& b) { return Vec4i(a[0] & b[0], a[1] & b[1], a[2] & b[2], a[3] & b[3]); }
 
@@ -809,11 +767,6 @@ static FnVec4iBinary s_MulLoI = nullptr;
 static FnVec4iBinary s_MinI = nullptr;
 static FnVec4iBinary s_MaxI = nullptr;
 
-void Initialize() {
-    g_SIMDLevel = DetectSIMDLevel();
-    Initialize(g_SIMDLevel);
-}
-
 void Initialize(SIMDLevel level) {
     g_SIMDLevel = level;
 
@@ -899,44 +852,10 @@ Vec4f Div(const Vec4f& a, const Vec4f& b) { return s_Div(a, b); }
 Vec4f MulScalar(const Vec4f& a, float s) { return s_MulScalar(a, s); }
 Vec4f FMA(const Vec4f& a, const Vec4f& b, const Vec4f& c) { return s_FMA(a, b, c); }
 float Dot3(const Vec4f& a, const Vec4f& b) { return s_Dot3(a, b); }
-float Dot4(const Vec4f& a, const Vec4f& b) { return s_Dot4(a, b); }
-Vec4f Cross3(const Vec4f& a, const Vec4f& b) { return s_Cross3(a, b); }
-Vec4f Lerp(const Vec4f& a, const Vec4f& b, float t) { return s_Lerp(a, b, t); }
 Vec4f Min(const Vec4f& a, const Vec4f& b) { return s_Min(a, b); }
 Vec4f Max(const Vec4f& a, const Vec4f& b) { return s_Max(a, b); }
 
-Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi) { return Min(Max(v, lo), hi); }
-
-float Length3(const Vec4f& v) { return std::sqrt(Dot3(v, v)); }
-
-Vec4f Normalize3(const Vec4f& v) {
-    float d = Dot3(v, v);
-    if (d < 1e-20f) return Vec4f(0.0f);
-    float inv = 1.0f / std::sqrt(d);
-    return MulScalar(v, inv);
-}
-
-Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b) { return s_MatMul(a, b); }
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v) { return s_MatVecMul(m, v); }
-Mat4x4 MatTranspose(const Mat4x4& m) { return s_MatTranspose(m); }
-
-void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count) {
-    s_TransformVerts(mvp, posIn, posOut, count);
-}
-
-void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normOut, int count) {
-    s_TransformNorms(normalMat, normIn, normOut, count);
-}
-
-void BatchLerp(const float* a, const float* b, float* out, float t, int count) {
-#if defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64)
-    if (g_SIMDLevel >= SIMDLevel::SSE2) {
-        SSE2::BatchLerp(a, b, out, t, count);
-        return;
-    }
-#endif
-    Scalar::BatchLerp(a, b, out, t, count);
-}
 
 Vec4i AddI(const Vec4i& a, const Vec4i& b) { return s_AddI(a, b); }
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b) { return s_MulLoI(a, b); }
@@ -946,90 +865,7 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b) { return s_MaxI(a, b); }
 } // namespace Dispatch
 
 // --- N64-SPECIFIC SIMD UTILITIES ---
-namespace N64SIMD {
-
-Vec4i ComputeClipFlags(const float* clipSpaceVerts4) {
-    Vec4i flags;
-    for (int i = 0; i < 4; i++) {
-        const float* v = clipSpaceVerts4 + i * 4;
-        float x = v[0], y = v[1], z = v[2], w = v[3];
-        int f = 0;
-        if (x > w) f |= 0x01;  // CLIP_POSX
-        if (x < -w) f |= 0x02; // CLIP_NEGX
-        if (y > w) f |= 0x04;  // CLIP_POSY
-        if (y < -w) f |= 0x08; // CLIP_NEGY
-        if (z > w) f |= 0x10;  // CLIP_POSZ
-        if (z < -w) f |= 0x20; // CLIP_NEGZ
-        flags.i[i] = f;
-    }
-    return flags;
-}
-
-int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount, int planeIndex, int floatsPerVert) {
-    if (vertCount < 3) return 0;
-
-    // Plane definitions: planeIndex 0-5 = +X,-X,+Y,-Y,+Z,-Z
-    auto getDist = [planeIndex](const float* v) -> float {
-        float x = v[0], y = v[1], z = v[2], w = v[3];
-        switch (planeIndex) {
-        case 0:  return w - x; // +X: x <= w
-        case 1:  return w + x; // -X: x >= -w
-        case 2:  return w - y; // +Y: y <= w
-        case 3:  return w + y; // -Y: y >= -w
-        case 4:  return w - z; // +Z: z <= w
-        case 5:  return w + z; // -Z: z >= -w (near)
-        default: return 0.0f;
-        }
-    };
-
-    int outCount = 0;
-
-    for (int i = 0; i < vertCount; i++) {
-        int next = (i + 1) % vertCount;
-        const float* curr = vertsIn + i * floatsPerVert;
-        const float* nxt = vertsIn + next * floatsPerVert;
-
-        float distCurr = getDist(curr);
-        float distNext = getDist(nxt);
-        bool currInside = distCurr >= 0.0f;
-        bool nextInside = distNext >= 0.0f;
-
-        if (currInside) {
-            std::memcpy(vertsOut + outCount * floatsPerVert, curr, floatsPerVert * sizeof(float));
-            outCount++;
-        }
-
-        // Edge crosses the plane: emit the intersection.
-        if (currInside != nextInside) {
-            float t = distCurr / (distCurr - distNext);
-            float* out = vertsOut + outCount * floatsPerVert;
-            for (int j = 0; j < floatsPerVert; j++) {
-                out[j] = curr[j] + t * (nxt[j] - curr[j]);
-            }
-            outCount++;
-        }
-    }
-
-    return outCount;
-}
-
-uint32_t CalculateDXT(uint32_t width, uint32_t size) {
-    // DXT = number of 64-bit TMEM words per row
-    uint32_t bitsPerTexel = 0;
-    switch (size) {
-    case 0: bitsPerTexel = 4; break;  // 4b
-    case 1: bitsPerTexel = 8; break;  // 8b
-    case 2: bitsPerTexel = 16; break; // 16b
-    case 3: bitsPerTexel = 32; break; // 32b
-    }
-    uint32_t bitsPerRow = width * bitsPerTexel;
-    uint32_t wordsPerRow = (bitsPerRow + 63) / 64;
-    if (wordsPerRow == 0) return 0;
-    // DXT is a 1.11 fixed-point value: (1 << 11) / wordsPerRow
-    return (1 << 11) / wordsPerRow;
-}
-
-} // namespace N64SIMD
+namespace N64SIMD {} // namespace N64SIMD
 
 } // namespace SIMD
 } // namespace Video

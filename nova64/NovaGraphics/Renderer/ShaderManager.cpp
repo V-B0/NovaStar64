@@ -40,15 +40,6 @@ void ShaderCache::Shutdown() {
     m_stats = ShaderCacheStats();
 }
 
-void ShaderCache::Clear() {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    if (m_deleteCallback) {
-        for (auto& [k, entry] : m_cache) m_deleteCallback(entry.shader);
-    }
-    m_cache.clear();
-    m_stats.currentCacheSize = 0;
-}
-
 const CompiledShader* ShaderCache::Find(const CombinerKey& key) const {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     auto it = m_cache.find(key);
@@ -88,36 +79,6 @@ void ShaderCache::Insert(const CombinerKey& key, CompiledShader&& shader) {
 
     m_stats.currentCacheSize = static_cast<uint32_t>(m_cache.size());
     m_stats.totalCompiled++;
-}
-
-bool ShaderCache::Remove(const CombinerKey& key) {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    auto it = m_cache.find(key);
-    if (it != m_cache.end()) {
-        if (m_deleteCallback) m_deleteCallback(it->second.shader);
-        m_cache.erase(it);
-        m_stats.currentCacheSize = static_cast<uint32_t>(m_cache.size());
-        return true;
-    }
-    return false;
-}
-
-void ShaderCache::EvictLRU(int count) {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    for (int i = 0; i < count && !m_cache.empty(); ++i) {
-        auto oldest = m_cache.begin();
-        uint64_t oldestFrame = UINT64_MAX;
-        for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
-            if (it->second.lastAccessFrame < oldestFrame) {
-                oldestFrame = it->second.lastAccessFrame;
-                oldest = it;
-            }
-        }
-        if (m_deleteCallback) m_deleteCallback(oldest->second.shader);
-        m_cache.erase(oldest);
-        m_stats.evictions++;
-    }
-    m_stats.currentCacheSize = static_cast<uint32_t>(m_cache.size());
 }
 
 // Binary format: [MAGIC][VERSION][COUNT][ [KEY][VERT_LEN][VERT_SRC][FRAG_LEN][FRAG_SRC] ... ]
@@ -517,12 +478,6 @@ void ShaderManager::SetFrameCount(uint32_t frame) {
         m_compiler->SetUniform1i(m_currentShader->uniforms.frameCount, static_cast<int>(frame));
 }
 
-void ShaderManager::SetResolutionScale(float scaleX, float scaleY) {
-    if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.resolutionScale >= 0)
-        m_compiler->SetUniform2f(m_currentShader->uniforms.resolutionScale, scaleX, scaleY);
-}
-
 void ShaderManager::SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
@@ -614,12 +569,6 @@ bool ShaderManager::LoadCache(const std::string& path) {
     return m_cache.GetStats().currentCacheSize > 0;
 }
 
-const ShaderCacheStats& ShaderManager::GetStats() const { return m_cache.GetStats(); }
-
-void ShaderManager::ResetStats() {
-    // Not supported: the stats live in the cache and can only be cleared by re-initialising it.
-}
-
 const CompiledShader* ShaderManager::GetFallbackShader() {
     if (m_fallbackShader && m_fallbackShader->valid) return m_fallbackShader.get();
     if (!m_compiler) return nullptr;
@@ -644,15 +593,6 @@ void main() { FragColor = vec4(1.0, 0.0, 1.0, 1.0); }
         return m_fallbackShader.get();
     }
     return nullptr;
-}
-
-void ShaderManager::OnFrameBegin() {
-    // No per-frame work.
-}
-
-void ShaderManager::OnFrameEnd() {
-    // Update cache frame counter for LRU
-    m_cache.AdvanceFrame();
 }
 
 const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {

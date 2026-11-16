@@ -141,13 +141,6 @@ public:
 
     // --- Plugin Discovery ---
 
-    /**
-     * @brief Get plugin information without loading
-     * @param path Path to plugin file
-     * @return Plugin info or empty if invalid
-     */
-    PluginInfo GetPluginInfo(const std::string& path) const;
-
     // --- Notifications ---
 
     // --- Save States ---

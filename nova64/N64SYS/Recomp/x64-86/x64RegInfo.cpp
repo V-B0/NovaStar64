@@ -174,10 +174,6 @@ void CX64RegInfo::UnmapRegister(uint32_t mipsReg, bool writeBack, bool force) {
     m_HostRegistersUsed.reset(static_cast<size_t>(hostReg));
 }
 
-bool CX64RegInfo::IsMapped(uint32_t mipsReg) const noexcept {
-    return mipsReg < 32 && m_MipsToHost[mipsReg].has_value();
-}
-
 bool CX64RegInfo::IsHostRegisterUsed(X64RegisterType hostReg) const noexcept {
     return m_HostRegistersUsed.test(static_cast<size_t>(hostReg));
 }
@@ -234,59 +230,6 @@ void CX64RegInfo::FreeHostRegister(X64RegisterType reg) {
 
 // --- State Management ---
 
-void CX64RegInfo::SaveState() {
-    SavedState state;
-    for (size_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value()) {
-            state.mappings.push_back(m_MipsToHost[i].value());
-        }
-    }
-    state.stats = m_Stats;
-    m_StateStack.push_back(std::move(state));
-}
-
-void CX64RegInfo::RestoreState() {
-    if (m_StateStack.empty()) {
-        Log::warning("CX64RegInfo::RestoreState: no saved state");
-        return;
-    }
-
-    FlushRegisters(false);
-
-    auto& state = m_StateStack.back();
-    for (auto& mapping : state.mappings) {
-        UpdateMapping(mapping.GetMipsReg(), mapping.GetHostReg(), mapping.GetWidth(), mapping.IsSigned());
-    }
-    m_Stats = state.stats;
-    m_StateStack.pop_back();
-}
-
-void CX64RegInfo::SynchronizeWith(const CX64RegInfo& other) {
-    // Spill registers that don't match the target state
-    for (uint32_t i = 0; i < 32; ++i) {
-        bool thisMapped = m_MipsToHost[i].has_value();
-        bool otherMapped = other.m_MipsToHost[i].has_value();
-
-        if (thisMapped && !otherMapped) {
-            UnmapRegister(i, true);
-        } else if (thisMapped && otherMapped) {
-            if (m_MipsToHost[i]->GetHostReg() != other.m_MipsToHost[i]->GetHostReg()) {
-                // Different host registers - spill and remap
-                SpillRegister(i);
-                UnmapRegister(i, false);
-                auto targetHost = other.m_MipsToHost[i]->GetHostReg();
-                UpdateMapping(i, targetHost, other.m_MipsToHost[i]->GetWidth(), other.m_MipsToHost[i]->IsSigned());
-                LoadRegisterToHost(i, targetHost);
-            }
-        } else if (!thisMapped && otherMapped) {
-            // Need to map to match target
-            auto targetHost = other.m_MipsToHost[i]->GetHostReg();
-            UpdateMapping(i, targetHost, other.m_MipsToHost[i]->GetWidth(), other.m_MipsToHost[i]->IsSigned());
-            LoadRegisterToHost(i, targetHost);
-        }
-    }
-}
-
 // --- Query / Statistics ---
 
 size_t CX64RegInfo::GetMappedRegisterCount() const noexcept {
@@ -303,30 +246,6 @@ size_t CX64RegInfo::GetDirtyRegisterCount() const noexcept {
         if (m.has_value() && m->IsDirty()) ++count;
     }
     return count;
-}
-
-std::string CX64RegInfo::ToString() const {
-    std::ostringstream oss;
-    oss << "CX64RegInfo: " << GetMappedRegisterCount() << " mapped, " << GetDirtyRegisterCount() << " dirty\n";
-    for (size_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value()) {
-            oss << "  " << m_MipsToHost[i]->ToString() << "\n";
-        }
-    }
-    return oss.str();
-}
-
-bool CX64RegInfo::Validate() const noexcept {
-    // Check bidirectional consistency
-    for (uint32_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value()) {
-            auto hostIdx = static_cast<size_t>(m_MipsToHost[i]->GetHostReg());
-            if (hostIdx >= m_HostToMips.size()) return false;
-            if (!m_HostToMips[hostIdx].has_value()) return false;
-            if (m_HostToMips[hostIdx].value() != i) return false;
-        }
-    }
-    return true;
 }
 
 // --- Internal Helpers ---
@@ -432,38 +351,6 @@ void CX64RegInfo::RemoveMapping(uint32_t mipsReg) {
 }
 
 // --- Allocation Strategies ---
-
-LinearScanAllocator::LinearScanAllocator(CX64RegInfo& regInfo) : m_RegInfo(regInfo) { m_RegisterUsageCount.fill(0); }
-
-X64RegisterType LinearScanAllocator::AllocateRegister(const RegisterSet& /*regSet*/, X64RegisterClass regClass,
-                                                      uint32_t preferredReg) {
-    X64RegisterType preferred = (preferredReg < static_cast<uint32_t>(X64RegisterType::Invalid))
-                                    ? static_cast<X64RegisterType>(preferredReg)
-                                    : X64RegisterType::Invalid;
-    return m_RegInfo.AllocateHostRegister(regClass, preferred);
-}
-
-void LinearScanAllocator::FreeRegister(X64RegisterType reg) { m_RegInfo.FreeHostRegister(reg); }
-
-bool LinearScanAllocator::IsRegisterAvailable(X64RegisterType reg) const { return !m_RegInfo.IsHostRegisterUsed(reg); }
-
-void LinearScanAllocator::Reset() { m_RegisterUsageCount.fill(0); }
-
-RoundRobinAllocator::RoundRobinAllocator(CX64RegInfo& regInfo) : m_RegInfo(regInfo), m_NextGPR(0), m_NextXMM(0) {}
-
-X64RegisterType RoundRobinAllocator::AllocateRegister(const RegisterSet& /*regSet*/, X64RegisterClass regClass,
-                                                      uint32_t /*preferredReg*/) {
-    return m_RegInfo.AllocateHostRegister(regClass);
-}
-
-void RoundRobinAllocator::FreeRegister(X64RegisterType reg) { m_RegInfo.FreeHostRegister(reg); }
-
-bool RoundRobinAllocator::IsRegisterAvailable(X64RegisterType reg) const { return !m_RegInfo.IsHostRegisterUsed(reg); }
-
-void RoundRobinAllocator::Reset() {
-    m_NextGPR = 0;
-    m_NextXMM = 0;
-}
 
 } // namespace Recompiler
 } // namespace Nova64

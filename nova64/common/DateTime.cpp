@@ -13,34 +13,3 @@
 #else
 #include <ctime>
 #endif
-
-static bool SafeLocalTime(const std::time_t& time, std::tm& result) {
-    std::memset(&result, 0, sizeof(result));
-#ifdef _WIN32
-    return localtime_s(&result, &time) == 0;
-#else
-    return localtime_r(&time, &result) != nullptr;
-#endif
-}
-
-DateTime::DateTime() : m_time(std::time(nullptr)) {}
-
-DateTime::DateTime(std::time_t time) : m_time(time) {}
-
-std::string DateTime::Format(std::string_view format) const {
-    std::tm tm{};
-    if (!SafeLocalTime(m_time, tm)) {
-        return {};
-    }
-
-    std::array<char, 256> buffer{};
-
-    const std::string fmt(format);
-    const std::size_t len = std::strftime(buffer.data(), buffer.size(), fmt.c_str(), &tm);
-    if (len == 0) {
-        return {};
-    }
-    return std::string(buffer.data(), len);
-}
-
-std::string DateTime::ToString() const { return Format("%Y-%m-%d %H:%M:%S"); }

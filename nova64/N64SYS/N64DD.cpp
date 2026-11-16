@@ -137,17 +137,6 @@ const DiskImage& N64Disk::GetImage() const {
     return *m_Image;
 }
 
-DiskFormat N64Disk::GetFormat() const { return m_Image ? m_Image->m_Format : DiskFormat::Unknown; }
-
-size_t N64Disk::GetSize() const { return m_Image ? m_Image->m_Data.size() : 0; }
-
-DataView N64Disk::GetIdentifier() const {
-    if (!IsLoaded()) {
-        return DataView{nullptr, 0};
-    }
-    return DataView{m_Image->m_Data.data() + m_IdentifierOffset, 0x20};
-}
-
 DataView N64Disk::GetSystemArea() const {
     if (!IsLoaded()) {
         return DataView{nullptr, 0};
@@ -156,29 +145,6 @@ DataView N64Disk::GetSystemArea() const {
 }
 
 // --- Private Helper Methods ---
-
-void N64Disk::ParseHeader() {
-    if (!IsLoaded()) {
-        return;
-    }
-
-    auto sysData = GetSystemArea();
-    if (sysData.empty()) {
-        return;
-    }
-
-    uint8_t diskType = sysData.data[5] & 0x0F;
-    if (diskType <= 6) {
-        m_Image->m_Type = DiskType::Retail;
-    }
-}
-
-void N64Disk::AllocateImage(size_t size) {
-    if (!m_Image) {
-        m_Image = std::make_unique<DiskImage>();
-    }
-    m_Image->m_Data.resize(size);
-}
 
 // --- DiskUtils Implementation ---
 

@@ -190,10 +190,9 @@ struct PluginConfig {
 
     // Get/Set by name (for INI serialization)
     bool SetValue(const std::string& key, const std::string& value);
-    std::string GetValue(const std::string& key) const;
 
-    void Clamp();          // Clamp all values to valid ranges
-    bool Validate() const; // Check for invalid combinations
+    void Clamp(); // Clamp all values to valid ranges
+                  // Check for invalid combinations
 };
 
 } // namespace Nova64::Video

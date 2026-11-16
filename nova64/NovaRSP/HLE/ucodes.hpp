@@ -82,9 +82,6 @@ void alist_process_nead_mm(CHle* hle);
 void alist_process_nead_mmb(CHle* hle);
 void alist_process_nead_ac(CHle* hle);
 
-// MP3 microcode
-void mp3_task(CHle* hle, unsigned int index, uint32_t address);
-
 // Musyx microcodes
 void musyx_v1_task(CHle* hle);
 void musyx_v2_task(CHle* hle);

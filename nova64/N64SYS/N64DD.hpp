@@ -71,63 +71,6 @@ struct DataView {
 };
 
 /**
- * @struct DiskGeometry
- * @brief Physical geometry of the disk
- */
-struct DiskGeometry {
-    static constexpr uint16_t SECTORS_PER_BLOCK = 85;
-    static constexpr uint16_t BLOCKS_PER_TRACK = 2;
-    static constexpr uint32_t MAX_LBA = 0x10DB;
-    static constexpr uint32_t SYSTEM_LBAS = 24;
-    static constexpr uint32_t DISKID_LBA = 14;
-
-    // Sector sizes by zone
-    static constexpr std::array<uint32_t, 16> SECTOR_SIZES = {232, 216, 208, 192, 176, 160, 144, 128,
-                                                              216, 208, 192, 176, 160, 144, 128, 112};
-
-    // Tracks per zone
-    static constexpr std::array<uint32_t, 16> ZONE_TRACKS = {158, 158, 149, 149, 149, 149, 149, 114,
-                                                             158, 158, 149, 149, 149, 149, 149, 114};
-
-    // RAM start LBAs by disk type
-    static constexpr std::array<uint16_t, 7> RAM_START_LBAS = {0x5A2, 0x7C6, 0x9EA, 0xC0E, 0xE32, 0x1010, 0x10DC};
-
-    // RAM sizes by disk type
-    static constexpr std::array<uint32_t, 7> RAM_SIZES = {0x24A9DC0, 0x1C226C0, 0x1450F00, 0xD35680,
-                                                          0x6CFD40,  0x1DA240,  0x0};
-
-    // Country codes
-    static constexpr uint32_t COUNTRY_JAPAN = 0xE848D316;
-    static constexpr uint32_t COUNTRY_USA = 0x2263EE56;
-    static constexpr uint32_t COUNTRY_DEV = 0x00000000;
-
-    static constexpr uint32_t BlockSize(uint8_t zone) noexcept { return SECTOR_SIZES[zone] * SECTORS_PER_BLOCK; }
-
-    static constexpr uint32_t TrackSize(uint8_t zone) noexcept { return BlockSize(zone) * BLOCKS_PER_TRACK; }
-
-    static constexpr uint32_t ZoneSize(uint8_t zone) noexcept { return TrackSize(zone) * ZONE_TRACKS[zone]; }
-};
-
-/**
- * @struct DiskAddress
- * @brief Represents a physical disk address
- */
-struct DiskAddress {
-    uint16_t head = 0;
-    uint16_t track = 0;
-    uint16_t block = 0;
-    uint16_t sector = 0;
-
-    bool IsValid() const noexcept { return track < 0x425 && block < 2 && sector < 85; }
-
-    std::string ToString() const {
-        std::ostringstream oss;
-        oss << "H:" << head << " T:" << track << " B:" << block << " S:" << sector;
-        return oss.str();
-    }
-};
-
-/**
  * @class DiskImage
  * @brief Represents a loaded disk image with access methods
  */
@@ -227,15 +170,6 @@ public:
 
     const DiskImage& GetImage() const;
 
-    DiskFormat GetFormat() const;
-
-    /**
-     * @brief Get disk size
-     */
-    size_t GetSize() const;
-
-    DataView GetIdentifier() const;
-
     DataView GetSystemArea() const;
 
     // Buffer management
@@ -248,11 +182,6 @@ public:
     void SetBufferAddress(uint32_t address) noexcept { m_BufferAddress = address; }
 
 private:
-    void ParseHeader();
-
-    // Memory management
-    void AllocateImage(size_t size);
-
     // Conversion tables
     struct ConversionTables {
         static const std::array<std::array<uint16_t, 16>, 7>& GetVZoneLBATable();

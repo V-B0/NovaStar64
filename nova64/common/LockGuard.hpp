@@ -22,13 +22,6 @@ public:
     RecursiveMutex& operator=(const RecursiveMutex&) = delete;
     RecursiveMutex& operator=(RecursiveMutex&&) = delete;
 
-    /**
-     * @brief Locks the mutex (blocks indefinitely)
-     */
-    void Lock();
-
-    void Unlock();
-
 private:
     void* m_mutex;                             ///< Platform-specific mutex
     [[maybe_unused]] void* m_condition;        ///< Platform-specific condition variable (if needed)

@@ -168,26 +168,6 @@ void MicrocodeDispatcher::RunShadow(uint32_t taskDataAddr, uint32_t ucodeAddr, u
     m_context.rdramRW = savedRdramRW;
 }
 
-void MicrocodeDispatcher::ProcessDisplayList(MicrocodeType type, uint32_t dlAddr) {
-    MicrocodeInfo info = m_registry.GetInfo(type);
-    ActivateHandler(type, info);
-
-    if (!m_activeHandler) return;
-
-    m_context.microcodeInfo = info;
-    m_context.halted = false;
-    m_context.dlStackDepth = 0;
-
-    m_activeHandler->OnFrameBegin(m_context);
-    m_activeHandler->ExecuteDisplayList(m_context, dlAddr);
-    m_activeHandler->OnFrameEnd(m_context);
-
-    ++m_stats.totalDLsProcessed;
-    m_stats.totalCommandsProcessed += m_activeHandler->GetCommandsProcessed();
-    m_stats.totalTrianglesProcessed += m_activeHandler->GetTrianglesProcessed();
-    m_stats.totalVerticesLoaded += m_activeHandler->GetVerticesLoaded();
-}
-
 // --- Mid-Frame Microcode Switch ---
 
 void MicrocodeDispatcher::HandleUcodeSwitch(uint32_t textAddr, uint32_t textSize, uint32_t dataAddr,
@@ -244,8 +224,6 @@ void MicrocodeDispatcher::HandleUcodeSwitch(uint32_t textAddr, uint32_t textSize
 }
 
 // --- Frame End ---
-
-void MicrocodeDispatcher::OnFrameEnd() { ++m_stats.framesProcessed; }
 
 // --- Handler Management ---
 

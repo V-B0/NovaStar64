@@ -40,31 +40,6 @@ namespace Nova64::Recompiler {
 
 // --- RegisterState Implementation ---
 
-std::string RegisterState::ToString() const {
-    char buffer[256];
-    const char* mappingStr = "Unknown";
-    const char* widthStr = "Unknown";
-
-    switch (mapping) {
-    case RegisterMapping::Unmapped:     mappingStr = "Unmapped"; break;
-    case RegisterMapping::MappedToHost: mappingStr = "Mapped"; break;
-    case RegisterMapping::Constant:     mappingStr = "Constant"; break;
-    case RegisterMapping::Unknown:      mappingStr = "Unknown"; break;
-    }
-
-    switch (width) {
-    case RegisterWidth::Bits32:  widthStr = "32-bit"; break;
-    case RegisterWidth::Bits64:  widthStr = "64-bit"; break;
-    case RegisterWidth::Unknown: widthStr = "Unknown"; break;
-    }
-
-    snprintf(buffer, sizeof(buffer), "State{mapping=%s, width=%s, %s%s%s%s, value=0x%016llX}", mappingStr, widthStr,
-             isSigned ? "signed" : "unsigned", isModified ? ", modified" : "", isDirty ? ", dirty" : "",
-             isLocked ? ", locked" : "", static_cast<unsigned long long>(constantValue));
-
-    return std::string(buffer);
-}
-
 // --- RegisterSet Implementation ---
 
 void RegisterSet::CopyFrom(const RegisterSet& other) noexcept {
@@ -100,37 +75,6 @@ bool RegisterSet::Compare(const RegisterSet& other) const noexcept {
     }
 
     return true;
-}
-
-std::string RegisterSet::ToString() const {
-    char buffer[4096];
-    size_t offset = 0;
-
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "RegisterSet: cycles=%u, FPU=%s, rounding=%d\n",
-                       m_CycleCount, m_FpuUsed ? "used" : "unused", static_cast<int>(m_RoundingMode));
-
-    // Show only interesting registers (non-zero or modified)
-    size_t shownRegs = 0;
-    for (size_t i = 0; i < NUM_GPR; ++i) {
-        const auto& state = m_States[i];
-
-        if (state.IsKnown() || state.IsModifiedOrDirty() || m_Values[i] != 0) {
-            if (offset < sizeof(buffer) - 128) {
-                offset +=
-                    snprintf(buffer + offset, sizeof(buffer) - offset, "  $%zu: %s\n", i, RegisterToString(i).c_str());
-                shownRegs++;
-
-                // Limit output to avoid buffer overflow
-                if (shownRegs >= 10) {
-                    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "  ... (%zu more registers)\n",
-                                       NUM_GPR - i - 1);
-                    break;
-                }
-            }
-        }
-    }
-
-    return std::string(buffer);
 }
 
 std::string RegisterSet::RegisterToString(size_t regIndex) const {
@@ -267,43 +211,6 @@ const char* CRegBase::RoundingModelName(FpuRoundingMode roundType) const noexcep
     case FpuRoundingMode::Unknown:  return "Unknown";
     default:                        return "Invalid";
     }
-}
-
-std::string CRegBase::ToString() const {
-    char buffer[512];
-
-    snprintf(buffer, sizeof(buffer), "CRegBase: cycles=%u, FPU=%s, rounding=%s\n", GetBlockCycleCount(),
-             GetFpuBeenUsed() ? "used" : "unused", RoundingModelName(GetRoundingModel()));
-
-    std::string result = buffer;
-
-    // Platform name for the dump.
-    CRegInfo regInfo;
-    result += "  Platform: ";
-    result += regInfo.GetPlatformName();
-    result += "\n";
-
-    // Show interesting registers
-    size_t shownRegs = 0;
-    for (int32_t i = 0; i < static_cast<int32_t>(RegisterSet::NUM_GPR); ++i) {
-        const auto& state = m_Registers.GetState(i);
-
-        if (state.IsKnown() || state.IsModifiedOrDirty() || m_Registers.GetValue(i) != 0) {
-            result += "  ";
-            result += RegisterToString(i);
-            result += "\n";
-            shownRegs++;
-
-            if (shownRegs >= 15) {
-                char moreBuffer[64];
-                snprintf(moreBuffer, sizeof(moreBuffer), "  ... (%zu more registers)\n", RegisterSet::NUM_GPR - i - 1);
-                result += moreBuffer;
-                break;
-            }
-        }
-    }
-
-    return result;
 }
 
 std::string CRegBase::RegisterToString(int32_t reg) const {

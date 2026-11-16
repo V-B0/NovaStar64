@@ -95,8 +95,6 @@ struct RegisterState {
         isLocked = false;
         constantValue = 0;
     }
-
-    std::string ToString() const;
 };
 
 /**
@@ -247,8 +245,6 @@ public:
     void CopyFrom(const RegisterSet& other) noexcept;
     bool Compare(const RegisterSet& other) const noexcept;
 
-    // Debug information
-    std::string ToString() const;
     std::string RegisterToString(size_t regIndex) const;
 
 private:
@@ -339,8 +335,6 @@ public:
     RegisterSet& GetRegisterSet() noexcept { return m_Registers; }
     const RegisterSet& GetRegisterSet() const noexcept { return m_Registers; }
 
-    // Debugging
-    std::string ToString() const;
     std::string RegisterToString(int32_t reg) const;
 
 protected:

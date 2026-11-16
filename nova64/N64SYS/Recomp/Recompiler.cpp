@@ -262,11 +262,6 @@ void CRecompiler::StopLog() {
 
 // --- Core Compilation ---
 
-CCompiledFunc* CRecompiler::CompileCode() {
-    uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
-    return CompileCode(pc);
-}
-
 CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     auto startTime = std::chrono::high_resolution_clock::now();
 

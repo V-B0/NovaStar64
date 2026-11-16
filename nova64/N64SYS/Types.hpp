@@ -122,17 +122,6 @@ constexpr const char* to_string(SystemType type) {
     }
 }
 
-union MIPS_WORD {
-    int32_t W;
-    uint32_t UW;
-    int16_t HW[2];
-    uint16_t UHW[2];
-    int8_t B[4];
-    uint8_t UB[4];
-
-    float F;
-};
-
 union MIPS_DWORD {
     int64_t DW;
     uint64_t UDW;

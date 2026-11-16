@@ -77,13 +77,6 @@ uint32_t GetVertexAttribComponentCount(VertexAttribType type) {
 
 // --- TEXTURE FORMAT UTILITIES ---
 
-bool IsDepthFormat(TextureFormat format) {
-    return format == TextureFormat::Depth16 || format == TextureFormat::Depth24 || format == TextureFormat::Depth32F ||
-           format == TextureFormat::Depth24Stencil8;
-}
-
-bool HasStencil(TextureFormat format) { return format == TextureFormat::Depth24Stencil8; }
-
 // --- BLEND STATE HELPERS (for N64 RDP blender modes) ---
 
 // --- DEPTH STATE HELPERS ---

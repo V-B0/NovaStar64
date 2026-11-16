@@ -104,9 +104,6 @@ public:
     using InterruptCallback = void (*)();
     void SetInterruptCallback(InterruptCallback callback) { m_InterruptCallback = callback; }
 
-    // Update function called periodically
-    void Update();
-
     // DMA check
     bool IsDMAActive() const { return m_DMAActive; }
 

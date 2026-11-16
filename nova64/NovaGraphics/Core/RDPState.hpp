@@ -254,17 +254,6 @@ struct TMEMState {
 constexpr int VERTEX_BUFFER_SIZE = 256;
 constexpr int VERTEX_BUFFER_MASK = VERTEX_BUFFER_SIZE - 1;
 
-struct VertexBufferState {
-    TransformedVertex vertices[VERTEX_BUFFER_SIZE];
-    bool loaded[VERTEX_BUFFER_SIZE];
-    int count;
-
-    void Reset() {
-        count = 0;
-        std::memset(loaded, 0, sizeof(loaded));
-    }
-};
-
 // --- RSP Geometry State (set by GBI commands) ---
 
 struct GeometryState {

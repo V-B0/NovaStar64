@@ -82,48 +82,6 @@ struct DeviceState {
 };
 } // namespace RDRAM
 
-class RDRAMDeviceRegisters {
-public:
-    explicit RDRAMDeviceRegisters(Common::Span<uint32_t> registers) : m_registers(registers) {}
-
-    // Accessor methods
-    uint32_t& config() { return m_registers[0]; }
-    uint32_t& device_type() { return m_registers[1]; }
-    uint32_t& device_id() { return m_registers[2]; }
-    uint32_t& delay() { return m_registers[3]; }
-    uint32_t& mode() { return m_registers[4]; }
-    uint32_t& refresh_interval() { return m_registers[5]; }
-    uint32_t& refresh_row() { return m_registers[6]; }
-    uint32_t& ras_interval() { return m_registers[7]; }
-    uint32_t& min_interval() { return m_registers[8]; }
-    uint32_t& addr_select() { return m_registers[9]; }
-    uint32_t& device_manuf() { return m_registers[10]; }
-
-    // Const accessors
-    uint32_t config() const { return m_registers[0]; }
-    uint32_t device_type() const { return m_registers[1]; }
-    uint32_t device_id() const { return m_registers[2]; }
-    uint32_t delay() const { return m_registers[3]; }
-    uint32_t mode() const { return m_registers[4]; }
-    uint32_t refresh_interval() const { return m_registers[5]; }
-    uint32_t refresh_row() const { return m_registers[6]; }
-    uint32_t ras_interval() const { return m_registers[7]; }
-    uint32_t min_interval() const { return m_registers[8]; }
-    uint32_t addr_select() const { return m_registers[9]; }
-    uint32_t device_manuf() const { return m_registers[10]; }
-
-    RDRAM::DeviceType get_device_type_enum() const { return static_cast<RDRAM::DeviceType>(device_type()); }
-
-    RDRAM::Manufacturer get_manufacturer_enum() const { return static_cast<RDRAM::Manufacturer>(device_manuf()); }
-
-    bool is_self_refresh() const { return (mode() & static_cast<uint32_t>(RDRAM::DeviceMode::SELF_REFRESH)) != 0; }
-
-    bool is_power_down() const { return (mode() & static_cast<uint32_t>(RDRAM::DeviceMode::POWER_DOWN)) != 0; }
-
-private:
-    Common::Span<uint32_t> m_registers;
-};
-
 class RDRAMRegistersHandler final : public MemoryHandler {
 public:
     struct Config {
@@ -145,14 +103,10 @@ public:
     // Device management
     [[nodiscard]] size_t get_device_count() const { return m_device_count; }
 
-    // Expansion Pak support
-    void enable_expansion_pak(bool enable);
     [[nodiscard]] bool is_expansion_pak_enabled() const { return m_expansion_pak_enabled; }
 
     // State management
     void reset();
-    void save_state(std::ostream& os) const;
-    void load_state(std::istream& is);
 
     // Statistics
     struct Statistics {

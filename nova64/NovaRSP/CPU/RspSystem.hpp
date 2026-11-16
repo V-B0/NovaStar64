@@ -77,7 +77,6 @@ public:
 
     // Lifecycle
     void Reset(RSP_INFO& info);
-    void RomClosed();
 
     // Execution
     void ExecuteOps(uint32_t cycles, uint32_t targetPC); // the interpreter, always
@@ -108,11 +107,6 @@ public:
 
     // Sync CPU support (for debugging / verification)
     void SetupSyncCPU();
-    [[nodiscard]] CRSPSystem* SyncSystem() const;
-
-    // DMA transfer helpers
-    void SP_DMA_READ();
-    void SP_DMA_WRITE();
 
     // Custom allocator for alignment
     void* operator new(size_t size);

@@ -314,7 +314,4 @@ protected:
 /// Get description of a GBI1 command
 std::string DescribeGBI1Command(uint32_t w0, uint32_t w1);
 
-/// Get description of a GBI2 command
-std::string DescribeGBI2Command(uint32_t w0, uint32_t w1);
-
 } // namespace Nova64::Video

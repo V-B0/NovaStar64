@@ -89,7 +89,6 @@ void debug(const std::string& message);
 void info(const std::string& message);
 void warning(const std::string& message);
 void error(const std::string& message);
-void critical(const std::string& message);
 
 void debugf(const char* format, ...);
 void infof(const char* format, ...);

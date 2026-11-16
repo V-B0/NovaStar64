@@ -141,8 +141,6 @@ const RomImage& N64Rom::GetImage() const {
     return *m_Image;
 }
 
-RomFormat N64Rom::GetFormat() const { return m_Image ? m_Image->m_Format : RomFormat::Unknown; }
-
 size_t N64Rom::GetSize() const { return m_Image ? m_Image->m_Data.size() : 0; }
 
 DataView N64Rom::GetBootCode() const {
@@ -151,8 +149,6 @@ DataView N64Rom::GetBootCode() const {
     }
     return DataView{m_Image->m_Data.data() + RomHeader::BOOT_CODE_OFFSET, RomHeader::BOOT_CODE_SIZE};
 }
-
-const uint8_t* N64Rom::GetRomAddress() const { return m_Image ? m_Image->m_Data.data() : nullptr; }
 
 uint8_t* N64Rom::GetRomAddress() { return m_Image ? m_Image->m_Data.data() : nullptr; }
 

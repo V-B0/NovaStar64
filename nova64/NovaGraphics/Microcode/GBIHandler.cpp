@@ -1795,30 +1795,4 @@ std::string DescribeGBI1Command(uint32_t w0, uint32_t w1) {
     }
 }
 
-std::string DescribeGBI2Command(uint32_t w0, uint32_t w1) {
-    uint8_t opcode = (w0 >> 24) & 0xFF;
-
-    switch (opcode) {
-    case GBI2::G_NOOP:      return "G_NOOP";
-    case GBI2::G_VTX:       return "G_VTX count=" + std::to_string((w0 >> 12) & 0xFF);
-    case GBI2::G_MODIFYVTX: return "G_MODIFYVTX";
-    case GBI2::G_CULLDL:    return "G_CULLDL";
-    case GBI2::G_BRANCH_Z:  return "G_BRANCH_Z";
-    case GBI2::G_TRI1:      return "G_TRI1";
-    case GBI2::G_TRI2:      return "G_TRI2";
-    case GBI2::G_QUAD:      return "G_QUAD";
-    case GBI2::G_TEXTURE:   return "G_TEXTURE";
-    case GBI2::G_POPMTX:    return "G_POPMTX";
-    case GBI2::G_DL:        return "G_DL addr=0x" + std::to_string(w1);
-    case GBI2::G_ENDDL:     return "G_ENDDL";
-    case GBI2::G_MTX:       return "G_MTX addr=0x" + std::to_string(w1);
-    case GBI2::G_MOVEWORD:  return "G_MOVEWORD";
-    case GBI2::G_MOVEMEM:   return "G_MOVEMEM";
-    default:                {
-        if (opcode >= 0xC0) return "RDP_CMD_0x" + std::to_string(opcode);
-        return "GBI2_UNKNOWN_0x" + std::to_string(opcode);
-    }
-    }
-}
-
 } // namespace Nova64::Video

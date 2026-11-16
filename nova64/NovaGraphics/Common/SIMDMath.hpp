@@ -157,7 +157,6 @@ struct alignas(16) Mat4x4 {
     float& operator()(int row, int c) { return col[c].f[row]; }
     float operator()(int row, int c) const { return col[c].f[row]; }
 
-    static Mat4x4 Identity();
     static Mat4x4 Zero();
 
     // Row access (gathers from columns)
@@ -184,19 +183,9 @@ float Dot4(const Vec4f& a, const Vec4f& b);
 Vec4f Cross3(const Vec4f& a, const Vec4f& b);
 float Length3(const Vec4f& v);
 float Length4(const Vec4f& v);
-Vec4f Normalize3(const Vec4f& v);
-Vec4f Normalize4(const Vec4f& v);
 Vec4f Lerp(const Vec4f& a, const Vec4f& b, float t);
 Vec4f Min(const Vec4f& a, const Vec4f& b);
 Vec4f Max(const Vec4f& a, const Vec4f& b);
-Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi);
-Vec4f Abs(const Vec4f& v);
-Vec4f Negate(const Vec4f& v);
-Vec4f Reciprocal(const Vec4f& v);
-Vec4f ReciprocalSqrt(const Vec4f& v);
-Vec4f Floor(const Vec4f& v);
-Vec4f Ceil(const Vec4f& v);
-Vec4f Round(const Vec4f& v);
 
 // --- Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
@@ -214,7 +203,6 @@ Vec4i SubI(const Vec4i& a, const Vec4i& b);
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b); // low 32 bits of each product
 Vec4i ShiftLeftI(const Vec4i& a, int bits);
 Vec4i ShiftRightI(const Vec4i& a, int bits);
-Vec4i ShiftRightLogI(const Vec4i& a, int bits);
 Vec4i AndI(const Vec4i& a, const Vec4i& b);
 Vec4i OrI(const Vec4i& a, const Vec4i& b);
 Vec4i XorI(const Vec4i& a, const Vec4i& b);
@@ -365,8 +353,6 @@ Vec8i GatherTMEM(const uint8_t* tmem, const Vec8i& addresses);
 // --- DISPATCH LAYER - Selects best implementation at runtime ---
 namespace Dispatch {
 
-// Selects the implementations for the detected SIMD level, or for `forceLevel`.
-void Initialize();
 void Initialize(SIMDLevel forceLevel);
 
 // --- Vector Operations (use function pointers internally) ---
@@ -377,24 +363,13 @@ Vec4f Div(const Vec4f& a, const Vec4f& b);
 Vec4f MulScalar(const Vec4f& a, float s);
 Vec4f FMA(const Vec4f& a, const Vec4f& b, const Vec4f& c);
 float Dot3(const Vec4f& a, const Vec4f& b);
-float Dot4(const Vec4f& a, const Vec4f& b);
-Vec4f Cross3(const Vec4f& a, const Vec4f& b);
-float Length3(const Vec4f& v);
-Vec4f Normalize3(const Vec4f& v);
-Vec4f Lerp(const Vec4f& a, const Vec4f& b, float t);
 Vec4f Min(const Vec4f& a, const Vec4f& b);
 Vec4f Max(const Vec4f& a, const Vec4f& b);
-Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi);
 
 // --- Matrix Operations ---
-Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
-Mat4x4 MatTranspose(const Mat4x4& m);
 
 // --- Batch Operations ---
-void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
-void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normOut, int count);
-void BatchLerp(const float* a, const float* b, float* out, float t, int count);
 
 // --- Integer Operations ---
 Vec4i AddI(const Vec4i& a, const Vec4i& b);
@@ -415,12 +390,7 @@ namespace N64SIMD {
 // vertexCount * 4 floats (RGBA)
 
 // --- Clipping ---
-// Compute clip flags for 4 vertices at once
-// Returns packed clip flags: bits [POSX, NEGX, POSY, NEGY, POSZ, NEGZ]
-Vec4i ComputeClipFlags(const float* clipSpaceVerts4); // 4 verts * 4 components
-
-// Sutherland-Hodgman clip against single plane (SIMD-accelerated lerp)
-int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount, int planeIndex, int floatsPerVert);
+// 4 verts * 4 components
 
 // --- Texture Coordinate Processing ---
 
@@ -429,8 +399,6 @@ int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount
 // --- Depth Buffer ---
 
 // --- DXT Calculation ---
-// Calculate DXT value for LoadBlock command
-uint32_t CalculateDXT(uint32_t width, uint32_t size);
 
 // --- CRC32 (for texture hashing) ---
 

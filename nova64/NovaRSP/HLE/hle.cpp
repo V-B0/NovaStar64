@@ -223,8 +223,6 @@ bool CHle::non_task_dispatching() {
     return false;
 }
 
-void CHle::QueueAudioOutput(const int16_t* samples, uint32_t count) { m_audioOutput.QueueSamples(samples, count); }
-
 void CHle::FeedAudioDevice() { m_audioOutput.FeedDevice(); }
 
 // --- Main HLE execution entry point ---

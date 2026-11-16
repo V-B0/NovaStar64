@@ -94,13 +94,6 @@ public:
     CompiledFuncPtr Remove(uint32_t vaddr) noexcept;
 
     /**
-     * @brief Check if an entry exists at the given address
-     * @param vaddr Virtual address (32-bit)
-     * @return true if an entry exists (even if nullptr)
-     */
-    bool Contains(uint32_t vaddr) const noexcept;
-
-    /**
      * @brief Get the direct jump table for fast-path access
      * @warning Direct access is unsafe, prefer using Lookup()/Store()
      */

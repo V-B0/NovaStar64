@@ -74,9 +74,6 @@ public:
 
     // Plugin Management
     void SetGraphicsPlugin(Plugins::GFXPlugin* plugin);
-    Plugins::GFXPlugin* GetGraphicsPlugin() const;
-
-    uint32_t GetStatus() const;
 
     /// Get a mutable pointer to a specific DPC register (for plugin wiring)
     [[nodiscard]] uint32_t* GetRegisterPtr(DPCRegisters::RegisterIndex index) noexcept { return &m_Registers[index]; }

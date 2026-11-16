@@ -125,20 +125,15 @@ public:
     void ProcessDListShadow(); ///< Shadow HLE: geometry-only run for RT under LLE
     void ProcessRDPList();
     void UpdateScreen();
-    void ShowCFB();
 
     // --- VI register changes ---
-    void ViStatusChanged();
-    void ViWidthChanged();
 
     // --- ROM events ---
     void RomOpen(const SystemInfo& sysInfo);
-    void RomClosed();
 
     // --- Configuration ---
     PluginConfig& GetConfig() { return m_config; }
     const PluginConfig& GetConfig() const { return m_config; }
-    void ApplyConfig(const PluginConfig& config);
     void OpenConfigDialog();
 
     /// Override resolution after config-file load (set before Initialize).
@@ -157,14 +152,9 @@ public:
     const GameProfile* GetActiveGameProfile() const { return m_activeProfile; }
 
     // --- Debug ---
-    void EnableWireframe(bool enable);
-    void EnableTextureDebug(bool enable);
     void TakeScreenshot(const std::string& path);
-    void DumpFrameInfo();
 
     // --- Thread safety ---
-    void LockRender();
-    void UnlockRender();
 
     // --- RDP command forwarding (called from adapter) ---
     void ProcessRDPCommand(uint32_t w0, uint32_t w1);
@@ -246,9 +236,6 @@ private:
     uint32_t m_viXScale = 0;
     uint32_t m_viYScale = 0;
 
-    // Flags
-    bool m_wireframe = false;
-    bool m_textureDebug = false;
     bool m_romLoaded = false;
     bool m_hleRenderedThisFrame = false;   // Set by ProcessDList
     bool m_hleEverRendered = false;        // Latched once HLE renders
@@ -269,8 +256,6 @@ private:
     int m_pendingResScale = 0;
     int m_pendingWindowW = 0;
     int m_pendingWindowH = 0;
-
-    bool IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint32_t height, uint32_t bpp) const;
 };
 
 } // namespace Nova64::Video

@@ -1091,34 +1091,7 @@ bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
 
 // --- Tile Copy (RDP COPY_MODE region transfer) ---
 
-void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int32_t srcX, int32_t srcY, int32_t dstX,
-                                  int32_t dstY, int32_t w, int32_t h) {
-    if (!src || !dst || w <= 0 || h <= 0 || !m_isGL) return;
-
-    // Scale coordinates
-    int32_t sx = srcX * static_cast<int32_t>(m_resScale);
-    int32_t sy = srcY * static_cast<int32_t>(m_resScale);
-    int32_t dx = dstX * static_cast<int32_t>(m_resScale);
-    int32_t dy = dstY * static_cast<int32_t>(m_resScale);
-    int32_t sw = w * static_cast<int32_t>(m_resScale);
-    int32_t sh = h * static_cast<int32_t>(m_resScale);
-
-    glBlitNamedFramebuffer(src->fbo, dst->fbo, sx, sy, sx + sw, sy + sh, dx, dy, dx + sw, dy + sh, GL_COLOR_BUFFER_BIT,
-                           GL_NEAREST);
-}
-
 // --- RDRAM Dirty Tracking ---
-
-bool FramebufferManager::IsRDRAMDirty(uint32_t address, uint32_t size) const {
-    uint32_t startPage = address / kPageSize;
-    uint32_t endPage = (address + size + kPageSize - 1) / kPageSize;
-    endPage = std::min(endPage, kPageCount);
-
-    for (uint32_t p = startPage; p < endPage; ++p) {
-        if (m_dirtyPages[p]) return true;
-    }
-    return false;
-}
 
 void FramebufferManager::MarkRDRAMDirty(uint32_t address, uint32_t size) {
     uint32_t startPage = address / kPageSize;
@@ -1443,19 +1416,6 @@ void FramebufferManager::ConvertRGBA8ToRGBA32(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void FramebufferManager::ConvertDepthN64ToFloat(const uint16_t* src, float* dst, uint32_t pixelCount) {
-    m_stats.formatConversions++;
-    // N64 depth: 14-bit integer (bits 15:2) + 2-bit dz (bits 1:0)
-    // Range: 0x0000 = near, 0x3FFF = far
-    constexpr float kInvMaxDepth = 1.0f / 16383.0f; // 14-bit max
-
-    for (uint32_t i = 0; i < pixelCount; ++i) {
-        uint16_t raw = src[i ^ 1];    // XOR 1 for correct halfword within 32-bit word
-        uint16_t depthInt = raw >> 2; // Extract 14-bit depth
-        dst[i] = static_cast<float>(depthInt) * kInvMaxDepth;
-    }
-}
-
 void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount, uint32_t width) {
     m_stats.formatConversions++;
     // N64 dz field encodes the local depth derivative magnitude for coverage AA.
@@ -1486,45 +1446,5 @@ void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst,
 }
 
 // --- Framebuffer Effects ---
-
-void FramebufferManager::CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst) {
-    if (!src || !dst) return;
-
-    glBlitNamedFramebuffer(src->fbo, dst->fbo, 0, 0, src->scaledWidth, src->scaledHeight, 0, 0, dst->scaledWidth,
-                           dst->scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-}
-
-void FramebufferManager::FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color) {
-    if (!fb) return;
-
-    float clearColor[4] = {((color >> 24) & 0xFF) / 255.0f, ((color >> 16) & 0xFF) / 255.0f,
-                           ((color >> 8) & 0xFF) / 255.0f, (color & 0xFF) / 255.0f};
-
-    // Scale coordinates
-    x *= m_resScale;
-    y *= m_resScale;
-    w *= m_resScale;
-    h *= m_resScale;
-
-    glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(x, y, w, h);
-    glClearNamedFramebufferfv(fb->fbo, GL_COLOR, 0, clearColor);
-    glDisable(GL_SCISSOR_TEST);
-}
-
-void FramebufferManager::ResolveMSAA(GPUFramebuffer* msaaFB, GPUFramebuffer* resolved) {
-    if (!msaaFB || !resolved) return;
-
-    // Resolve color
-    glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo, 0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight, 0, 0,
-                           resolved->scaledWidth, resolved->scaledHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-    // Resolve depth (must be separate blit with GL_NEAREST)
-    if (msaaFB->depthTex && resolved->depthTex) {
-        glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo, 0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight, 0, 0,
-                               resolved->scaledWidth, resolved->scaledHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-    }
-}
 
 } // namespace Nova64::Video

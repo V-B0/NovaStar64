@@ -632,53 +632,6 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     return true;
 }
 
-void VKComputeRaytracer::Destroy(const VKContext& ctx) {
-    for (uint32_t i = 0; i < kFrames; ++i) {
-        FrameRes& fr = m_frame[i];
-        DestroyImg(ctx, fr.out);
-        DestroyImg(ctx, fr.ras);
-        DestroyImg(ctx, fr.lit);
-        DestroyImg(ctx, fr.shd);
-        DestroyImg(ctx, fr.occ);
-        DestroyImg(ctx, fr.gbuf);
-        DestroyImg(ctx, fr.hist);
-        DestroyImg(ctx, fr.gi);
-        DestroyImg(ctx, fr.giHist);
-        if (fr.nodeBuf.buffer) DestroyBufferStorage(ctx, fr.nodeBuf);
-        if (fr.triBuf.buffer) DestroyBufferStorage(ctx, fr.triBuf);
-        if (fr.ubo.buffer) DestroyBufferStorage(ctx, fr.ubo);
-        fr = FrameRes{};
-    }
-    if (m_queryPool) vkDestroyQueryPool(ctx.device, m_queryPool, nullptr);
-    m_queryPool = VK_NULL_HANDLE;
-    for (bool& b : m_slotTimed) b = false;
-    if (m_depthView) vkDestroyImageView(ctx.device, m_depthView, nullptr);
-    if (m_depthSampler) vkDestroySampler(ctx.device, m_depthSampler, nullptr);
-    m_depthView = VK_NULL_HANDLE;
-    m_depthSampler = VK_NULL_HANDLE;
-    m_cachedDepth = VK_NULL_HANDLE;
-    if (m_pool) vkDestroyDescriptorPool(ctx.device, m_pool, nullptr);
-    if (m_tracePipeline) vkDestroyPipeline(ctx.device, m_tracePipeline, nullptr);
-    if (m_denoisePipeline) vkDestroyPipeline(ctx.device, m_denoisePipeline, nullptr);
-    if (m_compositePipeline) vkDestroyPipeline(ctx.device, m_compositePipeline, nullptr);
-    if (m_tracePipeLayout) vkDestroyPipelineLayout(ctx.device, m_tracePipeLayout, nullptr);
-    if (m_denoisePipeLayout) vkDestroyPipelineLayout(ctx.device, m_denoisePipeLayout, nullptr);
-    if (m_compositePipeLayout) vkDestroyPipelineLayout(ctx.device, m_compositePipeLayout, nullptr);
-    if (m_traceDsLayout) vkDestroyDescriptorSetLayout(ctx.device, m_traceDsLayout, nullptr);
-    if (m_denoiseDsLayout) vkDestroyDescriptorSetLayout(ctx.device, m_denoiseDsLayout, nullptr);
-    if (m_compositeDsLayout) vkDestroyDescriptorSetLayout(ctx.device, m_compositeDsLayout, nullptr);
-    m_pool = VK_NULL_HANDLE;
-    m_tracePipeline = VK_NULL_HANDLE;
-    m_denoisePipeline = VK_NULL_HANDLE;
-    m_compositePipeline = VK_NULL_HANDLE;
-    m_tracePipeLayout = VK_NULL_HANDLE;
-    m_denoisePipeLayout = VK_NULL_HANDLE;
-    m_compositePipeLayout = VK_NULL_HANDLE;
-    m_traceDsLayout = VK_NULL_HANDLE;
-    m_denoiseDsLayout = VK_NULL_HANDLE;
-    m_compositeDsLayout = VK_NULL_HANDLE;
-}
-
 } // namespace VK
 } // namespace Video
 } // namespace Nova64

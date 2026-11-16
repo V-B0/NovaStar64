@@ -71,7 +71,6 @@ public:
 
     [[nodiscard]] bool Read8(uint32_t address, uint8_t& value) override;
     [[nodiscard]] bool Read16(uint32_t address, uint16_t& value);
-    [[nodiscard]] bool ReadBytes(uint32_t address, void* buffer, size_t size);
 
     // ROM decay management
     void rom_write_decayed();
@@ -89,8 +88,6 @@ public:
 
     // State management
     void reset();
-    void save_state(std::ostream& os) const;
-    void load_state(std::istream& is);
 
     // Statistics
     struct Statistics {
@@ -176,8 +173,4 @@ private:
 
     // Logging
     void log_rom_access(uint32_t address, uint32_t value, bool is_write) const;
-
-    // System event handlers
-    void on_system_reset();
-    void on_game_state_loaded();
 };

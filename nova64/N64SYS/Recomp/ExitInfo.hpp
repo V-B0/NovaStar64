@@ -243,8 +243,6 @@ struct ExceptionInfo {
     uint32_t extra_info = 0;
     PipelineStage stage;
     uint64_t timestamp = 0;
-
-    std::string description() const;
 };
 
 // Branch prediction information
@@ -254,7 +252,6 @@ struct BranchPrediction {
     uint32_t predicted_target = 0;
     uint64_t training_count = 0;
 
-    void update(bool actually_taken, uint32_t actual_target);
     double get_confidence() const { return confidence; }
     bool should_predict() const { return confidence > 0.7; }
     double prediction_accuracy() const { return confidence; }
@@ -296,11 +293,7 @@ public:
 
     BranchPrediction get_prediction() const { return prediction_; }
 
-    // Statistics and profiling
-    void record_execution(uint64_t cycles = 1);
     const ExitStatistics& statistics() const { return stats_; }
-
-    bool can_inline() const;
 
     ExitId id() const { return id_; }
     uint32_t target_pc() const { return target_pc_; }
@@ -319,12 +312,7 @@ public:
     bool is_cold() const { return stats_.is_cold(); }
     bool is_exception() const { return static_cast<uint16_t>(reason_) >= 0x0100; }
 
-    // Validation
-    bool validate() const;
-
 private:
-    // Helper methods
-    void update_flags();
     void update_probability();
 
 private:
@@ -392,8 +380,6 @@ public:
         std::string to_string() const;
     };
 
-    ManagerStats statistics() const;
-
     // Serialization for save states
     struct SerializedExitManager {
         struct SerializedExit {
@@ -425,9 +411,6 @@ private:
     std::unordered_map<asmjit::Label, ExitId, AsmJitLabelHash> label_to_exit_id_;
 
     mutable std::shared_mutex mutex_;
-
-    // Helper methods
-    ExitId generate_id();
 };
 
 /**
@@ -456,9 +439,6 @@ public:
         void reset() { *this = PredictorStats(); }
         std::string to_string() const;
     };
-
-    PredictorStats statistics() const;
-    void reset_statistics();
 
 private:
     struct BranchHistory {

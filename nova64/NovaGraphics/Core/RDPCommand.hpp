@@ -129,9 +129,6 @@ public:
     /// Set Texture Image (0x3D, source for loads)
     void DecodeSetTextureImage(const uint32_t* words, ImageDescriptor& img);
 
-    /// Set Fill Color (0x37)
-    void DecodeSetFillColor(const uint32_t* words, RDPColor& color);
-
     /// Set Fog Color (0x38)
     void DecodeSetFogColor(const uint32_t* words, RDPColor& color);
 
@@ -189,9 +186,6 @@ public:
 private:
     const uint8_t* m_rdram = nullptr;
     size_t m_rdramSize = 0;
-
-    /// Read a 32-bit word from RDRAM in native word order (PJ64-style); 0 if out of range
-    uint32_t ReadWord(uint32_t address) const;
 };
 
 // --- RDP Command Buffer ---
@@ -205,12 +199,6 @@ public:
     ~RDPCommandBuffer();
 
     void Reset();
-
-    /// Append words; if the buffer is still full after compaction, all unread data is discarded
-    void Push(const uint32_t* words, int count);
-
-    /// Advance the read offset, clamped to the end of the data
-    void Advance(int wordCount);
 
     bool HasCommands() const { return m_readOffset < m_writeOffset; }
 

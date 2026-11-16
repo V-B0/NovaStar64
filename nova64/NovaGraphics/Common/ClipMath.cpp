@@ -226,31 +226,6 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
 
 // --- PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM ---
 
-ScreenVertex ViewportTransform::Transform(const ClipVertex& cv) const {
-    ScreenVertex sv;
-
-    if (std::fabs(cv.position.f[3]) < Math::kEpsilon) {
-        sv.position = Vec2f(transX, transY);
-        sv.depth = transZ;
-        sv.invW = 0.0f;
-    } else {
-        float invW = 1.0f / cv.position.f[3];
-        float ndcX = cv.position.f[0] * invW;
-        float ndcY = cv.position.f[1] * invW;
-        float ndcZ = cv.position.f[2] * invW;
-
-        sv.position = Vec2f(ndcX * scaleX + transX, ndcY * scaleY + transY);
-        sv.depth = ndcZ * scaleZ + transZ;
-        sv.invW = invW;
-    }
-
-    sv.color = Color4f(cv.color.f[0], cv.color.f[1], cv.color.f[2], cv.color.f[3]);
-    sv.texCoord = cv.texCoord;
-    sv.fog = cv.fog;
-
-    return sv;
-}
-
 // --- BRANCH_Z TEST ---
 
 // --- COMPLETE TRIANGLE PIPELINE ---

@@ -107,8 +107,6 @@ public:
         m_cic_type = type;
         m_config.cic_type = type;
     }
-    void save_state(std::ostream& os) const;
-    void load_state(std::istream& is);
     /// Save states and rewind (see StateArchive.hpp).
     void SerializeState(Nova64::StateArchive& ar);
 
@@ -229,7 +227,4 @@ private:
     static constexpr uint16_t swap_bytes_16(uint16_t value) noexcept {
         return ((value & 0x00FF) << 8) | ((value & 0xFF00) >> 8);
     }
-
-    // System event handlers
-    void on_system_reset();
 };

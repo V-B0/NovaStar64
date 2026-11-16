@@ -155,7 +155,6 @@ private:
     void SetSPInterrupt();
     void SetHalt();
     void ClearHalt();
-    void DmaReadDone(uint32_t End);
     void SystemReset();
 
     // RSP memory

@@ -140,11 +140,6 @@ void Logger::Shutdown() {
 
 // --- Configuration ---
 
-void Logger::SetConfig(const LoggerConfig& config) {
-    std::lock_guard<std::mutex> lk(m_mutex);
-    m_config = config;
-}
-
 // --- Level Checks ---
 
 LogLevel Logger::GetEffectiveLevel(LogSubsystem sub) const noexcept {
@@ -301,12 +296,6 @@ void Logger::RotateLog() {
 
     m_file.open(m_config.logFilePath, std::ios::out | std::ios::trunc);
     m_fileBytes = 0;
-}
-
-void Logger::Flush() {
-    std::lock_guard<std::mutex> lk(m_mutex);
-    if (m_file.is_open()) m_file.flush();
-    std::fflush(stderr);
 }
 
 } // namespace Nova64::Video

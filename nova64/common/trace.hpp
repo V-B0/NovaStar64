@@ -154,120 +154,10 @@ public:
 };
 
 // --- File sink ---
-class FileTraceSink final : public ITraceSink {
-public:
-    struct Options {
-        bool flushImmediately = false;
-        size_t maxFileSize = 5 * 1024 * 1024; // 5MB default
-        size_t maxArchiveFiles = 5;
-        std::string archivePattern = "{name}.{index}.log";
-    };
-
-    explicit FileTraceSink(std::string_view filename, const Options& options);
-    // Delegating overload: a default argument of `= {}` here would require the
-    // Options NSDMIs to be evaluated at class scope, which Clang rejects.
-    // Constructing Options{} in a member-initializer is well-formed instead.
-    explicit FileTraceSink(std::string_view filename) : FileTraceSink(filename, Options{}) {}
-    ~FileTraceSink() override;
-
-    // Non-copyable, movable
-    FileTraceSink(const FileTraceSink&) = delete;
-    FileTraceSink& operator=(const FileTraceSink&) = delete;
-    FileTraceSink(FileTraceSink&& other) noexcept;
-    FileTraceSink& operator=(FileTraceSink&& other) noexcept;
-
-    void Write(const LogEntry& entry) override;
-    void Flush() override;
-
-    [[nodiscard]] Severity GetMinSeverity() const noexcept override {
-        return m_MinSeverity.load(std::memory_order_relaxed);
-    }
-
-    void SetMinSeverity(Severity severity) noexcept override {
-        m_MinSeverity.store(severity, std::memory_order_relaxed);
-    }
-
-    [[nodiscard]] const std::string& GetFilename() const noexcept { return m_Filename; }
-
-    bool RotateIfNeeded();
-
-private:
-    std::string m_Filename;
-    Options m_Options;
-    std::ofstream m_FileStream;
-    std::atomic<Severity> m_MinSeverity{Severity::Info};
-    std::mutex m_Mutex;
-
-    void OpenFile();
-    void RotateFile();
-    [[nodiscard]] std::string GenerateArchiveName(size_t index) const;
-};
 
 // --- Console sink ---
-class ConsoleTraceSink final : public ITraceSink {
-public:
-    enum class OutputTarget { StdOut, StdErr, Both };
-
-    struct Options {
-        OutputTarget target = OutputTarget::StdOut;
-        bool useColors = true;
-        bool showTimestamp = true;
-        bool showSeverity = true;
-        bool showModule = true;
-        bool showLocation = false;
-    };
-
-    explicit ConsoleTraceSink(const Options& options);
-    // See FileTraceSink: delegating overload avoids evaluating Options NSDMIs
-    // in a class-scope default argument (rejected by Clang).
-    ConsoleTraceSink() : ConsoleTraceSink(Options{}) {}
-
-    void Write(const LogEntry& entry) override;
-    void Flush() override;
-
-    [[nodiscard]] Severity GetMinSeverity() const noexcept override {
-        return m_MinSeverity.load(std::memory_order_relaxed);
-    }
-
-    void SetMinSeverity(Severity severity) noexcept override {
-        m_MinSeverity.store(severity, std::memory_order_relaxed);
-    }
-
-private:
-    Options m_Options;
-    std::atomic<Severity> m_MinSeverity{Severity::Info};
-    std::mutex m_Mutex;
-
-    [[nodiscard]] std::string GetColorCode(Severity severity) const;
-};
 
 // --- Memory sink (ring buffer) ---
-class MemoryTraceSink final : public ITraceSink {
-public:
-    explicit MemoryTraceSink(size_t capacity = 1000);
-
-    void Write(const LogEntry& entry) override;
-    void Flush() override {} // Nothing to flush
-
-    [[nodiscard]] Severity GetMinSeverity() const noexcept override {
-        return m_MinSeverity.load(std::memory_order_relaxed);
-    }
-
-    void SetMinSeverity(Severity severity) noexcept override {
-        m_MinSeverity.store(severity, std::memory_order_relaxed);
-    }
-
-    void Clear();
-    [[nodiscard]] size_t GetCount() const noexcept;
-    [[nodiscard]] size_t GetCapacity() const noexcept { return m_Capacity; }
-
-private:
-    mutable std::mutex m_Mutex;
-    std::vector<LogEntry> m_Entries;
-    size_t m_Capacity;
-    size_t m_Index = 0;
-    std::atomic<Severity> m_MinSeverity{Severity::Info};
-};
 
 // --- Trace manager ---
 class TraceManager {
@@ -308,9 +198,6 @@ public:
         std::array<size_t, 7> severityCounts{};
         std::array<size_t, Module::Max> moduleCounts{};
     };
-
-    [[nodiscard]] Statistics GetStatistics() const;
-    void ResetStatistics();
 
 private:
     TraceManager();

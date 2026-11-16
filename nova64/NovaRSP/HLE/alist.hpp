@@ -68,39 +68,14 @@ void alist_resample(CHle* hle, bool init, bool flag2, uint16_t dmemo, uint16_t d
 void alist_polef(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t gain, int16_t* table,
                  uint32_t address);
 
-void alist_iirf(CHle* hle, bool init, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t* table, uint32_t address);
-
 void alist_resample_zoh(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint32_t pitch, uint32_t pitch_accu);
 
 void alist_filter(CHle* hle, uint16_t dmem, uint16_t count, uint32_t address, const uint32_t* lut_address);
 
 // --- Extended DSP operations ---
 
-// De-interleave stereo to separate L/R buffers
-void alist_deinterleave(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t dmem_src, uint16_t count);
-
-// Dynamic range compressor (limiter)
-void alist_compress(CHle* hle, uint16_t dmem, uint16_t count, int16_t threshold, int16_t ratio, int16_t attack,
-                    int16_t release);
-
-// Chorus effect (modulated delay)
-void alist_chorus(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t delay_base, uint16_t depth,
-                  uint16_t rate_hz, int16_t wet_gain);
-
-// Simple delay line (echo)
-void alist_delay(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uint16_t delay_samples, int16_t feedback,
-                 int16_t wet_gain);
-
 // High-pass / low-pass single-pole filter
 enum class FilterType : uint8_t { LowPass = 0, HighPass = 1 };
-void alist_hilopass(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, int16_t cutoff_coeff, FilterType type,
-                    uint32_t state_address);
-
-// Stereo pan with crossfade
-void alist_pan(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t count, int16_t pan_left, int16_t pan_right);
-
-// DC offset removal
-void alist_dc_remove(CHle* hle, uint16_t dmem, uint16_t count, uint32_t state_address);
 
 // --- Audio flags ---
 inline constexpr uint32_t A_INIT = 0x01;

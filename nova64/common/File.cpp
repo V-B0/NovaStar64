@@ -285,10 +285,6 @@ size_t File::write(const void* buffer, size_t count) {
 #endif
 }
 
-size_t File::write(const std::string& text) { return write(text.data(), text.size()); }
-
-size_t File::write(const std::vector<uint8_t>& data) { return write(data.data(), data.size()); }
-
 // --- File - Seek / Position operations ---
 
 int64_t File::seek(int64_t offset, SeekOrigin origin) {
@@ -350,22 +346,6 @@ int64_t File::size() const {
 #endif
 }
 
-void File::resize(int64_t new_size) {
-    if (!is_open()) {
-        return;
-    }
-
-#ifdef _WIN32
-    LARGE_INTEGER li;
-    li.QuadPart = new_size;
-    if (::SetFilePointerEx(m_impl->hFile, li, nullptr, FILE_BEGIN)) {
-        ::SetEndOfFile(m_impl->hFile);
-    }
-#else
-    ::ftruncate(m_impl->fd, static_cast<off_t>(new_size));
-#endif
-}
-
 void File::flush() {
     if (!is_open()) {
         return;
@@ -380,8 +360,6 @@ void File::flush() {
 
 // --- File - Error state ---
 
-void File::clear_error() noexcept { m_impl->clear_error(); }
-
 // --- File - Metadata accessors ---
 
 std::string File::filename() const { return m_impl->fileName; }
@@ -389,62 +367,5 @@ std::string File::filename() const { return m_impl->fileName; }
 // --- File - Timestamps ---
 
 // --- File - Static utility methods ---
-
-bool File::exists(const std::string& filename) {
-#ifdef _WIN32
-    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0) {
-        return false;
-    }
-    auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
-    MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
-
-    const DWORD attrs = ::GetFileAttributesW(wideName.get());
-    return attrs != INVALID_FILE_ATTRIBUTES;
-#else
-    struct stat st;
-    return ::stat(filename.c_str(), &st) == 0;
-#endif
-}
-
-bool File::remove(const std::string& filename) {
-#ifdef _WIN32
-    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0) {
-        return false;
-    }
-    auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
-    MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
-
-    // DeleteFileW refuses read-only files, so clear that attribute first.
-    const DWORD attrs = ::GetFileAttributesW(wideName.get());
-    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY)) {
-        ::SetFileAttributesW(wideName.get(), attrs & ~FILE_ATTRIBUTE_READONLY);
-    }
-
-    return ::DeleteFileW(wideName.get()) != 0;
-#else
-    return ::unlink(filename.c_str()) == 0;
-#endif
-}
-
-bool File::rename(const std::string& old_name, const std::string& new_name) {
-#ifdef _WIN32
-    const int wideOldLen = MultiByteToWideChar(CP_UTF8, 0, old_name.c_str(), -1, nullptr, 0);
-    const int wideNewLen = MultiByteToWideChar(CP_UTF8, 0, new_name.c_str(), -1, nullptr, 0);
-    if (wideOldLen <= 0 || wideNewLen <= 0) {
-        return false;
-    }
-
-    auto wideOld = std::make_unique<wchar_t[]>(static_cast<size_t>(wideOldLen));
-    auto wideNew = std::make_unique<wchar_t[]>(static_cast<size_t>(wideNewLen));
-    MultiByteToWideChar(CP_UTF8, 0, old_name.c_str(), -1, wideOld.get(), wideOldLen);
-    MultiByteToWideChar(CP_UTF8, 0, new_name.c_str(), -1, wideNew.get(), wideNewLen);
-
-    return ::MoveFileW(wideOld.get(), wideNew.get()) != 0;
-#else
-    return ::rename(old_name.c_str(), new_name.c_str()) == 0;
-#endif
-}
 
 } // namespace FileSystem

@@ -70,45 +70,6 @@ struct EmitOptions {
 };
 
 /**
- * @struct GeneratedCodeInfo
- * @brief Information about generated code block
- */
-struct GeneratedCodeInfo {
-    uint8_t* code = nullptr;
-    size_t size = 0;
-    size_t maxSize = 0;
-    uint32_t instructionCount = 0;
-    uint32_t labelCount = 0;
-    uint32_t jumpCount = 0;
-    std::string errorMessage;
-
-    bool IsValid() const noexcept { return code != nullptr && size > 0; }
-    void Reset() noexcept {
-        code = nullptr;
-        size = 0;
-        maxSize = 0;
-        instructionCount = 0;
-        labelCount = 0;
-        jumpCount = 0;
-        errorMessage.clear();
-    }
-};
-
-/**
- * @class IX64CodeGenerator
- * @brief Interface for x64 code generation strategies
- */
-class IX64CodeGenerator {
-public:
-    virtual ~IX64CodeGenerator() = default;
-
-    virtual bool Initialize(asmjit::CodeHolder& codeHolder) = 0;
-    virtual bool GenerateCode(const EmitOptions& options) = 0;
-    virtual GeneratedCodeInfo Finalize() = 0;
-    virtual void Reset() = 0;
-};
-
-/**
  * @class CX64Ops
  * @brief x64 assembler wrapper using AsmJit with enhanced features
  * 
@@ -166,8 +127,6 @@ public:
     // Logging and debugging
     void EnableLogging(bool enable) noexcept { m_Options.enableLogging = enable; }
     bool IsLoggingEnabled() const noexcept { return m_Options.enableLogging; }
-
-    void SetLogCallback(std::function<void(std::string_view)> callback) noexcept;
 
     void AddComment(std::string_view comment);
 

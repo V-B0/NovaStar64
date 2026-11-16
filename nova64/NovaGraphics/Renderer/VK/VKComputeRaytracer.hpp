@@ -71,9 +71,6 @@ public:
     /// descriptor layouts/pool and per-frame descriptor sets/UBOs.
     bool Build(const VKContext& ctx);
 
-    /// Release all GPU resources.
-    void Destroy(const VKContext& ctx);
-
     /// Hybrid composite for frame `frameIdx`, recorded entirely into `cmd`:
     ///   1. copy the swapchain (textured raster, in PRESENT_SRC) into a private
     ///      copy the compute shaders can read,

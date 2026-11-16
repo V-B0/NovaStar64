@@ -96,6 +96,4 @@ CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
     return removed;
 }
 
-bool CFunctionMap::Contains(uint32_t vaddr) const noexcept { return m_ExactLookup.count(vaddr) != 0; }
-
 } // namespace Nova64::Recompiler

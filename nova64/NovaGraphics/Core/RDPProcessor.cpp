@@ -186,32 +186,6 @@ void RDPProcessor::Reset(bool coldReset) {
 
 // --- Display List Processing ---
 
-void RDPProcessor::ProcessDList(uint32_t startAddress, uint32_t endAddress) {
-    if (!m_initialized || !m_rdram) return;
-
-    if (startAddress >= m_rdramSize || endAddress > m_rdramSize || startAddress >= endAddress) {
-        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "Invalid DList range: 0x{:08X} - 0x{:08X}", startAddress,
-                 endAddress);
-        return;
-    }
-
-    m_state.displayListActive = true;
-    m_stats.displayListsProcessed++;
-
-    uint32_t numWords = (endAddress - startAddress) / 4;
-
-    // RDRAM is stored in native 32-bit word order (PJ64-style)
-    std::vector<uint32_t> words(numWords);
-    for (uint32_t i = 0; i < numWords; i++) {
-        uint32_t addr = startAddress + i * 4;
-        words[i] = *reinterpret_cast<const uint32_t*>(m_rdram + addr);
-    }
-
-    ProcessCommandBuffer(words.data(), static_cast<int>(numWords));
-
-    m_state.displayListActive = false;
-}
-
 void RDPProcessor::ProcessRDPCommand(uint64_t command) {
     uint32_t words[2];
     words[0] = static_cast<uint32_t>(command >> 32);

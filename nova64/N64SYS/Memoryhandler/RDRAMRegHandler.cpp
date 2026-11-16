@@ -216,29 +216,8 @@ void RDRAMRegistersHandler::exit_self_refresh(size_t device_index) {
     }
 }
 
-void RDRAMRegistersHandler::enable_expansion_pak(bool enable) {
-    m_expansion_pak_enabled = enable;
-    if (m_device_count < 8 && enable) {
-        // The Expansion Pak adds 4MB to the standard console's 4MB, extending the memory map to 8MB.
-        m_device_count = 8; // all eight device slots
-        initialize_devices();
-    }
-}
-
 void RDRAMRegistersHandler::reset() {
     for (auto& dev : m_devices) dev = RDRAM::DeviceState();
     initialize_devices();
     reset_statistics();
-}
-
-void RDRAMRegistersHandler::save_state(std::ostream& os) const {
-    os.write(reinterpret_cast<const char*>(&m_device_count), sizeof(m_device_count));
-    os.write(reinterpret_cast<const char*>(&m_expansion_pak_enabled), sizeof(m_expansion_pak_enabled));
-    os.write(reinterpret_cast<const char*>(m_devices.data()), sizeof(RDRAM::DeviceState) * m_devices.size());
-}
-
-void RDRAMRegistersHandler::load_state(std::istream& is) {
-    is.read(reinterpret_cast<char*>(&m_device_count), sizeof(m_device_count));
-    is.read(reinterpret_cast<char*>(&m_expansion_pak_enabled), sizeof(m_expansion_pak_enabled));
-    is.read(reinterpret_cast<char*>(m_devices.data()), sizeof(RDRAM::DeviceState) * m_devices.size());
 }

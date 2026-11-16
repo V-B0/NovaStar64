@@ -137,7 +137,6 @@ public:
     Nova64::Video::WindowManager* GetWindowManager() const { return m_WindowManager.get(); }
 
     void CloseCpu();
-    void ExternalEvent(SystemEvent action);
     void StartEmulation(bool NewThread);
     void EndEmulation();
     void Pause();
@@ -177,7 +176,6 @@ private:
     void StartEmulation2(bool NewThread);
     void StartEmulationThread();
     void ExecuteRecompiler();
-    void ExecuteSyncCPU();
     void CpuStopped();
 
 public:

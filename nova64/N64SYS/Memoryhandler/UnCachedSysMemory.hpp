@@ -50,19 +50,6 @@ public:
      */
     bool Write32(uint32_t addr, uint32_t val, uint32_t mask) override;
 
-    /**
-     * @brief Perform PI DMA read (save memory to RDRAM)
-     * @return true on success
-     */
-    bool DMARead();
-
-    /**
-     * @brief Perform PI DMA write (RDRAM to save memory)
-     */
-    void DMAWrite();
-
-    CFlashRam& GetFlashRam();
-
 private:
     // Save type detection
     void AutoDetectSaveType(uint32_t offset);
@@ -81,10 +68,9 @@ private:
     UnCachedSysMemory(const UnCachedSysMemory&) = delete;
     UnCachedSysMemory& operator=(const UnCachedSysMemory&) = delete;
 
-    CN64System& m_System;        ///< N64 system reference
-    CRegisters& m_Reg;           ///< Register interface
-    Nova64::MipsMemoryVM& m_MMU; ///< Memory management unit
-    CSram m_Sram;                ///< SRAM handler
-    CFlashRam m_FlashRam;        ///< FlashRAM handler
-    bool m_SavesReadOnly;        ///< Read-only mode flag
+    CN64System& m_System; ///< N64 system reference
+    CRegisters& m_Reg;    ///< Register interface
+    CSram m_Sram;         ///< SRAM handler
+    CFlashRam m_FlashRam; ///< FlashRAM handler
+    bool m_SavesReadOnly; ///< Read-only mode flag
 };

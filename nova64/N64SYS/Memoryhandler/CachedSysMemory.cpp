@@ -511,11 +511,6 @@ void CachedSysMemory::PerformHardReset() {
 
 // --- DMA Operations ---
 
-void CachedSysMemory::SetRDRAM(uint8_t* rdram, uint32_t size) {
-    m_RDRAM = rdram;
-    m_RDRAMSize = size;
-}
-
 void CachedSysMemory::PerformDMARead(uint32_t rdramAddr, uint32_t length, uint32_t sectorOffset) {
     if (!m_RDRAM || m_RDRAMSize == 0) {
         Log::errorf("64DD: DMA read failed - RDRAM not initialized");

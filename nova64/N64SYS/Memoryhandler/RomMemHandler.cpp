@@ -118,21 +118,6 @@ bool RomMemoryHandler::Read8(uint32_t address, uint8_t& value) {
     return false;
 }
 
-bool RomMemoryHandler::ReadBytes(uint32_t address, void* buffer, size_t size) {
-    if (!buffer) return false;
-    // Bulk reads ignore the latch.
-
-    if (is_rom_address(address)) {
-        uint32_t offset = address & 0x0FFFFFFF;
-        if (offset + size <= m_rom_size) {
-            std::memcpy(buffer, &m_rom_data[offset], size);
-            m_stats.rom_reads += (size / 4) + 1;
-            return true;
-        }
-    }
-    return false;
-}
-
 uint8_t RomMemoryHandler::read_rom_8(uint32_t address) const {
     uint32_t offset = address & 0x0FFFFFFF;
     if (offset < m_rom_size) {
@@ -148,33 +133,6 @@ void RomMemoryHandler::reset() {
     rom_write_decayed();
     clear_all_patches();
     m_stats = {};
-}
-
-void RomMemoryHandler::on_system_reset() { reset(); }
-void RomMemoryHandler::on_game_state_loaded() { reset(); }
-
-void RomMemoryHandler::save_state(std::ostream& os) const {
-    os.write(reinterpret_cast<const char*>(&m_latch_active), sizeof(m_latch_active));
-    os.write(reinterpret_cast<const char*>(&m_latch_value), sizeof(m_latch_value));
-
-    size_t patch_count = m_active_patches.size();
-    os.write(reinterpret_cast<const char*>(&patch_count), sizeof(patch_count));
-    if (patch_count > 0) {
-        os.write(reinterpret_cast<const char*>(m_active_patches.data()), sizeof(PatchEntry) * patch_count);
-    }
-}
-
-void RomMemoryHandler::load_state(std::istream& is) {
-    is.read(reinterpret_cast<char*>(&m_latch_active), sizeof(m_latch_active));
-    is.read(reinterpret_cast<char*>(&m_latch_value), sizeof(m_latch_value));
-
-    size_t patch_count = 0;
-    is.read(reinterpret_cast<char*>(&patch_count), sizeof(patch_count));
-
-    m_active_patches.resize(patch_count);
-    if (patch_count > 0) {
-        is.read(reinterpret_cast<char*>(m_active_patches.data()), sizeof(PatchEntry) * patch_count);
-    }
 }
 
 void RomMemoryHandler::log_rom_access(uint32_t address, uint32_t value, bool is_write) const {

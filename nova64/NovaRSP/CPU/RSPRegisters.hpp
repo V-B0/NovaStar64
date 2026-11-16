@@ -94,54 +94,6 @@ inline constexpr uint32_t StartValid = 0x400;
 inline constexpr uint32_t MI_INTR_SP = 0x01;
 
 // --- Named GPR references for readability ---
-class CGPRRegisters {
-public:
-    explicit CGPRRegisters(Word32 (&gpr)[32]) :
-        GPR_R0(gpr[0].UW), GPR_AT(gpr[1].UW), GPR_V0(gpr[2].UW), GPR_V1(gpr[3].UW), GPR_A0(gpr[4].UW),
-        GPR_A1(gpr[5].UW), GPR_A2(gpr[6].UW), GPR_A3(gpr[7].UW), GPR_T0(gpr[8].UW), GPR_T1(gpr[9].UW),
-        GPR_T2(gpr[10].UW), GPR_T3(gpr[11].UW), GPR_T4(gpr[12].UW), GPR_T5(gpr[13].UW), GPR_T6(gpr[14].UW),
-        GPR_T7(gpr[15].UW), GPR_S0(gpr[16].UW), GPR_S1(gpr[17].UW), GPR_S2(gpr[18].UW), GPR_S3(gpr[19].UW),
-        GPR_S4(gpr[20].UW), GPR_S5(gpr[21].UW), GPR_S6(gpr[22].UW), GPR_S7(gpr[23].UW), GPR_T8(gpr[24].UW),
-        GPR_T9(gpr[25].UW), GPR_K0(gpr[26].UW), GPR_K1(gpr[27].UW), GPR_GP(gpr[28].UW), GPR_SP(gpr[29].UW),
-        GPR_S8(gpr[30].UW), GPR_RA(gpr[31].UW) {}
-
-protected:
-    uint32_t& GPR_R0;
-    uint32_t& GPR_AT;
-    uint32_t& GPR_V0;
-    uint32_t& GPR_V1;
-    uint32_t& GPR_A0;
-    uint32_t& GPR_A1;
-    uint32_t& GPR_A2;
-    uint32_t& GPR_A3;
-    uint32_t& GPR_T0;
-    uint32_t& GPR_T1;
-    uint32_t& GPR_T2;
-    uint32_t& GPR_T3;
-    uint32_t& GPR_T4;
-    uint32_t& GPR_T5;
-    uint32_t& GPR_T6;
-    uint32_t& GPR_T7;
-    uint32_t& GPR_S0;
-    uint32_t& GPR_S1;
-    uint32_t& GPR_S2;
-    uint32_t& GPR_S3;
-    uint32_t& GPR_S4;
-    uint32_t& GPR_S5;
-    uint32_t& GPR_S6;
-    uint32_t& GPR_S7;
-    uint32_t& GPR_T8;
-    uint32_t& GPR_T9;
-    uint32_t& GPR_K0;
-    uint32_t& GPR_K1;
-    uint32_t& GPR_GP;
-    uint32_t& GPR_SP;
-    uint32_t& GPR_S8;
-    uint32_t& GPR_RA;
-
-private:
-    CGPRRegisters() = delete;
-};
 
 // --- Complete RSP register file ---
 class CRSPRegisters {

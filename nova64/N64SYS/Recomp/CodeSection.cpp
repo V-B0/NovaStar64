@@ -198,59 +198,6 @@ CodeSection& CodeSection::operator=(CodeSection&& other) noexcept {
 
 // --- Code Generation (adapted from P64's GenerateNativeCode) ---
 
-CodeSection::GenerationResult CodeSection::generate_native_code() {
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    if (!parent_block_) {
-        log_generation("ERROR: No parent block");
-        return GenerationResult::InvalidSection;
-    }
-
-    log_generation("=== Generating native code for section 0x" + std::format("{:08X}", metadata_.entry_pc) + " ===");
-
-    // Step 1: Analyze the section
-    auto analysis = analyze_section();
-    if (!analysis.has_value()) {
-        log_generation("ERROR: Section analysis failed");
-        return GenerationResult::FailedAnalysis;
-    }
-
-    // Step 2: Build control flow graph from analysis
-    build_control_flow_graph(analysis.value());
-
-    // Step 3: Compute dominance if we have multiple basic blocks
-    if (analysis->basic_blocks.size() > 1) {
-        compute_dominance(analysis.value());
-    }
-
-    // Step 4: Apply optimizations if enabled
-    if (config_.enable_optimizations) {
-        auto opt_start = std::chrono::high_resolution_clock::now();
-        apply_optimizations();
-        auto opt_end = std::chrono::high_resolution_clock::now();
-        stats_.optimization_time_ns =
-            static_cast<size_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(opt_end - opt_start).count());
-    }
-
-    // Step 5: Generate native code
-    if (!generate_code(analysis.value())) {
-        log_generation("ERROR: Native code generation failed");
-        return GenerationResult::FailedCodeGen;
-    }
-
-    flags_ = flags_ | SectionFlags::Compiled;
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    stats_.generation_time_ns =
-        static_cast<size_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count());
-    stats_.mips_instruction_count = metadata_.instruction_count;
-
-    log_generation("Native code generation complete: " + std::to_string(stats_.native_code_size) + " bytes, " +
-                   std::to_string(stats_.mips_instruction_count) + " MIPS instructions");
-
-    return GenerationResult::Success;
-}
-
 // --- Section Linkage (adapted from P64's GenerateSectionLinkage) ---
 
 // --- Section Inlining ---
@@ -668,22 +615,6 @@ void CodeSection::log_generation(const std::string& message) {
     debug_log_ += "[Section " + std::to_string(static_cast<uint32_t>(id_)) + "] " + message + "\n";
 }
 
-void CodeSection::update_flags() {
-    if (!successors_.empty()) {
-        if (successors_.size() > 1) {
-            flags_ = flags_ | SectionFlags::HasBranch;
-        } else {
-            flags_ = flags_ | SectionFlags::HasJump;
-        }
-    }
-
-    if (metadata_.is_hot()) {
-        flags_ = flags_ | SectionFlags::HotPath;
-    } else if (metadata_.is_cold()) {
-        flags_ = flags_ | SectionFlags::ColdPath;
-    }
-}
-
 // --- Optimization sub-passes (private) ---
 
 // --- CodeGenerator Implementation (nested class) ---
@@ -730,8 +661,6 @@ bool CodeSection::CodeGenerator::generate_instruction(uint32_t address, uint32_t
 
 SectionGraph::SectionGraph() = default;
 SectionGraph::~SectionGraph() = default;
-
-void SectionGraph::compute_dominance_tree() { compute_dominators(); }
 
 void SectionGraph::compute_dominators() {
     // Iterative dominator computation (Cooper, Harvey, Kennedy)
@@ -808,60 +737,3 @@ void SectionGraph::compute_dominators() {
 // --- SectionGraph optimization ---
 
 // --- Serialization ---
-
-SectionGraph::GraphStats SectionGraph::statistics() const {
-    GraphStats stats;
-    stats.node_count = nodes_.size();
-    stats.edge_count = edges_.size();
-
-    if (!nodes_.empty()) {
-        size_t total_out = 0;
-        for (const auto& [id, node] : nodes_) {
-            total_out += node.outgoing_edges.size();
-        }
-        stats.average_branching_factor = static_cast<double>(total_out) / static_cast<double>(nodes_.size());
-    }
-
-    // SCC and loop counts are not tracked.
-    stats.scc_count = 0;
-    stats.loop_count = 0;
-
-    // Compute max depth via BFS from entry
-    if (!nodes_.empty()) {
-        NodeId entry = nodes_.begin()->first;
-        for (const auto& [id, node] : nodes_) {
-            if (node.section &&
-                (!nodes_.at(entry).section || node.section->entry_pc() < nodes_.at(entry).section->entry_pc())) {
-                entry = id;
-            }
-        }
-
-        std::unordered_map<uint32_t, size_t> depth;
-        std::queue<NodeId> queue;
-        queue.push(entry);
-        depth[static_cast<uint32_t>(entry)] = 0;
-
-        while (!queue.empty()) {
-            NodeId current = queue.front();
-            queue.pop();
-            uint32_t current_val = static_cast<uint32_t>(current);
-
-            auto it = nodes_.find(current);
-            if (it == nodes_.end()) continue;
-
-            for (auto eid : it->second.outgoing_edges) {
-                auto edge_it = edges_.find(eid);
-                if (edge_it == edges_.end()) continue;
-
-                uint32_t target_val = static_cast<uint32_t>(edge_it->second.target);
-                if (!depth.count(target_val)) {
-                    depth[target_val] = depth[current_val] + 1;
-                    stats.max_depth = std::max(stats.max_depth, depth[target_val]);
-                    queue.push(edge_it->second.target);
-                }
-            }
-        }
-    }
-
-    return stats;
-}

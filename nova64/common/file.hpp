@@ -128,8 +128,6 @@ public:
     }
 
     [[nodiscard]] size_t write(const void* buffer, size_t count);
-    [[nodiscard]] size_t write(const std::string& text);
-    [[nodiscard]] size_t write(const std::vector<uint8_t>& data);
 
     template <typename T> [[nodiscard]] size_t write(const T& value) {
         static_assert(std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>,
@@ -142,15 +140,8 @@ public:
 
     // File properties
     [[nodiscard]] int64_t size() const;
-    void resize(int64_t new_size);
     /// Forces written data to disk (FlushFileBuffers / fsync).
     void flush();
-
-    [[nodiscard]] static bool exists(const std::string& filename);
-    [[nodiscard]] static bool remove(const std::string& filename);
-    [[nodiscard]] static bool rename(const std::string& old_name, const std::string& new_name);
-
-    void clear_error() noexcept;
 
     [[nodiscard]] std::string filename() const;
 

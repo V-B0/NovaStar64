@@ -41,8 +41,6 @@ enum class DiskFormat : uint8_t;
 enum class DiskType : uint8_t;
 enum class CountryCode : uint8_t;
 struct DataView;
-struct DiskGeometry;
-struct DiskAddress;
 class DiskImage;
 class DiskError;
 class N64Disk;
@@ -188,24 +186,6 @@ std::string to_string(PipelineStage stage);
 } // namespace N64Types
 
 // --- Common Data Types (from Types.hpp) ---
-
-/**
- * @union MIPS_WORD
- * @brief 32-bit MIPS word with various access types
- */
-union MIPS_WORD {
-    int32_t W;
-    uint32_t UW;
-    int16_t HW[2];
-    uint16_t UHW[2];
-    int8_t B[4];
-    uint8_t UB[4];
-    float F;
-
-    MIPS_WORD() : UW(0) {}
-    explicit MIPS_WORD(uint32_t val) : UW(val) {}
-    explicit MIPS_WORD(int32_t val) : W(val) {}
-};
 
 /**
  * @union MIPS_DWORD

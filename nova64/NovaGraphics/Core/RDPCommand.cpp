@@ -13,12 +13,6 @@ namespace Nova64::Video {
 
 // --- Helper Functions ---
 
-uint32_t RDPCommandDecoder::ReadWord(uint32_t address) const {
-    if (!m_rdram || address + 3 >= m_rdramSize) return 0;
-    // RDRAM is stored in native 32-bit word order (PJ64-style)
-    return *reinterpret_cast<const uint32_t*>(m_rdram + address);
-}
-
 // --- Command ID Decoding ---
 
 RDPCommandID RDPCommandDecoder::DecodeCommand(const uint32_t* cmdWords, int /*wordCount*/) {
@@ -121,13 +115,6 @@ void RDPCommandDecoder::DecodeSetTextureImage(const uint32_t* words, ImageDescri
     img.size = static_cast<ImageSize>((w0 >> 19) & 0x03);
     img.width = (w0 & 0xFFF) + 1;
     img.address = w1 & 0x03FFFFFF;
-}
-
-void RDPCommandDecoder::DecodeSetFillColor(const uint32_t* words, RDPColor& color) {
-    // Fill color is packed differently depending on framebuffer format:
-    // 16-bit: two 16-bit pixels packed into 32 bits
-    // 32-bit: one RGBA8888 pixel
-    color.FromCommand(words[1]);
 }
 
 void RDPCommandDecoder::DecodeSetFogColor(const uint32_t* words, RDPColor& color) { color.FromCommand(words[1]); }
@@ -453,25 +440,6 @@ RDPCommandBuffer::~RDPCommandBuffer() { delete[] m_buffer; }
 void RDPCommandBuffer::Reset() {
     m_readOffset = 0;
     m_writeOffset = 0;
-}
-
-void RDPCommandBuffer::Push(const uint32_t* words, int count) {
-    if (m_writeOffset + count > m_capacity) {
-        Compact();
-        if (m_writeOffset + count > m_capacity) {
-            // Buffer overflow - discard old data
-            m_readOffset = 0;
-            m_writeOffset = 0;
-        }
-    }
-
-    std::memcpy(m_buffer + m_writeOffset, words, count * sizeof(uint32_t));
-    m_writeOffset += count;
-}
-
-void RDPCommandBuffer::Advance(int wordCount) {
-    m_readOffset += wordCount;
-    if (m_readOffset > m_writeOffset) m_readOffset = m_writeOffset;
 }
 
 void RDPCommandBuffer::Compact() {

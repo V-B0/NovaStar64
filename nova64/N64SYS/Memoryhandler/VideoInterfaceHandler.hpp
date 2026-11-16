@@ -75,23 +75,6 @@ enum class Register : uint32_t {
     REGISTER_COUNT = 22
 };
 
-// Video timing constants
-struct Timing {
-    static constexpr uint32_t NTSC_WIDTH = 640;
-    static constexpr uint32_t NTSC_HEIGHT = 480;
-    static constexpr uint32_t NTSC_VBLANK_START = 480;
-    static constexpr uint32_t NTSC_VBLANK_END = 525;
-    static constexpr uint32_t NTSC_HBLANK_START = 640;
-    static constexpr uint32_t NTSC_HBLANK_END = 720;
-
-    static constexpr uint32_t PAL_WIDTH = 640;
-    static constexpr uint32_t PAL_HEIGHT = 576;
-    static constexpr uint32_t PAL_VBLANK_START = 576;
-    static constexpr uint32_t PAL_VBLANK_END = 625;
-    static constexpr uint32_t PAL_HBLANK_START = 640;
-    static constexpr uint32_t PAL_HBLANK_END = 720;
-};
-
 // Helper functions
 constexpr ColorDepth get_color_depth(uint32_t status) { return static_cast<ColorDepth>((status >> 0) & 0x3); }
 
@@ -240,14 +223,11 @@ public:
 
     // State management
     void reset();
-    void save_state(std::ostream& os) const;
-    void load_state(std::istream& is);
     /// Save states and rewind (see StateArchive.hpp).
     void SerializeState(Nova64::StateArchive& ar);
 
     // Video information
     [[nodiscard]] VideoMode get_current_video_mode() const;
-    [[nodiscard]] std::string get_register_dump() const;
     [[nodiscard]] uint32_t get_current_scanline() const;
     [[nodiscard]] uint32_t get_framebuffer_address() const;
     [[nodiscard]] uint32_t get_framebuffer_width() const;
@@ -352,9 +332,4 @@ private:
 
     // Logging
     void log_video_mode_change(const VideoMode& old_mode, const VideoMode& new_mode) const;
-    void log_register_access(uint32_t address, uint32_t value, bool is_write) const;
-
-    // System event handlers
-    void on_system_reset();
-    void on_game_state_loaded();
 };

@@ -427,11 +427,6 @@ void PifRamHandler::CicNus6105(const char* Challenge, char* Response, int Length
 
 // --- Accessors & Stubs ---
 
-void PifRamHandler::save_state(std::ostream& os) const {}
-void PifRamHandler::load_state(std::istream& is) {}
-
-void PifRamHandler::on_system_reset() {}
-
 // --- Controller Pak Implementation ---
 
 namespace {

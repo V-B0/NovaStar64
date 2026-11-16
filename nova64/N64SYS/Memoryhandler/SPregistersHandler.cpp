@@ -534,8 +534,6 @@ void SRegistersHandler::ClearHalt() {
     s_inClearHalt = false;
 }
 
-void SRegistersHandler::DmaReadDone(uint32_t End) { SP_STATUS &= ~SPStatus::DMA_BUSY; }
-
 void SRegistersHandler::SystemReset() {
     std::memset(m_SPRegs, 0, sizeof(m_SPRegs));
 

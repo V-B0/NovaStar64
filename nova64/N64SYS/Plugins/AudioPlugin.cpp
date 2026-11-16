@@ -328,8 +328,6 @@ private:
 
 // --- Factory functions ---
 
-std::unique_ptr<AudioPlugin> CreateDefaultAudioPlugin() { return std::make_unique<DefaultAudioPlugin>(); }
-
 std::unique_ptr<AudioPlugin> CreateAudioPluginFromDLL(const std::string& path) {
     return std::make_unique<DynLibAudioPlugin>(path);
 }

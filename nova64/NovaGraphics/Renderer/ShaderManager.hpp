@@ -333,7 +333,6 @@ public:
 
     void Initialize(uint32_t maxShaders = 4096);
     void Shutdown();
-    void Clear();
 
     /// Set a callback invoked before each shader is removed from the cache.
     /// The callback must delete the backend GPU program (e.g. glDeleteProgram).
@@ -343,11 +342,6 @@ public:
     const CompiledShader* Find(const CombinerKey& key) const;
 
     void Insert(const CombinerKey& key, CompiledShader&& shader);
-
-    bool Remove(const CombinerKey& key);
-
-    // Evicts the least recently used shaders.
-    void EvictLRU(int count = 1);
 
     // Persistence: save/load shader cache to/from disk
     bool SaveToDisk(const std::string& path) const;
@@ -423,28 +417,8 @@ public:
     ~ShaderGenerator();
 
     void Initialize(ShaderLanguage language);
-    void Shutdown();
 
     ShaderTemplate GenerateShader(const CombinerKey& key) const;
-
-    std::string GenerateVertexShader(uint64_t features) const;
-
-    // The fragment shader carries the combiner logic.
-    std::string GenerateFragmentShader(const CombinerKey& key) const;
-
-    // For wireframe debug or point sprite expansion.
-    std::string GenerateGeometryShader(uint64_t features) const;
-
-    // For the shadow/depth pass.
-    std::string GenerateDepthOnlyVertex() const;
-    std::string GenerateDepthOnlyFragment() const;
-
-    std::string GeneratePostProcessVertex() const;
-    std::string GeneratePostProcessFragment(uint64_t features) const;
-
-    // For debug rendering overlays.
-    std::string GenerateUIVertex() const;
-    std::string GenerateUIFragment() const;
 
     ShaderLanguage GetLanguage() const { return m_language; }
 
@@ -519,7 +493,6 @@ public:
     void SetConvertK(const int16_t convertK[6]);
     void SetScreenSize(float width, float height);
     void SetFrameCount(uint32_t frame);
-    void SetResolutionScale(float scaleX, float scaleY);
     void SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1);
     void SetScreenScale(float scaleX, float scaleY);
     void SetKeyWidth(float r, float g, float b);
@@ -532,12 +505,6 @@ public:
 
     bool SaveCache(const std::string& path);
     bool LoadCache(const std::string& path);
-
-    const ShaderCacheStats& GetStats() const;
-    void ResetStats();
-
-    void OnFrameBegin();
-    void OnFrameEnd();
 
     // Set the backend shader compiler (must be called after Initialize)
     void SetCompiler(std::unique_ptr<IShaderCompiler> compiler) {

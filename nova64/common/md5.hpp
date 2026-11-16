@@ -55,52 +55,6 @@ namespace fs = std::filesystem;
 namespace Common {
 
 /**
- * @struct MD5Digest
- * @brief Structure to hold a 16-byte MD5 digest
- */
-struct MD5Digest {
-    uint8_t digest[16];
-
-    MD5Digest() { Reset(); }
-
-    void Reset() { std::memset(digest, 0, sizeof(digest)); }
-
-    bool IsClear() const {
-        int isClear = 0;
-        for (int i = 0; i < 16; i++) {
-            isClear += digest[i];
-        }
-        return (isClear == 0);
-    }
-
-    std::string ToString() const {
-        char s[33];
-        std::memset(s, 0, sizeof(s));
-        for (int i = 0; i < 16; i++) {
-            std::snprintf(s + i * 2, 3, "%02x", digest[i]);
-        }
-        s[32] = '\0';
-        return std::string(s);
-    }
-
-    std::string ToUpperString() const {
-        char s[33];
-        std::memset(s, 0, sizeof(s));
-        for (int i = 0; i < 16; i++) {
-            std::snprintf(s + i * 2, 3, "%02X", digest[i]);
-        }
-        s[32] = '\0';
-        return std::string(s);
-    }
-
-    bool operator==(const MD5Digest& other) const { return std::memcmp(digest, other.digest, 16) == 0; }
-
-    bool operator!=(const MD5Digest& other) const { return !(*this == other); }
-
-    bool operator<(const MD5Digest& other) const { return std::memcmp(digest, other.digest, 16) < 0; }
-};
-
-/**
  * @class MD5
  * @brief MD5 Message-Digest Algorithm implementation
  */

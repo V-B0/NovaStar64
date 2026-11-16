@@ -51,13 +51,6 @@ public:
      */
     bool Write32(uint32_t addr, uint32_t val, uint32_t mask) override;
 
-    /**
-     * @brief Set RDRAM pointer for DMA operations
-     * @param rdram Pointer to RDRAM
-     * @param size RDRAM size in bytes
-     */
-    void SetRDRAM(uint8_t* rdram, uint32_t size);
-
 private:
     // Initialization
     void InitializeDiskInterface();

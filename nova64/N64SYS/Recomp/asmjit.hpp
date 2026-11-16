@@ -347,61 +347,7 @@ using Mem = asmjit::arm::Mem;
 
 // --- Error Handling Helper ---
 
-/**
- * @class AsmJitErrorHandler
- * @brief Custom error handler for AsmJit operations
- * 
- * Captures and logs AsmJit errors with detailed information.
- * Provides better diagnostics than Project64's basic error handling.
- */
-class AsmJitErrorHandler {
-public:
-    AsmJitErrorHandler() = default;
-    virtual ~AsmJitErrorHandler() = default;
-
-    // Mirrors the asmjit::ErrorHandler callback signature
-    virtual void handleError(asmjit::Error err, const char* message, asmjit::BaseEmitter* /*origin*/) {
-        m_lastError = err;
-        m_lastMessage = message ? message : "Unknown AsmJit error";
-
-        Log::errorf("AsmJit Error [%u]: %s", static_cast<uint32_t>(err), m_lastMessage.c_str());
-    }
-
-    [[nodiscard]] asmjit::Error getLastError() const noexcept { return m_lastError; }
-    [[nodiscard]] const std::string& getLastMessage() const noexcept { return m_lastMessage; }
-
-    [[nodiscard]] bool hasError() const noexcept { return m_lastError != asmjit::kErrorOk; }
-
-    void clearError() noexcept {
-        m_lastError = asmjit::kErrorOk;
-        m_lastMessage.clear();
-    }
-
-private:
-    asmjit::Error m_lastError = asmjit::kErrorOk;
-    std::string m_lastMessage;
-};
-
 // --- Code Buffer Manager ---
-
-/**
- * @class CodeBufferInfo
- * @brief Information about generated code buffer
- * 
- * Tracks statistics and metadata for recompiled code blocks.
- */
-struct CodeBufferInfo {
-    void* baseAddress = nullptr;
-    size_t codeSize = 0;
-    size_t capacity = 0;
-    uint32_t instructionCount = 0;
-
-    [[nodiscard]] bool isValid() const noexcept { return baseAddress != nullptr && codeSize > 0; }
-
-    [[nodiscard]] void* getEndAddress() const noexcept { return static_cast<uint8_t*>(baseAddress) + codeSize; }
-
-    [[nodiscard]] size_t getUsedPercentage() const noexcept { return capacity > 0 ? (codeSize * 100) / capacity : 0; }
-};
 
 // --- Helper Functions ---
 

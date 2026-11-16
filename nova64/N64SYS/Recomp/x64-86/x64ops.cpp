@@ -103,10 +103,6 @@ void CX64Ops::InitializeSymbols() {
 
 // --- Logging ---
 
-void CX64Ops::SetLogCallback(std::function<void(std::string_view)> callback) noexcept {
-    m_LogCallback = std::move(callback);
-}
-
 asmjit::Error CX64Ops::_log(const char* data, size_t size) noexcept {
     if (size == SIZE_MAX) {
         size = std::strlen(data);

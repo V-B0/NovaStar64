@@ -99,10 +99,6 @@ void CRSPSystem::Reset(RSP_INFO& info) {
     }
 }
 
-void CRSPSystem::RomClosed() {
-    // Nothing to release per game.
-}
-
 // --- Main Execution Loop (Interpreter) ---
 void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
     RSP_Running = 1;
@@ -284,13 +280,6 @@ void CRSPSystem::SetupSyncCPU() {
     copyReg(m_SyncSystem->m_DPC_TMEM_REG, m_DPC_TMEM_REG);
 }
 
-CRSPSystem* CRSPSystem::SyncSystem() const {
-    if (m_SyncSystem == nullptr) {
-        const_cast<CRSPSystem*>(this)->SetupSyncCPU();
-    }
-    return m_SyncSystem;
-}
-
 // --- Aligned allocation (16-byte alignment for SIMD) ---
 
 void* CRSPSystem::operator new(size_t size) {
@@ -316,74 +305,6 @@ void CRSPSystem::operator delete(void* ptr) {
 // --- Null callbacks (used before real ones are set) ---
 
 // --- DMA transfers between SP memory and RDRAM ---
-
-void CRSPSystem::SP_DMA_READ() {
-    // DMA from RDRAM → IMEM/DMEM
-    if (m_SP_MEM_ADDR_REG == nullptr || m_SP_DRAM_ADDR_REG == nullptr || m_SP_RD_LEN_REG == nullptr ||
-        m_RDRAM == nullptr)
-        return;
-
-    uint32_t mem_addr = *m_SP_MEM_ADDR_REG & 0x1FFF;
-    uint32_t dram_addr = *m_SP_DRAM_ADDR_REG & 0x7FFFFF;
-    uint32_t length = (*m_SP_RD_LEN_REG & 0xFFF) + 1;
-    uint32_t count = ((*m_SP_RD_LEN_REG >> 12) & 0xFF) + 1;
-    uint32_t skip = (*m_SP_RD_LEN_REG >> 20) & 0xFFF;
-
-    // Determine target: bit 12 of mem_addr selects IMEM vs DMEM
-    uint8_t* target = (mem_addr & 0x1000) ? m_IMEM : m_DMEM;
-    mem_addr &= 0xFFF;
-
-    if (target == nullptr) return;
-
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t copy_len = std::min<uint32_t>(length, 0x1000 - mem_addr);
-        copy_len = std::min<uint32_t>(copy_len, m_RdramSize - dram_addr);
-
-        if (copy_len > 0) std::memcpy(target + mem_addr, m_RDRAM + dram_addr, copy_len);
-
-        // Advance for multi-line DMA
-        dram_addr += length + skip;
-        dram_addr &= 0x7FFFFF;
-        mem_addr += length;
-        mem_addr &= 0xFFF;
-    }
-
-    if (m_SP_DMA_BUSY_REG) *m_SP_DMA_BUSY_REG = 0;
-    if (m_SP_DMA_FULL_REG) *m_SP_DMA_FULL_REG = 0;
-}
-
-void CRSPSystem::SP_DMA_WRITE() {
-    // DMA from IMEM/DMEM → RDRAM
-    if (m_SP_MEM_ADDR_REG == nullptr || m_SP_DRAM_ADDR_REG == nullptr || m_SP_WR_LEN_REG == nullptr ||
-        m_RDRAM == nullptr)
-        return;
-
-    uint32_t mem_addr = *m_SP_MEM_ADDR_REG & 0x1FFF;
-    uint32_t dram_addr = *m_SP_DRAM_ADDR_REG & 0x7FFFFF;
-    uint32_t length = (*m_SP_WR_LEN_REG & 0xFFF) + 1;
-    uint32_t count = ((*m_SP_WR_LEN_REG >> 12) & 0xFF) + 1;
-    uint32_t skip = (*m_SP_WR_LEN_REG >> 20) & 0xFFF;
-
-    const uint8_t* source = (mem_addr & 0x1000) ? m_IMEM : m_DMEM;
-    mem_addr &= 0xFFF;
-
-    if (source == nullptr) return;
-
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t copy_len = std::min<uint32_t>(length, 0x1000 - mem_addr);
-        copy_len = std::min<uint32_t>(copy_len, m_RdramSize - dram_addr);
-
-        if (copy_len > 0) std::memcpy(m_RDRAM + dram_addr, source + mem_addr, copy_len);
-
-        dram_addr += length + skip;
-        dram_addr &= 0x7FFFFF;
-        mem_addr += length;
-        mem_addr &= 0xFFF;
-    }
-
-    if (m_SP_DMA_BUSY_REG) *m_SP_DMA_BUSY_REG = 0;
-    if (m_SP_DMA_FULL_REG) *m_SP_DMA_FULL_REG = 0;
-}
 
 // --- Debug: dump sync state to buffer ---
 

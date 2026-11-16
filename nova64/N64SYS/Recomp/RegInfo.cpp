@@ -193,10 +193,6 @@ bool CRegInfo::SupportsFeature(std::string_view /*feature*/) const {
     return false;
 }
 
-IRegisterAllocator* CRegInfo::GetAllocator() noexcept { return m_Allocator.get(); }
-
-const IRegisterAllocator* CRegInfo::GetAllocator() const noexcept { return m_Allocator.get(); }
-
 // --- Static methods ---
 
 PlatformType CRegInfo::DetectPlatform() noexcept {
@@ -240,9 +236,6 @@ static PlatformInfo s_CurrentPlatformInfo(CRegInfo::DetectPlatform(),
 );
 
 // --- UnsupportedPlatformException ---
-
-UnsupportedPlatformException::UnsupportedPlatformException(PlatformType platform) :
-    std::runtime_error("Unsupported platform: " + CRegInfo::GetPlatformDescription(platform)), m_Platform(platform) {}
 
 // --- RegisterCustomPlatform ---
 

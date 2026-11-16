@@ -139,9 +139,6 @@ public:
     std::string GetABIName() const override;
     bool SupportsFeature(std::string_view feature) const override;
 
-    IRegisterAllocator* GetAllocator() noexcept;
-    const IRegisterAllocator* GetAllocator() const noexcept;
-
     // Debug and statistics
     struct Statistics {
         size_t allocations = 0;
@@ -166,15 +163,6 @@ private:
     std::unique_ptr<IRegisterAllocator> m_Allocator;
 
     Statistics m_Stats;
-};
-
-class UnsupportedPlatformException : public std::runtime_error {
-public:
-    explicit UnsupportedPlatformException(PlatformType platform);
-    PlatformType GetPlatform() const noexcept { return m_Platform; }
-
-private:
-    PlatformType m_Platform;
 };
 
 } // namespace Recompiler

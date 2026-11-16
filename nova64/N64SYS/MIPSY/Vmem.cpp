@@ -1291,48 +1291,7 @@ void MipsMemoryVM::ISViewer_WriteByte(uint32_t pAddr, uint8_t value) {
 
 // --- Address Translation ---
 
-bool MipsMemoryVM::VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const {
-    if (m_TLB_ReadMap[vAddr >> 12] == static_cast<uint32_t>(-1)) {
-        return false;
-    }
-    pAddr = m_TLB_ReadMap[vAddr >> 12] + vAddr;
-    return true;
-}
-
 // --- TLB Notification Functions ---
-
-void MipsMemoryVM::TLB_Unmaped(uint32_t vAddr, uint32_t len) {
-    uint64_t end = static_cast<uint64_t>(vAddr) + len;
-
-    for (uint64_t address = vAddr; address < end && address >= vAddr; address += 0x1000) {
-        size_t index = static_cast<size_t>(address >> 12);
-
-        // Check if address is in KSEG0/KSEG1 (should remain mapped)
-        if (address >= 0x80000000 && address < 0x80000000 + m_AllocatedRdramSize) {
-            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
-            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
-            m_TLB_ReadMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-            m_TLB_WriteMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-        } else if (address >= 0xA0000000 && address < 0xA0000000 + m_AllocatedRdramSize) {
-            m_MemoryReadMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
-            m_MemoryWriteMap[address >> 12] = reinterpret_cast<size_t>((m_RDRAM + (address & 0x007FFFFF)) - address);
-            m_TLB_ReadMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-            m_TLB_WriteMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-        } else if (address >= 0x80000000 && address < 0xC0000000) {
-            // KSEG0/KSEG1 unmapped region
-            m_MemoryReadMap[index] = static_cast<size_t>(-1);
-            m_MemoryWriteMap[index] = static_cast<size_t>(-1);
-            m_TLB_ReadMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-            m_TLB_WriteMap[address >> 12] = static_cast<uint32_t>((address & 0x1FFFFFFF) - address);
-        } else {
-            // Fully unmap
-            m_MemoryReadMap[index] = static_cast<size_t>(-1);
-            m_MemoryWriteMap[index] = static_cast<size_t>(-1);
-            m_TLB_ReadMap[index] = static_cast<uint32_t>(-1);
-            m_TLB_WriteMap[index] = static_cast<uint32_t>(-1);
-        }
-    }
-}
 
 // --- Memory Map Management ---
 

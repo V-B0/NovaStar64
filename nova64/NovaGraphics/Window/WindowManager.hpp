@@ -46,13 +46,6 @@ struct WindowEventData {
 
 // --- DISPLAY MODE ---
 
-struct DisplayMode {
-    int32_t width;
-    int32_t height;
-    int32_t refreshRate;
-    uint32_t pixelFormat;
-};
-
 // --- WINDOW CONFIGURATION ---
 
 struct WindowConfig {

@@ -32,14 +32,11 @@ public:
 
     /// Decimal, or hexadecimal with a 0x prefix. Empty if the value is not entirely a number.
     [[nodiscard]] std::optional<int32_t> GetNumber(std::string_view section, std::string_view key) const;
-    [[nodiscard]] int32_t GetNumber(std::string_view section, std::string_view key, int32_t defaultValue) const;
 
     /// Accepts 1/0, true/false, yes/no and on/off, case-insensitively.
     [[nodiscard]] std::optional<bool> GetBool(std::string_view section, std::string_view key) const;
-    [[nodiscard]] bool GetBool(std::string_view section, std::string_view key, bool defaultValue) const;
 
     void SetString(std::string_view section, std::string_view key, std::string_view value);
-    void SetBool(std::string_view section, std::string_view key, bool value);
 
     /// Writes pending changes to disk. A no-op when read-only or unmodified.
     /// Called automatically on destruction.

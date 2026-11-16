@@ -51,7 +51,4 @@ bool IsEnabled();
 /// Call once per VI frame, after the frame's work is done.
 void RecordFrame(const CN64System& system, uint64_t frameNumber);
 
-/// Flushes and closes the trace file. Safe to call when tracing is disabled.
-void Shutdown();
-
 } // namespace Nova64::Trace

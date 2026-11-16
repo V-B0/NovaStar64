@@ -30,7 +30,6 @@ std::unique_ptr<::Plugins::AudioPlugin> CreateNovaAudioPlugin();
 }
 
 namespace Plugins {
-std::unique_ptr<AudioPlugin> CreateDefaultAudioPlugin();
 std::unique_ptr<AudioPlugin> CreateAudioPluginFromDLL(const std::string& path);
 std::unique_ptr<InputPlugin> CreateDefaultInputPlugin();
 std::unique_ptr<InputPlugin> CreateInputPluginFromDLL(const std::string& path);
@@ -258,27 +257,6 @@ PluginBase* PluginManager::GetPlugin(PluginType type) const {
 // --- Configuration ---
 
 // --- Plugin Discovery ---
-
-PluginInfo PluginManager::GetPluginInfo(const std::string& path) const {
-    Log::debugf("PluginManager: Getting plugin info from %s", path.c_str());
-
-    PluginInfo info{};
-    info.Type = PluginType::Graphics;
-    info.Version = 0;
-    info.Name = std::filesystem::path(path).stem().string();
-
-    // Infer plugin type from filename convention
-    const auto stem = info.Name;
-    if (stem.find("RSP") != std::string::npos || stem.find("rsp") != std::string::npos) {
-        info.Type = PluginType::RSP;
-    } else if (stem.find("Audio") != std::string::npos || stem.find("audio") != std::string::npos) {
-        info.Type = PluginType::Audio;
-    } else if (stem.find("Input") != std::string::npos || stem.find("input") != std::string::npos) {
-        info.Type = PluginType::Input;
-    }
-
-    return info;
-}
 
 // --- Notifications ---
 

@@ -118,8 +118,6 @@ public:
     bool Init(const LoggerConfig& config);
     void Shutdown();
 
-    void SetConfig(const LoggerConfig& config);
-
     bool IsEnabled(LogLevel level, LogSubsystem sub) const noexcept;
     LogLevel GetEffectiveLevel(LogSubsystem sub) const noexcept;
 
@@ -127,8 +125,6 @@ public:
 
     void SetFrameNumber(uint32_t frame) { m_frameNumber.store(frame, std::memory_order_relaxed); }
     uint32_t GetFrameNumber() const { return m_frameNumber.load(std::memory_order_relaxed); }
-
-    void Flush();
 
     const LoggerStats& GetStats() const { return m_stats; }
 

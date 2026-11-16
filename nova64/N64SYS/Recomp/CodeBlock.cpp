@@ -931,32 +931,6 @@ CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const Analysis
     register_states_.fill({});
 }
 
-bool CodeBlock::CodeGenerator::generate_prologue() {
-    // Legacy/stub code generator.  The live recompiler path uses the
-    // architecture-specific *RecompilerOps backends; this nested helper only
-    // emits a host prologue on x86 and is a no-op elsewhere.
-#if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
-    assembler_.push(asmjit::x86::rbp);
-    assembler_.mov(asmjit::x86::rbp, asmjit::x86::rsp);
-#endif
-    return true;
-}
-
-bool CodeBlock::CodeGenerator::generate_epilogue() {
-#if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
-    assembler_.mov(asmjit::x86::rsp, asmjit::x86::rbp);
-    assembler_.pop(asmjit::x86::rbp);
-    assembler_.ret();
-#endif
-    return true;
-}
-
-bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32_t /*opcode*/) {
-    // Instruction code generation is done by the *RecompilerOps backends, not here.
-    generated_bytes_ += 4;
-    return true;
-}
-
 void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/) {}
 
 // --- Instruction Access ---
@@ -989,20 +963,6 @@ void CodeBlock::update_memory_snapshot() {
 }
 
 // --- Debug Information ---
-
-std::string CodeBlock::disassembly() const {
-    std::string result;
-    result.reserve(instructions_.size() * 40);
-
-    for (size_t i = 0; i < instructions_.size(); ++i) {
-        uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
-        R4300iInstruction instr(addr, instructions_[i]);
-        result += instr.GetFullString();
-        result += "\n";
-    }
-
-    return result;
-}
 
 // --- Linking and Patching ---
 
@@ -1093,8 +1053,6 @@ void CodeBlockCache::remove(uint32_t address) {
     }
 }
 
-void CodeBlockCache::invalidate(uint32_t address) { remove(address); }
-
 void CodeBlockCache::clear() {
     std::unique_lock lock(mutex_);
     blocks_.clear();
@@ -1103,16 +1061,6 @@ void CodeBlockCache::clear() {
     hot_lru_list_.clear();
     hot_lru_map_.clear();
     hot_block_count_ = 0;
-}
-
-CodeBlockCache::CacheStats CodeBlockCache::statistics() const {
-    std::lock_guard lock(stats_mutex_);
-    return stats_;
-}
-
-void CodeBlockCache::reset_statistics() {
-    std::lock_guard lock(stats_mutex_);
-    stats_.reset();
 }
 
 void CodeBlockCache::touch(uint32_t address, bool is_hit) {
@@ -1148,14 +1096,6 @@ void CodeBlockCache::evict_oldest() {
     std::lock_guard lock(stats_mutex_);
     stats_.evictions++;
     stats_.current_blocks = blocks_.size();
-}
-
-void CodeBlockCache::promote_to_hot(uint32_t address) {
-    auto it = blocks_.find(address);
-    if (it != blocks_.end() && !it->second.is_hot) {
-        it->second.is_hot = true;
-        hot_block_count_++;
-    }
 }
 
 // --- CodeBlockFactory Implementation ---

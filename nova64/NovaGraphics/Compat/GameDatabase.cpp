@@ -83,22 +83,6 @@ void GameDatabase::UpdateProfile(const std::string& gameId, const GameProfile& p
     }
 }
 
-GameDatabase::DatabaseStats GameDatabase::GetStats() const {
-    DatabaseStats stats;
-    stats.total = static_cast<int>(m_profiles.size());
-    for (const auto& p : m_profiles) {
-        switch (p.rating) {
-        case CompatRating::Perfect:  stats.perfect++; break;
-        case CompatRating::Playable: stats.playable++; break;
-        case CompatRating::InGame:   stats.inGame++; break;
-        case CompatRating::Menus:    stats.menus++; break;
-        case CompatRating::Intro:    stats.intro++; break;
-        case CompatRating::Nothing:  stats.nothing++; break;
-        }
-    }
-    return stats;
-}
-
 // --- Custom Profile I/O ---
 
 bool GameDatabase::LoadCustomProfiles(const std::string& path) {

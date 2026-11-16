@@ -40,28 +40,6 @@ VkFormat ToVkFormat(TextureFormat f) {
     }
 }
 
-uint32_t BytesPerPixel(TextureFormat f) {
-    switch (f) {
-    case TextureFormat::RGBA8:           return 4;
-    case TextureFormat::RGB8:            return 3;
-    case TextureFormat::RGBA4:           return 2;
-    case TextureFormat::RGB5A1:          return 2;
-    case TextureFormat::R8:              return 1;
-    case TextureFormat::RG8:             return 2;
-    case TextureFormat::RGBA16F:         return 8;
-    case TextureFormat::RGBA32F:         return 16;
-    case TextureFormat::Depth16:         return 2;
-    case TextureFormat::Depth24:         return 4;
-    case TextureFormat::Depth32F:        return 4;
-    case TextureFormat::Depth24Stencil8: return 4;
-    case TextureFormat::IA16:            return 2;
-    case TextureFormat::I8:              return 1;
-    case TextureFormat::CI4:             return 1;
-    case TextureFormat::CI8:             return 1;
-    default:                             return 0;
-    }
-}
-
 // --- Helpers ---
 
 namespace {

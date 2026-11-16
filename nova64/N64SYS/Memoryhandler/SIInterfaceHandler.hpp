@@ -133,18 +133,8 @@ public:
     [[nodiscard]] bool Read32(uint32_t address, uint32_t& value) override;
     [[nodiscard]] bool Write32(uint32_t address, uint32_t value, uint32_t mask) override;
 
-    // DMA control
-    void process_dma_cycles(uint64_t current_cycle);
-    void cancel_dma();
-
     // State management
     void reset();
-    void save_state(std::ostream& os) const;
-    void load_state(std::istream& is);
-
-    // Debug information
-    [[nodiscard]] std::string get_dma_status() const;
-    [[nodiscard]] std::string get_register_dump() const;
 
     // Statistics
     struct Statistics {
@@ -167,7 +157,6 @@ public:
 
     // Control
     [[nodiscard]] bool is_dma_active() const { return m_dma_state.active; }
-    void force_dma_completion();
     /// Save states and rewind (see StateArchive.hpp).
     void SerializeState(Nova64::StateArchive& ar);
 
@@ -203,17 +192,6 @@ private:
     // Address validation
     [[nodiscard]] bool validate_dma_address(uint32_t dram_addr) const;
 
-    // Timing calculations
-    [[nodiscard]] uint64_t calculate_dma_duration() const;
-    [[nodiscard]] uint64_t get_current_cycle() const;
-
-    void handle_status_register_write(uint32_t value, uint32_t mask);
-
-    // Logging
-    void log_dma_start(const DMAState& state) const;
     void log_dma_complete(const DMAState& state) const;
     void log_register_access(uint32_t address, uint32_t value, bool is_write) const;
-
-    // System event handlers
-    void on_system_reset();
 };

@@ -198,14 +198,6 @@ constexpr uint8_t G_MV2_MATRIX = 14;
 
 // --- Microcode Signature (for detection from IMEM) ---
 
-struct MicrocodeSignature {
-    MicrocodeType type;
-    uint32_t crc;            // CRC of the microcode IMEM data
-    uint32_t textLength;     // Size of microcode text in bytes
-    const char* name;        // Human-readable name
-    const char* description; // Additional info (e.g., "Zelda OoT v1.2")
-};
-
 /// Microcode feature capabilities
 struct MicrocodeCapabilities {
     MicrocodeType type;

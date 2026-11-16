@@ -1835,20 +1835,6 @@ void RDPProcessor::FlushBatch() {
     m_batch.Reset();
 }
 
-bool RDPProcessor::NeedsBatchFlush(const DrawCall& newCall) const {
-    if (m_batch.drawCalls.empty()) return false;
-
-    const auto& lastCall = m_batch.drawCalls.back();
-
-    // Different render mode requires flush
-    if (lastCall.combineMode != newCall.combineMode) return true;
-    if (lastCall.otherModeH != newCall.otherModeH) return true;
-    if (lastCall.otherModeL != newCall.otherModeL) return true;
-    if (lastCall.type != newCall.type) return true;
-
-    return false;
-}
-
 void RDPProcessor::OnFrameEnd() {
     FlushBatch();
 
@@ -1871,15 +1857,6 @@ void RDPProcessor::OnFrameEnd() {
 }
 
 // --- Frame Buffer Access ---
-
-void RDPProcessor::GetFrameBufferInfo(FrameBufferInfo* info, int maxBuffers) const {
-    if (maxBuffers < 1 || !info) return;
-
-    info[0].address = m_state.rdp.colorImage.address;
-    info[0].width = m_state.rdp.colorImage.width;
-    info[0].height = static_cast<uint32_t>(m_state.rdp.scissor.yl >> 2);
-    info[0].size = static_cast<uint32_t>(m_state.rdp.colorImage.size);
-}
 
 bool RDPProcessor::ReadFrameBuffer(uint32_t address, uint32_t size, void* data) {
     if (!m_rdram || !data) return false;

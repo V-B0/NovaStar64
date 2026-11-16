@@ -147,64 +147,15 @@ struct ScreenVertex {
 
 static constexpr int MAX_SCREEN_CLIPPED = 12;
 
-struct ScreenClippedPolygon {
-    ScreenVertex vertices[MAX_SCREEN_CLIPPED];
-    int vertexCount;
-
-    ScreenClippedPolygon() : vertexCount(0) {}
-};
-
 // --- BACKFACE CULLING ---
 
 // --- PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM ---
-
-/// Viewport transform from clip space to screen coordinates.
-struct ViewportTransform {
-    float scaleX, scaleY, scaleZ;
-    float transX, transY, transZ;
-
-    ViewportTransform() : scaleX(160), scaleY(-120), scaleZ(0.5f), transX(160), transY(120), transZ(0.5f) {}
-
-    void SetFromN64(float vpScaleX, float vpScaleY, float vpScaleZ, float vpTransX, float vpTransY, float vpTransZ) {
-        scaleX = vpScaleX;
-        scaleY = vpScaleY; // Usually negative (Y flip)
-        scaleZ = vpScaleZ;
-        transX = vpTransX;
-        transY = vpTransY;
-        transZ = vpTransZ;
-    }
-
-    ScreenVertex Transform(const ClipVertex& cv) const;
-};
 
 // --- BRANCH_Z TEST (N64 specific) ---
 
 // --- COMPLETE TRIANGLE PIPELINE ---
 
-struct TrianglePipelineConfig {
-    ViewportTransform viewport;
-    ScissorRect scissor;
-    GuardBand guardBand;
-    uint32_t geometryMode;
-    bool useGuardBand;
-    bool useNearClipN64; // z=0 near clip instead of z=-w
-
-    TrianglePipelineConfig() : geometryMode(0), useGuardBand(true), useNearClipN64(true) {}
-};
-
-// Screen-space triangle, ready for rasterization.
-struct ScreenTriangle {
-    ScreenVertex v[3];
-};
-
 static constexpr int MAX_OUTPUT_TRIANGLES = 8; // a clipped polygon of up to 10 vertices fans into 8 triangles
-
-struct TrianglePipelineResult {
-    ScreenTriangle triangles[MAX_OUTPUT_TRIANGLES];
-    int triangleCount;
-
-    TrianglePipelineResult() : triangleCount(0) {}
-};
 
 } // namespace Clip
 } // namespace Video

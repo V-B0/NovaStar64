@@ -16,24 +16,7 @@
 #include <cstdint>
 #endif
 
-namespace {
-// Portable 32-bit thread identifier.
-//   - Windows: GetCurrentThreadId()
-//   - Apple:   pthread_t is an opaque pointer, so pthread_self() cannot be
-//              cast to an integer; use pthread_threadid_np() instead.
-//   - Other POSIX: pthread_t is an integral type.
-inline uint32_t CurrentThreadId32() noexcept {
-#ifdef _WIN32
-    return static_cast<uint32_t>(GetCurrentThreadId());
-#elif defined(__APPLE__)
-    uint64_t tid = 0;
-    pthread_threadid_np(nullptr, &tid);
-    return static_cast<uint32_t>(tid);
-#else
-    return static_cast<uint32_t>(pthread_self());
-#endif
-}
-} // namespace
+namespace {} // namespace
 
 // --- RecursiveMutex ---
 
@@ -62,27 +45,5 @@ RecursiveMutex::~RecursiveMutex() {
     auto* mtx = static_cast<pthread_mutex_t*>(m_mutex);
     pthread_mutex_destroy(mtx);
     delete mtx;
-#endif
-}
-
-void RecursiveMutex::Lock() {
-#ifdef _WIN32
-    EnterCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
-#else
-    pthread_mutex_lock(static_cast<pthread_mutex_t*>(m_mutex));
-#endif
-    m_ownerThreadId.store(CurrentThreadId32(), std::memory_order_relaxed);
-    m_recursionCount.fetch_add(1, std::memory_order_relaxed);
-}
-
-void RecursiveMutex::Unlock() {
-    uint32_t count = m_recursionCount.fetch_sub(1, std::memory_order_relaxed);
-    if (count == 1) {
-        m_ownerThreadId.store(0, std::memory_order_relaxed);
-    }
-#ifdef _WIN32
-    LeaveCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
-#else
-    pthread_mutex_unlock(static_cast<pthread_mutex_t*>(m_mutex));
 #endif
 }

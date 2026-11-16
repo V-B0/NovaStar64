@@ -117,175 +117,21 @@ protected:
 
 // --- Gamma correction effect ---
 
-class GammaEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::GammaCorrection; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    GammaParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
-
 // --- FXAA effect ---
-
-class FXAAEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::FXAA; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    FXAAParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
 
 // --- Bloom effect (multi-pass) ---
 
-class BloomEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::Bloom; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    BloomParams params;
-
-private:
-    struct MipLevel {
-        uint32_t fbo = 0;
-        uint32_t tex = 0;
-        int width = 0;
-        int height = 0;
-    };
-    std::vector<MipLevel> m_mips;
-    uint32_t m_thresholdShader = 0;
-    uint32_t m_downsampleShader = 0;
-    uint32_t m_upsampleShader = 0;
-    uint32_t m_compositeShader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
-
 // --- CRT filter ---
-
-class CRTEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::CRT; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    CRTParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
 
 // --- Sharpen effect ---
 
-class SharpenEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::Sharpen; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    SharpenParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
-
 // --- Chromatic Aberration effect ---
-
-class ChromaticAberrationEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::ChromaticAberration; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    ChromaticAberrationParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
 
 // --- Film Grain effect ---
 
-class FilmGrainEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::FilmGrain; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    void SetFrameCount(uint32_t frame) { m_frameCount = frame; }
-    FilmGrainParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-    uint32_t m_frameCount = 0;
-};
-
 // --- Dithering effect ---
 
-class DitheringEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::Dithering; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
-
 // --- Color Grading effect ---
-
-class ColorGradingEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::ColorGrading; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    ColorGradingParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
 
 // --- Depth of Field effect ---
 
@@ -295,24 +141,6 @@ struct DepthOfFieldParams {
     float blurStrength = 3.0f;
 };
 
-class DepthOfFieldEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::DepthOfField; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    void SetDepthTexture(uint32_t tex) { m_depthTex = tex; }
-    DepthOfFieldParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-    uint32_t m_depthTex = 0;
-};
-
 // --- Motion Blur effect ---
 
 struct MotionBlurParams {
@@ -320,63 +148,9 @@ struct MotionBlurParams {
     int samples = 8;
 };
 
-class MotionBlurEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::MotionBlur; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    MotionBlurParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-    uint32_t m_prevTex = 0;
-    int m_width = 0;
-    int m_height = 0;
-};
-
 // --- Vignette effect ---
 
-class VignetteEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::Vignette; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-    VignetteParams params;
-
-private:
-    uint32_t m_shader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-};
-
 // --- SMAA effect (edge-detect + blend) ---
-
-class SMAAEffect : public PostEffect {
-public:
-    PostEffectType GetType() const override { return PostEffectType::SMAA; }
-    bool Init(int width, int height) override;
-    void Shutdown() override;
-    void Resize(int width, int height) override;
-    void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
-
-private:
-    uint32_t m_edgeShader = 0;
-    uint32_t m_blendShader = 0;
-    uint32_t m_vao = 0;
-    uint32_t m_vbo = 0;
-    uint32_t m_edgeTex = 0;
-    uint32_t m_edgeFBO = 0;
-    int m_width = 0;
-    int m_height = 0;
-};
 
 // --- PostProcessingPipeline ---
 

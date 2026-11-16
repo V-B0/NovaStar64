@@ -228,27 +228,6 @@ constexpr uint32_t G_CLIPPING = 0x00800000;
 
 // --- Fundamental Geometry Types ---
 
-/// N64 vertex as received from display list (16 bytes raw) + transformed data
-struct N64Vertex {
-    // --- Raw N64 vertex data (16 bytes) ---
-    int16_t x, y, z;    // Position (s15 integer)
-    uint16_t flag;
-    int16_t s, t;       // Texture coordinates (s10.5)
-    uint8_t r, g, b, a; // Color / normal
-
-    // --- Transformed/processed fields ---
-    float sx, sy, sz;   // Screen-space position
-    float w;            // W coordinate (clip space)
-    float invW;         // 1/w for perspective correction
-    float s0, t0;       // Texture tile 0 coords (float)
-    float s1, t1;       // Texture tile 1 coords (float)
-    float nx, ny, nz;   // Normal vector (after transform)
-    float fog;          // Fog factor
-    uint32_t clipFlags; // Clipping flags
-    bool transformed;
-    bool lit;
-};
-
 /// Transformed vertex (after modelview/projection)
 /// Uses anonymous unions to support flat (.x), array (.position[0]), and struct (.position.x) access
 #ifdef _MSC_VER
@@ -329,20 +308,6 @@ struct Triangle {
     bool textured;
     bool zbuffered;
     bool flatShaded;
-};
-
-/// Clipped polygon (up to 10 vertices from Sutherland-Hodgman)
-struct ClippedPoly {
-    TransformedVertex vertices[10];
-    int count;
-};
-
-/// Rectangle primitive
-struct RDPRect {
-    float x0, y0, x1, y1; // Screen-space corners (in 10.2 fixed-point converted to float)
-    float s, t;           // Texture origin
-    float dsdx, dtdy;     // Texture step
-    int tileIndex;
 };
 
 // Tile descriptor: canonical definition in TileManager.hpp (TMEMController.hpp has TMEMTileEntry).

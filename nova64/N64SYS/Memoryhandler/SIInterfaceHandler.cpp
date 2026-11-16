@@ -101,50 +101,6 @@ bool SerialInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t 
 
 // --- Implemented Helper Methods ---
 
-void SerialInterfaceHandler::process_dma_cycles(uint64_t current_cycle) {
-    if (m_dma_state.active && m_dma_state.is_complete(current_cycle)) {
-        complete_dma_transfer();
-    }
-}
-
-void SerialInterfaceHandler::cancel_dma() { m_dma_state.active = false; }
-
-void SerialInterfaceHandler::force_dma_completion() {
-    if (m_dma_state.active) {
-        complete_dma_transfer();
-    }
-}
-
-void SerialInterfaceHandler::save_state(std::ostream& os) const {
-    // Basic register dump
-    for (auto reg : m_registers.m_SerialInterface) {
-        uint32_t val = reg;
-        os.write(reinterpret_cast<const char*>(&val), sizeof(val));
-    }
-}
-
-void SerialInterfaceHandler::load_state(std::istream& is) {
-    for (size_t i = 0; i < m_registers.m_SerialInterface.size(); i++) {
-        uint32_t val;
-        is.read(reinterpret_cast<char*>(&val), sizeof(val));
-        m_registers.m_SerialInterface[i] = val;
-    }
-}
-
-std::string SerialInterfaceHandler::get_dma_status() const { return m_dma_state.active ? "Active" : "Idle"; }
-
-std::string SerialInterfaceHandler::get_register_dump() const {
-    std::stringstream ss;
-    ss << "SI Registers:\n"
-       << "DRAM Addr: " << std::hex << m_si_regs.dram_addr() << "\n"
-       << "PIF Read: " << m_si_regs.pif_addr_read() << "\n"
-       << "PIF Write: " << m_si_regs.pif_addr_write() << "\n"
-       << "Status: " << m_si_regs.status() << "\n";
-    return ss.str();
-}
-
-void SerialInterfaceHandler::on_system_reset() { reset(); }
-
 void SerialInterfaceHandler::handle_dma_read() {
     // PIF -> DRAM
     if (!validate_dma_address(m_si_regs.dram_addr())) return;
@@ -189,17 +145,6 @@ void SerialInterfaceHandler::trigger_si_interrupt() {
 bool SerialInterfaceHandler::validate_dma_address(uint32_t dram_addr) const {
     // Every address is accepted; no alignment is enforced.
     return true;
-}
-
-uint64_t SerialInterfaceHandler::calculate_dma_duration() const { return 0; }
-uint64_t SerialInterfaceHandler::get_current_cycle() const { return 0; }
-
-void SerialInterfaceHandler::handle_status_register_write(uint32_t value, uint32_t mask) {
-    // Interrupt clear logic is in Write32
-}
-
-void SerialInterfaceHandler::log_dma_start(const DMAState& state) const {
-    Log::debugf("DMA Start: %s Addr=0x%08X", state.is_read ? "Read" : "Write", state.dram_address);
 }
 
 void SerialInterfaceHandler::log_dma_complete(const DMAState& state) const { Log::debugf("DMA Complete"); }

@@ -58,7 +58,6 @@ public:
 
     // --- Audio output ---
     [[nodiscard]] CAudioOutput& audioOutput() { return m_audioOutput; }
-    void QueueAudioOutput(const int16_t* samples, uint32_t count);
     void FeedAudioDevice();
 
     // --- Plugin callbacks ---

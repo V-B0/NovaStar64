@@ -13,10 +13,7 @@
 #include <iomanip>
 
 // Use simple register offsets for RDRAM interface registers (0x04700000 base)
-namespace {
-constexpr uint32_t RI_BASE_ADDRESS = 0x04700000;
-constexpr uint32_t RI_END_ADDRESS = 0x0470001C;
-} // namespace
+namespace {} // namespace
 
 // --- RDRAMInterfaceHandler Implementation ---
 
@@ -37,10 +34,6 @@ void RDRAMInterfaceHandler::reset() {
     m_register_data[3] = 0x14;       // RI_SELECT_REG
     m_register_data[4] = 0x00063634; // RI_REFRESH_REG
     m_initialized = true;
-}
-
-bool RDRAMInterfaceHandler::is_register_address(uint32_t address) const {
-    return (address >= RI_BASE_ADDRESS && address <= RI_END_ADDRESS);
 }
 
 bool RDRAMInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
@@ -100,22 +93,6 @@ void RDRAMInterfaceHandler::handle_mode_write(uint32_t value, uint32_t mask) {
         // A reset request is only logged; the other RI registers are left as they are.
         Log::info("RDRAMInterface: RI_MODE Reset bit set");
     }
-}
-
-void RDRAMInterfaceHandler::log_register_access(uint32_t address, uint32_t value, bool is_write) const {}
-
-std::string RDRAMInterfaceHandler::get_register_dump() const {
-    std::stringstream ss;
-    ss << "RI Registers:" << std::endl;
-    ss << "MODE: " << std::hex << std::setw(8) << std::setfill('0') << m_regs.mode() << std::endl;
-    ss << "CONFIG: " << std::setw(8) << m_regs.config() << std::endl;
-    ss << "CURRENT_LOAD: " << std::setw(8) << m_regs.current_load() << std::endl;
-    ss << "SELECT: " << std::setw(8) << m_regs.select() << std::endl;
-    ss << "REFRESH: " << std::setw(8) << m_regs.refresh() << std::endl;
-    ss << "LATENCY: " << std::setw(8) << m_regs.latency() << std::endl;
-    ss << "RERROR: " << std::setw(8) << m_regs.rerror() << std::endl;
-    ss << "WERROR: " << std::setw(8) << m_regs.werror() << std::endl;
-    return ss.str();
 }
 
 void RDRAMInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {

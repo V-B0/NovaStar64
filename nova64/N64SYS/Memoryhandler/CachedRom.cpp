@@ -423,18 +423,6 @@ void CachedRom::LoadSectorToC2Buffer(uint32_t sector) {
 
 void CachedRom::FlushC2BufferToDisk(uint32_t sector) { (void)sector; }
 
-void CachedRom::Update() {
-    if (m_DMAActive) {
-        ProcessDMA();
-    }
-
-    if (ASIC_BM_STATUS & static_cast<uint32_t>(DDBMStatus::RUNNING)) {
-        if (!m_DMAActive) {
-            ASIC_BM_STATUS &= ~static_cast<uint32_t>(DDBMStatus::RUNNING);
-        }
-    }
-}
-
 void CachedRom::TriggerInterrupt() {
     if (m_InterruptCallback) {
         m_InterruptCallback();

@@ -13,8 +13,6 @@ namespace N64System {
 
 // CP0 Register Indices
 using Reg = CRegisters::COP0Reg;
-constexpr auto CP0_INDEX = Reg::Index;
-constexpr auto CP0_ENTRYHI = Reg::EntryHi;
 
 TranslationLookasideBuffer::TranslationLookasideBuffer() : random_generator(TLB_ENTRY_COUNT) { reset(); }
 
@@ -25,13 +23,6 @@ TranslationLookasideBuffer::TranslationLookasideBuffer(Nova64::MipsMemoryVM& mmu
 }
 
 TranslationLookasideBuffer::~TranslationLookasideBuffer() {}
-
-void TranslationLookasideBuffer::Initialize(Nova64::MipsMemoryVM* mmu, CRegisters* reg, CRecompiler* recomp) {
-    memory_management_unit = mmu;
-    registers = reg;
-    recompiler = recomp;
-    reset();
-}
 
 void TranslationLookasideBuffer::reset(bool invalidate_tlb) {
     if (invalidate_tlb) {
@@ -55,122 +46,8 @@ void TranslationLookasideBuffer::invalidate_fast_tlb() {
     }
 }
 
-void TranslationLookasideBuffer::probe() {
-    if (!registers) return;
-
-    uint64_t entry_hi_val = registers->Cop0_MF(CP0_ENTRYHI);
-    COP0EntryHi entry_hi;
-    entry_hi.Value = entry_hi_val;
-
-    uint32_t vpn2 = entry_hi.VPN2();
-    uint8_t asid = static_cast<uint8_t>(entry_hi.ASID());
-
-    bool match_found = false;
-
-    for (size_t i = 0; i < tlb_entries.size(); ++i) {
-        const auto& entry = tlb_entries[i];
-
-        uint32_t page_mask = entry.page_mask.mask;
-        uint32_t masked_vpn2 = vpn2 & ~page_mask;
-        uint32_t entry_vpn2 = entry.entry_hi.vpn2 & ~page_mask;
-
-        if (masked_vpn2 == entry_vpn2 && (entry.global || entry.entry_hi.asid == asid)) {
-            registers->Cop0_MT(CP0_INDEX, static_cast<uint32_t>(i));
-            match_found = true;
-            break;
-        }
-    }
-
-    if (!match_found) {
-        // Set bit 31 (P) of Index register if no match
-        uint32_t index_val = registers->Cop0_MF(CP0_INDEX);
-        registers->Cop0_MT(CP0_INDEX, index_val | 0x80000000);
-    }
-}
-
-TlbTranslationResult TranslationLookasideBuffer::translate_address(uint64_t virtual_address, bool is_write,
-                                                                   bool is_execute) {
-    TlbTranslationResult result;
-    result.valid = false;
-
-    uint32_t vaddr_32 = static_cast<uint32_t>(virtual_address);
-
-    // KSEG0: 0x80000000 - 0x9FFFFFFF
-    if (vaddr_32 >= 0x80000000 && vaddr_32 <= 0x9FFFFFFF) {
-        result.physical_address = vaddr_32 - 0x80000000;
-        result.segment = MemorySegment::Cached;
-        result.cached = true;
-        result.valid = true;
-        return result;
-    }
-
-    // KSEG1: 0xA0000000 - 0xBFFFFFFF
-    if (vaddr_32 >= 0xA0000000 && vaddr_32 <= 0xBFFFFFFF) {
-        result.physical_address = vaddr_32 - 0xA0000000;
-        result.segment = MemorySegment::Direct;
-        result.cached = false;
-        result.valid = true;
-        return result;
-    }
-
-    // KSEG2 / USEG -> TLB Mapped
-    if (!registers) return result;
-
-    uint8_t current_asid = static_cast<uint8_t>(registers->Cop0_MF(CP0_ENTRYHI) & 0xFF);
-
-    for (const auto& entry : tlb_entries) {
-        if (!entry.defined) continue;
-
-        uint32_t mask = entry.page_mask.mask; // mask for VPN comparison
-        uint32_t vaddr_vpn2 = (vaddr_32 >> 13) & 0x7FFFF;
-        uint32_t entry_vpn2 = entry.entry_hi.vpn2;
-
-        if (((vaddr_vpn2 & ~mask) == (entry_vpn2 & ~mask)) && (entry.global || entry.entry_hi.asid == current_asid)) {
-
-            uint32_t offset_mask = (mask << 12) | 0xFFF;
-            uint32_t select_mask = (offset_mask + 1);
-
-            const auto& lo = (vaddr_32 & select_mask) ? entry.entry_lo1 : entry.entry_lo0;
-
-            if (!lo.valid) {
-                result.exception = TlbException::TlbInvalid;
-                return result;
-            }
-
-            if (is_write && !lo.dirty) {
-                result.exception = TlbException::TlbModified;
-                return result;
-            }
-
-            uint32_t pfn = lo.pfn;
-            uint32_t offset = vaddr_32 & offset_mask;
-            uint32_t phys_page_base = (pfn & ~mask) << 12;
-            result.physical_address = phys_page_base | offset;
-
-            result.segment = MemorySegment::Mapped;
-            result.cached = (lo.cache_algorithm != 2);
-            result.valid = true;
-            result.dirty = lo.dirty;
-
-            statistics.hits++;
-            return result;
-        }
-    }
-
-    statistics.misses++;
-    result.exception = TlbException::TlbRefill;
-    return result;
-}
-
 TranslationLookasideBuffer::RandomIndexGenerator::RandomIndexGenerator(size_t max) :
     max_index(max), wired_count(0), counter(max - 1) {}
-
-size_t TranslationLookasideBuffer::RandomIndexGenerator::next() {
-    if (counter <= wired_count) {
-        counter = max_index - 1;
-    }
-    return counter--;
-}
 
 // --- Legacy CTLB Implementation ---
 
@@ -376,12 +253,6 @@ CTLB::TlbLookupResult CTLB::AddressLookup(uint64_t VAddr, bool& Dirty) {
     return TlbLookupResult::NoMatch;
 }
 
-CTLB::TLB_ENTRY& CTLB::TlbEntry(int32_t Entry) {
-    if (Entry >= 0 && Entry < 32) return m_tlb[Entry];
-    static TLB_ENTRY dummy;
-    return dummy;
-}
-
 bool CTLB::VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused) {
     uint32_t vaddr_32 = static_cast<uint32_t>(VAddr);
     MemoryUnused = false;
@@ -439,36 +310,6 @@ bool CTLB::VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused) {
 
     MemoryUnused = true;
     return false;
-}
-
-void CTLB::RecordDifference(CLog& LogFile, const CTLB& rTLB) {
-    // Compare all 32 TLB entries and log differences
-    // Used for sync CPU mode debugging
-    for (int i = 0; i < 32; ++i) {
-        const auto& e1 = m_tlb[i];
-        const auto& e2 = rTLB.m_tlb[i];
-
-        if (e1.EntryDefined != e2.EntryDefined) {
-            Log::debugf("TLB[%d] EntryDefined: %s vs %s", i, e1.EntryDefined ? "true" : "false",
-                        e2.EntryDefined ? "true" : "false");
-            continue;
-        }
-
-        if (!e1.EntryDefined) continue;
-
-        if (e1.PageMask.Value != e2.PageMask.Value) {
-            Log::debugf("TLB[%d] PageMask: 0x%016llX vs 0x%016llX", i, e1.PageMask.Value, e2.PageMask.Value);
-        }
-        if (e1.EntryHi.Value != e2.EntryHi.Value) {
-            Log::debugf("TLB[%d] EntryHi: 0x%016llX vs 0x%016llX", i, e1.EntryHi.Value, e2.EntryHi.Value);
-        }
-        if (e1.EntryLo0.Value != e2.EntryLo0.Value) {
-            Log::debugf("TLB[%d] EntryLo0: 0x%016llX vs 0x%016llX", i, e1.EntryLo0.Value, e2.EntryLo0.Value);
-        }
-        if (e1.EntryLo1.Value != e2.EntryLo1.Value) {
-            Log::debugf("TLB[%d] EntryLo1: 0x%016llX vs 0x%016llX", i, e1.EntryLo1.Value, e2.EntryLo1.Value);
-        }
-    }
 }
 
 bool CTLB::operator==(const CTLB& rTLB) const {

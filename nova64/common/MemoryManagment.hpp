@@ -61,19 +61,6 @@ bool DecommitMemory(void* addr, size_t size);
 namespace MemoryManagement {
 
 /**
- * @brief Memory region information
- */
-struct MemoryInfo {
-    void* base_address;        ///< Base address of the region
-    void* allocation_base;     ///< Base address of the allocation
-    size_t region_size;        ///< Size of the region
-    MEM_PROTECTION protection; ///< Current protection
-    bool is_committed;         ///< Whether memory is committed
-    bool is_reserved;          ///< Whether memory is reserved
-    bool is_free;              ///< Whether memory is free
-};
-
-/**
  * @brief Flush the instruction cache
  * @param address Address of the code region
  * @param size Size of the code region

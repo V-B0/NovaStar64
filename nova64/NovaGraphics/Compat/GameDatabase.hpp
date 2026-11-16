@@ -163,7 +163,6 @@ public:
         int intro = 0;
         int nothing = 0;
     };
-    DatabaseStats GetStats() const;
 
 private:
     GameDatabase() = default;

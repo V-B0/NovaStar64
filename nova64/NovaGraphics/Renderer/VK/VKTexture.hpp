@@ -29,10 +29,6 @@ namespace VK {
 /// Returns VK_FORMAT_UNDEFINED for unsupported formats (logged).
 VkFormat ToVkFormat(TextureFormat f);
 
-/// Bytes per pixel for the chosen format (after Vulkan mapping).
-/// Returns 0 for compressed/unknown.
-uint32_t BytesPerPixel(TextureFormat f);
-
 class VKTextureImpl final : public ITexture {
 public:
     VKTextureImpl(const VKContext* ctx, const TextureDesc& desc);

@@ -214,22 +214,7 @@ public:
 
     // --- TLB Notification Functions ---
 
-    /**
-     * @brief Notify that a TLB entry has been unmapped
-     * @param vAddr Virtual address
-     * @param len Length of mapping
-     */
-    void TLB_Unmaped(uint32_t vAddr, uint32_t len);
-
     // --- Address Translation ---
-
-    /**
-     * @brief Translate virtual address to physical address
-     * @param vAddr Virtual address
-     * @param pAddr Output physical address
-     * @return true if translation successful
-     */
-    [[nodiscard]] bool VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const;
 
     // --- Debug Support ---
 

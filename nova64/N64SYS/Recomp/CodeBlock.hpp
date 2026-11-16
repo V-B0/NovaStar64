@@ -273,8 +273,6 @@ public:
     bool verify_memory_snapshot() const;
     void update_memory_snapshot();
 
-    // Debug information
-    std::string disassembly() const;
     std::string get_code_log() const { return code_log_; }
 
     // Hot/cold classification
@@ -330,10 +328,6 @@ private:
     class CodeGenerator {
     public:
         CodeGenerator(asmjit::CodeHolder& code, const AnalysisResult& analysis, const Config& config);
-
-        bool generate_prologue();
-        bool generate_epilogue();
-        bool generate_instruction(uint32_t address, uint32_t opcode);
 
         size_t generated_bytes() const noexcept { return generated_bytes_; }
         const std::vector<uint8_t>& generated_code() const noexcept { return generated_code_; }
@@ -437,7 +431,6 @@ public:
     std::shared_ptr<CodeBlock> get(uint32_t address) const;
     void insert(std::shared_ptr<CodeBlock> block);
     void remove(uint32_t address);
-    void invalidate(uint32_t address);
     void clear();
 
     // Statistics
@@ -461,9 +454,6 @@ public:
 
         void reset() noexcept { *this = CacheStats(); }
     };
-
-    CacheStats statistics() const;
-    void reset_statistics();
 
 private:
     struct CacheEntry {
@@ -498,35 +488,12 @@ private:
     // Helper methods
     void touch(uint32_t address, bool is_hit);
     void evict_oldest();
-    void promote_to_hot(uint32_t address);
 
     // Timestamp generation
     uint64_t get_timestamp() const noexcept {
         static std::atomic<uint64_t> counter{0};
         return ++counter;
     }
-};
-
-/**
- * @brief Factory for creating code blocks with different optimization levels
- */
-class CodeBlockFactory {
-public:
-    enum class OptimizationLevel {
-        None,         // No optimization, direct translation
-        Basic,        // Basic optimizations (dead code elimination, constant folding)
-        Aggressive,   // Aggressive optimizations (inlining, loop unrolling)
-        ProfileGuided // Profile-guided optimizations
-    };
-
-    struct ProfileData {
-        std::unordered_map<uint32_t, uint64_t> address_execution_counts;
-        std::unordered_map<uint32_t, uint64_t> branch_taken_counts;
-        std::vector<uint32_t> hot_paths;
-        size_t total_executions = 0;
-    };
-
-private:
 };
 
 } // namespace Recompiler

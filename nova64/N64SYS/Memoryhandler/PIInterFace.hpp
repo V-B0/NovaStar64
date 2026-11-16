@@ -48,14 +48,6 @@ enum Register : size_t {
     REGISTER_COUNT
 };
 
-// Bus Domain configurations
-struct BusDomain {
-    uint32_t latency;
-    uint32_t pulse_width;
-    uint32_t page_size;
-    uint32_t release;
-};
-
 struct DMAState {
     bool active;
     bool is_read;

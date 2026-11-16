@@ -217,12 +217,6 @@ private:
     void EmitBranchCallback(void* callback, uint32_t opcVal, uint32_t pc);
     void EmitBranchLikelyCallback(void* callback, uint32_t opcVal, uint32_t pc);
 
-    // Register allocation and management
-    void AllocateRegister(uint32_t regIndex, bool is64Bit = false);
-    void FreeRegister(uint32_t regIndex);
-    void SpillRegister(uint32_t regIndex);
-    void ReloadRegister(uint32_t regIndex);
-
     // Branch comparison instructions
     void BNE_Compare();
     void BEQ_Compare();
@@ -370,17 +364,7 @@ private:
     void COP1_S_NEG();
     void COP1_S_SQRT();
     void COP1_S_MOV();
-    void COP1_S_ROUND_L();
-    void COP1_S_TRUNC_L();
-    void COP1_S_CEIL_L();
-    void COP1_S_FLOOR_L();
-    void COP1_S_ROUND_W();
-    void COP1_S_TRUNC_W();
-    void COP1_S_CEIL_W();
-    void COP1_S_FLOOR_W();
     void COP1_S_CVT_D();
-    void COP1_S_CVT_W();
-    void COP1_S_CVT_L();
     void COP1_S_CMP();
     void COP1_D_ADD();
     void COP1_D_SUB();
@@ -390,17 +374,7 @@ private:
     void COP1_D_NEG();
     void COP1_D_SQRT();
     void COP1_D_MOV();
-    void COP1_D_ROUND_L();
-    void COP1_D_TRUNC_L();
-    void COP1_D_CEIL_L();
-    void COP1_D_FLOOR_L();
-    void COP1_D_ROUND_W();
-    void COP1_D_TRUNC_W();
-    void COP1_D_CEIL_W();
-    void COP1_D_FLOOR_W();
     void COP1_D_CVT_S();
-    void COP1_D_CVT_W();
-    void COP1_D_CVT_L();
     void COP1_D_CMP();
     void COP1_W_CVT_S();
     void COP1_W_CVT_D();

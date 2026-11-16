@@ -226,81 +226,11 @@ struct N64Viewport {
 // --- GEOMETRY UTILITIES ---
 
 // --- Bounding Box ---
-struct AABB {
-    Vec3f min, max;
-
-    AABB() : min(1e30f), max(-1e30f) {}
-    AABB(const Vec3f& _min, const Vec3f& _max) : min(_min), max(_max) {}
-
-    void Expand(const Vec3f& point) {
-        min = Vec3f::Min(min, point);
-        max = Vec3f::Max(max, point);
-    }
-
-    void Expand(const AABB& other) {
-        min = Vec3f::Min(min, other.min);
-        max = Vec3f::Max(max, other.max);
-    }
-
-    Vec3f Center() const { return (min + max) * 0.5f; }
-    Vec3f Size() const { return max - min; }
-    float Volume() const {
-        Vec3f s = Size();
-        return s.x * s.y * s.z;
-    }
-
-    bool Contains(const Vec3f& point) const {
-        return point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y && point.z >= min.z &&
-               point.z <= max.z;
-    }
-
-    bool Intersects(const AABB& other) const {
-        return min.x <= other.max.x && max.x >= other.min.x && min.y <= other.max.y && max.y >= other.min.y &&
-               min.z <= other.max.z && max.z >= other.min.z;
-    }
-
-    bool IsValid() const { return min.x <= max.x && min.y <= max.y && min.z <= max.z; }
-};
 
 // --- Frustum (6 planes) ---
-struct VMPlane {
-    Vec3f normal;
-    float distance;
-
-    VMPlane() : distance(0) {}
-    VMPlane(const Vec3f& n, float d) : normal(n), distance(d) {}
-    VMPlane(float a, float b, float c, float d) : normal(a, b, c), distance(d) {
-        float len = normal.Length();
-        if (len > kEpsilon) {
-            normal = normal / len;
-            distance /= len;
-        }
-    }
-
-    float DistanceToPoint(const Vec3f& p) const { return normal.Dot(p) + distance; }
-};
-
-struct Frustum {
-    enum Side { Left = 0, Right, Bottom, Top, Near, Far, Count };
-    VMPlane planes[Count];
-};
 
 // --- Triangle Utilities ---
-namespace TriangleUtil {
-
-// Compute triangle gradients for attribute interpolation
-struct TriangleGradients {
-    float dAttributedX; // dAttr/dx
-    float dAttributedY; // dAttr/dy
-};
-
-// Setup edge equations for triangle rasterization
-struct EdgeEquation {
-    float a, b, c;  // ax + by + c = 0
-    bool isTopLeft; // for fill rule
-};
-
-} // namespace TriangleUtil
+namespace TriangleUtil {} // namespace TriangleUtil
 
 // --- Interpolation Utilities ---
 namespace Interp {

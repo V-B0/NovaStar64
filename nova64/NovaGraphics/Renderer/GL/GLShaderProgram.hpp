@@ -41,8 +41,6 @@ public:
     const std::string& GetInfoLog() const { return m_infoLog; }
     const std::string& GetSource() const { return m_source; }
 
-    void SetLabel(const std::string& label);
-
 private:
     uint32_t m_handle = 0;
     ShaderStage m_stage = ShaderStage::Vertex;
@@ -160,11 +158,9 @@ public:
     const std::string& GetInfoLog() const { return m_infoLog; }
 
     const ProgramReflection& GetReflection() const { return m_reflection; }
-    void Reflect();
 
     // Uniform queries
     int32_t GetUniformLocation(const std::string& name) const;
-    int32_t GetUniformLocation(const char* name) const;
     int32_t GetUniformBlockIndex(const std::string& name) const;
     int32_t GetSSBOIndex(const std::string& name) const;
 
@@ -173,44 +169,16 @@ public:
     void SetVec2(int32_t loc, float x, float y) const;
     void SetVec3(int32_t loc, float x, float y, float z) const;
     void SetVec4(int32_t loc, float x, float y, float z, float w) const;
-    void SetVec4(int32_t loc, const float* v) const;
     void SetInt(int32_t loc, int32_t v) const;
-    void SetUInt(int32_t loc, uint32_t v) const;
-    void SetIVec2(int32_t loc, int32_t x, int32_t y) const;
-    void SetIVec3(int32_t loc, int32_t x, int32_t y, int32_t z) const;
-    void SetIVec4(int32_t loc, int32_t x, int32_t y, int32_t z, int32_t w) const;
     void SetBool(int32_t loc, bool v) const;
-    void SetMat3(int32_t loc, const float* m, bool transpose = false) const;
     void SetMat4(int32_t loc, const float* m, bool transpose = false) const;
-    void SetMat4Array(int32_t loc, const float* m, int count, bool transpose = false) const;
-    void SetFloatArray(int32_t loc, const float* v, int count) const;
-    void SetIntArray(int32_t loc, const int32_t* v, int count) const;
-
-    // Uniform setters (by name — slower, uses cache)
-    void SetFloat(const std::string& name, float v) const;
-    void SetVec2(const std::string& name, float x, float y) const;
-    void SetVec3(const std::string& name, float x, float y, float z) const;
-    void SetVec4(const std::string& name, float x, float y, float z, float w) const;
-    void SetInt(const std::string& name, int32_t v) const;
-    void SetBool(const std::string& name, bool v) const;
-    void SetMat4(const std::string& name, const float* m, bool transpose = false) const;
 
     // Block binding
     void BindUniformBlock(uint32_t blockIndex, uint32_t bindingPoint) const;
-    void BindUniformBlock(const std::string& name, uint32_t bindingPoint) const;
     void BindSSBO(uint32_t index, uint32_t bindingPoint) const;
-    void BindSSBO(const std::string& name, uint32_t bindingPoint) const;
 
     // Compute dispatch helpers
     void Dispatch(uint32_t groupsX, uint32_t groupsY = 1, uint32_t groupsZ = 1) const;
-    void DispatchForSize(uint32_t sizeX, uint32_t sizeY = 1, uint32_t sizeZ = 1) const;
-    void MemoryBarrier(uint32_t barriers) const;
-
-    // Binary cache
-    bool GetBinary(std::vector<uint8_t>& outData, uint32_t& outFormat) const;
-    bool LoadBinary(const std::vector<uint8_t>& data, uint32_t format);
-
-    void SetLabel(const std::string& label);
 
 private:
     bool CheckLinkStatus();
@@ -238,19 +206,8 @@ public:
     bool Create();
     void Destroy();
 
-    void SetVertexStage(uint32_t program);
-    void SetFragmentStage(uint32_t program);
-    void SetGeometryStage(uint32_t program);
-    void SetComputeStage(uint32_t program);
-
-    void Bind() const;
-    static void Unbind();
-    bool Validate() const;
-
     uint32_t Handle() const { return m_handle; }
     bool IsValid() const { return m_handle != 0; }
-
-    void SetLabel(const std::string& label);
 
 private:
     uint32_t m_handle = 0;
@@ -260,11 +217,6 @@ private:
 
 class ShaderIncludeManager {
 public:
-    void RegisterInclude(const std::string& path, const std::string& source);
-    void UnregisterInclude(const std::string& path);
-    void ClearAll();
-    bool HasInclude(const std::string& path) const;
-
 private:
     std::unordered_map<std::string, std::string> m_includes;
     std::string m_empty;
@@ -274,18 +226,10 @@ private:
 
 class ShaderPreprocessor {
 public:
-    void SetVersion(int version, const std::string& profile = "core");
     void AddDefine(const std::string& name, const std::string& value = "");
-    void AddDefine(const std::string& name, int value);
-    void AddDefine(const std::string& name, float value);
     void RemoveDefine(const std::string& name);
-    void ClearDefines();
 
     void SetIncludeManager(const ShaderIncludeManager* mgr) { m_includes = mgr; }
-
-    // Common define sets
-    void SetN64Defines(bool twoPoint, bool fog, bool noise, bool lod);
-    void SetBackendDefines(bool bindless, bool dsa, bool multiDraw);
 
 private:
     int m_version = 460;
@@ -304,13 +248,7 @@ struct ShaderFileEntry {
 
 class ShaderHotReloader {
 public:
-    void AddWatch(const std::string& path, ShaderStage stage);
-    void RemoveWatch(const std::string& path);
-    void ClearAll();
     void SetEnabled(bool enabled) { m_enabled = enabled; }
-
-    // Reloads the file and recompiles the shader.
-    bool ReloadShader(GLShader& shader, const std::string& path);
 
 private:
     std::vector<ShaderFileEntry> m_watches;

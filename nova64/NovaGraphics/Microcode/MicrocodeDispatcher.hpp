@@ -49,11 +49,6 @@ public:
                              uint32_t ucodeDataSize, uint32_t dlAddr);
 
     /**
-     * Process a display list with explicitly specified microcode type.
-     */
-    void ProcessDisplayList(MicrocodeType type, uint32_t dlAddr);
-
-    /**
      * Handle mid-frame microcode switch (G_LOAD_UCODE).
      * Re-detects and switches handler, then continues at currentPC.
      */
@@ -77,11 +72,6 @@ public:
     void RunShadow(uint32_t taskDataAddr, uint32_t ucodeAddr, uint32_t ucodeSize, uint32_t ucodeDataAddr,
                    uint32_t ucodeDataSize, uint32_t dlAddr, RT::ISceneGeometryConsumer* consumer,
                    uint8_t* rdramRW = nullptr);
-
-    /**
-     * Called at end of frame — flush pending work, update stats.
-     */
-    void OnFrameEnd();
 
     // --- Registry Access ---
 

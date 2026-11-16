@@ -22,8 +22,6 @@ HighResolutionTimer::HighResolutionTimer() { reset(); }
 
 void HighResolutionTimer::reset() { start_time = Clock::now(); }
 
-HighResolutionTimer::Duration HighResolutionTimer::elapsed() const { return Clock::now() - start_time; }
-
 // --- SystemTimer Implementation ---
 
 SystemTimer::SystemTimer(CN64System& system) : system(system) {}

@@ -69,7 +69,6 @@ public:
     HighResolutionTimer();
 
     void reset();
-    Duration elapsed() const;
 
     static double cycles_to_seconds(uint64_t cycles, uint32_t clock_frequency);
     static uint64_t seconds_to_cycles(double seconds, uint32_t clock_frequency);
@@ -189,38 +188,6 @@ private:
     };
 };
 
-class TimerManager {
-public:
-    static TimerManager& instance();
-
-    // Global timer access
-    void register_system_timer(SystemTimer* timer);
-    void unregister_system_timer(SystemTimer* timer);
-
-    // Global time query
-    uint64_t get_master_cycles() const;
-    double get_master_time_seconds() const;
-
-    // System time conversion
-    static uint32_t nanoseconds_to_cycles(uint64_t nanoseconds, uint32_t frequency);
-    static uint64_t cycles_to_nanoseconds(uint32_t cycles, uint32_t frequency);
-
-    // Sleep/wait functions
-    static void sleep_cycles(uint32_t cycles);
-    static void sleep_nanoseconds(uint64_t nanoseconds);
-
-private:
-    TimerManager() = default;
-    ~TimerManager() = default;
-
-    // No copying
-    TimerManager(const TimerManager&) = delete;
-    TimerManager& operator=(const TimerManager&) = delete;
-
-    std::vector<SystemTimer*> registered_timers;
-    uint64_t master_cycles = 0;
-};
-
 namespace TimerUtils {
 constexpr const char* timer_type_to_string(TimerType type) {
     switch (type) {
@@ -260,86 +227,6 @@ constexpr double calculate_seconds(uint32_t cycles, uint32_t frequency) {
     return static_cast<double>(cycles) / static_cast<double>(frequency);
 }
 } // namespace TimerUtils
-
-// Legacy CSystemTimer class (for compatibility)
-class CSystemTimer {
-public:
-    // Timer type enumeration (legacy)
-    enum TimerType {
-        UnknownTimer,
-        CompareTimer,
-        SoftResetTimer,
-        ViTimer,
-        AiTimerInterrupt,
-        AiTimerBusy,
-        AiTimerDMA,
-        SiTimer,
-        PiTimer,
-        RspTimer,
-        RSPTimerDlist,
-        DDPiTimer,
-        DDSeekTimer,
-        DDMotorTimer,
-        RomWriteDecay,
-        MaxTimer
-    };
-
-    struct TIMER_DETAILS {
-        union {
-            int64_t reserved;
-            bool Active;
-        };
-        int64_t CyclesToTimer;
-    };
-
-    CSystemTimer(CN64System& system);
-
-    // Legacy interface
-    void SetTimer(TimerType Type, uint32_t Cycles, bool bRelative);
-    uint32_t GetTimer(TimerType Type);
-    void StopTimer(TimerType Type);
-    void UpdateTimers();
-    void TimerDone();
-    void Reset();
-    void UpdateCompareTimer();
-    bool SaveAllowed();
-
-    // Save/load methods
-    void SaveData(class zipFile& file) const;
-    void SaveData(class CFile& file) const;
-    void LoadData(class zipFile& file);
-    void LoadData(class CFile& file);
-
-    // Debug methods
-    void RecordDifference(class CLog& LogFile, const CSystemTimer& rSystemTimer);
-
-    // Accessors
-    TimerType CurrentType() const { return m_Current; }
-
-    // Comparison operators
-    bool operator==(const CSystemTimer& rSystemTimer) const;
-    bool operator!=(const CSystemTimer& rSystemTimer) const;
-
-private:
-    // Disable copying
-    CSystemTimer() = delete;
-    CSystemTimer(const CSystemTimer&) = delete;
-    CSystemTimer& operator=(const CSystemTimer&) = delete;
-
-    // Internal methods
-    void SetCompareTimer();
-    void FixTimers();
-
-    CN64System& m_System;
-    TIMER_DETAILS m_TimerDetatils[MaxTimer];
-    int32_t m_LastUpdate;
-    int32_t& m_NextTimer;
-    TimerType m_Current;
-    bool m_inFixTimer;
-    CRegisters& m_Reg;
-    RomMemoryHandler& m_RomMemoryHandler;
-    AudioInterfaceHandler& m_AudioInterface;
-};
 
 } // namespace N64System
 

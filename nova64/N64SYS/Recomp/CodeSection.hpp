@@ -213,8 +213,6 @@ public:
     // Code generation
     enum class GenerationResult { Success, FailedAnalysis, FailedCodeGen, OutOfMemory, InvalidSection };
 
-    GenerationResult generate_native_code();
-
     void compute_dominance_tree();
 
     void propagate_constants();
@@ -328,7 +326,6 @@ private:
 
     // Helper methods
     void log_generation(const std::string& message);
-    void update_flags();
     void invalidate() { flags_ = SectionFlags::None; }
 
 private:
@@ -409,8 +406,6 @@ public:
     SectionGraph();
     ~SectionGraph();
 
-    // Analysis
-    void compute_dominance_tree();
     // Strongly Connected Components
 
     // Serialization
@@ -443,8 +438,6 @@ public:
 
         void reset() { *this = GraphStats(); }
     };
-
-    GraphStats statistics() const;
 
 private:
     std::unordered_map<NodeId, Node> nodes_;

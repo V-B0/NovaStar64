@@ -1253,27 +1253,6 @@ void CX64RecompilerOps::InitializeInstructionHandlers() {
 
 // --- Private - Register Allocation and Management ---
 
-void CX64RecompilerOps::AllocateRegister(uint32_t regIndex, bool is64Bit) {
-    if (regIndex >= 32 || regIndex == 0) return;
-    auto width = is64Bit ? RegisterWidth::Bits64 : RegisterWidth::Bits32;
-    m_RegisterSet->MapRegister(regIndex, width);
-}
-
-void CX64RecompilerOps::FreeRegister(uint32_t regIndex) {
-    if (regIndex >= 32 || regIndex == 0) return;
-    m_RegisterSet->UnmapRegister(regIndex);
-}
-
-void CX64RecompilerOps::SpillRegister(uint32_t regIndex) {
-    if (regIndex >= 32 || regIndex == 0) return;
-    m_RegisterSet->SpillRegister(regIndex);
-}
-
-void CX64RecompilerOps::ReloadRegister(uint32_t regIndex) {
-    if (regIndex >= 32 || regIndex == 0) return;
-    m_RegisterSet->ReloadRegister(regIndex);
-}
-
 // --- Private - Memory Access Helpers ---
 
 // --- Private - Optimization Helpers ---
@@ -2931,17 +2910,7 @@ DEFINE_COP1_S_ARITH(MOV)
         m_Stats.categories.floating++;                                                                                 \
     }
 
-DEFINE_COP1_S_CVT(ROUND_L)
-DEFINE_COP1_S_CVT(TRUNC_L)
-DEFINE_COP1_S_CVT(CEIL_L)
-DEFINE_COP1_S_CVT(FLOOR_L)
-DEFINE_COP1_S_CVT(ROUND_W)
-DEFINE_COP1_S_CVT(TRUNC_W)
-DEFINE_COP1_S_CVT(CEIL_W)
-DEFINE_COP1_S_CVT(FLOOR_W)
 DEFINE_COP1_S_CVT(CVT_D)
-DEFINE_COP1_S_CVT(CVT_W)
-DEFINE_COP1_S_CVT(CVT_L)
 
 void CX64RecompilerOps::COP1_S_CMP() {
     if (!m_CurrentContext) return;
@@ -2983,17 +2952,7 @@ DEFINE_COP1_D_ARITH(MOV)
         m_Stats.categories.floating++;                                                                                 \
     }
 
-DEFINE_COP1_D_CVT(ROUND_L)
-DEFINE_COP1_D_CVT(TRUNC_L)
-DEFINE_COP1_D_CVT(CEIL_L)
-DEFINE_COP1_D_CVT(FLOOR_L)
-DEFINE_COP1_D_CVT(ROUND_W)
-DEFINE_COP1_D_CVT(TRUNC_W)
-DEFINE_COP1_D_CVT(CEIL_W)
-DEFINE_COP1_D_CVT(FLOOR_W)
 DEFINE_COP1_D_CVT(CVT_S)
-DEFINE_COP1_D_CVT(CVT_W)
-DEFINE_COP1_D_CVT(CVT_L)
 
 void CX64RecompilerOps::COP1_D_CMP() {
     if (!m_CurrentContext) return;

@@ -211,7 +211,6 @@ void debug(const std::string& m) { Logging::log(Logging::Level::Debug, m); }
 void info(const std::string& m) { Logging::log(Logging::Level::Info, m); }
 void warning(const std::string& m) { Logging::log(Logging::Level::Warning, m); }
 void error(const std::string& m) { Logging::log(Logging::Level::Error, m); }
-void critical(const std::string& m) { Logging::log(Logging::Level::Critical, m); }
 
 #define NOVA_LOG_VARIADIC(fnName, levelName)                                                                           \
     void fnName(const char* format, ...) {                                                                             \

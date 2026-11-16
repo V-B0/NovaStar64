@@ -187,10 +187,4 @@ void RecordFrame(const CN64System& system, uint64_t frameNumber) {
     state.out.flush(); // a crash mid-run should still leave a usable trace
 }
 
-void Shutdown() {
-    TraceState& state = State();
-    if (state.out.is_open()) state.out.close();
-    state.enabled = false;
-}
-
 } // namespace Nova64::Trace

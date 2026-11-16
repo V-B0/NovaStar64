@@ -1219,44 +1219,6 @@ void VideoPlugin::UpdateScreen() {
     }
 }
 
-void VideoPlugin::ShowCFB() {
-    if (!m_renderer) return; // video disabled (no GL context) — don't touch GL
-    // Color Frame Buffer display — used when the CPU writes directly to the frame buffer
-    // without going through the RDP (e.g., for menus, 2D graphics).
-    if (!m_sysInfo.rdram || !m_sysInfo.viOriginReg) return;
-
-    UpdateVIRegisters();
-
-    uint32_t viType = m_viStatus & 0x3;
-    bool viActive = (viType == 2 || viType == 3);
-    if (!viActive || m_viOrigin == 0 || m_viWidth == 0) {
-        LOG_DEBUG("ShowCFB: VI not active (type={}, origin=0x{:06X}, width={})", viType, m_viOrigin, m_viWidth);
-        return;
-    }
-
-    uint32_t xscale = m_viXScale & 0xFFF;
-    uint32_t yscale = m_viYScale & 0xFFF;
-    uint32_t baseHeight = m_sysInfo.isPAL ? 288u : 240u;
-    uint32_t outHeight = (yscale > 0) ? (baseHeight * yscale) / 1024 : baseHeight;
-    (void)xscale; // xscale not needed here — fbWidth comes from VI width register
-
-    if (!m_viBlitProgram || outHeight == 0) return;
-
-    m_renderer->BeginFrame();
-    BlitVIFramebuffer(viType, m_viOrigin & 0x00FFFFFF, m_viWidth, outHeight);
-    m_renderer->EndFrame();
-
-    if (g_fbManager.IsGL()) {
-        if (auto* win = GetActiveWindow()) {
-            win->SwapBuffers();
-        }
-    } else {
-        m_renderer->Present();
-    }
-
-    LOG_DEBUG("ShowCFB: displayed origin=0x{:06X} {}x{}", m_viOrigin, m_viWidth, outHeight);
-}
-
 // --- Shared VI framebuffer decode + blit helper ---
 
 void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t fbWidth, uint32_t fbHeight) {
@@ -1355,28 +1317,6 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t f
 
 // --- VI Register Changes ---
 
-void VideoPlugin::ViStatusChanged() {
-    uint32_t newStatus = ReadVIRegister(m_sysInfo.viStatusReg);
-    if (newStatus == m_viStatus) return;
-
-    uint32_t oldType = m_viStatus & 0x3;
-    uint32_t newType = newStatus & 0x3;
-
-    m_viStatus = newStatus;
-
-    if (oldType != newType) {
-        LOG_DEBUG("VI type changed: {} -> {} ({}bpp)", oldType, newType, newType == 2 ? 16 : newType == 3 ? 32 : 0);
-    }
-}
-
-void VideoPlugin::ViWidthChanged() {
-    uint32_t newWidth = ReadVIRegister(m_sysInfo.viWidthReg);
-    if (newWidth == m_viWidth) return;
-
-    LOG_DEBUG("VI width changed: {} -> {}", m_viWidth, newWidth);
-    m_viWidth = newWidth;
-}
-
 void VideoPlugin::UpdateVIRegisters() {
     m_viStatus = ReadVIRegister(m_sysInfo.viStatusReg);
     m_viOrigin = ReadVIRegister(m_sysInfo.viOriginReg) & 0x00FFFFFF;
@@ -1386,29 +1326,6 @@ void VideoPlugin::UpdateVIRegisters() {
 }
 
 uint32_t VideoPlugin::ReadVIRegister(uint32_t* reg) const { return reg ? *reg : 0; }
-
-bool VideoPlugin::IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint32_t height, uint32_t bpp) const {
-    if (!fbData || width == 0 || height == 0) return false;
-
-    // Heuristic: if the first 100 pixels are all zero the buffer is treated as
-    // uninitialized, to avoid displaying garbage when the grace period ends too early.
-    uint32_t zeroCount = 0;
-    uint32_t pixelsToCheck = std::min(width * height, 100u);
-    for (uint32_t i = 0; i < pixelsToCheck; i++) {
-        if (bpp == 2) {
-            if (fbData[i * 2] == 0 && fbData[i * 2 + 1] == 0) zeroCount++;
-        } else {
-            if (fbData[i * 4] == 0 && fbData[i * 4 + 1] == 0 && fbData[i * 4 + 2] == 0 && fbData[i * 4 + 3] == 0)
-                zeroCount++;
-        }
-    }
-
-    // A fully zeroed frame is just black, so rejecting it and keeping the
-    // screen black is safe.
-    if (zeroCount == pixelsToCheck) return false;
-
-    return true;
-}
 
 // --- ROM Events ---
 
@@ -1523,22 +1440,7 @@ void VideoPlugin::SetupTexturePack() {
     if (m_rdpProcessor) m_rdpProcessor->SetHiResHashing(pack != nullptr || dump);
 }
 
-void VideoPlugin::RomClosed() {
-    LOG_INFO("ROM closed");
-    m_romLoaded = false;
-    m_activeProfile = nullptr;
-    Reset();
-}
-
 // --- Configuration ---
-
-void VideoPlugin::ApplyConfig(const PluginConfig& config) {
-    m_config = config;
-    m_config.SaveToFile("settings/NovaGraphics.ini");
-
-    // Only stores and saves the settings; the renderer is not recreated here.
-    LOG_INFO("Configuration applied");
-}
 
 void VideoPlugin::OpenConfigDialog() {
     // Ensure the config file exists with current settings
@@ -1555,16 +1457,6 @@ void VideoPlugin::OpenConfigDialog() {
 }
 
 // --- Debug Features ---
-
-void VideoPlugin::EnableWireframe(bool enable) {
-    m_wireframe = enable;
-    LOG_INFO("Wireframe mode: {}", enable ? "ON" : "OFF");
-}
-
-void VideoPlugin::EnableTextureDebug(bool enable) {
-    m_textureDebug = enable;
-    LOG_INFO("Texture debug mode: {}", enable ? "ON" : "OFF");
-}
 
 void VideoPlugin::TakeScreenshot(const std::string& path) {
     if (!m_renderer) {
@@ -1621,19 +1513,7 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
     LOG_INFO("Screenshot saved to: {}", path);
 }
 
-void VideoPlugin::DumpFrameInfo() {
-    LOG_INFO("=== Frame {} Info ===", m_frameCount);
-    LOG_INFO("DLists: {} | RDP cmds: {} | Tris: {} | Rects: {}", m_frameStats.dlistCount, m_frameStats.rdpCommandCount,
-             m_frameStats.triangleCount, m_frameStats.rectCount);
-    LOG_INFO("Frame: {:.2f}ms | DList: {:.2f}ms | Render: {:.2f}ms | Swap: {:.2f}ms", m_frameStats.frameTimeMs,
-             m_frameStats.dlistTimeMs, m_frameStats.renderTimeMs, m_frameStats.swapTimeMs);
-}
-
 PluginFrameStats VideoPlugin::GetFrameStats() const { return m_frameStats; }
-
-void VideoPlugin::LockRender() { m_glMutex.lock(); }
-
-void VideoPlugin::UnlockRender() { m_glMutex.unlock(); }
 
 // --- Internal: Renderer & Window ---
 

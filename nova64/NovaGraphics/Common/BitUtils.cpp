@@ -146,25 +146,6 @@ uint32_t CRC32_Fast(const void* data, size_t length, uint32_t seed) noexcept {
 
 // --- CRC64 (ECMA-182 polynomial, for shader cache keys) ---
 
-namespace {
-
-constexpr uint64_t kCRC64Poly = 0xC96C5795D7870F42ULL;
-
-struct CRC64Table {
-    std::array<uint64_t, 256> tab{};
-
-    constexpr CRC64Table() {
-        for (uint64_t i = 0; i < 256; i++) {
-            uint64_t c = i;
-            for (int j = 0; j < 8; j++) {
-                if (c & 1) c = kCRC64Poly ^ (c >> 1);
-                else c >>= 1;
-            }
-            tab[i] = c;
-        }
-    }
-};
-
-} // namespace
+namespace {} // namespace
 
 } // namespace Nova64::Video

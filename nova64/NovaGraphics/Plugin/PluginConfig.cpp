@@ -31,13 +31,6 @@ void PluginConfig::Clamp() {
     threadCount = std::max(0, std::min(threadCount, 16));
 }
 
-bool PluginConfig::Validate() const {
-    if (windowWidth < 320 || windowHeight < 240) return false;
-    if (internalResScale < 1 || internalResScale > 8) return false;
-    if (backendType < 0 || backendType > 2) return false;
-    return true;
-}
-
 // --- INI Serialization ---
 
 bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
@@ -297,22 +290,6 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
         return false;
     }
     return false;
-}
-
-std::string PluginConfig::GetValue(const std::string& key) const {
-    if (key == "windowWidth") return std::to_string(windowWidth);
-    if (key == "windowHeight") return std::to_string(windowHeight);
-    if (key == "internalResScale") return std::to_string(internalResScale);
-    if (key == "fullscreen") return fullscreen ? "1" : "0";
-    if (key == "vsync") return vsync ? "1" : "0";
-    if (key == "backendType") return std::to_string(backendType);
-    if (key == "antiAliasing") return std::to_string(static_cast<int>(antiAliasing));
-    if (key == "texFilter") return std::to_string(static_cast<int>(texFilter));
-    if (key == "gamma") return std::to_string(gamma);
-    if (key == "fbEmulation") return fbEmulation ? "1" : "0";
-    if (key == "showFPS") return showFPS ? "1" : "0";
-    // Only these keys have getters; any other key yields an empty string.
-    return "";
 }
 
 bool PluginConfig::LoadFromFile(const std::string& path) {

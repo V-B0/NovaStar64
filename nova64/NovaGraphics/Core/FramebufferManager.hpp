@@ -227,13 +227,6 @@ public:
     /// Is an async readback currently pending?
     bool IsReadbackPending() const { return m_pboFence != nullptr; }
 
-    /// Copy a rectangular region between two framebuffer addresses (RDP tile copy)
-    void TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int32_t srcX, int32_t srcY, int32_t dstX, int32_t dstY,
-                  int32_t w, int32_t h);
-
-    /// Check if RDRAM region was modified since last GPU upload
-    bool IsRDRAMDirty(uint32_t address, uint32_t size) const;
-
     /// Mark RDRAM region as modified
     void MarkRDRAMDirty(uint32_t address, uint32_t size);
 
@@ -263,16 +256,9 @@ public:
     void ConvertRGBA8ToRGBA16(const uint8_t* src, uint16_t* dst, uint32_t pixelCount);
     void ConvertRGBA8ToRGBA32(const uint8_t* src, uint32_t* dst, uint32_t pixelCount);
 
-    /// Convert depth buffer format (N64 uses 18-bit: 14.2 fixed + 2 dz)
-    void ConvertDepthN64ToFloat(const uint16_t* src, float* dst, uint32_t pixelCount);
     void ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount, uint32_t width = 0);
 
     // --- Framebuffer Effects ---
-    /// Copy between framebuffers (used by some games for effects)
-    void CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst);
-
-    /// Fill framebuffer region with color
-    void FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
 
     /// Get a GL_TEXTURE_2D handle safe to bind as a shader sampler2D.
     /// Handles MSAA resolve (returns resolvedTex) and self-texture
@@ -283,8 +269,6 @@ public:
     /// Called after a scene batch is flushed so that a subsequent fill-rect
     /// clear (common in N64 DLs) does not destroy the completed frame.
     void SnapshotForPresentation();
-
-    void ResolveMSAA(GPUFramebuffer* msaaFB, GPUFramebuffer* resolved);
 
     // --- Statistics ---
     struct Stats {

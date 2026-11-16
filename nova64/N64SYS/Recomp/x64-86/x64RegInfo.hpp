@@ -291,8 +291,6 @@ public:
      */
     void UnmapRegister(uint32_t mipsReg, bool writeBack = true, bool force = false);
 
-    bool IsMapped(uint32_t mipsReg) const noexcept;
-
     bool IsHostRegisterUsed(X64RegisterType hostReg) const noexcept;
 
     // Register operations
@@ -330,13 +328,6 @@ public:
      */
     void FreeHostRegister(X64RegisterType reg);
 
-    // State management
-    void SaveState();
-
-    void RestoreState();
-
-    void SynchronizeWith(const CX64RegInfo& other);
-
     // Query and statistics
     struct AllocationStats {
         size_t totalAllocations = 0;
@@ -354,10 +345,6 @@ public:
     size_t GetMappedRegisterCount() const noexcept;
 
     size_t GetDirtyRegisterCount() const noexcept;
-
-    // Debug and validation
-    std::string ToString() const;
-    bool Validate() const noexcept;
 
     IRegisterAllocationStrategy* GetAllocationStrategy() noexcept { return m_AllocationStrategy.get(); }
 
@@ -412,46 +399,6 @@ private:
 
     // Friends
     friend class RegisterAllocationStrategy;
-};
-
-// Common allocation strategies
-class LinearScanAllocator : public IRegisterAllocationStrategy {
-public:
-    explicit LinearScanAllocator(CX64RegInfo& regInfo);
-
-    X64RegisterType AllocateRegister(const RegisterSet& regSet, X64RegisterClass regClass,
-                                     uint32_t preferredReg = UINT32_MAX) override;
-    void FreeRegister(X64RegisterType reg) override;
-    bool IsRegisterAvailable(X64RegisterType reg) const override;
-    void Reset() override;
-    std::string GetName() const override { return "LinearScan"; }
-
-private:
-    CX64RegInfo& m_RegInfo;
-    std::array<uint32_t, 256> m_RegisterUsageCount;
-};
-
-class RoundRobinAllocator : public IRegisterAllocationStrategy {
-public:
-    explicit RoundRobinAllocator(CX64RegInfo& regInfo);
-
-    X64RegisterType AllocateRegister(const RegisterSet& regSet, X64RegisterClass regClass,
-                                     uint32_t preferredReg = UINT32_MAX) override;
-    void FreeRegister(X64RegisterType reg) override;
-    bool IsRegisterAvailable(X64RegisterType reg) const override;
-    void Reset() override;
-    std::string GetName() const override { return "RoundRobin"; }
-
-private:
-    CX64RegInfo& m_RegInfo;
-    uint32_t m_NextGPR = 0;
-    uint32_t m_NextXMM = 0;
-};
-
-// Exception for allocation errors
-class RegisterAllocationError : public std::runtime_error {
-public:
-    explicit RegisterAllocationError(const std::string& message) : std::runtime_error(message) {}
 };
 
 } // namespace Recompiler

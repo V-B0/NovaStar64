@@ -229,13 +229,10 @@ public:
 
     const RomImage& GetImage() const;
 
-    RomFormat GetFormat() const;
-
     size_t GetSize() const;
 
     DataView GetBootCode() const;
 
-    const uint8_t* GetRomAddress() const;
     uint8_t* GetRomAddress();
 
     // CIC detection

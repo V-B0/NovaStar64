@@ -105,69 +105,13 @@ void DepthConvert::DecodeRDRAM16(uint16_t rdram, uint16_t& z14, uint8_t& dz4Lowe
 
 // --- Depth Buffer Config ---
 
-void DepthBufferConfig::DecodeOtherMode(uint32_t otherModeH, uint32_t otherModeL) {
-    // Z compare: bit 4 of otherModeL
-    // Z update:  bit 5 of otherModeL
-    enabled = (otherModeL & (1 << 4)) != 0;      // z_cmp
-    writeEnabled = (otherModeL & (1 << 5)) != 0; // z_upd
-
-    // Z source: bit 2 of otherModeL
-    source = ((otherModeL & (1 << 2)) != 0) ? DepthSource::Primitive : DepthSource::Pixel;
-
-    // Z mode: bits 10-11 of otherModeL
-    uint32_t zm = (otherModeL >> 10) & 0x3;
-    zMode = static_cast<ZMode>(zm);
-
-    // Default compare mode based on z-mode
-    switch (zMode) {
-    case ZMode::Opaque:
-    case ZMode::Transparent:    compareMode = DepthCompareMode::Less; break;
-    case ZMode::Decal:          compareMode = DepthCompareMode::LessEqual; break;
-    case ZMode::Interpenetrate: compareMode = DepthCompareMode::Less; break;
-    }
-}
-
-void DepthBufferConfig::SetPrimitiveDepth(uint16_t z, uint16_t dz) {
-    primZ = DepthConvert::N64ZToFloat(z);
-    primDeltaZ = static_cast<float>(dz) / 65536.0f;
-}
-
 // --- GPUDepthBuffer ---
-
-bool GPUDepthBuffer::OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) const {
-    if (address == 0) return false;
-    uint32_t mySize = width * height * 2; // 16-bit Z per pixel
-    uint32_t otherSize = w * h * 2;
-    uint32_t myEnd = address + mySize;
-    uint32_t otherEnd = addr + otherSize;
-    return (address < otherEnd) && (addr < myEnd);
-}
 
 // --- Depth Compare Logic ---
 
 const std::array<uint16_t, 16> DepthCompare::s_dzDecode = {0x0000, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010,
                                                            0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400,
                                                            0x0800, 0x1000, 0x2000, 0x4000};
-
-bool DepthCompare::Compare(float incomingZ, float storedZ, DepthCompareMode mode, ZMode zMode, float decalTolerance) {
-    // Decal mode: pass if approximately equal
-    if (zMode == ZMode::Decal) {
-        float diff = std::abs(incomingZ - storedZ);
-        return diff <= decalTolerance;
-    }
-
-    switch (mode) {
-    case DepthCompareMode::Never:     return false;
-    case DepthCompareMode::Less:      return incomingZ < storedZ;
-    case DepthCompareMode::Equal:     return std::abs(incomingZ - storedZ) < 1e-6f;
-    case DepthCompareMode::LessEqual: return incomingZ <= storedZ;
-    case DepthCompareMode::Greater:   return incomingZ > storedZ;
-    case DepthCompareMode::NotEqual:  return std::abs(incomingZ - storedZ) >= 1e-6f;
-    case DepthCompareMode::GreaterEq: return incomingZ >= storedZ;
-    case DepthCompareMode::Always:    return true;
-    default:                          return true;
-    }
-}
 
 bool DepthCompare::CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ, uint16_t storedZ14, uint8_t storedDZ, ZMode zMode) {
     // Get the actual delta values
@@ -256,8 +200,6 @@ void GPUDepthBufferManager::Reset() {
     m_softwareDZ.assign(m_swWidth * m_swHeight, 0);
 }
 
-void GPUDepthBufferManager::SetConfig(const DepthBufferConfig& config) { m_config = config; }
-
 // --- Buffer Management ---
 
 void GPUDepthBufferManager::OnSetDepthImage(uint32_t address, uint32_t width) {
@@ -335,16 +277,6 @@ GPUDepthBuffer* GPUDepthBufferManager::FindOrCreate(uint32_t address, uint32_t w
 
     m_stats.activeBuffers = m_bufferCount;
     return &buf;
-}
-
-GPUDepthBuffer* GPUDepthBufferManager::FindByAddress(uint32_t address) const {
-    address &= 0x00FFFFFF;
-    for (int i = 0; i < m_bufferCount; ++i) {
-        if (m_buffers[i].address == address) {
-            return const_cast<GPUDepthBuffer*>(&m_buffers[i]);
-        }
-    }
-    return nullptr;
 }
 
 void GPUDepthBufferManager::CreateGPUResources(GPUDepthBuffer& buf) {
@@ -429,100 +361,9 @@ void GPUDepthBufferManager::ClearDepthBuffer(float clearValue) {
     glClearNamedFramebufferfv(m_current->glDepthFBO, GL_DEPTH, 0, &clearValue);
 }
 
-void GPUDepthBufferManager::ClearDepthBufferN64(uint16_t clearZ, uint16_t clearDZ) {
-    float clearValue = DepthConvert::N64ZToFloat(clearZ);
-    ClearDepthBuffer(clearValue);
-}
-
 // --- GPU ↔ CPU Copy ---
 
-void GPUDepthBufferManager::CopyToGPU(GPUDepthBuffer& buf, const uint8_t* rdram, uint32_t rdramSize) {
-    if (buf.address + buf.width * buf.height * 2 > rdramSize) return;
-    if (!buf.glDepthTexture) return;
-
-    m_stats.bufferUploads++;
-
-    // Convert N64 16-bit Z values to float depth
-    std::vector<float> depthData(buf.width * buf.height);
-    const uint16_t* src = reinterpret_cast<const uint16_t*>(rdram + buf.address);
-
-    for (uint32_t y = 0; y < buf.height; ++y) {
-        for (uint32_t x = 0; x < buf.width; ++x) {
-            uint32_t idx = y * buf.width + x;
-            // N64 is big-endian
-            uint16_t raw = (src[idx] >> 8) | (src[idx] << 8);
-            uint16_t z14;
-            uint8_t dz;
-            DepthConvert::DecodeRDRAM16(raw, z14, dz);
-            depthData[idx] = DepthConvert::N64ZToFloat(z14);
-        }
-    }
-
-    glTextureSubImage2D(buf.glDepthTexture, 0, 0, 0, buf.width, buf.height, GL_DEPTH_COMPONENT, GL_FLOAT,
-                        depthData.data());
-    buf.dirty = false;
-}
-
-void GPUDepthBufferManager::CopyFromGPU(const GPUDepthBuffer& buf, uint8_t* rdram, uint32_t rdramSize) {
-    if (buf.address + buf.width * buf.height * 2 > rdramSize) return;
-    if (!buf.glDepthTexture) return;
-
-    m_stats.bufferDownloads++;
-
-    // Read float depth from GPU
-    std::vector<float> depthData(buf.width * buf.height);
-    glGetTextureImage(buf.glDepthTexture, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
-                      static_cast<GLsizei>(depthData.size() * sizeof(float)), depthData.data());
-
-    // Convert back to N64 16-bit format
-    uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + buf.address);
-    for (uint32_t y = 0; y < buf.height; ++y) {
-        for (uint32_t x = 0; x < buf.width; ++x) {
-            uint32_t idx = y * buf.width + x;
-            uint16_t z14 = DepthConvert::FloatToN64Z(depthData[idx]);
-            uint8_t dz4 = DepthConvert::GetDeltaZ(z14);
-            uint16_t encoded = DepthConvert::EncodeRDRAM16(z14, dz4);
-            // Write big-endian
-            dst[idx] = (encoded >> 8) | (encoded << 8);
-        }
-    }
-}
-
 // --- Software Depth Test ---
-
-bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, float deltaZ) {
-    if (x < 0 || y < 0 || x >= static_cast<int32_t>(m_swWidth) || y >= static_cast<int32_t>(m_swHeight)) return false;
-    if (m_softwareZ.empty()) return true;
-
-    uint32_t idx = static_cast<uint32_t>(y) * m_swWidth + static_cast<uint32_t>(x);
-
-    uint16_t inZ14 = DepthConvert::FloatToN64Z(depth);
-    uint8_t inDZ = DepthCompare::ComputePixelDeltaZ(deltaZ, deltaZ);
-
-    uint16_t storedZ14 = m_softwareZ[idx];
-    uint8_t storedDZ = m_softwareDZ[idx];
-
-    // Perform depth comparison
-    bool pass = false;
-    if (m_config.enabled) {
-        pass = DepthCompare::CompareWithDeltaZ(inZ14, inDZ, storedZ14, storedDZ, m_config.zMode);
-    } else {
-        pass = true;
-    }
-
-    if (pass) {
-        m_stats.depthTestsPassed++;
-        if (m_config.writeEnabled) {
-            m_softwareZ[idx] = inZ14;
-            m_softwareDZ[idx] = inDZ;
-            m_stats.depthWrites++;
-        }
-    } else {
-        m_stats.depthTestsFailed++;
-    }
-
-    return pass;
-}
 
 // --- Z-Image Textures (for shader-based N64 depth compare) ---
 
@@ -579,30 +420,6 @@ void GPUDepthBufferManager::ClearDepthImageTextures(GPUDepthBuffer& buf) {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void GPUDepthBufferManager::UploadRDRAMToZImage(GPUDepthBuffer& buf, const uint8_t* rdram, uint32_t rdramSize) {
-    if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
-    if (buf.width == 0 || buf.height == 0) return;
-    uint32_t pixelCount = buf.width * buf.height;
-    if (buf.address + pixelCount * 2 > rdramSize) return;
-
-    std::vector<float> zData(pixelCount);
-    std::vector<float> dzData(pixelCount);
-    const uint16_t* src = reinterpret_cast<const uint16_t*>(rdram + buf.address);
-
-    for (uint32_t i = 0; i < pixelCount; ++i) {
-        // N64 is big-endian; RDRAM is stored word-swapped in little-endian host
-        uint16_t raw = (src[i] >> 8) | (src[i] << 8);
-        uint16_t z14;
-        uint8_t dz;
-        DepthConvert::DecodeRDRAM16(raw, z14, dz);
-        zData[i] = DepthConvert::N64ZToFloat(z14);
-        dzData[i] = static_cast<float>(dz) / 15.0f;
-    }
-
-    glTextureSubImage2D(buf.glZImageTex, 0, 0, 0, buf.width, buf.height, GL_RED, GL_FLOAT, zData.data());
-    glTextureSubImage2D(buf.glDeltaZImageTex, 0, 0, 0, buf.width, buf.height, GL_RED, GL_FLOAT, dzData.data());
-}
-
 void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf, uint32_t zUnit, uint32_t dzUnit) {
     if (buf.glZImageTex) {
         glBindTextureUnit(zUnit, buf.glZImageTex);
@@ -616,38 +433,7 @@ void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf, ui
 
 // --- Depth Attachment Helper ---
 
-void GPUDepthBufferManager::SetDepthAttachment(const GPUDepthBuffer& buf, uint32_t fbo) {
-    if (!buf.glDepthTexture || !fbo) return;
-    glNamedFramebufferTexture(fbo, GL_DEPTH_ATTACHMENT, buf.glDepthTexture, 0);
-}
-
 // --- MSAA Depth Resolve ---
-
-void GPUDepthBufferManager::ResolveDepthBuffer(GPUDepthBuffer& buf, uint32_t msaaFBO) {
-    if (!msaaFBO || !buf.glDepthTexture) return;
-
-    // Lazily create single-sample resolve texture
-    if (!buf.glResolvedDepthTex) {
-        glCreateTextures(GL_TEXTURE_2D, 1, &buf.glResolvedDepthTex);
-        glTextureStorage2D(buf.glResolvedDepthTex, 1, GL_DEPTH_COMPONENT32F, buf.width, buf.height);
-        glTextureParameteri(buf.glResolvedDepthTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(buf.glResolvedDepthTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    }
-
-    // Use a temporary FBO for the resolve target
-    uint32_t resolveFBO = 0;
-    glCreateFramebuffers(1, &resolveFBO);
-    glNamedFramebufferTexture(resolveFBO, GL_DEPTH_ATTACHMENT, buf.glResolvedDepthTex, 0);
-    glNamedFramebufferDrawBuffer(resolveFBO, GL_NONE);
-    glNamedFramebufferReadBuffer(resolveFBO, GL_NONE);
-
-    // Blit MSAA depth → single-sample
-    glBlitNamedFramebuffer(msaaFBO, resolveFBO, 0, 0, buf.width, buf.height, 0, 0, buf.width, buf.height,
-                           GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-
-    glDeleteFramebuffers(1, &resolveFBO);
-    buf.resolved = true;
-}
 
 // --- Z Lookup Table Texture ---
 
@@ -683,10 +469,6 @@ void GPUDepthBufferManager::InitZLUT() {
 
     m_zLutInitialized = true;
     LOG_INFO("Z LUT texture initialized (512x512, 262144 entries)");
-}
-
-void GPUDepthBufferManager::BindZLUT(uint32_t textureUnit) {
-    if (m_zLutTex) glBindTextureUnit(textureUnit, m_zLutTex);
 }
 
 // --- Frame Management ---

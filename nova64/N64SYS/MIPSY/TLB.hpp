@@ -153,18 +153,6 @@ enum class TlbException : uint8_t {
     BusError      // Bus error
 };
 
-struct TlbTranslationResult {
-    uint32_t physical_address = 0;
-    MemorySegment segment = MemorySegment::Unused;
-    TlbException exception = TlbException::None;
-    bool dirty = false;
-    bool cached = false;
-    bool valid = false;
-
-    explicit operator bool() const { return valid && exception == TlbException::None; }
-    std::string exception_string() const;
-};
-
 class TranslationLookasideBuffer {
 public:
     static constexpr size_t TLB_ENTRY_COUNT = 32;      // MIPS R4300 has 32 TLB entries
@@ -176,8 +164,6 @@ public:
 
     using CTLB = TranslationLookasideBuffer;
 
-    void Initialize(Nova64::MipsMemoryVM* mmu, CRegisters* registers, CRecompiler* recompiler);
-
     TranslationLookasideBuffer(const TranslationLookasideBuffer&) = delete;
     TranslationLookasideBuffer& operator=(const TranslationLookasideBuffer&) = delete;
 
@@ -186,12 +172,9 @@ public:
 
     // Core TLB operations
     void reset(bool invalidate_tlb = true);
-    void probe(); // TLB probe instruction (TLBP)
-                  // Read TLB entry (TLBR)
-                  // Write TLB entry (TLBWI/TLBWR)
-
-    // Address translation
-    TlbTranslationResult translate_address(uint64_t virtual_address, bool is_write = false, bool is_execute = false);
+    // TLB probe instruction (TLBP)
+    // Read TLB entry (TLBR)
+    // Write TLB entry (TLBWI/TLBWR)
 
     // TLB query operations
     bool is_address_defined(uint64_t virtual_address, bool& dirty) const;
@@ -277,7 +260,6 @@ private:
     class RandomIndexGenerator {
     public:
         RandomIndexGenerator(size_t max_index);
-        size_t next();
         void set_wired(size_t wired);
 
     private:
@@ -339,12 +321,8 @@ public:
     enum class TlbLookupResult { NoMatch, MatchInvalid, MatchValid };
 
     TlbLookupResult AddressLookup(uint64_t VAddr, bool& Dirty);
-    TLB_ENTRY& TlbEntry(int32_t Entry);
 
     bool VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused);
-
-    // Debug methods
-    void RecordDifference(class CLog& LogFile, const CTLB& rTLB);
 
     bool operator==(const CTLB& rTLB) const;
     bool operator!=(const CTLB& rTLB) const;
@@ -407,27 +385,6 @@ bool tlb_matches(uint64_t entry_hi, uint64_t virtual_address, uint8_t asid);
 std::string format_address(uint64_t address);
 std::string format_tlb_entry(const TlbEntry& entry);
 } // namespace TlbUtils
-
-class TlbManager {
-public:
-    static TlbManager& instance();
-
-    void register_tlb(TranslationLookasideBuffer* tlb);
-    void unregister_tlb(TranslationLookasideBuffer* tlb);
-
-    // Global TLB operations
-    void invalidate_all_tlbs();
-    void update_all_tlbs_for_mode_change(PrivilegeMode new_mode);
-
-private:
-    TlbManager() = default;
-    ~TlbManager() = default;
-
-    TlbManager(const TlbManager&) = delete;
-    TlbManager& operator=(const TlbManager&) = delete;
-
-    std::vector<TranslationLookasideBuffer*> registered_tlbs;
-};
 
 } // namespace N64System
 

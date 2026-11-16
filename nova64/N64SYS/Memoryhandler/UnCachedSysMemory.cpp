@@ -37,10 +37,9 @@ constexpr uint32_t AUTO_DETECT_THRESHOLD = 0x88000;
 
 // --- Constructor/Destructor ---
 
-UnCachedSysMemory::UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64::MipsMemoryVM& mmu,
+UnCachedSysMemory::UnCachedSysMemory(CN64System& system, CRegisters& reg, Nova64::MipsMemoryVM& /*mmu*/,
                                      bool savesReadOnly) :
-    m_System(system), m_Reg(reg), m_MMU(mmu), m_Sram(savesReadOnly), m_FlashRam(savesReadOnly),
-    m_SavesReadOnly(savesReadOnly) {
+    m_System(system), m_Reg(reg), m_Sram(savesReadOnly), m_FlashRam(savesReadOnly), m_SavesReadOnly(savesReadOnly) {
     Log::infof("UnCachedSysMemory: Initialized (saves %s)", savesReadOnly ? "read-only" : "read-write");
 }
 
@@ -116,99 +115,6 @@ bool UnCachedSysMemory::Write32(uint32_t addr, uint32_t val, uint32_t mask) {
 }
 
 // --- DMA Operations ---
-
-bool UnCachedSysMemory::DMARead() {
-    // PI DMA: Read from save memory to RDRAM
-    // PI_CART_ADDR -> PI_DRAM_ADDR
-
-    uint32_t cartAddr = m_Reg.m_Peripheral_Interface[3];                    // PI_CART_ADDR_REG
-    uint32_t dramAddr = m_Reg.m_Peripheral_Interface[0];                    // PI_DRAM_ADDR_REG
-    uint32_t length = ((m_Reg.m_Peripheral_Interface[2]) & 0x00FFFFFF) + 1; // PI_RD_LEN_REG
-
-    // Align length to 2 bytes
-    if ((length & 1) != 0) {
-        length += 1;
-    }
-
-    Log::debugf("UnCachedSysMemory: DMA Read - Cart[0x%08X] -> RDRAM[0x%08X], length=0x%X", cartAddr, dramAddr, length);
-
-    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
-
-    // Auto-detect save chip type
-    if (m_System.m_SaveUsing == N64Types::SaveChipType::Auto) {
-        AutoDetectSaveType(offset);
-    }
-
-    uint8_t* rdram = m_MMU.Rdram();
-
-    if (!rdram) {
-        Log::errorf("UnCachedSysMemory: DMA read failed - RDRAM not initialized");
-        CompleteDMA(true);
-        return false;
-    }
-
-    N64Types::SaveChipType saveType = m_System.m_SaveUsing;
-
-    if (saveType == N64Types::SaveChipType::Sram) {
-        m_Sram.DmaFromSram(rdram + dramAddr, offset, length);
-    } else if (saveType == N64Types::SaveChipType::FlashRam) {
-        m_FlashRam.DmaFromFlashram(rdram + dramAddr, offset, length);
-    } else {
-        Log::errorf("UnCachedSysMemory: DMA read failed - unknown save type");
-        CompleteDMA(true);
-        return false;
-    }
-
-    CompleteDMA(false);
-    return true;
-}
-
-void UnCachedSysMemory::DMAWrite() {
-    // PI DMA: Write from RDRAM to save memory
-    // PI_DRAM_ADDR -> PI_CART_ADDR
-
-    uint32_t cartAddr = m_Reg.m_Peripheral_Interface[3];                    // PI_CART_ADDR_REG
-    uint32_t dramAddr = m_Reg.m_Peripheral_Interface[0];                    // PI_DRAM_ADDR_REG
-    uint32_t length = ((m_Reg.m_Peripheral_Interface[2]) & 0x00FFFFFE) + 2; // PI_WR_LEN_REG
-
-    Log::debugf("UnCachedSysMemory: DMA Write - RDRAM[0x%08X] -> Cart[0x%08X], length=0x%X", dramAddr, cartAddr,
-                length);
-
-    uint32_t offset = (cartAddr & SaveMemory::REGION_MASK) - SaveMemory::REGION_BASE;
-
-    // Auto-detect save chip type
-    if (m_System.m_SaveUsing == N64Types::SaveChipType::Auto) {
-        AutoDetectSaveType(offset);
-    }
-
-    if (m_SavesReadOnly) {
-        Log::warningf("UnCachedSysMemory: DMA write blocked (read-only mode)");
-        CompleteDMA(false);
-        return;
-    }
-
-    uint8_t* rdram = m_MMU.Rdram();
-
-    if (!rdram) {
-        Log::errorf("UnCachedSysMemory: DMA write failed - RDRAM not initialized");
-        CompleteDMA(true);
-        return;
-    }
-
-    N64Types::SaveChipType saveType = m_System.m_SaveUsing;
-
-    if (saveType == N64Types::SaveChipType::Sram) {
-        m_Sram.DmaToSram(rdram + dramAddr, offset, length);
-    } else if (saveType == N64Types::SaveChipType::FlashRam) {
-        m_FlashRam.DmaToFlashram(rdram + dramAddr, offset, length);
-    } else {
-        Log::errorf("UnCachedSysMemory: DMA write failed - unknown save type");
-        CompleteDMA(true);
-        return;
-    }
-
-    CompleteDMA(false);
-}
 
 // --- Save Chip Type Detection ---
 
@@ -312,5 +218,3 @@ void UnCachedSysMemory::CompleteDMA(bool error) {
 }
 
 // --- Save Access ---
-
-CFlashRam& UnCachedSysMemory::GetFlashRam() { return m_FlashRam; }

@@ -189,8 +189,6 @@ public:
 private:
     CRecompiler() = delete;
 
-    // Core compilation
-    CCompiledFunc* CompileCode();
     CCompiledFunc* CompileCode(uint32_t address);
 
     // Execution engine implementations

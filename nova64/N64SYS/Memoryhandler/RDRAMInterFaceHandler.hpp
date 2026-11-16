@@ -94,8 +94,6 @@ public:
     /// Save states and rewind (see StateArchive.hpp).
     void SerializeState(Nova64::StateArchive& ar);
 
-    // Debug information
-    [[nodiscard]] std::string get_register_dump() const;
     [[nodiscard]] bool is_initialized() const { return m_initialized; }
 
     // Get register access (for other components)
@@ -117,13 +115,7 @@ private:
 
     bool m_initialized = false;
 
-    // Helper methods
-    [[nodiscard]] bool is_register_address(uint32_t address) const;
-
     // Register handling
     void handle_config_write(uint32_t value, uint32_t mask);
     void handle_mode_write(uint32_t value, uint32_t mask);
-
-    // Logging
-    void log_register_access(uint32_t address, uint32_t value, bool is_write) const;
 };

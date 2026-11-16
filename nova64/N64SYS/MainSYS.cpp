@@ -1091,14 +1091,6 @@ void CN64System::ExecuteRecompiler() {
     recompiler.Run();
 }
 
-void CN64System::ExecuteSyncCPU() {
-    LOG_DEBUG("ExecuteSyncCPU");
-    // Sync CPU mode is meant to validate recompiler output against the interpreter, which needs
-    // single-step hooks in the recompiler; without them it runs the interpreter alone.
-    LOG_WARNING("SyncCPU: lockstep comparison not yet available, falling back to interpreter");
-    ExecuteInterpret();
-}
-
 void CN64System::CpuStopped() {
     LOG_DEBUG("CpuStopped");
 
@@ -1147,21 +1139,6 @@ void CN64System::DelayedRelativeJump(int32_t offset) {
         m_PipelineStage = N64Types::PipelineStage::PermanentLoopDoDelay;
     } else {
         m_PipelineStage = N64Types::PipelineStage::DelaySlot;
-    }
-}
-
-void CN64System::ExternalEvent(SystemEvent action) {
-    Log::debugf("ExternalEvent: %d", static_cast<int>(action));
-
-    switch (action) {
-    case SysEvent_CloseCPU:
-        Log::info("ExternalEvent: SysEvent_CloseCPU -> ending emulation");
-        m_EndEmulation = true;
-        break;
-    case SysEvent_ResetCPU_Soft: GameReset(); break;
-    case SysEvent_ResetCPU_Hard: Reset(true, true); break;
-    case SysEvent_PauseCPU:      Pause(); break;
-    default:                     Log::warningf("Unknown system event: %d", static_cast<int>(action)); break;
     }
 }
 

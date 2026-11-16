@@ -273,47 +273,8 @@ void VideoInterfaceHandler::apply_video_mode(const VideoMode& mode) {
     log_video_mode_change(m_video_state.previous_mode, mode);
 }
 
-std::string VideoInterfaceHandler::get_register_dump() const {
-    std::stringstream ss;
-    ss << std::hex << std::uppercase << std::setfill('0');
-    ss << "VI_STATUS:  " << std::setw(8) << m_vi_regs.status() << "\n";
-    ss << "VI_ORIGIN:  " << std::setw(8) << m_vi_regs.origin() << "\n";
-    ss << "VI_WIDTH:   " << std::setw(8) << m_vi_regs.width() << "\n";
-    ss << "VI_INTR:    " << std::setw(8) << m_vi_regs.v_intr() << "\n";
-    ss << "VI_CURRENT: " << std::setw(8) << m_video_state.half_line << "\n";
-    ss << "VI_BURST:   " << std::setw(8) << m_vi_regs.burst() << "\n";
-    ss << "VI_V_SYNC:  " << std::setw(8) << m_vi_regs.v_sync() << "\n";
-    ss << "VI_H_SYNC:  " << std::setw(8) << m_vi_regs.h_sync();
-    return ss.str();
-}
-
-void VideoInterfaceHandler::save_state(std::ostream& os) const {
-    os.write(reinterpret_cast<const char*>(m_registers.data()), m_registers.size() * sizeof(uint32_t));
-
-    os.write(reinterpret_cast<const char*>(&m_video_state), sizeof(VideoState));
-    os.write(reinterpret_cast<const char*>(&m_stats), sizeof(Statistics));
-}
-
-void VideoInterfaceHandler::load_state(std::istream& is) {
-    is.read(reinterpret_cast<char*>(m_registers.data()), m_registers.size() * sizeof(uint32_t));
-
-    is.read(reinterpret_cast<char*>(&m_video_state), sizeof(VideoState));
-    is.read(reinterpret_cast<char*>(&m_stats), sizeof(Statistics));
-}
-
 void VideoInterfaceHandler::log_video_mode_change(const VideoMode& old_mode, const VideoMode& new_mode) const {
     Log::infof("VI Mode Change: %s -> %s", old_mode.to_string().c_str(), new_mode.to_string().c_str());
-}
-
-void VideoInterfaceHandler::log_register_access(uint32_t address, uint32_t value, bool is_write) const {
-    Log::debugf("VI Reg %s [0x%X] = 0x%X", (is_write ? "Write" : "Read"), address, value);
-}
-
-void VideoInterfaceHandler::on_system_reset() { reset(); }
-
-void VideoInterfaceHandler::on_game_state_loaded() {
-    // Refresh derived state
-    detect_video_mode_change();
 }
 
 void VideoInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
