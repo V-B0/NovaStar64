@@ -26,7 +26,6 @@
 #include <mutex>
 #include <shared_mutex>
 
-// Forward declarations
 #include "CodeBlock.hpp"
 
 namespace Nova64 {
@@ -38,14 +37,11 @@ class Recompiler;
 
 namespace Nova64 {
 
-// Forward declarations
 class CpuRegisters;
 class MipsMemory;
-// using N64System = CN64System; // Removed to prevent redefinition conflicts
 
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlockCache;
 class ProfileData;
 
@@ -70,7 +66,6 @@ namespace Recompiler {
 
 enum class BlockId : uint32_t;
 
-// Function compilation status
 enum class CompilationStatus : uint8_t {
     NotCompiled,
     Compiling,
@@ -83,7 +78,6 @@ enum class CompilationStatus : uint8_t {
     Specialized
 };
 
-// Function optimization levels
 enum class OptimizationLevel : uint8_t {
     None,          // No optimization, direct translation
     Basic,         // Basic optimizations (dead code elimination, constant folding)
@@ -92,7 +86,6 @@ enum class OptimizationLevel : uint8_t {
     Max            // Maximum optimization (all techniques)
 };
 
-// Function execution flags
 enum class FunctionFlags : uint32_t {
     None = 0,
     Hot = 1 << 0,              // Frequently executed function
@@ -131,7 +124,6 @@ inline bool has_flag(FunctionFlags value, FunctionFlags flag) {
 // Function signature for compiled code
 using NativeFunction = void (*)(CpuRegisters&, MipsMemory&, void*);
 
-// Function metadata for optimization and analysis
 struct FunctionMetadata {
     uint32_t entry_pc;
     uint32_t min_pc;
@@ -155,7 +147,6 @@ struct FunctionMetadata {
     }
 };
 
-// Function statistics for profiling
 struct FunctionStatistics {
     uint64_t execution_count = 0;
     uint64_t total_cycles = 0;
@@ -239,7 +230,6 @@ struct MemorySnapshot {
     bool empty() const { return count == 0; }
 };
 
-// Inlining information
 struct InliningInfo {
     struct InlinedFunction {
         FunctionId function_id;
@@ -325,12 +315,10 @@ public:
         size_t max_specializations = 8; // Max specialized versions
     };
 
-    // Construction/Destruction
     CompiledFunction(Recompiler& recompiler, uint32_t entry_pc, const Config& config = Config());
 
     ~CompiledFunction();
 
-    // Non-copyable, movable
     CompiledFunction(const CompiledFunction&) = delete;
     CompiledFunction& operator=(const CompiledFunction&) = delete;
     CompiledFunction(CompiledFunction&&) noexcept;
@@ -481,16 +469,13 @@ private:
     std::unordered_map<SpecializationContext, std::unique_ptr<CompiledFunction>, SpecializationContext::Hasher>
         specializations_;
 
-    // Statistics
     FunctionStatistics stats_;
 
-    // Configuration
     Config config_;
 
     // Linked list for hash table (optional)
     std::unique_ptr<CompiledFunction> next_;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 
     // Debug information
@@ -625,14 +610,11 @@ private:
     std::unordered_set<FunctionId> hot_functions_;
     size_t hot_function_count_ = 0;
 
-    // Statistics
     mutable ManagerStats stats_;
     mutable std::mutex stats_mutex_;
 
-    // Configuration
     Config config_;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 
     // Helper methods
@@ -715,15 +697,8 @@ private:
     bool matches_memory_set(uint32_t pc, const MipsMemory& memory) const;
     bool matches_simple_math(uint32_t pc, const MipsMemory& memory) const;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 };
 
 } // namespace Recompiler
 } // namespace Nova64
-
-// Hash specializations (Moved to top of file)
-/* 
-   Moved hash specialization to after FunctionId definition to prevent
-   implicit instantiation errors (C2908/C2766).
-*/

@@ -104,11 +104,9 @@ CodeBlock::CodeBlock(CodeBlock&& other) noexcept :
 // Move assignment must clear source's compiled_function_ to prevent double-release
 CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept {
     if (this != &other) {
-        // Release our own code first
         if (compiled_function_ && runtime_) {
             runtime_->release(reinterpret_cast<void*>(compiled_function_));
         }
-        // Move all members
         system_ = other.system_;
         memory_ = other.memory_;
         registers_ = other.registers_;
@@ -129,7 +127,6 @@ CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept {
         statistics_ = other.statistics_;
         code_log_ = std::move(other.code_log_);
         generated_code_cache_ = std::move(other.generated_code_cache_);
-        // Clear source to prevent double-release
         other.runtime_ = nullptr;
         other.compiled_function_ = nullptr;
     }
@@ -147,9 +144,7 @@ CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options) {
         return CompileResult::FailedAnalysis;
     }
 
-    // Keep what the analysis found. BlockFlags::HasLoop in particular is what
-    // the dispatcher uses to recognise a spin loop, and it was previously
-    // computed and then thrown away.
+    // Keep the analysis flags: the dispatcher uses BlockFlags::HasLoop to recognise a spin loop.
     flags_ = analysis->flags;
 
     // Step 2: Generate code
@@ -174,7 +169,6 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
         return std::nullopt;
     }
 
-    // Get the code size from asmjit
     // Assuming section 0 is the text section
     asmjit::Section* textSection = code_holder_->text_section();
     size_t code_size = textSection ? textSection->buffer_size() : 0;
@@ -187,7 +181,7 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
     asmjit::Error err = runtime_->add(&fn_ptr, code_holder_.get());
     compiled_function_ = reinterpret_cast<ExecutionFunction>(fn_ptr);
     if (err != asmjit::kErrorOk) {
-        // Simple error reporting since asmjit::DebugUtils is gone
+        // asmjit::DebugUtils is unavailable, so only the numeric error code is reported
         log_error("AsmJit finalize failed: Error " + std::to_string(static_cast<uint32_t>(err)));
         return std::nullopt;
     }
@@ -199,9 +193,9 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
     // (labels, relocations, node lists) that is no longer needed.
     code_holder_.reset();
 
-    // Also release compilation-only data structures to reduce per-block
-    // memory from ~50 KB to a few hundred bytes. instruction_count() now
-    // reads from statistics_.instruction_count (already set in compile()).
+    // Also release compilation-only data to cut per-block memory from ~50 KB to a few hundred
+    // bytes. instruction_count() reads statistics_.instruction_count, which compile() has
+    // already set.
     instructions_.clear();
     instructions_.shrink_to_fit();
     sections_.clear();
@@ -255,7 +249,6 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
     const uint32_t page_end = ((start_addr + 0x1000) & 0xFFFFF000);
 
     for (uint32_t pc = start_addr; pc < page_end; pc += 4) {
-        // Read instruction from memory
         uint32_t raw_instr = 0;
         if (!memory_->MemoryValue32(pc, raw_instr)) {
             log_error("Failed to read instruction at 0x" + std::to_string(pc));
@@ -265,7 +258,6 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
         instructions_.push_back(raw_instr);
         bb.end_address = pc;
 
-        // Analyze the instruction for control flow
         if (!analyze_instruction(pc, raw_instr, temp_result, bb)) {
             log_error("Failed to analyze instruction at 0x" + std::to_string(pc));
             return std::nullopt;
@@ -275,13 +267,10 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
         if (!temp_result.branches.empty()) {
             auto& last_branch = temp_result.branches.back();
 
-            // Include delay slot instruction if needed.
-            // The delay slot MUST be included even when it crosses a page
-            // boundary — the MIPS architecture always fetches and executes
-            // the delay slot regardless of page alignment.  The previous
-            // check (pc + 4 < page_end) incorrectly excluded delay slots
-            // at the exact page boundary, causing blocks to undercount
-            // instructions and skip the delay slot entirely.
+            // Include the delay slot if needed. It must be included even when it crosses a
+            // page boundary: the MIPS architecture always fetches and executes the delay slot
+            // regardless of page alignment. Excluding it at the exact page boundary
+            // undercounts instructions and skips the delay slot entirely.
             if (last_branch.delay_slot) {
                 uint32_t delay_instr = 0;
                 if (memory_->MemoryValue32(pc + 4, delay_instr)) {
@@ -293,7 +282,6 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
 
             bb.flags = bb.flags | BlockFlags::HasConditional;
 
-            // Add successor addresses
             if (last_branch.target != static_cast<uint32_t>(-1)) {
                 bb.successors.push_back(last_branch.target);
             }
@@ -316,7 +304,7 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
     return bb;
 }
 
-// Analysis - Instruction Level
+// --- Analysis - Instruction Level ---
 // Ported from Project64's CCodeBlock::AnalyzeInstruction
 
 bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult& result,
@@ -328,28 +316,26 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult
     const int16_t offset = mips_offset(opcode);
     const uint32_t target_field = mips_target(opcode);
 
-    // Helper lambda: compute branch target from PC-relative offset
     auto branch_target = [&]() -> uint32_t { return pc + (static_cast<int32_t>(offset) << 2) + 4; };
 
-    // Helper lambda: check if branch target forms a permanent loop
     // A branch back to its own address is a spin loop: nothing but an interrupt
     // will get it out, so the dispatcher may skip ahead to the next timer event
     // rather than executing it a few million times.
     //
     // This deliberately matches the interpreter's test exactly
-    // (`CN64System::DelayedRelativeJump` with offset 0) and nothing more. It
-    // used to also require that the delay slot could not affect the branch
-    // condition, which sounds stricter and better but made the two engines
-    // disagree: the interpreter fast-forwarded the spin loop while the
-    // recompiler executed it, so their Count values drifted and the game
-    // programmed CP0 Compare differently on each.
+    // (`CN64System::DelayedRelativeJump` with offset 0) and nothing more.
+    // Additionally requiring that the delay slot cannot affect the branch
+    // condition sounds stricter but makes the two engines disagree: the
+    // interpreter fast-forwards the spin loop while the recompiler executes it,
+    // so their Count values drift and the game programs CP0 Compare differently
+    // on each. The typical spin loop reloads its flag in the delay slot, so that
+    // extra condition would reject almost every real case.
     //
-    // The typical spin loop reloads its flag in the delay slot, so that extra
-    // condition rejected almost every real case. Skipping to the next timer is
-    // still correct for those: the flag is written by an interrupt handler or a
-    // DMA completion, and both of those *are* timer events. If this is ever
-    // refined to spot self-terminating loops (e.g. a countdown in the delay
-    // slot), the interpreter has to be changed in the same commit.
+    // Skipping to the next timer is still correct for those: the flag is written
+    // by an interrupt handler or a DMA completion, and both of those *are* timer
+    // events. If this is ever refined to spot self-terminating loops (e.g. a
+    // countdown in the delay slot), the interpreter has to be changed in the same
+    // commit.
     auto check_perm_loop = [&](uint32_t target_pc) -> bool { return target_pc == pc; };
 
     switch (op) {
@@ -727,12 +713,9 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
     // Emit x64 function prologue (push callee-saved regs, set up frame)
     ops.EnterCodeBlock();
 
-    // Compile every instruction in the block
-    // Determine which instruction is the branch (if any) so we can skip
-    // PipelineStageCheck for it. On MIPS, the delay slot must execute
-    // AFTER the branch sets JumpToLocation but BEFORE the block exits.
-    // If we check PipelineStage after the branch, we'd exit before the
-    // delay slot runs, causing it to be skipped entirely.
+    // Find the branch (if any) so PipelineStageCheck can be skipped for it: on MIPS the
+    // delay slot must run after the branch sets JumpToLocation but before the block exits,
+    // and a check right after the branch would exit before the delay slot runs.
     size_t branchInstrIdx = static_cast<size_t>(-1);
     if (!analysis.branches.empty() && !analysis.delay_slots.empty() && instructions_.size() >= 2) {
         // The branch is at second-to-last position, delay slot at last
@@ -757,7 +740,6 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
 
         if (!ops.CompileInstruction(instrCtx)) {
             log_error("x64 CompileInstruction failed at 0x" + std::to_string(addr));
-            // emit a NOP fallback so the block is still valid
         }
 
         if (branchInstrIdx != static_cast<size_t>(-1) && i == branchInstrIdx + 1) {
@@ -768,9 +750,8 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
         // This matches the interpreter's per-instruction decrement so that
         // COUNT reads within blocks are accurate, and early exits (exceptions,
         // syscalls) don't over-count cycles for unexecuted instructions.
-        // NOTE: For branch-likely instructions, EmitBranchLikelyCallback
-        // already emitted the timer decrement BEFORE the conditional skip,
-        // so we must not emit a second one here.
+        // For branch-likely instructions EmitBranchLikelyCallback already emitted the timer
+        // decrement before the conditional skip, so a second one must not be emitted here.
         if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
             ops.EmitTimerDecrement();
         }
@@ -778,17 +759,15 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
         // After each instruction, check if an exception (TLB miss, syscall,
         // etc.) set PipelineStage to Jump.  If so, exit the block immediately
         // so the dispatcher can redirect to the exception vector.
-        // EXCEPT: skip for the branch instruction itself — the branch sets
-        // PipelineStage=Jump for normal control flow, and we must let the
-        // delay slot execute before exiting.
+        // Skipped for the branch instruction itself: the branch sets PipelineStage=Jump
+        // for normal control flow, and the delay slot must execute before the block exits.
         if (i != branchInstrIdx) {
             ops.EmitPipelineStageCheck();
         }
     }
 
-    // If the last instruction pair was a branch-likely + delay slot,
-    // bind the skip label HERE, AFTER the delay slot code, so that
-    // when the branch is NOT taken the delay slot is jumped over.
+    // If the last instruction pair was a branch-likely plus delay slot, bind the skip label
+    // after the delay slot code so the delay slot is jumped over when the branch is not taken.
     ops.BindPendingBranchLikelyLabel();
 
     // After running all instructions, update the program counter to
@@ -803,7 +782,6 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
         // the branch callback already updated PC, so we only patch PC
         // for non-branch blocks.
         if (analysis.branches.empty()) {
-            // mov qword ptr [&PROGRAM_COUNTER], nextPC
             using namespace asmjit::x86;
             uint64_t pcAddr = reinterpret_cast<uint64_t>(&registers_->m_PROGRAM_COUNTER);
             a.mov(rax, pcAddr);
@@ -874,8 +852,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
     return true;
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    // ARM64 path – use ArmRecompilerOps (partial native codegen).
-    // Integer ALU / shifts / mul are native; loads/stores/FPU use fallback.
+    // ARM64 path: ArmRecompilerOps turns each instruction into a call to a shared interpreter callback.
     using namespace Nova64::Recompiler::Arm;
 
     auto* mem = system_->GetMemory();
@@ -947,8 +924,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
 }
 
 bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/) {
-    // Optimization passes - stub for now
-    // Future: dead code elimination, constant folding, etc.
+    // No-op: no optimization passes are implemented.
     return true;
 }
 
@@ -981,15 +957,13 @@ bool CodeBlock::CodeGenerator::generate_epilogue() {
 }
 
 bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32_t /*opcode*/) {
-    // Individual instruction code generation is delegated to
-    // CX64RecompilerOps via the recompiler pipeline.
-    // Stub until the full recompiler ops are connected.
+    // Instruction code generation is done by the *RecompilerOps backends, not here.
     generated_bytes_ += 4;
     return true;
 }
 
 bool CodeBlock::CodeGenerator::generate_branch(const AnalysisResult::BranchInfo& /*branch*/) {
-    // Branch linkage code generation - stub
+    // No-op: branch linkage is not generated here.
     return true;
 }
 
@@ -1077,12 +1051,12 @@ std::string CodeBlock::control_flow_graph() const {
 // --- Linking and Patching ---
 
 bool CodeBlock::link_to(CodeBlock& /*target*/, uint32_t /*branch_address*/) {
-    // Block linking - stub until section linking is operational
+    // No-op: blocks are not linked.
     return true;
 }
 
 void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/) {
-    // Patch a previously compiled branch to point to a new address
+    // No-op: compiled branches are not patched.
 }
 
 // --- Serialization ---
@@ -1239,11 +1213,11 @@ void CodeBlockCache::clear() {
 }
 
 void CodeBlockCache::prefetch(const std::vector<uint32_t>& /*addresses*/) {
-    // Prefetch hint - could pre-compile blocks we expect to need
+    // No-op: no blocks are pre-compiled.
 }
 
 void CodeBlockCache::compress_cold_blocks() {
-    // Could release generated code cache from cold blocks
+    // No-op: cold blocks keep their generated code.
 }
 
 CodeBlockCache::CacheStats CodeBlockCache::statistics() const {
@@ -1381,6 +1355,5 @@ bool CodeBlockFactory::is_branch_likely_pattern(const std::vector<uint32_t>& ins
 
 bool CodeBlockFactory::is_exception_handler_pattern(const std::vector<uint32_t>& /*instructions*/) { return false; }
 
-// Functions moved to CodeSection.cpp
 } // namespace Recompiler
 } // namespace Nova64

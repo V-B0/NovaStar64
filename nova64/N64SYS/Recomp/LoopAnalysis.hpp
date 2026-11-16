@@ -34,7 +34,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CodeSection;
 class CodeBlock;
 
@@ -58,7 +57,6 @@ public:
 
     ~LoopAnalysis();
 
-    // Non-copyable, non-movable
     LoopAnalysis(const LoopAnalysis&) = delete;
     LoopAnalysis& operator=(const LoopAnalysis&) = delete;
 
@@ -83,9 +81,8 @@ public:
     const CRegBase& GetContinueRegisterSet() const { return m_ContinueRegisters; }
 
 private:
-    // Helper to extract MIPS instruction fields correctly
-    // Note: Rtype bitfields are incorrectly named in R4300iOps.hpp
-    // Use Itype.rs/rt/op (correct) and bit extraction for rd/sa/funct
+    // The Rtype bitfields in R4300iOps.hpp are mis-named, so op/rs/rt come from
+    // Itype and rd/sa/funct are extracted from Value.
     static uint32_t Cmd_op(const R4300iOps& c) { return c.Itype.op; }
     static uint32_t Cmd_rs(const R4300iOps& c) { return c.Itype.rs; }
     static uint32_t Cmd_rt(const R4300iOps& c) { return c.Itype.rt; }
@@ -177,7 +174,6 @@ private:
     std::unordered_map<CodeSection*, CRegBase*> m_ContinueRegSets;
     std::unordered_map<CodeSection*, CRegBase*> m_EnterRegSets;
 
-    // Flags
     bool m_Changed = false;
 };
 

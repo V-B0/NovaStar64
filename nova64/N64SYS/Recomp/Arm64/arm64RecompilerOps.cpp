@@ -255,16 +255,13 @@ void ArmRecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
     a.mov(a64::x1, a64::x20);
     m_Assembler->MovImm64(a64::x2, opcVal);
     m_Assembler->EmitCall(callback);
-    // A faulting load/store (TLB miss, address error) redirects the pipeline
-    // to the exception vector via CRegisters::TriggerAddressException, but
-    // that only updates m_System.m_PipelineStage/m_JumpToLocation -- it does
-    // NOT touch this compiled block's instruction stream. Without this check,
-    // the JIT kept executing the REST of the block (native code compiled
-    // assuming the load/store succeeded) against stale/garbage state, which
-    // then caused a second, unrelated fault before the real exception handler
-    // ever ran. Bail out to the block exit immediately so the recompiler's
-    // outer loop (which already checks PipelineStage after a block returns)
-    // applies the redirect before any more MIPS instructions execute.
+    // A faulting load/store (TLB miss, address error) only redirects the pipeline
+    // through CRegisters::TriggerAddressException (m_PipelineStage/m_JumpToLocation);
+    // it does not alter this block's instruction stream. Without an exit here the
+    // rest of the block, compiled on the assumption that the access succeeded, ran
+    // against stale state and raised a second, unrelated fault before the real
+    // exception handler. Leaving the block lets the outer loop, which checks
+    // PipelineStage after every block, apply the redirect first.
     EmitPipelineStageCheck();
 }
 
@@ -276,9 +273,8 @@ void ArmRecompilerOps::EmitTlbCallback(void* callback, uint32_t opcVal) {
     m_Assembler->MovImm64(a64::x1, reinterpret_cast<uint64_t>(&m_Context.tlb));
     m_Assembler->MovImm64(a64::x2, opcVal);
     m_Assembler->EmitCall(callback);
-    // TLBWI/TLBWR/TLBP/TLBR don't normally fault, but are cheap/rare enough
-    // that checking unconditionally (matching EmitMemoryCallback) costs
-    // nothing measurable and closes off any edge case symmetrically.
+    // TLB instructions do not normally fault; the check is cheap and these ops
+    // are rare, so it is done unconditionally, as in EmitMemoryCallback.
     EmitPipelineStageCheck();
 }
 
@@ -339,13 +335,11 @@ bool ArmRecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     // Typed dispatch helpers keep the switch readable; the reinterpret_cast to
     // void* (function-pointer -> data-pointer) happens once, here.
     auto reg = [&](void (*cb)(CRegisters*, uint32_t)) { EmitRegisterCallback(reinterpret_cast<void*>(cb), opcVal); };
-    // Same as reg(), but for the handful of register-only ops that can
-    // themselves synchronously trigger an exception (SYSCALL, BREAK, the
-    // conditional TRAP instructions): the pipeline-stage bail-out is required
-    // here for the same reason EmitMemoryCallback needs it -- without it the
-    // JIT keeps running the rest of the block against state the exception
-    // handler hasn't had a chance to run yet. Kept separate from reg() so the
-    // hot-path ALU/shift/logic/mul/div default case pays no extra cost.
+    // Like reg(), for the register-only ops that can raise an exception
+    // synchronously (SYSCALL, BREAK, the conditional TRAP instructions). They
+    // need the same pipeline-stage exit as EmitMemoryCallback so the rest of the
+    // block does not run before the exception handler. Kept separate from reg()
+    // so the hot ALU/shift/logic/mul/div path pays nothing for it.
     auto regExc = [&](void (*cb)(CRegisters*, uint32_t)) {
         EmitRegisterCallback(reinterpret_cast<void*>(cb), opcVal);
         EmitPipelineStageCheck();
@@ -359,16 +353,12 @@ bool ArmRecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     };
     auto brl = [&](int (*cb)(CRegisters*, uint32_t, uint32_t)) {
         EmitBranchLikelyCallback(reinterpret_cast<void*>(cb), opcVal, pc);
-        // Match brc(): the branch-likely callback already computed the correct
-        // next PC (taken target or pc+8) via SetPC. Without this, the delay
-        // slot instruction that follows -- if compiled through a callback that
-        // calls EmitPCUpdate() (any memory/register op) -- unconditionally
-        // overwrites m_PROGRAM_COUNTER with its own static address, clobbering
-        // the branch-likely's decision. This silently redirected every taken
-        // branch-likely to the delay slot's own address instead of the real
-        // target, corrupting control flow throughout any code using BEQL/BNEL/
-        // BLEZL/BGTZL/BLTZL/BGEZL/BLTZALL/BGEZALL/BC1FL/BC1TL (a very common
-        // MIPS idiom for loop/null-check conditions).
+        // As in brc(): the callback has already set the next PC (taken target or
+        // pc+8) via SetPC. Ending the block stops the following delay-slot
+        // instruction's EmitPCUpdate() from overwriting that PC with the delay
+        // slot's own address, which sent every taken branch-likely (BEQL, BNEL,
+        // BLEZL, BGTZL, BLTZL, BGEZL, BLTZALL, BGEZALL, BC1FL, BC1TL) to the
+        // delay slot instead of its target.
         m_BlockEnded = true;
     };
 

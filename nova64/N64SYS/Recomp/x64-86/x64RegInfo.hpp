@@ -28,7 +28,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 class CX64Ops;
 
@@ -262,7 +261,6 @@ public:
 
     ~CX64RegInfo() override;
 
-    // Non-copyable, movable
     CX64RegInfo(const CX64RegInfo&) = delete;
     CX64RegInfo& operator=(const CX64RegInfo&) = delete;
     CX64RegInfo(CX64RegInfo&&) noexcept;
@@ -314,14 +312,8 @@ public:
      */
     uint32_t GetMappedMipsRegister(X64RegisterType hostReg) const noexcept;
 
-    /**
-     * @brief Check if a MIPS register is currently mapped
-     */
     bool IsMapped(uint32_t mipsReg) const noexcept;
 
-    /**
-     * @brief Check if a host register is currently in use
-     */
     bool IsHostRegisterUsed(X64RegisterType hostReg) const noexcept;
 
     // Register operations
@@ -337,14 +329,8 @@ public:
      */
     void ReloadRegister(uint32_t mipsReg);
 
-    /**
-     * @brief Spill all dirty registers
-     */
     void SpillAllDirtyRegisters();
 
-    /**
-     * @brief Reload all registers from memory
-     */
     void ReloadAllRegisters();
 
     /**
@@ -382,19 +368,10 @@ public:
     void UnlockRegister(uint32_t mipsReg);
 
     // State management
-    /**
-     * @brief Save current register state
-     */
     void SaveState();
 
-    /**
-     * @brief Restore previously saved register state
-     */
     void RestoreState();
 
-    /**
-     * @brief Synchronize with another register info
-     */
     void SynchronizeWith(const CX64RegInfo& other);
 
     // Query and statistics
@@ -411,19 +388,10 @@ public:
     const AllocationStats& GetStats() const noexcept { return m_Stats; }
     void ResetStats() noexcept { m_Stats.Reset(); }
 
-    /**
-     * @brief Get number of currently mapped registers
-     */
     size_t GetMappedRegisterCount() const noexcept;
 
-    /**
-     * @brief Get number of dirty registers
-     */
     size_t GetDirtyRegisterCount() const noexcept;
 
-    /**
-     * @brief Get register usage mask
-     */
     uint32_t GetUsedGeneralPurposeMask() const noexcept;
     uint64_t GetUsedFloatingPointMask() const noexcept;
 
@@ -478,7 +446,6 @@ private:
     // State stack for save/restore
     std::vector<SavedState> m_StateStack;
 
-    // Statistics
     AllocationStats m_Stats;
 
     // Configuration

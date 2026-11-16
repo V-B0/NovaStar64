@@ -24,11 +24,8 @@
  *      x22 = &m_NextTimer         (mirrors x64 R14)
  *      x23 = &MemoryReadMap[0]    (mirrors x64 R15)
  *
- * Status: the block scaffolding (prologue/epilogue, pinned pointers, native
- * call/branch/timer/pipeline primitives) is implemented and exercised by the
- * AArch64 build.  Per-opcode translation is being filled in incrementally; the
- * always-correct interpreter remains the default execution mode on AArch64
- * (see CN64System::s_UseInterpreter), so partial coverage is safe.
+ * The interpreter remains the default execution mode on AArch64 (see
+ * CN64System::s_UseInterpreter); this backend is selected at runtime.
  */
 
 #pragma once
@@ -48,6 +45,7 @@ class CodeBlock;
 
 namespace Arm {
 
+/// Translates MIPS R4300i instructions into AArch64 stubs that call the shared interpreter callbacks.
 class ArmRecompilerOps {
 public:
     ArmRecompilerOps(RecompilerContext& context, CodeBlock& codeBlock);
@@ -56,14 +54,14 @@ public:
     ArmRecompilerOps(const ArmRecompilerOps&) = delete;
     ArmRecompilerOps& operator=(const ArmRecompilerOps&) = delete;
 
-    // --- Block lifetime (called by CodeBlock::generate_code) ----------------
+    // --- Block lifetime (called by CodeBlock::generate_code) ---
     void EnterCodeBlock();
     void ExitCodeBlock();
 
-    // --- Per-instruction translation ----------------------------------------
+    // --- Per-instruction translation ---
     bool CompileInstruction(const InstructionContext& ctx);
 
-    // --- Control-flow / housekeeping primitives -----------------------------
+    // --- Control-flow / housekeeping primitives ---
     void EmitTimerDecrement();
 
     /// Decrements the timer and, if it has expired, leaves the block with the
@@ -81,14 +79,14 @@ public:
 
     void EmitPipelineStageCheck();
     void EmitPCUpdate();
-    // Unconditionally write m_PROGRAM_COUNTER = sign_extend32(addr).  Used at
-    // the end of a fall-through (non-branch) block to point the dispatcher at
-    // the next block (addr = block_end + 4).
+    /// Writes m_PROGRAM_COUNTER = sign_extend32(addr). Used at the end of a
+    /// fall-through (non-branch) block to point the dispatcher at the next
+    /// block (addr = block_end + 4).
     void EmitSetPC(uint32_t addr);
     void BindPendingBranchLikelyLabel();
     bool HasPendingBranchLikelySkip() const { return m_HasPendingBranchLikelySkip; }
 
-    // --- Native callback emitters (AAPCS64) ---------------------------------
+    // --- Native callback emitters (AAPCS64) ---
     // void(CRegisters*, uint32_t opcVal)
     void EmitRegisterCallback(void* callback, uint32_t opcVal);
     // void(CRegisters*, MipsMemoryVM*, uint32_t opcVal)

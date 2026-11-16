@@ -31,20 +31,16 @@ namespace Recompiler {
 
 /**
  * @class CFunctionMap
- * @brief Manages lookup tables for compiled functions with RAII memory management
+ * @brief Maps virtual addresses to compiled functions with RAII memory management
  * 
- * The class provides O(1) lookup for compiled functions using a hybrid approach:
- * 1. Direct jump table for lower 18 bits of address (256K entries)
- * 2. Two-level page table for full 32-bit address space
- * 
- * Memory layout:
- *   - Page directory: 1024 entries (10 bits)
- *   - Page table: 1024 entries per page (10 bits each)
- *   Total: 1M entries possible, but allocated sparsely
+ * Lookup() first tries a direct-mapped jump table indexed by the low 18 bits
+ * of the address (a fast-path cache: distinct addresses can collide), then
+ * falls back to an exact-match hash map, which is authoritative. The two-level
+ * page directory (1024 x 1024 entries, allocated sparsely) is reachable only
+ * through GetOrCreateEntry().
  */
 class CFunctionMap {
 public:
-    // Constants for table sizes
     static constexpr uint32_t JUMP_TABLE_SIZE = 0x40000; // 256K entries
     static constexpr uint32_t PAGE_DIR_SIZE = 1024;      // 10 bits
     static constexpr uint32_t PAGE_TABLE_SIZE = 1024;    // 10 bits
@@ -58,7 +54,6 @@ public:
     CFunctionMap();
     ~CFunctionMap() = default;
 
-    // Non-copyable but movable
     CFunctionMap(const CFunctionMap&) = delete;
     CFunctionMap& operator=(const CFunctionMap&) = delete;
     CFunctionMap(CFunctionMap&&) noexcept = default;
@@ -132,7 +127,6 @@ public:
     const PageDirectory& GetPageDirectory() const noexcept { return m_PageDirectory; }
 
 private:
-    // Helper methods for address decomposition
     static constexpr uint32_t GetPageDirectoryIndex(uint32_t vaddr) noexcept {
         return (vaddr >> (PAGE_SHIFT * 2)) & PAGE_MASK;
     }
@@ -143,7 +137,6 @@ private:
         return vaddr & 0x3FFFF; // Lower 18 bits
     }
 
-    // Ensure a page table exists at the specified directory index
     PageTable& EnsurePageTable(uint32_t dirIndex);
 
     // Direct jump table for fast-path lookups (lower 18 bits)
@@ -158,11 +151,9 @@ private:
     // functions, preventing runaway recompilation of already-compiled code.
     std::unordered_map<uint32_t, CompiledFuncPtr> m_ExactLookup;
 
-    // Statistics
     size_t m_AllocatedPageTables = 0;
 };
 
-// Inline implementations for performance-critical methods
 inline CFunctionMap::CompiledFuncPtr CFunctionMap::Lookup(uint32_t vaddr) const noexcept {
     // First try the fast jump table (indexed by lower 18 bits - instruction-level)
     if (auto func = m_JumpTable[GetJumpTableIndex(vaddr)]) {
@@ -202,7 +193,6 @@ inline CFunctionMap::CompiledFuncPtr CFunctionMap::Store(uint32_t vaddr, Compile
     uint32_t jumpIdx = GetJumpTableIndex(vaddr);
     m_JumpTable[jumpIdx] = func;
 
-    // Return the old function that was at this exact address
     return oldExact;
 }
 

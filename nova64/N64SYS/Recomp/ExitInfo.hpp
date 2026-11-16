@@ -32,23 +32,18 @@ class CN64System;
 
 namespace Nova64 {
 
-// Forward declarations
-// class CodeBlock; // Moved to Recompiler namespace
 class RegisterState;
-// class CRegisters; // Removed to avoid conflict with global CRegisters
 class MipsMemory;
 using ::CN64System;
-// using N64System = CN64System; // Prevent redefinition
 
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 class RecompilerOperations;
 
 // Strongly typed identifiers
 enum class ExitId : uint32_t {};
-// enum class BlockId : uint32_t {}; // Forward declared here, defined in CodeSection.hpp or consistent
+// BlockId is defined in CodeSection.hpp.
 enum class BlockId : uint32_t;
 
 // Pipeline stages for precise exception handling
@@ -159,7 +154,6 @@ template <> struct std::hash<Nova64::Recompiler::ExitReason> {
 };
 
 namespace Nova64 {
-// class CRegisters;
 namespace Recompiler {
 
 inline ExitFlags operator|(ExitFlags a, ExitFlags b) {
@@ -266,7 +260,7 @@ struct BranchPrediction {
     void update(bool actually_taken, uint32_t actual_target);
     double get_confidence() const { return confidence; }
     bool should_predict() const { return confidence > 0.7; }
-    double prediction_accuracy() const { return confidence; } // Added simplest implementation
+    double prediction_accuracy() const { return confidence; }
 };
 
 /**
@@ -288,11 +282,9 @@ public:
         size_t prediction_history_size = 1024;
     };
 
-    // Construction/Destruction
     ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config = Config());
     ~ExitInfo();
 
-    // Non-copyable, movable
     ExitInfo(const ExitInfo&) = delete;
     ExitInfo& operator=(const ExitInfo&) = delete;
     ExitInfo(ExitInfo&&) noexcept;
@@ -385,13 +377,11 @@ private:
     // Branch prediction
     BranchPrediction prediction_;
 
-    // Statistics
     ExitStatistics stats_;
 
     // AsmJit label for code generation
     asmjit::Label jump_label_;
 
-    // Configuration
     Config config_;
 
     // Cache for frequently accessed data
@@ -490,7 +480,6 @@ private:
     std::unordered_map<uint32_t, ExitId> pc_to_exit_id_;
     std::unordered_map<asmjit::Label, ExitId, AsmJitLabelHash> label_to_exit_id_;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 
     // Helper methods
@@ -581,7 +570,6 @@ private:
     // Pattern matching
     bool matches_pattern(const BranchHistory& history, const std::vector<bool>& pattern) const;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 };
 

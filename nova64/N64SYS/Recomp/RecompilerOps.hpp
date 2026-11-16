@@ -23,10 +23,7 @@
 
 namespace Nova64 {
 
-// Forward declarations for system components
-// class CN64System; // Global
 class MipsMemoryVM;
-// class CRegisters; // Global
 
 } // namespace Nova64
 
@@ -46,7 +43,6 @@ using ::N64System::CTLB;
 
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 class CodeSection;
 class ICodeGenerator;
@@ -218,7 +214,6 @@ public:
     explicit RecompilerOpsBase(RecompilerContext& context);
     virtual ~RecompilerOpsBase() override;
 
-    // Non-copyable, movable
     RecompilerOpsBase(const RecompilerOpsBase&) = delete;
     RecompilerOpsBase& operator=(const RecompilerOpsBase&) = delete;
     RecompilerOpsBase(RecompilerOpsBase&&) = default;
@@ -286,12 +281,10 @@ private:
     virtual bool CompileInstructionImpl(const InstructionContext& ctx) = 0;
     virtual bool CompileDelaySlotImpl(const InstructionContext& ctx) = 0;
 
-    // Common state
     RecompilerContext m_Context;
     CodeBlock* m_CurrentBlock = nullptr;
     CodeSection* m_CurrentSection = nullptr;
 
-    // Statistics
     CompilationStats m_Stats;
 
     // Configuration
@@ -308,6 +301,3 @@ std::unique_ptr<IRecompilerOps> CreatePlatformRecompilerOps(RecompilerContext& c
 
 } // namespace Recompiler
 } // namespace Nova64
-
-// Platform-specific implementations are included via factory function
-// No conditional includes in this header - cleaner separation

@@ -29,8 +29,7 @@
 // Check if AsmJit is available (defined by CMake when asmjit package is found)
 #ifdef NOVA64_ASMJIT_ENABLED
 
-// AsmJit is available - use real implementation
-// #define ASMJIT_STATIC // Defined by CMake
+// ASMJIT_STATIC is defined by CMake.
 
 // Protect against 'new' macro conflicts (common in debug builds)
 #ifdef new
@@ -77,7 +76,7 @@ struct AsmJitLabelHash {
     std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
 };
 
-// Also specialize std::hash just in case
+// std::hash specialization so Label can key unordered containers
 namespace std {
 template <> struct hash<asmjit::Label> {
     std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
@@ -113,7 +112,7 @@ template <> struct hash<asmjit::Label> {
 class ErrorHandler;
 class BaseEmitter;
 
-// Forward declarations for AsmJit types (stubs until library is integrated)
+// Minimal stand-ins for the AsmJit types the recompiler names
 namespace asmjit {
 enum Error : uint32_t { kErrorOk = 0 };
 
@@ -283,7 +282,7 @@ struct AsmJitLabelHash {
     std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
 };
 
-// Also specialize std::hash just in case
+// std::hash specialization so Label can key unordered containers
 namespace std {
 template <> struct hash<asmjit::Label> {
     std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
@@ -360,7 +359,7 @@ public:
     AsmJitErrorHandler() = default;
     virtual ~AsmJitErrorHandler() = default;
 
-    // ErrorHandler interface (virtual for future AsmJit integration)
+    // Mirrors the asmjit::ErrorHandler callback signature
     virtual void handleError(asmjit::Error err, const char* message, asmjit::BaseEmitter* /*origin*/) {
         m_lastError = err;
         m_lastMessage = message ? message : "Unknown AsmJit error";
@@ -368,14 +367,11 @@ public:
         Log::errorf("AsmJit Error [%u]: %s", static_cast<uint32_t>(err), m_lastMessage.c_str());
     }
 
-    // Get last error information
     [[nodiscard]] asmjit::Error getLastError() const noexcept { return m_lastError; }
     [[nodiscard]] const std::string& getLastMessage() const noexcept { return m_lastMessage; }
 
-    // Check if an error occurred
     [[nodiscard]] bool hasError() const noexcept { return m_lastError != asmjit::kErrorOk; }
 
-    // Clear error state
     void clearError() noexcept {
         m_lastError = asmjit::kErrorOk;
         m_lastMessage.clear();
@@ -410,7 +406,7 @@ struct CodeBufferInfo {
 // --- Helper Functions ---
 
 /**
- * @brief Get human-readable error message for AsmJit error code
+ * @brief Generic error string; the error code is not decoded
  */
 [[nodiscard]] inline const char* GetErrorString(asmjit::Error /*err*/) noexcept {
     return "AsmJit Error (details unavailable)";
@@ -443,9 +439,6 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 
 // --- Architecture Information ---
 
-/**
- * @brief Get current target architecture as string
- */
 [[nodiscard]] inline constexpr const char* GetTargetArchName() noexcept {
 #if defined(NOVA64_ARCH_X64)
     return "x86-64";
@@ -460,9 +453,6 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 #endif
 }
 
-/**
- * @brief Check if running on 64-bit architecture
- */
 [[nodiscard]] inline constexpr bool Is64BitArch() noexcept {
 #if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_ARM64)
     return true;
@@ -471,9 +461,6 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 #endif
 }
 
-/**
- * @brief Get pointer size for current architecture
- */
 [[nodiscard]] inline constexpr size_t GetPointerSize() noexcept { return Is64BitArch() ? 8 : 4; }
 
 } // namespace Recomp

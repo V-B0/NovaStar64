@@ -20,7 +20,7 @@
 #include <array>
 #include <string>
 #include <math.h>
-#include <cmath> // std::isnan (replaces MSVC _isnan)
+#include <cmath> // std::isnan
 #include <cstdlib>
 
 // Softfloat library for IEEE 754 compliant FPU emulation
@@ -179,10 +179,9 @@ void R4300iInterpreter::ExecuteOps(uint32_t Cycles) {
         }
         m_Opcode.Value = *m_InstructionPtr;
 
-        // HLE osViSwapBuffer intercept removed: the hardcoded addresses
-        // (0x8000176C/0x80001770) only applied to one ROM build and corrupted
-        // game state for other ROMs (including OoT v1.2).  The native MIPS
-        // osViSwapBuffer implementation works correctly through the interpreter.
+        // osViSwapBuffer is not intercepted: the hardcoded addresses (0x8000176C/0x80001770)
+        // only apply to one ROM build and corrupt game state for other ROMs (including OoT
+        // v1.2). The game's own osViSwapBuffer runs correctly through the interpreter.
 
         (this->*Jump_Opcode[op()])();
         m_GPR[0].DW = 0; // MIPS $zero hard-wired to 0
@@ -2151,7 +2150,7 @@ void R4300iInterpreter::COP1_D_DIV() {
     if (InitFpuOperation(((FPStatusReg&)m_FPCR[31]).RoundingMode)) {
         return;
     }
-    // Debug: log inputs and FPCSR before CheckFPUInputs64
+    // Diagnostic: logs the first DIV.D with a subnormal or zero operand
     {
         static bool loggedDivD = false;
         if (!loggedDivD) {
@@ -2730,12 +2729,9 @@ bool R4300iInterpreter::CheckFPUInputs64(const double& Value, const double& Valu
     if (isSubNormal[0] || isSubNormal[1]) {
         FPStatusReg& StatusReg = (FPStatusReg&)m_FPCR[31];
         if (StatusReg.FlushSubnormals) {
-            // FS=1: Flush subnormal inputs to zero instead of raising exception.
-            // The MIPS R4300i with FS=1 should not trigger UnimplementedOperation
-            // for subnormal inputs — they are silently flushed.
-            // (Note: the caller still passes the original pointers, so we can't
-            // modify the inputs here. But the softfloat library will handle the
-            // flushed zero values correctly if we just continue.)
+            // FS=1: subnormal inputs are flushed silently instead of raising
+            // UnimplementedOperation. The caller passes the original pointers, so the inputs
+            // are not modified here; execution just continues.
         } else {
             StatusReg.Cause.UnimplementedOperation = 1;
             Exception = true;

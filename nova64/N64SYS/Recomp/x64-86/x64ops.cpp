@@ -422,7 +422,7 @@ std::string CX64Ops::GetLastErrorMessage() const {
 bool CX64Ops::ValidateInstruction(const asmjit::BaseInst& /*inst*/) const { return m_LastError == asmjit::kErrorOk; }
 
 void CX64Ops::ApplyOptimizations() {
-    // Placeholder for peephole optimizations
+    // No-op: no peephole optimizations are implemented.
 }
 
 void CX64Ops::EmitDebugTrap() {

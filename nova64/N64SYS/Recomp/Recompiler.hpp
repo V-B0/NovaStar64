@@ -103,7 +103,7 @@ struct RecompilerStats {
  * @class CRecompiler
  * @brief Main dynamic recompiler for N64 emulation
  * 
- * Translates MIPS R4300i code to native x86/x64 code at runtime
+ * Translates MIPS R4300i code to native x86-64 or AArch64 code at runtime
  * for improved emulation performance.
  */
 class CRecompiler : public CFunctionMap, public CRecompMemory {
@@ -116,7 +116,6 @@ public:
     CRecompiler(CN64System& system, std::atomic<bool>& endEmulation);
     ~CRecompiler();
 
-    // Non-copyable, non-movable for simplicity
     CRecompiler(const CRecompiler&) = delete;
     CRecompiler& operator=(const CRecompiler&) = delete;
     CRecompiler(CRecompiler&&) = delete;
@@ -173,29 +172,15 @@ public:
     void ResetFunctionTimes();
     void DumpFunctionTimes();
 
-    /**
-     * @brief Get statistics structure
-     */
     const RecompilerStats& GetStats() const noexcept { return m_Stats; }
 
-    /**
-     * @brief Reset all statistics
-     */
     void ResetStats() noexcept { m_Stats.Reset(); }
 
-    /**
-     * @brief Enable or disable profiling
-     */
     void SetProfilingEnabled(bool enabled) noexcept { m_ProfilingEnabled = enabled; }
 
-    /**
-     * @brief Check if profiling is enabled
-     */
     bool IsProfilingEnabled() const noexcept { return m_ProfilingEnabled; }
 
-    /**
-     * @brief Set execution mode
-     */
+    /// Selects the execution loop implementation (see the Execute_* methods).
     enum class ExecutionMode {
         VirtualTable,         ///< Use virtual function table
         VirtualTableValidate, ///< Virtual table with validation
@@ -214,7 +199,6 @@ public:
     bool IsLogging() const noexcept { return m_LogFile != nullptr; }
 
 private:
-    // Prevent default construction
     CRecompiler() = delete;
 
     // Core compilation

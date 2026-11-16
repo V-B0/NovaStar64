@@ -57,12 +57,10 @@ void ExecutableMemoryDeleter::operator()(uint8_t* ptr) const {
 
 CRecompMemory::CRecompMemory(uint32_t initialSize) :
     m_Buffer(nullptr), m_WritePosition(nullptr), m_CurrentSize(0), m_OldWritePosition(nullptr) {
-    // Use default size if none specified
     if (initialSize == 0) {
         initialSize = DEFAULT_INITIAL_SIZE;
     }
 
-    // Clamp to maximum allowed size
     if (initialSize > MAX_BUFFER_SIZE) {
         Log::warning("RecompilerMemory: Requested size exceeds maximum, clamping to 60MB");
         initialSize = MAX_BUFFER_SIZE;
@@ -77,12 +75,10 @@ CRecompMemory::CRecompMemory(uint32_t initialSize) :
     uint32_t pageSize = static_cast<uint32_t>(sysconf(_SC_PAGESIZE));
 #endif
 
-    // Round up to next page boundary
     initialSize = ((initialSize + pageSize - 1) / pageSize) * pageSize;
 
     Log::infof("RecompilerMemory: Initializing with %u bytes (%u KB)", initialSize, initialSize / 1024);
 
-    // Allocate initial buffer
     m_Buffer = AllocateBuffer(initialSize);
     if (!m_Buffer) {
         Log::error("RecompilerMemory: Failed to allocate initial buffer");
@@ -93,7 +89,6 @@ CRecompMemory::CRecompMemory(uint32_t initialSize) :
     m_WritePosition = m_Buffer.get();
     m_OldWritePosition = m_WritePosition;
 
-    // Initialize statistics
     m_Stats.allocatedBytes = initialSize;
     m_Stats.usedBytes = 0;
     m_Stats.peakUsedBytes = 0;
@@ -110,8 +105,6 @@ CRecompMemory::~CRecompMemory() {
                     m_Stats.growthCount);
 
 #ifdef _WIN32
-// Free with VirtualFree if we used VirtualAlloc
-// Note: unique_ptr will handle this via custom deleter if set
 #endif
     }
 }
@@ -119,7 +112,6 @@ CRecompMemory::~CRecompMemory() {
 CRecompMemory::CRecompMemory(CRecompMemory&& other) noexcept :
     m_Buffer(std::move(other.m_Buffer)), m_WritePosition(other.m_WritePosition), m_CurrentSize(other.m_CurrentSize),
     m_Stats(other.m_Stats), m_OldWritePosition(other.m_OldWritePosition) {
-    // Clear the moved-from object
     other.m_WritePosition = nullptr;
     other.m_CurrentSize = 0;
     other.m_OldWritePosition = nullptr;
@@ -134,7 +126,6 @@ CRecompMemory& CRecompMemory::operator=(CRecompMemory&& other) noexcept {
         m_Stats = other.m_Stats;
         m_OldWritePosition = other.m_OldWritePosition;
 
-        // Clear the moved-from object
         other.m_WritePosition = nullptr;
         other.m_CurrentSize = 0;
         other.m_OldWritePosition = nullptr;
@@ -164,7 +155,6 @@ std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> CRecompMemory::AllocateBuffe
 
     Log::debugf("RecompilerMemory: Allocated executable memory at %p (%u bytes)", memory, size);
 
-    // Return with custom deleter
     ExecutableMemoryDeleter deleter;
     deleter.size = size;
     return std::unique_ptr<uint8_t[], ExecutableMemoryDeleter>(static_cast<uint8_t*>(memory), deleter);
@@ -201,7 +191,6 @@ std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> CRecompMemory::AllocateBuffe
 
     Log::debugf("RecompilerMemory: Allocated executable memory at %p (%u bytes)", memory, size);
 
-    // Return with custom deleter
     ExecutableMemoryDeleter deleter;
     deleter.size = size;
     return std::unique_ptr<uint8_t[], ExecutableMemoryDeleter>(static_cast<uint8_t*>(memory), deleter);
@@ -220,7 +209,6 @@ bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
         newSize = requiredTotal + GROWTH_INCREMENT;
     }
 
-    // Clamp to maximum allowed
     if (newSize > MAX_BUFFER_SIZE) {
         if (requiredTotal > MAX_BUFFER_SIZE) {
             Log::errorf("RecompilerMemory: Cannot grow beyond %u MB - requested %u bytes",
@@ -230,7 +218,6 @@ bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
         newSize = MAX_BUFFER_SIZE;
     }
 
-// Align to page boundaries
 #ifdef _WIN32
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
@@ -243,32 +230,26 @@ bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
 
     Log::infof("RecompilerMemory: Growing buffer from %u KB to %u KB", m_CurrentSize / 1024, newSize / 1024);
 
-    // Allocate new buffer
     auto newBuffer = AllocateBuffer(newSize);
     if (!newBuffer) {
         Log::error("RecompilerMemory: Failed to allocate larger buffer");
         return false;
     }
 
-    // Calculate current usage
     uint32_t usedBytes = GetUsedMemory();
 
-    // Copy existing code to new buffer
     if (usedBytes > 0) {
         std::memcpy(newBuffer.get(), m_Buffer.get(), usedBytes);
         Log::debugf("RecompilerMemory: Copied %u bytes to new buffer", usedBytes);
     }
 
-    // Calculate new write position offset
     ptrdiff_t writeOffset = m_WritePosition - m_Buffer.get();
 
-    // Replace old buffer
     m_Buffer = std::move(newBuffer);
     m_WritePosition = m_Buffer.get() + writeOffset;
     m_OldWritePosition = m_WritePosition;
     m_CurrentSize = newSize;
 
-    // Update statistics
     m_Stats.allocatedBytes = newSize;
     m_Stats.growthCount++;
     m_Stats.usedBytes = usedBytes;
@@ -300,7 +281,6 @@ void CRecompMemory::ShowMemoryUsage() const {
     Log::infof("  Available:       %u KB (%u MB)", available / 1024, available / (1024 * 1024));
     Log::infof("  Growth count:    %u times", m_Stats.growthCount);
 
-    // Efficiency metrics
     if (m_Stats.peakUsedBytes > 0) {
         float efficiency =
             (m_Stats.allocatedBytes > 0) ? (100.0f * m_Stats.peakUsedBytes / m_Stats.allocatedBytes) : 0.0f;
@@ -311,7 +291,6 @@ void CRecompMemory::ShowMemoryUsage() const {
         }
     }
 
-    // Memory waste analysis
     uint32_t waste = m_Stats.allocatedBytes - m_Stats.peakUsedBytes;
     if (waste > 10 * 1024 * 1024) { // More than 10 MB wasted
         Log::warningf("RecompilerMemory: %u MB of allocated memory never used", waste / (1024 * 1024));

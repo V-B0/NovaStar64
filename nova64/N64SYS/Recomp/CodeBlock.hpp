@@ -31,19 +31,17 @@
 #include <shared_mutex>
 
 // Third-party libraries
-#include "asmjit.hpp" // AsmJit wrapper (currently stubbed)
+#include "asmjit.hpp" // AsmJit wrapper
 
 class CN64System;
 class CRegisters;
 
 namespace Nova64 {
 
-// Forward declarations
 class MipsMemoryVM;
 
 namespace Recompiler {
 
-// Forward declarations
 class Recompiler;
 class RecompilationMemory;
 class RecompilerOperations;
@@ -133,8 +131,6 @@ struct BasicBlockInfo {
  * @brief Recompiled code block with JIT compilation
  * 
  * Uses RAII for resource management and modern C++ features for safety.
- * 
- * NOTE: Currently stubbed - requires AsmJit library integration
  */
 class CodeBlock : public asmjit::ErrorHandler {
 public:
@@ -149,12 +145,10 @@ public:
         size_t cache_line_size = 64;   // For alignment
     };
 
-    // Construction/Destruction
     CodeBlock(N64System& system, uint32_t entry_address, const Config& config = Config(),
               asmjit::JitRuntime* shared_runtime = nullptr);
     ~CodeBlock() noexcept;
 
-    // Non-copyable, movable
     CodeBlock(const CodeBlock&) = delete;
     CodeBlock& operator=(const CodeBlock&) = delete;
     CodeBlock(CodeBlock&&) noexcept;
@@ -206,7 +200,6 @@ public:
     /// Get the system registers (used by platform-specific recompiler register allocators)
     ::CRegisters* GetRegisters() const noexcept { return registers_; }
 
-    /// Get the N64 system reference
     N64System* GetSystem() const noexcept { return system_; }
 
     bool is_compiled() const noexcept { return compiled_function_ != nullptr; }
@@ -232,7 +225,6 @@ public:
 
         void reset() noexcept { *this = Statistics(); }
 
-        // Update statistics after execution
         void record_execution(size_t cycles) noexcept {
             ++execution_count;
             total_cycles += cycles;
@@ -432,7 +424,6 @@ private:
     // Statistics and profiling
     Statistics statistics_;
 
-    // Configuration
     Config config_;
 
     // Debug and logging
@@ -529,10 +520,8 @@ private:
     LruMap hot_lru_map_;
     size_t hot_block_count_ = 0;
 
-    // Thread safety
     mutable std::shared_mutex mutex_;
 
-    // Statistics
     mutable CacheStats stats_;
     mutable std::mutex stats_mutex_;
 

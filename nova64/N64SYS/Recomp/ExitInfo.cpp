@@ -33,7 +33,6 @@ namespace Recompiler {
 // --- ExitRegisterState Implementation ---
 
 bool ExitRegisterState::operator==(const ExitRegisterState& other) const {
-    // Compare all register snapshots
     for (size_t i = 0; i < 32; ++i) {
         if (!(gpr[i] == other.gpr[i])) return false;
         if (!(fpr[i] == other.fpr[i])) return false;
@@ -42,7 +41,6 @@ bool ExitRegisterState::operator==(const ExitRegisterState& other) const {
 }
 
 void ExitRegisterState::merge(const ExitRegisterState& other) {
-    // Merge register states - if states differ, mark as not constant
     auto merge_snapshot = [](RegisterSnapshot& a, const RegisterSnapshot& b) {
         if (!b.valid) return;
 
@@ -78,7 +76,6 @@ std::string ExitRegisterState::to_string() const {
     std::ostringstream oss;
     oss << "ExitRegisterState:\n";
 
-    // GPRs
     for (size_t i = 0; i < 32; ++i) {
         if (gpr[i].valid) {
             oss << "  r" << i << ": ";
@@ -96,7 +93,6 @@ std::string ExitRegisterState::to_string() const {
         }
     }
 
-    // Special registers
     if (hi.valid) oss << "  HI: " << (hi.constant ? "const" : "valid") << "\n";
     if (lo.valid) oss << "  LO: " << (lo.constant ? "const" : "valid") << "\n";
     if (pc.valid) oss << "  PC: 0x" << std::hex << pc.value << "\n";
@@ -146,7 +142,6 @@ void BranchPrediction::update(bool actually_taken, uint32_t actual_target) {
         }
     }
 
-    // Update target prediction
     if (actually_taken && actual_target != 0) {
         predicted_target = actual_target;
     }
@@ -156,7 +151,6 @@ void BranchPrediction::update(bool actually_taken, uint32_t actual_target) {
 
 ExitInfo::ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config) :
     parent_block_(parent_block), id_(id), config_(config) {
-    // Initialize with sensible defaults
     register_state_.reset();
 
     if (config_.enable_profiling) {
@@ -164,9 +158,7 @@ ExitInfo::ExitInfo(CodeBlock& parent_block, ExitId id, const Config& config) :
     }
 }
 
-ExitInfo::~ExitInfo() {
-    // Cleanup
-}
+ExitInfo::~ExitInfo() {}
 
 ExitInfo::ExitInfo(ExitInfo&& other) noexcept :
     parent_block_(other.parent_block_), id_(other.id_), target_pc_(other.target_pc_), reason_(other.reason_),
@@ -202,7 +194,6 @@ void ExitInfo::set_target(uint32_t target_pc, ExitReason reason, ExitCategory ca
     reason_ = reason;
     category_ = category;
 
-    // Update flags based on reason
     update_flags();
 }
 
@@ -215,16 +206,15 @@ void ExitInfo::set_exception_info(const ExceptionInfo& exception) {
 void ExitInfo::capture_register_state(const ::CRegisters& registers) {
     if (!config_.enable_register_state) return;
 
-    // Capture current register state
     for (size_t i = 0; i < 32; ++i) {
         auto& snap = register_state_.gpr[i];
         snap.valid = true;
-        snap.value = static_cast<uint32_t>(registers.m_GPR[i]); // Explicit cast
+        snap.value = static_cast<uint32_t>(registers.m_GPR[i]);
         // Would need additional info to determine if constant/dirty
     }
 
     register_state_.pc.valid = true;
-    register_state_.pc.value = registers.m_PROGRAM_COUNTER; // Use correct member m_PROGRAM_COUNTER
+    register_state_.pc.value = registers.m_PROGRAM_COUNTER;
 }
 
 void ExitInfo::restore_register_state(::CRegisters& registers) const {
@@ -233,7 +223,7 @@ void ExitInfo::restore_register_state(::CRegisters& registers) const {
     // Restore register state (mainly for debugging/validation)
     for (size_t i = 0; i < 32; ++i) {
         if (register_state_.gpr[i].valid && register_state_.gpr[i].constant) {
-            registers.m_GPR[i] = register_state_.gpr[i].value; // Use correct member m_GPR
+            registers.m_GPR[i] = register_state_.gpr[i].value;
         }
     }
 }
@@ -241,8 +231,7 @@ void ExitInfo::restore_register_state(::CRegisters& registers) const {
 void ExitInfo::predict_branch() {
     if (!config_.enable_branch_prediction) return;
 
-    // Use simple static prediction for now
-    // Could be enhanced with more sophisticated predictors
+    // Simple static heuristic.
     if (stats_.execution_count > 10) {
         prediction_.predicted_taken = stats_.execution_count > (stats_.execution_count / 2);
         prediction_.confidence = 0.7;
@@ -254,7 +243,6 @@ void ExitInfo::update_prediction(bool taken, uint32_t actual_target) {
 
     prediction_.update(taken, actual_target);
 
-    // Update statistics
     stats_.record_prediction(prediction_.predicted_taken == taken);
 
     // Update flags based on prediction accuracy
@@ -270,7 +258,6 @@ void ExitInfo::update_prediction(bool taken, uint32_t actual_target) {
 void ExitInfo::record_execution(uint64_t cycles) {
     stats_.record_execution(cycles);
 
-    // Update probability
     update_probability();
 
     // Track execution history for profiling
@@ -278,7 +265,6 @@ void ExitInfo::record_execution(uint64_t cycles) {
         execution_history_.push_back(target_pc_);
     }
 
-    // Update flags
     if (stats_.is_hot()) {
         flags_ = flags_ | ExitFlags::Hot;
     } else if (stats_.is_cold()) {
@@ -287,7 +273,6 @@ void ExitInfo::record_execution(uint64_t cycles) {
 }
 
 void ExitInfo::optimize() {
-    // Apply various optimization strategies
     apply_peephole_optimization();
 
     if (config_.enable_profiling && stats_.execution_count > 100) {
@@ -302,7 +287,6 @@ void ExitInfo::optimize() {
 }
 
 bool ExitInfo::can_inline() const {
-    // Check if this exit is a good candidate for inlining
     if (!stats_.is_hot()) return false;
     if (has_flag(flags_, ExitFlags::ExceptionPossible)) return false;
     if (category_ == ExitCategory::Exception) return false;
@@ -311,7 +295,6 @@ bool ExitInfo::can_inline() const {
 }
 
 bool ExitInfo::should_speculate() const {
-    // Check if speculative optimization is worthwhile
     if (!config_.enable_branch_prediction) return false;
     if (category_ == ExitCategory::Exception) return false;
 
@@ -319,7 +302,6 @@ bool ExitInfo::should_speculate() const {
 }
 
 bool ExitInfo::is_profitable_to_link() const {
-    // Check if direct linking would be beneficial
     if (category_ == ExitCategory::Exception) return false;
     if (has_flag(flags_, ExitFlags::SelfModifying)) return false;
 
@@ -354,7 +336,6 @@ std::string ExitInfo::get_statistics_string() const {
 }
 
 bool ExitInfo::validate() const {
-    // Validate exit information consistency
     if (target_pc_ == 0 && reason_ != ExitReason::NormalBlockEnd) {
         return false;
     }
@@ -367,7 +348,6 @@ bool ExitInfo::validate() const {
 }
 
 bool ExitInfo::is_consistent_with(const ExitInfo& other) const {
-    // Check if two exits are consistent
     if (target_pc_ != other.target_pc_) return false;
     if (reason_ != other.reason_) return false;
     if (category_ != other.category_) return false;
@@ -376,7 +356,6 @@ bool ExitInfo::is_consistent_with(const ExitInfo& other) const {
 }
 
 void ExitInfo::update_flags() {
-    // Update flags based on current state
     if (reason_ == ExitReason::ConditionalBranchTaken || reason_ == ExitReason::ConditionalBranchNotTaken) {
         flags_ = flags_ | ExitFlags::DelaySlot;
     }
@@ -387,25 +366,21 @@ void ExitInfo::update_flags() {
 }
 
 void ExitInfo::update_probability() {
-    // Calculate exit probability based on execution count
-    // This would need access to parent block's total execution count
+    // Approximation: the parent block's total execution count is not available.
     if (stats_.execution_count > 0) {
         stats_.probability = static_cast<double>(stats_.execution_count) / (stats_.execution_count + 1.0);
     }
 }
 
 void ExitInfo::log_exit(const std::string& message) {
-    // TRACE(TraceLevel::Info, "Exit {}: {}", static_cast<uint32_t>(id_), message);
     Log::debugf("Exit %u: %s", static_cast<uint32_t>(id_), message.c_str());
 }
 
 void ExitInfo::apply_peephole_optimization() {
-    // Simple peephole optimizations for exit sequences
-    // Would involve analyzing the exit code pattern
+    // No-op: no peephole rewrites are implemented.
 }
 
 void ExitInfo::apply_profile_guided_optimization() {
-    // Use profiling data to optimize
     if (stats_.is_hot()) {
         flags_ = flags_ | ExitFlags::ProfileGuided | ExitFlags::CriticalPath;
     }
@@ -417,7 +392,6 @@ void ExitInfo::apply_profile_guided_optimization() {
 }
 
 void ExitInfo::apply_speculative_optimization() {
-    // Apply speculative optimizations
     if (prediction_.confidence > 0.9) {
         flags_ = flags_ | ExitFlags::Speculative | ExitFlags::Predicted;
     }
@@ -528,10 +502,9 @@ void ExitManager::optimize_all_exits() {
 void ExitManager::profile_all_exits() {
     std::shared_lock lock(mutex_);
 
-    // Collect profiling data from all exits
+    // No-op: the statistics are read but not aggregated or logged.
     for (const auto& [id, exit] : exits_) {
         [[maybe_unused]] const auto& stats = exit->statistics();
-        // Could aggregate or log this data
     }
 }
 
@@ -539,7 +512,7 @@ void ExitManager::reset_all_statistics() {
     std::shared_lock lock(mutex_);
 
     for ([[maybe_unused]] auto& [id, exit] : exits_) {
-        // Would need to add a reset method to ExitInfo
+        // No-op: ExitInfo has no statistics reset.
     }
 }
 
@@ -651,7 +624,7 @@ ExitManager::ManagerStats ExitManager::statistics() const {
     }
 
     if (stats.total_exits > 0) {
-        stats.average_exits_per_block = 1.0; // Would need block count
+        stats.average_exits_per_block = 1.0; // Block count is not available here
     }
 
     return stats;
@@ -701,7 +674,7 @@ bool ExitManager::deserialize(const SerializedExitManager& data) {
         exit->set_target(se.target_pc, se.reason, se.category);
         exit->set_flags(se.flags);
         exit->set_pipeline_stage(se.stage);
-        // Would need to restore statistics and register state
+        // Statistics and register state are not restored.
 
         exits_[id] = std::move(exit);
         pc_to_exit_id_[se.target_pc] = id;
@@ -746,7 +719,6 @@ ExitPredictor::PredictionResult ExitPredictor::predict(uint32_t current_pc, uint
 
     const auto& history = it->second;
 
-    // Use history to predict
     result.taken = history.taken_probability() > 0.5;
     result.confidence = std::abs(history.taken_probability() - 0.5) * 2.0;
 
@@ -765,7 +737,6 @@ ExitPredictor::PredictionResult ExitPredictor::predict(uint32_t current_pc, uint
         }
     }
 
-    // Suggest flags
     if (result.confidence > 0.7) {
         result.suggested_flags = result.taken ? ExitFlags::Likely : ExitFlags::Unlikely;
     }
@@ -802,18 +773,16 @@ std::vector<uint32_t> ExitPredictor::get_likely_targets(uint32_t branch_pc) cons
 
     const auto& history = it->second;
 
-    // Count target frequencies
     std::unordered_map<uint32_t, size_t> target_counts;
     for (uint32_t target : history.target_history) {
         ++target_counts[target];
     }
 
-    // Sort by frequency
     std::vector<std::pair<uint32_t, size_t>> sorted_targets(target_counts.begin(), target_counts.end());
     std::sort(sorted_targets.begin(), sorted_targets.end(),
               [](const auto& a, const auto& b) { return a.second > b.second; });
 
-    // Return top targets
+    // Top three targets.
     std::vector<uint32_t> result;
     for (size_t i = 0; i < std::min(size_t(3), sorted_targets.size()); ++i) {
         result.push_back(sorted_targets[i].first);
@@ -884,7 +853,7 @@ ExitPredictor::PredictorStats ExitPredictor::statistics() const {
     stats.branches_tracked = branch_histories_.size();
 
     for (const auto& [pc, history] : branch_histories_) {
-        // Would need to track prediction accuracy
+        // Taken probability stands in for accuracy, which is not tracked.
         stats.branch_accuracies[pc] = history.taken_probability();
     }
 

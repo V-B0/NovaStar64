@@ -39,6 +39,7 @@ class CArm64Ops;
 
 namespace Arm {
 
+/// Register-mapping bookkeeping for the AArch64 backend; guest GPRs stay in memory, so no host code is emitted.
 class ArmRegInfo final : public CRegBase {
 public:
     ArmRegInfo(CodeBlock& codeBlock, CArm64Ops& assembler) : m_CodeBlock(&codeBlock), m_Assembler(&assembler) {

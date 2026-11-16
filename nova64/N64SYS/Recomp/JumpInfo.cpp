@@ -23,7 +23,6 @@
 
 namespace Nova64::Recompiler {
 
-// Helper for string conversion
 static const char* GetJumpTypeName(JumpType type) {
     switch (type) {
     case JumpType::Direct:      return "Direct";
@@ -40,30 +39,18 @@ static const char* GetJumpTypeName(JumpType type) {
 
 static std::string GetExitReasonName(ExitReason reason) { return std::to_string(static_cast<uint16_t>(reason)); }
 
-// Note: Some CCodeBlock methods are used but require the full definition
-// These will be moved to inline implementations or use simpler accessors
-
 // --- CJumpInfo Implementation ---
 
 CJumpInfo::CJumpInfo(CodeBlock& codeBlock) :
     m_JumpPC(0), m_TargetPC(0), m_LinkAddress(std::nullopt), m_Type(JumpType::Unknown), m_CanFallThrough(false),
     m_IsPermanentLoop(false), m_DelaySlotDone(false), m_IsResolved(false), m_ExitReason(ExitReason::NormalBlockEnd) {
-    // Extract jump information from the code block
-    // Note: Since CCodeBlock is forward declared only, we use simpler access
-    // Full implementation would extract detailed state once header is complete
-
-    // For now, just log that we're tracking this code block
-    // Real implementation would call: m_JumpPC = codeBlock.GetCurrentPC();
+    // Only logs; no state is read from the code block.
     Log::debug("CJumpInfo: Created jump info from code block");
-
-    // This creates a dependency on CodeBlock - once fully defined,
-    // we would inspect its state, detect loops, check existing jumps, etc.
 }
 
 CJumpInfo::CJumpInfo(uint32_t jumpPC, uint32_t targetPC, std::optional<uint32_t> linkAddr, JumpType type) :
     m_JumpPC(jumpPC), m_TargetPC(targetPC), m_LinkAddress(linkAddr), m_Type(type), m_CanFallThrough(false),
     m_IsPermanentLoop(false), m_DelaySlotDone(false), m_IsResolved(false), m_ExitReason(ExitReason::NormalBlockEnd) {
-    // Validate parameters
     if (jumpPC == 0) {
         Log::warning("CJumpInfo: Jump PC is zero");
     }
@@ -98,7 +85,6 @@ CJumpInfo::CJumpInfo(uint32_t jumpPC, uint32_t targetPC, std::optional<uint32_t>
     default:                 m_ExitReason = ExitReason::NormalBlockEnd; break;
     }
 
-    // Generate debug label
     char label[64];
     std::snprintf(label, sizeof(label), "jump_0x%08X_to_0x%08X", jumpPC, targetPC);
     m_BranchLabel = label;
@@ -145,9 +131,6 @@ std::string CJumpInfo::ToString() const {
 }
 
 bool CJumpInfo::NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CRegInfo& targetReg) const {
-    // Check if registers need to be synchronized when taking this jump
-    // This creates dependencies on CRegInfo's state inspection
-
     // For indirect jumps, always synchronize (target unknown at compile time)
     if (m_Type == JumpType::Indirect) {
         Log::debug("CJumpInfo: Indirect jump requires full register sync");
@@ -166,8 +149,7 @@ bool CJumpInfo::NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CR
         return true;
     }
 
-    // Compare register states - if they differ, sync is needed
-    // This uses CRegInfo's state inspection methods
+    // Otherwise sync only if the allocation counts differ.
     const auto& sourceStats = sourceReg.GetStatistics();
     const auto& targetStats = targetReg.GetStatistics();
 
@@ -181,26 +163,16 @@ bool CJumpInfo::NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CR
 }
 
 void CJumpInfo::UpdateExitInfo(CExitInfo& exitInfo, const CRegInfo& regInfo) const {
-    // Update exit information based on this jump
-    // Creates dependency on both CExitInfo and CRegInfo
-    // Note: Demonstrates relationship - actual ExitInfo class may have different interface
-
-    // Copy register allocation statistics from CRegInfo
     const auto& stats = regInfo.GetStatistics();
     Log::debugf("CJumpInfo: Exit with %zu register allocations, %zu spills", stats.allocations, stats.spills);
 
-    // Log exit details showing the data that would be passed to ExitInfo
+    // Only logs the values that would be passed to exitInfo; it is not modified.
     Log::debugf("CJumpInfo: Exit reason %d, target PC 0x%08X, can fall-through: %s", static_cast<int>(m_ExitReason),
                 m_TargetPC, m_CanFallThrough ? "yes" : "no");
 
     if (m_LinkAddress.has_value()) {
         Log::debugf("CJumpInfo: Link address 0x%08X", m_LinkAddress.value());
     }
-
-    // This demonstrates the inter-dependency:
-    // - JumpInfo provides jump/branch metadata
-    // - RegInfo provides register state
-    // - ExitInfo would combine these for code generation
 }
 
 } // namespace Nova64::Recompiler

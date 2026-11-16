@@ -189,7 +189,7 @@ std::string CRegInfo::GetABIName() const {
 }
 
 bool CRegInfo::SupportsFeature(std::string_view /*feature*/) const {
-    // Stub - no special features detected yet
+    // No optional host features are probed.
     return false;
 }
 
@@ -204,11 +204,11 @@ const IRegisterAllocator* CRegInfo::GetAllocator() const noexcept { return m_All
 void CRegInfo::ResetRegisterState(RegisterSet& /*regSet*/) { m_Stats.Reset(); }
 
 void CRegInfo::SaveRegisterState(RegisterSet& /*regSet*/) {
-    // Stub - state saving for register allocation
+    // No-op.
 }
 
 void CRegInfo::RestoreRegisterState(RegisterSet& /*regSet*/) {
-    // Stub - state restoration
+    // No-op.
 }
 
 // --- Static methods ---
@@ -251,7 +251,7 @@ std::string CRegInfo::GetPlatformDescription(PlatformType platform) {
 std::unique_ptr<CRegInfo> CRegInfo::CreateForCurrentPlatform() { return std::make_unique<CRegInfo>(); }
 
 std::unique_ptr<CRegInfo> CRegInfo::CreateForPlatform(PlatformType /*platform*/) {
-    // Currently all platforms use the same CRegInfo with compile-time detection
+    // All platforms share one CRegInfo; the platform is detected at compile time.
     return std::make_unique<CRegInfo>();
 }
 
@@ -278,10 +278,10 @@ bool CheckPlatformFeature(std::string_view /*feature*/) noexcept { return false;
 UnsupportedPlatformException::UnsupportedPlatformException(PlatformType platform) :
     std::runtime_error("Unsupported platform: " + CRegInfo::GetPlatformDescription(platform)), m_Platform(platform) {}
 
-// --- RegisterCustomPlatform (stub) ---
+// --- RegisterCustomPlatform ---
 
 void RegisterCustomPlatform(PlatformType /*type*/, std::function<std::unique_ptr<IRegInfo>()> /*factory*/) {
-    // Custom platform registration - stub for now
+    // No-op: custom platforms are not supported.
 }
 
 } // namespace Recompiler

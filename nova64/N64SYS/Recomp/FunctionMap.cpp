@@ -27,14 +27,11 @@ CFunctionMap::CFunctionMap() : m_JumpTable(nullptr), m_AllocatedPageTables(0) {
 
 bool CFunctionMap::Initialize() {
     try {
-        // Allocate the direct jump table (256K entries)
         m_JumpTable = std::make_unique<CompiledFuncPtr[]>(JUMP_TABLE_SIZE);
 
-        // Zero-initialize the jump table
         std::memset(m_JumpTable.get(), 0, JUMP_TABLE_SIZE * sizeof(CompiledFuncPtr));
 
-        // Page tables are allocated on demand, so we don't need to allocate them here
-        // The page directory array is already initialized by default construction
+        // Page tables are allocated on demand (see EnsurePageTable).
 
         Log::debugf("CFunctionMap initialized with %zu jump table entries", JUMP_TABLE_SIZE);
 
@@ -55,14 +52,11 @@ void CFunctionMap::Reset(bool preserveStructure) {
         return; // Not initialized
     }
 
-    // Clear the jump table
     std::memset(m_JumpTable.get(), 0, JUMP_TABLE_SIZE * sizeof(CompiledFuncPtr));
 
-    // Clear exact-match map
     m_ExactLookup.clear();
 
     if (preserveStructure) {
-        // Keep allocated page tables but clear their entries
         for (auto& pageTable : m_PageDirectory) {
             if (pageTable) {
                 std::memset(pageTable.get(), 0, PAGE_TABLE_SIZE * sizeof(CompiledFuncPtr));
@@ -71,7 +65,6 @@ void CFunctionMap::Reset(bool preserveStructure) {
 
         Log::debugf("CFunctionMap reset (structure preserved, %zu page tables)", m_AllocatedPageTables);
     } else {
-        // Deallocate all page tables
         for (auto& pageTable : m_PageDirectory) {
             pageTable.reset();
         }
@@ -86,14 +79,11 @@ CFunctionMap::CompiledFuncPtr& CFunctionMap::GetOrCreateEntry(uint32_t vaddr) {
         throw std::runtime_error("CFunctionMap: Not initialized");
     }
 
-    // Get the page directory and table indices
     uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
     uint32_t tblIndex = GetPageTableIndex(vaddr);
 
-    // Ensure the page table exists
     auto& pageTable = EnsurePageTable(dirIndex);
 
-    // Return reference to the entry
     return pageTable[tblIndex];
 }
 
@@ -102,7 +92,6 @@ CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
         return nullptr;
     }
 
-    // Remove from exact-match map (authoritative)
     CompiledFuncPtr removed = nullptr;
     auto it = m_ExactLookup.find(vaddr);
     if (it != m_ExactLookup.end()) {
@@ -129,10 +118,8 @@ CFunctionMap::PageTable& CFunctionMap::EnsurePageTable(uint32_t dirIndex) {
     auto& pageTable = m_PageDirectory[dirIndex];
 
     if (!pageTable) {
-        // Allocate a new page table
         pageTable = std::make_unique<CompiledFuncPtr[]>(PAGE_TABLE_SIZE);
 
-        // Zero-initialize the new page table
         std::memset(pageTable.get(), 0, PAGE_TABLE_SIZE * sizeof(CompiledFuncPtr));
 
         ++m_AllocatedPageTables;

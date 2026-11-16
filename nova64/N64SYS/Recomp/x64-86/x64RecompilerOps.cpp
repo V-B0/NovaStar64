@@ -77,7 +77,7 @@ namespace Recompiler {
 // These private methods of CX64RecompilerOps emit x64 machine code using
 // AsmJit that, at runtime, will call the appropriate interpreter callback.
 
-// Helper: emit call to a register-only callback: void(CRegisters*, uint32_t)
+// Callback signature: void(CRegisters*, uint32_t)
 void CX64RecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
     EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
@@ -97,7 +97,7 @@ void CX64RecompilerOps::EmitRegisterCallback(void* callback, uint32_t opcVal) {
     m_Assembler->EmitCall(callback);
 }
 
-// Helper: emit call to a memory callback: void(CRegisters*, MipsMemoryVM*, uint32_t)
+// Callback signature: void(CRegisters*, MipsMemoryVM*, uint32_t)
 void CX64RecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
     EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
@@ -119,7 +119,7 @@ void CX64RecompilerOps::EmitMemoryCallback(void* callback, uint32_t opcVal) {
     m_Assembler->EmitCall(callback);
 }
 
-// Helper: emit call to a TLB callback: void(CRegisters*, CTLB*, uint32_t)
+// Callback signature: void(CRegisters*, CTLB*, uint32_t)
 void CX64RecompilerOps::EmitTlbCallback(void* callback, uint32_t opcVal) {
     EmitPCUpdate();
     auto& a = m_Assembler->GetAssembler();
@@ -140,7 +140,7 @@ void CX64RecompilerOps::EmitTlbCallback(void* callback, uint32_t opcVal) {
     m_Assembler->EmitCall(callback);
 }
 
-// Helper: emit call to a branch callback: void(CRegisters*, uint32_t opcVal, uint32_t pc)
+// Callback signature: void(CRegisters*, uint32_t opcVal, uint32_t pc)
 void CX64RecompilerOps::EmitBranchCallback(void* callback, uint32_t opcVal, uint32_t pc) {
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
@@ -190,13 +190,12 @@ void CX64RecompilerOps::EmitBranchLikelyCallback(void* callback, uint32_t opcVal
     a.jmp(m_BlockExitLabel);
     a.bind(noException);
 
-    // Emit the timer decrement for the branch instruction BEFORE the
-    // conditional skip.  The branch itself always executes (evaluates its
-    // condition), so its timer must always fire — even when the delay slot
-    // is skipped on a not-taken branch-likely.  Without this, every
-    // not-taken branch-likely undercounts NextTimer by CountPerOp, causing
-    // a cumulative COUNT_REGISTER drift vs the interpreter.
-    // ecx holds callback result (caller-saved, not used by EmitTimerDecrement)
+    // The branch itself always executes (evaluates its condition), so its timer decrement
+    // is emitted before the conditional skip: it must fire even when the delay slot is
+    // skipped on a not-taken branch-likely. Otherwise every not-taken branch-likely
+    // undercounts NextTimer by CountPerOp, causing a cumulative COUNT_REGISTER drift vs
+    // the interpreter.
+    // ecx holds the callback result (caller-saved, not used by EmitTimerDecrement)
     EmitTimerDecrement(); // sub [&NextTimer], CountPerOp  (clobbers rax)
     m_BranchLikelySkipLabel = a.new_label();
     m_HasPendingBranchLikelySkip = true;
@@ -272,7 +271,7 @@ static void Interp_COP2_Dispatch(CRegisters* regs, Nova64::MipsMemoryVM* mmu, ui
     // Set PC to the COP2 instruction's address from compile time.
     regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr));
 
-    // Check CU2 bit in Status register FIRST (before any RI checks)
+    // Check the CU2 bit in the Status register first (before any RI checks)
     if (regs->STATUS_REGISTER.CU2 == 0) {
         regs->TriggerException(11, 2); // EXC_CPU=11, Coprocessor=2
         return;
@@ -283,10 +282,9 @@ static void Interp_COP2_Dispatch(CRegisters* regs, Nova64::MipsMemoryVM* mmu, ui
         regs->TriggerException(10, 2); // EXC_II=10, CE=2 (from COP2)
         return;
     }
-    // No exception fired — advance PC past this COP2 instruction so the
-    // block exit doesn't re-execute it (the block always exits immediately
-    // with m_BlockEnded=true, so m_PROGRAM_COUNTER must point to the NEXT
-    // instruction for the dispatch loop to continue correctly).
+    // No exception fired: advance PC past this COP2 instruction so the block exit does not
+    // re-execute it (the block always exits immediately with m_BlockEnded=true, so
+    // m_PROGRAM_COUNTER must point to the next instruction for the dispatch loop).
     regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(compileAddr)) + 4;
     // CU2=1: COP2 operations use a latch register on VR4300
     // MFC2 (rs=0): read COP2 latch into rt (sign-extended to 64-bit)
@@ -356,9 +354,9 @@ static void TriggerCop3ReservedInstruction(CRegisters* regs, uint32_t compileAdd
 }
 
 void CX64RecompilerOps::EmitCop1UsableCheck() {
-    // CU1 checks are now inside each COP1 callback directly.
-    // The EmitPipelineStageCheck after each instruction handles the block exit
-    // when TriggerException sets PipelineStage=Jump.
+    // No code is emitted: each COP1 callback checks CU1 itself, and the
+    // EmitPipelineStageCheck after each instruction exits the block when
+    // TriggerException sets PipelineStage=Jump.
 }
 
 void CX64RecompilerOps::EmitCop1BranchUsableCheck(uint32_t pc) {
@@ -460,14 +458,12 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx) {
                                                 /* disassembly     */ {},
                                                 /* emitDebugComments */ true});
 
-    // Create a debug comment with the MIPS address
     m_Assembler->AddComment(std::string("PC=0x") + std::to_string(ctx.virtualAddress));
 
-    // Dispatch by primary opcode
     switch (op.Rtype.op) {
     case R4300_SPECIAL: {
 #if FORCE_CALLBACK_SPECIAL
-        // Binary-search: route ALL SPECIAL ALU/shift/logic to interpreter callback
+        // Route all SPECIAL ALU/shift/logic ops to the interpreter callback
         {
             uint32_t funct = mips_funct(opcVal);
             // JR, JALR, SYSCALL, BREAK, SYNC, traps still use their own paths
@@ -1036,8 +1032,6 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     default:       UnknownOpcode(); break;
     }
 
-    // Ensure $zero is always 0 after every instruction
-    // (The callbacks already handle this, but this is a safety net)
     return true;
 }
 
@@ -1203,8 +1197,7 @@ void CX64RecompilerOps::LinkJump(CJumpInfo& jumpInfo) {
 
 void CX64RecompilerOps::LinkJumpToSection(CodeSection* section) {
     if (!section) return;
-    // Link a jump to the entry label of a code section
-    // The section's entry label will be resolved during final code emission
+    // Only logs; no jump is emitted.
     Log::debugf("CX64RecompilerOps: Linking jump to section at 0x%08X", section->entry_pc());
 }
 
@@ -1220,8 +1213,7 @@ void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo) {
 void CX64RecompilerOps::SynchronizeRegisterState(const CX64RegInfo& other) { m_RegisterSet->SynchronizeWith(other); }
 
 void CX64RecompilerOps::PropagateRegisterState() {
-    // Propagate known register values to successor blocks
-    // This is part of the optimization pipeline
+    // Only logs; no state is propagated.
     Log::debug("CX64RecompilerOps: Propagating register state");
 }
 
@@ -1238,8 +1230,7 @@ bool CX64RecompilerOps::ValidateGeneratedCode() const { return !m_Assembler->Has
 // --- Private - Instruction Handler Initialization ---
 
 void CX64RecompilerOps::InitializeInstructionHandlers() {
-    // The dispatch is handled directly in CompileInstruction via switch/case
-    // The handler maps are available for future optimization passes
+    // Dispatch is done directly in CompileInstruction via switch/case.
     Log::debug("CX64RecompilerOps: Instruction handlers initialized");
 }
 
@@ -1273,7 +1264,7 @@ TranslationResult CX64RecompilerOps::TranslateCop1Instruction(const TranslationC
 }
 
 TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationContext& /*ctx*/) {
-    // COP2 doesn't exist on N64 CPU — always fire CopUnusable exception
+    // Emits nothing: COP2 is handled in CompileInstruction.
     return TranslationResult::Success;
 }
 
@@ -1330,7 +1321,7 @@ TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContex
 }
 
 // --- Private - Individual Handle* Methods (TranslationContext variants) ---
-// These delegate to the bare-name methods since both emit the same code.
+// Callback-only handlers taking a TranslationContext; reachable only through TranslateInstruction.
 
 #define DEFINE_HANDLE_SPECIAL(name, callback)                                                                          \
     TranslationResult CX64RecompilerOps::HandleSPECIAL_##name(const TranslationContext& ctx) {                         \
@@ -1382,7 +1373,7 @@ DEFINE_HANDLE_SPECIAL(DSRL32, DSRL32)
 DEFINE_HANDLE_SPECIAL(DSRA32, DSRA32)
 
 TranslationResult CX64RecompilerOps::HandleSPECIAL_JR(const TranslationContext& ctx) {
-    // JR ends the block - flush registers, update PC from register, exit
+    // JR ends the block (reported as BlockBoundary); no code is emitted here.
     m_Stats.branchesTranslated++;
     return TranslationResult::BlockBoundary;
 }
@@ -1602,9 +1593,8 @@ void CX64RecompilerOps::ReloadRegister(uint32_t regIndex) {
 asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_t offset, uint32_t size,
                                                         bool /*is64Bit*/) {
     using namespace asmjit::x86;
-    // Create a memory operand relative to the register base pointer
-    // baseReg is a MIPS register index; offset is the immediate offset
-    // We compute the effective address at runtime via the callback approach
+    // Operand relative to RBX (the CRegisters base). baseReg is unused: the effective
+    // address is computed at runtime by the memory callbacks.
     return ptr(rbx, offset, size);
 }
 
@@ -1626,21 +1616,19 @@ void CX64RecompilerOps::OptimizeCurrentBlock() {
 }
 
 void CX64RecompilerOps::PeepholeOptimize() {
-    // Peephole optimizations on the generated x64 code
-    // (future: merge adjacent loads, eliminate redundant moves, etc.)
+    // No-op: no peephole optimizations are implemented.
 }
 
 void CX64RecompilerOps::ConstantPropagation() {
-    // Track constant values through the register set
-    // and replace runtime computations with immediate values
+    // No-op: constants are not propagated.
 }
 
 void CX64RecompilerOps::DeadCodeElimination() {
-    // Remove generated code for instructions whose results are never used
+    // No-op: not implemented.
 }
 
 void CX64RecompilerOps::RedundantMoveElimination(){
-    // Remove mov reg, reg instructions and unnecessary register shuffling
+    // No-op: not implemented.
 }
 
 // --- Private - Branch Comparison Instructions (True JIT - Inline x64) ---
@@ -1791,7 +1779,7 @@ void CX64RecompilerOps::BLTZAL_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BLTZAL");
-    // Read rs BEFORE writing return address (rs may be GPR[31])
+    // Read rs before writing the return address (rs may be GPR[31])
     a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     if (m_InDelaySlot) {
         // Branch-in-delay-slot: RA = outer_jump_target + 4
@@ -1823,7 +1811,7 @@ void CX64RecompilerOps::BGEZAL_Compare() {
     int64_t takenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 4 + offset));
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BGEZAL");
-    // Read rs BEFORE writing return address (rs may be GPR[31])
+    // Read rs before writing the return address (rs may be GPR[31])
     a.mov(rcx, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     if (m_InDelaySlot) {
         // Branch-in-delay-slot: RA = outer_jump_target + 4
@@ -1856,7 +1844,7 @@ void CX64RecompilerOps::COP1_BCF_Compare() {
     int64_t notTakenPC = static_cast<int64_t>(static_cast<int32_t>(pc + 8));
     m_Assembler->AddComment("BC1F");
     EmitCop1BranchUsableCheck(pc);
-    // Branch if FP condition is false (FPCSR_C bit NOT set)
+    // Branch if FP condition is false (FPCSR_C bit not set)
     a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
     a.mov(rax, notTakenPC);
     a.mov(rdx, takenPC);

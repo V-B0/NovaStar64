@@ -85,19 +85,16 @@ CRecompiler::CRecompiler(::CN64System& system, std::atomic<bool>& endEmulation) 
     m_SharedJitRuntime(std::make_unique<asmjit::JitRuntime>()) {
     Log::info("CRecompiler: Initializing dynamic recompiler");
 
-    // Initialize function map
     if (!Initialize()) {
         Log::error("CRecompiler: Failed to initialize function map");
         throw std::runtime_error("Failed to initialize recompiler");
     }
 
-    // Allocate memory for compiled code
     if (!EnsureSpace(DEFAULT_INITIAL_SIZE)) {
         Log::error("CRecompiler: Failed to allocate recompiler memory");
         throw std::runtime_error("Failed to allocate recompiler memory");
     }
 
-    // Initialize memory stack
     m_MemoryStack = GetWritePosition();
 
     Log::info("CRecompiler: Initialization complete");
@@ -106,15 +103,12 @@ CRecompiler::CRecompiler(::CN64System& system, std::atomic<bool>& endEmulation) 
 CRecompiler::~CRecompiler() {
     Log::info("CRecompiler: Shutting down");
 
-    // Stop logging if active
     if (m_LogFile) {
         StopLog();
     }
 
-    // Clear all compiled functions
     Reset(false);
 
-    // Free memory (handled by CRecompMemory destructor via RAII)
     CRecompMemory::Reset();
 
     Log::info("CRecompiler: Shutdown complete");
@@ -132,7 +126,6 @@ void CRecompiler::Run() {
     m_System.m_DMAInvalidateCtx = this;
     m_System.m_FlushCodeFn = [](void* ctx) { static_cast<CRecompiler*>(ctx)->ClearAllCode(); };
 
-    // Select execution mode
     switch (m_ExecutionMode) {
     case ExecutionMode::VirtualTable: Execute_VirtualTable(); break;
 
@@ -154,7 +147,6 @@ void CRecompiler::Run() {
                m_Stats.blocksCompiled, m_Stats.blocksExecuted, m_Stats.cacheHits, m_Stats.cacheMisses,
                m_Stats.codeInvalidations, m_Stats.interpretedFallbacks, m_Stats.memoryUsed, m_Stats.compilationTimeNs);
 
-    // Unregister DMA invalidation callback
     m_System.m_DMAInvalidateFn = nullptr;
     m_System.m_FlushCodeFn = nullptr;
     m_System.m_DMAInvalidateCtx = nullptr;
@@ -163,7 +155,6 @@ void CRecompiler::Run() {
 void CRecompiler::Reset(bool allocateMemory) {
     Log::info("CRecompiler: Resetting recompiler");
 
-    // Clear all compiled functions
     for (auto* func : m_ActiveFunctions) {
         if (func) {
             delete func;
@@ -171,17 +162,13 @@ void CRecompiler::Reset(bool allocateMemory) {
     }
     m_ActiveFunctions.clear();
 
-    // Reset function map
     CFunctionMap::Reset(false);
 
-    // Reset statistics
     m_Stats.Reset();
 
-    // Reset profiling data
     m_FunctionProfiles.clear();
     m_LastProfilingReset = std::chrono::high_resolution_clock::now();
 
-    // Re-allocate memory if requested
     if (allocateMemory) {
         CRecompMemory::Reset();
         if (!EnsureSpace(DEFAULT_INITIAL_SIZE)) {
@@ -190,7 +177,6 @@ void CRecompiler::Reset(bool allocateMemory) {
         m_MemoryStack = GetWritePosition();
     }
 
-    // Re-initialize function map
     if (allocateMemory) {
         Initialize();
     }
@@ -217,17 +203,15 @@ void CRecompiler::ClearRecompCode_Virt(uint32_t virtualAddress, size_t length, R
         }
     }
 
-    // Check memory usage before clearing - uses RecompilerMemory
+    // Log memory usage before and after the clear
     {
         const auto& memStats = CRecompMemory::GetStats();
         Log::debugf("CRecompiler: Memory before clear - %u KB used / %u KB allocated", memStats.usedBytes / 1024,
                     memStats.allocatedBytes / 1024);
     }
 
-    // Use FunctionMap to clear code in range - creates dependency
     ClearCodeRange(virtualAddress, endAddress, reason);
 
-    // Update memory statistics
     {
         const auto& memStats = CRecompMemory::GetStats();
         Log::debugf("CRecompiler: Memory after clear - %u KB used / %u KB allocated", memStats.usedBytes / 1024,
@@ -252,9 +236,8 @@ void CRecompiler::ClearRecompCode_Phys(uint32_t physicalAddress, size_t length, 
         for (uint32_t chunk = chunkStart; chunk < chunkEnd; ++chunk) bitmap[chunk] = 0;
     }
 
-    // Convert physical to virtual address
-    // This is simplified - full implementation would handle TLB mapping
-    uint32_t virtualAddress = physicalAddress | 0x80000000; // KSEG0 mapping
+    // Only the KSEG0 mapping is handled; TLB-mapped addresses are not translated.
+    uint32_t virtualAddress = physicalAddress | 0x80000000;
 
     ClearRecompCode_Virt(virtualAddress, length, reason);
 }
@@ -286,7 +269,6 @@ void CRecompiler::DumpFunctionTimes() {
     Log::info("CRecompiler: Function Profiling Report");
     Log::info("========================================");
 
-    // Sort by total time
     std::vector<std::pair<CCompiledFunc*, FunctionProfile>> sorted;
     sorted.reserve(m_FunctionProfiles.size());
 
@@ -297,7 +279,6 @@ void CRecompiler::DumpFunctionTimes() {
     std::sort(sorted.begin(), sorted.end(),
               [](const auto& a, const auto& b) { return a.second.totalTime > b.second.totalTime; });
 
-    // Print top functions
     size_t count = std::min<size_t>(20, sorted.size());
     for (size_t i = 0; i < count; ++i) {
         const auto& profile = sorted[i].second;
@@ -345,7 +326,6 @@ void CRecompiler::ResetLog() {
         StopLog();
     }
 
-    // Delete existing log file
     std::filesystem::remove("recompiler.log");
 
     if (wasLogging) {
@@ -365,7 +345,6 @@ CCompiledFunc* CRecompiler::CompileCode() {
 CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // Check if already compiled
     auto* existingFunc = Lookup(address);
     if (existingFunc) {
         ++m_Stats.cacheHits;
@@ -379,7 +358,7 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
     Log::infof("CRecompiler: Compiling new block at 0x%08X", address);
 
     try {
-        // ---- Step 1: Create and analyse the CodeBlock -------------------
+        // Step 1: Create and analyse the CodeBlock
         CodeBlock::Config blockCfg;
         blockCfg.enable_profiling = m_ProfilingEnabled;
         blockCfg.enable_optimizations = true;
@@ -399,7 +378,6 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
             [[maybe_unused]] uint32_t failFunct = failInstr & 0x3F;
             Log::debugf("CRecompiler: CodeBlock analysis/codegen failed at 0x%08X (result=%d)", address,
                         static_cast<int>(compileResult));
-            // Dump the internal log from CodeBlock for debugging
             auto blockLog = codeBlock->get_code_log();
             if (!blockLog.empty()) {
                 Log::debugf("CRecompiler: CodeBlock log: %s", blockLog.c_str());
@@ -407,7 +385,7 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
             return nullptr;
         }
 
-        // ---- Step 2: Finalize -- get executable memory from AsmJit ------
+        // Step 2: Finalize -- get executable memory from AsmJit
         // finalize() calls runtime_->add() which copies the code into
         // executable (RWX) memory and returns the entry-point address.
         // We pass a dummy RecompilationMemory -- the actual backing comes
@@ -421,9 +399,9 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
 
         auto entryPtr = reinterpret_cast<BlockFunction>(entryOpt.value());
 
-        // ---- Step 3: Wrap in CCompiledFunc and store in map ------------
+        // Step 3: Wrap in CCompiledFunc and store in map
 
-        // Cache addresses BEFORE moving codeBlock (argument evaluation order is unspecified!)
+        // Cache addresses before moving codeBlock (argument evaluation order is unspecified)
         uint32_t startAddr = codeBlock->start_address();
         uint32_t endAddr = codeBlock->end_address();
 
@@ -445,7 +423,6 @@ CCompiledFunc* CRecompiler::CompileCode(uint32_t address) {
             }
         }
 
-        // Track for cleanup
         m_ActiveFunctions.push_back(funcMem);
 
         compiledFunc = funcMem;
@@ -483,11 +460,9 @@ void CRecompiler::Execute_VirtualTable() {
     while (!m_EndEmulation.load(std::memory_order_relaxed)) {
         uint32_t pc = static_cast<uint32_t>(m_ProgramCounter);
 
-        // Lookup compiled function
         auto* func = Lookup(pc);
 
         if (!func) {
-            // Need to compile
             func = CompileCode(pc);
 
             if (!func) {
@@ -567,10 +542,10 @@ void CRecompiler::Execute_VirtualTable() {
                 Log::infof("CRecompiler: PC=0x%08X (blocks: %llu)", newPC, (unsigned long long)m_Stats.blocksExecuted);
             }
 
-            // CRITICAL FIX: If m_NextTimer <= 0, we MUST enter the slow path to process timers
-            // and trigger interrupts. Also compare against this block's end, not its entry:
-            // a branch can loop backward inside the same compiled block while still landing
-            // at an address greater than the block entry PC.
+            // If m_NextTimer <= 0 the slow path must run to process timers and trigger
+            // interrupts. Compare against this block's end, not its entry: a branch can loop
+            // backward inside the same compiled block while still landing at an address
+            // greater than the block entry PC.
             const uint32_t blockEndPC = func->MaxPC();
             if (newPC > blockEndPC && !m_System.m_TestTimer && m_System.m_NextTimer > 0) {
                 // Even on the fast path, process pending system events
@@ -591,11 +566,7 @@ void CRecompiler::Execute_VirtualTable() {
         // SLOW PATH: Backward branch, self-loop, or TestTimer.
         // Process idle detection, timers, events, and frame limit.
         static uint64_t slowPathCounter = 0;
-        if ((++slowPathCounter % 10000) == 0) {
-            // Log::infof("CRecompiler: SLOW PATH PC=0x%08X (nextTimer=%d testTimer=%d EXL=%d IE=%d pend=%x)",
-            //           pc, nextTimer,
-            //           m_System.m_TestTimer, m_Reg.STATUS_REGISTER.ExceptionLevel, m_Reg.STATUS_REGISTER.InterruptEnable, (m_Reg.CAUSE_REGISTER.PendingInterrupts & m_Reg.STATUS_REGISTER.InterruptMask));
-        }
+        if ((++slowPathCounter % 10000) == 0) {}
 
         m_System.m_TestTimer = false;
 
@@ -607,9 +578,8 @@ void CRecompiler::Execute_VirtualTable() {
         //
         // The test is the block's own self-branch analysis, not "is this block
         // small": a short block that loops while doing real work must still be
-        // executed, and the interpreter would execute it. Using a size
-        // heuristic here made the two engines skip different loops and their
-        // Count values drift apart.
+        // executed, and the interpreter would execute it. A size heuristic makes
+        // the two engines skip different loops, so their Count values drift apart.
         {
             uint32_t newPC = static_cast<uint32_t>(m_ProgramCounter);
             if (newPC == pc && nextTimer > 0) {
@@ -711,7 +681,8 @@ void CRecompiler::Execute_VirtualTable_Validate() {
             continue;
         }
 
-        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions();
+        // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -723,7 +694,7 @@ void CRecompiler::Execute_VirtualTable_Validate() {
             instrCount = static_cast<uint32_t>(block->instruction_count());
             if (instrCount == 0) instrCount = 1;
         }
-        // nextTimer decrement now done per-instruction inside compiled blocks
+        // The nextTimer decrement happens per instruction inside the compiled blocks.
 
         // Idle loop detection
         {
@@ -798,7 +769,8 @@ void CRecompiler::Execute_MemoryChange() {
             continue;
         }
 
-        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions();
+        // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -809,7 +781,7 @@ void CRecompiler::Execute_MemoryChange() {
             instrCount = static_cast<uint32_t>(block->instruction_count());
             if (instrCount == 0) instrCount = 1;
         }
-        // nextTimer decrement now done per-instruction inside compiled blocks
+        // The nextTimer decrement happens per instruction inside the compiled blocks.
 
         // Idle loop detection
         {
@@ -876,7 +848,8 @@ void CRecompiler::Execute_Lookup() {
             continue;
         }
 
-        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions();
+        // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -887,7 +860,7 @@ void CRecompiler::Execute_Lookup() {
             instrCount = static_cast<uint32_t>(block->instruction_count());
             if (instrCount == 0) instrCount = 1;
         }
-        // nextTimer decrement now done per-instruction inside compiled blocks
+        // The nextTimer decrement happens per instruction inside the compiled blocks.
 
         // Idle loop detection
         {
@@ -960,7 +933,8 @@ void CRecompiler::Execute_Lookup_Validate() {
             continue;
         }
 
-        ProcessPendingDeletions(); // Apply any pending jump (branch or synchronous exception)
+        ProcessPendingDeletions();
+        // Apply any pending jump (branch or synchronous exception)
         if (m_System.m_PipelineStage == N64Types::PipelineStage::Jump) {
             m_ProgramCounter = m_System.m_JumpToLocation;
             m_System.m_PipelineStage = N64Types::PipelineStage::Normal;
@@ -971,7 +945,7 @@ void CRecompiler::Execute_Lookup_Validate() {
             instrCount = static_cast<uint32_t>(block->instruction_count());
             if (instrCount == 0) instrCount = 1;
         }
-        // nextTimer decrement now done per-instruction inside compiled blocks
+        // The nextTimer decrement happens per instruction inside the compiled blocks.
 
         // Idle loop detection
         {
@@ -1050,12 +1024,9 @@ void CRecompiler::ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reas
         Log::debugf("CRecompiler: ClearCodeRange [0x%08X-0x%08X) removing %zu funcs", start, end, toRemove.size());
     }
 
-    // Remove functions
     for (auto* func : toRemove) {
-        // Remove the function's entry from the lookup map
         Remove(func->EnterPC());
 
-        // Remove from active list
         auto it = std::find(m_ActiveFunctions.begin(), m_ActiveFunctions.end(), func);
         if (it != m_ActiveFunctions.end()) {
             m_ActiveFunctions.erase(it);
@@ -1081,7 +1052,6 @@ void CRecompiler::ProcessPendingDeletions() {
 void CRecompiler::HandleSelfModifyingCode(uint32_t address, RemoveReason reason) {
     Log::debugf("CRecompiler: Detected self-modifying code at 0x%08X", address);
 
-    // Clear affected code
     ClearRecompCode_Virt(address, 4, reason); // Clear at least one instruction
 }
 
@@ -1092,10 +1062,8 @@ void CRecompiler::UpdateProfiling(CCompiledFunc* func, std::chrono::nanoseconds 
 
     auto& profile = m_FunctionProfiles[func];
 
-    // Initialize address on first use
     if (profile.address == 0) {
-        // Find address in function map
-        // Since we don't have GetAddress(), search the map
+        // There is no reverse lookup, so scan KSEG0 for the function's entry address.
         for (uint32_t addr = 0x80000000; addr < 0x80800000; addr += 4) {
             if (Lookup(addr) == func) {
                 profile.address = addr;

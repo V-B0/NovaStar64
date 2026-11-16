@@ -23,7 +23,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CCodeSection;
 class CodeBlock;
 class CJumpInfo;
@@ -66,19 +65,10 @@ struct BlockParent {
      */
     bool IsValid() const noexcept { return parent != nullptr && jumpInfo != nullptr; }
 
-    /**
-     * @brief Check if this parent represents a conditional branch
-     */
     bool IsConditional() const noexcept { return relationshipType == ParentRelationshipType::ConditionalBranch; }
 
-    /**
-     * @brief Check if this parent represents a fall-through connection
-     */
     bool IsFallThrough() const noexcept { return relationshipType == ParentRelationshipType::FallThrough; }
 
-    /**
-     * @brief Check if this parent represents a loop back edge
-     */
     bool IsLoopBackEdge() const noexcept { return relationshipType == ParentRelationshipType::LoopBackEdge; }
 
     /**
@@ -97,14 +87,12 @@ struct BlockParent {
     CJumpInfo* jumpInfo = nullptr;                                                ///< Associated jump information
     ParentRelationshipType relationshipType = ParentRelationshipType::DirectJump; ///< Type of connection
 
-    // Equality operators for testing
     bool operator==(const BlockParent& other) const noexcept {
         return parent == other.parent && jumpInfo == other.jumpInfo && relationshipType == other.relationshipType;
     }
 
     bool operator!=(const BlockParent& other) const noexcept { return !(*this == other); }
 
-    /// Convert to string for debugging
     std::string ToString() const;
 };
 
@@ -222,17 +210,11 @@ public:
                             [section](const BlockParent& parent) { return parent.parent == section; });
     }
 
-    /**
-     * @brief Find parent relationship by jump info
-     */
     const_iterator FindByJumpInfo(const CJumpInfo* jumpInfo) const noexcept {
         return std::find_if(m_parents.begin(), m_parents.end(),
                             [jumpInfo](const BlockParent& parent) { return parent.jumpInfo == jumpInfo; });
     }
 
-    /**
-     * @brief Get all parents of a specific relationship type
-     */
     BlockParentList GetParentsByType(ParentRelationshipType type) const {
         BlockParentList result;
         for (const auto& parent : m_parents) {
@@ -243,25 +225,16 @@ public:
         return result;
     }
 
-    /**
-     * @brief Check if any parent is a conditional branch
-     */
     bool HasConditionalParent() const noexcept {
         return std::any_of(m_parents.begin(), m_parents.end(),
                            [](const BlockParent& parent) { return parent.IsConditional(); });
     }
 
-    /**
-     * @brief Check if any parent is a loop back edge
-     */
     bool HasLoopBackEdge() const noexcept {
         return std::any_of(m_parents.begin(), m_parents.end(),
                            [](const BlockParent& parent) { return parent.IsLoopBackEdge(); });
     }
 
-    /**
-     * @brief Remove all parents of a specific type
-     */
     void RemoveByType(ParentRelationshipType type) {
         m_parents.erase(std::remove_if(m_parents.begin(), m_parents.end(),
                                        [type](const BlockParent& parent) { return parent.relationshipType == type; }),
@@ -283,16 +256,10 @@ public:
         m_parents.erase(last, m_parents.end());
     }
 
-    /**
-     * @brief Apply a function to each parent
-     */
     template <typename Func> void ForEach(Func&& func) const {
         std::for_each(m_parents.begin(), m_parents.end(), std::forward<Func>(func));
     }
 
-    /**
-     * @brief Apply a function to each parent (mutable)
-     */
     template <typename Func> void ForEach(Func&& func) {
         std::for_each(m_parents.begin(), m_parents.end(), std::forward<Func>(func));
     }
@@ -306,7 +273,6 @@ public:
                            [](const BlockParent& parent) { return parent.IsValid(); });
     }
 
-    // Statistics
     struct Statistics {
         size_t totalParents = 0;
         size_t conditionalParents = 0;

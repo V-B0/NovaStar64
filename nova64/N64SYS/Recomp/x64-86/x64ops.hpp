@@ -29,7 +29,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 
 /**
@@ -130,7 +129,6 @@ public:
     explicit CX64Ops(CodeBlock& codeBlock, EmitOptions options = {});
     ~CX64Ops();
 
-    // Non-copyable, movable
     CX64Ops(const CX64Ops&) = delete;
     CX64Ops& operator=(const CX64Ops&) = delete;
     CX64Ops(CX64Ops&&) noexcept;
@@ -143,15 +141,9 @@ public:
      */
     bool Initialize(asmjit::CodeHolder& codeHolder);
 
-    /**
-     * @brief Set code generation mode
-     */
     void SetEmitMode(EmitMode mode) noexcept { m_EmitMode = mode; }
     EmitMode GetEmitMode() const noexcept { return m_EmitMode; }
 
-    /**
-     * @brief Update emit options
-     */
     void SetEmitOptions(const EmitOptions& options) noexcept { m_Options = options; }
     const EmitOptions& GetEmitOptions() const noexcept { return m_Options; }
 
@@ -175,14 +167,8 @@ public:
      */
     asmjit::Label DefineSymbol(std::string_view name, bool isExported = false);
 
-    /**
-     * @brief Get symbol information by name
-     */
     std::optional<SymbolInfo> GetSymbol(std::string_view name) const;
 
-    /**
-     * @brief Get symbol information by label
-     */
     std::optional<SymbolInfo> GetSymbol(asmjit::Label label) const;
 
     /**
@@ -197,14 +183,8 @@ public:
     void SetLogOutput(std::ostream& output) noexcept;
     void SetLogCallback(std::function<void(std::string_view)> callback) noexcept;
 
-    /**
-     * @brief Generate disassembly of current code
-     */
     std::string GenerateDisassembly() const;
 
-    /**
-     * @brief Add a comment to the generated code
-     */
     void AddComment(std::string_view comment);
 
     // Code generation helpers
@@ -293,24 +273,12 @@ public:
         asmjit::Error m_ErrorCode;
     };
 
-    /**
-     * @brief Check if assembler is in error state
-     */
     bool HasError() const noexcept { return m_LastError != asmjit::kErrorOk; }
 
-    /**
-     * @brief Get last error
-     */
     asmjit::Error GetLastError() const noexcept { return m_LastError; }
 
-    /**
-     * @brief Get last error message
-     */
     std::string GetLastErrorMessage() const;
 
-    /**
-     * @brief Clear error state
-     */
     void ClearError() noexcept { m_LastError = asmjit::kErrorOk; }
 
     // Performance and statistics
@@ -372,24 +340,19 @@ private:
     asmjit::Error m_LastError = asmjit::kErrorOk;
     std::string m_LastErrorContext;
 
-    // Statistics
     Statistics m_Stats;
 
-    // Register allocator
     RegisterAllocator m_Allocator;
 
     // Logging
     std::ostream* m_LogOutput = nullptr;
     std::function<void(std::string_view)> m_LogCallback;
 
-    // Code holder reference
     asmjit::CodeHolder* m_CodeHolder = nullptr;
 
     // Friends for internal access
     friend class RegisterAllocator;
 };
-
-// Inline implementations for performance-critical methods
 
 inline void CX64Ops::AddComment(std::string_view comment) {
     if (m_Options.emitDebugComments) {

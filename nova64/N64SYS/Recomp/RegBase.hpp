@@ -22,7 +22,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declaration for friend class
 class CRegInfo;
 
 /**
@@ -87,7 +86,6 @@ struct RegisterState {
     bool Is64Bit() const noexcept { return width == RegisterWidth::Bits64; }
     bool IsModifiedOrDirty() const noexcept { return isModified || isDirty; }
 
-    // Reset to default state
     void Reset() noexcept {
         width = RegisterWidth::Unknown;
         mapping = RegisterMapping::Unknown;
@@ -98,7 +96,6 @@ struct RegisterState {
         constantValue = 0;
     }
 
-    // Convert to string for debugging
     std::string ToString() const;
 };
 
@@ -118,7 +115,6 @@ public:
     RegisterSet() = default;
     ~RegisterSet() = default;
 
-    // Non-copyable, movable
     RegisterSet(const RegisterSet&) = delete;
     RegisterSet& operator=(const RegisterSet&) = delete;
     RegisterSet(RegisterSet&&) = default;
@@ -157,10 +153,8 @@ public:
         m_Values[regIndex] = static_cast<uint64_t>(value);
     }
 
-    // Get 64-bit signed value
     int64_t GetValueSigned(size_t regIndex) const noexcept { return static_cast<int64_t>(GetValue(regIndex)); }
 
-    // Get 32-bit signed value
     int32_t GetValueSigned32(size_t regIndex) const noexcept { return static_cast<int32_t>(GetValue32(regIndex)); }
 
     // State query methods
@@ -178,7 +172,6 @@ public:
 
     bool Is64Bit(size_t regIndex) const noexcept { return GetState(regIndex).Is64Bit(); }
 
-    // Set register to constant value
     void SetConstant(size_t regIndex, uint64_t value, RegisterWidth width, bool isSigned = false) noexcept {
         assert(regIndex < NUM_GPR);
         auto& state = m_States[regIndex];
@@ -189,7 +182,6 @@ public:
         m_Values[regIndex] = value;
     }
 
-    // Set register to mapped state
     void SetMapped(size_t regIndex, RegisterWidth width, bool isSigned = false) noexcept {
         assert(regIndex < NUM_GPR);
         auto& state = m_States[regIndex];
@@ -199,7 +191,6 @@ public:
         state.isSigned = isSigned;
     }
 
-    // Mark register as modified
     void MarkModified(size_t regIndex, bool dirty = true) noexcept {
         assert(regIndex < NUM_GPR);
         auto& state = m_States[regIndex];
@@ -207,13 +198,11 @@ public:
         state.isDirty = dirty;
     }
 
-    // Clear dirty flag
     void ClearDirty(size_t regIndex) noexcept {
         assert(regIndex < NUM_GPR);
         m_States[regIndex].isDirty = false;
     }
 
-    // Lock/unlock register
     void Lock(size_t regIndex) noexcept {
         assert(regIndex < NUM_GPR);
         m_States[regIndex].isLocked = true;
@@ -226,7 +215,6 @@ public:
 
     bool IsLocked(size_t regIndex) const noexcept { return GetState(regIndex).isLocked; }
 
-    // Reset all registers to default state
     void Reset() noexcept {
         for (auto& state : m_States) {
             state.Reset();
@@ -249,7 +237,6 @@ public:
     void SetRoundingMode(FpuRoundingMode mode) noexcept { m_RoundingMode = mode; }
     FpuRoundingMode GetRoundingMode() const noexcept { return m_RoundingMode; }
 
-    // Reset a specific register
     void ResetRegister(size_t regIndex) noexcept {
         assert(regIndex < NUM_GPR);
         m_States[regIndex].Reset();
@@ -270,7 +257,6 @@ private:
     std::array<RegisterState, NUM_GPR> m_States;
     std::array<uint64_t, NUM_GPR> m_Values;
 
-    // Additional state information
     uint32_t m_CycleCount = 0; ///< Cycle count for current block
     bool m_FpuUsed = false;    ///< Whether FPU has been used
     FpuRoundingMode m_RoundingMode = FpuRoundingMode::Default;
@@ -288,7 +274,6 @@ public:
     CRegBase();
     virtual ~CRegBase() = default;
 
-    // Non-copyable, movable
     CRegBase(CRegBase&&) = default;
     CRegBase& operator=(CRegBase&&) = default;
 
@@ -349,7 +334,6 @@ public:
     FpuRoundingMode GetRoundingModel() const noexcept { return m_Registers.GetRoundingMode(); }
     void SetRoundingModel(FpuRoundingMode roundingModel) noexcept { m_Registers.SetRoundingMode(roundingModel); }
 
-    // Operators
     CRegBase& operator=(const CRegBase& other);
     bool operator==(const CRegBase& right) const;
     bool operator!=(const CRegBase& right) const;
@@ -369,10 +353,8 @@ private:
     RegisterSet m_Registers;
 };
 
-// Inline implementations
 inline void CRegBase::SetMipsRegHi(int32_t reg, uint32_t value) noexcept {
-    // In MIPS64, setting the high part of a 32-bit value involves sign-extension
-    // This is a simplified version - actual behavior depends on context
+    // Replaces bits 63..32 and keeps the low word; no sign extension is applied.
     uint64_t current = m_Registers.GetValue(reg);
     current = (current & 0xFFFFFFFF) | (static_cast<uint64_t>(value) << 32);
     m_Registers.SetValue(reg, current);

@@ -112,7 +112,6 @@ CX64RegInfo& CX64RegInfo::operator=(CX64RegInfo&& other) noexcept {
 }
 
 bool CX64RegInfo::operator==(const CX64RegInfo& other) const noexcept {
-    // Compare mappings
     for (size_t i = 0; i < 32; ++i) {
         if (m_MipsToHost[i].has_value() != other.m_MipsToHost[i].has_value()) return false;
         if (m_MipsToHost[i].has_value() && other.m_MipsToHost[i].has_value()) {
@@ -139,7 +138,6 @@ X64RegisterType CX64RegInfo::MapRegister(uint32_t mipsReg, RegisterWidth width, 
 
     m_Stats.cacheMisses++;
 
-    // Allocate a host register
     X64RegisterType hostReg = FindFreeRegister(X64RegisterClass::GeneralPurpose, preferredReg);
     if (hostReg == X64RegisterType::Invalid) {
         // Need to evict
@@ -307,7 +305,6 @@ void CX64RegInfo::RestoreState() {
         return;
     }
 
-    // Flush current state
     FlushRegisters(false);
 
     auto& state = m_StateStack.back();
@@ -420,16 +417,12 @@ void CX64RegInfo::WriteBackRegister(uint32_t mipsReg) {
     auto hostReg = mapping.GetHostReg();
     auto hostIdx = static_cast<uint8_t>(hostReg);
 
-    // Emit store to MIPS GPR context
-    // address = &regs->m_GPR[mipsReg]
-    // We generate: mov [context + offset], hostReg
     auto& a = m_Assembler->GetAssembler();
     (void)a;
     (void)hostIdx;
 
-    // In the interpreter-callback model, register writes happen through
-    // the callback functions. Spilling is a no-op currently since we flush
-    // before every callback anyway.
+    // In the interpreter-callback model, register writes happen through the callback
+    // functions and registers are flushed before every callback, so nothing is emitted.
     Log::debugf("CX64RegInfo: WriteBack r%u (spill)", mipsReg);
 }
 
@@ -441,8 +434,8 @@ void CX64RegInfo::LoadRegisterToHost(uint32_t mipsReg, X64RegisterType hostReg) 
     (void)a;
     (void)hostIdx;
 
-    // In the interpreter-callback model, register loads happen through
-    // the callback functions. Loading is a no-op currently.
+    // In the interpreter-callback model, register loads happen through the callback
+    // functions, so nothing is emitted.
     Log::debugf("CX64RegInfo: LoadToHost r%u (reload)", mipsReg);
 }
 

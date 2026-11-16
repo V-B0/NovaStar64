@@ -24,7 +24,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 class CRegInfo;
 class CExitInfo;
@@ -89,7 +88,6 @@ public:
     bool IsDelaySlotDone() const noexcept { return m_DelaySlotDone; }
     std::string_view GetBranchLabel() const noexcept { return m_BranchLabel; }
 
-    // Get AsmJit labels (const and non-const versions)
     const asmjit::Label& GetLinkLocation() const noexcept { return m_LinkLocation; }
     asmjit::Label& GetLinkLocation() noexcept { return m_LinkLocation; }
 
@@ -105,9 +103,7 @@ public:
     void SetDelaySlotDone(bool done) noexcept { m_DelaySlotDone = done; }
     void SetBranchLabel(std::string_view label) { m_BranchLabel = label; }
 
-    /**
-     * @brief Check if this jump has a known target address
-     */
+    /// A target of 0 or UINT32_MAX means unknown.
     bool HasKnownTarget() const noexcept { return m_TargetPC != 0 && m_TargetPC != UINT32_MAX; }
 
     /**
@@ -115,29 +111,14 @@ public:
      */
     bool RequiresLinking() const noexcept { return !m_LinkLocation.is_valid() || !m_SecondaryLinkLocation.is_valid(); }
 
-    /**
-     * @brief Check if this is a function call with return address
-     */
     bool IsFunctionCall() const noexcept { return m_Type == JumpType::Call && m_LinkAddress.has_value(); }
 
-    /**
-     * @brief Check if this is a conditional branch
-     */
     bool IsConditional() const noexcept { return m_Type == JumpType::Conditional; }
 
-    /**
-     * @brief Mark as resolved (both link locations are valid)
-     */
-    void MarkResolved() noexcept {
-        // Both labels should be bound by now
-        m_IsResolved = true;
-    }
+    void MarkResolved() noexcept { m_IsResolved = true; }
 
     bool IsResolved() const noexcept { return m_IsResolved; }
 
-    /**
-     * @brief Reset the jump info for reuse
-     */
     void Reset() noexcept {
         m_TargetPC = 0;
         m_LinkAddress.reset();
@@ -157,8 +138,6 @@ public:
      * @param sourceReg Register state at jump site
      * @param targetReg Register state at jump target
      * @return true if synchronization is needed
-     * 
-     * Creates dependency on CRegInfo for register state comparison
      */
     bool NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CRegInfo& targetReg) const;
 
@@ -166,8 +145,6 @@ public:
      * @brief Update exit information based on this jump
      * @param exitInfo Exit information to update
      * @param regInfo Current register state
-     * 
-     * Creates dependencies on both CExitInfo and CRegInfo
      */
     void UpdateExitInfo(CExitInfo& exitInfo, const CRegInfo& regInfo) const;
 
@@ -193,30 +170,17 @@ private:
 
     // Exit information
     ExitReason m_ExitReason = ExitReason::NormalBlockEnd;
-
-    // Note: RegSet will be added as CRegInfo* when RegInfo.hpp is included
-    // CRegInfo* m_RegSet = nullptr;
 };
 
-// Helper functions
 namespace JumpInfo {
-/**
-     * @brief Create a jump info for a direct jump
-     */
 inline CJumpInfo CreateDirectJump(uint32_t jumpPC, uint32_t targetPC) {
     return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Direct);
 }
 
-/**
-     * @brief Create a jump info for a function call
-     */
 inline CJumpInfo CreateCall(uint32_t jumpPC, uint32_t targetPC, uint32_t linkAddr) {
     return CJumpInfo(jumpPC, targetPC, linkAddr, JumpType::Call);
 }
 
-/**
-     * @brief Create a jump info for a conditional branch
-     */
 inline CJumpInfo CreateConditionalBranch(uint32_t jumpPC, uint32_t targetPC) {
     return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Conditional);
 }

@@ -22,7 +22,6 @@
 #include <array>
 #include <functional>
 
-// Forward declarations
 class CN64System;
 namespace N64System {
 class CTLB;
@@ -44,7 +43,6 @@ namespace Interpreter {
  */
 class R4300iInterpreter {
 public:
-    // Instruction handler function pointer type
     using OpcodeFunc = void (R4300iInterpreter::*)();
 
     /**
@@ -54,12 +52,8 @@ public:
      */
     R4300iInterpreter(CN64System& system, bool force32bit = false);
 
-    /**
-     * @brief Destructor
-     */
     ~R4300iInterpreter();
 
-    // Delete copy operations
     R4300iInterpreter(const R4300iInterpreter&) = delete;
     R4300iInterpreter& operator=(const R4300iInterpreter&) = delete;
 

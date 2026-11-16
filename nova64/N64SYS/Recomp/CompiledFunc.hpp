@@ -58,9 +58,8 @@ public:
     CCompiledFunc(const CCompiledFunc&) = delete;
     CCompiledFunc& operator=(const CCompiledFunc&) = delete;
 
-    // ---- Execution ----
+    // --- Execution ---
 
-    /** Invoke the compiled native code. */
     void Execute() const {
         if (m_Function) {
             m_Function();
@@ -72,23 +71,23 @@ public:
     /** Get the raw function pointer (for profiling / debugging). */
     BlockFunction Function() const noexcept { return m_Function; }
 
-    // ---- Address info ----
+    // --- Address info ---
 
     uint32_t EnterPC() const noexcept { return m_EnterPC; }
     uint32_t MinPC() const noexcept { return m_MinPC; }
     uint32_t MaxPC() const noexcept { return m_MaxPC; }
 
-    // ---- Self-modifying-code detection ----
+    // --- Self-modifying-code detection ---
 
     /** @return true if the original MIPS memory still matches. */
     bool MemoryValid() const { return m_CodeBlock ? m_CodeBlock->verify_memory_snapshot() : true; }
 
-    // ---- Linked list for FunctionMap hash chains ----
+    // --- Linked list for FunctionMap hash chains ---
 
     CCompiledFunc* Next() const noexcept { return m_Next; }
     void SetNext(CCompiledFunc* next) noexcept { m_Next = next; }
 
-    // ---- Underlying CodeBlock (for debugging / stats) ----
+    // --- Underlying CodeBlock (for debugging / stats) ---
 
     CodeBlock* GetCodeBlock() const noexcept { return m_CodeBlock.get(); }
 

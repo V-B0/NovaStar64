@@ -187,8 +187,6 @@ CodeSection::CodeSection(CodeBlock* parent_block, uint32_t entry_pc, SectionId i
 }
 
 CodeSection::~CodeSection() noexcept {
-    // RAII: code_holder_ unique_ptr handles cleanup
-    // Log final statistics if profiling is enabled
     if (config_.enable_profiling && metadata_.execution_count > 0) {
         log_generation("Section destroyed - executed " + std::to_string(metadata_.execution_count) + " times, avg " +
                        std::to_string(metadata_.average_cycles) + " cycles");
@@ -253,7 +251,6 @@ void CodeSection::set_delay_slot() {
 void CodeSection::set_jump_target(uint32_t branch_pc, uint32_t target_pc, bool permanent_loop) {
     flags_ = flags_ | SectionFlags::HasJump;
 
-    // Create or update the outgoing edge for the jump target
     ControlFlowEdge edge{};
     edge.source = id_;
     edge.target = SectionId{0}; // Will be resolved during linking
@@ -338,7 +335,6 @@ CodeSection::GenerationResult CodeSection::generate_native_code() {
         return GenerationResult::FailedCodeGen;
     }
 
-    // Mark as compiled
     flags_ = flags_ | SectionFlags::Compiled;
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -366,23 +362,19 @@ bool CodeSection::generate_linkage() {
     for (size_t i = 0; i < successor_addresses_.size(); ++i) {
         uint32_t target_addr = successor_addresses_[i];
 
-        // Search for an existing section with this entry address
         auto existing = find_existing_section(target_addr);
         if (existing.has_value()) {
             CodeSection* target_section = existing.value();
             SectionId target_id = target_section->id();
 
-            // Add to successors if not already present
             if (std::find(successors_.begin(), successors_.end(), target_id) == successors_.end()) {
                 successors_.push_back(target_id);
             }
 
-            // Update the edge target
             if (i < outgoing_edges_.size()) {
                 outgoing_edges_[i].target = target_id;
             }
 
-            // Register ourselves as a parent of the target
             target_section->add_parent(this);
 
             log_generation("Linked to section 0x" + std::format("{:08X}", target_addr) +
@@ -428,7 +420,6 @@ bool CodeSection::inline_section(const CodeSection& source) {
         return false;
     }
 
-    // Append the source instructions
     instructions_.insert(instructions_.end(), source.instructions_.begin(), source.instructions_.end());
 
     metadata_.instruction_count += source.metadata().instruction_count;
@@ -444,7 +435,6 @@ bool CodeSection::inline_section(const CodeSection& source) {
 void CodeSection::analyze_control_flow() {
     log_generation("Analyzing control flow...");
 
-    // Build edges from successor addresses
     for (size_t i = 0; i < successor_addresses_.size(); ++i) {
         uint32_t target_addr = successor_addresses_[i];
         ControlFlowEdge edge{};
@@ -454,7 +444,6 @@ void CodeSection::analyze_control_flow() {
         // Check if it's a conditional branch (second successor = fall-through)
         edge.is_conditional = (i > 0 && successor_addresses_.size() > 1);
 
-        // Try to find the target section
         auto existing = find_existing_section(target_addr);
         if (existing.has_value()) {
             edge.target = existing.value()->id();
@@ -551,10 +540,9 @@ void CodeSection::determine_loops() {
                         break;
                     }
 
-                    // Find the section and explore its successors
-                    [[maybe_unused]] auto section = find_existing_section(0); // placeholder
-                    // Walk through the section graph looking for back-edges
-                    // In a complete implementation, we'd use the SectionGraph
+                    // No-op: find_existing_section() cannot resolve SectionIds, so successors
+                    // are not explored.
+                    [[maybe_unused]] auto section = find_existing_section(0);
                 }
             }
         }
@@ -570,9 +558,8 @@ void CodeSection::determine_loops() {
 void CodeSection::compute_dominance_tree() {
     log_generation("Computing dominance tree...");
 
-    // Iterative dominator computation (Cooper, Harvey, Kennedy algorithm)
-    // For a single section, the immediate dominator is just the section with
-    // the lowest ID among predecessors (simplified)
+    // Approximates the Cooper-Harvey-Kennedy dominator computation: the immediate
+    // dominator is the predecessor with the lowest ID.
 
     if (predecessors_.empty()) {
         // Entry section: dominates itself
@@ -580,14 +567,10 @@ void CodeSection::compute_dominance_tree() {
         return;
     }
 
-    // Start with the first predecessor as the immediate dominator candidate
     SectionId candidate = predecessors_.front();
 
-    // Intersect with all other predecessors
     for (size_t i = 1; i < predecessors_.size(); ++i) {
-        // In a full implementation, we'd walk up the dominator tree
-        // to find the common ancestor. For now, use the minimum ID
-        // as a conservative approximation
+        // The common ancestor is not computed; the minimum ID is a conservative approximation.
         if (static_cast<uint32_t>(predecessors_[i]) < static_cast<uint32_t>(candidate)) {
             candidate = predecessors_[i];
         }
@@ -600,22 +583,15 @@ void CodeSection::compute_dominance_tree() {
 // --- Section Query and Navigation ---
 
 std::optional<CodeSection*> CodeSection::find_existing_section(uint32_t address) {
-    // Search through all sections in the parent block
     // This adapts P64's CCodeSection::ExistingSection
     if (!parent_block_) {
         return std::nullopt;
     }
 
-    // The parent CodeBlock maintains a mapping of addresses to sections
-    // We search its sections vector
-    // NOTE: This requires CodeBlock to expose its sections - if not available,
-    // we fall back to walking the section graph
-
-    // For now search by walking our outgoing/incoming edges
-    // A full implementation would query parent_block_->find_section(address)
+    // Always reports no section: the lookup through the parent CodeBlock is not implemented.
     log_generation("Looking for existing section at 0x" + std::format("{:08X}", address));
 
-    return std::nullopt; // Will be connected when CodeBlock exposes section lookup
+    return std::nullopt;
 }
 
 bool CodeSection::is_accessible(SectionId section_id) const {
@@ -626,27 +602,22 @@ bool CodeSection::is_accessible(SectionId section_id) const {
         return true;
     }
 
-    // Check direct successors
     for (const auto& succ : successors_) {
         if (succ == section_id) {
             return true;
         }
     }
 
-    // For a complete implementation, we'd do a full BFS through the
-    // section graph. This requires access to all sections.
-    // For now, report direct successors only.
+    // Only direct successors are checked; a full search needs access to all sections.
     return false;
 }
 
 bool CodeSection::is_dominated_by(SectionId dominator) const {
-    // Walk up the dominator tree looking for the target
     if (dominator == id_) {
         return true;
     }
 
-    // Check the immediate dominator chain
-    // In a simple implementation, we just check the immediate dominator
+    // Only the immediate dominator is checked, not the whole chain.
     if (immediate_dominator_.has_value() && immediate_dominator_.value() == dominator) {
         return true;
     }
@@ -655,7 +626,6 @@ bool CodeSection::is_dominated_by(SectionId dominator) const {
 }
 
 bool CodeSection::post_dominates(SectionId target) const {
-    // Check if this section post-dominates the target
     for (const auto& pd : post_dominated_by_) {
         if (pd == target) {
             return true;
@@ -673,7 +643,6 @@ void CodeSection::add_parent(CodeSection* parent) {
 
     SectionId parent_id = parent->id();
 
-    // Check if already a predecessor
     for (const auto& pred : predecessors_) {
         if (pred == parent_id) {
             // Already registered - merge register states (P64 behavior)
@@ -685,7 +654,6 @@ void CodeSection::add_parent(CodeSection* parent) {
 
     predecessors_.push_back(parent_id);
 
-    // Add incoming edge
     ControlFlowEdge edge{};
     edge.source = parent_id;
     edge.target = id_;
@@ -693,9 +661,7 @@ void CodeSection::add_parent(CodeSection* parent) {
     edge.is_conditional = has_flag(parent->flags(), SectionFlags::HasBranch);
     incoming_edges_.push_back(edge);
 
-    // Merge register entry state with parent's exit state
-    // This is critical for correctness - when multiple paths converge,
-    // we must take the conservative union of all register states
+    // When paths converge the entry state is the conservative union of all parents' states.
     if (predecessors_.size() > 1) {
         entry_state_.merge(parent->exit_state_);
     } else {
@@ -714,13 +680,11 @@ void CodeSection::remove_parent(CodeSection* parent) {
 
     SectionId parent_id = parent->id();
 
-    // Remove from predecessors
     auto it = std::find(predecessors_.begin(), predecessors_.end(), parent_id);
     if (it != predecessors_.end()) {
         predecessors_.erase(it);
     }
 
-    // Remove corresponding incoming edge
     incoming_edges_.erase(std::remove_if(incoming_edges_.begin(), incoming_edges_.end(),
                                          [parent_id](const ControlFlowEdge& e) { return e.source == parent_id; }),
                           incoming_edges_.end());
@@ -729,9 +693,7 @@ void CodeSection::remove_parent(CodeSection* parent) {
 
     // If we have remaining parents, recompute the entry state
     if (!predecessors_.empty()) {
-        // Reset and re-merge from all remaining parents
-        // NOTE: In a full implementation, we'd fetch each parent's exit state
-        // For now, just log a warning
+        // The entry state is not recomputed; only a warning is logged.
         log_generation("WARNING: Entry state may need recomputation after parent removal");
     }
 }
@@ -744,7 +706,6 @@ void CodeSection::switch_parent(CodeSection* old_parent, CodeSection* new_parent
     SectionId old_id = old_parent->id();
     SectionId new_id = new_parent->id();
 
-    // Replace in predecessors list
     for (auto& pred : predecessors_) {
         if (pred == old_id) {
             pred = new_id;
@@ -752,7 +713,6 @@ void CodeSection::switch_parent(CodeSection* old_parent, CodeSection* new_parent
         }
     }
 
-    // Update incoming edges
     for (auto& edge : incoming_edges_) {
         if (edge.source == old_id) {
             edge.source = new_id;
@@ -772,11 +732,9 @@ void CodeSection::add_child(CodeSection* child) {
 
     SectionId child_id = child->id();
 
-    // Add to successors if not already present
     if (std::find(successors_.begin(), successors_.end(), child_id) == successors_.end()) {
         successors_.push_back(child_id);
 
-        // Create outgoing edge
         ControlFlowEdge edge{};
         edge.source = id_;
         edge.target = child_id;
@@ -784,15 +742,13 @@ void CodeSection::add_child(CodeSection* child) {
         outgoing_edges_.push_back(edge);
     }
 
-    // Also add ourselves as a parent of the child
     child->add_parent(this);
 }
 
 // --- Register State Management ---
 
 void CodeSection::capture_entry_state() {
-    // Capture the current CPU register state as the entry state for this section
-    // This would normally read from the actual CPU state via the system object
+    // Builds a conservative entry state; the actual CPU state is not read.
     log_generation("Capturing entry register state at 0x" + std::format("{:08X}", metadata_.entry_pc));
 
     // Mark all GPRs as potentially allocated (conservative)
@@ -816,7 +772,6 @@ void CodeSection::capture_entry_state() {
 void CodeSection::propagate_constants() {
     log_generation("Propagating constants...");
 
-    // Walk through instructions and propagate known constant values
     RegisterEntryState current = entry_state_;
 
     for (size_t idx = 0; idx < instructions_.size(); ++idx) {
@@ -855,7 +810,6 @@ void CodeSection::propagate_constants() {
         }
     }
 
-    // Update the exit state with propagated constants
     exit_state_ = current;
 }
 
@@ -901,19 +855,13 @@ void CodeSection::apply_optimizations() {
 }
 
 bool CodeSection::optimize_control_flow() {
-    // Remove unreachable code after unconditional jumps
-    // Fold consecutive branches
-    // Convert conditional branches with constant conditions to unconditional
+    // No rewrites are implemented; the loop below visits conditional edges but changes nothing.
 
     bool changed = false;
 
-    // Check for branches with known constant conditions
     for (auto& edge : outgoing_edges_) {
         if (edge.is_conditional) {
-            // If we can statically determine the branch outcome,
-            // convert to unconditional
-            // This requires the condition register to be a known constant
-            // Full implementation would check the entry_state_ constants
+            // No-op: folding needs the condition register to be a known constant in entry_state_.
         }
     }
 
@@ -921,8 +869,7 @@ bool CodeSection::optimize_control_flow() {
 }
 
 bool CodeSection::eliminate_dead_code() {
-    // Remove instructions whose results are never used
-    // This is a simple backward liveness analysis
+    // Backward liveness analysis; dead writes are replaced with NOP.
 
     if (instructions_.size() < 2) {
         return false;
@@ -931,11 +878,9 @@ bool CodeSection::eliminate_dead_code() {
     bool changed = false;
     std::array<bool, 32> gpr_live{};
 
-    // All GPRs that are live-out (used by successors) are considered live
-    // Conservative: assume all are live at exit
+    // Conservative: assume every GPR is live at exit.
     gpr_live.fill(true);
 
-    // Walk backwards
     for (int idx = static_cast<int>(instructions_.size()) - 1; idx >= 0; --idx) {
         uint32_t addr = metadata_.entry_pc + static_cast<uint32_t>(idx * 4);
         R4300iInstruction instr(addr, instructions_[idx]);
@@ -949,7 +894,6 @@ bool CodeSection::eliminate_dead_code() {
                 opcode != 0x04 && opcode != 0x05 && opcode != 0x01 && // BEQ, BNE, REGIMM
                 opcode != 0x02 && opcode != 0x03)                     // J, JAL
             {
-                // Replace with NOP
                 instructions_[idx] = 0x00000000;
                 changed = true;
             }
@@ -973,11 +917,9 @@ bool CodeSection::eliminate_dead_code() {
 }
 
 bool CodeSection::fold_constants() {
-    // Perform constant folding using propagated constant values
     propagate_constants();
 
-    // Currently, constant propagation already updates the state.
-    // Future: replace instructions with simpler forms when inputs are constants
+    // Only propagates constants; no instruction is rewritten.
     return false;
 }
 
@@ -987,16 +929,13 @@ bool CodeSection::hoist_invariants() {
         return false;
     }
 
-    // Identify instructions that don't depend on anything modified in the loop
-    // This requires knowing which registers are modified in the loop body
-    // Future implementation
+    // Not implemented: needs the set of registers modified in the loop body.
     log_generation("Loop invariant hoisting: not yet implemented for loops");
     return false;
 }
 
 bool CodeSection::schedule_instructions() {
-    // Instruction scheduling to reduce pipeline stalls
-    // MIPS R4300i has a 5-stage pipeline with load delay slots
+    // Reorders instructions to separate a load from its first use.
 
     if (instructions_.size() < 3) {
         return false;
@@ -1023,7 +962,6 @@ bool CodeSection::schedule_instructions() {
         uint32_t loaded_reg = reg_i.write;
         if (loaded_reg >= 32) continue;
 
-        // Check if the next instruction uses the loaded register
         uint32_t addr_next = metadata_.entry_pc + static_cast<uint32_t>((i + 1) * 4);
         R4300iInstruction instr_next(addr_next, instructions_[i + 1]);
         auto reg_next = instr_next.GetRegisterInfo();
@@ -1043,7 +981,6 @@ bool CodeSection::schedule_instructions() {
                     independent = false;
 
                 if (independent) {
-                    // Swap instructions[i+1] and instructions[j]
                     std::swap(instructions_[i + 1], instructions_[j]);
                     changed = true;
                     break;
@@ -1131,7 +1068,7 @@ bool CodeSection::resolve_patch_points() {
         // Try to resolve the patch point by finding the native code offset
         // for the MIPS address. This requires the code holder to be valid.
         if (code_holder_) {
-            // In a full AsmJit integration, we'd resolve the label offset here
+            // The label offset is not looked up; the patch point is only marked resolved.
             pp.resolved = true;
             log_generation("Resolved patch point at 0x" + std::format("{:08X}", pp.mips_address));
         } else {
@@ -1163,7 +1100,7 @@ std::optional<CodeSection::AnalysisResult> CodeSection::analyze_section() {
             uint32_t addr = metadata_.entry_pc + static_cast<uint32_t>(i * 4);
             uint32_t opcode = instructions_[i] >> 26;
 
-            // Check for branch/jump instructors that start new basic blocks
+            // Check for branch/jump instructions that start new basic blocks
             bool is_branch = (opcode == 0x04 || opcode == 0x05 || // BEQ, BNE
                               opcode == 0x06 || opcode == 0x07 || // BLEZ, BGTZ
                               opcode == 0x01 ||                   // REGIMM (BLTZ, BGEZ, etc.)
@@ -1240,25 +1177,17 @@ void CodeSection::build_control_flow_graph(const AnalysisResult& analysis) {
 }
 
 void CodeSection::compute_dominance(const AnalysisResult& /*analysis*/) {
-    // Compute dominance relationships using the iterative algorithm
-    // This is called when we have multiple basic blocks within the section
+    // Called only when the section has multiple basic blocks.
     compute_dominance_tree();
 }
 
 bool CodeSection::generate_code(const AnalysisResult& analysis) {
     log_generation("Generating native code...");
 
-    // Skip actual code generation if AsmJit is not fully integrated yet
-    // In a full implementation, this would:
-    // 1. Create an asmjit::CodeHolder
-    // 2. Create the CodeGenerator
-    // 3. Generate prologue
-    // 4. Walk instructions and generate native code for each
-    // 5. Generate epilogue
-    // 6. Finalize the code
+    // CodeGenerator is a skeleton: assembler_ is never set, so no machine code is emitted
+    // and the reported size is only an estimate.
 
 #ifdef NOVA64_ASMJIT_ENABLED
-    // Create code holder if needed
     if (!code_holder_) {
         code_holder_ = std::make_unique<asmjit::CodeHolder>();
 
@@ -1272,11 +1201,9 @@ bool CodeSection::generate_code(const AnalysisResult& analysis) {
     // Create assembler (arch-neutral alias: x86 or a64 depending on host)
     Recomp::Assembler assembler(code_holder_.get());
 
-    // Bind entry label
     entry_label_ = assembler.new_label();
     assembler.bind(entry_label_);
 
-    // Create the code generator and dispatch instructions
     CodeGenerator gen(*code_holder_, analysis, entry_state_);
 
     if (!gen.generate_prologue()) {
@@ -1284,12 +1211,10 @@ bool CodeSection::generate_code(const AnalysisResult& analysis) {
         return false;
     }
 
-    // Generate code for each instruction
     for (size_t i = 0; i < instructions_.size(); ++i) {
         uint32_t addr = metadata_.entry_pc + static_cast<uint32_t>(i * 4);
         if (!gen.generate_instruction(addr, instructions_[i])) {
             log_generation("WARNING: Failed to generate instruction at 0x" + std::format("{:08X}", addr));
-            // Continue with remaining instructions
         }
     }
 
@@ -1300,7 +1225,7 @@ bool CodeSection::generate_code(const AnalysisResult& analysis) {
 
     stats_.native_code_size = gen.generated_bytes();
 #else
-    // Stub: just record instruction count as "native size"
+    // Without AsmJit the size is estimated as 4 bytes per MIPS instruction.
     stats_.native_code_size = instructions_.size() * 4;
 #endif
 
@@ -1313,7 +1238,6 @@ void CodeSection::log_generation(const std::string& message) {
 }
 
 void CodeSection::update_flags() {
-    // Update flags based on current section state
     if (!successors_.empty()) {
         if (successors_.size() > 1) {
             flags_ = flags_ | SectionFlags::HasBranch;
@@ -1334,9 +1258,8 @@ void CodeSection::update_flags() {
 void CodeSection::apply_peephole_optimizations() {
     // Simple pattern-matching optimizations on instruction pairs
     for (size_t i = 0; i + 1 < instructions_.size(); ++i) {
-        // Pattern: NOP after NOP -> single NOP (mark second as dead)
+        // Pattern: NOP after NOP. Both are kept for alignment; the pair is skipped.
         if (instructions_[i] == 0x00000000 && instructions_[i + 1] == 0x00000000) {
-            // Keep one NOP for alignment, mark the other
             continue;
         }
 
@@ -1379,43 +1302,25 @@ CodeSection::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const Analys
 
 bool CodeSection::CodeGenerator::generate_prologue() {
 #ifdef NOVA64_ASMJIT_ENABLED
-    if (!assembler_) return true; // Stub mode
+    if (!assembler_) return true; // no assembler attached
 
-    // Save callee-saved registers
-    // Set up the register state according to entry_state_
-    // This would emit:
-    //   push rbp
-    //   mov rbp, rsp
-    //   sub rsp, <frame_size>
-    //   ... save callee-saved regs that we'll use
+    // Prologue emission (callee-saved register saves, frame setup) is not implemented.
 #endif
     return true;
 }
 
 bool CodeSection::CodeGenerator::generate_epilogue() {
 #ifdef NOVA64_ASMJIT_ENABLED
-    if (!assembler_) return true; // Stub mode
+    if (!assembler_) return true; // no assembler attached
 
-    // Restore callee-saved registers and return
-    // This would emit:
-    //   ... restore callee-saved regs
-    //   mov rsp, rbp
-    //   pop rbp
-    //   ret
+    // Epilogue emission is not implemented.
 #endif
     return true;
 }
 
 bool CodeSection::CodeGenerator::generate_instruction(uint32_t address, uint32_t opcode) {
-    // Dispatch to the appropriate instruction handler
     // This is adapted from P64's opcode dispatch in GenerateNativeCode
-    //
-    // In a full implementation, this would:
-    // 1. Decode the MIPS instruction
-    // 2. Look up the host register mapping for source/dest
-    // 3. Emit native x86-64 code via AsmJit
-    //
-    // For now, just track the instruction count
+    // No instruction is translated: only the byte count is advanced.
 
     generated_bytes_ += 4; // Placeholder: each MIPS instruction ~= 4 bytes native
     (void)address;
@@ -1427,9 +1332,7 @@ bool CodeSection::CodeGenerator::generate_branch(const ControlFlowEdge& edge) {
 #ifdef NOVA64_ASMJIT_ENABLED
     if (!assembler_) return true;
 
-    // Generate branch code based on the edge type
-    // Conditional branches: emit comparison + conditional jump
-    // Unconditional: emit direct jump
+    // Branch emission is not implemented.
     (void)edge;
 #else
     (void)edge;
@@ -1438,9 +1341,7 @@ bool CodeSection::CodeGenerator::generate_branch(const ControlFlowEdge& edge) {
 }
 
 bool CodeSection::CodeGenerator::generate_delay_slot(uint32_t address, uint32_t opcode) {
-    // Generate the delay slot instruction
-    // On MIPS, the instruction after a branch is always executed
-    // We need to emit it before the actual branch in native code
+    // The delay-slot instruction always executes, so it must be emitted before the native branch.
     return generate_instruction(address, opcode);
 }
 
@@ -1470,7 +1371,6 @@ SectionGraph::EdgeId SectionGraph::add_edge(NodeId source, NodeId target, const 
     Edge edge{source, target, data};
     edges_[id] = edge;
 
-    // Update node adjacency
     if (nodes_.count(source)) {
         nodes_[source].outgoing_edges.insert(id);
     }
@@ -1498,7 +1398,6 @@ void SectionGraph::remove_node(NodeId node) {
         remove_edge(eid);
     }
 
-    // Remove from PC map
     if (it->second.section) {
         pc_to_node_.erase(it->second.section->entry_pc());
     }
@@ -1510,13 +1409,11 @@ void SectionGraph::remove_edge(EdgeId edge) {
     auto it = edges_.find(edge);
     if (it == edges_.end()) return;
 
-    // Remove from source node's outgoing
     auto src_it = nodes_.find(it->second.source);
     if (src_it != nodes_.end()) {
         src_it->second.outgoing_edges.erase(edge);
     }
 
-    // Remove from target node's incoming
     auto tgt_it = nodes_.find(it->second.target);
     if (tgt_it != nodes_.end()) {
         tgt_it->second.incoming_edges.erase(edge);
@@ -1566,7 +1463,6 @@ std::vector<SectionGraph::NodeId> SectionGraph::find_path(NodeId start, NodeId e
         uint32_t current_val = static_cast<uint32_t>(current);
 
         if (current == end) {
-            // Reconstruct path
             std::vector<NodeId> path;
             uint32_t node = end_val;
             while (node != UINT32_MAX) {
@@ -1607,13 +1503,12 @@ void SectionGraph::find_loops() {
         auto source_it = nodes_.find(edge.source);
 
         if (target_it != nodes_.end() && source_it != nodes_.end()) {
-            // Check if target dominates source
             [[maybe_unused]] uint32_t target_val = static_cast<uint32_t>(edge.target);
             if (source_it->second.dominators.count(edge.target)) {
                 // This is a back-edge => natural loop
                 if (target_it->second.section) {
-                    // Mark the target section as a loop header
-                    // (would need non-const access or a callback)
+                    // The header section is not marked: that needs non-const access to the
+                    // section or a callback.
                 }
             }
         }
@@ -1631,7 +1526,6 @@ void SectionGraph::compute_scc() {
     std::vector<NodeId> stack;
     std::vector<std::vector<NodeId>> components;
 
-    // Reset DFS state
     [[maybe_unused]] uint32_t counter = 0;
     for (auto& [id, node] : nodes_) {
         node.dfs_number = UINT32_MAX;
@@ -1763,8 +1657,7 @@ void SectionGraph::compute_dominators() {
 }
 
 void SectionGraph::compute_post_dominators() {
-    // Reverse the graph edges and compute dominators on the reversed graph
-    // For now, use a simplified approach
+    // Reverse the graph edges and compute dominators on the reversed graph (simplified).
 
     if (nodes_.empty()) return;
 
@@ -1833,13 +1726,13 @@ void SectionGraph::compute_post_dominators() {
     }
 }
 
-// SectionGraph optimization stubs
+// --- SectionGraph optimization ---
 void SectionGraph::inline_sections(NodeId /*target*/, const std::vector<NodeId>& /*sources*/) {
-    // Future: inline small sections into their callers
+    // No-op: small sections are not inlined into their callers.
 }
 
 void SectionGraph::merge_equivalent_sections() {
-    // Future: detect and merge sections with identical instruction sequences
+    // No-op: sections with identical instruction sequences are not merged.
 }
 
 void SectionGraph::eliminate_dead_sections() {
@@ -1892,7 +1785,7 @@ void SectionGraph::eliminate_dead_sections() {
     }
 }
 
-// Serialization
+// --- Serialization ---
 SectionGraph::SerializedGraph SectionGraph::serialize() const {
     SerializedGraph result;
 
@@ -1910,7 +1803,6 @@ SectionGraph::SerializedGraph SectionGraph::serialize() const {
         SerializedGraph::SerializedEdge se{};
         se.data = edge.data;
 
-        // Resolve PCs from section pointers
         auto src_it = nodes_.find(edge.source);
         auto tgt_it = nodes_.find(edge.target);
         if (src_it != nodes_.end() && src_it->second.section) se.source_pc = src_it->second.section->entry_pc();
@@ -1923,7 +1815,7 @@ SectionGraph::SerializedGraph SectionGraph::serialize() const {
 }
 
 bool SectionGraph::deserialize(const SerializedGraph& /*graph*/, CodeBlock& /*parent*/) {
-    // Future: reconstruct graph from serialized data
+    // Not supported: the graph cannot be reconstructed from serialized data.
     return false;
 }
 
@@ -1932,7 +1824,6 @@ SectionGraph::GraphStats SectionGraph::statistics() const {
     stats.node_count = nodes_.size();
     stats.edge_count = edges_.size();
 
-    // Compute average branching factor
     if (!nodes_.empty()) {
         size_t total_out = 0;
         for (const auto& [id, node] : nodes_) {
@@ -1941,7 +1832,7 @@ SectionGraph::GraphStats SectionGraph::statistics() const {
         stats.average_branching_factor = static_cast<double>(total_out) / static_cast<double>(nodes_.size());
     }
 
-    // Count SCCs (loops) - would need to track from compute_scc
+    // SCC and loop counts are not tracked.
     stats.scc_count = 0;
     stats.loop_count = 0;
 

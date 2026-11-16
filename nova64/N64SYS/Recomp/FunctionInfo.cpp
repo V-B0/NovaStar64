@@ -42,14 +42,12 @@ CompiledFunction::CompiledFunction(Recompiler& recompiler, uint32_t entry_pc, co
     metadata_.min_pc = entry_pc;
     metadata_.max_pc = entry_pc;
 
-    // Calculate initial hash
     update_hash();
 }
 
 CompiledFunction::~CompiledFunction() {
-    // Cleanup native code if allocated
     if (code_ptr_) {
-        // Would free executable memory here
+        // Only the pointer is cleared; the memory is not released here.
         code_ptr_ = nullptr;
     }
 }
@@ -108,7 +106,6 @@ CompiledFunction::CompileResult CompiledFunction::compile(const CompileOptions& 
         return CompileResult::FailedAnalysis;
     }
 
-    // Update metadata from analysis
     metadata_.instruction_count = analysis->total_instructions;
     metadata_.basic_block_count = analysis->basic_blocks.size();
     metadata_.optimization_level = options.optimization;
@@ -130,7 +127,6 @@ CompiledFunction::CompileResult CompiledFunction::compile(const CompileOptions& 
     // Step 4: Capture memory snapshot for self-modifying code detection
     capture_memory_snapshot();
 
-    // Update flags and status
     update_flags();
     set_status(CompilationStatus::Compiled);
     optimization_level_ = options.optimization;
@@ -146,17 +142,14 @@ bool CompiledFunction::recompile(const CompileOptions& options) {
 
     log_compilation("Recompiling function");
 
-    // Invalidate current compilation
     set_status(CompilationStatus::NotCompiled);
 
-    // Clear old code
     if (code_ptr_) {
-        // Would free old code here
+        // Only the pointer is cleared; the memory is not released here.
         code_ptr_ = nullptr;
         code_size_ = 0;
     }
 
-    // Recompile
     lock.unlock();
     return compile(options) == CompileResult::Success;
 }
@@ -165,17 +158,16 @@ void CompiledFunction::execute(CpuRegisters& registers, MipsMemory& memory, void
     std::shared_lock lock(mutex_);
 
     if (!is_valid() || !function_ptr_) {
-        // Function not compiled, interpret or recompile
+        // Not compiled: nothing to execute.
         return;
     }
 
     // Record execution for profiling
-    uint64_t start_cycles = 0; // Would get from system
+    uint64_t start_cycles = 0; // cycles are not measured
 
-    uint64_t end_cycles = 0;   // Would get from system
+    uint64_t end_cycles = 0;   // cycles are not measured
     uint64_t cycles = end_cycles - start_cycles;
 
-    // Update statistics
     stats_.record_execution(cycles, metadata_.instruction_count);
     stats_.record_cache_hit(true);
 }
@@ -207,13 +199,12 @@ void CompiledFunction::optimize() {
 
     log_compilation("Optimizing function");
 
-    // Apply various optimizations based on profiling data
     if (stats_.is_hot()) {
         flags_ = flags_ | FunctionFlags::Hot;
 
         // Hot functions get more aggressive optimization
         if (config_.enable_inlining) {
-            // Would apply inlining here
+            // Inlining is not applied here.
         }
     }
 
@@ -232,12 +223,11 @@ bool CompiledFunction::inline_function(FunctionId function_id, uint32_t call_sit
         return false;
     }
 
-    // Calculate estimated savings
     size_t savings = estimate_inline_savings(function_id);
 
-    // Perform inlining (simplified)
+    // The inlined span is modelled as the single call instruction.
     uint32_t inline_start = call_site;
-    uint32_t inline_end = call_site + 4; // Simplified
+    uint32_t inline_end = call_site + 4;
 
     inlining_info_.add_inlined(function_id, call_site, inline_start, inline_end, savings);
 
@@ -263,7 +253,6 @@ bool CompiledFunction::specialize(const SpecializationContext& context) {
         return true; // Already exists
     }
 
-    // Create specialized version
     auto specialized = std::make_unique<CompiledFunction>(recompiler_, entry_pc(), config_);
 
     CompileOptions opts;
@@ -284,9 +273,6 @@ bool CompiledFunction::specialize(const SpecializationContext& context) {
 bool CompiledFunction::apply_profile_guided_optimization(const ProfileData& profile) {
     std::unique_lock lock(mutex_);
 
-    // Apply optimizations based on profiling data
-    // This is a simplified version - real implementation would be more complex
-
     if (stats_.is_hot()) {
         flags_ = flags_ | FunctionFlags::Hot | FunctionFlags::ProfileGuided;
         optimization_level_ = OptimizationLevel::ProfileGuided;
@@ -301,7 +287,6 @@ bool CompiledFunction::apply_profile_guided_optimization(const ProfileData& prof
 bool CompiledFunction::verify() const {
     std::shared_lock lock(mutex_);
 
-    // Verify function consistency
     if (metadata_.min_pc > metadata_.max_pc) {
         return false;
     }
@@ -326,8 +311,7 @@ bool CompiledFunction::verify_memory_snapshot() const {
         return true; // No snapshot to verify
     }
 
-    // Would verify memory hasn't changed
-    // For now, simplified version
+    // The snapshot is not compared; any non-empty snapshot is reported as valid.
     return true;
 }
 
@@ -350,7 +334,6 @@ void CompiledFunction::record_execution(uint64_t cycles, uint64_t instructions) 
     // Lock-free statistics update for hot path
     stats_.record_execution(cycles, instructions);
 
-    // Update access time
     last_access_ = stats_.last_execution;
 }
 
@@ -363,7 +346,7 @@ std::string CompiledFunction::get_disassembly() const {
     oss << "Size: " << std::dec << metadata_.size() << " instructions\n";
     oss << "Native code size: " << code_size_ << " bytes\n";
 
-    // Would disassemble native code here
+    // Native code is not disassembled.
 
     return oss.str();
 }
@@ -423,7 +406,7 @@ void CompiledFunction::link_to(CompiledFunction* target, uint32_t branch_pc) {
 
     if (!target) return;
 
-    // Linking functionality would patch branches to directly jump to target
+    // Only the flag is set; no branch is patched.
     flags_ = flags_ | FunctionFlags::Linked;
     log_compilation("Linked to target function");
 }
@@ -431,7 +414,7 @@ void CompiledFunction::link_to(CompiledFunction* target, uint32_t branch_pc) {
 void CompiledFunction::unlink_from(uint32_t branch_pc) {
     std::unique_lock lock(mutex_);
 
-    // Would remove direct link at branch_pc
+    // No branch is patched, so there is nothing to undo.
     log_compilation("Unlinked from branch");
 }
 
@@ -446,7 +429,6 @@ CompiledFunction::SerializedFunction CompiledFunction::serialize() const {
     data.flags = flags_;
     data.status = status_;
 
-    // Copy native code
     if (code_ptr_ && code_size_ > 0) {
         data.native_code.resize(code_size_);
         std::memcpy(data.native_code.data(), code_ptr_, code_size_);
@@ -465,10 +447,9 @@ bool CompiledFunction::deserialize(const SerializedFunction& data) {
     flags_ = data.flags;
     status_ = data.status;
 
-    // Restore native code
     if (!data.native_code.empty()) {
         code_size_ = data.native_code.size();
-        // Would allocate executable memory and copy code
+        // The code bytes are not restored.
     }
 
     return true;
@@ -477,27 +458,23 @@ bool CompiledFunction::deserialize(const SerializedFunction& data) {
 std::optional<CompiledFunction::CompilationContext> CompiledFunction::analyze_function() {
     CompilationContext context(CompileOptions{});
 
-    // Simple function analysis - trace from entry point
+    // No tracing: the function is assumed to span 64 instructions from its entry point.
     uint32_t current_pc = entry_pc();
     context.visited_addresses.insert(current_pc);
 
-    // Simplified: assume function is small for now
     metadata_.min_pc = current_pc;
     metadata_.max_pc = current_pc + 0x100; // Assume 64 instructions max
 
-    context.total_instructions = 64;       // Simplified
+    context.total_instructions = 64;
     context.basic_blocks.push_back(current_pc);
 
     return context;
 }
 
 bool CompiledFunction::generate_native_code(const CompilationContext& context) {
-    // Simplified code generation
-    // Real implementation would use AsmJit to generate x86/x64 code
+    // No code is generated; a placeholder size is recorded.
 
-    // Allocate code buffer (simplified)
     code_size_ = 1024; // Placeholder
-    // code_ptr_ would point to executable memory
 
     metadata_.native_code_size = code_size_;
 
@@ -505,11 +482,9 @@ bool CompiledFunction::generate_native_code(const CompilationContext& context) {
 }
 
 bool CompiledFunction::optimize_native_code(const CompilationContext& context) {
-    // Apply optimizations to native code
-    // Simplified version
+    // Only logs; no native code is rewritten.
 
     if (context.options.optimization >= OptimizationLevel::Aggressive) {
-        // Apply aggressive optimizations
         log_compilation("Applied aggressive optimizations");
     }
 
@@ -521,13 +496,11 @@ bool CompiledFunction::can_inline_function(FunctionId function_id, uint32_t call
         return false;
     }
 
-    // Additional checks would go here
     return true;
 }
 
 size_t CompiledFunction::estimate_inline_savings(FunctionId function_id) const {
-    // Estimate cycle savings from inlining
-    // Simplified: assume fixed savings
+    // Fixed estimate.
     return 10; // 10 cycles saved per inline
 }
 
@@ -536,21 +509,19 @@ bool CompiledFunction::should_specialize(const SpecializationContext& context) c
         return false;
     }
 
-    // Check if specialization would be beneficial
     return stats_.is_hot();
 }
 
 SpecializationContext CompiledFunction::extract_context() const {
     SpecializationContext context;
-    // Would extract current execution context
+    // The context is left empty.
     return context;
 }
 
 void CompiledFunction::capture_memory_snapshot() {
     memory_snapshot_ = MemorySnapshot{};
 
-    // Would capture memory values at key addresses
-    // Simplified version doesn't actually capture
+    // No memory values are captured.
 }
 
 void CompiledFunction::update_flags() {
@@ -566,15 +537,13 @@ void CompiledFunction::update_flags() {
 }
 
 void CompiledFunction::update_hash() {
-    // Calculate hash of function code
-    // Simplified: use entry PC as hash
+    // The "hash" is the entry PC, not a hash of the code.
     hash_ = static_cast<uint64_t>(entry_pc());
     metadata_.hash = hash_;
 }
 
 void CompiledFunction::log_compilation(const std::string& message) {
     debug_log_ += message + "\n";
-    // TRACE(TraceLevel::Info, "Function {}: {}", static_cast<uint32_t>(id_), message);
     Log::infof("Function %u: %s", static_cast<uint32_t>(id_), message.c_str());
 }
 
@@ -590,7 +559,6 @@ FunctionManager::FunctionManager(Recompiler& recompiler, const Config& config) :
 FunctionManager::~FunctionManager() { clear(); }
 
 CompiledFunction* FunctionManager::get_or_compile(uint32_t entry_pc, const CompiledFunction::CompileOptions& options) {
-    // Try to get existing function
     {
         std::shared_lock lock(mutex_);
         auto it = pc_to_function_id_.find(entry_pc);
@@ -602,13 +570,11 @@ CompiledFunction* FunctionManager::get_or_compile(uint32_t entry_pc, const Compi
         }
     }
 
-    // Compile new function
     std::unique_lock lock(mutex_);
 
     auto function = std::make_unique<CompiledFunction>(recompiler_, entry_pc);
     FunctionId id = generate_id();
 
-    // Compile the function
     auto result = function->compile(options);
     if (result != CompiledFunction::CompileResult::Success) {
         return nullptr;
@@ -616,7 +582,7 @@ CompiledFunction* FunctionManager::get_or_compile(uint32_t entry_pc, const Compi
 
     CompiledFunction* func_ptr = function.get();
 
-    uint64_t timestamp = 0; // Would get from system
+    uint64_t timestamp = 0; // not recorded
     functions_.emplace(id, FunctionEntry(std::move(function), timestamp));
     pc_to_function_id_[entry_pc] = id;
 
@@ -692,7 +658,6 @@ void FunctionManager::remove(uint32_t entry_pc) {
 void FunctionManager::invalidate(uint32_t address) {
     std::unique_lock lock(mutex_);
 
-    // Find all functions containing this address
     for (auto& [id, entry] : functions_) {
         if (entry.function->metadata().contains(address)) {
             entry.function->invalidate_if_modified();
@@ -734,7 +699,7 @@ void FunctionManager::profile_all() {
     // Collect profiling data from all functions
     for (const auto& [id, entry] : functions_) {
         [[maybe_unused]] const auto& stats = entry.function->statistics();
-        // Would aggregate profiling data
+        // No-op: not aggregated.
     }
 }
 
@@ -771,7 +736,6 @@ std::vector<FunctionId> FunctionManager::find_caller_functions(FunctionId callee
 
     uint32_t callee_pc = callee_it->second.function->entry_pc();
 
-    // Find functions that call this function
     for (const auto& [id, entry] : functions_) {
         const auto& called = entry.function->metadata().called_functions;
         if (std::find(called.begin(), called.end(), callee_pc) != called.end()) {
@@ -794,7 +758,6 @@ std::vector<FunctionId> FunctionManager::find_callee_functions(FunctionId caller
 
     const auto& called_pcs = caller_it->second.function->metadata().called_functions;
 
-    // Convert PCs to function IDs
     for (uint32_t pc : called_pcs) {
         auto it = pc_to_function_id_.find(pc);
         if (it != pc_to_function_id_.end()) {
@@ -958,9 +921,8 @@ void FunctionManager::touch(FunctionId id) {
     auto it = functions_.find(id);
     if (it != functions_.end()) {
         ++it->second.access_count;
-        it->second.last_access = 0; // Would be timestamp
+        it->second.last_access = 0; // timestamp not recorded
 
-        // Check if should promote to hot
         if (should_promote_to_hot(id)) {
             promote_to_hot(id);
         }
@@ -980,10 +942,8 @@ void FunctionManager::evict_cold_functions() {
         }
     }
 
-    // Sort by last access time
     std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
 
-    // Remove oldest
     if (!candidates.empty()) {
         remove(candidates.front().first);
     }
@@ -995,7 +955,6 @@ bool FunctionManager::should_promote_to_hot(FunctionId id) const {
         return false;
     }
 
-    // Promote if accessed frequently
     return it->second.access_count > 100 && it->second.function->statistics().is_hot();
 }
 
@@ -1015,8 +974,7 @@ bool FunctionManager::functions_can_fuse(FunctionId f1, FunctionId f2) const {
 }
 
 std::unique_ptr<CompiledFunction> FunctionManager::fuse_functions_impl(FunctionId f1, FunctionId f2) {
-    // Create new fused function
-    // Simplified implementation
+    // Not implemented: always returns nullptr, so fusion never succeeds.
     return nullptr;
 }
 
@@ -1032,7 +990,6 @@ FunctionAnalyzer::AnalysisResult FunctionAnalyzer::analyze(const CompiledFunctio
     const auto& metadata = function.metadata();
     const auto& stats = function.statistics();
 
-    // Determine optimization potential
     result.can_inline = metadata.instruction_count < 50 && !has_flag(function.flags(), FunctionFlags::HasExceptions);
 
     result.can_specialize = stats.is_hot() && metadata.instruction_count < 200;
@@ -1051,8 +1008,7 @@ FunctionAnalyzer::AnalysisResult FunctionAnalyzer::analyze(uint32_t entry_pc, co
 
     AnalysisResult result;
 
-    // Analyze function starting at entry_pc
-    // Simplified analysis
+    // Fixed estimate; the function body is not analysed.
     result.estimated_instructions = 50;
     result.estimated_cycles = 150;
 
@@ -1088,7 +1044,7 @@ bool FunctionAnalyzer::is_math_function_pattern(uint32_t start_pc, const MipsMem
 }
 
 bool FunctionAnalyzer::is_string_function_pattern(uint32_t start_pc, const MipsMemory& memory) const {
-    // Check for string manipulation patterns
+    // Not implemented: never matches.
     return false;
 }
 
@@ -1098,7 +1054,6 @@ size_t FunctionAnalyzer::estimate_inline_cost(const CompiledFunction& function) 
 
 size_t FunctionAnalyzer::estimate_specialization_benefit(const CompiledFunction& function,
                                                          const SpecializationContext& context) const {
-    // Estimate benefit from specialization
     size_t base_cost = function.statistics().average_cycles;
     size_t specialized_cost = base_cost * 0.7; // 30% improvement estimate
     return base_cost - specialized_cost;
@@ -1107,7 +1062,6 @@ size_t FunctionAnalyzer::estimate_specialization_benefit(const CompiledFunction&
 FunctionAnalyzer::CallGraph FunctionAnalyzer::build_call_graph(const FunctionManager& manager) const {
     CallGraph graph;
 
-    // Build call graph from all functions
     for (const auto& [id, entry] : manager) {
         graph.add_function(id);
     }
@@ -1129,7 +1083,7 @@ FunctionAnalyzer::CallGraph FunctionAnalyzer::build_call_graph(const FunctionMan
 
 bool FunctionAnalyzer::has_side_effects(uint32_t pc, const MipsMemory& memory,
                                         std::unordered_set<uint32_t>& visited) const {
-    // Simplified check for side effects
+    // Conservative: always assumes side effects.
     return true;
 }
 
@@ -1139,17 +1093,17 @@ bool FunctionAnalyzer::is_pure_function(uint32_t pc, const MipsMemory& memory,
 }
 
 bool FunctionAnalyzer::matches_memory_copy(uint32_t pc, const MipsMemory& memory) const {
-    // Pattern matching for memcpy-like functions
+    // Not implemented: never matches.
     return false;
 }
 
 bool FunctionAnalyzer::matches_memory_set(uint32_t pc, const MipsMemory& memory) const {
-    // Pattern matching for memset-like functions
+    // Not implemented: never matches.
     return false;
 }
 
 bool FunctionAnalyzer::matches_simple_math(uint32_t pc, const MipsMemory& memory) const {
-    // Pattern matching for simple math functions
+    // Not implemented: never matches.
     return false;
 }
 
@@ -1182,9 +1136,8 @@ std::vector<FunctionId> FunctionAnalyzer::CallGraph::get_recursive_functions() c
 
 std::vector<std::vector<FunctionId>> FunctionAnalyzer::CallGraph::get_call_chains(FunctionId start,
                                                                                   FunctionId end) const {
-    // Find all call paths from start to end
     std::vector<std::vector<FunctionId>> chains;
-    // Simplified: would use BFS/DFS to find paths
+    // Not implemented: no paths are searched.
     return chains;
 }
 

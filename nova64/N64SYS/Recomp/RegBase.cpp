@@ -69,11 +69,9 @@ std::string RegisterState::ToString() const {
 // --- RegisterSet Implementation ---
 
 void RegisterSet::CopyFrom(const RegisterSet& other) noexcept {
-    // Copy all register states
     m_States = other.m_States;
     m_Values = other.m_Values;
 
-    // Copy additional state
     m_CycleCount = other.m_CycleCount;
     m_FpuUsed = other.m_FpuUsed;
     m_RoundingMode = other.m_RoundingMode;
@@ -82,7 +80,6 @@ void RegisterSet::CopyFrom(const RegisterSet& other) noexcept {
 }
 
 bool RegisterSet::Compare(const RegisterSet& other) const noexcept {
-    // Compare all register states
     for (size_t i = 0; i < NUM_GPR; ++i) {
         const auto& state1 = m_States[i];
         const auto& state2 = other.m_States[i];
@@ -92,7 +89,6 @@ bool RegisterSet::Compare(const RegisterSet& other) const noexcept {
             return false;
         }
 
-        // If both are constants, compare values
         if (state1.IsConstant() && state2.IsConstant()) {
             if (m_Values[i] != other.m_Values[i]) {
                 return false;
@@ -100,7 +96,6 @@ bool RegisterSet::Compare(const RegisterSet& other) const noexcept {
         }
     }
 
-    // Compare additional state
     if (m_CycleCount != other.m_CycleCount || m_FpuUsed != other.m_FpuUsed || m_RoundingMode != other.m_RoundingMode) {
         return false;
     }
@@ -147,7 +142,6 @@ std::string RegisterSet::RegisterToString(size_t regIndex) const {
     const auto& state = m_States[regIndex];
     char buffer[256];
 
-    // Get register name from MIPS registers - creates dependency
     const char* regName = "Unknown";
     if (regIndex == 0) regName = "zero";
     else if (regIndex == 1) regName = "at";
@@ -192,7 +186,6 @@ std::string RegisterSet::RegisterToString(size_t regIndex) const {
 // --- CRegBase Implementation ---
 
 CRegBase::CRegBase() {
-    // Initialize register set with default state
     m_Registers.Reset();
 
     // $zero is always 0 and constant
@@ -229,11 +222,9 @@ void CRegBase::SetMipsRegState(int32_t reg, REG_STATE state) noexcept {
         return;
     }
 
-    // Convert legacy state to modern RegisterState
     auto& regState = m_Registers.GetState(reg);
     regState.Reset();
 
-    // Map legacy flags to modern state
     if (state & STATE_KNOWN_VALUE) {
         if (state & STATE_X86_MAPPED) {
             regState.mapping = RegisterMapping::MappedToHost;
@@ -266,7 +257,6 @@ CRegBase::REG_STATE CRegBase::GetMipsRegState(int32_t reg) const noexcept {
     const auto& state = m_Registers.GetState(reg);
     REG_STATE result = STATE_UNKNOWN;
 
-    // Convert modern state to legacy flags
     if (state.IsKnown()) {
         result = STATE_KNOWN_VALUE;
 
@@ -337,7 +327,7 @@ std::string CRegBase::ToString() const {
 
     std::string result = buffer;
 
-    // Use CRegInfo to get platform information - creates dependency
+    // Platform name for the dump.
     CRegInfo regInfo;
     result += "  Platform: ";
     result += regInfo.GetPlatformName();
@@ -374,16 +364,15 @@ std::string CRegBase::RegisterToString(int32_t reg) const {
     return m_Registers.RegisterToString(static_cast<size_t>(reg));
 }
 
-// --- Register State Analysis (creates dependencies on other components) ---
+// --- Register state analysis ---
 
 namespace {
 
 /**
  * @brief Analyze register state transitions for optimization
  * 
- * This helper function examines how register states change and determines
- * if optimizations like constant propagation are possible.
- * Creates dependencies on CCodeSection and CJumpInfo.
+ * Returns false when both states hold the same constant; true when the
+ * transition needs work (unknown to known, constant to mapped, width change).
  */
 bool AnalyzeRegisterTransition(const RegisterState& from, const RegisterState& to, uint64_t fromValue,
                                uint64_t toValue) {
@@ -416,9 +405,6 @@ bool AnalyzeRegisterTransition(const RegisterState& from, const RegisterState& t
 
 /**
  * @brief Check if register needs synchronization at section boundary
- * 
- * Uses CCodeSection to determine if register state must be synchronized
- * when jumping between code sections.
  */
 bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) {
     // Dirty registers always need sync
@@ -427,13 +413,13 @@ bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) 
         return true;
     }
 
-    // Modified registers need sync if not written back
+    // Modified but already written back: nothing to sync.
     if (state.isModified && !state.isDirty) {
         Log::debug("RegBase: Register is modified but clean");
-        return false; // Already synced
+        return false;
     }
 
-    // Mapped registers might need sync depending on calling convention
+    // Mapped registers are conservatively treated as needing sync.
     if (state.IsMapped()) {
         Log::debug("RegBase: Mapped register may need sync");
         return true;
@@ -444,13 +430,12 @@ bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) 
 
 } // anonymous namespace
 
-// --- Advanced Register Operations (with dependencies) ---
+// --- Register usage and synchronization analysis ---
 
 /**
  * @brief Analyze register usage across a code section
  * 
- * This demonstrates how RegBase creates dependencies on CodeSection
- * by analyzing register usage patterns.
+ * Logs how many registers are constant, mapped, modified and dirty.
  */
 void AnalyzeRegisterUsage(const CRegBase& regBase, const char* contextName) {
     Log::debugf("RegBase: Analyzing register usage in context '%s'", contextName);
@@ -485,7 +470,7 @@ void AnalyzeRegisterUsage(const CRegBase& regBase, const char* contextName) {
 /**
  * @brief Synchronize register state between code sections
  * 
- * Demonstrates dependency on CJumpInfo and CExitInfo for branch handling.
+ * Logs which registers would need synchronizing between the two states.
  */
 void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase, const char* sourceName,
                               const char* targetName) {
@@ -512,10 +497,9 @@ void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase, 
 
     Log::debugf("RegBase: Synchronized %zu registers", syncedRegs);
 
-    // Create CJumpInfo to track this synchronization point
+    // Diagnostic only: the jump and register infos below are placeholders.
     CJumpInfo jumpInfo(0x80000000, 0x80000004, std::nullopt, JumpType::Direct);
 
-    // Check if register synchronization is needed using CRegInfo
     CRegInfo sourceInfo, targetInfo;
     bool needsSync = jumpInfo.NeedsRegisterSynchronization(sourceInfo, targetInfo);
 
@@ -529,7 +513,8 @@ void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase, 
 /**
  * @brief Initialize register base subsystem
  * 
- * Called during recompiler initialization to set up register tracking.
+ * Logs sample register states as a smoke test of RegisterState, RegisterSet and
+ * CRegBase.
  */
 void InitializeRegBase() {
     Log::info("RegBase: Initializing register state tracking subsystem");

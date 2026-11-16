@@ -48,7 +48,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 
 /**
@@ -77,7 +76,6 @@ public:
     explicit CArm64Ops(CodeBlock& codeBlock, Arm64EmitOptions options = Arm64EmitOptions());
     ~CArm64Ops();
 
-    // Non-copyable
     CArm64Ops(const CArm64Ops&) = delete;
     CArm64Ops& operator=(const CArm64Ops&) = delete;
 
@@ -90,7 +88,7 @@ public:
     void SetEmitOptions(const Arm64EmitOptions& options) noexcept { m_Options = options; }
     const Arm64EmitOptions& GetEmitOptions() const noexcept { return m_Options; }
 
-    // Symbol management ------------------------------------------------------
+    // --- Symbol management ---
     struct SymbolInfo {
         std::string name;
         asmjit::Label label;
@@ -102,7 +100,7 @@ public:
     asmjit::Label DefineSymbol(std::string_view name, bool isExported = false);
     std::optional<SymbolInfo> GetSymbol(std::string_view name) const;
 
-    // Logging / debugging ----------------------------------------------------
+    // --- Logging / debugging ---
     void EnableLogging(bool enable) noexcept { m_Options.enableLogging = enable; }
     bool IsLoggingEnabled() const noexcept { return m_Options.enableLogging; }
     void SetLogCallback(std::function<void(std::string_view)> callback) noexcept {
@@ -110,7 +108,7 @@ public:
     }
     void AddComment(std::string_view comment);
 
-    // Code generation helpers ------------------------------------------------
+    // --- Code generation helpers ---
     /**
      * @brief Emit a call to a native function pointer.
      *
@@ -134,12 +132,12 @@ public:
      */
     void LoadHostPtr(const asmjit::a64::Gp& dst, const void* ptr) { MovImm64(dst, reinterpret_cast<uint64_t>(ptr)); }
 
-    // Error handling ---------------------------------------------------------
+    // --- Error handling ---
     bool HasError() const noexcept { return m_LastError != asmjit::kErrorOk; }
     asmjit::Error GetLastError() const noexcept { return m_LastError; }
     void ClearError() noexcept { m_LastError = asmjit::kErrorOk; }
 
-    // Direct access to AsmJit assembler (for advanced use) -------------------
+    // --- Direct access to AsmJit assembler (for advanced use) ---
     asmjit::a64::Assembler& GetAssembler() noexcept { return *this; }
     const asmjit::a64::Assembler& GetAssembler() const noexcept { return *this; }
 

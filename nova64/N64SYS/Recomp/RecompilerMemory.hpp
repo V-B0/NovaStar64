@@ -41,7 +41,6 @@ public:
     explicit CRecompMemory(uint32_t initialSize = 0);
     ~CRecompMemory();
 
-    // Non-copyable, movable
     CRecompMemory(const CRecompMemory&) = delete;
     CRecompMemory& operator=(const CRecompMemory&) = delete;
     CRecompMemory(CRecompMemory&& other) noexcept;
@@ -60,9 +59,6 @@ public:
         return m_CurrentSize - static_cast<uint32_t>(m_WritePosition - m_Buffer.get());
     }
 
-    /**
-     * @brief Get the total allocated buffer size
-     */
     uint32_t GetBufferSize() const noexcept { return m_CurrentSize; }
 
     /**
@@ -89,9 +85,6 @@ public:
      */
     void Reset() noexcept { m_WritePosition = m_Buffer.get(); }
 
-    /**
-     * @brief Get a pointer to the buffer start
-     */
     const uint8_t* GetBufferData() const noexcept { return m_Buffer.get(); }
 
     /**
@@ -120,13 +113,9 @@ public:
 
     const MemoryStats& GetStats() const noexcept { return m_Stats; }
 
-    /**
-     * @brief Show memory usage information (for debugging)
-     */
     void ShowMemoryUsage() const;
 
 protected:
-    /// Memory size constants
     static constexpr uint32_t DEFAULT_INITIAL_SIZE = 32 * 1024 * 1024; // 32 MB
     static constexpr uint32_t MAX_BUFFER_SIZE = 60 * 1024 * 1024;      // 60 MB
     static constexpr uint32_t GROWTH_INCREMENT = 8 * 1024 * 1024;      // 8 MB
@@ -147,19 +136,15 @@ private:
      */
     static std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> AllocateBuffer(uint32_t size);
 
-    // Buffer management
     std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> m_Buffer; ///< The actual code buffer
     uint8_t* m_WritePosition = nullptr;                           ///< Current write position
     uint32_t m_CurrentSize = 0;                                   ///< Current buffer size
 
-    // Statistics
     MemoryStats m_Stats;
 
     // Track previous write position for buffer growth
     uint8_t* m_OldWritePosition = nullptr;
 };
-
-// Inline implementations for performance-critical methods
 
 inline uint8_t* CRecompMemory::Reserve(uint32_t requiredSize) {
     if (!EnsureSpace(requiredSize)) {

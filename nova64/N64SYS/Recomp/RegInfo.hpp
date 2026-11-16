@@ -23,7 +23,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class IRegInfo;
 class IRegisterAllocator;
 struct InstructionContext;
@@ -118,7 +117,6 @@ public:
     explicit CRegInfo(std::unique_ptr<IRegisterAllocator> allocator = nullptr);
     ~CRegInfo() override;
 
-    // Non-copyable, movable
     CRegInfo(const CRegInfo&) = delete;
     CRegInfo& operator=(const CRegInfo&) = delete;
     CRegInfo(CRegInfo&&) = default;
@@ -174,30 +172,18 @@ public:
     static std::unique_ptr<CRegInfo> CreateForPlatform(PlatformType platform);
 
 private:
-    // Platform-specific implementation
     class PlatformImpl;
     std::unique_ptr<PlatformImpl> m_Impl;
 
-    // Register allocator
     std::unique_ptr<IRegisterAllocator> m_Allocator;
 
-    // Statistics
     Statistics m_Stats;
 };
 
-/**
- * @brief Get information about the current platform
- */
 const PlatformInfo& GetCurrentPlatformInfo() noexcept;
 
-/**
- * @brief Check if a platform feature is available
- */
 bool CheckPlatformFeature(std::string_view feature) noexcept;
 
-/**
- * @brief Exception thrown when platform is unsupported
- */
 class UnsupportedPlatformException : public std::runtime_error {
 public:
     explicit UnsupportedPlatformException(PlatformType platform);
@@ -239,6 +225,3 @@ void RegisterCustomPlatform(PlatformType type, std::function<std::unique_ptr<IRe
 #elif defined(__riscv) && (__riscv_xlen == 32)
 #define NOVA64_ARCH_RISCV32 1
 #endif
-
-// No platform-specific includes in the main header
-// They are included in the implementation

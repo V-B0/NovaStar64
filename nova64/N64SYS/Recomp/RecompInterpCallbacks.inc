@@ -8,7 +8,7 @@
 using MIPS_DWORD = N64Types::MIPS_DWORD;
 using ExceptionCode = N64Types::ExceptionCode;
 
-// Forward declaration: COP1 usable check for interpreter callbacks
+// COP1 usable check for the interpreter callbacks: raises Coprocessor Unusable when CU1 is clear
 static inline bool CheckCop1Unusable(CRegisters* regs) {
     if (regs->STATUS_REGISTER.CU1 == 0) {
         regs->TriggerException(11, 1); // EXC_CPU=11, Coprocessor=1
@@ -18,28 +18,30 @@ static inline bool CheckCop1Unusable(CRegisters* regs) {
 }
 
 // --- Interpreter Callback Functions ---
-// These static functions are called at RUNTIME by the JIT-generated x64 code.
-// They implement the exact semantics of each MIPS R4300i instruction by
-// directly manipulating the CRegisters state.
+// These functions are called at runtime by the JIT-generated code. They implement
+// the exact semantics of each MIPS R4300i instruction by directly manipulating the
+// CRegisters state.
 //
 // Callback signatures:
-//   RegisterOp:  void(CRegisters* regs, uint32_t opcode)
-//   MemoryOp:    void(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcode)
-//   SystemOp:    void(CRegisters* regs, CTLB* tlb, CN64System* sys, uint32_t opcode)
+//   RegisterOp:     void(CRegisters* regs, uint32_t opcode)
+//   MemoryOp:       void(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcode)
+//   TlbOp:          void(CRegisters* regs, CTLB* tlb, uint32_t opcode)
+//   SysOp:          void(CRegisters* regs, CN64System* sys, uint32_t opcode)
+//   BranchOp:       void(CRegisters* regs, uint32_t opcode, uint32_t pc)
+//   BranchLikelyOp: int(CRegisters* regs, uint32_t opcode, uint32_t pc); 1 taken, 0 not taken
 
 namespace {
 
-// Helper: reinterpret a uint64_t GPR entry as MIPS_DWORD for union field access
+// Reinterprets a uint64_t GPR entry as MIPS_DWORD for union field access
 inline MIPS_DWORD& AsDWord(MipsRegisterType& reg) { return *reinterpret_cast<MIPS_DWORD*>(&reg); }
 
 inline const MIPS_DWORD& AsDWord(const MipsRegisterType& reg) { return *reinterpret_cast<const MIPS_DWORD*>(&reg); }
 
-// ---- Safe MIPS instruction field extractors ----
-// The R4300iOps.Rtype bitfield struct has incorrectly ordered middle
-// fields on MSVC (LSB-first allocation).  The I-type struct is fine,
-// but for R-type instructions we MUST use manual bit extraction to
-// match the real MIPS encoding.  These helpers mirror the correct
-// accessors used by the interpreter.
+// --- Safe MIPS instruction field extractors ---
+// The R4300iOps.Rtype bitfield struct has incorrectly ordered middle fields on MSVC
+// (LSB-first allocation). The I-type struct is fine, but R-type instructions must use
+// manual bit extraction to match the real MIPS encoding. These helpers mirror the
+// accessors the interpreter uses.
 inline uint32_t mips_rs(uint32_t v) { return (v >> 21) & 0x1F; }
 inline uint32_t mips_rt(uint32_t v) { return (v >> 16) & 0x1F; }
 inline uint32_t mips_rd(uint32_t v) { return (v >> 11) & 0x1F; }
@@ -61,7 +63,7 @@ inline void SetPC(CRegisters* regs, uint32_t pc32) {
     regs->m_PROGRAM_COUNTER = static_cast<int64_t>(static_cast<int32_t>(pc32));
 }
 
-// ----- ALU Immediate Callbacks -----
+// --- ALU Immediate Callbacks ---
 
 void Interp_ADDI(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -157,7 +159,7 @@ void Interp_DADDIU(CRegisters* regs, uint32_t opcVal) {
     AsDWord(regs->m_GPR[op.Itype.rt]).DW = rs + imm;
 }
 
-// ----- SPECIAL R-type ALU Callbacks -----
+// --- SPECIAL R-type ALU Callbacks ---
 
 void Interp_ADD(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -297,7 +299,7 @@ void Interp_DSUBU(CRegisters* regs, uint32_t opcVal) {
         AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW - AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
-// ----- Shift Callbacks -----
+// --- Shift Callbacks ---
 
 void Interp_SLL(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -420,7 +422,7 @@ void Interp_DSRAV(CRegisters* regs, uint32_t opcVal) {
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> shift;
 }
 
-// ----- Multiply / Divide Callbacks -----
+// --- Multiply / Divide Callbacks ---
 
 void Interp_MULT(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -477,7 +479,6 @@ void Interp_DMULT(CRegisters* regs, uint32_t opcVal) {
     // 64x64 -> 128 signed multiplication using partial products
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
-    // Use compiler intrinsic or manual 128-bit mult
 #ifdef _MSC_VER
     int64_t hi;
     int64_t lo = _mul128(rs, rt, &hi);
@@ -538,7 +539,7 @@ void Interp_DDIVU(CRegisters* regs, uint32_t opcVal) {
     }
 }
 
-// ----- HI/LO Move Callbacks -----
+// --- HI/LO Move Callbacks ---
 
 void Interp_MFHI(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -566,7 +567,7 @@ void Interp_MTLO(CRegisters* regs, uint32_t opcVal) {
     AsDWord(regs->m_LO).DW = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
 }
 
-// ----- Load Callbacks (require MMU) -----
+// --- Load Callbacks (require MMU) ---
 
 void Interp_LB(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op;
@@ -854,7 +855,7 @@ void Interp_LDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     }
 }
 
-// ----- Store Callbacks -----
+// --- Store Callbacks ---
 
 void Interp_SB(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     R4300iOps op;
@@ -1032,7 +1033,7 @@ void Interp_SDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     mmu->SD_Memory(addr, fpr_read_u64(regs, mips_ft(opcVal)));
 }
 
-// ----- COP0 Callbacks -----
+// --- COP0 Callbacks ---
 
 void Interp_COP0_MFC0(CRegisters* regs, uint32_t opcVal) {
     R4300iOps op;
@@ -1080,9 +1081,8 @@ void Interp_COP0_CO_TLBWR(CRegisters* regs, CTLB* tlb, uint32_t /*opcVal*/) {
 void Interp_COP0_CO_TLBP(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) { tlb->Probe(); }
 
 void Interp_COP0_CO_ERET(CRegisters* regs, CN64System* sys, uint32_t /*opcVal*/) {
-    // Match the interpreter: set PipelineStage = Jump and JumpToLocation,
-    // NOT m_PROGRAM_COUNTER directly.  The dispatcher will apply the jump
-    // after the block exits.
+    // Match the interpreter: set PipelineStage = Jump and JumpToLocation, not
+    // m_PROGRAM_COUNTER directly. The dispatcher applies the jump after the block exits.
     if (regs->STATUS_REGISTER.ErrorLevel) {
         sys->m_JumpToLocation = regs->ERROREPC_REGISTER;
         regs->STATUS_REGISTER.ErrorLevel = 0;
@@ -1092,16 +1092,15 @@ void Interp_COP0_CO_ERET(CRegisters* regs, CN64System* sys, uint32_t /*opcVal*/)
     }
     sys->m_PipelineStage = N64Types::PipelineStage::Jump;
     regs->m_LLBit = 0;
-    // Don't call CheckInterrupts here — it would queue an interrupt exception
-    // that fires BEFORE the ERET target instruction executes. On real VR4300,
-    // ERET lets at least one instruction execute before servicing interrupts.
-    // Instead, set a deferred flag so the dispatch loop calls CheckInterrupts
-    // AFTER the next block executes.
+    // Don't call CheckInterrupts here: it would queue an interrupt exception that fires
+    // before the ERET target instruction executes. On real VR4300, ERET lets at least one
+    // instruction execute before servicing interrupts. Set a deferred flag instead so the
+    // dispatch loop calls CheckInterrupts after the next block executes.
     sys->m_DeferredCheckInterrupts = true;
     sys->m_TestTimer = true;
 }
 
-// ----- COP1 Move/Control Callbacks -----
+// --- COP1 Move/Control Callbacks ---
 
 // DCFC1/DCTC1 (rs=3/7): check CU1 first, then fire FPE if usable
 static void Interp_COP1_DCFC1_DCTC1(CRegisters* regs, uint32_t /*opcVal*/) {
@@ -1164,10 +1163,9 @@ void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
     SyncRoundingMode(regs);
 }
 
-// ----- COP1 FPU Arithmetic (use softfloat via interpreter callbacks) -----
-// For FPU, we call through to the CRegisters-level FPU implementation.
-// These are simplified interpreter callbacks - a full implementation would
-// route through the softfloat library for IEEE 754 compliance.
+// --- COP1 FPU Arithmetic ---
+// The operations run on the host FPU. The host rounding mode is synced from FCR31 and the
+// host exception flags are translated back into FCR31 Cause/Flag bits.
 
 // Force precise FP semantics for all FPU callback functions.
 // The project uses /fp:fast which sets FTZ/DAZ and allows the compiler to
@@ -1186,7 +1184,7 @@ static void Interp_COP1_Unimplemented(CRegisters* regs, uint32_t opcVal) {
     regs->TriggerException(15, 0);   // FPE
 }
 
-// Sync the host x86 rounding mode to match MIPS FCR31 bits 1:0.
+// Sync the host rounding mode to match MIPS FCR31 bits 1:0.
 // Must be called before any native float operation that depends on rounding.
 static inline void SyncRoundingMode(CRegisters* regs) {
     // Map MIPS rounding mode to MXCSR rounding control (bits 14:13)
@@ -1199,7 +1197,7 @@ static inline void SyncRoundingMode(CRegisters* regs) {
     nova_mm_setcsr(mxcsr);
 }
 
-// Update FCR31 exception flags from x86 FP exception status (matching interpreter's SetFPUException)
+// Update FCR31 exception flags from the host FP exception status (matching interpreter's SetFPUException)
 static inline bool UpdateFCR31FromHostExceptions(CRegisters* regs) {
     int exc = std::fetestexcept(FE_ALL_EXCEPT);
     if (exc == 0) return false;
@@ -2151,7 +2149,7 @@ void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
 #endif
 #pragma float_control(pop)
 
-// ----- System / Trap / CACHE Callbacks -----
+// --- System / Trap / CACHE Callbacks ---
 
 static std::atomic<int> s_syscallCount{0};
 
@@ -2289,7 +2287,7 @@ void Interp_TNEI(CRegisters* regs, uint32_t opcVal) {
     if (AsDWord(regs->m_GPR[op.Itype.rs]).DW != imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
-// ----- Branch / Jump Callbacks -----
+// --- Branch / Jump Callbacks ---
 // These take 3 args: (CRegisters*, uint32_t opcVal, uint32_t pc)
 // They compute the branch target and set m_PROGRAM_COUNTER accordingly.
 
@@ -2383,7 +2381,7 @@ void Interp_JR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
 
 void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     uint32_t rd = mips_rd(opcVal);
-    // Read target BEFORE writing link (handles rd==rs case)
+    // Read the target before writing the link (handles rd==rs case)
     uint32_t target = static_cast<uint32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW);
     if (rd != 0) {
         AsDWord(regs->m_GPR[rd]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
@@ -2393,7 +2391,7 @@ void Interp_JALR_Jump(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     regs->SetTestTimer();
 }
 
-// ----- Branch-Likely Callbacks -----
+// --- Branch-Likely Callbacks ---
 // These return int: 1 = branch taken (execute delay slot), 0 = not taken (skip delay slot).
 // For branch-likely instructions, when the branch is NOT taken, the delay slot is nullified.
 
@@ -2525,9 +2523,10 @@ int Interp_BC1TL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     }
 }
 
-// ---- Binary-search diagnostic: SPECIAL dispatcher callback ----
-// When FORCE_CALLBACK_SPECIAL is 1, all SPECIAL ops route through this
-// single callback instead of inline x64 code.
+// --- SPECIAL dispatcher callback ---
+// Routes SPECIAL ALU/shift/mul/div ops through one callback. The ARM64 backend uses it for
+// all of them; on x64 it serves the ops without inline code (e.g. the overflow-trapping
+// adds) and every op when FORCE_CALLBACK_SPECIAL is 1.
 void Interp_SpecialDispatch(CRegisters* regs, uint32_t opcVal) {
     switch (mips_funct(opcVal)) {
     case 0x00: Interp_SLL(regs, opcVal); break;
@@ -2575,7 +2574,10 @@ void Interp_SpecialDispatch(CRegisters* regs, uint32_t opcVal) {
     }
 }
 
-// ---- Binary-search diagnostic: IMM dispatcher callback ----
+// --- IMM dispatcher callback ---
+// Routes ALU-immediate ops through one callback. The ARM64 backend uses it for all of them;
+// on x64 it serves the ops without inline code (e.g. ADDI) and every op when
+// FORCE_CALLBACK_IMM is 1.
 void Interp_ImmDispatch(CRegisters* regs, uint32_t opcVal) {
     uint32_t op = opcVal >> 26;
     switch (op) {

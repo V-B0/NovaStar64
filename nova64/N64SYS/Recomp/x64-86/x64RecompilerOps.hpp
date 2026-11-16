@@ -28,7 +28,6 @@
 namespace Nova64 {
 namespace Recompiler {
 
-// Forward declarations
 class CX64Ops;
 class CJumpInfo;
 
@@ -83,7 +82,6 @@ public:
     explicit CX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock);
     ~CX64RecompilerOps() override;
 
-    // Non-copyable, movable
     CX64RecompilerOps(const CX64RecompilerOps&) = delete;
     CX64RecompilerOps& operator=(const CX64RecompilerOps&) = delete;
     CX64RecompilerOps(CX64RecompilerOps&&) = delete;
@@ -120,21 +118,12 @@ public:
     size_t GetCodeSizeEstimate(const InstructionContext& ctx) const override;
 
     // Extended interface for x64-specific functionality
-    /**
-     * @brief Get the x64 assembler
-     */
     CX64Ops& GetAssembler() noexcept { return *m_Assembler; }
     const CX64Ops& GetAssembler() const noexcept { return *m_Assembler; }
 
-    /**
-     * @brief Get the register working set
-     */
     CX64RegInfo& GetRegisterSet() noexcept { return *m_RegisterSet; }
     const CX64RegInfo& GetRegisterSet() const noexcept { return *m_RegisterSet; }
 
-    /**
-     * @brief Set optimization level
-     */
     enum class OptimizationLevel {
         None,       ///< No optimizations
         Basic,      ///< Basic optimizations
@@ -221,14 +210,8 @@ public:
     const TranslationStats& GetStats() const noexcept { return m_Stats; }
     void ResetStats() noexcept { m_Stats.Reset(); }
 
-    /**
-     * @brief Generate disassembly of translated code
-     */
     std::string GenerateDisassembly() const;
 
-    /**
-     * @brief Validate generated code
-     */
     bool ValidateGeneratedCode() const;
 
 private:
@@ -621,7 +604,6 @@ private:
     // Block exit label for early exit on exception
     asmjit::Label m_BlockExitLabel;
 
-    // Statistics
     TranslationStats m_Stats;
 
     // Cached labels and jump targets

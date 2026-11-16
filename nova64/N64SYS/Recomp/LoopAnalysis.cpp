@@ -40,7 +40,6 @@ LoopAnalysis::LoopAnalysis(CodeBlock& codeBlock, CodeSection* entrySection) :
 }
 
 LoopAnalysis::~LoopAnalysis() {
-    // Clean up allocated register sets
     for (auto& [section, regSet] : m_JumpRegSets) {
         delete regSet;
     }
@@ -123,7 +122,6 @@ bool LoopAnalysis::CheckLoopRegisterUsage() {
             return false;
         }
 
-        // Start analysis from the entry section
         if (!CheckSectionRegisterUsage(m_EntrySection)) {
             return false;
         }
@@ -151,17 +149,14 @@ bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
     // If so, use that as a starting point; otherwise, create a fresh register set
     CRegBase RegSet;
 
-    // Check if we already have an enter reg set for this section
     auto enterIt = m_EnterRegSets.find(section);
     if (enterIt != m_EnterRegSets.end()) {
         RegSet = *(enterIt->second);
     }
 
-    // Initialize pipeline for walking instructions
     m_PipelineStage = N64Types::PipelineStage::Normal;
     m_PC = section->entry_pc();
 
-    // Walk through all instructions in the section
     bool done = false;
     while (!done) {
         // Safety: if PC is 0 or in an invalid range, bail
@@ -170,7 +165,6 @@ bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
             break;
         }
 
-        // Fetch instruction from memory
         if (!g_System->GetMemory()->MemoryValue32(m_PC, m_Command.Value)) {
             Log::errorf("LoopAnalysis: Failed to read instruction at 0x%08X", m_PC);
             m_Command.Value = 0; // NOP
@@ -648,27 +642,21 @@ bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
             // Delay slot is complete - handle jump/continue targets
             m_PipelineStage = N64Types::PipelineStage::Normal;
 
-            // Process the successor sections
             const auto& successors = section->successors();
 
             // Jump section (first successor, if exists)
             if (successors.size() > 0) {
-                // Store the register set for the jump target
                 SetJumpRegSet(section, RegSet);
             }
 
             // Continue section (second successor, if exists)
             if (successors.size() > 1) {
-                // Store register set for continue path
                 SetContinueRegSet(section, RegSet);
             }
 
-            // Visit successor sections recursively
             for (size_t i = 0; i < successors.size(); ++i) {
-                // Find the actual CodeSection for this successor
-                // The successors are SectionIds referencing into the parent block's section vector
-                // We need to resolve them to CodeSection pointers
-                // For now, store the register state and let the iterative process continue
+                // No-op: SectionIds are not resolved to CodeSection pointers here; register
+                // state propagates across sections through the repeated passes instead.
             }
 
             done = true;
@@ -710,7 +698,6 @@ bool LoopAnalysis::CheckSectionRegisterUsage(CodeSection* section) {
     // If states differ, mark changed for another iteration
     auto existingEnter = m_EnterRegSets.find(section);
     if (existingEnter != m_EnterRegSets.end()) {
-        // Compare and sync
         if (SyncRegState(*(existingEnter->second), RegSet)) {
             m_Changed = true;
         }
@@ -759,12 +746,10 @@ void LoopAnalysis::SetupEnterSection(CodeSection* section, bool bRecursive) {
         return;
     }
 
-    // Recursively process successor sections
     const auto& successors = section->successors();
     for ([[maybe_unused]] const auto& succId : successors) {
-        // We would need to resolve SectionId to CodeSection* here
-        // For now, the main analysis in CheckSectionRegisterUsage handles
-        // the register state propagation across sections
+        // No-op: SectionIds are not resolved to CodeSection pointers; propagation happens
+        // in CheckSectionRegisterUsage.
     }
 }
 
@@ -775,7 +760,6 @@ void LoopAnalysis::SetupRegisterForLoop(CodeSection* section) {
         return;
     }
 
-    // Get the enter/continue register sets for this section
     auto enterIt = m_EnterRegSets.find(section);
     if (enterIt == m_EnterRegSets.end()) {
         return;
@@ -783,16 +767,13 @@ void LoopAnalysis::SetupRegisterForLoop(CodeSection* section) {
 
     CRegBase& enterRegs = *(enterIt->second);
 
-    // For each register, determine if it should be kept in a host register
     for (int32_t reg = 1; reg < 32; reg++) {
         // If the register is constant at entry and not modified in the loop,
         // it's a good candidate for keeping in a host register
         if (enterRegs.IsConst(reg) && !enterRegs.IsModified(reg)) {
-            // Keep the constant value
             continue;
         }
 
-        // If the register is modified, mark it appropriately
         if (enterRegs.IsModified(reg)) {
             enterRegs.SetMipsRegState(reg, CRegBase::STATE_MODIFIED);
         }

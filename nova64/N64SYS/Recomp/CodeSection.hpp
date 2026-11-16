@@ -31,19 +31,15 @@
 #include <mutex>
 #include <array>
 
-// Forward declarations
 class CN64System;
 
 namespace Nova64 {
 
-// Forward declarations
 class CpuRegisters;
 class MipsMemory;
-// using N64System = ::CN64System; // Prevent redefinition
 
 namespace Recompiler {
 
-// Forward declarations
 class CodeBlock;
 class RegisterInfo;
 class RecompilerOperations;
@@ -118,16 +114,13 @@ struct RegisterEntryState {
     RegisterInfo hi;                  // HI register
     RegisterInfo lo;                  // LO register
 
-    // Compare two states for equality
     bool operator==(const RegisterEntryState& other) const;
 
     // Merge two states (used for control flow merging)
     void merge(const RegisterEntryState& other);
 
-    // Reset to default state
     void reset();
 
-    // String representation for debugging
     std::string to_string() const;
 };
 
@@ -191,8 +184,6 @@ private:
  * A code section is a contiguous sequence of MIPS instructions that
  * ends with a control flow instruction (branch, jump, or exception).
  * Sections are linked together to form complete recompiled blocks.
- * 
- * NOTE: Currently using AsmJit stubs - full integration pending
  */
 class CodeSection {
 public:
@@ -207,13 +198,11 @@ public:
         size_t cache_line_size = 64;
     };
 
-    // Construction/Destruction
     CodeSection(CodeBlock* parent_block, uint32_t entry_pc, SectionId id, bool allow_linking = true,
                 const Config& config = Config());
 
     ~CodeSection() noexcept;
 
-    // Non-copyable, movable
     CodeSection(const CodeSection&) = delete;
     CodeSection& operator=(const CodeSection&) = delete;
     CodeSection(CodeSection&&) noexcept;
@@ -335,7 +324,7 @@ public:
     bool resolve_patch_points();
 
 private:
-    // AsmJit error handler (for future integration)
+    // AsmJit error handler
     void handleError(asmjit::Error error, const char* message, asmjit::BaseEmitter* origin);
 
     // Internal analysis methods
