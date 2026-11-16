@@ -17,9 +17,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Microcode CRC Database Entry
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Microcode CRC Database Entry ---
 
 struct MicrocodeCRCEntry {
     uint32_t crc;
@@ -27,9 +25,7 @@ struct MicrocodeCRCEntry {
     const char* name;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Detection Result
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Detection Result ---
 
 enum class DetectionMethod : uint8_t {
     CRC_Match = 0,    // Exact CRC match in database
@@ -48,16 +44,14 @@ struct DetectionResult {
     std::string matchDetails; // Human-readable match info
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Microcode Registry
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Microcode Registry ---
 
 class MicrocodeRegistry {
 public:
     MicrocodeRegistry();
     ~MicrocodeRegistry() = default;
 
-    // ─── Detection ───────────────────────────────────────────────────────
+    // --- Detection ---
 
     /**
      * Detect microcode type from IMEM text data.
@@ -88,7 +82,7 @@ public:
      */
     DetectionResult DetectByHeuristic(const uint8_t* imemData, uint32_t imemSize) const;
 
-    // ─── Registry Management ─────────────────────────────────────────────
+    // --- Registry Management ---
 
     /**
      * Get full MicrocodeInfo for a detected type.
@@ -115,10 +109,10 @@ public:
     void ClearForced();
     bool IsForced() const { return m_forcedType != MicrocodeType::Unknown; }
 
-    // ─── Cache ───────────────────────────────────────────────────────────
+    // --- Cache ---
 
     /**
-     * Check if we've seen this CRC before and return cached result.
+     * True if a detection result is cached for this CRC.
      */
     bool HasCachedResult(uint32_t crc) const;
 
@@ -132,7 +126,7 @@ public:
      */
     void ClearCache();
 
-    // ─── Statistics ──────────────────────────────────────────────────────
+    // --- Statistics ---
 
     uint32_t GetTotalDetections() const { return m_totalDetections; }
     uint32_t GetCRCHits() const { return m_crcHits; }
@@ -167,7 +161,6 @@ private:
     // Forced microcode override
     MicrocodeType m_forcedType = MicrocodeType::Unknown;
 
-    // Statistics
     mutable uint32_t m_totalDetections = 0;
     mutable uint32_t m_crcHits = 0;
     mutable uint32_t m_stringHits = 0;

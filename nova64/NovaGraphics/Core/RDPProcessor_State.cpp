@@ -1,4 +1,9 @@
-﻿#include "RDPProcessor_Private.hpp"
+﻿/**
+ * @file RDPProcessor_State.cpp
+ * @brief RDPProcessor handlers for the RDP state-setting commands (tiles, scissor, images, colors, combiner).
+ */
+
+#include "RDPProcessor_Private.hpp"
 void RDPProcessor::HandleSetOtherModes(const uint32_t* words) {
     m_decoder.DecodeSetOtherModes(words, m_state.rdp);
     m_stats.stateChanges++;
@@ -28,9 +33,8 @@ void RDPProcessor::HandleSetTileSize(const uint32_t* words) {
 }
 
 void RDPProcessor::HandleSetScissor(const uint32_t* words) {
-    // Flush existing batch before changing scissor � N64 scissor applies per-triangle
-    // and we use a single global scissor in FlushBatch, so a mid-batch change would
-    // apply the new scissor to all previously-batched triangles incorrectly.
+    // Flush the batch first: the N64 scissor applies per triangle, but FlushBatch uses one global
+    // scissor, so a mid-batch change would apply the new scissor to triangles batched earlier.
     if (!m_batch.drawCalls.empty()) FlushBatch();
     m_decoder.DecodeSetScissor(words, m_state.rdp.scissor);
     m_state.rdp.MarkDirty(RDPDirtyFlag::Scissor);
@@ -44,30 +48,28 @@ void RDPProcessor::HandleSetScissor(const uint32_t* words) {
 }
 
 void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
-    // Remember the previous color image address for mid-frame readback
+    // Previous color image address, reported by the trace below
     uint32_t prevAddr = m_state.rdp.colorImage.address;
 
     FlushBatch(); // Changing render target requires flush
 
-    // Vulkan: capture the current swapchain content BEFORE the new FB's renders overwrite it.
-    // N64 games render a background to FB-A, then switch to FB-B for the overlay (e.g. MM
-    // inventory).  By the time a subsequent LoadTile reads from FB-A, the swapchain already
-    // holds FB-B content.  Snapshotting here — at switch time — captures the correct content.
-    //
-    // Gate on needsInventorySnapshot, NOT gpuModified: LoadBlock/LoadTile's FB-as-texture
-    // sync path (RDPProcessor_Texture.cpp) also clears gpuModified for its own purpose (e.g.
-    // OoT/MM's every-frame CfB/AA-resolve copy-back reads the color image as a texture before
-    // the player ever opens a menu). If that path runs first, gpuModified is already false by
-    // the time this fires, so the inventory background was never captured -- a black image.
+    // Vulkan: capture the current swapchain content before the new FB's renders overwrite it.
+    // N64 games render a background to FB-A, then switch to FB-B for the overlay (e.g. the MM
+    // inventory). By the time a later LoadTile reads from FB-A, the swapchain already holds
+    // FB-B content, so the snapshot is taken here, at switch time.
+    // The gate is needsInventorySnapshot, not gpuModified: the FB-as-texture sync path in
+    // LoadBlock/LoadTile (RDPProcessor_Texture.cpp) also clears gpuModified for its own purpose
+    // (OoT/MM's every-frame CfB/AA-resolve copy-back reads the color image as a texture before
+    // the player ever opens a menu). If that path ran first, gpuModified would already be false
+    // here and the inventory background would never be captured, giving a black image.
     if (!g_fbManager.IsGL() && m_renderer) {
         GPUFramebuffer* prevFB = g_fbManager.GetCurrentColor();
         if (prevFB && prevFB->needsInventorySnapshot) {
             const uint32_t snapW = m_renderer->GetWidth();
             const uint32_t snapH = m_renderer->GetHeight();
             if (snapW > 0 && snapH > 0) {
-                // Ping-pong: flip slot FIRST so the previously-bound snapshot
-                // (which may still be sampled by an in-flight GPU frame) is not
-                // overwritten by this capture.
+                // Ping-pong: flip the slot first so the previously bound snapshot (which an in-flight
+                // GPU frame may still sample) is not overwritten by this capture.
                 m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
                 auto& slot = m_vkFBSnapshots[m_vkFBSnapshotIdx];
                 bool needRecreate = !slot || slot->GetWidth() != snapW || slot->GetHeight() != snapH;
@@ -97,11 +99,9 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
                  static_cast<int>(m_state.rdp.colorImage.size), m_state.rdp.colorImage.width,
                  m_state.rdp.zbufferImage.address & 0x7FFFFF);
 
-    // NOTE: We intentionally do NOT do a proactive CopyFromGPU here.
-    // The reactive copies in LoadBlock/LoadTile already handle reading
-    // from GPU framebuffers when needed.  A proactive copy here would
-    // overwrite unrelated RDRAM data (e.g. palettes) that overlaps
-    // with the framebuffer address range.
+    // No proactive CopyFromGPU here: the reactive copies in LoadBlock/LoadTile already read
+    // from GPU framebuffers when needed, and a proactive copy would overwrite unrelated RDRAM
+    // data (e.g. palettes) that overlaps the framebuffer address range.
 
     m_state.rdp.MarkDirty(RDPDirtyFlag::ColorImage);
     m_stats.stateChanges++;
@@ -114,7 +114,7 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
     g_fbManager.OnSetColorImage(m_state.rdp.colorImage.address, m_state.rdp.colorImage.width,
                                 static_cast<uint32_t>(m_state.rdp.colorImage.format),
                                 static_cast<uint32_t>(m_state.rdp.colorImage.size));
-    // Evict any stale TextureCache entries at this address � it is now a GPU render target
+    // Evict stale TextureCache entries at this address: it is now a GPU render target
     if (m_textureCache) {
         uint32_t fbSizeBytes = m_state.rdp.colorImage.width * 240 * 4; // conservative upper bound
         m_textureCache->InvalidateRange(m_state.rdp.colorImage.address, fbSizeBytes);
@@ -136,7 +136,6 @@ void RDPProcessor::HandleSetMaskImage(const uint32_t* words) {
 
     g_fbManager.OnSetDepthImage(m_state.rdp.zbufferImage.address);
 
-    // Wire into the N64-accurate depth buffer manager
     g_depthManager.OnSetDepthImage(m_state.rdp.zbufferImage.address, m_state.rdp.colorImage.width);
 
     // Proactively initialize Z-image textures so SF_N64_DEPTH_COMPARE can be
@@ -210,9 +209,5 @@ void RDPProcessor::HandleSetConvert(const uint32_t* words) { m_decoder.DecodeSet
 void RDPProcessor::HandleSetKeyGB(const uint32_t* words) { m_decoder.DecodeSetKeyGB(words, m_state.rdp); }
 
 void RDPProcessor::HandleSetKeyR(const uint32_t* words) { m_decoder.DecodeSetKeyR(words, m_state.rdp); }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Texture Load Handlers
-// ═══════════════════════════════════════════════════════════════════════════
 
 } // namespace Nova64::Video

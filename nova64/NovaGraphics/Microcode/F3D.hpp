@@ -3,7 +3,7 @@
  * @brief Fast3D (original) microcode handler
  *
  * The original Fast3D microcode used by early N64 titles like Super Mario 64
- * and Wave Race 64. Uses GBI1 command encoding with 16 vertex buffer.
+ * and Wave Race 64. Uses GBI1 command encoding with a 16-vertex buffer.
  */
 
 #pragma once
@@ -47,7 +47,7 @@ public:
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
 
 private:
-    // ─── F3D-specific command handlers ───────────────────────────────
+    // --- F3D-specific command handlers ---
     void Cmd_G_SPNOOP(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -71,9 +71,7 @@ private:
     void Cmd_G_TRI4(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation ---
 
 inline void F3DHandler::Initialize(const MicrocodeInfo& info) {
     (void)info;
@@ -89,7 +87,6 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
         return true;
     }
 
-    // Command Logging (Task 3)
     if (m_commandsProcessed < 1000) { // Log first 1000 commands
         NOVA_LOG(LogLevel::Debug, LogSubsystem::Microcode, "F3D DL: [0x{:08X}] 0x{:08X} 0x{:08X} ({})", ctx.pc - 8, w0,
                  w1, DescribeGBI1Command(w0, w1));
@@ -98,35 +95,33 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
     // F3D opcode dispatch — mirrors GLideN64 F3D_Init() table exactly
     switch (opcode) {
     // Low opcodes (0x00 .. 0x09)
-    case 0x00: Cmd_G_SPNOOP(ctx, w0, w1); break;  // G_SPNOOP
-    case 0x01: Cmd_G_MTX(ctx, w0, w1); break;     // G_MTX
+    case 0x00: Cmd_G_SPNOOP(ctx, w0, w1); break;
+    case 0x01: Cmd_G_MTX(ctx, w0, w1); break;
     case 0x02: /* G_RESERVED0 */ break;
-    case 0x03: Cmd_G_MOVEMEM(ctx, w0, w1); break; // G_MOVEMEM
-    case 0x04: Cmd_G_VTX(ctx, w0, w1); break;     // G_VTX
+    case 0x03: Cmd_G_MOVEMEM(ctx, w0, w1); break;
+    case 0x04: Cmd_G_VTX(ctx, w0, w1); break;
     case 0x05: /* G_RESERVED1 */ break;
-    case 0x06: Cmd_G_DL(ctx, w0, w1); break;      // G_DL
+    case 0x06: Cmd_G_DL(ctx, w0, w1); break;
     case 0x07: /* G_RESERVED2 */ break;
     case 0x08: /* G_RESERVED3 */ break;
-    case 0x09:
-        Cmd_G_SPRITE2D_BASE(ctx, w0, w1);
-        break; // G_SPRITE2D_BASE
+    case 0x09: Cmd_G_SPRITE2D_BASE(ctx, w0, w1); break;
 
     // High opcodes (0xB1 .. 0xBF) — F3D-style high-end commands
-    case 0xB1: Cmd_G_TRI4(ctx, w0, w1); break;              // G_TRI4 (Fast3D)
-    case 0xB2: Cmd_G_RDPHALF_CONT(ctx, w0, w1); break;      // G_RDPHALF_CONT
-    case 0xB3: Cmd_G_RDPHALF_2(ctx, w0, w1); break;         // G_RDPHALF_2
-    case 0xB4: Cmd_G_RDPHALF_1(ctx, w0, w1); break;         // G_RDPHALF_1
-    case 0xB5: Cmd_G_QUAD(ctx, w0, w1); break;              // G_QUAD (F3D)
-    case 0xB6: Cmd_G_CLEARGEOMETRYMODE(ctx, w0, w1); break; // G_CLEARGEOMETRYMODE
-    case 0xB7: Cmd_G_SETGEOMETRYMODE(ctx, w0, w1); break;   // G_SETGEOMETRYMODE
-    case 0xB8: Cmd_G_ENDDL(ctx, w0, w1); break;             // G_ENDDL
-    case 0xB9: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;    // G_SETOTHERMODE_L
-    case 0xBA: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;    // G_SETOTHERMODE_H
-    case 0xBB: Cmd_G_TEXTURE(ctx, w0, w1); break;           // G_TEXTURE
-    case 0xBC: Cmd_G_MOVEWORD(ctx, w0, w1); break;          // G_MOVEWORD
-    case 0xBD: Cmd_G_POPMTX(ctx, w0, w1); break;            // G_POPMTX
-    case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;            // G_CULLDL
-    case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;              // G_TRI1
+    case 0xB1: Cmd_G_TRI4(ctx, w0, w1); break; // G_TRI4 (Fast3D)
+    case 0xB2: Cmd_G_RDPHALF_CONT(ctx, w0, w1); break;
+    case 0xB3: Cmd_G_RDPHALF_2(ctx, w0, w1); break;
+    case 0xB4: Cmd_G_RDPHALF_1(ctx, w0, w1); break;
+    case 0xB5: Cmd_G_QUAD(ctx, w0, w1); break; // G_QUAD (F3D)
+    case 0xB6: Cmd_G_CLEARGEOMETRYMODE(ctx, w0, w1); break;
+    case 0xB7: Cmd_G_SETGEOMETRYMODE(ctx, w0, w1); break;
+    case 0xB8: Cmd_G_ENDDL(ctx, w0, w1); break;
+    case 0xB9: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
+    case 0xBA: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
+    case 0xBB: Cmd_G_TEXTURE(ctx, w0, w1); break;
+    case 0xBC: Cmd_G_MOVEWORD(ctx, w0, w1); break;
+    case 0xBD: Cmd_G_POPMTX(ctx, w0, w1); break;
+    case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;
+    case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;
 
     default:
         NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3D: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode,
@@ -137,7 +132,7 @@ inline bool F3DHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t 
     return !ctx.halted;
 }
 
-// ─── Individual command implementations ──────────────────────────────────
+// --- Individual command implementations ---
 // All implementations mirror GLideN64 uCodes/F3D.cpp exactly.
 
 inline void F3DHandler::Cmd_G_SPNOOP(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -226,13 +221,12 @@ inline void F3DHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) 
 }
 
 inline void F3DHandler::Cmd_G_TRI4(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Fast3D G_TRI4 (0xB1): four triangles per command, RAW nibble indices
-    // (0-15, NOT the ×10 encoding of TRI1/QUAD). SDK gbi.h gsSP1Triangle4:
+    // Fast3D G_TRI4 (0xB1): four triangles per command, raw nibble indices (0-15, not the x10
+    // encoding of TRI1/QUAD). SDK gbi.h gsSP1Triangle4:
     //   w0 nibbles 0/4/8/12  = x0..x3  (first vertex of each triangle)
     //   w1 nibbles 0/4,8/12,16/20,24/28 = y0,z0, y1,z1, y2,z2, y3,z3
-    // Unused slots are (0,0,0) — DrawTriangle's degenerate guard skips them.
-    // This opcode previously fell into "unknown" and its triangles were
-    // silently dropped (SM64 uses TRI4 for small quads/particles).
+    // Unused slots are (0,0,0) and DrawTriangle's degenerate guard skips them. SM64 uses TRI4 for
+    // small quads/particles; without this case its triangles would be dropped as an unknown opcode.
     for (int i = 0; i < 4; ++i) {
         int x = static_cast<int>((w0 >> (4 * i)) & 0xF);
         int y = static_cast<int>((w1 >> (8 * i)) & 0xF);
@@ -299,13 +293,13 @@ inline void F3DHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w
 
 inline void F3DHandler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: the raw byte is the length (no -1 encoding)
     SetOtherModeH(ctx, shift, length, w1);
 }
 
 inline void F3DHandler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: the raw byte is the length (no -1 encoding)
     SetOtherModeL(ctx, shift, length, w1);
 }
 
@@ -361,8 +355,7 @@ inline void F3DHandler::Cmd_G_RDPHALF_CONT(DListContext& ctx, uint32_t w0, uint3
     (void)ctx;
     (void)w0;
     (void)w1;
-    // Used in conjunction with RDPHALF_1 for 128-bit RDP triangle commands
-    // The actual triangle data is assembled from the stored halves
+    // No state is kept for G_RDPHALF_CONT
 }
 
 inline void F3DHandler::Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -514,15 +507,12 @@ inline void F3DHandler::Cmd_G_SPRITE2D_BASE(DListContext& ctx, uint32_t w0, uint
             v.invW = 1.0f;
             v.clipFlags = 0;
             v.reject = false;
-            // vx/vy/z above are already final screen-space values (frameX/Y +
-            // imageW/H, built directly from the uSprite struct), not clip-space
-            // coordinates meant to go through the viewport transform. Without
-            // these flags, RDPProcessor::DrawTriangle's makeVert() (which
-            // checks modifiedXY/modifiedZ exactly like gSPModifyVertex
-            // XYSCREEN/ZSCREEN does) falls through to its default branch and
-            // re-applies geo.viewport.scale/transX|Y to values that were
-            // already in screen pixels, producing garbage on-screen positions
-            // for every sprite drawn through this path.
+            // vx/vy/z above are already final screen-space values (frameX/Y + imageW/H, built directly from
+            // the uSprite struct), not clip-space coordinates meant to go through the viewport transform.
+            // Without these flags, RDPProcessor::DrawTriangle's makeVert() (which checks modifiedXY/modifiedZ
+            // like gSPModifyVertex XYSCREEN/ZSCREEN) falls through to its default branch and re-applies
+            // geo.viewport.scale/transX|Y to values already in screen pixels, producing garbage on-screen
+            // positions for every sprite drawn through this path.
             v.modifiedXY = true;
             v.modifiedZ = true;
             geo.vertexLoaded[idx] = true;

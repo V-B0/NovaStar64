@@ -28,7 +28,7 @@ public:
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
 
 protected:
-    // ─── F3DEX command handlers (extending F3D) ──────────────────────
+    // --- F3DEX command handlers (extending F3D) ---
     void Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -53,9 +53,7 @@ protected:
     void Cmd_G_RDPHALF_2(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation ---
 
 inline void F3DEXHandler::Initialize(const MicrocodeInfo& info) {
     (void)info;
@@ -108,11 +106,10 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
 }
 
 inline void F3DEXHandler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // F3DEX1 (GBI1): count = (w0>>10)&0x3F, v0 = (w0>>17)&0x7F is the vertex
-    // buffer's DIRECT start index -- unlike F3DEX2/GBI2 (see F3DEX2.hpp's
-    // Cmd_G_VTX), whose same-position field encodes the END index and must
-    // be reduced by count. Verified against GLideN64's actual F3DEX_Vtx:
-    // gSPVertex(w1, _SHIFTR(w0,10,6), _SHIFTR(w0,17,7)) -- no subtraction.
+    // F3DEX1 (GBI1): count = (w0>>10)&0x3F, and v0 = (w0>>17)&0x7F is the vertex buffer's direct
+    // start index, unlike F3DEX2/GBI2 (see F3DEX2.hpp's Cmd_G_VTX), whose same-position field
+    // encodes the end index and must be reduced by count. Matches GLideN64's F3DEX_Vtx:
+    // gSPVertex(w1, _SHIFTR(w0,10,6), _SHIFTR(w0,17,7)), with no subtraction.
     int count = (w0 >> 10) & 0x3F;
     int startIndex = (w0 >> 17) & 0x7F;
 
@@ -174,10 +171,8 @@ inline void F3DEXHandler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1
 }
 
 inline void F3DEXHandler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // G_LINE3D: line rendering is not implemented. The prior degenerate-triangle
-    // approach (DrawTriangle(ctx, v0, v1, v0)) is silently discarded by the
-    // v0==v2 guard in DrawTriangle, so it was a no-op. Skip until a proper
-    // line-draw path (thin-quad or rasterizer line) is added.
+    // G_LINE3D is not implemented. Drawing it as a degenerate triangle (DrawTriangle(ctx, v0, v1,
+    // v0)) would be discarded by the v0==v2 guard in DrawTriangle, so the command is skipped.
     (void)ctx;
     (void)w0;
     (void)w1;
@@ -197,10 +192,9 @@ inline void F3DEXHandler::Cmd_G_BRANCH_Z(DListContext& ctx, uint32_t w0, uint32_
 }
 
 inline void F3DEXHandler::Cmd_G_CULLDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // GLideN64 F3DEX_CullDL (shared by F3DEX1 and F3DEX2): gSPCullDisplayList(
-    // _SHIFTR(w0,1,15), _SHIFTR(w1,1,15)) -- 15-bit fields, i.e. mask 0xFFFF
-    // (16 bits) then halve, matching F3DEX2.hpp's own Cmd_G_CULLDL. The prior
-    // 0xFFF (12-bit) mask here dropped the top 4 bits of both indices.
+    // GLideN64 F3DEX_CullDL (shared by F3DEX1 and F3DEX2): gSPCullDisplayList(_SHIFTR(w0,1,15),
+    // _SHIFTR(w1,1,15)), i.e. 15-bit fields: mask 0xFFFF (16 bits) then halve, as in F3DEX2.hpp's
+    // Cmd_G_CULLDL. A 0xFFF (12-bit) mask would drop the top 4 bits of both indices.
     uint32_t start = ((w0 & 0xFFFF) / 2);
     uint32_t end = ((w1 & 0xFFFF) / 2);
     CullDisplayList(ctx, start, end);
@@ -253,13 +247,13 @@ inline void F3DEXHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: the raw byte is the length (no -1 encoding)
     SetOtherModeH(ctx, shift, length, w1);
 }
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: the raw byte is the length (no -1 encoding)
     SetOtherModeL(ctx, shift, length, w1);
 }
 

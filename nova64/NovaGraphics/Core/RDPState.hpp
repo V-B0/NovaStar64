@@ -44,7 +44,6 @@ struct TileDescriptor {
     int32_t sh = 0; // S high (lower-right)
     int32_t th = 0; // T high (lower-right)
 
-    // Convenience
     float GetSL() const { return sl / 4.0f; }
     float GetTL() const { return tl / 4.0f; }
     float GetSH() const { return sh / 4.0f; }
@@ -117,9 +116,7 @@ struct ScissorRect {
     bool operator!=(const ScissorRect& o) const { return !(*this == o); }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  State Change Flags (for incremental GPU updates)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- State Change Flags (for incremental GPU updates) ---
 
 enum class RDPDirtyFlag : uint32_t {
     None = 0,
@@ -160,9 +157,7 @@ inline bool HasFlag(RDPDirtyFlag flags, RDPDirtyFlag test) {
     return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(test)) != 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Color Image / Z-Buffer Image Descriptors
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Color Image / Z-Buffer Image Descriptors ---
 
 struct ImageDescriptor {
     uint32_t address; // RDRAM address (24-bit)
@@ -176,9 +171,7 @@ struct ImageDescriptor {
     bool operator!=(const ImageDescriptor& o) const { return !(*this == o); }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Combiner Hash Key (for shader caching)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Combiner Hash Key (for shader caching) ---
 
 struct CombinerKey {
     uint64_t combineMode;  // Raw 64-bit combine word
@@ -202,9 +195,7 @@ struct CombinerKey {
     };
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TMEM State
-// ═══════════════════════════════════════════════════════════════════════════
+// --- TMEM State ---
 
 struct TMEMState {
     uint8_t data[TMEM_SIZE]; // 4 KB TMEM
@@ -223,17 +214,16 @@ struct TMEMState {
     int regionCount = 0;
 
     void Reset(bool cold = true) {
-        // N64 hardware does NOT clear TMEM between RSP tasks.
-        // Only clear TMEM on a true cold reset (emulator init / ROM change).
+        // N64 hardware does not clear TMEM between RSP tasks, so it is only cleared on a true cold
+        // reset (emulator init or ROM change).
         if (cold) {
             std::memset(data, 0, TMEM_SIZE);
             regionCount = 0;
         }
     }
 
-    /// Record a load into TMEM
     void RecordLoad(uint32_t rdramAddr, uint16_t tmemAddr, uint16_t size, uint32_t crc) {
-        // See if this overlaps an existing region
+        // A load at the same TMEM address replaces the earlier region
         for (int i = 0; i < regionCount; i++) {
             if (regions[i].tmemAddr == tmemAddr) {
                 regions[i] = {rdramAddr, tmemAddr, size, crc, true};
@@ -256,14 +246,11 @@ struct TMEMState {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Vertex Buffer State (RSP vertex cache)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Vertex Buffer State (RSP vertex cache) ---
 
-// GLideN64 parity (GraphicsDrawer.h: VERTBUFF_SIZE = 256, VERTBUFF_MASK = 255).
-// Power-of-two so vertex indices can be MASKED rather than range-rejected --
-// see the note at DrawTriangle's index handling. 80 was both too small for
-// ucodes with a larger cache and not maskable.
+// Matches GLideN64 (GraphicsDrawer.h: VERTBUFF_SIZE = 256, VERTBUFF_MASK = 255). A power of two
+// so vertex indices can be masked rather than range-rejected (see DrawTriangle's index handling);
+// a size of 80 is too small for microcodes with a larger cache and cannot be masked.
 constexpr int VERTEX_BUFFER_SIZE = 256;
 constexpr int VERTEX_BUFFER_MASK = VERTEX_BUFFER_SIZE - 1;
 
@@ -278,15 +265,13 @@ struct VertexBufferState {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RSP Geometry State (set by GBI commands)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RSP Geometry State (set by GBI commands) ---
 
 struct GeometryState {
     // Matrix stacks
     Matrix4x4 modelView;
     Matrix4x4 projection;
-    Matrix4x4 combinedMatrix; // projection * modelView (alias: combined)
+    Matrix4x4 combinedMatrix; // modelView * projection (row-vector convention)
     bool combinedDirty;
 
     static constexpr int MAX_MATRIX_STACK = 32;
@@ -306,10 +291,9 @@ struct GeometryState {
     uint32_t vertexGeneration[VERTEX_BUFFER_SIZE];
     uint32_t vertexLoadCounter;
 
-    // NOVA64_F3D_VTRACE diagnostics only: counts Reset() calls (~1 per display
-    // list / frame). Deliberately NOT cleared by Reset() itself, so it gives
-    // an absolute, monotonic frame index usable to scope a triangle dump to a
-    // specific point in the run.
+    // NOVA64_F3D_VTRACE diagnostics only: counts Reset() calls (about one per display list / frame).
+    // Deliberately not cleared by Reset() itself, so it gives an absolute, monotonic frame index
+    // usable to scope a triangle dump to a specific point in the run.
     uint64_t frameSeq = 0;
 
     // Viewport
@@ -344,8 +328,8 @@ struct GeometryState {
     // 0 = no fog, 1 = standard fog (alpha), 2 = F3DAM mode 2 (RGB)
     int fogUsage = 0;
 
-    // LookAt vectors for environment map texture generation
-    float lookat[2][3]; // [0]=X (right), [1]=Y (up)
+    // LookAt directions for environment map texture generation
+    float lookat[2][3];
     bool lookatEnabled;
 
     // Segment table (for address translation)
@@ -401,7 +385,6 @@ struct GeometryState {
     void UpdateCombinedMatrix() {
         if (combinedDirty) {
             // Row-vector convention: v_clip = v * Combined
-            // combined = MV * P
             MatrixOps::Multiply(modelViewStack[modelViewStackDepth], projectionStack[projectionStackDepth],
                                 combinedMatrix);
             combinedDirty = false;
@@ -409,18 +392,16 @@ struct GeometryState {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Complete RDP State
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Complete RDP State ---
 
 struct RDPState {
-    // ── Other Modes ──
+    // --- Other Modes ---
     uint32_t otherModeH;    // High word (GBI-level, updated by 0xE2/0xE3)
     uint32_t otherModeL;    // Low word  (GBI-level, updated by 0xE2/0xE3)
     uint32_t rdpOtherModeH; // RDP-level copy (updated only by 0xEF SetOtherModes)
     uint32_t rdpOtherModeL; // RDP-level copy (updated only by 0xEF SetOtherModes)
 
-    // ── Derived from Other Modes ──
+    // --- Derived from Other Modes ---
     CycleType cycleType;
     TextureFilter textureFilter;
     TextureLUT textureLUT;
@@ -439,20 +420,20 @@ struct RDPState {
     bool alphaCvgSel;
     bool forceBlend;
 
-    // ── Combine Mode ──
+    // --- Combine Mode ---
     CombineMode combineMode;
     uint64_t combineModeRaw; // Raw 64-bit word
 
-    // ── Blender ──
+    // --- Blender ---
     BlenderMode blenderMode;
 
-    // ── Tiles ──
+    // --- Tiles ---
     std::array<TileDescriptor, MAX_TILES> tiles;
 
-    // ── TMEM ──
+    // --- TMEM ---
     TMEMState tmem;
 
-    // ── Colors ──
+    // --- Colors ---
     RDPColor fillColor;
     uint32_t fillColorRaw = 0; // Raw 32-bit fill color register (decoded at draw-time)
     RDPColor fogColor;
@@ -462,17 +443,17 @@ struct RDPState {
     float primLODFrac; // Primitive LOD fraction (0-1)
     float primLODMin;
 
-    // ── Texture Scrolling ──
+    // --- Texture Scrolling ---
     float scrollS[8] = {0};
     float scrollT[8] = {0};
 
-    // ── Per-tile RDRAM source address (set by LoadBlock/LoadTile) ──
+    // --- Per-tile RDRAM source address (set by LoadBlock/LoadTile) ---
     // Tracks which textureImage.address was active when each tile was loaded.
     // Used by PopulateTextureInfo so tile0/tile1 get the correct RDRAM source
     // even in 2-cycle mode with two different texture loads.
     uint32_t tileLoadAddress[MAX_TILES] = {0};
 
-    // ── Per-TMEM-slot RDRAM source address (set by LoadBlock/LoadTile) ──
+    // --- Per-TMEM-slot RDRAM source address (set by LoadBlock/LoadTile) ---
     // Indexed by TMEM word address (0–511 for 4 KB TMEM / 8-byte words).
     // N64 games use a dedicated "loading tile" (typically tile 7) for G_LOADBLOCK
     // which sets tileLoadAddress[7], but the render tile (tile 0) is distinct and
@@ -483,68 +464,63 @@ struct RDPState {
     static constexpr int TMEM_WORDS = 512;
     uint32_t tmemSourceAddress[TMEM_WORDS] = {0};
 
-    // ── Per-TMEM-slot LOAD INFO (mirrors GLideN64's gDP.loadInfo[]) ──
-    // Records HOW the data in each TMEM slot got there. GLideN64's
-    // _calcTileSizes() (Textures.cpp) has two entirely different size
-    // derivations selected by this: a LOADTYPE_TILE branch that sizes the
-    // texture from the region actually LOADED (loadWidth/loadHeight/texWidth,
-    // rescaled when the load size differs from the tile size), and the
-    // mask/clamp branch used otherwise. We previously implemented only the
-    // mask/clamp branch, so any LoadTile whose loaded region disagrees with the
-    // tile's mask-derived extent produced wrong texture dimensions -- and since
-    // width/height drive scaleS/scaleT, wrong dimensions map the texture across
-    // the wrong UV range, i.e. visible stretching/squashing.
+    // --- Per-TMEM-slot load info (mirrors GLideN64's gDP.loadInfo[]) ---
+    // Records how the data in each TMEM slot got there. GLideN64's _calcTileSizes() (Textures.cpp)
+    // derives the texture size in two different ways depending on it: a LOADTYPE_TILE branch sizes
+    // the texture from the region actually loaded (loadWidth/loadHeight/texWidth, rescaled when the
+    // load size differs from the tile size), otherwise the mask/clamp branch applies. Using the
+    // mask/clamp branch for a LoadTile whose loaded region disagrees with the tile's mask-derived
+    // extent gives wrong texture dimensions, and since width/height drive scaleS/scaleT the texture
+    // is mapped across the wrong UV range (visible stretching/squashing).
     enum : uint8_t { LOADTYPE_BLOCK = 0, LOADTYPE_TILE = 1 };
     uint8_t tmemLoadType[TMEM_WORDS] = {0};
     uint16_t tmemLoadWidth[TMEM_WORDS] = {0};    // texels actually loaded per row
     uint16_t tmemLoadHeight[TMEM_WORDS] = {0};   // rows actually loaded
     uint16_t tmemLoadTexWidth[TMEM_WORDS] = {0}; // SetTextureImage width
     uint8_t tmemLoadSize[TMEM_WORDS] = {0};      // SetTextureImage pixel size
-    // Two more things a texture pack's checksum needs (see HiResPack.hpp): the DXT a
-    // LoadBlock used (it says how wide the rows are), and a raw copy of the palette memory
-    // as LoadTLUT read it from RDRAM. The palette copy has 8 bytes of padding in front,
-    // which the checksum can read when a palette holds an odd number of entries.
+    // Inputs to a texture pack's checksum (see HiResPack.hpp): the DXT a LoadBlock used (it says
+    // how wide the rows are), and a raw copy of the palette memory as LoadTLUT read it from RDRAM.
+    // The palette copy has 8 bytes of padding in front, which the checksum can read when a palette
+    // holds an odd number of entries.
     uint32_t tmemLoadDxt[TMEM_WORDS] = {0};
     uint16_t tmemLoadBlockWidth[TMEM_WORDS] = {0}; // LoadBlock's last texel (lrs)
     uint8_t texFilterPalette[8 + 512] = {0};
 
-    // ── Scissor ──
+    // --- Scissor ---
     ScissorRect scissor;
 
-    // ── Prim Depth ──
+    // --- Prim Depth ---
     uint16_t primDepth;
     uint16_t primDeltaZ;
 
-    // ── Image Targets ──
+    // --- Image Targets ---
     ImageDescriptor colorImage;   // Framebuffer
     ImageDescriptor zbufferImage; // Z-buffer
     ImageDescriptor textureImage; // Source for loads
 
-    // ── Convert Coefficients ──
+    // --- Convert Coefficients ---
     int16_t convertK[6]; // K0-K5 for YUV→RGB
 
-    // ── Geometry State (RSP) ──
+    // --- Geometry State (RSP) ---
     GeometryState geometry;
 
-    // ── Key (chroma key) ──
+    // --- Key (chroma key) ---
     struct {
         uint16_t widthR, widthG, widthB; // 12-bit fields
         uint8_t centerR, centerG, centerB;
         uint8_t scaleR, scaleG, scaleB;
     } chromaKey;
 
-    // ── Dirty Flags ──
+    // --- Dirty Flags ---
     RDPDirtyFlag dirtyFlags;
 
-    // ── Statistics ──
+    // --- Statistics ---
     uint64_t triangleCount;
     uint64_t rectCount;
     uint64_t textureLoadCount;
     uint64_t syncCount;
 
-    // ═════════════════════════════════════════════════════════════════
-    //  Methods
-    // ═════════════════════════════════════════════════════════════════
+    // --- Methods ---
 
     void Reset(bool cold = true) {
         otherModeH = 0;
@@ -657,10 +633,9 @@ struct RDPState {
     /// Get combiner key for shader caching
     CombinerKey GetCombinerKey(uint32_t geoMode) const { return {combineModeRaw, otherModeH, otherModeL, geoMode}; }
 
-    /// Mark a state component as dirty
     void MarkDirty(RDPDirtyFlag flag) { dirtyFlags |= flag; }
 
-    /// Check and clear dirty flag
+    /// Clear the flag and return whether it was set
     bool CheckAndClearDirty(RDPDirtyFlag flag) {
         if (HasFlag(dirtyFlags, flag)) {
             dirtyFlags = static_cast<RDPDirtyFlag>(static_cast<uint32_t>(dirtyFlags) & ~static_cast<uint32_t>(flag));
@@ -672,10 +647,9 @@ struct RDPState {
     /// Clear all dirty flags (after flushing state to GPU)
     void ClearDirty() { dirtyFlags = RDPDirtyFlag::None; }
 
-    /// Check if any state is dirty
     bool IsDirty() const { return dirtyFlags != RDPDirtyFlag::None; }
 
-    /// Compute a combined hash of all state for debugging
+    /// CRC of the other modes, combine word and fill color, for debugging
     uint32_t ComputeStateHash() const {
         uint32_t hash = 0;
         hash = CRC32_Fast(reinterpret_cast<const uint8_t*>(&otherModeH), 4, hash);
@@ -686,9 +660,7 @@ struct RDPState {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Complete RSP + RDP State (the "big" state context)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Complete RSP + RDP State ---
 
 struct VideoState {
     RDPState rdp;

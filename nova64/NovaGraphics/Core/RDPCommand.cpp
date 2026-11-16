@@ -1,6 +1,6 @@
 /**
  * @file RDPCommand.cpp
- * @brief RDP command decoding implementation
+ * @brief RDP command decoding: command words to structured triangles, rectangles, tiles and state.
  */
 
 #include "RDPCommand.hpp"
@@ -11,9 +11,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Helper Functions
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Helper Functions ---
 
 uint32_t RDPCommandDecoder::ReadWord(uint32_t address) const {
     if (!m_rdram || address + 3 >= m_rdramSize) return 0;
@@ -32,18 +30,14 @@ double RDPCommandDecoder::ReadFixed_S11_2(uint32_t packed) {
     return static_cast<double>(raw) / 4.0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Command ID Decoding
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Command ID Decoding ---
 
 RDPCommandID RDPCommandDecoder::DecodeCommand(const uint32_t* cmdWords, int /*wordCount*/) {
     uint8_t cmdByte = (cmdWords[0] >> 24) & 0x3F;
     return static_cast<RDPCommandID>(cmdByte);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  State-Setting Decoders
-// ═══════════════════════════════════════════════════════════════════════════
+// --- State-Setting Decoders ---
 
 void RDPCommandDecoder::DecodeSetOtherModes(const uint32_t* words, RDPState& state) {
     // Word 0: cmd[7:0] | otherModeH[23:0]
@@ -127,7 +121,7 @@ void RDPCommandDecoder::DecodeSetColorImage(const uint32_t* words, ImageDescript
 
 void RDPCommandDecoder::DecodeSetMaskImage(const uint32_t* words, ImageDescriptor& img) {
     img.address = words[1] & 0x03FFFFFF;
-    // Mask image inherits format/size/width from color image typically
+    // Only the address is encoded; the Z image takes its width from the color image.
 }
 
 void RDPCommandDecoder::DecodeSetTextureImage(const uint32_t* words, ImageDescriptor& img) {
@@ -201,9 +195,7 @@ void RDPCommandDecoder::DecodeSetKeyR(const uint32_t* words, RDPState& state) {
     state.chromaKey.scaleR = w1 & 0xFF;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Texture Load Decoders
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Texture Load Decoders ---
 
 void RDPCommandDecoder::DecodeLoadBlock(const uint32_t* words, int& tile, int& uls, int& ult, int& texels, int& dxt) {
     uint32_t w0 = words[0];
@@ -233,9 +225,7 @@ void RDPCommandDecoder::DecodeLoadTLUT(const uint32_t* words, int& tile, int& co
     count = ((w1 >> 14) & 0x3FF) + 1;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Triangle Decoding
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Triangle Decoding ---
 
 void RDPCommandDecoder::DecodeTriangle(const uint32_t* words, int wordCount, DecodedTriangle& tri) {
     uint8_t cmdByte = (words[0] >> 24) & 0x3F;
@@ -380,9 +370,7 @@ void RDPCommandDecoder::DecodeTriangle(const uint32_t* words, int wordCount, Dec
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Rectangle Decoding
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Rectangle Decoding ---
 
 void RDPCommandDecoder::DecodeTextureRect(const uint32_t* words, DecodedRectangle& rect) {
     uint32_t w0 = words[0];
@@ -418,9 +406,7 @@ void RDPCommandDecoder::DecodeFillRect(const uint32_t* words, float& x0, float& 
     y0 = static_cast<float>(w1 & 0xFFF) / 4.0f;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Command Description
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Command Description ---
 
 const char* RDPCommandDecoder::GetCommandName(RDPCommandID cmd) {
     switch (cmd) {
@@ -466,9 +452,7 @@ const char* RDPCommandDecoder::GetCommandName(RDPCommandID cmd) {
 
 std::string RDPCommandDecoder::DescribeCommand(RDPCommandID cmd) { return GetCommandName(cmd); }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Command Buffer
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Command Buffer ---
 
 RDPCommandBuffer::RDPCommandBuffer() :
     m_readOffset(0), m_writeOffset(0), m_capacity(MAX_BUFFER_SIZE / sizeof(uint32_t)) {

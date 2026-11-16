@@ -1,12 +1,8 @@
 /**
  * @file DepthBuffer.hpp
- * @brief Depth Buffer System.
+ * @brief N64 RDP depth buffer emulation: 18-bit Z + dZ, compare modes, Z-mode decode, primitive depth,
+ *        delta-Z calculation, and GPU depth buffer management.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Depth Buffer System
-// N64 RDP depth buffer emulation: 18-bit Z + dZ, compare modes, Z-mode decode,
-// primitive depth, delta-Z calculation, and GPU depth buffer management.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 #include "N64Types.hpp"
@@ -17,16 +13,11 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════
-//  N64 Depth Format
-// ═══════════════════════════════════════════════════════════════
+// --- N64 Depth Format ---
 
-// N64 Z-buffer: 18 bits per pixel
-//   - 14-bit integer part (upper)
-//   - 4-bit dZ (delta-Z / precision bits)
-// Stored in RDRAM as 16-bit values with a separate 2-bit dZ extension
-// Combined: z[15:0] = 14-bit Z value in bits 15:2, 2 bits of dZ in 1:0
-// Full 18-bit: upper 14 = Z, lower 4 = dZ
+// N64 Z-buffer: 18 bits per pixel, a 14-bit Z in the upper part and 4 bits of dZ (delta-Z,
+// precision bits) below it. RDRAM holds 16 bits per pixel: z[15:2] is the 14-bit Z and z[1:0]
+// the low 2 bits of dZ; the remaining 2 dZ bits are a separate 2-bit extension.
 
 enum class DepthCompareMode : uint8_t {
     Never = 0,     // Never passes — used for "depth off" semantics
@@ -46,9 +37,7 @@ enum class DepthSource : uint8_t {
 
 // ZMode imported from N64Types.hpp (Opaque, Interpenetrate, Transparent, Decal)
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Conversion Tables
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Conversion Tables ---
 
 class DepthConvert {
 public:
@@ -57,7 +46,6 @@ public:
     // depth value. These tables convert between the N64 Z encoding and
     // linear/float depth values.
 
-    // Initialize conversion tables
     static void Init();
 
     // Convert a float depth [0, 1] to N64 14-bit Z value
@@ -81,8 +69,7 @@ public:
     // Convert from 18-bit packed N64 format to float
     static float N64PackedToFloat(uint32_t packed);
 
-    // Encode/decode 16-bit RDRAM representation
-    // The N64 stores Z as: [z14_bits13:0] in 16 bits, with dZ in a separate 4-bit array
+    // Encode/decode the 16-bit RDRAM representation: z14 in bits 15:2, low 2 bits of dZ in bits 1:0
     static uint16_t EncodeRDRAM16(uint16_t z14, uint8_t dz4);
     static void DecodeRDRAM16(uint16_t rdram, uint16_t& z14, uint8_t& dz4Lower);
 
@@ -97,9 +84,7 @@ private:
     static std::array<uint8_t, 0x4000> s_zToDz;  // Z14 → dZ LUT
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Buffer State
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Buffer State ---
 
 struct DepthBufferConfig {
     bool enabled = false;
@@ -118,7 +103,6 @@ struct DepthBufferConfig {
     // Decal mode tolerance
     float decalOffset = 0.001f;
 
-    // From OtherMode
     void DecodeOtherMode(uint32_t otherModeH, uint32_t otherModeL);
     void SetPrimitiveDepth(uint16_t z, uint16_t dz);
 };
@@ -136,7 +120,7 @@ struct GPUDepthBuffer {
     uint32_t lastUsedFrame = 0;  // Frame counter for eviction
 
     // Z-image textures for N64-accurate depth compare in fragment shader
-    // (GlideN64 DepthBuffer::m_pDepthImageZTexture / m_pDepthImageDeltaZTexture)
+    // (GLideN64 DepthBuffer::m_pDepthImageZTexture / m_pDepthImageDeltaZTexture)
     uint32_t glZImageTex = 0;       // R32F — stores N64 14-bit Z as float
     uint32_t glDeltaZImageTex = 0;  // R32F — stores delta-Z as float
     uint32_t glZImageFBO = 0;       // FBO for clearing Z-image textures
@@ -153,9 +137,7 @@ struct GPUDepthBuffer {
     bool OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) const;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Compare Logic
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Compare Logic ---
 
 class DepthCompare {
 public:
@@ -183,9 +165,7 @@ private:
     static const std::array<uint16_t, 16> s_dzDecode;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Buffer Manager
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Buffer Manager ---
 
 class GPUDepthBufferManager {
 public:

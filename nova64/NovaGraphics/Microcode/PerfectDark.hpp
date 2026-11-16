@@ -24,14 +24,14 @@ public:
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3DPD; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
-    int GetVertexCacheSize() const override { return 80; } // PD handles extended vertex buffer size up to 80
+    int GetVertexCacheSize() const override { return 80; } // PD's vertex cache holds 80 vertices
     const char* GetName() const override { return "F3DPD (Perfect Dark)"; }
 
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
     void OnFrameBegin(DListContext& ctx) override;
 
 private:
-    // ─── PD-specific command handlers ────────────────────────────────
+    // --- PD-specific command handlers ---
     void Cmd_G_VTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_VTX_COLOR_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -63,9 +63,7 @@ private:
     uint32_t m_vtxColorAddress = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation ---
 
 inline void F3DPDHandler::Initialize(const MicrocodeInfo& info) {
     (void)info;
@@ -97,7 +95,7 @@ inline bool F3DPDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     // PD-specific: vertex color load (unique command)
     case 0x07: Cmd_G_VTX_COLOR_PD(ctx, w0, w1); break;
 
-    // PD uses a special TRI4 that packs 4 triangles into 3 words
+    // PD TRI4: opcodes 0x10-0x1F, the low nibble is the triangle count
     case 0x10:
     case 0x11:
     case 0x12:
@@ -138,14 +136,14 @@ inline bool F3DPDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     return !ctx.halted;
 }
 
-// ─── Perfect Dark Vertex Loading ─────────────────────────────────────────
+// --- Perfect Dark Vertex Loading ---
 
 inline void F3DPDHandler::Cmd_G_VTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // PD vertex: count in bits [20:10], start in bits [9:0]
+    // PD vertex: count in bits [15:10], start index in bits [9:0]
     int count = (w0 >> 10) & 0x3F;
     int startIndex = w0 & 0x3FF;
 
-    // PD has 80 vertex buffer
+    // Clamp to PD's 80-entry vertex buffer
     if (startIndex + count > 80) {
         count = 80 - startIndex;
     }
@@ -219,9 +217,8 @@ inline void F3DPDHandler::Cmd_G_TRI2_PD(DListContext& ctx, uint32_t w0, uint32_t
 }
 
 inline void F3DPDHandler::Cmd_G_TRI4_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // PD's unique TRI4 command can encode up to 4 triangles compactly
-    // Opcodes 0x10-0x1F encode the triangle count in low nibble
-    // Triangle vertices are packed across w0 and w1
+    // PD's TRI4 command (opcodes 0x10-0x1F) encodes up to 4 triangles; the low nibble of the
+    // opcode is the triangle count and the vertices are packed across w0, w1 and a following word pair
     uint8_t flags = w0 >> 24;
     int numTris = flags & 0x0F;
     if (numTris == 0) numTris = 1;

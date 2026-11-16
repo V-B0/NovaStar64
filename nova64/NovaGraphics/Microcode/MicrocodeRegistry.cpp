@@ -10,9 +10,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  MicrocodeType Name Table
-// ═══════════════════════════════════════════════════════════════════════════
+// --- MicrocodeType Name Table ---
 
 const char* MicrocodeTypeName(MicrocodeType type) {
     switch (type) {
@@ -52,16 +50,14 @@ const char* MicrocodeTypeName(MicrocodeType type) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  MicrocodeCapabilities
-// ═══════════════════════════════════════════════════════════════════════════
+// --- MicrocodeCapabilities ---
 
 MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
     MicrocodeCapabilities caps{};
     caps.type = type;
 
     switch (type) {
-    // ─── F3D (original) ──────────────────────────────────────────────
+    // --- F3D (original) ---
     case MicrocodeType::F3D:
         caps.gbiVersion = GBIVersion::GBI1;
         caps.maxVertices = 16;
@@ -82,7 +78,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── F3DEX ───────────────────────────────────────────────────────
+    // --- F3DEX ---
     case MicrocodeType::F3DEX:
     case MicrocodeType::F3DLX:
         caps.gbiVersion = GBIVersion::GBI1;
@@ -104,7 +100,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── F3DEX2 (most common) ───────────────────────────────────────
+    // --- F3DEX2 (most common) ---
     case MicrocodeType::F3DEX2:
     case MicrocodeType::F3DLX2:
     case MicrocodeType::F3DFLX2:
@@ -127,7 +123,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── F3DZEX (Zelda) ─────────────────────────────────────────────
+    // --- F3DZEX (Zelda) ---
     case MicrocodeType::F3DZEX:
         caps.gbiVersion = GBIVersion::GBI2;
         caps.maxVertices = 32;
@@ -148,7 +144,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = true; // Zelda point lights
         break;
 
-    // ─── Perfect Dark ────────────────────────────────────────────────
+    // --- Perfect Dark ---
     case MicrocodeType::F3DPD:
         caps.gbiVersion = GBIVersion::GBI1;
         caps.maxVertices = 80;
@@ -169,7 +165,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── Conker's Bad Fur Day ────────────────────────────────────────
+    // --- Conker's Bad Fur Day ---
     case MicrocodeType::F3DCBFD:
         caps.gbiVersion = GBIVersion::GBI2;
         caps.maxVertices = 32;
@@ -190,7 +186,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── GoldenEye ──────────────────────────────────────────────────
+    // --- GoldenEye ---
     case MicrocodeType::F3DGOLDEN:
         caps.gbiVersion = GBIVersion::GBI1;
         caps.maxVertices = 32;
@@ -211,7 +207,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── Yoshi's Story ──────────────────────────────────────────────
+    // --- Yoshi's Story ---
     case MicrocodeType::F3DTEXA:
         caps.gbiVersion = GBIVersion::GBI1;
         caps.maxVertices = 32;
@@ -232,7 +228,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── S2DEX family ────────────────────────────────────────────────
+    // --- S2DEX family ---
     case MicrocodeType::S2DEX:
         caps.gbiVersion = GBIVersion::GBI_S2DEX;
         caps.maxVertices = 4;
@@ -273,7 +269,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── Turbo3D ─────────────────────────────────────────────────────
+    // --- Turbo3D ---
     case MicrocodeType::Turbo3D:
         caps.gbiVersion = GBIVersion::GBI1;
         caps.maxVertices = 16;
@@ -294,7 +290,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── ZSort ───────────────────────────────────────────────────────
+    // --- ZSort ---
     case MicrocodeType::ZSort:
         caps.gbiVersion = GBIVersion::GBI_Custom;
         caps.maxVertices = 256;
@@ -315,7 +311,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasPointLight = false;
         break;
 
-    // ─── Line3D family (wireframe variants) ─────────────────────────
+    // --- Line3D family (wireframe variants) ---
     case MicrocodeType::L3D:
         caps = ForType(MicrocodeType::F3D);
         caps.type = MicrocodeType::L3D;
@@ -334,49 +330,49 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasLine3D = true;
         break;
 
-    // ─── F3DSETA (alternate MoveWord encoding) ──────────────────────
+    // --- F3DSETA (alternate MoveWord encoding) ---
     case MicrocodeType::F3DSETA:
         caps = ForType(MicrocodeType::F3D);
         caps.type = MicrocodeType::F3DSETA;
         break;
 
-    // ─── F3DEX2ACCLAIM (Turok 2/3, South Park) ─────────────────────
+    // --- F3DEX2ACCLAIM (Turok 2/3, South Park) ---
     case MicrocodeType::F3DEX2ACCLAIM:
         caps = ForType(MicrocodeType::F3DEX2);
         caps.type = MicrocodeType::F3DEX2ACCLAIM;
         break;
 
-    // ─── F3DAM (Army Men) ───────────────────────────────────────────
+    // --- F3DAM (Army Men) ---
     case MicrocodeType::F3DAM:
         caps = ForType(MicrocodeType::F3DEX2);
         caps.type = MicrocodeType::F3DAM;
         break;
 
-    // ─── ZSortBOSS ──────────────────────────────────────────────────
+    // --- ZSortBOSS ---
     case MicrocodeType::ZSortBOSS:
         caps = ForType(MicrocodeType::ZSort);
         caps.type = MicrocodeType::ZSortBOSS;
         break;
 
-    // ─── F3DBETA (Star Wars SoE, early Wave Race) ──────────────────
+    // --- F3DBETA (Star Wars SoE, early Wave Race) ---
     case MicrocodeType::F3DBETA:
         caps = ForType(MicrocodeType::F3D);
         caps.type = MicrocodeType::F3DBETA;
         break;
 
-    // ─── F3DEX3 (newest F3DEX2 derivative) ──────────────────────────
+    // --- F3DEX3 (F3DEX2 derivative) ---
     case MicrocodeType::F3DEX3:
         caps = ForType(MicrocodeType::F3DEX2);
         caps.type = MicrocodeType::F3DEX3;
         break;
 
-    // ─── F3DEX 0.95 (Mario Kart 64) ────────────────────────────────
+    // --- F3DEX 0.95 (Mario Kart 64) ---
     case MicrocodeType::F3DEX095:
         caps = ForType(MicrocodeType::F3DEX);
         caps.type = MicrocodeType::F3DEX095;
         break;
 
-    // ─── Factor 5: Rogue Squadron ───────────────────────────────────
+    // --- Factor 5: Rogue Squadron ---
     case MicrocodeType::F5Rogue:
         caps.gbiVersion = GBIVersion::GBI_Custom;
         caps.maxVertices = 32;
@@ -386,7 +382,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasBranchZ = false;
         break;
 
-    // ─── Factor 5: Indiana Jones / Battle for Naboo ─────────────────
+    // --- Factor 5: Indiana Jones / Battle for Naboo ---
     case MicrocodeType::F5Indi_Naboo:
         caps.gbiVersion = GBIVersion::GBI_Custom;
         caps.maxVertices = 32;
@@ -396,7 +392,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
         caps.hasBranchZ = false;
         break;
 
-    // ─── Turbo3D UX (Toukon Road) ───────────────────────────────────
+    // --- Turbo3D UX (Toukon Road) ---
     case MicrocodeType::T3DUX:
         caps = ForType(MicrocodeType::Turbo3D);
         caps.type = MicrocodeType::T3DUX;
@@ -412,9 +408,7 @@ MicrocodeCapabilities MicrocodeCapabilities::ForType(MicrocodeType type) {
     return caps;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC Calculation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC32 Lookup Table ---
 
 static constexpr uint32_t CRC32_TABLE[256] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3, 0x0EDB8832,
@@ -448,9 +442,7 @@ static constexpr uint32_t CRC32_TABLE[256] = {
     0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D,
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Constructor & Initialization
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Constructor & Initialization ---
 
 MicrocodeRegistry::MicrocodeRegistry() {
     InitializeDatabase();
@@ -564,8 +556,8 @@ void MicrocodeRegistry::InitializeDatabase() {
         {0xF89248E1, MicrocodeType::F3DEX095, "F3DLX 0.95 (Mario Kart 64)"},
 
         // Factor 5: Rogue Squadron
-        // NOTE: CRC 0xDA51CCDB overlaps F3DEX2 2.05 — detection is
-        // refined at a higher level via game database ForceMicrocode.
+        // CRC 0xDA51CCDB overlaps F3DEX2 2.05; detection is refined at a higher level via the game
+        // database ForceMicrocode.
 
         // Factor 5: Indiana Jones / Battle for Naboo
         {0x23FEF05F, MicrocodeType::F5Indi_Naboo, "F5 Battle for Naboo"},
@@ -609,9 +601,7 @@ void MicrocodeRegistry::InitializeStringPatterns() {
     };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC Calculation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC Calculation ---
 
 uint32_t MicrocodeRegistry::CalculateCRC(const uint8_t* data, uint32_t size) const {
     uint32_t crc = 0xFFFFFFFF;
@@ -621,9 +611,7 @@ uint32_t MicrocodeRegistry::CalculateCRC(const uint8_t* data, uint32_t size) con
     return crc ^ 0xFFFFFFFF;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Detection Methods
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Detection Methods ---
 
 DetectionResult MicrocodeRegistry::Detect(const uint8_t* imemData, uint32_t imemSize, const uint8_t* dmemData,
                                           uint32_t dmemSize) const {
@@ -789,7 +777,7 @@ DetectionResult MicrocodeRegistry::DetectByHeuristic(const uint8_t* imemData, ui
         uint32_t word = (static_cast<uint32_t>(imemData[i]) << 24) | (static_cast<uint32_t>(imemData[i + 1]) << 16) |
                         (static_cast<uint32_t>(imemData[i + 2]) << 8) | static_cast<uint32_t>(imemData[i + 3]);
 
-        // Look for GBI1-style constants (opcode << 24 shifted comparisons)
+        // The high byte of each word is tested against known GBI opcodes
         uint32_t hi = (word >> 24) & 0xFF;
         if (hi == 0x04) gbi1Score += 2;                        // G_VTX in GBI1 (also G_SELECT_DL in S2DEX2)
         if (hi == 0x01 && (word & 0x00F00000)) gbi2Score += 2; // G_VTX in GBI2
@@ -839,9 +827,7 @@ DetectionResult MicrocodeRegistry::DetectByHeuristic(const uint8_t* imemData, ui
     return result;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Info Lookup
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Info Lookup ---
 
 MicrocodeInfo MicrocodeRegistry::GetInfo(MicrocodeType type) const {
     MicrocodeInfo info;
@@ -862,9 +848,7 @@ MicrocodeInfo MicrocodeRegistry::GetInfo(MicrocodeType type, uint32_t textAddr, 
     return info;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Custom Registration
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Custom Registration ---
 
 void MicrocodeRegistry::RegisterCustomCRC(uint32_t crc, MicrocodeType type, const char* name) {
     m_customCRCs.push_back({crc, type, name});
@@ -887,9 +871,7 @@ void MicrocodeRegistry::ClearForced() {
     NOVA_LOG(LogLevel::Info, LogSubsystem::Core, "Microcode force override cleared");
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Cache Management
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Cache Management ---
 
 bool MicrocodeRegistry::HasCachedResult(uint32_t crc) const {
     std::lock_guard<std::mutex> lock(m_cacheMutex);

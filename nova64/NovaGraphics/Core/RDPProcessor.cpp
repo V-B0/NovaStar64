@@ -36,7 +36,7 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* rende
     m_batch.Reset();
     m_stats.Reset();
 
-    // �� Create noise texture (64x64 random R8, bound to unit 5) ��
+    // --- Create noise texture (64x64 random R8, bound to unit 5) ---
     {
         constexpr int NOISE_SIZE = 64;
         std::mt19937 rng(42); // fixed seed for reproducibility
@@ -63,15 +63,15 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* rende
         }
     }
 
-    // �� Create N64 dither textures (4x4 R8, bound to unit 6) ��
-    // N64 has two ordered dither patterns selectable via otherModeH rgb_dither_sel:
-    //   Mode 0: Magic Square (N64 default) � values 0-7 (3 bits)
-    //   Mode 1: Standard Bayer             � values 0-7 (3 bits)
-    //   Mode 2: Noise dither (uses noise texture)
+    // --- Create N64 dither textures (4x4 R8, bound to unit 6) ---
+    // otherModeH rgb_dither_sel selects the dither:
+    //   Mode 0: Magic Square (N64 default), values 0-7 (3 bits)
+    //   Mode 1: Standard Bayer, values 0-7 (3 bits)
+    //   Mode 2: Noise dither (uses the noise texture)
     //   Mode 3: Disabled
-    // We store both patterns in separate textures; the active one is bound at draw time.
+    // Both matrices are stored in separate textures; the active one is bound at draw time.
     {
-        // N64 Magic Square dither matrix (normalized 0-7 � 0-255)
+        // N64 Magic Square dither matrix (0-7 scaled to 0-255)
         static constexpr uint8_t magicSquare4x4[16] = {0,   219, 36,  255, 146, 73,  182, 109,
                                                        219, 0,   255, 36,  73,  146, 109, 182};
         TextureDesc desc;
@@ -92,7 +92,7 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* rende
             m_ditherTexture->SetSampler(s);
         }
 
-        // N64 Bayer dither matrix (normalized 0-7 � 0-255)
+        // N64 Bayer dither matrix (0-7 scaled to 0-255)
         static constexpr uint8_t bayer4x4[16] = {0,   146, 36, 182, 146, 0,   182, 36,
                                                  109, 255, 73, 219, 255, 109, 219, 73};
         TextureDesc desc2;
@@ -114,7 +114,7 @@ bool RDPProcessor::Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* rende
         }
     }
 
-    // �� Create debug white texture (1x1 RGBA8, for diagnostic tests) ��
+    // --- Create debug white texture (1x1 RGBA8, for diagnostic tests) ---
     {
         uint32_t white = 0xFFFFFFFF;
         TextureDesc desc;
@@ -184,14 +184,11 @@ void RDPProcessor::Reset(bool coldReset) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Display List Processing
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Display List Processing ---
 
 void RDPProcessor::ProcessDList(uint32_t startAddress, uint32_t endAddress) {
     if (!m_initialized || !m_rdram) return;
 
-    // Validate addresses
     if (startAddress >= m_rdramSize || endAddress > m_rdramSize || startAddress >= endAddress) {
         NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "Invalid DList range: 0x{:08X} - 0x{:08X}", startAddress,
                  endAddress);
@@ -201,7 +198,6 @@ void RDPProcessor::ProcessDList(uint32_t startAddress, uint32_t endAddress) {
     m_state.displayListActive = true;
     m_stats.displayListsProcessed++;
 
-    // Read commands from RDRAM into command buffer
     uint32_t numWords = (endAddress - startAddress) / 4;
 
     // RDRAM is stored in native 32-bit word order (PJ64-style)
@@ -266,7 +262,7 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
         switch (cmdID) {
         case RDPCommandID::Nop: offset += 2; break;
 
-        // ── Triangles ──
+        // --- Triangles ---
         case RDPCommandID::TriNoShade:
         case RDPCommandID::TriNoShadeZ:
         case RDPCommandID::TriTexNoShade:
@@ -278,10 +274,10 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             bool shade = (static_cast<int>(cmdID) & 0x04) != 0;
             bool texture = (static_cast<int>(cmdID) & 0x02) != 0;
             bool zbuffer = (static_cast<int>(cmdID) & 0x01) != 0;
-            int triSize = 8;            // Edge coefficients: 4 � 64-bit words = 8 � 32-bit words
-            if (shade) triSize += 16;   // Shade: 8 � 64-bit = 16 � 32-bit
-            if (texture) triSize += 16; // Texture: 8 � 64-bit = 16 � 32-bit
-            if (zbuffer) triSize += 4;  // Z: 2 � 64-bit = 4 � 32-bit
+            int triSize = 8;            // Edge coefficients: 4 x 64-bit words = 8 x 32-bit words
+            if (shade) triSize += 16;   // Shade: 8 x 64-bit = 16 x 32-bit
+            if (texture) triSize += 16; // Texture: 8 x 64-bit = 16 x 32-bit
+            if (zbuffer) triSize += 4;  // Z: 2 x 64-bit = 4 x 32-bit
 
             if (remaining >= triSize) {
                 HandleTriangle(current, triSize);
@@ -290,7 +286,7 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             break;
         }
 
-        // ── Rectangles ──
+        // --- Rectangles ---
         case RDPCommandID::TextureRectangle:
             if (remaining >= 4) HandleTextureRect(current);
             offset += 4;
@@ -306,7 +302,7 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             offset += 2;
             break;
 
-        // ── Syncs ──
+        // --- Syncs ---
         case RDPCommandID::SyncFull:
             HandleSyncFull();
             offset += 2;
@@ -327,7 +323,7 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             offset += 2;
             break;
 
-        // ── State Setting ──
+        // --- State Setting ---
         case RDPCommandID::SetOtherModes:
             HandleSetOtherModes(current);
             offset += 2;
@@ -413,7 +409,7 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             offset += 2;
             break;
 
-        // ── Texture Loads ──
+        // --- Texture Loads ---
         case RDPCommandID::LoadBlock:
             HandleLoadBlock(current);
             offset += 2;
@@ -435,16 +431,12 @@ void RDPProcessor::ProcessCommandBuffer(const uint32_t* commands, int wordCount)
             break;
 
         default:
-            // Unknown command � skip 2 words
+            // Unknown command: skip 2 words
             NOVA_LOG(LogLevel::Debug, LogSubsystem::RDP, "Unknown RDP command: 0x{:02X}", static_cast<int>(cmdID));
             offset += 2;
             break;
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Command Handlers
-// ═══════════════════════════════════════════════════════════════════════════
 
 } // namespace Nova64::Video

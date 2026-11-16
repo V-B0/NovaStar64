@@ -22,9 +22,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  S2DEX Sprite Structures
-// ═══════════════════════════════════════════════════════════════════════════
+// --- S2DEX Sprite Structures ---
 
 /// Background sprite definition (uObjBg)
 struct ObjBgSprite {
@@ -80,9 +78,7 @@ struct ObjMatrix {
     uint16_t BaseScaleY; // u5.10
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  S2DEX Command IDs
-// ═══════════════════════════════════════════════════════════════════════════
+// --- S2DEX Command IDs ---
 
 namespace S2DEXCmd {
 // S2DEX1 commands (GBI1 variant — matches GLideN64 S2DEX.cpp)
@@ -116,9 +112,7 @@ constexpr uint8_t G_OBJ_MOVEMEM = 0xDC;
 } // namespace V2
 } // namespace S2DEXCmd
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  S2DEX Handler
-// ═══════════════════════════════════════════════════════════════════════════
+// --- S2DEX Handler ---
 
 class S2DEXHandler : public GBIHandler {
 public:
@@ -156,12 +150,11 @@ protected:
     };
     SelectDLState m_selectDL;
 
-    // NOTE: S2DEX status registers live in DListContext::s2dexStatusRegs,
-    // NOT here — they survive G_LOAD_UCODE microcode switches within a task,
-    // and are reset to 0 at the start of each RSP task in
-    // MicrocodeDispatcher::ProcessGraphicsTask.
+    // S2DEX status registers live in DListContext::s2dexStatusRegs, not here. They are reset to 0 at
+    // the start of each RSP task in MicrocodeDispatcher::ProcessGraphicsTask (OnFrameBegin and
+    // OnUcodeSwitch below also zero them).
 
-    // ─── Command Handlers ────────────────────────────────────────────
+    // --- Command Handlers ---
     void Cmd_BG_1CYC(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_BG_COPY(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_OBJ_SPRITE(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -174,21 +167,12 @@ protected:
     void Cmd_OBJ_LDTX_RECT(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t w1);
 
-    // ─── Sprite Rendering Helpers ────────────────────────────────────
+    // --- Sprite Rendering Helpers ---
 
-    /**
-     * Read a background sprite structure from RDRAM.
-     */
     bool ReadBgSprite(DListContext& ctx, uint32_t address, ObjBgSprite& bg);
 
-    /**
-     * Read an object sprite structure from RDRAM.
-     */
     bool ReadObjSprite(DListContext& ctx, uint32_t address, ObjSprite& obj);
 
-    /**
-     * Read a 2D matrix from RDRAM.
-     */
     bool ReadObjMatrix(DListContext& ctx, uint32_t address, ObjMatrix& mtx);
 
     /**
@@ -207,9 +191,7 @@ protected:
     void LoadSpriteTexture(DListContext& ctx, uint32_t address);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  S2DEX2 Handler (GBI2 variant)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- S2DEX2 Handler (GBI2 variant) ---
 
 class S2DEX2Handler : public S2DEXHandler {
 public:
@@ -225,9 +207,7 @@ private:
     uint32_t m_rdpHalf1 = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation ---
 
 inline void S2DEXHandler::Initialize(const MicrocodeInfo& info) {
     m_type = info.type;
@@ -243,8 +223,8 @@ inline void S2DEXHandler::Initialize(const MicrocodeInfo& info) {
     m_lastObjTextureTmem = 0;
     m_objRendermode = 0;
     m_selectDL = {};
-    // s2dexStatusRegs live in DListContext and are reset here
-    // because S2DEX DMEM is overwritten on G_LOAD_UCODE.
+    // s2dexStatusRegs live in DListContext and are not touched here; OnFrameBegin and
+    // OnUcodeSwitch zero them.
     ResetStats();
 }
 
@@ -253,10 +233,9 @@ inline void S2DEXHandler::OnFrameBegin(DListContext& ctx) {
     m_lastObjTextureSource = 0;
     m_lastObjTextureTmem = 0;
 
-    // Status registers live in DMEM. A G_LOAD_UCODE switch to S2DEX
-    // reloads DMEM, effectively zeroing these registers. If we don't
-    // zero them here, SELECT_DL will erroneously skip needed sub-displaylists
-    // (due to stale flags), causing game freezes in OoT/MM.
+    // Status registers live in DMEM. A G_LOAD_UCODE switch to S2DEX reloads DMEM, effectively
+    // zeroing these registers. If they are not zeroed here, SELECT_DL erroneously skips needed
+    // sub-displaylists (due to stale flags), causing game freezes in OoT/MM.
     ctx.s2dexStatusRegs[0] = 0;
     ctx.s2dexStatusRegs[1] = 0;
     ctx.s2dexStatusRegs[2] = 0;
@@ -264,11 +243,10 @@ inline void S2DEXHandler::OnFrameBegin(DListContext& ctx) {
 }
 
 inline void S2DEXHandler::OnUcodeSwitch(DListContext& ctx) {
-    // Mid-task G_LOAD_UCODE switch into S2DEX.  On real hardware G_LOAD_UCODE
-    // reloads DMEM from RDRAM (CPU wrote zeros there before task start), so
-    // status registers are effectively zeroed on every switch — same as task
-    // start.  Not zeroing them here causes SELECT_DL to skip sub-displaylists
-    // it thinks already ran, freezing boot-logo and other animations.
+    // Mid-task G_LOAD_UCODE switch into S2DEX. On real hardware G_LOAD_UCODE reloads DMEM from RDRAM
+    // (the CPU wrote zeros there before task start), so the status registers are effectively zeroed
+    // on every switch, the same as at task start. Without zeroing them here SELECT_DL would skip
+    // sub-displaylists it thinks already ran, freezing the boot logo and other animations.
     OnFrameBegin(ctx);
 }
 
@@ -356,7 +334,7 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     // low-range sprite opcode assignments from S2DEX1. Handle everything here
     // without falling through to S2DEXHandler (which uses S2DEX1 opcodes).
     switch (opcode) {
-    // ── S2DEX2 sprite commands (low range: 0x00–0x0B) ──
+    // --- S2DEX2 sprite commands (low range: 0x00–0x0B) ---
     case 0x00:                            break;                                   // NOOP
     case S2DEXCmd::V2::G_OBJ_RECTANGLE:   Cmd_OBJ_RECTANGLE(ctx, w0, w1); break;   // 0x01
     case S2DEXCmd::V2::G_OBJ_SPRITE:      Cmd_OBJ_SPRITE(ctx, w0, w1); break;      // 0x02
@@ -371,7 +349,7 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         Cmd_OBJ_RENDERMODE(ctx, w0, w1);
         break; // 0x0B
 
-    // ── GBI2 state commands (high range) ──
+    // --- GBI2 state commands (high range) ---
     case 0xD7:                            SetTextureState(ctx, w0, w1); break;
     case 0xD9:                            SetGeometryMode(ctx, ~(w0 & 0x00FFFFFF), w1); break;
     case S2DEXCmd::V2::G_OBJ_RECTANGLE_R: Cmd_OBJ_RECTANGLE_R(ctx, w0, w1); break; // 0xDA
@@ -384,9 +362,8 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         break;
     }
     case 0xDF: EndDisplayList(ctx); return !ctx.halted;
-    // 0xE1 = G_RDPHALF_1 in F3DEX2/S2DEX2 — stores the data half for
-    // G_LOAD_UCODE (used by 0xDD) and for texrect lower-right coords.
-    // NOT the SELECT_DL preamble (that's 0xE4, see below).
+    // 0xE1 = G_RDPHALF_1 in F3DEX2/S2DEX2: stores the data half for G_LOAD_UCODE (used by 0xDD) and
+    // for texrect lower-right coords. It is not the SELECT_DL preamble (that is 0xE4, see below).
     case 0xE1: m_rdpHalf1 = w1; break;
     // 0xE4 = G_RDPHALF_0 in S2DEX2 (GLideN64: S2DEX2_RDPHALF_0 = 0xE4).
     // In F3DEX2 this opcode is G_TEXRECT, but S2DEX2 repurposes it:
@@ -414,7 +391,7 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         }
         break;
     }
-    // F3DEX2/S2DEX2 swaps the opcodes: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
+    // GBI2: 0xE2 = SetOtherMode_L, 0xE3 = SetOtherMode_H
     case 0xE2: {
         uint32_t len = (w0 & 0xFF) + 1;
         uint32_t sft = 32 - ((w0 >> 8) & 0xFF) - len;
@@ -441,7 +418,7 @@ inline bool S2DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     return !ctx.halted;
 }
 
-// ─── BG Sprite Commands ─────────────────────────────────────────────────
+// --- BG Sprite Commands ---
 
 inline void S2DEXHandler::Cmd_BG_1CYC(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w0;
@@ -459,7 +436,7 @@ inline void S2DEXHandler::Cmd_BG_COPY(DListContext& ctx, uint32_t w0, uint32_t w
     }
 }
 
-// ─── Object Sprite Commands ─────────────────────────────────────────────
+// --- Object Sprite Commands ---
 
 inline void S2DEXHandler::Cmd_OBJ_SPRITE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w0;
@@ -511,9 +488,9 @@ inline void S2DEXHandler::Cmd_OBJ_MOVEMEM(DListContext& ctx, uint32_t w0, uint32
 
 inline void S2DEXHandler::Cmd_OBJ_RENDERMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // Store the S2DEX object render mode flags (mirrors GLideN64: gSP.objRendermode = w1).
-    // Do NOT modify otherModeH — the render mode bits are S2DEX-specific flags
-    // (G_OBJRM_BILERP, G_OBJRM_SHRINKSIZE_*, etc.) and are not otherModeH values.
-    // RenderBgSprite / RenderObjSprite set cycle type explicitly when needed.
+    // otherModeH is not modified: the render mode bits are S2DEX-specific flags (G_OBJRM_BILERP,
+    // G_OBJRM_SHRINKSIZE_*, etc.) and are not otherModeH values. RenderBgSprite / RenderObjSprite
+    // set the cycle type explicitly when needed.
     (void)ctx;
     (void)w0;
     m_objRendermode = w1;
@@ -570,18 +547,15 @@ inline void S2DEXHandler::Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t
     const uint32_t flag = m_selectDL.flag;
     const uint32_t mask = w1;
 
-    // sid here is S2DEX_RDPHalf_0's raw _SHIFTR(w0,18,8) field, which real
-    // hardware/GLideN64 (S2DEX.cpp S2DEX_Select_DL) uses DIRECTLY as the
-    // gSP.status[] index (validated < 4) -- unlike gSPSetStatus/MW_GENSTAT
-    // and the OBJLT_TXTRSPRITE/TXTRTILE sid fields elsewhere in this file,
-    // which really are byte offsets (0/4/8/12) needing >>2. This previously
-    // used the same >>2 shift here too, which for the only valid real sid
-    // values (0-3) collapses ALL FOUR status registers onto
-    // s2dexStatusRegs[0] -- so two independent SELECT_DL sequences using
-    // different sid values (e.g. selecting between different equipped-item
-    // icon variants) would alias and corrupt each other's dedup state,
-    // causing a DL to wrongly re-run (visible as stacked/duplicated icon
-    // geometry) or wrongly get skipped.
+    // sid here is S2DEX_RDPHalf_0's raw _SHIFTR(w0,18,8) field, which real hardware/GLideN64
+    // (S2DEX.cpp S2DEX_Select_DL) uses directly as the gSP.status[] index (validated < 4), unlike
+    // gSPSetStatus/MW_GENSTAT and the OBJLT_TXTRSPRITE/TXTRTILE sid fields elsewhere in this file,
+    // which really are byte offsets (0/4/8/12) needing >>2. Applying that >>2 here as well would
+    // collapse all four status registers onto s2dexStatusRegs[0] for the only valid real sid values
+    // (0-3), so two independent SELECT_DL sequences using different sid values (e.g. selecting
+    // between different equipped-item icon variants) would alias and corrupt each other's dedup
+    // state, causing a DL to wrongly re-run (visible as stacked/duplicated icon geometry) or wrongly
+    // get skipped.
     if (sid >= 4) {
         NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "S2DEX SELECT_DL: invalid sid {} (must be < 4)", sid);
         m_selectDL = {};
@@ -615,7 +589,7 @@ inline void S2DEXHandler::Cmd_SELECT_DL(DListContext& ctx, uint32_t w0, uint32_t
     m_selectDL = {};
 }
 
-// ─── RDRAM Read Helpers ─────────────────────────────────────────────────
+// --- RDRAM Read Helpers ---
 
 inline bool S2DEXHandler::ReadBgSprite(DListContext& ctx, uint32_t address, ObjBgSprite& bg) {
     address = ctx.ResolveAddress(address);
@@ -703,7 +677,7 @@ inline bool S2DEXHandler::ReadObjMatrix(DListContext& ctx, uint32_t address, Obj
     return true;
 }
 
-// ─── Rendering Helpers ──────────────────────────────────────────────────
+// --- Rendering Helpers ---
 
 inline void S2DEXHandler::RenderBgSprite(DListContext& ctx, const ObjBgSprite& bg, bool copyMode) {
     if (!ctx.rdpProcessor || !ctx.state) return;
@@ -752,7 +726,7 @@ inline void S2DEXHandler::RenderBgSprite(DListContext& ctx, const ObjBgSprite& b
     if (rowsPerStrip <= 0) rowsPerStrip = 1;
     if (rowsPerStrip > imageHi) rowsPerStrip = imageHi;
 
-    // ── Strip loop ──
+    // --- Strip loop ---
     // Strips are loaded the way the microcode loads them: the texture image
     // stays at the start of the picture, each strip is a LoadTile of the next
     // rows, and a strip's T coordinate is the row it starts at. The draw path
@@ -940,9 +914,7 @@ inline void S2DEXHandler::RenderObjSprite(DListContext& ctx, const ObjSprite& ob
     rect.tileIndex = 0;
     rect.flipped = false;
 
-    // DIAG: log first 50 sprite renders + 1-in-200 sampling thereafter, capped
-    // at 600 lines. MM HUD likely doesn't go through this path (uses F3DZEX
-    // TexRect instead) but we'll capture any S2DEX2 cinematic/title sprites.
+    // Diagnostic: log the first 50 sprite renders, then 1 in 200, capped at 600 lines
     static int s_spriteSeen = 0;
     static int s_spriteLogCount = 0;
     ++s_spriteSeen;

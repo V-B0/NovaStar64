@@ -1,12 +1,8 @@
 /**
  * @file DepthBuffer.cpp
- * @brief Depth Buffer System.
+ * @brief N64 RDP 18-bit depth: piecewise-linear encoding, dZ fuzzy compare, GPU buffer management with
+ *        GL4.6 DSA, and a software fallback depth test.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Depth Buffer System Implementation
-// N64 RDP 18-bit depth: piecewise-linear encoding, dZ fuzzy compare,
-// GPU buffer management with GL4.6 DSA, software fallback depth test.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include "DepthBuffer.hpp"
 #include "FramebufferManager.hpp"
@@ -22,9 +18,7 @@ namespace Nova64::Video {
 
 GPUDepthBufferManager g_depthManager;
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Conversion Tables — Static Data
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Conversion Tables — Static Data ---
 
 bool DepthConvert::s_initialized = false;
 std::array<uint32_t, 8> DepthConvert::s_zShifts;
@@ -131,9 +125,7 @@ void DepthConvert::DecodeRDRAM16(uint16_t rdram, uint16_t& z14, uint8_t& dz4Lowe
     dz4Lower = static_cast<uint8_t>(rdram & 0x3);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Buffer Config
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Buffer Config ---
 
 void DepthBufferConfig::DecodeOtherMode(uint32_t otherModeH, uint32_t otherModeL) {
     // Z compare: bit 4 of otherModeL
@@ -162,9 +154,7 @@ void DepthBufferConfig::SetPrimitiveDepth(uint16_t z, uint16_t dz) {
     primDeltaZ = static_cast<float>(dz) / 65536.0f;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GPUDepthBuffer
-// ═══════════════════════════════════════════════════════════════
+// --- GPUDepthBuffer ---
 
 bool GPUDepthBuffer::OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) const {
     if (address == 0) return false;
@@ -175,9 +165,7 @@ bool GPUDepthBuffer::OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) cons
     return (address < otherEnd) && (addr < myEnd);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Compare Logic
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Compare Logic ---
 
 const std::array<uint16_t, 16> DepthCompare::s_dzDecode = {0x0000, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010,
                                                            0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400,
@@ -251,9 +239,7 @@ uint8_t DepthCompare::ComputePixelDeltaZ(float dZdx, float dZdy) {
 
 bool DepthCompare::ShouldSkipTest(const DepthBufferConfig& config) { return !config.enabled && !config.writeEnabled; }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Buffer Manager — Lifecycle
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Buffer Manager — Lifecycle ---
 
 void GPUDepthBufferManager::Init() {
     DepthConvert::Init();
@@ -298,9 +284,7 @@ void GPUDepthBufferManager::Reset() {
 
 void GPUDepthBufferManager::SetConfig(const DepthBufferConfig& config) { m_config = config; }
 
-// ═══════════════════════════════════════════════════════════════
-//  Buffer Management
-// ═══════════════════════════════════════════════════════════════
+// --- Buffer Management ---
 
 void GPUDepthBufferManager::OnSetDepthImage(uint32_t address, uint32_t width) {
     address &= 0x00FFFFFF; // Mask to RDRAM range
@@ -462,9 +446,7 @@ void GPUDepthBufferManager::EvictOldBuffers() {
     m_stats.activeBuffers = m_bufferCount;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Operations
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Operations ---
 
 void GPUDepthBufferManager::ClearDepthBuffer(float clearValue) {
     if (!m_current) return;
@@ -478,9 +460,7 @@ void GPUDepthBufferManager::ClearDepthBufferN64(uint16_t clearZ, uint16_t clearD
     ClearDepthBuffer(clearValue);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GPU ↔ CPU Copy
-// ═══════════════════════════════════════════════════════════════
+// --- GPU ↔ CPU Copy ---
 
 void GPUDepthBufferManager::CopyToGPU(GPUDepthBuffer& buf, const uint8_t* rdram, uint32_t rdramSize) {
     if (buf.address + buf.width * buf.height * 2 > rdramSize) return;
@@ -534,9 +514,7 @@ void GPUDepthBufferManager::CopyFromGPU(const GPUDepthBuffer& buf, uint8_t* rdra
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Software Depth Test
-// ═══════════════════════════════════════════════════════════════
+// --- Software Depth Test ---
 
 bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, float deltaZ) {
     if (x < 0 || y < 0 || x >= static_cast<int32_t>(m_swWidth) || y >= static_cast<int32_t>(m_swHeight)) return false;
@@ -572,9 +550,7 @@ bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, floa
     return pass;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Z-Image Textures (for shader-based N64 depth compare)
-// ═══════════════════════════════════════════════════════════════
+// --- Z-Image Textures (for shader-based N64 depth compare) ---
 
 void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t resScale) {
     if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
@@ -664,18 +640,14 @@ void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf, ui
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Attachment Helper
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Attachment Helper ---
 
 void GPUDepthBufferManager::SetDepthAttachment(const GPUDepthBuffer& buf, uint32_t fbo) {
     if (!buf.glDepthTexture || !fbo) return;
     glNamedFramebufferTexture(fbo, GL_DEPTH_ATTACHMENT, buf.glDepthTexture, 0);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  MSAA Depth Resolve
-// ═══════════════════════════════════════════════════════════════
+// --- MSAA Depth Resolve ---
 
 void GPUDepthBufferManager::ResolveDepthBuffer(GPUDepthBuffer& buf, uint32_t msaaFBO) {
     if (!msaaFBO || !buf.glDepthTexture) return;
@@ -703,9 +675,7 @@ void GPUDepthBufferManager::ResolveDepthBuffer(GPUDepthBuffer& buf, uint32_t msa
     buf.resolved = true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Z Lookup Table Texture
-// ═══════════════════════════════════════════════════════════════
+// --- Z Lookup Table Texture ---
 
 void GPUDepthBufferManager::InitZLUT() {
     if (m_zLutInitialized) return;
@@ -745,9 +715,7 @@ void GPUDepthBufferManager::BindZLUT(uint32_t textureUnit) {
     if (m_zLutTex) glBindTextureUnit(textureUnit, m_zLutTex);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Frame Management
-// ═══════════════════════════════════════════════════════════════
+// --- Frame Management ---
 
 void GPUDepthBufferManager::OnFrameEnd() {
     m_frameCounter++;

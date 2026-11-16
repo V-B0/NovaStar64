@@ -17,9 +17,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Known Microcode Types
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Known Microcode Types ---
 
 enum class MicrocodeType : uint8_t {
     Unknown = 0,
@@ -30,7 +28,7 @@ enum class MicrocodeType : uint8_t {
     F3DEX2 = 3,     // Major revision — new command IDs (most common)
     F3DPD = 4,      // Perfect Dark custom F3D variant
     F3DCBFD = 5,    // Conker's Bad Fur Day custom F3D
-    F3DTEXA = 6,    // Texture-alpha variant (Yoshis Story)
+    F3DTEXA = 6,    // Texture-alpha variant (Yoshi's Story)
     F3DLX = 7,      // Low-latency F3D variant
     F3DLX2 = 8,     // Low-latency F3DEX2 variant
     F3DZEX = 9,     // Zelda exclusive F3DEX2 variant (OoT, MM)
@@ -68,7 +66,7 @@ enum class MicrocodeType : uint8_t {
 
     // Additional variants
     F3DBETA = 60,  // Early F3D beta (Star Wars SoE, Wave Race early)
-    F3DEX3 = 61,   // Newest F3DEX2 derivative
+    F3DEX3 = 61,   // F3DEX2 derivative
     F3DEX095 = 62, // F3DEX 0.95 (Mario Kart 64)
     T3DUX = 63,    // Turbo3D UX (Toukon Road)
 
@@ -78,9 +76,7 @@ enum class MicrocodeType : uint8_t {
 /// Get human-readable name for a microcode type
 const char* MicrocodeTypeName(MicrocodeType type);
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GBI Command Sets (Graphics Binary Interface)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- GBI Command Sets (Graphics Binary Interface) ---
 
 /// GBI version determines command byte encoding
 enum class GBIVersion : uint8_t {
@@ -91,9 +87,7 @@ enum class GBIVersion : uint8_t {
     GBI_Custom = 4, // Game-specific custom extension
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GBI1 Command IDs (F3D / F3DEX / older microcodes)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- GBI1 Command IDs (F3D / F3DEX / older microcodes) ---
 
 namespace GBI1 {
 constexpr uint8_t G_SPNOOP = 0x00;
@@ -129,9 +123,7 @@ constexpr uint8_t G_BRANCH_Z = 0xB0;
 constexpr uint8_t G_MODIFYVTX = 0xB2;
 } // namespace GBI1
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GBI2 Command IDs (F3DEX2 / F3DZEX / most common)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- GBI2 Command IDs (F3DEX2 / F3DZEX / most common) ---
 
 namespace GBI2 {
 constexpr uint8_t G_NOOP = 0x00;
@@ -153,7 +145,7 @@ constexpr uint8_t G_DMA_IO = 0xD6;
 constexpr uint8_t G_TEXTURE = 0xD7;
 constexpr uint8_t G_POPMTX = 0xD8;
 constexpr uint8_t G_SETGEOMETRYMODE = 0xD9;
-// NOTE: GBI2 has no separate CLEARGEOMETRYMODE — 0xD9 handles both
+// GBI2 has no separate CLEARGEOMETRYMODE: 0xD9 handles both
 constexpr uint8_t G_MTX = 0xDA;
 constexpr uint8_t G_DL = 0xDE;
 constexpr uint8_t G_ENDDL = 0xDF;
@@ -168,9 +160,7 @@ constexpr uint8_t G_RDPHALF_2 = 0xF1;
 // All RDP commands 0xC0-0xFF pass through to RDP
 } // namespace GBI2
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  MoveWord / MoveMem Indices
-// ═══════════════════════════════════════════════════════════════════════════
+// --- MoveWord / MoveMem Indices ---
 
 namespace MoveWord {
 constexpr uint8_t MW_MATRIX = 0x00;
@@ -206,9 +196,7 @@ constexpr uint8_t G_MV2_POINT = 12;
 constexpr uint8_t G_MV2_MATRIX = 14;
 } // namespace MoveMem
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Microcode Signature (for detection from IMEM)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Microcode Signature (for detection from IMEM) ---
 
 struct MicrocodeSignature {
     MicrocodeType type;
@@ -244,9 +232,7 @@ struct MicrocodeCapabilities {
     static MicrocodeCapabilities ForType(MicrocodeType type);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Microcode Info (runtime-detected info for current game)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Microcode Info (runtime-detected info for current game) ---
 
 struct MicrocodeInfo {
     MicrocodeType type = MicrocodeType::Unknown;

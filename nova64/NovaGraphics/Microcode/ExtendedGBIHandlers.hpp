@@ -1,14 +1,9 @@
 /**
  * @file ExtendedGBIHandlers.hpp
- * @brief Extended GBI Handlers.
+ * @brief GBIHandler subclasses for extended microcodes (Turbo3D, ZSort, DKR, Waverace, Star Wars,
+ *        Line3D and the F3D/F3DEX2 variants), each with its own vertex loading, matrix transforms
+ *        and triangle drawing via DListContext.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Extended GBI Handlers
-// Proper GBIHandler subclasses for extended microcodes (Turbo3D, ZSort, DKR,
-// Waverace, Star Wars). These replace the old MicrocodeHandler-based stubs
-// in ExtendedMicrocodes.hpp with full vertex loading, matrix transforms, and
-// triangle drawing via DListContext.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 
@@ -27,12 +22,8 @@ namespace Nova64::Video {
 
 using namespace Clip; // CLIP_POSX, CLIP_NEGX, etc.
 
-// ══════════════════════════════════════════════════════════════
-//  Turbo3DGBIHandler
-//  Simplified microcode (Indiana Jones, Stunt Race FX).
-//  Inherits from F3DHandler for DL/ENDDL/MOVEMEM/RDP passthrough.
-//  Overrides VTX/TRI/MTX with Turbo3D-specific encodings.
-// ══════════════════════════════════════════════════════════════
+/// Turbo3D (Indiana Jones, Stunt Race FX): simplified microcode. Inherits from F3DHandler for
+/// DL/ENDDL/MOVEMEM/RDP passthrough and overrides VTX/TRI/MTX with Turbo3D-specific encodings.
 
 class Turbo3DGBIHandler : public F3DHandler {
 public:
@@ -89,11 +80,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  ZSortGBIHandler (World Driver Championship)
-//  Z-sorted rendering at the microcode level.
-//  Accumulates objects, sorts by Z, then processes their DLs.
-// ══════════════════════════════════════════════════════════════
+/// ZSort (World Driver Championship): Z-sorted rendering at the microcode level. Accumulates
+/// objects, sorts by Z, then processes their DLs.
 
 class ZSortGBIHandler : public GBIHandler {
 public:
@@ -239,7 +227,7 @@ private:
                 int savedDepth = ctx.dlStackDepth;
                 bool savedHalted = ctx.halted;
 
-                // Hide outer stack so ENDDL nicely halts inner execution
+                // Hide the outer stack so ENDDL cleanly halts inner execution
                 ctx.dlStackDepth = 0;
                 ctx.halted = false;
 
@@ -255,10 +243,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  DKRGBIHandler (Diddy Kong Racing, Mickey's Speedway, JFG)
-//  Custom vertex format (10 bytes), indexed matrices, billboard
-// ══════════════════════════════════════════════════════════════
+/// DKR (Diddy Kong Racing, Mickey's Speedway, JFG): custom 10-byte vertex format, indexed
+/// matrices and billboards.
 
 class DKRGBIHandler : public GBIHandler {
 public:
@@ -456,14 +442,11 @@ private:
             TransformedVertex& tv = geo.vertexBuffer[idx];
             float in[4] = {tv.position[0], tv.position[1], tv.position[2], 1.0f};
             float out[4];
-            // Row-vector convention (v_clip = v * combinedMatrix), matching
-            // every other transform in this codebase (GBIHandler::
-            // TransformVertexBatch, RDPState's matrix multiplies) and how
-            // combinedMatrix is actually populated by the shared LoadMatrix()
-            // this handler's own Cmd_MTX delegates to. This loop previously
-            // indexed as out[r] = M[r][c]*in[c] -- the opposite (column-
-            // vector, M*v) convention -- which transposes the transform and
-            // produces wrong vertex positions for any DKR-microcode content.
+            // Row-vector convention (v_clip = v * combinedMatrix), matching every other transform in this
+            // codebase (GBIHandler::TransformVertexBatch, RDPState's matrix multiplies) and how
+            // combinedMatrix is populated by the shared LoadMatrix() that this handler's own Cmd_MTX
+            // delegates to. Indexing as out[r] = M[r][c]*in[c] (column-vector, M*v) would transpose the
+            // transform and give wrong vertex positions for any DKR-microcode content.
             for (int c = 0; c < 4; ++c) {
                 out[c] = in[0] * geo.combinedMatrix.m[0][c] + in[1] * geo.combinedMatrix.m[1][c] +
                          in[2] * geo.combinedMatrix.m[2][c] + in[3] * geo.combinedMatrix.m[3][c];
@@ -485,11 +468,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  WaveraceGBIHandler (Wave Race 64)
-//  F3DEX-based with custom water surface rendering.
-//  Overrides water/heightmap commands; delegates everything else.
-// ══════════════════════════════════════════════════════════════
+/// Wave Race 64: F3DEX-based with custom water surface rendering. Overrides the water/heightmap
+/// commands and delegates everything else.
 
 class WaveraceGBIHandler : public F3DEXHandler {
 public:
@@ -576,11 +556,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  StarWarsGBIHandler (Rogue Squadron, Episode I Racer, BFN)
-//  F3DEX2-based with compressed vertex support, quads, and
-//  terrain LOD. Factor 5 custom microcode.
-// ══════════════════════════════════════════════════════════════
+/// Star Wars (Rogue Squadron, Episode I Racer, BFN): F3DEX2-based Factor 5 custom microcode with
+/// compressed vertex support, quads and terrain LOD.
 
 class StarWarsGBIHandler : public F3DEX2Handler {
 public:
@@ -655,12 +632,10 @@ private:
             tv.texCoord1[0] = 0.0f;
             tv.texCoord1[1] = 0.0f;
 
-            // Transform through combined MVP. Row-vector convention (v *
-            // combinedMatrix) -- same fix and rationale as DKRGBIHandler::
-            // TransformVertices above: the previous out[r]=M[r][c]*in[c]
-            // indexing was the transposed (column-vector) convention,
-            // inconsistent with how combinedMatrix is populated everywhere
-            // else in this codebase.
+            // Transform through combined MVP. Row-vector convention (v * combinedMatrix), same rationale as
+            // DKRGBIHandler::TransformVertices above: out[r]=M[r][c]*in[c] indexing would be the transposed
+            // (column-vector) convention, inconsistent with how combinedMatrix is populated everywhere else
+            // in this codebase.
             float in[4] = {x, y, z, 1.0f};
             float out[4];
             for (int c = 0; c < 4; ++c) {
@@ -687,12 +662,11 @@ private:
     }
 
     void Cmd_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        // gSP1Quadrangle encoding (F5/StarWars is F3DEX2-derived): w0 holds the
-        // first triangle (v0,v1,v2); w1 holds the ENTIRE second triangle
-        // (v0,v2,v3), not just v3 in isolation. Matches the fixed
-        // F3DEX2Handler::Cmd_G_QUAD -- this handler had the same missing-half
-        // -of-every-quad bug (root cause of "shattered glass" skies/backgrounds)
-        // independently, since it decodes QUAD itself instead of delegating.
+        // gSP1Quadrangle encoding (F5/StarWars is F3DEX2-derived): w0 holds the first triangle
+        // (v0,v1,v2); w1 holds the entire second triangle (v0,v2,v3), not just v3 in isolation. Matches
+        // F3DEX2Handler::Cmd_G_QUAD; this handler decodes QUAD itself instead of delegating, so it needs
+        // the same two-triangle decode (the missing half of every quad was the root cause of the
+        // "shattered glass" skies/backgrounds).
         int v0 = ((w0 >> 16) & 0xFF) / 2;
         int v1 = ((w0 >> 8) & 0xFF) / 2;
         int v2 = (w0 & 0xFF) / 2;
@@ -751,12 +725,9 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  L3DGBIHandler (Line3D — original F3D wireframe variant)
-//  Renders triangles as three line segments (wireframe mode).
-//  G_TRI1 decomposes to 3 lines; G_LINE3D draws a line.
-//  Vertex indices divided by 10 (like F3D).
-// ══════════════════════════════════════════════════════════════
+/// L3D (Line3D, original F3D wireframe variant): renders triangles as three line segments
+/// (wireframe mode). G_TRI1 decomposes to 3 lines; G_LINE3D draws a line. Vertex indices are
+/// divided by 10 (like F3D).
 
 class L3DGBIHandler : public F3DHandler {
 public:
@@ -796,10 +767,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  L3DEXGBIHandler (Line3D EX variant — F3DEX wireframe)
-//  Same concept as L3D but with F3DEX vertex encoding (/2).
-// ══════════════════════════════════════════════════════════════
+/// L3DEX (Line3D EX, F3DEX wireframe variant): same concept as L3D but with F3DEX vertex
+/// encoding (/2).
 
 class L3DEXGBIHandler : public F3DEXHandler {
 public:
@@ -854,10 +823,7 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  L3DEX2GBIHandler (Line3D EX2 variant — F3DEX2 wireframe)
-//  GBI2 encoding with vertex indices in w0, /2.
-// ══════════════════════════════════════════════════════════════
+/// L3DEX2 (Line3D EX2, F3DEX2 wireframe variant): GBI2 encoding with vertex indices in w0, /2.
 
 class L3DEX2GBIHandler : public F3DEX2Handler {
 public:
@@ -912,13 +878,9 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  F3DSETAGBIHandler (F3D SetA variant)
-//  F3D-based but uses different MoveWord index encoding.
-//  MW_NUMLIGHT formula: ((w1 - 0x80000000) >> 5) - 1
-//  MW_SEGMENT uses 10-bit shift
-//  Swaps opcode slots for PERSPNORM/RDPHALF
-// ══════════════════════════════════════════════════════════════
+/// F3DSETA (F3D SetA variant): F3D-based but with a different MoveWord index encoding.
+/// MW_NUMLIGHT formula: ((w1 - 0x80000000) >> 5) - 1. MW_SEGMENT uses a 10-bit shift. The opcode
+/// slots for PERSPNORM/RDPHALF are swapped.
 
 class F3DSETAGBIHandler : public F3DHandler {
 public:
@@ -986,12 +948,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  F3DEX2AcclaimGBIHandler (Turok 2/3, South Park)
-//  Identical to F3DEX2 except:
-//  - G_MOVEMEM (0xDC) handles lights differently at high offsets
-//  - Uses 16-byte light structs beyond offset 24*4
-// ══════════════════════════════════════════════════════════════
+/// F3DEX2 Acclaim (Turok 2/3, South Park): identical to F3DEX2 except that G_MOVEMEM (0xDC)
+/// handles lights differently at high offsets, using 16-byte light structs beyond offset 24*4.
 
 class F3DEX2AcclaimGBIHandler : public F3DEX2Handler {
 public:
@@ -1051,11 +1009,8 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  F3DAMGBIHandler (Army Men — F3DEX2 variant)
-//  Modified vertex loading and MoveWord.
-//  Uses standard F3DEX2 for most commands.
-// ══════════════════════════════════════════════════════════════
+/// F3DAM (Army Men, F3DEX2 variant): modified vertex loading and MoveWord; uses standard F3DEX2
+/// for most commands.
 
 class F3DAMGBIHandler : public F3DEX2Handler {
 public:
@@ -1086,7 +1041,7 @@ private:
     uint32_t m_textureCoordScaleOrg = 0;
     uint32_t m_textureCoordScale[2] = {};
 
-    // ─── F3DAM fog usage: compute from geometryMode bits 13 and 16 ──────
+    // --- F3DAM fog usage: compute from geometryMode bits 13 and 16 ---
     // GLideN64: fogMode = ((geomMode >> 13) & 9) + 0xFFF8
     //   fogMode == 0  → standard fog (alpha)
     //   fogMode > 0   → F3DAM mode 2 (fog → shade RGB)
@@ -1100,7 +1055,7 @@ private:
         else geo.fogUsage = (geo.geometryMode & 0x00010000) ? 1 : 0; // G_FOG flag
     }
 
-    // ─── F3DAM MoveWord: extends MW_FOG with texcoord scale registers ───
+    // --- F3DAM MoveWord: extends MW_FOG with texcoord scale registers ---
     void Cmd_F3DAM_MoveWord(DListContext& ctx, uint32_t w0, uint32_t w1) {
         uint8_t index = (w0 >> 16) & 0xFF;
         uint16_t offset = w0 & 0xFFFF;
@@ -1119,7 +1074,7 @@ private:
         MoveWord(ctx, index, offset, w1);
     }
 
-    // ─── F3DAM Texture: stores org, sets scaleS/T = 1.0 (0xFFFF) ───────
+    // --- F3DAM Texture: stores org, sets scaleS/T = 1.0 (0xFFFF) ---
     void Cmd_F3DAM_Texture(DListContext& ctx, uint32_t w0, uint32_t w1) {
         m_textureCoordScaleOrg = w1;
 
@@ -1129,7 +1084,7 @@ private:
         SetTextureState(ctx, w0, modW1);
     }
 
-    // ─── F3DAM Vertex: custom texcoord computation ──────────────────────
+    // --- F3DAM Vertex: custom texcoord computation ---
     void Cmd_F3DAM_Vtx(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
         auto& geo = ctx.state->geometry;
@@ -1194,7 +1149,7 @@ private:
         m_verticesLoaded += count;
     }
 
-    // ─── F3DAM texcoord calculation (matches GlideN64 calcF3DAMTexCoords) ──
+    // --- F3DAM texcoord calculation (matches GLideN64 calcF3DAMTexCoords) ---
     void CalcF3DAMTexCoords(uint16_t rawS, uint16_t rawT, TransformedVertex& tv) const {
         uint32_t s0 = rawS;
         uint32_t t0 = rawT;
@@ -1214,13 +1169,10 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  ZSortBOSSGBIHandler (Boss Game Studios ZSort variant)
-//  Used by World Driver Championship, Stunt Racer 64.
-//  Features: dual display list (main + sub) with signal-based
-//  synchronisation, DMEM-based vertex transform, custom lighting,
-//  z-sorted object rendering, matrix concatenation, and audio DSP.
-// ══════════════════════════════════════════════════════════════
+/// ZSortBOSS (Boss Game Studios ZSort variant), used by World Driver Championship and Stunt
+/// Racer 64. Features: dual display list (main + sub) with signal-based synchronisation,
+/// DMEM-based vertex transform, custom lighting, z-sorted object rendering, matrix
+/// concatenation, and audio DSP.
 
 class ZSortBOSSGBIHandler : public GBIHandler {
 public:
@@ -1242,7 +1194,7 @@ public:
         ResetState();
     }
 
-    // ZSortBOSS opcode table (values from GlideN64):
+    // ZSortBOSS opcode table (values from GLideN64):
     //  0x00: SPNOOP           0x02: EndMainDL       0x04: MoveMem
     //  0x06: MoveWord         0x08: TransposeMTX    0x0A: MTXCAT
     //  0x0C: MultMPMTX        0x0E: RDPCMD          0x10: Obj
@@ -1297,7 +1249,7 @@ public:
     }
 
 private:
-    // ─── Internal state (emulates part of DMEM) ──────────────
+    // --- Internal state (emulates part of DMEM) ---
     enum DLState : uint8_t { DEFAULT_DL = 0, PROCESSED_DL = 1 };
 
     struct BOSSState {
@@ -1331,7 +1283,7 @@ private:
         m_lookat[1][2] = 0.0f;
     }
 
-    // ─── Helper: read s16 from DMEM with XOR swap ────────────
+    // --- Helper: read s16 from DMEM with XOR swap ---
     int16_t DmemReadS16(uint32_t addr) const {
         addr &= (BOSSState::DMEM_SIZE - 1);
         uint32_t swapped = addr ^ 2;
@@ -1356,7 +1308,7 @@ private:
                (static_cast<uint32_t>(m_boss.dmem[addr + 2]) << 8) | static_cast<uint32_t>(m_boss.dmem[addr + 3]);
     }
 
-    // ─── Resolve matrix pointer from DMEM offset ─────────────
+    // --- Resolve matrix pointer from DMEM offset ---
     // 0x830 = model matrix, 0x870 = projection, 0x8b0 = combined
     Matrix4x4* ResolveMtx(DListContext& ctx, uint32_t dmemAddr) {
         if (!ctx.state) return nullptr;
@@ -1369,20 +1321,20 @@ private:
         }
     }
 
-    // ─── Helper: fixed-point to float ────────────────────────
+    // --- Helper: fixed-point to float ---
     static float Fixed2Float(int16_t val, int fracBits) {
         return static_cast<float>(val) / static_cast<float>(1 << fracBits);
     }
     static float FixedColor(uint8_t val) { return static_cast<float>(val) / 255.0f; }
 
-    // ─── Helper: Calc_invw (from GlideN64) ──────────────────
+    // --- Helper: Calc_invw (from GLideN64) ---
     static float CalcInvW(int _w) {
         if (_w == 0) return 1.0f;
         // The N64 RSP uses a reciprocal LUT; approximate with 1.0/w
         return 1.0f / static_cast<float>(_w);
     }
 
-    // ─── Helper: Store matrix to RDRAM in N64 format ─────────
+    // --- Helper: Store matrix to RDRAM in N64 format ---
     static void StoreMatrixToRDRAM(uint8_t* rdram, uint32_t addr, const Matrix4x4& mtx) {
         // N64 matrix format: 32 bytes of integer parts, 32 bytes of fraction parts
         for (int i = 0; i < 4; i++) {
@@ -1401,7 +1353,7 @@ private:
         }
     }
 
-    // ─── Helper: transform & normalize vector by 3x3 ────────
+    // --- Helper: transform & normalize vector by 3x3 ---
     static void TransformVectorNormalize(float vec[3], const Matrix4x4& mtx) {
         float vr[3];
         vr[0] = mtx.m[0][0] * vec[0] + mtx.m[1][0] * vec[1] + mtx.m[2][0] * vec[2];
@@ -1415,10 +1367,10 @@ private:
         vec[2] = vr[2] * recip;
     }
 
-    // ─── Dot product ─────────────────────────────────────────
+    // --- Dot product ---
     static float Dot3(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
-    // ═══ Command implementations ══════════════════════════════
+    // --- Command implementations ---
 
     void Cmd_EndMainDL(DListContext& ctx, uint32_t, uint32_t) {
         // In the real microcode, this signals between main/sub DLs
@@ -1633,7 +1585,7 @@ private:
 
             int fog = static_cast<int>(w * Fixed2Float(geo.fogMultiplier, 16) + geo.fogOffset);
             fog = std::max(-128, std::min(127, fog));
-            // fog value could be used here.
+            // The fog value is looked up but not used
             uint8_t fogVal = m_boss.fogTable[fog + 128];
             (void)fogVal;
 

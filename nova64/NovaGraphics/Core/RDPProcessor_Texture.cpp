@@ -1,7 +1,12 @@
-﻿#include "RDPProcessor_Private.hpp"
+﻿/**
+ * @file RDPProcessor_Texture.cpp
+ * @brief RDPProcessor texture load commands (LoadBlock, LoadTile, LoadTLUT, ScrollTex) and the sync commands.
+ */
+
+#include "RDPProcessor_Private.hpp"
 void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
-    // Flush pending draws before overwriting TMEM � batched draws need
-    // the TMEM content that was present when they were queued.
+    // Flush pending draws before overwriting TMEM: batched draws need the TMEM content that was
+    // present when they were queued.
     if (!m_batch.drawCalls.empty()) FlushBatch();
     int tile, uls, ult, texels, dxt;
     m_decoder.DecodeLoadBlock(words, tile, uls, ult, texels, dxt);
@@ -53,8 +58,8 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
     // Also index by TMEM slot: connects loading tile to render tile via shared tmemAddr.
     m_state.rdp.tmemSourceAddress[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = m_state.rdp.textureImage.address;
-    // Clear any stale LOADTYPE_TILE record for this slot: a block load must not
-    // inherit a previous tile load's dimensions.
+    // Clear any stale LOADTYPE_TILE record for this slot; ExecuteLoadTile sets it again once the
+    // load is accepted.
     m_state.rdp.tmemLoadType[m_state.rdp.tiles[tile & 7].tmemAddr & 0x1FF] = RDPState::LOADTYPE_BLOCK;
     ExecuteLoadTile(tile, sl, tl, sh, th);
 }
@@ -63,13 +68,12 @@ void RDPProcessor::HandleLoadTLUT(const uint32_t* words) {
     if (!m_batch.drawCalls.empty()) FlushBatch();
     int tile, count;
     m_decoder.DecodeLoadTLUT(words, tile, count);
-    // Real hardware / GLideN64 gDPLoadTLUT: G_LOADTLUT's w0 carries no uls/ult
-    // fields at all (w0 is the bare opcode) -- the command implicitly performs
-    // gDPSetTileSize(tile, 0, 0, count-1, 0), OVERWRITING this tile's sl/tl/sh/th
-    // registers. Must mirror that side effect: otherwise ExecuteLoadTLUT's address
-    // math falls through to whatever sl/tl a PRIOR SetTileSize/LoadTile/LoadBlock
-    // left on this tile index (typically tile 7, reused across loads), producing
-    // a garbage source address and palette noise.
+    // Real hardware / GLideN64 gDPLoadTLUT: G_LOADTLUT's w0 carries no uls/ult fields (w0 is the
+    // bare opcode), and the command implicitly performs gDPSetTileSize(tile, 0, 0, count-1, 0),
+    // overwriting this tile's sl/tl/sh/th registers. That side effect is mirrored here; otherwise
+    // ExecuteLoadTLUT's address math falls through to whatever sl/tl an earlier
+    // SetTileSize/LoadTile/LoadBlock left on this tile index (typically tile 7, reused across
+    // loads), producing a garbage source address and palette noise.
     auto& tileRef = m_state.rdp.tiles[tile];
     tileRef.sl = 0;
     tileRef.tl = 0;
@@ -92,7 +96,7 @@ void RDPProcessor::HandleScrollTex(const uint32_t* words) {
     m_state.rdp.scrollT[tile] = static_cast<float>(t) / 1024.0f;
 }
 
-// �� GLideN64-matching TMEM copy helpers ����������������������������������
+// --- GLideN64-matching TMEM copy helpers ---
 
 // Byte-swap copy from big-endian N64 RDRAM into little-endian TMEM byte array.
 // Mirrors GLideN64's UnswapCopyWrap: reverses bytes within each 32-bit word
@@ -186,8 +190,8 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult, int texels, int 
             const uint32_t snapW = m_renderer->GetWidth();
             const uint32_t snapH = m_renderer->GetHeight();
             if (snapW > 0 && snapH > 0) {
-                // Ping-pong: flip slot FIRST so the previously-bound snapshot
-                // is not overwritten while still being sampled by the in-flight frame.
+                // Ping-pong: flip the slot first so the previously bound snapshot is not overwritten
+                // while the in-flight frame is still sampling it.
                 m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
                 auto& slot = m_vkFBSnapshots[m_vkFBSnapshotIdx];
                 bool needRecreate = !slot || slot->GetWidth() != snapW || slot->GetHeight() != snapH;
@@ -228,15 +232,13 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult, int texels, int 
 
         // The GLideN64-derived w32 formula (<<2 scaling) inflates the loop
         // bound to 4x the true dword count for a plain, unpadded 32-bit block
-        // (e.g. lrs=1023,dxt=128,line=0 for a standalone 32x32 icon -- the
-        // exact pattern the SDK's gDPLoadTextureBlock macro emits). Since the
-        // dxt/t addressing wraps TMEM writes at 1024 entries (&0x3ff), running
-        // the full inflated range rewrites every entry 4 times, and the LAST
-        // (4th) pass -- reading 12-16KB past the true image -- is what
-        // survives, producing noise from whatever unrelated data follows the
-        // icon in RDRAM. The true source-dword count never depends on the
-        // <<2 scaling (padding only changes where in TMEM data lands, not how
-        // many real texels get read), so bound reads to it directly.
+        // (e.g. lrs=1023, dxt=128, line=0 for a standalone 32x32 icon, the
+        // pattern the SDK's gDPLoadTextureBlock macro emits). The dxt/t addressing
+        // wraps TMEM writes at 1024 entries (&0x3ff), so the full inflated range would rewrite every
+        // entry 4 times, and the last pass, reading 12-16KB past the true image, is the one that
+        // survives: noise from whatever unrelated data follows the icon in RDRAM. The true source
+        // dword count never depends on the <<2 scaling (padding only changes where in TMEM data lands,
+        // not how many real texels are read), so reads are bounded to it directly.
         uint32_t trueDwords = ((static_cast<uint32_t>(texels) - uls + 1) & 0xFFFu);
         uint32_t readLimit = std::min(w32, trueDwords);
 
@@ -296,7 +298,7 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult, int texels, int 
         end_dxt:
             DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data), tmAddr << 1, 0x3FF, line);
         }
-    } // end non-RGBA32
+    }
 
     // Compute CRC for texture cache
     uint32_t tmemByteAddr = tmemWordAddr << 3;
@@ -389,19 +391,14 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}", address & 0x7FFFFF,
                      srcFB->desc.address, srcFB->desc.width, srcFB->desc.height, srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
-        // CopyFromGPU is a GL-only no-op (FramebufferManager.cpp: `if (...||
-        // !m_isGL) return;`). Clearing needsRdramResync unconditionally here
-        // -- as this did previously -- told the Vulkan-specific sync block
-        // below that this address's RDRAM copy was already handled when
-        // nothing actually happened. If gpuModified had ALSO already been
-        // consumed by an earlier LoadTile/LoadBlock this frame (very common:
-        // several reads compete for the same buffer's flags per frame), the
-        // real Vulkan copy's own condition (gpuModified || needsRdramResync)
-        // then evaluated false and silently never ran -- RDRAM permanently
-        // stuck with whatever pixels (often blank/uninitialized) it held
-        // from this buffer's last ACTUAL sync, no matter how much real
-        // content the GPU went on to render. Only clear the flag when the
-        // call could have actually done something.
+        // CopyFromGPU is a GL-only no-op (FramebufferManager.cpp: `if (...|| !m_isGL) return;`), so
+        // needsRdramResync is cleared only when the call could have done something. Clearing it
+        // unconditionally would tell the Vulkan sync block below that this address's RDRAM copy was
+        // already handled when nothing happened. If gpuModified had also been consumed by an earlier
+        // LoadTile/LoadBlock this frame (common: several reads compete for the same buffer's flags per
+        // frame), that block's condition (gpuModified || needsRdramResync) would evaluate false and
+        // the copy would never run, leaving RDRAM stuck with whatever pixels (often blank or
+        // uninitialized) the buffer last synced, however much the GPU went on to render.
         if (g_fbManager.IsGL()) srcFB->needsRdramResync = false;
     }
     if (!g_fbManager.IsGL() && rawSrcFB && (rawSrcFB->gpuModified || rawSrcFB->needsRdramResync) && m_renderer) {
@@ -439,9 +436,9 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         }
         totalBytes = width * height * 4;
     } else {
-        // Non-RGBA32: UnswapCopyWrap per row + DWordInterleave on odd rows
-        // (matches GLideN64 gDPLoadTile: qwpr = bpr >> 3, i.e. the row's own
-        // aligned byte count, NOT the tile's full `line` stride)
+        // Non-RGBA32: UnswapCopyWrap per row + DWordInterleave on odd rows (matches GLideN64
+        // gDPLoadTile: qwpr = bpr >> 3, i.e. the row's own aligned byte count, not the tile's full
+        // `line` stride)
         uint32_t tmAddr = tmemWordAddr;                  // in 64-bit word units
         uint32_t srcLineBpl = texImg.width * srcBpp / 8; // source bytes per line
         uint32_t curAddr = address;
@@ -461,9 +458,9 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
             curAddr += srcLineBpl;
             tmAddr += tileDesc.line; // advance by tile line (64-bit word units)
         }
-    } // end non-RGBA32
+    }
 
-    // CRC the loaded data
+    // CRC of the loaded data, for texture cache lookups
     uint32_t tmemByteAddr = tmemWordAddr << 3;
     if (totalBytes > 0) {
         int crcLen = std::min(totalBytes, static_cast<int>(TMEM_SIZE - tmemByteAddr));
@@ -511,7 +508,6 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
             uint32_t entryIdx = (tileDesc.tmemAddr + i) & 0x1FF;
             uint16_t val = *reinterpret_cast<const uint16_t*>(m_rdram + (rdAddr ^ 2));
             uint16_t color = swapword(val);
-            // Replicate color across all 4 banks (8 bytes total per entry)
             tmem16[entryIdx * 4 + 0] = color;
             tmem16[entryIdx * 4 + 1] = color;
             tmem16[entryIdx * 4 + 2] = color;
@@ -542,14 +538,12 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
     m_state.rdp.MarkDirty(RDPDirtyFlag::Tiles);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Sync Handlers
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Sync Handlers ---
 
 void RDPProcessor::HandleSyncFull() {
-    // Signal DP_FULL interrupt immediately � this is what the N64 CPU waits for.
-    // The callback fires before FlushBatch so the CPU can overlap with rendering,
-    // matching real hardware where the RDP issues the interrupt at sync time.
+    // Signal the DP_FULL interrupt immediately: this is what the N64 CPU waits for. The callback
+    // fires before FlushBatch so the CPU can overlap with rendering, matching real hardware where
+    // the RDP issues the interrupt at sync time.
     if (m_syncFullCallback) m_syncFullCallback();
 
     // Count scene draws for readback decision (snapshot is handled by FlushBatch).
@@ -560,24 +554,21 @@ void RDPProcessor::HandleSyncFull() {
 
     FlushBatch();
 
-    // �� GPU � RDRAM readback ��
+    // --- GPU to RDRAM readback ---
     // After the frame is complete, copy rendered pixels back to RDRAM so the
     // CPU sees up-to-date data if it reads the framebuffer memory directly.
     //
-    // Throttle: glMapBufferRange(GL_MAP_READ_BIT) blocks ~10-50ms on Intel Iris Xe
-    // even with a signaled fence (driver bug). Doing this every SyncFull tanks
-    // FPS to ~47. Throttling to every Nth call keeps the bulk of frames at native
-    // pace; mid-frame CPU reads of stale FB data are uncommon and tolerated.
-    //
-    // The throttle is GL-ONLY and must stay that way. Its justification above is
-    // a specific GL/Intel driver problem; Vulkan's readback is an entirely
-    // different mechanism (submit + fence, no glMapBufferRange) and is already
-    // deduped per-address-per-frame by the backend's readback budget, so it
-    // cannot run away. Throttling it would be actively WRONG: the CPU-side
-    // PreRender framebuffer capture that produces MM's pause background happens
-    // on ONE specific frame -- the moment the player opens the menu -- so a
-    // 1-in-8 sampling misses the only frame that matters 7 times out of 8, and
-    // the capture reads stale/zero RDRAM exactly as if no readback existed.
+    // Throttle: glMapBufferRange(GL_MAP_READ_BIT) blocks ~10-50ms on Intel Iris Xe even with a
+    // signaled fence (driver bug), and doing this on every SyncFull tanks FPS to ~47. Throttling to
+    // every Nth call keeps the bulk of frames at native pace; mid-frame CPU reads of stale FB data
+    // are uncommon and tolerated.
+    // The throttle must stay GL-only. Its justification is a specific GL/Intel driver problem;
+    // Vulkan's readback is a different mechanism (submit + fence, no glMapBufferRange) and the
+    // backend's readback budget already dedupes it per address per frame, so it cannot run away.
+    // Throttling it would be wrong: the CPU-side PreRender framebuffer capture that produces MM's
+    // pause background happens on one specific frame (the moment the player opens the menu), so
+    // 1-in-8 sampling misses the only frame that matters 7 times out of 8, and the capture reads
+    // stale or zero RDRAM exactly as if no readback existed.
     static uint64_t s_rbCounter = 0;
     constexpr uint64_t kRdpReadbackInterval = 8;
     const bool readbackDue = !g_fbManager.IsGL() || ((s_rbCounter++ % kRdpReadbackInterval) == 0);
@@ -590,39 +581,27 @@ void RDPProcessor::HandleSyncFull() {
             if (g_fbManager.IsGL()) {
                 g_fbManager.BeginAsyncReadback(colorFB);
             } else if (m_renderer) {
-                // ── Vulkan: the CFB→RDRAM readback that never existed ──
-                // BeginAsyncReadback (and CopyFromGPU) both start with
-                // `if (!m_isGL) return;` -- the whole "copy rendered pixels back
-                // so the CPU sees real data" feature was GL-only, a silent no-op
-                // on this backend. That is not a plumbing detail: OoT/MM build
-                // the pause-menu background on the CPU (the decomp's PreRender_*
-                // routines read the color framebuffer OUT OF RDRAM, blur it, and
-                // write the result to the prerender buffer). With RDRAM never
-                // receiving the rendered frame, that code read zeros, blurred
-                // zeros and wrote zeros -- so the inventory panel was black no
-                // matter how the later read-back of the prerender buffer was
-                // fixed. GLideN64 calls this framebuffer emulation feature
-                // `copyToRDRAM`, and it is exactly why that option exists and is
-                // required for OoT/MM's pause screen.
-                //
-                // Done here (SyncFull) rather than at VI/present time because
-                // the frame is still recording: CopyFramebufferToRDRAM needs a
-                // live command buffer. It is synchronous (submit + fence wait),
-                // hence the existing kRdpReadbackInterval throttle above, and it
-                // is additionally deduped per address per frame by the backend's
-                // readback budget.
+                // --- Vulkan: the CFB to RDRAM readback ---
+                // BeginAsyncReadback and CopyFromGPU both start with `if (!m_isGL) return;`, so on this backend
+                // the "copy rendered pixels back so the CPU sees real data" feature would be a silent no-op
+                // without this block. That matters: OoT/MM build the pause-menu background on the CPU (the
+                // decomp's PreRender_* routines read the color framebuffer out of RDRAM, blur it, and write the
+                // result to the prerender buffer). If RDRAM never receives the rendered frame, that code reads
+                // zeros, blurs zeros and writes zeros, so the inventory panel is black however the later
+                // read-back of the prerender buffer is handled. GLideN64 calls this framebuffer emulation
+                // feature `copyToRDRAM`; it is why that option exists and is required for OoT/MM's pause screen.
+                // It runs here (SyncFull) rather than at VI/present time because the frame is still recording
+                // and CopyFramebufferToRDRAM needs a live command buffer. It is synchronous (submit + fence
+                // wait) and the backend's readback budget dedupes it per address per frame.
                 const auto& d = colorFB->desc;
                 m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height, d.format == FBFormat::RGBA16, m_rdram);
                 g_fbManager.RecordRdramFingerprint(colorFB, m_rdram, m_rdramSize);
-                // Also sync the DISPLAY buffer when it differs from the current
-                // render target. MM double-buffers (0x000500 / 0x7DA800) and the
-                // CPU capture reads the frame the player is actually looking at,
-                // which is the VI-origin buffer -- not necessarily whichever
-                // buffer the display list happened to end on. Instrumentation
-                // showed only 0x000500 was ever being written back, so a capture
-                // taken while the other buffer was on screen read empty RDRAM.
-                // The backend dedupes per address per frame, so this adds at most
-                // one extra copy and none at all for single-buffered scenes.
+                // Also sync the display buffer when it differs from the current render target. MM
+                // double-buffers (0x000500 / 0x7DA800) and the CPU capture reads the frame the player is
+                // actually looking at, which is the VI-origin buffer, not necessarily the buffer the display
+                // list ended on. If only the render target were written back, a capture taken while the other
+                // buffer was on screen would read empty RDRAM. The backend dedupes per address per frame, so
+                // this adds at most one extra copy and none at all for single-buffered scenes.
                 GPUFramebuffer* displayFB = g_fbManager.GetDisplayFramebuffer();
                 if (displayFB && displayFB != colorFB && displayFB->desc.address != 0 &&
                     displayFB->desc.address != d.address) {
@@ -647,15 +626,13 @@ void RDPProcessor::HandleSyncFull() {
     m_stats.syncFullCount++;
     m_state.rdp.syncCount++;
 
-    // ��� Clear coverage image for next frame �����������������������������
-    // On real N64, a FILL-mode FillRect clears both the color framebuffer
-    // AND the per-pixel coverage.  Our FillRect draws via normal GL (not MLE
-    // imageStore), so the coverage image retains stale values from the
-    // previous frame's geometry.  With b1=1 (B = mem_coverage), stale
-    // coverage causes edge pixels to blend with the old frame's color,
-    // producing visible wireframe outlines on every triangle.
-    // Clear the coverage image at frame boundaries so the next frame starts
-    // with cvg=0 everywhere (matching N64's post-fill state).
+    // --- Clear coverage image for next frame ---
+    // On real N64, a FILL-mode FillRect clears both the color framebuffer and the per-pixel
+    // coverage. Our FillRect draws via normal GL (not MLE imageStore), so the coverage image keeps
+    // stale values from the previous frame's geometry. With b1=1 (B = mem_coverage), stale coverage
+    // makes edge pixels blend with the old frame's color, producing visible wireframe outlines on
+    // every triangle. Clearing the coverage image at frame boundaries starts the next frame with
+    // cvg=0 everywhere (matching N64's post-fill state).
     if (g_fbManager.IsGL()) {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->coverageTex) {
@@ -664,17 +641,13 @@ void RDPProcessor::HandleSyncFull() {
         }
     }
 
-    // ─── Defensive depth clear ──────────────────────────────────────────
-    // Games normally clear depth via FillRect targeting the Z-buffer address,
-    // which we intercept in HandleFillRect.  However, if a game skips that
-    // clear (or if our detection missed it), stale depth from the previous
-    // frame can cause 2D HUD elements to be hidden behind 3D geometry.
-    // Clear the depth buffer at frame boundaries as a safety net.
-    //
-    // Mirrors the two branches already used for the *detected* clear path
-    // in RDPProcessor_Draw.cpp (search "Vulkan: clear the active swapchain
-    // depth attachment") -- this defensive fallback only ever had the GL
-    // branch, so on Vulkan a missed detection had no safety net at all.
+    // --- Defensive depth clear ---
+    // Games normally clear depth via a FillRect targeting the Z-buffer address, which
+    // HandleFillRect intercepts. If a game skips that clear (or detection missed it), stale depth
+    // from the previous frame can hide 2D HUD elements behind 3D geometry, so the depth buffer is
+    // cleared at frame boundaries as a safety net. Mirrors the two branches of the detected clear
+    // path in RDPProcessor_Draw.cpp (search "Vulkan: clear the active swapchain depth attachment");
+    // without the Vulkan branch a missed detection would have no safety net there.
     if (g_fbManager.IsGL()) {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->fbo) {
@@ -686,17 +659,13 @@ void RDPProcessor::HandleSyncFull() {
 }
 
 void RDPProcessor::HandleSyncPipe() {
-    // SyncPipe ensures all primitives have been written before state change
-    // In HLE, this is handled by our batch system
+    // SyncPipe ensures all primitives have been written before a state change; the HLE batch
+    // system already guarantees that.
     m_stats.syncPipeCount++;
 }
 
 void RDPProcessor::HandleSyncTile() { m_stats.syncTileCount++; }
 
 void RDPProcessor::HandleSyncLoad() { m_stats.syncLoadCount++; }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Primitive Handlers
-// ═══════════════════════════════════════════════════════════════════════════
 
 } // namespace Nova64::Video

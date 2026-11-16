@@ -1,9 +1,9 @@
 /**
  * @file RDPProcessor_Private.hpp
- * @brief Private shared helpers for RDPProcessor split translation units.
- *        Include ONLY from RDPProcessor*.cpp — never from headers.
- *        Each including .cpp MUST close the namespace with:
- *            } // namespace Nova64::Video
+ * @brief Private helpers shared by the RDPProcessor*.cpp translation units.
+ *
+ * Include only from RDPProcessor*.cpp, never from headers. The header leaves namespace
+ * Nova64::Video open; see the end of the file.
  */
 #pragma once
 #include <limits>
@@ -28,13 +28,13 @@
 #include <vector>
 #include <unordered_set>
 
-// === DEBUG: Set to true to force all fragments to bright red ===============
+// Debug switch: force all fragments to bright red.
 static constexpr bool FORCE_RED_DEBUG = false;
-// === DEBUG: Set to true to skip ALL depth-tested triangle draws ============
+// Debug switch: skip all depth-tested triangle draws.
 static constexpr bool DEBUG_SKIP_DEPTH_TRIS = false;
-// === MLE blender toggle: true = legacy GL blend, false = imageLoad/imageStore ==
+// MLE blender: true uses the legacy GL blend, false uses imageLoad/imageStore.
 static constexpr bool DISABLE_MLE_BLENDER = false;
-// === DEBUG: Disable N64 image-based depth compare (use GL depth test only) ===
+// Debug switch: disable the N64 image-based depth compare and use only the GL depth test.
 static constexpr bool DISABLE_N64_DEPTH_COMPARE = false;
 
 namespace Nova64::Video {
@@ -108,10 +108,7 @@ inline bool ForensicEnabled() {
         }                                                                                                              \
     } while (0)
 
-// Compute the effective texture dimensions for a tile, accounting for
-// mask/clamp settings.
-// LoadInfo for one TMEM slot, mirroring GLideN64's gDP.loadInfo[] entry.
-// Passing nullptr keeps the historical mask/clamp-only behaviour.
+// Load record for one TMEM slot, mirroring GLideN64's gDP.loadInfo[] entry.
 struct TileLoadInfo {
     bool isTileLoad = false;
     uint16_t width = 0;    // texels actually loaded per row
@@ -120,14 +117,11 @@ struct TileLoadInfo {
     uint8_t size = 0;      // SetTextureImage pixel size
 };
 
-// Build a TileLoadInfo for `tile` from its TMEM slot's load record. Every
-// CalcTileSize call site must go through this (not construct TileLoadInfo by
-// hand) so they all agree on tile size — a call site that skips it silently
-// falls back to CalcTileSize's mask/clamp-only path and can disagree with one
-// that doesn't, for the same texture, in the same frame (this was the case
-// for FlushBatch's shader texture-size uniforms vs BuildTextureKey's decode
-// size — the same LoadTile-sourced texture got sized two different ways,
-// which is exactly a UV-scale/actual-decode-size mismatch: stretching).
+// Build a TileLoadInfo for `tile` from its TMEM slot's load record. Every CalcTileSize call site
+// must go through this rather than construct a TileLoadInfo by hand: a call site that skips it falls
+// back to CalcTileSize's mask/clamp-only path and can size the same texture differently within a
+// frame. FlushBatch's shader texture-size uniforms and BuildTextureKey's decode size disagreed this
+// way for a LoadTile-sourced texture, which stretched it (UV scale vs actual decode size mismatch).
 template <typename RDPStateT> static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor& tile) {
     TileLoadInfo li;
     const uint32_t slot = tile.tmemAddr & 0x1FF;
@@ -139,28 +133,27 @@ template <typename RDPStateT> static TileLoadInfo MakeTileLoadInfo(const RDPStat
     return li;
 }
 
-// GLideN64 TileSizes parity:
+// Effective texture dimensions for a tile, accounting for mask/clamp settings; without a
+// loadInfo only the mask/clamp rules apply. Mirrors GLideN64's TileSizes:
 //     _sizes.clampWidth = (clamps && cycleType != G_CYC_COPY) ? tileWidth : width;
-// clampWidth/Height bound the SOURCE texel reads during TMEM decode, so texels
-// past the loaded extent replicate the edge instead of reading on into whatever
-// TMEM holds next (adjacent texture data or the palette). Optional out-params;
-// pass nullptr to skip.
+// clampWidth/Height bound the source texel reads during TMEM decode, so texels past the loaded
+// extent replicate the edge instead of reading on into whatever TMEM holds next (adjacent
+// texture data or the palette). outClampW/H are optional; pass nullptr to skip.
 inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH,
                          const TileLoadInfo* loadInfo = nullptr, int cycleType = 0, int* outClampW = nullptr,
                          int* outClampH = nullptr) {
     int tileW = std::max(1, tile.GetWidth());
     int tileH = std::max(1, tile.GetHeight());
 
-    // ── LOADTYPE_TILE branch (GLideN64 Textures.cpp::_calcTileSizes) ──
-    // For data brought in by G_LOADTILE the hardware-visible extent is the
-    // region that was actually LOADED, not the tile's mask-derived extent.
-    // GLideN64:
+    // --- LOADTYPE_TILE branch (GLideN64 Textures.cpp::_calcTileSizes) ---
+    // For data brought in by G_LOADTILE the hardware-visible extent is the region that was
+    // loaded, not the tile's mask-derived extent. GLideN64:
     //     width = min(info.width, info.texWidth);
     //     if (width == 0) width = tileWidth;
     //     if (info.size > pTile->size) width <<= info.size - pTile->size;
     //     height = info.height; if (height == 0) height = tileHeight;
-    // The size-shift matters because a load performed at a larger pixel size
-    // than the tile samples at packs proportionally more texels per row.
+    // The size shift matters because a load performed at a larger pixel size than the tile
+    // samples at packs proportionally more texels per row.
     if (loadInfo != nullptr && loadInfo->isTileLoad) {
         int w = static_cast<int>(std::min<uint32_t>(loadInfo->width, loadInfo->texWidth));
         if (w == 0) w = tileW;
@@ -193,6 +186,6 @@ inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW
     if (outClampH) *outClampH = (tile.IsClamped_T() && cycleType != kCycCopy) ? tileH : outH;
 }
 
-// NOTE: namespace Nova64::Video is intentionally left open here.
-// Every .cpp that includes this header MUST close it with:
+// Namespace Nova64::Video is left open here on purpose: every .cpp that includes this header
+// closes it with
 //     } // namespace Nova64::Video

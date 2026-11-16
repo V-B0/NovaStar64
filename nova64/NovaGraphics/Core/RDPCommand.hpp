@@ -2,9 +2,8 @@
  * @file RDPCommand.hpp
  * @brief RDP command parsing and decoding
  *
- * Decodes raw 64-bit RDP command words into structured representations.
- * Handles all RDP commands: triangles, rectangles, texture loads, mode setting,
- * syncs, and color/image setup.
+ * Decodes raw 64-bit RDP command words into structured representations (triangles, rectangles,
+ * texture loads and the state-setting commands) and provides the buffer that queues commands.
  */
 
 #pragma once
@@ -19,9 +18,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Decoded Triangle Edge Coefficients
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Decoded Triangle Edge Coefficients ---
 
 struct TriangleEdge {
     // Major edge (longest edge)
@@ -75,9 +72,7 @@ struct DecodedTriangle {
     bool hasDepth;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Decoded Rectangle Command
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Decoded Rectangle Command ---
 
 struct DecodedRectangle {
     float x0, y0, x1, y1; // Screen coordinates
@@ -85,34 +80,30 @@ struct DecodedRectangle {
     float dsDx, dtDy;     // Texture slopes
     uint8_t tileIndex;
     bool flipped;         // TextureRectFlip swaps S/T increments
-    // Texture-sampling bounds edges: normally == x0/y0/x1/y1, but COPY mode
-    // expands the DRAWN rect to 4-pixel blocks — sampling must still be
-    // clamped to the original rect's texel range or up to 3 garbage texel
-    // columns/rows appear on each side (HUD glyph fringes). Set by
-    // HandleTextureRect before block expansion.
+    // Optional texture-sampling bounds, used instead of x0/y0/x1/y1 when >= 0. They let sampling be
+    // clamped to a smaller rect than the one drawn, which a COPY-mode block expansion would need:
+    // otherwise up to 3 garbage texel columns/rows appear on each side (HUD glyph fringes). Nothing
+    // sets them, so DrawTextureRect always bounds sampling by the rect corners.
     float boundX0 = -1.0f, boundY0 = -1.0f; // <0 = use x0/y0
     float boundX1 = -1.0f, boundY1 = -1.0f; // <0 = use x1/y1
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Command Decoder
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Command Decoder ---
 
 class RDPCommandDecoder {
 public:
     RDPCommandDecoder() = default;
 
-    /// Set the RDRAM pointer for reading RDP commands
     void SetRDRAM(const uint8_t* rdram, size_t rdramSize) {
         m_rdram = rdram;
         m_rdramSize = rdramSize;
     }
 
-    /// Decode a command starting at the given 64-bit word pointer
-    /// Returns the command ID and advances the pointer
+    /// Command ID from the top bits of the first word. Consumes nothing; the caller advances by the
+    /// command's length.
     RDPCommandID DecodeCommand(const uint32_t* cmdWords, int wordCount);
 
-    // ─── State-Setting Command Decoders ───
+    // --- State-Setting Command Decoders ---
 
     /// Set Other Modes (0x2F): 64-bit mode word
     void DecodeSetOtherModes(const uint32_t* words, RDPState& state);
@@ -163,7 +154,7 @@ public:
     void DecodeSetKeyGB(const uint32_t* words, RDPState& state);
     void DecodeSetKeyR(const uint32_t* words, RDPState& state);
 
-    // ─── Texture Load Decoders ───
+    // --- Texture Load Decoders ---
 
     /// Load Block (0x33): Load a contiguous block of texels into TMEM
     void DecodeLoadBlock(const uint32_t* words, int& tile, int& uls, int& ult, int& texels, int& dxt);
@@ -174,7 +165,7 @@ public:
     /// Load TLUT (0x30): Load a palette into TMEM
     void DecodeLoadTLUT(const uint32_t* words, int& tile, int& count);
 
-    // ─── Primitive Decoders ───
+    // --- Primitive Decoders ---
 
     /// Decode a triangle command (0x08-0x0F)
     void DecodeTriangle(const uint32_t* words, int wordCount, DecodedTriangle& tri);
@@ -188,29 +179,26 @@ public:
     /// Decode Fill Rectangle (0x36)
     void DecodeFillRect(const uint32_t* words, float& x0, float& y0, float& x1, float& y1);
 
-    // ─── Debug ───
+    // --- Debug ---
 
     /// Get a human-readable description of a command
     static std::string DescribeCommand(RDPCommandID cmd);
 
-    /// Get command name
     static const char* GetCommandName(RDPCommandID cmd);
 
 private:
     const uint8_t* m_rdram = nullptr;
     size_t m_rdramSize = 0;
 
-    /// Read big-endian 32-bit word from RDRAM
+    /// Read a 32-bit word from RDRAM in native word order (PJ64-style); 0 if out of range
     uint32_t ReadWord(uint32_t address) const;
 
-    /// Read a signed fixed-point value and convert to float
+    /// Signed fixed point to double: s15.16 from a high/low half pair, s11.2 from a packed field
     static double ReadFixed_S15_16(uint32_t hi, uint32_t lo);
     static double ReadFixed_S11_2(uint32_t packed);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Command Buffer
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Command Buffer ---
 
 /// Buffered RDP commands waiting to be processed
 class RDPCommandBuffer {
@@ -220,22 +208,19 @@ public:
     RDPCommandBuffer();
     ~RDPCommandBuffer();
 
-    /// Reset buffer to empty
     void Reset();
 
-    /// Push raw command words into the buffer
+    /// Append words; if the buffer is still full after compaction, all unread data is discarded
     void Push(const uint32_t* words, int count);
 
-    /// Get pointer to next command to process
+    /// Pointer to the next unread word, or nullptr if the buffer is empty
     const uint32_t* Peek() const;
 
-    /// Advance past N words
+    /// Advance the read offset, clamped to the end of the data
     void Advance(int wordCount);
 
-    /// Check if buffer has unprocessed commands
     bool HasCommands() const { return m_readOffset < m_writeOffset; }
 
-    /// Get number of unprocessed words
     size_t GetPendingWordCount() const { return m_writeOffset - m_readOffset; }
 
     /// Compact buffer (move unread data to front)

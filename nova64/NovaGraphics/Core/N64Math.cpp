@@ -8,15 +8,11 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Matrix4x4::LoadFromN64
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Matrix4x4::LoadFromN64 ---
 
 void Matrix4x4::LoadFromN64(const uint8_t* rdram, uint32_t address) {
-    // N64 matrix format: 64 bytes total
-    // Bytes 0-31: 4x4 int16 (integer parts)
-    // Bytes 32-63: 4x4 uint16 (fraction parts)
-    // RDRAM uses 32-bit word-swapped storage
+    // 64-byte N64 matrix: 4x4 int16 integer parts (bytes 0-31) followed by 4x4 uint16 fraction parts
+    // (bytes 32-63), i.e. s15.16 fixed point. RDRAM uses 32-bit word-swapped storage.
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
             uint32_t intOff = address + (i * 8) + (j * 2);
@@ -25,15 +21,13 @@ void Matrix4x4::LoadFromN64(const uint8_t* rdram, uint32_t address) {
             int16_t intPart = RDRAMReadHalfSigned(rdram, intOff);
             uint16_t fracPart = RDRAMReadHalf(rdram, fracOff);
 
-            // Combine: integer + fraction/65536
+            // s15.16: integer part plus fraction / 65536
             m[i][j] = static_cast<float>(intPart) + static_cast<float>(fracPart) / 65536.0f;
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Matrix Operations
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Matrix Operations ---
 
 namespace MatrixOps {
 

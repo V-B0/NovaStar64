@@ -19,12 +19,9 @@
 
 namespace Nova64::Video {
 
-// Forward declarations
 class MicrocodeDispatcher;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Display List Execution Context
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Display List Execution Context ---
 
 struct DListContext {
     const uint8_t* rdram = nullptr;            // Main RDRAM (8MB)
@@ -55,9 +52,9 @@ struct DListContext {
     // (G_TRI1, G_TRI2, G_QUAD) call this after the normal RDP path.
     RT::ISceneGeometryConsumer* geometryConsumer = nullptr;
 
-    // S2DEX status registers — gSP.status[] equivalent (GLideN64).
-    // Must persist across G_LOAD_UCODE microcode switches: OOT/MM switch
-    // F3DEX2 <-> S2DEX2 every frame, which calls S2DEXHandler::Initialize()
+    // S2DEX status registers: gSP.status[] equivalent (GLideN64). They live in the context rather
+    // than in S2DEXHandler, which is re-initialized on every G_LOAD_UCODE switch (OOT/MM switch
+    // F3DEX2 <-> S2DEX2 every frame).
     uint32_t s2dexStatusRegs[256] = {};
 
     // Branch source tracking for DL loop detection (intra-task scope).
@@ -75,7 +72,7 @@ struct DListContext {
     // Cleared at the start of each shadow task in MicrocodeDispatcher::RunShadow().
     std::unordered_set<uint32_t> shadowPatchedAddresses;
 
-    // ─── Helper Methods ──────────────────────────────────────────────
+    // --- Helper Methods ---
 
     /// Read a 32-bit word from RDRAM (native endian — emulator stores RDRAM in host byte order)
     uint32_t ReadWord(uint32_t addr) const {
@@ -105,7 +102,7 @@ struct DListContext {
         return (hi << 32) | lo;
     }
 
-    /// Read N bytes from RDRAM into a buffer
+    /// Copy raw bytes from RDRAM (no word-swap correction)
     bool ReadBytes(uint32_t addr, void* dst, uint32_t count) const {
         addr &= 0x00FFFFFF;
         if (addr + count > rdramSize) return false;
@@ -162,13 +159,11 @@ struct DListContext {
     void AdvancePC(int words = 2) { pc += words * 4; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GBI Command Handler Interface
-// ═══════════════════════════════════════════════════════════════════════════
+// --- GBI Command Handler Interface ---
 
 /**
  * Abstract base class for microcode-specific command handlers.
- * 
+ *
  * Each microcode variant (F3D, F3DEX, F3DEX2, etc.) inherits from this
  * and implements command dispatch with its own opcode table. The handler
  * translates GBI commands into RDP state changes and draw calls.
@@ -180,16 +175,13 @@ public:
     /// Initialize the handler with its capabilities
     virtual void Initialize(const MicrocodeInfo& info) = 0;
 
-    /// Get the microcode type this handler supports
     virtual MicrocodeType GetType() const = 0;
 
-    /// Get the GBI version
     virtual GBIVersion GetGBIVersion() const = 0;
 
     /// Get the maximum number of vertices supported by this microcode's cache
     virtual int GetVertexCacheSize() const { return VERTEX_BUFFER_SIZE; }
 
-    /// Get human-readable name
     virtual const char* GetName() const = 0;
 
     /**
@@ -221,19 +213,19 @@ public:
 
     /**
      * Called when a mid-task G_LOAD_UCODE switches to this handler.
-     * Unlike OnFrameBegin, this must NOT reset per-task state (e.g. S2DEX
+     * Unlike OnFrameBegin, this must not reset per-task state (e.g. S2DEX
      * status registers) that should persist across microcode switches within
      * the same RSP task.
      */
     virtual void OnUcodeSwitch(DListContext& ctx) { (void)ctx; }
 
-    // ─── Common GBI Commands (shared across all microcodes) ──────────
+    // --- Common GBI Commands (shared across all microcodes) ---
     // These implement RDP commands (0xC0-0xFF) which are identical
     // regardless of microcode variant.
 
     void HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1);
 
-    // ─── Statistics ──────────────────────────────────────────────────
+    // --- Statistics ---
 
     uint64_t GetCommandsProcessed() const { return m_commandsProcessed; }
     uint64_t GetTrianglesProcessed() const { return m_trianglesProcessed; }
@@ -241,12 +233,11 @@ public:
     void ResetStats();
 
 protected:
-    // Track statistics
     uint64_t m_commandsProcessed = 0;
     uint64_t m_trianglesProcessed = 0;
     uint64_t m_verticesLoaded = 0;
 
-    // ─── Common Helper Methods ───────────────────────────────────────
+    // --- Common Helper Methods ---
 
     /// Transform a batch of vertices through the full pipeline (MVP, clip, light, fog, texgen)
     void TransformVertexBatch(GeometryState& geo, int startIndex, int count);
@@ -313,14 +304,12 @@ protected:
     /// Process G_LOAD_UCODE
     void LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAddress, uint32_t textSize = 4096);
 
-    /// Process G_RDPHALF_1 / G_RDPHALF_2
+    /// Words latched by G_RDPHALF_1 / G_RDPHALF_2
     uint32_t m_rdpHalf1 = 0;
     uint32_t m_rdpHalf2 = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GBI Command Logging/Debug
-// ═══════════════════════════════════════════════════════════════════════════
+// --- GBI Command Logging/Debug ---
 
 /// Get description of a GBI1 command
 std::string DescribeGBI1Command(uint32_t w0, uint32_t w1);

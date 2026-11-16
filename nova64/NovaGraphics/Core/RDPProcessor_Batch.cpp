@@ -1,3 +1,10 @@
+/**
+ * @file RDPProcessor_Batch.cpp
+ * @brief RDPProcessor::FlushBatch and batch handling: converts the accumulated RenderBatch into GPU vertices,
+ *        derives each draw's shader features, blend, depth, scissor and texture bindings from the snapshotted
+ *        RDP state, and submits the draws. Also OnFrameEnd and the framebuffer access helpers.
+ */
+
 #include "RDPProcessor_Private.hpp"
 #include <cstdlib>
 #include <cstdio>
@@ -8,9 +15,7 @@ void RDPProcessor::FlushBatch() {
         return;
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  MLE Director — classify batch before GPU submission
-    // ═══════════════════════════════════════════════════════════════════
+    // --- MLE Director — classify batch before GPU submission ---
     bool batchNeedsMleBlender = false; // true → force FSI blender for this batch
     if (m_mleDirector) {
         BatchInfo bi{};
@@ -20,7 +25,7 @@ void RDPProcessor::FlushBatch() {
             bi.hasFillOps |= (dc.type == DrawCall::Type::FillRect);
             bi.hasCopyOps |= (dc.type == DrawCall::Type::TextureRect && dc.textureHash0 != 0);
             bi.hasTexturedTri |= (dc.type == DrawCall::Type::Triangle && dc.textureHash0 != 0);
-            bi.hasTranslucent |= ((dc.otherModeL & (1u << 6)) != 0); // ALPHA_CVG_SEL
+            bi.hasTranslucent |= ((dc.otherModeL & (1u << 6)) != 0); // bit 6 (IM_RD)
             if (bi.combineModeRaw == 0) bi.combineModeRaw = dc.combineMode;
             bi.otherModeH |= dc.otherModeH;
             bi.otherModeL |= dc.otherModeL;
@@ -43,31 +48,15 @@ void RDPProcessor::FlushBatch() {
         curFB->everGpuRendered = true; // sticky; see the field's comment
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  1. Upload vertex data to a dynamic VBO
-    // ═══════════════════════════════════════════════════════════════════
-    //
-    // RenderBatch::Vertex layout (44 bytes):
-    //   float x, y, z, w   � position   (offset 0,  4 floats)
-    //   float s, t          � texcoord   (offset 16, 2 floats)
-    //   float r, g, b, a    � color      (offset 24, 4 floats)
-    //   float fogFactor     � fog        (offset 40, 1 float)
-    //
-    // The N64 VertexLayout from Renderer.hpp expects:
-    //   loc 0: float4 position (offset 0)
-    //   loc 1: float4 color    (offset 16)
-    //   loc 2: float2 texcoord0(offset 32)
-    //   loc 3: float2 texcoord1(offset 40)
-    //   loc 4: float1 fog      (offset 48)
-    //   stride = 52
-    //
-    // We convert RenderBatch::Vertex → interleaved GPU vertex format.
+    // --- 1. Upload vertex data to a dynamic VBO ---
+    // RenderBatch::Vertex is converted into the interleaved GPUVertex below, which must match
+    // VertexLayout::CreateN64() in Renderer.hpp (the attribute location is noted per field).
 
     struct GPUVertex {
         float x, y, z, w;   // position (loc 0)
         float r, g, b, a;   // color (loc 1)
         float s0, t0;       // texcoord0 (loc 2)
-        float s1, t1;       // texcoord1 (loc 3) � same as tex0 for now
+        float s1, t1;       // texcoord1 (loc 3)
         float fog;          // fog (loc 4)
         float perspW;       // 1/clip_W for perspective-correct textures (loc 5)
         float baryS, baryT; // barycentric coords for sub-pixel coverage AA (loc 6)
@@ -232,14 +221,12 @@ void RDPProcessor::FlushBatch() {
 
     // --- 2. Iterate draw calls, set state, and draw ---
 
-    // Compute N64 screen dimensions for the ortho projection.
-    // CRITICAL: must use the active color framebuffer dimensions, NOT the
-    // scissor.  The scissor is for fragment clipping and changes frequently
-    // (per draw call, per frame) — using it as the projection range causes
-    // every vertex we've already snapped to N64 screen coords to be remapped
-    // to NDC with a different scale each time, producing visible per-frame
-    // wobble / "vibrating textures".  The FBO size is the canonical N64
-    // render target and stays constant for the duration of a scene.
+    // Compute N64 screen dimensions for the ortho projection. This must use the active color
+    // framebuffer dimensions, not the scissor: the scissor is for fragment clipping and changes
+    // frequently (per draw call, per frame), so using it as the projection range would remap every
+    // vertex already snapped to N64 screen coords to NDC with a different scale each time, giving
+    // visible per-frame wobble ("vibrating textures"). The FBO size is the canonical N64 render
+    // target and stays constant for the duration of a scene.
     GPUFramebuffer* projFB = g_fbManager.GetCurrentColor();
     float n64W = projFB ? static_cast<float>(projFB->width) : 0.0f;
     float n64H = projFB ? static_cast<float>(projFB->height) : 0.0f;
@@ -248,9 +235,9 @@ void RDPProcessor::FlushBatch() {
     if (n64W < 1.0f) n64W = 320.0f;
     if (n64H < 1.0f) n64H = 240.0f;
 
-    // Intel Iris Xe workaround: FBOs created lazily (after game textures are
-    // loaded) can fail texture sampling. GL-only: Recreating the FBO here � during the
-    // rendering phase � produces a fresh GL object that works correctly.
+    // Intel Iris Xe workaround: FBOs created lazily (after game textures are loaded) can fail
+    // texture sampling. GL-only: recreating the FBO here, during the rendering phase, produces a
+    // fresh GL object that works correctly.
     {
         static std::unordered_set<uint32_t> recreatedFBOs;
         GPUFramebuffer* curFB = g_fbManager.GetCurrentColor();
@@ -263,9 +250,9 @@ void RDPProcessor::FlushBatch() {
     }
 
     // Ortho matrix: maps N64 screen coords (0..n64W, 0..n64H, z_norm 0..1) to NDC.
-    // Z: clip_z = 2*z_norm - 1, so window_depth = z_norm ? [0,1] (full precision).
-    // Near z_norm=0 � depth=0, Far z_norm=1 � depth=1.0 (= clear value).
-    // GL_LEQUAL: near objects (depth � 0) correctly overwrite far objects (depth � 1).
+    // Z: clip_z = 2*z_norm - 1, so window_depth = z_norm in [0,1] (full precision): near z_norm=0
+    // gives depth=0, far z_norm=1 gives depth=1.0 (= clear value).
+    // GL_LEQUAL: near objects (depth ~0) correctly overwrite far objects (depth ~1).
     // Column-major for OpenGL/Vulkan: ortho(left=0, right=n64W, top=0, bottom=n64H)
     float ortho[16] = {2.0f / n64W, 0, 0, 0, 0, -2.0f / n64H, 0, 0, 0, 0, 1, 0, -1.0f, 1.0f, 0, 1};
 
@@ -280,10 +267,9 @@ void RDPProcessor::FlushBatch() {
                        ortho[8], ortho[9], ortho[10], ortho[11], ortho[12], ortho[13], ortho[14], ortho[15]);
         }
     }
-    // FBO dimensions for scissor scaling - use the current color FBO size, not the window.
-    // The N64 renders to a 320x240 FBO; using window dims (640x480) would double all scissors
-    // The N64 renders to a 320�240 FBO; using window dims (640�480) would double all scissors
-    // (scaleX = 640/320 = 2.0) causing every scissor rect to overflow the FBO entirely.
+    // FBO dimensions for scissor scaling: use the current color FBO size, not the window. The N64
+    // renders to a 320x240 FBO; using window dims (640x480) would double all scissors (scaleX =
+    // 640/320 = 2.0) and make every scissor rect overflow the FBO entirely.
     GPUFramebuffer* curFBO = g_fbManager.GetCurrentColor();
     float fboW = (curFBO && curFBO->scaledWidth > 0) ? static_cast<float>(curFBO->scaledWidth) : n64W;
     float fboH = (curFBO && curFBO->scaledHeight > 0) ? static_cast<float>(curFBO->scaledHeight) : n64H;
@@ -329,11 +315,10 @@ void RDPProcessor::FlushBatch() {
         if (call.textureHash1 != 0) features |= Shader::SF_TEXTURE_1;
 
         // Depth
-        // N64 depth: Z_CMP (bit 4) enables depth comparison, Z_UPD (bit 5)
-        // enables depth writes. G_ZBUFFER is an RSP flag that tells the RSP to
-        // compute per-vertex Z � it does NOT enable the RDP's depth test.
-        // When Z_UPD is set without Z_CMP, the RDP writes depth unconditionally
-        // (depth init mode) � we use depthFunc=ALWAYS for that case.
+        // N64 depth: Z_CMP (bit 4) enables depth comparison, Z_UPD (bit 5) enables depth writes.
+        // G_ZBUFFER is an RSP flag that tells the RSP to compute per-vertex Z; it does not enable the
+        // RDP's depth test. When Z_UPD is set without Z_CMP, the RDP writes depth unconditionally
+        // (depth init mode), and depthFunc=ALWAYS is used for that case.
         {
             bool zCmp = (call.otherModeL & 0x0010) != 0;
             bool zUpd = (call.otherModeL & 0x0020) != 0;
@@ -345,16 +330,12 @@ void RDPProcessor::FlushBatch() {
             if (zPrim) features |= Shader::SF_DEPTH_SOURCE_PRIM;
         }
 
-        // Pre-compute whether the MLE blender will be selected for this draw
-        // (mirrors the "Framebuffer read & blender memColor strategy" block
-        // further down) so the N64 Z-image depth-compare gate immediately
-        // below can correctly avoid combining the two on Intel hardware.
-        // This must run first: SF_MLE_BLENDER isn't set into `features`
-        // until that later block runs, so checking `features &
-        // SF_MLE_BLENDER` at this point was always false -- silently
-        // turning the intended Intel-only workaround into unscoped dead
-        // code that never actually fired on ANY platform (including
-        // Intel, where the real driver bug it describes still lives).
+        // Pre-compute whether the MLE blender will be selected for this draw (mirrors the "Framebuffer
+        // read & blender memColor strategy" block further down) so the N64 Z-image depth-compare gate
+        // immediately below can avoid combining the two on Intel hardware. This has to run first:
+        // SF_MLE_BLENDER is not set in `features` until that later block runs, so testing
+        // `features & SF_MLE_BLENDER` here would always be false and the Intel-only workaround would
+        // never fire, on any platform (including Intel, where the driver bug it describes exists).
         bool willUseMleBlender = false;
         {
             uint32_t preBlenderBits = call.otherModeL & 0xFFFF0000;
@@ -378,23 +359,18 @@ void RDPProcessor::FlushBatch() {
             }
         }
 
-        // N64-accurate Z-image depth compare: enable when Z_CMP is set,
-        // the depth buffer manager has a current Z-image texture pair,
-        // and the GPU supports fragment shader interlock for imageLoad/imageStore.
-        //
-        // INTEL WORKAROUND: When the MLE blender is also active (SF_MLE_BLENDER),
-        // the shader would need to access 4 image bindings (Z-image, delta-Z,
-        // color, coverage) within a single interlock region.  Intel Iris Xe
-        // drivers silently fail when the interlock region spans too many
-        // image operations, causing all depth-tested MLE draws to become
-        // invisible.  Fall back to GL depth test for these draws — the
-        // MLE blender still handles color/coverage blending correctly.
-        //
-        // INTEL WORKAROUND #2: Also skip N64 depth compare when dual-source
-        // blend is active.  Intel Iris Xe silently fails when image bindings
-        // (Z-image imageLoad/imageStore) are combined with dual-source
-        // fragment outputs (fragColor + fragColor1) in the same shader.
-        // Fall back to GL depth test (with z-bias 0.99999 for far-plane).
+        // N64-accurate Z-image depth compare: enabled when Z_CMP is set, the depth buffer manager has
+        // a current Z-image texture pair, and the GPU supports fragment shader interlock for
+        // imageLoad/imageStore.
+        // Intel workaround: when the MLE blender is also active (SF_MLE_BLENDER), the shader would need
+        // to access 4 image bindings (Z-image, delta-Z, color, coverage) within a single interlock
+        // region. Intel Iris Xe drivers silently fail when the interlock region spans too many image
+        // operations, making all depth-tested MLE draws invisible. These draws fall back to the GL
+        // depth test; the MLE blender still handles color/coverage blending correctly.
+        // Intel workaround #2: also skip N64 depth compare when dual-source blend is active. Intel
+        // Iris Xe silently fails when image bindings (Z-image imageLoad/imageStore) are combined with
+        // dual-source fragment outputs (fragColor + fragColor1) in the same shader. These draws fall
+        // back to the GL depth test (with z-bias 0.99999 for the far plane).
         if (!DISABLE_N64_DEPTH_COMPARE && (call.otherModeL & 0x0010) && g_depthManager.GetCurrent() &&
             g_depthManager.GetCurrent()->glZImageTex != 0 &&
             m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
@@ -415,11 +391,11 @@ void RDPProcessor::FlushBatch() {
             features |= Shader::SF_DEPTH_RENDER;
         }
 
-        // Alpha compare: bit 0 = G_AC_THRESHOLD, bit 1 = G_AC_NOISE;
-        // both modes need the alpha discard test in the shader.
+        // Alpha compare: bit 0 = G_AC_THRESHOLD, bit 1 = G_AC_NOISE; both modes need the alpha discard
+        // test in the shader.
         // FILL mode: alpha test is always disabled (hardware ignores it).
-        // COPY mode: N64 hardware ALWAYS tests texel alpha against
-        // blendColor.alpha regardless of alpha compare bits � force it on.
+        // COPY mode: N64 hardware always tests texel alpha against blendColor.alpha regardless of the
+        // alpha compare bits, so the test is forced on.
         uint32_t alphaCmp = call.otherModeL & 0x03;
         if (cycleType == 2) {
             // COPY mode: unconditional alpha test per N64 hardware
@@ -436,9 +412,9 @@ void RDPProcessor::FlushBatch() {
         if ((call.geometryMode & 0x00010000) && !m_renderer->GetCapabilities().isIntelGPU) features |= Shader::SF_FOG;
 
         // Texture filter (otherModeH bits 12-13)
-        //   0 = G_TF_POINT   � nearest-neighbor (no flag)
-        //   2 = G_TF_BILERP  � N64 3-sample interpolation
-        //   3 = G_TF_AVERAGE � true bilinear (for LOD blending)
+        //   0 = G_TF_POINT: nearest-neighbor (no flag)
+        //   2 = G_TF_BILERP: N64 3-sample interpolation
+        //   3 = G_TF_AVERAGE: true bilinear (for LOD blending)
         // COPY mode always uses point sampling on real N64 hardware.
         uint32_t texFilter = (cycleType == 2) ? 0 : ((call.otherModeH >> 12) & 0x03);
         // SF_TEXTURE_3POINT disabled: the N64 3-point GLSL function causes >1s glslang
@@ -447,15 +423,14 @@ void RDPProcessor::FlushBatch() {
         if (texFilter == 2) features |= Shader::SF_TEXTURE_BILINEAR;
         else if (texFilter == 3) features |= Shader::SF_TEXTURE_BILINEAR;
 
-        // Monochrome post-process (game-specific hack — e.g. Zelda OoT cutscenes).
-        // Only activate when the tile is CI8 over what was originally an RGBA16
-        // framebuffer — that is the specific N64 trick Zelda uses for grayscale
-        // flashbacks.  Applying this unconditionally would desaturate everything.
+        // Monochrome post-process (game-specific hack, e.g. Zelda OoT cutscenes). Only activated when
+        // the tile is CI8 over what was originally an RGBA16 framebuffer, the N64 trick Zelda uses for
+        // grayscale flashbacks; applying it unconditionally would desaturate everything.
         if (m_hacks.zeldaMonochrome && call.tileDesc0.format == 2 /* G_IM_FMT_CI */ &&
             call.tileDesc0.size == 1 /* G_IM_SIZ_8b */ && g_fbManager.FindByAddress(call.textureImageAddr) != nullptr)
             features |= Shader::SF_MONOCHROME;
 
-        // Texture LOD (G_TL_LOD � mipmap fraction via LOD_FRACTION combiner input)
+        // Texture LOD (G_TL_LOD: mipmap fraction via LOD_FRACTION combiner input)
         if (call.otherModeH & 0x00010000) features |= Shader::SF_TEXTURE_LOD;
 
         // Texture detail/sharpen (otherModeH bits 17-18: 0=clamp, 1=sharpen, 2=detail)
@@ -465,13 +440,13 @@ void RDPProcessor::FlushBatch() {
             if (tdMode == 2) features |= Shader::SF_TEXTURE_DETAIL;
         }
 
-        // YUV texture format (tile format == 1) � enable shader YUV�RGB conversion
+        // YUV texture format (tile format == 1): enable shader YUV to RGB conversion
         if (call.tileDesc0.format == 1) features |= Shader::SF_TEXTURE_YUV;
 
         // Chroma key enable (otherModeH bit 8)
         if (call.otherModeH & 0x00000100) features |= Shader::SF_CHROMA_KEY;
 
-        // Alpha noise/dither (otherModeL bits 0-1: 1=threshold, 3=dither � note: value 2 unused)
+        // Alpha noise/dither (otherModeL bits 0-1: 1=threshold, 3=dither; 2 is unused)
         if ((call.otherModeL & 0x03) == 3) {
             features |= Shader::SF_NOISE_ENABLE;
             features |= Shader::SF_ALPHA_NOISE_DITHER;
@@ -503,12 +478,10 @@ void RDPProcessor::FlushBatch() {
         }
 
         // Framebuffer read & blender memColor strategy.
-        //
-        // MLE BLENDER: When the blender references memColor or needs FB
-        // coverage, we use the full shader-based read-modify-write path
-        // (imageLoad/imageStore) with fragment shader interlock.  This
-        // replaces the old SF_FRAMEBUFFER_READ and SF_DUAL_SOURCE_BLEND
-        // approximations and gives pixel-perfect N64 blender behavior.
+        // MLE blender: when the blender references memColor or needs FB coverage, the full shader-based
+        // read-modify-write path (imageLoad/imageStore) with fragment shader interlock gives
+        // pixel-perfect N64 blender behavior. Dual-source blending is the approximate fallback where
+        // interlock is unavailable or unreliable.
         {
             uint32_t blenderBits = call.otherModeL & 0xFFFF0000;
 
@@ -516,10 +489,9 @@ void RDPProcessor::FlushBatch() {
             bool imageRead = (call.otherModeL & 0x40) != 0;
 
             if (imageRead && blenderBits != 0) {
-                // Performance gate: only enable the expensive MLE (interlock)
-                // path when the blender actually needs to READ framebuffer.
-                // Skip MLE when no blender input references memColor/memCvg
-                // AND coverage destination is FULL (always writes 7).
+                // Performance gate: only enable the expensive MLE (interlock) path when the blender
+                // actually needs to read the framebuffer. Skip MLE when no blender input references
+                // memColor/memCvg and the coverage destination is FULL (always writes 7).
                 int p1 = (blenderBits >> 30) & 0x3;
                 int m1 = (blenderBits >> 22) & 0x3;
                 int b1 = (blenderBits >> 18) & 0x3;
@@ -533,11 +505,10 @@ void RDPProcessor::FlushBatch() {
                 int cvgDst = (call.otherModeL >> 8) & 0x03;
                 if (cvgDst != 2) needsMem = true; // CLAMP/WRAP/SAVE read mem_cvg
 
-                // INTEL WORKAROUND: Intel Iris Xe fragment shader interlock
-                // with imageLoad/imageStore silently fails for certain MLE
-                // blender configurations (e.g. OoT title screen logo draws
-                // with 2-cycle fog blender).  Fall back to dual-source blend
-                // on Intel GPUs for reliable blender emulation.
+                // Intel workaround: Intel Iris Xe fragment shader interlock with imageLoad/imageStore silently
+                // fails for certain MLE blender configurations (e.g. OoT title screen logo draws with a
+                // 2-cycle fog blender). Fall back to dual-source blend on Intel GPUs for reliable blender
+                // emulation.
                 if ((needsMem || batchNeedsMleBlender) && !DISABLE_MLE_BLENDER &&
                     m_renderer->GetCapabilities().supportsFragmentShaderInterlock &&
                     !m_renderer->GetCapabilities().isIntelGPU)
@@ -546,9 +517,9 @@ void RDPProcessor::FlushBatch() {
             }
         }
 
-        // FORCE_BL (otherModeL bit 14) � when set, the blender always applies
-        // the full (P*A+M*B)/(A+B) formula.  When clear, fully-covered pixels
-        // bypass the blend and output P directly.
+        // FORCE_BL (otherModeL bit 14): when set, the blender always applies the full
+        // (P*A+M*B)/(A+B) formula. When clear, fully-covered pixels bypass the blend and output P
+        // directly.
         if (call.otherModeL & 0x4000) features |= Shader::SF_FORCE_BLEND;
 
         // Coverage / AA flags (otherModeL)
@@ -569,10 +540,9 @@ void RDPProcessor::FlushBatch() {
 
         shaderKey.features = features;
 
-        // �� Shadow map override ����������������������������������������
-        // When this draw call is a shadow map rect, replace the entire
-        // combiner/blender pipeline with a specialised shader that reads
-        // the depth buffer and converts it via a palette (TLUT) into a
+        // --- Shadow map override ---
+        // When this draw call is a shadow map rect, replace the entire combiner/blender pipeline with a
+        // specialised shader that reads the depth buffer and converts it via a palette (TLUT) into a
         // fog-coloured shadow overlay.
         if (call.isShadowMap) {
             shaderKey.features = Shader::SF_SHADOW_MAP;
@@ -632,7 +602,7 @@ void RDPProcessor::FlushBatch() {
                 m_shaderManager->SetFillColor(v0.r, v0.g, v0.b, v0.a);
             }
 
-            // Set screen size uniforms (uScreenSize, uInvScreenSize) � use FBO dims
+            // Set screen size uniforms (uScreenSize, uInvScreenSize): use FBO dims
             m_shaderManager->SetScreenSize(fboW, fboH);
 
             // Set frame counter for noise/dither animation
@@ -647,19 +617,15 @@ void RDPProcessor::FlushBatch() {
                     return static_cast<float>(1 << (16 - shift));
                 };
 
-                // Real RDP hardware runs texture rectangles through the same
-                // per-pixel span/texture pipeline as triangles (TEXRECT is just a
-                // synthesized rectangular span, not a distinct pixel path) -- the
-                // tile's shiftS/shiftT applies uniformly to any texture lookup
-                // through that tile, not just RSP-vertex-driven triangle coords.
-                // Games rely on this: a small HUD icon is commonly drawn by
-                // TEXRECT-sampling a larger shared texture through a tile whose
-                // SETTILE set a nonzero shift, letting the RDP pre-compress the
-                // coordinate instead of shipping a separate small texture. Treating
-                // rects as shift=0 always (the previous behavior) left that
-                // compression un-applied, so the rect sampled a texel range far
-                // wider than intended -- aliasing into sparse noise-like dots for
-                // any icon actually relying on tile shift to minify.
+                // Real RDP hardware runs texture rectangles through the same per-pixel span/texture pipeline
+                // as triangles (TEXRECT is a synthesized rectangular span, not a distinct pixel path), so the
+                // tile's shiftS/shiftT applies uniformly to any texture lookup through that tile, not just
+                // RSP-vertex-driven triangle coords. Games rely on this: a small HUD icon is commonly drawn by
+                // TEXRECT-sampling a larger shared texture through a tile whose SETTILE set a nonzero shift,
+                // letting the RDP pre-compress the coordinate instead of shipping a separate small texture.
+                // Treating rects as shift=0 would leave that compression un-applied, so the rect would sample
+                // a texel range far wider than intended and alias into sparse noise-like dots for any icon
+                // relying on tile shift to minify.
                 float scale0[2], scale1[2];
                 scale0[0] = getShiftScale(call.tileDesc0.shiftS);
                 scale0[1] = getShiftScale(call.tileDesc0.shiftT);
@@ -668,12 +634,10 @@ void RDPProcessor::FlushBatch() {
                 float size0[2] = {1.0f, 1.0f};
                 float size1[2] = {1.0f, 1.0f};
 
-                // Use mask/clamp-aware tile sizes, LoadTile-load-aware just
-                // like BuildTextureKey (the actual decode-size authority) —
-                // these feed the shader's UV scale, so if this disagrees with
-                // what the texture was actually decoded at, the result is a
-                // stretched/squashed sample: the shader thinks the texture is
-                // one size, the data underneath it is a different size.
+                // Use mask/clamp-aware, LoadTile-load-aware tile sizes, like BuildTextureKey (the decode-size
+                // authority): these feed the shader's UV scale, so if they disagree with the size the texture
+                // was decoded at, the sample is stretched or squashed (the shader thinks the texture is one
+                // size, the data underneath is another).
                 uint8_t tlut = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
                 const TileLoadInfo li0 = MakeTileLoadInfo(m_state.rdp, call.tileDesc0);
                 const TileLoadInfo li1 = MakeTileLoadInfo(m_state.rdp, call.tileDesc1);
@@ -722,10 +686,9 @@ void RDPProcessor::FlushBatch() {
             // Set texture coordinate bounds for TextureRect bilinear bleed prevention
             m_shaderManager->SetTexCoordBounds(call.useTexCoordBounds, call.texCoordBounds0, call.texCoordBounds1);
 
-            // Texture perspective is now handled in vertex setup (DrawTriangle sets
-            // perspW = invW when TEXTPERSP is on, perspW = 1.0 when off), so
-            // the shader always divides by vClipW and we no longer need the
-            // uTexturePersp uniform toggle here.
+            // Texture perspective is handled in vertex setup (DrawTriangle sets perspW = invW when
+            // TEXTPERSP is on and 1.0 when off), so the shader always divides by vClipW and needs no
+            // uTexturePersp uniform.
 
             // Screen scale for resolution-independent LOD computation
             // Screen scale = scaledSize / nativeSize; at native res this is (1,1).
@@ -763,14 +726,12 @@ void RDPProcessor::FlushBatch() {
                 m_shaderManager->SetDebugOutput(debugMode);
             }
 
-            // Texture-alpha coverage: for RGBA16 sprites drawn with the copyright/
-            // trademark combine mode (0x00FFFFFFFFFCFA7D), the texture A bit is the
-            // only per-pixel coverage mask.  Discard A=0 pixels so background texels
-            // don't overdraw the framebuffer.
-            //
-            // Using the EXACT combine mode avoids the "dA==5" over-match: many other
-            // RGBA16 textures (Mario face, trees, sky) also use ENV_ALPHA as dA but
-            // leave the A bit = 0 everywhere — discarding those would erase them.
+            // Texture-alpha coverage: for RGBA16 sprites drawn with the copyright/trademark combine mode
+            // (0x00FFFFFFFFFCFA7D), the texture A bit is the only per-pixel coverage mask, so A=0 pixels
+            // are discarded to keep background texels from overdrawing the framebuffer.
+            // Matching the exact combine mode avoids the "dA==5" over-match: many other RGBA16 textures
+            // (Mario face, trees, sky) also use ENV_ALPHA as dA but leave the A bit = 0 everywhere, and
+            // discarding those would erase them.
             {
                 static constexpr uint64_t kCvgAlphaMux = 0x00FFFFFFFFFCFA7DULL;
                 bool needsCvgAlpha =
@@ -782,19 +743,16 @@ void RDPProcessor::FlushBatch() {
             {
                 uint32_t alphaCompMode = call.otherModeL & 0x03;
                 if (cycleType == 2) {
-                    // COPY mode: N64 hardware KEEPS texels with alpha >= blend
-                    // alpha (not strict ">"). The old "+half-LSB" here turned
-                    // the test into ">": SM64's HUD text DLs set blendColor
-                    // alpha = 255, so fully-opaque glyph texels (alpha == 1.0)
-                    // failed 1.0 < 1.002 and the ENTIRE HUD was discarded.
-                    // ref = blend.a exactly gives >= semantics in the shader's
-                    // "alpha < ref → discard" test. blend.a == 0 keeps a tiny
-                    // epsilon so zero-alpha texels still cut out (hardware
-                    // keeps them, but games rely on transparent copy texels).
+                    // COPY mode: N64 hardware keeps texels with alpha >= blend alpha (not strict ">"). Adding a
+                    // half-LSB to the reference would turn the test into ">": SM64's HUD text DLs set blendColor
+                    // alpha = 255, so fully-opaque glyph texels (alpha == 1.0) would fail 1.0 < 1.002 and the
+                    // entire HUD would be discarded. ref = blend.a exactly gives >= semantics in the shader's
+                    // "alpha < ref -> discard" test. blend.a == 0 keeps a tiny epsilon so zero-alpha texels still
+                    // cut out (hardware keeps them, but games rely on transparent copy texels).
                     float ra = call.blendColor.a / 255.0f;
                     m_shaderManager->SetAlphaRef(ra > 0.0f ? ra : (0.5f / 255.0f));
                 } else if (alphaCompMode & 1) {
-                    // Threshold (1) or dither (3) � set blendColor.a as reference
+                    // Threshold (1) or dither (3): set blendColor.a as reference
                     m_shaderManager->SetAlphaRef(call.blendColor.a / 255.0f);
                 }
             }
@@ -853,11 +811,11 @@ void RDPProcessor::FlushBatch() {
             if (cycleType >= 2) {
                 blend.enabled = false;
             } else if (hasMLE) {
-                // �� MLE blender: shader does full read-modify-write �������
+                // --- MLE blender: shader does full read-modify-write ---
                 // No GL blend needed; imageStore handles everything.
                 blend.enabled = false;
             } else if (hasDualSource) {
-                // �� Dual-source blending path �����������������������������
+                // --- Dual-source blending path ---
                 // The shader outputs:
                 //   fragColor  = source contribution (non-memColor terms)
                 //   fragColor1 = destination factor  (memColor weight)
@@ -868,44 +826,32 @@ void RDPProcessor::FlushBatch() {
                 blend.srcAlpha = BlendFactor::One;
                 blend.dstAlpha = BlendFactor::Src1Alpha;
 
-                // NOTE: bF==1 (B references memColor.a, i.e. N64 "coverage")
-                // is already fully resolved INSIDE the shader as a constant
-                // 1.0 approximation (see ShaderGenerator.cpp's emitFinalCycleDS
-                // — bB is baked into srcContrib/dstFactor, i.e. fragColor.rgb
-                // or fragColor1, before GL blending ever runs).  A prior
-                // version of this code additionally multiplied the GL blend
-                // factor by real GL DstAlpha here, reasoning it needed to
-                // "supply the real memColor.a".  That reasoning was wrong:
-                // per GLideN64 (glsl_CombinerProgramBuilderCommon.cpp's
-                // ShaderCoverage/uCoverageImage), N64 "coverage" is a
-                // dedicated per-pixel sub-triangle sample count, tracked in
-                // its own buffer (this project's own MLE-blender path does
-                // the same via uCoverageImage) — it is NOT the framebuffer's
-                // literal stored color alpha.  Once the canvas architecture
-                // made framebuffer alpha persist correctly across draws
-                // within a frame, that extra multiply started reading real
-                // (and often 0, e.g. many sky texels' decoded alpha) values
-                // instead of an incidental ~1.0, silently killing/zeroing
-                // the blend on exactly the full-screen translucent-overlay
-                // draws that triggered it — the residual "sky ghosting/
-                // streaking" symptom.  Removed; the shader-side bB=1.0
-                // approximation is already complete on its own.
+                // bF==1 (B references memColor.a, i.e. N64 "coverage") is already fully resolved inside the
+                // shader as a constant 1.0 approximation (see ShaderGenerator.cpp's emitFinalCycleDS: bB is
+                // baked into srcContrib/dstFactor, i.e. fragColor.rgb or fragColor1, before GL blending runs).
+                // Multiplying the GL blend factor by the real GL DstAlpha as well, to "supply the real
+                // memColor.a", is wrong: per GLideN64 (glsl_CombinerProgramBuilderCommon.cpp's
+                // ShaderCoverage/uCoverageImage), N64 "coverage" is a dedicated per-pixel sub-triangle sample
+                // count tracked in its own buffer (this project's MLE-blender path does the same via
+                // uCoverageImage), not the framebuffer's stored color alpha. Because framebuffer alpha
+                // persists across draws within a frame, that extra multiply would read real values (often 0,
+                // e.g. many sky texels' decoded alpha) instead of an incidental ~1.0, zeroing the blend on the
+                // full-screen translucent-overlay draws and producing "sky ghosting/streaking". The
+                // shader-side bB=1.0 approximation is complete on its own.
 
-                // P==M � result is always P regardless of blend factors
+                // P == M: the result is always P regardless of blend factors
                 if (pF == mF) {
                     blend.enabled = false;
                 }
             } else {
-                // �� Legacy GL blend approximation �������������������������
+                // --- Legacy GL blend approximation ---
                 // Match the shader-side skip: only when P or M is memColor.
                 bool needsMemColor = (pF == 1) || (mF == 1);
                 bool hasFBRead = (features & Shader::SF_FRAMEBUFFER_READ) != 0;
                 bool shaderBlenderSkipped = needsMemColor && !hasFBRead;
-                // On real N64, ALPHA_CVG_SEL without CVG_X_ALPHA means the
-                // blender alpha comes from coverage.  For fully-covered
-                // interior pixels coverage is 1.0, so the blend formula
-                // degenerates to P (source only) � the surface is opaque.
-                // Enabling GL blend for these modes produces additive
+                // On real N64, ALPHA_CVG_SEL without CVG_X_ALPHA means the blender alpha comes from coverage.
+                // For fully-covered interior pixels coverage is 1.0, so the blend formula degenerates to P
+                // (source only) and the surface is opaque. Enabling GL blend for these modes produces additive
                 // artifacts on overlapping geometry.
                 bool alphaCvgSel = (features & Shader::SF_ALPHA_CVG_SEL) != 0;
                 bool cvgXAlpha = (features & Shader::SF_ALPHA_CVG) != 0;
@@ -922,14 +868,14 @@ void RDPProcessor::FlushBatch() {
                     blend.srcAlpha = BlendFactor::Zero;
                     blend.dstAlpha = BlendFactor::One;
                 } else {
-                    // �� Blend enable & factor ������������������������������
+                    // --- Blend enable & factor ---
                     // N64 formula: out = (P*A + M*B) / (A+B)
-                    // Since the shader blender is skipped, fragColor = combined
-                    // (raw combiner output, NOT pre-multiplied by A).
-                    // Map A � srcFactor (applied to P=combined by GL)
-                    //     B � dstFactor (applied to M=memColor=dst by GL)
+                    // Since the shader blender is skipped, fragColor = combined (raw combiner output, not
+                    // pre-multiplied by A).
+                    // A maps to srcFactor (applied to P=combined by GL)
+                    // B maps to dstFactor (applied to M=memColor=dst by GL)
 
-                    // Helper: map blender A selector to GL blend factor
+                    // Map the blender A selector to a GL blend factor
                     auto mapAToSrc = [&]() -> BlendFactor {
                         switch (aF) {
                         case 0: return BlendFactor::SrcAlpha; // combined.a
@@ -939,7 +885,7 @@ void RDPProcessor::FlushBatch() {
                             blend.blendColor[2] = call.fogColor.b / 255.0f;
                             blend.blendColor[3] = call.fogColor.a / 255.0f;
                             return BlendFactor::ConstantAlpha;
-                        case 2:  return BlendFactor::SrcAlpha; // shadeAlpha ? srcAlpha
+                        case 2:  return BlendFactor::SrcAlpha; // shadeAlpha maps to srcAlpha
                         default: return BlendFactor::Zero;     // 0.0
                         }
                     };
@@ -966,14 +912,14 @@ void RDPProcessor::FlushBatch() {
                     };
 
                     if (pF == 1 && mF == 1) {
-                        // Both P and M are memColor � preserve framebuffer
+                        // Both P and M are memColor: preserve framebuffer
                         blend.enabled = true;
                         blend.srcColor = BlendFactor::Zero;
                         blend.dstColor = BlendFactor::One;
                         blend.srcAlpha = BlendFactor::Zero;
                         blend.dstAlpha = BlendFactor::One;
                     } else if (pF == mF) {
-                        // P == M � result is always P regardless of factors
+                        // P == M: the result is always P regardless of factors
                         blend.enabled = false;
                     } else {
                         blend.enabled = isTranslucent;
@@ -991,7 +937,7 @@ void RDPProcessor::FlushBatch() {
                             blend.srcColor = mapAToSrc(); // combined gets A factor
                             blend.dstColor = mapBToDst(); // dst(mem) gets B factor
                         } else {
-                            // Neither is memColor � shouldn't reach here
+                            // Neither is memColor: this case is not expected to be reached
                             blend.srcColor = BlendFactor::One;
                             blend.dstColor = BlendFactor::Zero;
                         }
@@ -999,15 +945,13 @@ void RDPProcessor::FlushBatch() {
                         blend.srcAlpha = blend.srcColor;
                         blend.dstAlpha = blend.dstColor;
                     }
-                } // end else (!pF==1 bypass)
+                }
             }
 
-            // NOTE: The old "Texture-off sanity check" (blastCorpsBlendFix) was
-            // removed.  It tested bit 0x40000 of geometryMode, which is
-            // G_TEXTURE_GEN in F3DEX2 � NOT G_TEXTURE_ENABLE.  In F3DEX2,
-            // texture enable is controlled by gSPTexture, not geometryMode.
-            // The check incorrectly made all textured triangles without
-            // environment mapping invisible (blend src=0, dst=1).
+            // blastCorpsBlendFix is not applied here: its texture-off sanity check tested bit 0x40000 of
+            // geometryMode, which is G_TEXTURE_GEN in F3DEX2 and not G_TEXTURE_ENABLE (texture enable is
+            // controlled by gSPTexture in F3DEX2, not geometryMode), and so made all textured triangles
+            // without environment mapping invisible (blend src=0, dst=1).
         }
         m_renderer->SetBlendState(blend);
 
@@ -1024,12 +968,10 @@ void RDPProcessor::FlushBatch() {
         // Derive depth func from N64 zMode (otherModeL bits 10-11)
         uint32_t zMode = (call.otherModeL >> 10) & 0x03;
         if (features & Shader::SF_N64_DEPTH_COMPARE) {
-            // When the N64 Z-image compare is active, the fragment shader
-            // handles ALL depth testing via imageLoad/imageStore on the
-            // Z-image.  Disable GL depth test and GL depth writes entirely
-            // to prevent the GL depth buffer from being polluted with
-            // rasterizer-interpolated linear Z values that would corrupt
-            // subsequent non-N64-depth draws.  Matches GLideN64.
+            // When the N64 Z-image compare is active, the fragment shader handles all depth testing via
+            // imageLoad/imageStore on the Z-image. GL depth test and GL depth writes are disabled entirely
+            // to keep the GL depth buffer from being polluted with rasterizer-interpolated linear Z values
+            // that would corrupt subsequent non-N64-depth draws. Matches GLideN64.
             depth.depthTestEnabled = false;
             depth.depthWriteEnabled = false;
         } else if (!zCmpOn) {
@@ -1053,21 +995,17 @@ void RDPProcessor::FlushBatch() {
             default: depth.depthFunc = CompareFunc::LessEqual; break;
             }
         }
-        // NOTE: a prior heuristic here forced depth writes off for
-        // CVG_DST_SAVE (cvgDst==3) and for ZMODE_XLU without FORCE_BL,
-        // reasoning "games sort transparent draws themselves". Checked
-        // both real-hardware-authoritative sources this pass:
+        // Depth writes follow Z_UPD alone (via SF_DEPTH_WRITE). A heuristic that forced writes off for
+        // CVG_DST_SAVE (cvgDst==3) and for ZMODE_XLU without FORCE_BL ("games sort transparent draws
+        // themselves") broke inter-transparent-surface depth ordering. Both hardware-authoritative
+        // references gate the write only on Z_UPD:
         //   - GLideN64 GraphicsDrawer.cpp::_updateDepthUpdate():
-        //     `gfxContext.enableDepthWrite(gDP.otherMode.depthUpdate != 0)`
-        //     — gated ONLY by the Z_UPD bit, no zMode/cvgDst involvement.
-        //   - angrylion-rdp-plus rasterizer.c: `if (wen) { fbwrite(...);
-        //     if (other_modes.z_update_en) z_store(...); }` — same: only
-        //     Z_UPD (ANDed with the pixel actually passing z_compare+blend).
-        // Neither reference special-cases zMode or cvg_dst for the WRITE
-        // decision (zMode only picks the compare function/bias; cvg_dst
-        // only affects how coverage is combined). The heuristic silently
-        // broke inter-transparent-surface depth ordering — removed;
-        // depth.depthWriteEnabled already reflects Z_UPD via SF_DEPTH_WRITE.
+        //     `gfxContext.enableDepthWrite(gDP.otherMode.depthUpdate != 0)`, with no zMode/cvgDst
+        //     involvement.
+        //   - angrylion-rdp-plus rasterizer.c: `if (wen) { fbwrite(...); if (other_modes.z_update_en)
+        //     z_store(...); }`, only Z_UPD (ANDed with the pixel actually passing z_compare+blend).
+        // zMode only picks the compare function/bias, and cvg_dst only affects how coverage is
+        // combined.
 
         // --- 1.2 Override Depth for Rectangles ---
         // N64 rectangles have no vertex Z; they only participate in depth
@@ -1101,19 +1039,15 @@ void RDPProcessor::FlushBatch() {
             // compare via Z-image imageLoad; GL depth func stays ALWAYS.
         }
 
-        // Polygon offset: match GLideN64's _updateDepthCompare() — the
-        // POLYGON_OFFSET_FILL toggle only lives inside GLideN64's non-N64-
-        // accurate branch (config.frameBufferEmulation.N64DepthCompare ==
-        // dcDisable).  When the accurate Z-image compare is active, GLideN64
-        // disables GL depth test/write entirely and never touches polygon
-        // offset — decal "closeness" is instead handled purely by the
-        // shader's bNearer/bFarther tolerance window (see
-        // GenerateDepthCompareCode's zMode==3 branch).  Applying a GL bias
-        // here while SF_N64_DEPTH_COMPARE is active would perturb
-        // gl_FragCoord.z, which our shader reads back as curZ for that same
-        // window test — pushing decals outside [bufZ-dzMin, bufZ+dzMin] and
-        // causing them to intermittently fail depth (flicker).  So only
-        // apply the GL-side offset on the fallback (non-accurate) path.
+        // Polygon offset: match GLideN64's _updateDepthCompare(). The POLYGON_OFFSET_FILL toggle only
+        // lives inside GLideN64's non-N64-accurate branch (config.frameBufferEmulation.N64DepthCompare
+        // == dcDisable). When the accurate Z-image compare is active, GLideN64 disables GL depth
+        // test/write entirely and never touches polygon offset: decal "closeness" is handled purely by
+        // the shader's bNearer/bFarther tolerance window (see GenerateDepthCompareCode's zMode==3
+        // branch). Applying a GL bias while SF_N64_DEPTH_COMPARE is active would perturb gl_FragCoord.z,
+        // which our shader reads back as curZ for that same window test, pushing decals outside
+        // [bufZ-dzMin, bufZ+dzMin] and making them intermittently fail depth (flicker). So the GL-side
+        // offset is applied only on the fallback (non-accurate) path.
         {
             RasterizerState rast{};
             rast.cullMode = CullMode::None;
@@ -1130,7 +1064,7 @@ void RDPProcessor::FlushBatch() {
         }
         m_renderer->SetDepthStencilState(depth);
 
-        // ��� N64 Z-image depth compare: bind Z-image textures + set mode ����
+        // --- N64 Z-image depth compare: bind Z-image textures + set mode ---
         if (features & Shader::SF_N64_DEPTH_COMPARE) {
             auto* depthBuf = g_depthManager.GetCurrent();
             if (depthBuf) {
@@ -1142,7 +1076,7 @@ void RDPProcessor::FlushBatch() {
             }
         }
 
-        // ��� MLE blender: bind color/coverage images and disable color writes ����
+        // --- MLE blender: bind color/coverage images and disable color writes ---
         if (features & Shader::SF_MLE_BLENDER) {
             // Ensure prior FBO writes (e.g. fill rects) are visible to imageLoad.
             m_renderer->ImageMemoryBarrier();
@@ -1150,19 +1084,17 @@ void RDPProcessor::FlushBatch() {
             if (fb && fb->coverageTex) {
                 m_renderer->BindImageForRW(2, fb->colorImageHandle, ImageBindFormat::RGBA8);
                 m_renderer->BindImageForRW(3, fb->coverageImageHandle, ImageBindFormat::R8UI);
-                // Disable fragment output writes � only imageStore updates
-                // the color buffer.  This avoids undefined aliasing between
-                // the FBO attachment and the image binding.
+                // Disable fragment output writes: only imageStore updates the color buffer. This avoids
+                // undefined aliasing between the FBO attachment and the image binding.
                 m_renderer->SetColorWriteMask(false, false, false, false);
             }
         }
 
-        // ��� CVG_DST coverage accumulator �����������������������
-        // The N64 uses the 3 coverage bits per pixel for anti-aliasing blending.
-        // We now accurately compute CVG_DEST logic (WRAP, CLAMP, SAVE, ZAP) in the
-        // pixel shader (GenerateBlenderCode) to perfectly emulate N64 coverage wrap,
-        // rather than relying on flawed OpenGL fixed-function stencil operations.
-        // For WRAP, it uses SF_FRAMEBUFFER_READ to precisely evaluate (cvg+memCvg)&7.
+        // --- CVG_DST coverage accumulator ---
+        // The N64 uses the 3 coverage bits per pixel for anti-aliasing blending. CVG_DEST logic (WRAP,
+        // CLAMP, SAVE, ZAP) is computed in the pixel shader (GenerateBlenderCode) to emulate N64
+        // coverage wrap exactly, rather than with OpenGL fixed-function stencil operations. For WRAP it
+        // uses SF_FRAMEBUFFER_READ to evaluate (cvg+memCvg)&7 precisely.
 
         // --- Set scissor (scale N64 coords to GL window coords, flip Y) ---
         {
@@ -1171,30 +1103,19 @@ void RDPProcessor::FlushBatch() {
             int n64sw = static_cast<int>((m_state.rdp.scissor.xl >> 2) - n64sx);
             int n64sh = static_cast<int>((m_state.rdp.scissor.yl >> 2) - n64sy);
 
-            // Widescreen: expand scissor Y to full height for all draws.
-            // This lets both 3D content and fullscreen effects (fades,
-            // transitions) fill the expanded viewport area. Letterbox bar
+            // Widescreen: expand scissor Y to full height for all draws. This lets both 3D content and
+            // fullscreen effects (fades, transitions) fill the expanded viewport area. Letterbox bar
             // skipping and inward scaling are handled in Handle*Rect().
-            //
-            // Gated to only apply when the game's OWN scissor already covers
-            // most of the screen height. widescreenScale is a single global
-            // (set once from the user's aspect-ratio config, applied to every
-            // draw call regardless of content -- see VideoPlugin.cpp), so
-            // this expansion previously fired unconditionally even for small,
-            // narrow scissor rects a game sets to isolate one screen region
-            // from another -- e.g. MM/OoT's pause-menu inventory grid, where
-            // each item slot's small 3D rotating-icon draw gets its own tight
-            // scissor rect. Blowing that open to the full screen height
-            // removes the vertical isolation between grid rows: geometry that
-            // real hardware's scissor would hard-clip to one slot (e.g. an
-            // animating icon model momentarily extending past its intended
-            // bounding box) is no longer clipped, letting it bleed into a
-            // neighboring row -- a plausible mechanism for the observed
-            // "stacked/duplicated icon" artifact. Only expand when the
-            // original scissor already covers most of the frame vertically,
-            // matching the documented intent (full-screen 3D content and
-            // fullscreen fade/transition effects) without touching small,
-            // deliberately-isolated regions.
+            // The expansion only applies when the game's own scissor already covers most of the screen
+            // height. widescreenScale is a single global (set once from the user's aspect-ratio config and
+            // applied to every draw call regardless of content; see VideoPlugin.cpp), so expanding
+            // unconditionally would also open up the small, narrow scissor rects a game sets to isolate one
+            // screen region from another, e.g. MM/OoT's pause-menu inventory grid, where each item slot's
+            // small 3D rotating-icon draw gets its own tight scissor rect. Blowing that open to the full
+            // screen height removes the vertical isolation between grid rows: geometry that real hardware's
+            // scissor would hard-clip to one slot (e.g. an animating icon model momentarily extending past
+            // its bounding box) is no longer clipped and can bleed into a neighboring row, a likely cause
+            // of the observed "stacked/duplicated icon" artifact.
             float wsScale = m_state.rdp.geometry.widescreenScale;
             constexpr float kWidescreenExpandMinCoverage = 0.6f;
             bool scissorAlreadyMostlyFull =
@@ -1247,7 +1168,7 @@ void RDPProcessor::FlushBatch() {
             }
         }
 
-        // --- Shadow map: bind depth texture & TLUT, override blend ----
+        // --- Shadow map: bind depth texture & TLUT, override blend ---
         if (call.isShadowMap) {
             if (g_fbManager.IsGL()) {
                 // Bind the current FBO's depth texture on unit 4 (uDepthTexture)
@@ -1269,7 +1190,7 @@ void RDPProcessor::FlushBatch() {
                 }
                 glTextureSubImage2D(m_shadowTLUTTexture, 0, 0, 0, 256, 1, GL_RED, GL_UNSIGNED_BYTE, call.shadowTLUT);
                 glBindTextureUnit(2, m_shadowTLUTTexture);
-            } // end if (g_fbManager.IsGL()) shadow map textures
+            }
 
             // Override blend for shadow: SRC_ALPHA / ONE_MINUS_SRC_ALPHA
             blend.enabled = true;
@@ -1344,26 +1265,20 @@ void RDPProcessor::FlushBatch() {
 
             if (key0.width > 0 && key0.height > 0) {
                 GPUFramebuffer* rawRTFB0 = g_fbManager.FindByAddress(key0.address);
-                // Mirror ExecuteLoadTile's fallback (RDPProcessor_Texture.cpp):
-                // FindByAddress's range pass additionally demands STRIDE
-                // ALIGNMENT, so a read landing inside a known buffer at a
-                // non-row-aligned offset returns null here even though the
-                // buffer plainly contains that address. ExecuteLoadTile
-                // compensates with FindContaining (a pure range search, like
-                // GLideN64's findBuffer) but this draw-side lookup never did --
-                // so the sync path could resolve the framebuffer while the draw
-                // that consumes it could not, and the draw silently fell through
-                // to decoding raw RDRAM. Measured with NOVA64_CANVASTEX_DBG:
-                // rawRTFB0 was null on every single sample, which is what made
-                // every framebuffer-dependent fix in this area dead code.
+                // Mirror ExecuteLoadTile's fallback (RDPProcessor_Texture.cpp): FindByAddress's range pass
+                // additionally demands stride alignment, so a read landing inside a known buffer at a
+                // non-row-aligned offset returns null even though the buffer contains that address.
+                // ExecuteLoadTile compensates with FindContaining (a pure range search, like GLideN64's
+                // findBuffer); this draw-side lookup needs the same fallback, otherwise the sync path can
+                // resolve the framebuffer while the draw that consumes it cannot, and the draw falls through
+                // to decoding raw RDRAM.
                 if (!g_fbManager.IsGL() && !rawRTFB0) rawRTFB0 = g_fbManager.FindContaining(key0.address);
                 bool aliasRTFB0 = CanAliasFramebuffer(rawRTFB0, key0.address, IsRGBAFramebufferFormat(key0));
-                // A buffer matched only by RANGE whose memory has been reused
-                // since the RDP last drew into it is not a framebuffer read.
-                // OOT renders Link's equipment-page preview into a 64x112 buffer
-                // inside the heap; once the menu closes, gameplay textures are
-                // loaded over that memory, and treating them as reads of the
-                // stale buffer bound the preview image in place of Link's cap.
+                // A buffer matched only by range whose memory has been reused since the RDP last drew into it
+                // is not a framebuffer read. OOT renders Link's equipment-page preview into a 64x112 buffer
+                // inside the heap; once the menu closes, gameplay textures are loaded over that memory, and
+                // treating them as reads of the stale buffer would bind the preview image in place of Link's
+                // cap.
                 if (rawRTFB0 && !aliasRTFB0 && !g_fbManager.RdramUnchanged(rawRTFB0, m_rdram, m_rdramSize))
                     rawRTFB0 = nullptr;
                 GPUFramebuffer* rtFB0 = aliasRTFB0 ? rawRTFB0 : nullptr;
@@ -1377,21 +1292,16 @@ void RDPProcessor::FlushBatch() {
                     m_state.rdp.colorImage.address & 0x7FFFFF, m_state.rdp.zbufferImage.address & 0x7FFFFF,
                     static_cast<int>(key0.shiftS), static_cast<int>(key0.shiftT));
 
-                // ── CfB copy-back detection ──────────────────────────────
-                // Some N64 games (OoT, MM) copy an AA-processed framebuffer
-                // (CfB) back to the display via RGBA32 TextureRect strips.
-                // The CfB was never used as an RDP color image, so no GPU
-                // framebuffer exists for it.  The TMEM data is really
-                // RGBA5551 pixels loaded as RGBA32 → decode produces garbage.
-                //
-                // Only skip when the texture address is within the RDRAM
-                // range of a known framebuffer (CfB is typically allocated
-                // adjacent to the main framebuffers).  Textures from other
-                // RDRAM regions (e.g. ROM-loaded artwork) are legitimate.
-                //
-                // IMPORTANT: Only skip TextureRect draws.  Triangle draws
-                // with RGBA32 textures (e.g. Zelda logo shield/sword) are
-                // legitimate game geometry and must NOT be skipped.
+                // --- CfB copy-back detection ---
+                // Some N64 games (OoT, MM) copy an AA-processed framebuffer (CfB) back to the display via
+                // RGBA32 TextureRect strips. The CfB was never used as an RDP color image, so no GPU
+                // framebuffer exists for it, and the TMEM data is really RGBA5551 pixels loaded as RGBA32, so
+                // decoding produces garbage.
+                // Only skip when the texture address is within the RDRAM range of a known framebuffer (the CfB
+                // is typically allocated adjacent to the main framebuffers). Textures from other RDRAM regions
+                // (e.g. ROM-loaded artwork) are legitimate.
+                // Only TextureRect draws are skipped: triangle draws with RGBA32 textures (e.g. the Zelda logo
+                // shield/sword) are legitimate game geometry and must not be skipped.
                 if (!rtFB0 && call.type == DrawCall::Type::TextureRect && key0.format == Tex::N64TexFormat::RGBA &&
                     key0.size == Tex::N64TexSize::Bits32) {
                     uint32_t texAddr = key0.address & 0x7FFFFF;
@@ -1401,8 +1311,8 @@ void RDPProcessor::FlushBatch() {
                         if (!fb || fb->desc.type != FBType::Color) continue;
                         uint32_t fbStart = fb->desc.address;
                         uint32_t fbSize = fb->desc.ByteSize();
-                        // CfB is typically within 2x framebuffer size of a
-                        // known FB address (one extra buffer worth of room).
+                        // The CfB is typically adjacent to a known FB: accept addresses within three framebuffer
+                        // sizes of its start.
                         if (texAddr >= fbStart && texAddr < fbStart + fbSize * 3) {
                             nearFB = true;
                             break;
@@ -1426,35 +1336,27 @@ void RDPProcessor::FlushBatch() {
                 bool useVKSnapshot0 = false;
                 ITexture* vkSnapshotTex0 = nullptr;
                 if (fbTex0 == 0 && !g_fbManager.IsGL()) {
-                    // Primary path: use the ring slot resolved at ENQUEUE time
-                    // (call.snapshotSlot0, set in PopulateTextureInfo). MM's pause
-                    // menu issues several SetColorImage switches to the SAME
-                    // physical framebuffer address within a single frame (a full
-                    // world redraw, then 1-2 much smaller UI-only overlay passes
-                    // onto that same target) -- multiple ring slots end up holding
-                    // the SAME address but very different content generations.
-                    // Re-resolving by address at FLUSH time is ambiguous: it can't
-                    // tell which same-address generation this draw call actually
-                    // intended (a panel could bind a near-empty UI-only capture
-                    // instead of the full world snapshot it needed -- the
-                    // asymmetric black-pane bug). The enqueue-time slot was
-                    // captured synchronously in DL-execution order, i.e. from
-                    // whatever was ACTUALLY live at that address at the moment
-                    // this draw was issued, exactly like real hardware would read.
+                    // Primary path: use the ring slot resolved at enqueue time (call.snapshotSlot0, set in
+                    // PopulateTextureInfo). MM's pause menu issues several SetColorImage switches to the same
+                    // physical framebuffer address within a single frame (a full world redraw, then 1-2 much
+                    // smaller UI-only overlay passes onto that target), so multiple ring slots end up holding the
+                    // same address but very different content generations. Re-resolving by address at flush time
+                    // is ambiguous: it cannot tell which same-address generation this draw intended, and a panel
+                    // could bind a near-empty UI-only capture instead of the full world snapshot it needed (the
+                    // asymmetric black-pane bug). The enqueue-time slot was captured synchronously in
+                    // display-list execution order, i.e. from whatever was live at that address when this draw was
+                    // issued, exactly like real hardware would read.
                     if (call.snapshotSlot0 >= 0) {
                         const uint32_t slot0 = static_cast<uint32_t>(call.snapshotSlot0);
                         ITexture* snapTex = m_vkFBSnapshots[slot0].get();
-                        // Re-validate the slot still holds the address it was resolved for
-                        // in PopulateTextureInfo. Between this draw call's enqueue and this
-                        // flush, other capture sites (SetColorImage switch-away in
-                        // HandleSetColorImage, the LoadBlock CopyFromGPU-snapshot in
-                        // RDPProcessor_Texture.cpp, or the last-resort canvas fallback
-                        // below) can ping-pong m_vkFBSnapshotIdx back onto this SAME slot
-                        // number and overwrite it with an unrelated framebuffer's content
-                        // (e.g. a later 3D-model render target reusing the ring). Trusting
-                        // a stale index here let that overwritten content silently replace
-                        // the intended source (the OoT/MM pause-menu background snapshot
-                        // getting clobbered by the Link-doll render).
+                        // Re-validate that the slot still holds the address it was resolved for in
+                        // PopulateTextureInfo. Between this draw call's enqueue and this flush, other capture sites
+                        // (the SetColorImage switch-away in HandleSetColorImage, the LoadBlock CopyFromGPU snapshot in
+                        // RDPProcessor_Texture.cpp, or the last-resort canvas fallback below) can ping-pong
+                        // m_vkFBSnapshotIdx back onto this same slot number and overwrite it with an unrelated
+                        // framebuffer's content (e.g. a later 3D-model render target reusing the ring). Trusting a
+                        // stale index would let that overwritten content replace the intended source (the OoT/MM
+                        // pause-menu background snapshot getting clobbered by the Link-doll render).
                         if (snapTex && m_vkFBSnapshotAddrs[slot0] == (key0.address & 0x7FFFFF) && (rtFB0 || rawRTFB0)) {
                             fbTex0 = 1;
                             useVKSnapshot0 = true;
@@ -1493,22 +1395,16 @@ void RDPProcessor::FlushBatch() {
                         }
                     }
 
-                    // Last resort — the fix for the black pause-menu panel.
-                    // GLideN64 gives EVERY tracked framebuffer a permanent
-                    // sampleable color texture (FrameBuffer::m_pTexture), so a
-                    // framebuffer-as-texture read can always bind real rendered
-                    // content. Here GetSampleableTexture() is 0 on Vulkan, and
-                    // the snapshot ring above only captures at a few discrete
-                    // EVENTS (SetColorImage switch-away, LoadBlock) -- so a read
-                    // of a buffer that wasn't snapshotted at exactly the right
-                    // moment fell through to m_textureCache->GetTexture() below,
-                    // decoding raw RDRAM. For a buffer the GPU rendered (and
-                    // that RDRAM therefore never received) that decodes stale
-                    // uniform garbage: the black panel. The backend already
-                    // keeps a persistent canvas image per N64 buffer address for
-                    // buffer isolation -- those ARE the per-FB textures we were
-                    // missing, so pull this buffer's canvas into a ring slot and
-                    // bind it rather than decoding RDRAM.
+                    // Last resort for the black pause-menu panel. GLideN64 gives every tracked framebuffer a
+                    // permanent sampleable color texture (FrameBuffer::m_pTexture), so a framebuffer-as-texture
+                    // read can always bind real rendered content. Here GetSampleableTexture() is 0 on Vulkan and
+                    // the snapshot ring above only captures at a few discrete events (SetColorImage switch-away,
+                    // LoadBlock), so a read of a buffer that was not snapshotted at the right moment would fall
+                    // through to m_textureCache->GetTexture() below and decode raw RDRAM. For a buffer the GPU
+                    // rendered (and that RDRAM therefore never received) that decodes stale uniform garbage: the
+                    // black panel. The backend already keeps a persistent canvas image per N64 buffer address for
+                    // buffer isolation; those are the per-FB textures that were missing, so this buffer's canvas is
+                    // pulled into a ring slot and bound instead of decoding RDRAM.
                     if (fbTex0 == 0 && m_renderer) {
                         GPUFramebuffer* canvasFB = rtFB0 ? rtFB0 : rawRTFB0;
                         const uint32_t snapW = m_renderer->GetWidth();
@@ -1548,11 +1444,9 @@ void RDPProcessor::FlushBatch() {
                     } else if (useVKSnapshot0 && vkSnapshotTex0) {
                         m_renderer->BindTexture(0, vkSnapshotTex0);
                     }
-                    // Sample in buffer texels (see fbSampling0 above). The old
-                    // 1/width scale on top of the shader's tile-size
-                    // normalisation squeezed every read into the buffer's
-                    // first texels, so each strip of a copied frame repeated
-                    // the same few rows.
+                    // Sample in buffer texels (see fbSampling0 above). A 1/width scale on top of the shader's
+                    // tile-size normalisation would squeeze every read into the buffer's first texels, so each
+                    // strip of a copied frame would repeat the same few rows.
                     {
                         float originS = 0.0f, originT = 0.0f;
                         fbTileOrigin(*rtFB0, key0.address, originS, originT);
@@ -1607,9 +1501,9 @@ void RDPProcessor::FlushBatch() {
                             // Force correct per-draw filter mode from otherModeH
                             // texFilter 0/1=point, 2=3-point (shader samples texels manually), 3=bilinear
                             GLenum glFilter = (texFilter == 3) ? GL_LINEAR : GL_NEAREST;
-                            // A tile chain (G_TL_LOD) is read by explicit level, and GL
-                            // ignores the level unless minification uses mipmaps, so the
-                            // LOD path only ever saw the base tile.
+                            // A tile chain (G_TL_LOD) is read by explicit level, and GL ignores the level unless
+                            // minification uses mipmaps, so without a mipmap min filter the LOD path only sees the base
+                            // tile.
                             GLenum glMinFilter = glFilter;
                             if (mipCount > 0)
                                 glMinFilter = (texFilter == 3) ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
@@ -1663,13 +1557,12 @@ void RDPProcessor::FlushBatch() {
                 uint32_t fbTex1 =
                     rtFB1 ? g_fbManager.GetSampleableTexture(rtFB1, rtFB1 == g_fbManager.GetCurrentColor()) : 0;
 
-                // Vulkan: mirror the tex0 swapchain-snapshot fallback (see above).
-                // Without this, a 2-cycle combiner draw that reads a framebuffer
-                // address through texture unit 1 (e.g. UI overlays that blend a
-                // world snapshot on tex0 with an icon/mask on tex1, or vice versa)
-                // fell straight through to m_textureCache->GetTexture() below, which
-                // decodes raw RDRAM/TMEM bytes for an address the GPU renders to but
-                // never writes back to RDRAM on the Vulkan path — garbage/noise.
+                // Vulkan: mirror the tex0 swapchain-snapshot fallback (see above). Without it, a 2-cycle
+                // combiner draw that reads a framebuffer address through texture unit 1 (e.g. UI overlays that
+                // blend a world snapshot on tex0 with an icon/mask on tex1, or vice versa) would fall straight
+                // through to m_textureCache->GetTexture() below, which decodes raw RDRAM/TMEM bytes for an
+                // address the GPU renders to but never writes back to RDRAM on the Vulkan path, giving
+                // garbage/noise.
                 bool useVKSnapshot1 = false;
                 ITexture* vkSnapshotTex1 = nullptr;
                 if (fbTex1 == 0 && !g_fbManager.IsGL()) {
@@ -1704,26 +1597,17 @@ void RDPProcessor::FlushBatch() {
                         }
                     }
 
-                    // Last resort — mirrors tex0's canvas-blit fallback (the
-                    // fix for the black pause-menu panel) above. Tex1 never
-                    // had this: only the two ring-based paths, which depend
-                    // on the 4-slot snapshot ring (m_vkFBSnapshots) still
-                    // holding this address's entry. MM/OoT's pause-menu
-                    // world-snapshot background is read through tex1 (a
-                    // 2-cycle combiner blending it with a darkening tint),
-                    // and the ring churns fast -- the routine double-buffer
-                    // and Z-buffer-reuse-as-color-target captures alone
-                    // consume 2+ new ring slots per frame -- so a one-time
-                    // background capture falls out of the ring within a
-                    // frame or two. Without this fallback, every read after
-                    // that point had nowhere left to go but raw, never-
-                    // synced RDRAM. Confirmed via a live capture: reads
-                    // succeeded via the ring for exactly the first two
-                    // frames, then failed on every following frame with no
-                    // recovery, even though the framebuffer itself remained
-                    // correctly resolvable (rtFB1 non-null) the whole time --
-                    // the persistent canvas this reads from survives ring
-                    // churn entirely, unlike the ring itself.
+                    // Last resort, mirroring tex0's canvas-blit fallback above (the fix for the black pause-menu
+                    // panel). The two ring-based paths depend on the 4-slot snapshot ring (m_vkFBSnapshots) still
+                    // holding this address's entry. MM/OoT's pause-menu world-snapshot background is read through
+                    // tex1 (a 2-cycle combiner blending it with a darkening tint), and the ring churns fast (the
+                    // routine double-buffer and Z-buffer-reuse-as-color-target captures alone consume 2+ new ring
+                    // slots per frame), so a one-time background capture falls out of the ring within a frame or
+                    // two. Without this fallback, every read after that point has nowhere left to go but raw,
+                    // never-synced RDRAM. A live capture confirmed it: reads succeeded via the ring for exactly the
+                    // first two frames, then failed on every following frame with no recovery, even though the
+                    // framebuffer itself stayed resolvable (rtFB1 non-null); the persistent canvas this reads from
+                    // survives ring churn entirely, unlike the ring itself.
                     if (fbTex1 == 0 && m_renderer) {
                         GPUFramebuffer* canvasFB1 = rtFB1 ? rtFB1 : rawRTFB1;
                         const uint32_t snapW = m_renderer->GetWidth();
@@ -1852,17 +1736,16 @@ void RDPProcessor::FlushBatch() {
                     glBindTexture(GL_TEXTURE_2D, fbTex);
                 }
             }
-            // When dual-source is NOT active, the shader blender computes
-            // the full blend formula (including memColor from FB texture),
-            // so disable GL hardware blend to avoid double-blending.
-            // When dual-source IS active, we need GL blend for compositing.
+            // When dual-source is not active, the shader blender computes the full blend formula
+            // (including memColor from the FB texture), so GL hardware blend is disabled to avoid
+            // double-blending. When dual-source is active, GL blend is needed for compositing.
             if (!(features & Shader::SF_DUAL_SOURCE_BLEND)) {
                 blend.enabled = false;
                 m_renderer->SetBlendState(blend);
             }
         }
 
-        // --- Trivial rejection bypass for testing ---
+        // --- Trivial rejection bypass for testing (disabled: the condition is hard-coded false) ---
         if (false && call.type == DrawCall::Type::Triangle && call.vertexCount >= 3) {
             bool allOutsideSamePlane = false;
 
@@ -1879,7 +1762,7 @@ void RDPProcessor::FlushBatch() {
             }
 
             if (allOutsideSamePlane) {
-                // Skip this triangle entirely � all vertices are culled
+                // Skip this triangle entirely: all vertices are culled
                 m_stats.trianglesDrawn++; // Count as drawn (for statistics)
                 continue;                 // Move to next draw call
             }
@@ -1891,7 +1774,7 @@ void RDPProcessor::FlushBatch() {
             prim = PrimitiveType::Triangles; // Rects decomposed into 2 triangles
         }
 
-        // === DEBUG: Skip depth-tested triangles (model draws) =============
+        // Debug switch: skip depth-tested triangles (model draws)
         if constexpr (DEBUG_SKIP_DEPTH_TRIS) {
             if (call.type == DrawCall::Type::Triangle && (features & Shader::SF_DEPTH_TEST)) {
                 continue;
@@ -1987,9 +1870,7 @@ void RDPProcessor::OnFrameEnd() {
     g_depthManager.OnFrameEnd();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Frame Buffer Access
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Frame Buffer Access ---
 
 void RDPProcessor::GetFrameBufferInfo(FrameBufferInfo* info, int maxBuffers) const {
     if (maxBuffers < 1 || !info) return;

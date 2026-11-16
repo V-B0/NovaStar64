@@ -1,6 +1,6 @@
 /**
  * @file N64Math.hpp
- * @brief Matrix4x4 RDRAM load + matrix multiply, used by the modelview/projection stack
+ * @brief Matrix4x4 multiply for the modelview/projection stack
  */
 
 #pragma once
@@ -11,9 +11,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Matrix Operations
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Matrix Operations ---
 
 namespace MatrixOps {
 

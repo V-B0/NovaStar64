@@ -1,4 +1,11 @@
-﻿#include "RDPProcessor_Private.hpp"
+﻿/**
+ * @file RDPProcessor_Draw.cpp
+ * @brief RDPProcessor triangle, texture rectangle and fill rectangle handling: the command handlers and draw
+ *        routines that queue DrawCalls into the render batch, plus the per-draw texture snapshot
+ *        (PopulateTextureInfo, BuildTextureKey).
+ */
+
+#include "RDPProcessor_Private.hpp"
 #include <cstdlib>
 #include <cstdio>
 #include <atomic>
@@ -13,14 +20,10 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
     DecodedRectangle rect;
     m_decoder.DecodeTextureRect(words, rect);
 
-    // COPY mode: the RDP processes 4 texels per clock cycle.
-    // dSdX is in "per cycle" units; divide by 4 for our per-pixel renderer.
-    // XL also needs +1 because the hardware uses an exclusive right edge in COPY.
     uint32_t cycleType = (m_state.rdp.otherModeH >> 20) & 0x03;
 
-    // Diagnostic trace for UI/HUD invisibility investigation: dumps the
-    // pre-widescreen rect plus the scissor + cycle + combiner + Z_CMP state
-    // that influences whether the rect renders.  Gated by NOVA_RDP_TRACE.
+    // Trace of the rect before the widescreen adjustment, plus the scissor, cycle, combiner and
+    // Z_CMP state that decides whether it renders. Enabled with NOVA64_MM_RDP_TRACE.
     MM_RDP_TRACE("TexRect rect=({:.2f},{:.2f})-({:.2f},{:.2f}) dsDx={:.4f} dtDy={:.4f} "
                  "cycle={} otherL=0x{:08X} otherH=0x{:08X} combine=0x{:016X} "
                  "scissor=({},{})-({},{}) wsScale={:.3f} tile={}",
@@ -29,13 +32,11 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
                  m_state.rdp.scissor.yh >> 2, m_state.rdp.scissor.xl >> 2, m_state.rdp.scissor.yl >> 2,
                  m_state.rdp.geometry.widescreenScale, rect.tileIndex);
     if (cycleType == 2) {
-        // COPY mode (GLideN64 model): dsDx is in 4-texels-per-clock units →
-        // /4 for per-pixel sampling, and the lower-right edge is INCLUSIVE →
-        // +1. NO corner/block rounding: an earlier "round to 4-pixel blocks"
-        // interpretation (misread from RT64) drew up to 3 extra pixel rows/
-        // columns per rect whose samples lay outside the glyph — the stray
-        // fringe pixels around every HUD icon. The exact rect has no such
-        // pixels, so no clamping gymnastics are needed either.
+        // COPY mode (GLideN64 model): dsDx is in 4-texels-per-clock units, so divide by 4 for
+        // per-pixel sampling, and the lower-right edge is inclusive, so add 1. There is no corner/block
+        // rounding: rounding to 4-pixel blocks (an interpretation misread from RT64) drew up to 3 extra
+        // pixel rows/columns per rect whose samples lay outside the glyph, the stray fringe pixels
+        // around every HUD icon. The exact rect has no such pixels, so no clamping is needed either.
         rect.dsDx /= 4.0f;
         rect.x1 += 1.0f;
         rect.y1 += 1.0f;
@@ -91,15 +92,11 @@ void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
 
     uint32_t cycleType = (m_state.rdp.otherModeH >> 20) & 0x03;
     if (cycleType == 2) {
-        // After flip swap: dsDx = orig dtDy, dtDy = orig dsDx.
-        // COPY mode divides the original dsDx by 4 — which is now in dtDy.
-        // x0/y0/x1/y1 are screen-space rect corners decoded identically to
-        // the non-flip TextureRect (flip only changes the S/T axis mapping,
-        // not the rect corners), so use the same fix as the non-flip path:
-        // the lower-right edge is inclusive in COPY mode (+1), no 4-pixel
-        // block rounding. The old block-rounding here was never updated when
-        // it was removed from HandleTextureRect for causing stray fringe
-        // pixels around every HUD icon — same bug, just not yet propagated.
+        // After the flip swap: dsDx = orig dtDy, dtDy = orig dsDx. COPY mode divides the original
+        // dsDx by 4, which is now in dtDy. x0/y0/x1/y1 are screen-space rect corners decoded
+        // identically to the non-flip TextureRect (flip only changes the S/T axis mapping, not the
+        // rect corners), so the same rule applies: the lower-right edge is inclusive in COPY mode (+1)
+        // and there is no 4-pixel block rounding, which caused stray fringe pixels around HUD icons.
         rect.dtDy /= 4.0f;
         rect.x1 += 1.0f;
         rect.y1 += 1.0f;
@@ -155,12 +152,11 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
                  static_cast<int>(m_state.rdp.colorImage.size),
                  static_cast<int>((m_state.rdp.otherModeH >> 20) & 0x03));
 
-    // �� Detect depth buffer clear ��
-    // The N64 clears the depth buffer by setting the color image to the depth
-    // buffer address, then issuing FillRect with the canonical depth-clear
-    // value. Some games, including Majora's Mask, also use the depth-image
-    // address as an auxiliary color buffer, so only the real clear value should
-    // be intercepted here.
+    // --- Detect depth buffer clear ---
+    // The N64 clears the depth buffer by setting the color image to the depth buffer address, then
+    // issuing FillRect with the canonical depth-clear value. Some games, including Majora's Mask,
+    // also use the depth-image address as an auxiliary color buffer, so only the real clear value
+    // is intercepted here.
     constexpr uint32_t kN64DepthClearFillColor = 0xFFFCFFFCu;
     if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
         m_state.rdp.colorImage.size == ImageSize::Bpp16 && m_state.rdp.fillColorRaw == kN64DepthClearFillColor) {
@@ -185,8 +181,8 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
         return;
     }
 
-    // Re-decode fill color at draw time using the CURRENT color image size
-    // (in case it changed since SetFillColor was called).
+    // Re-decode the fill color at draw time with the current color image size (it may have changed
+    // since SetFillColor).
     DecodeFillColor(m_state.rdp.fillColorRaw, m_state.rdp.colorImage.size, m_state.rdp.fillColor.r,
                     m_state.rdp.fillColor.g, m_state.rdp.fillColor.b, m_state.rdp.fillColor.a);
 
@@ -195,12 +191,10 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     // Add 1 pixel to compensate so the last column/row is filled.
     uint32_t cycleType = (m_state.rdp.otherModeH >> 20) & 0x03;
     if (cycleType == 3) {
-        // GLideN64's gDPFillRectangle in G_CYC_FILL does exactly this and
-        // nothing else: "++lrx; ++lry;" -- no 4-pixel block alignment.
-        // The previous "RT64-style ulx&=~3 / lrx|=3" rounding here was the
-        // same discredited hack already found and removed from the
-        // TextureRect COPY-mode path (it shifted fades/depth-clears/HUD
-        // backplates by up to 3px), just never propagated to this handler.
+        // GLideN64's gDPFillRectangle in G_CYC_FILL does exactly this and nothing else: "++lrx; ++lry;"
+        // with no 4-pixel block alignment. An RT64-style ulx&=~3 / lrx|=3 rounding is wrong: it shifts
+        // fades, depth clears and HUD backplates by up to 3px (the same rounding was removed from the
+        // TextureRect COPY-mode path).
         x1 += 1.0f;
         y1 += 1.0f;
     } else if (y1 == y0) {
@@ -237,9 +231,7 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     DrawFillRect(x0, y0, x1, y1);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Drawing
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Drawing ---
 
 void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     if (m_batch.IsFull()) FlushBatch();
@@ -257,7 +249,6 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         }
     }
 
-    // Create draw call
     DrawCall call;
     call.type = DrawCall::Type::Triangle;
     call.vertexStart = static_cast<int>(m_batch.vertices.size());
@@ -289,7 +280,8 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     [[maybe_unused]] double dxmdy = tri.edge.dxmDy;
     double dxldy = tri.edge.dxlDy;
 
-    // Attribute interpolation helper
+    // Evaluate an attribute plane at (x, y): base at the top of the major edge, plus the edge slope
+    // along Y and the X slope across the span
     auto interpAttr = [&](double base, double dDe, double dDx, double x, double y) -> float {
         double dy = y - yh;
         double xMajor = xh + dxhdy * dy; // major edge X at this Y
@@ -303,7 +295,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
 
         if (tri.hasDepth) {
             float rawZ = interpAttr(tri.depth.z, tri.depth.dzDe, tri.depth.dzDx, x, y);
-            // Log first vertex raw z value (before clamp) to understand N64 Z scale
+            // Diagnostic: log the first raw z value (before the clamp) to show the N64 Z scale
             {
                 static bool s_zLogged = false;
                 if (!s_zLogged) {
@@ -347,7 +339,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         v.clipFlags = 0;
     };
 
-    // Calculate mid-point on major edge
+    // X of the major edge at ym
     double x_major_mid = xh + dxhdy * (ym - yh);
 
     // Triangle 1 (Top half: yh to ym)
@@ -447,20 +439,18 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         } else {
             v.x = tv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
             v.y = tv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
-            // NOTE: 1/4-pixel snap intentionally NOT applied here. The N64 RSP
-            // does snap, but our texcoords are stored as s*invW (pre-divided
-            // for perspective interpolation). When the camera is close to a
-            // surface invW is large, so quantising the screen position by
-            // 0.25 px makes the corresponding texel step visibly each time
-            // the camera moves — the "horizontal/vertical back-and-forth"
-            // texture march users see on water and walls. The far-distance
-            // wobble that motivated snapping is solved by using the FBO size
-            // (not the per-draw scissor) for the ortho projection in
-            // FlushBatch, which is the actual stable mapping.
+            // No 1/4-pixel snap here. The N64 RSP does snap, but our texcoords are stored as s*invW
+            // (pre-divided for perspective interpolation). When the camera is close to a surface invW is
+            // large, so quantising the screen position by 0.25 px makes the corresponding texel step
+            // visibly each time the camera moves: the "horizontal/vertical back-and-forth" texture march
+            // seen on water and walls. The far-distance wobble that motivated snapping is solved by using
+            // the FBO size (not the per-draw scissor) for the ortho projection in FlushBatch, which is the
+            // stable mapping.
         }
-        // Normalize screen-space z to [0,1]. The ortho maps this to clip_z = 2*z_norm - 1 ? [-1,1]
-        // (full NDC range). Near z_norm=0 � window_depth=0, Far z_norm=1 � window_depth=1.0 (clear).
-        // Without normalization, z_screen ? [0,1024] � clip_z ? [-1,3] � far geometry clipped.
+        // Normalize screen-space z to [0,1]. The ortho maps this to clip_z = 2*z_norm - 1 in [-1,1] (the
+        // full NDC range): near z_norm=0 gives window_depth=0, far z_norm=1 gives window_depth=1.0 (the
+        // clear value). Without normalization, z_screen in [0,1024] would give clip_z in [-1,3] and far
+        // geometry would be clipped.
         if (tv.modifiedZ) {
             // gSPModifyVertex ZSCREEN: screenZ is already the final normalized depth
             v.z = tv.screenZ;
@@ -487,9 +477,8 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         // When texturePersp is ON (the common case), store texcoords
         // pre-multiplied by 1/W so the fragment shader can recover
         // perspective-correct texels via (vTexCoord / vClipW).
-        // When texturePersp is OFF, the N64 does affine (linear) texturing,
-        // so store raw texcoords and set perspW=1 � the shader division
-        // by vClipW is then an identity op.
+        // When texturePersp is OFF, the N64 does affine (linear) texturing, so store raw texcoords and
+        // set perspW=1: the shader division by vClipW is then an identity op.
         // N64 RSP outputs ST at 2x scale in non-perspective mode; compensate
         // with *0.5 (matches GLideN64 vertex shader: texCoord *= 0.5).
         bool textPersp = (m_state.rdp.otherModeH & OTHERMODE_TEXTPERSP) != 0;
@@ -501,7 +490,7 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         v.t1 = tv.texCoord1[1] * scaleT * tcW * affineHalf;
         v.perspW = tcW;
         v.fogFactor = tv.fogFactor;
-        v.clipFlags = tv.clipFlags; // Copy clip flags for frustum culling
+        v.clipFlags = tv.clipFlags;
         return v;
     };
 
@@ -528,8 +517,8 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
     m_batch.vertices.push_back(makeVert(v1));
     m_batch.vertices.push_back(makeVert(v2));
 
-    // Prim shading: when G_LIGHTING is off AND G_SHADE is off, the shade
-    // input should be primColor (not vertex color). GLideN64 ref: GraphicsDrawer.cpp.
+    // Prim shading: when G_LIGHTING and G_SHADE are both off, the shade input should be primColor
+    // (not vertex color). GLideN64 ref: GraphicsDrawer.cpp.
     if (!(geo.geometryMode & G_LIGHTING) && !(geo.geometryMode & G_SHADE)) {
         auto& verts = m_batch.vertices;
         size_t base = verts.size() - 3;
@@ -634,10 +623,9 @@ void RDPProcessor::DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderB
 void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     if (m_batch.IsFull()) FlushBatch();
 
-    // �� Special depth-buffer texture rect detection ����������������������
-    // Some N64 games (Zelda OoT, Perfect Dark, �) read the depth buffer via
-    // textured rectangles for shadows (texturedRectShadowMap) or depth
-    // readback (texturedRectDepthBufferCopy).
+    // --- Special depth-buffer texture rect detection ---
+    // Some N64 games (Zelda OoT, Perfect Dark, and others) read the depth buffer via textured
+    // rectangles for shadows (texRectShadowMap) or depth readback (texRectDepthBufferCopy).
     bool shadowMapRect = false;
     {
         uint32_t texAddr = m_state.rdp.textureImage.address & 0x7FFFFF;
@@ -645,7 +633,7 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         uint8_t texSize = static_cast<uint8_t>(m_state.rdp.textureImage.size);
         uint32_t fbWidth = m_state.rdp.colorImage.width;
 
-        // Depth buffer range: conservative upper bound (width � width � 1.5).
+        // Depth buffer range: conservative upper bound (width x width x 1.5).
         uint32_t zbRange = fbWidth * fbWidth * 3 / 2;
 
         const bool readsDepthBuffer = texSize == 2 && zbAddr != 0 && texAddr >= zbAddr && texAddr < zbAddr + zbRange;
@@ -654,26 +642,23 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         // at the depth buffer's address, and treating those strips as a
         // shadow map replaced the picture with a depth-fog overlay.
         if (readsDepthBuffer && m_hacks.texRectDepthBufferCopy && rect.y0 == 0.0f && rect.y1 <= 1.0f) {
-            // texturedRectDepthBufferCopy: a 1-row copy of depth data from
-            // TMEM back to RDRAM. The GPU has nothing to render.
+            // texRectDepthBufferCopy: a 1-row copy of depth data from TMEM back to RDRAM; the GPU has
+            // nothing to render.
             return;
         }
-        // texturedRectShadowMap: depth read drawn as a fog-coloured shadow.
+        // texRectShadowMap: depth read drawn as a fog-coloured shadow.
         if (readsDepthBuffer && m_hacks.texRectShadowMap) {
             shadowMapRect = true;
         }
     }
 
-    // N64 hardware quirk (matches GLideN64's _calcTileSizes): a degenerate
-    // 1x1 declared tile size in COPY cycle mode is not literal -- the RDP
-    // infers the real texture width/height from the rectangle's own
-    // screen-space span instead of the tile's SETTILESIZE. Some games rely
-    // on this rather than setting a matching tile size for a straight,
-    // unscaled COPY-mode blit. Temporarily patch the tile's sh/th so the
-    // size calculation downstream (CalcTileSize, in PopulateTextureInfo)
-    // sees the corrected dimensions for this one draw, then restore --
-    // the tile slot's real SETTILESIZE state must not be permanently
-    // clobbered for whatever draw reuses it next.
+    // N64 hardware quirk (matches GLideN64's _calcTileSizes): a degenerate 1x1 declared tile size
+    // in COPY cycle mode is not literal. The RDP infers the real texture width/height from the
+    // rectangle's own screen-space span instead of the tile's SETTILESIZE, and some games rely on
+    // this rather than setting a matching tile size for a straight, unscaled COPY-mode blit. The
+    // tile's sh/th are patched temporarily so the size calculation downstream (CalcTileSize, in
+    // PopulateTextureInfo) sees the corrected dimensions for this one draw, then restored: the tile
+    // slot's real SETTILESIZE state must not be clobbered for whatever draw reuses it next.
     auto& tileForRect = m_state.rdp.tiles[rect.tileIndex];
     int32_t savedSh = tileForRect.sh, savedTh = tileForRect.th;
     bool copyRectSizeOverridden = false;
@@ -737,9 +722,9 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     float s0 = rect.s;
     float t0 = rect.t;
 
-    // HACK: Some games set s=512.0 (raw 0x4000) for narrow textures.
-    // When the tile ULS + colorImage width < 512, the offset wraps
-    // incorrectly. Force s to 0. (GLideN64 ref: gDP.cpp gDPTextureRectangle)
+    // Workaround: some games set s=512.0 (raw 0x4000) for narrow textures. When the tile ULS +
+    // colorImage width < 512, the offset wraps incorrectly, so s is forced to 0. (GLideN64 ref:
+    // gDP.cpp gDPTextureRectangle)
     if (s0 == 512.0f) {
         auto& tile = m_state.rdp.tiles[rect.tileIndex];
         if (m_state.rdp.colorImage.width + (tile.sl >> 2) < 512) s0 = 0.0f;
@@ -754,17 +739,13 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         t1 = t0 + rect.dtDy * height;
     }
 
-    // Normalize to screen space [-1, 1]
-    // The renderer will handle the actual viewport transformation
+    // Vertices are in N64 screen pixels; the renderer applies the viewport transformation.
     RenderBatch::Vertex v[4];
 
     // Top-left (shade color = 0 for TextureRect, matching GLideN64 uRectColor)
     v[0] = {rect.x0, rect.y0, 0, 1, s0, t0, 0, 0, 0, 0, 0, 0, 0, 0};
-    // Top-right
     v[1] = {rect.x1, rect.y0, 0, 1, s1, t0, 0, 0, 0, 0, 0, 0, 0, 0};
-    // Bottom-left
     v[2] = {rect.x0, rect.y1, 0, 1, s0, t1, 0, 0, 0, 0, 0, 0, 0, 0};
-    // Bottom-right
     v[3] = {rect.x1, rect.y1, 0, 1, s1, t1, 0, 0, 0, 0, 0, 0, 0, 0};
 
     if (rect.flipped) {
@@ -781,16 +762,12 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         v[i].t1 = v[i].t;
     }
 
-    // Compute texture coordinate bounds to prevent bilinear bleed.
-    // Use pixel-center snapping: RDP samples at integer pixel centers,
-    // so the first sampled pixel is at ceil(x0), last at ceil(x1)-1.
-    // COPY mode: bound at the PRE-block-expansion edge (boundX1/boundY1) —
-    // the expanded region must repeat the edge texel, not sample past it.
+    // Compute texture coordinate bounds to prevent bilinear bleed. Pixel-center snapping: the RDP
+    // samples at integer pixel centers, so the first sampled pixel is at ceil(x0) and the last at
+    // ceil(x1)-1. The bounds default to the rect corners; boundX0..boundY1, when set, span a smaller
+    // original rect (evaluated in the current vertex mapping) so that pixels outside it clamp to
+    // its edge texels on all four sides, like hardware.
     {
-        // COPY mode block expansion: bounds span the ORIGINAL rect's texels
-        // (boundX0..boundX1), evaluated in the current (expanded-corner)
-        // vertex mapping — expansion pixels then clamp to the glyph's own
-        // edge texels on all four sides, like hardware.
         float bx0 = (rect.boundX0 >= 0.0f) ? rect.boundX0 : rect.x0;
         float by0 = (rect.boundY0 >= 0.0f) ? rect.boundY0 : rect.y0;
         float bx1 = (rect.boundX1 >= 0.0f) ? rect.boundX1 : rect.x1;
@@ -827,7 +804,7 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
 
     // Compute clip flags (texture rects in screen space: w=1, so no clipping expected)
     for (int i = 0; i < 4; i++) {
-        v[i].clipFlags = 0; // Screen-space rects: always inside frustum
+        v[i].clipFlags = 0;
     }
 
     // Two triangles: (0, 1, 2), (1, 3, 2)
@@ -908,7 +885,7 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
 
     // Compute clip flags (fill rects in screen space: w=1, so no clipping expected)
     for (int i = 0; i < 4; i++) {
-        v[i].clipFlags = 0; // Screen-space rects: always inside frustum
+        v[i].clipFlags = 0;
     }
 
     m_batch.vertices.push_back(v[0]);
@@ -924,9 +901,7 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
     m_stats.fillRectsDrawn++;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Texture Helpers
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Texture Helpers ---
 
 void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     // Snapshot tile descriptors first — we need tmemAddr to look up the source address.
@@ -952,11 +927,10 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     call.textureImageAddr = addr0;
     call.textureImageAddr1 = addr1;
 
-    // Resolve the FB-snapshot ring slot NOW, at enqueue time, while the ring
-    // reflects the state as of this exact draw call (see the field comment
-    // on snapshotSlot0/1 in RDPProcessor.hpp for why address-only lookup at
-    // flush time is ambiguous). Search most-recently-written first so a
-    // match reflects whatever was actually last written to that address.
+    // Resolve the FB-snapshot ring slot now, at enqueue time, while the ring reflects the state as
+    // of this exact draw call (see the field comment on snapshotSlot0/1 in RDPProcessor.hpp for why
+    // an address-only lookup at flush time is ambiguous). Search most-recently-written first so a
+    // match reflects whatever was last written to that address.
     call.snapshotSlot0 = -1;
     call.snapshotSlot1 = -1;
     if (!g_fbManager.IsGL()) {
@@ -971,17 +945,13 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
         }
     }
 
-    // RSP tile-clone for HLE triangles:
-    // When texture LOD is enabled in the RDP mode word AND the RSP has
-    // texture.level == 0 (base level only), the microcode clones
-    // tile[tileIndex] into tile[tileIndex+1] so that texel1 reads valid
-    // TMEM data.  Without this clone, tile1 may point to stale TMEM
-    // (e.g. the palette area), causing noise artifacts.
-    //
-    // When LOD is NOT enabled, tile0 and tile1 are independent textures
-    // used by the 2-cycle combiner (e.g. the NINTENDO64 metallic text
-    // effect which blends two tiles via PRIM_LOD_FRAC).  In that case
-    // we must NOT clone, otherwise the second texture is lost.
+    // RSP tile clone for HLE triangles: when texture LOD is enabled in the RDP mode word and the
+    // RSP has texture.level == 0 (base level only), the microcode clones tile[tileIndex] into
+    // tile[tileIndex+1] so that texel1 reads valid TMEM data. Without the clone, tile1 may point
+    // to stale TMEM (e.g. the palette area), causing noise artifacts.
+    // When LOD is not enabled, tile0 and tile1 are independent textures used by the 2-cycle
+    // combiner (e.g. the NINTENDO64 metallic text effect, which blends two tiles via
+    // PRIM_LOD_FRAC), so they must not be cloned or the second texture is lost.
     int level = static_cast<int>(m_state.rdp.geometry.texture.level);
     bool textureLOD = ((call.otherModeH >> 16) & 1) != 0;
     if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD) {
@@ -1035,7 +1005,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD) call.textureHash1 = 0;
     else call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1, call.textureImageAddr1) : 0;
 
-    // Copy scrolling when tile1 was cloned from tile0, use tile0's scroll values
+    // When tile1 was cloned from tile0, use tile0's scroll values
     call.scrollS0 = m_state.rdp.scrollS[tileIndex & 7];
     call.scrollT0 = m_state.rdp.scrollT[tileIndex & 7];
     if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD) {
@@ -1046,31 +1016,22 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
         call.scrollT1 = m_state.rdp.scrollT[(tileIndex + 1) & 7];
     }
 
-    // Snapshot the TMEM content CRC at draw-queue time.
-    // BuildTextureKey (called later at flush time) reads TMEM when building the
-    // texture cache key. If a subsequent LoadBlock overwrites TMEM before the
-    // batch is flushed, all batched draws would be keyed against the LAST loaded
-    // texture rather than their own.  Capturing the CRC now, while TMEM holds
-    // the correct data, avoids this flush-time mismatch.
-    //
-    // That fix only protects the CACHE KEY though -- the actual pixel DECODE
-    // (TextureCache::GetTexture's cache-miss path) still reads live TMEM at
-    // FLUSH time via m_state.rdp.tmem.data. A batch of several small texture
-    // draws sharing one render state (e.g. many TextureRect strips building up
-    // one image row by row -- MM's pause-menu background construction) never
-    // triggers an intervening flush (NeedsBatchFlush only compares render
-    // state, not texture identity), so every strip's LoadTile call keeps
-    // overwriting the SAME TMEM region before FlushBatch ever runs. By the
-    // time GetTexture actually decodes each (correctly, uniquely keyed) entry,
-    // every one of them decodes from whatever TMEM holds AFTER THE LAST
-    // strip's load -- silently caching identical (usually the final strip's)
-    // pixel content under every different key. Symptom: a supposedly-varied
-    // captured background renders as one uniform block/color.
-    //
-    // Fix: eagerly call GetTexture here, at enqueue time, while TMEM still
-    // holds THIS draw's own correct data. This decodes+caches under the same
-    // key FlushBatch will look up later (same overrideCrc), so the later
-    // lookup is a cache hit and never re-decodes from by-then-stale TMEM.
+    // Snapshot the TMEM content CRC at draw-queue time. BuildTextureKey (called later at flush
+    // time) reads TMEM when building the texture cache key. If a later LoadBlock overwrites TMEM
+    // before the batch is flushed, all batched draws would be keyed against the last loaded texture
+    // rather than their own, so the CRC is captured now, while TMEM holds the right data.
+    // That only protects the cache key: the pixel decode (TextureCache::GetTexture's cache-miss
+    // path) still reads live TMEM at flush time via m_state.rdp.tmem.data. A batch of several small
+    // texture draws sharing one render state (e.g. many TextureRect strips building up one image
+    // row by row, as in MM's pause-menu background) never triggers an intervening flush
+    // (NeedsBatchFlush only compares render state, not texture identity), so every strip's LoadTile
+    // keeps overwriting the same TMEM region before FlushBatch runs. By the time GetTexture decodes
+    // each (correctly keyed) entry, every one decodes from whatever TMEM holds after the last
+    // strip's load, caching identical pixel content (usually the final strip's) under every key; a
+    // captured background then renders as one uniform block of color.
+    // To avoid that, GetTexture is called here at enqueue time, while TMEM still holds this draw's
+    // own data. It decodes and caches under the same key FlushBatch looks up later (same
+    // overrideCrc), so the later lookup is a cache hit and never re-decodes from stale TMEM.
     uint8_t snapTlutType = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
     if (call.textureHash0 != 0) {
         Tex::TextureKey key0 = BuildTextureKey(call.tileDesc0, call.textureImageAddr, snapTlutType,
@@ -1237,12 +1198,11 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile, uint32
     } else {
 
         uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
-        // When the render tile has line=0 (common for TextureRect item/sprite draws,
-        // where stride is irrelevant to the hardware), GetBytesPerRow() returns 0 and
-        // tmemSize would be 0 → crc=0 for all such tiles.  If multiple items share the
-        // same SetTextureImage address (loaded via different tl offsets into a texture
-        // table), they'd all hash to the same cache key and show the first item's texture.
-        // Fix: when line=0, derive the row stride from width and bits-per-pixel so that
+        // A render tile with line=0 (common for TextureRect item/sprite draws, where stride is
+        // irrelevant to the hardware) has GetBytesPerRow() == 0, so tmemSize would be 0 and the crc 0
+        // for all such tiles. If several items share one SetTextureImage address (loaded via different
+        // tl offsets into a texture table) they would all hash to the same cache key and show the first
+        // item's texture. So when line=0 the row stride is derived from width and bits-per-pixel, and
         // the CRC covers the actual texel data in TMEM.
         uint32_t bytesPerRow = static_cast<uint32_t>(tile.GetBytesPerRow());
         if (bytesPerRow == 0 && key.width > 0) {
@@ -1295,7 +1255,7 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile, uint32
             }
             key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
         }
-    } // end else (overrideCrc == 0)
+    }
 
     if (m_hiResHashing && mipCount == 0 && overrideCrc == 0) {
         // Each distinct texture is checksummed once; the memo is keyed by everything that
@@ -1358,9 +1318,5 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile, uint32
 
     return key;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Batch Management
-// ═══════════════════════════════════════════════════════════════════════════
 
 } // namespace Nova64::Video

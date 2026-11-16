@@ -16,14 +16,14 @@ inline void UnpackRGBA5551(uint16_t packed, uint8_t& r, uint8_t& g, uint8_t& b, 
     g = static_cast<uint8_t>(((packed >> 6) & 0x1F) << 3);
     b = static_cast<uint8_t>(((packed >> 1) & 0x1F) << 3);
     a = (packed & 1) ? 0xFF : 0x00;
-    // Replicate high bits into low bits for better precision
+    // Widen 5 bits to 8 by replicating the top bits into the low bits so 0x1F maps to 0xFF
     r |= (r >> 5);
     g |= (g >> 5);
     b |= (b >> 5);
 }
 
-/// Decode an N64 fill color from the 32-bit register
-/// For 16-bit modes, it contains two RGBA5551 pixels; for 32-bit, one RGBA8888
+/// Decode a fill color register: one RGBA8888 pixel for 32-bit images, two RGBA5551 pixels for 16-bit
+/// (the upper one is used)
 inline void DecodeFillColor(uint32_t raw, ImageSize size, uint8_t& r, uint8_t& g, uint8_t& b, uint8_t& a) {
     if (size == ImageSize::Bpp32) {
         r = (raw >> 24) & 0xFF;

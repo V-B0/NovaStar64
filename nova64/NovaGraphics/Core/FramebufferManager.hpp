@@ -13,9 +13,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════
-//  Framebuffer Format
-// ═══════════════════════════════════════════════════════════════
+// --- Framebuffer Format ---
 
 enum class FBFormat : uint8_t {
     RGBA16 = 0, // 5-5-5-1 (most N64 games)
@@ -30,9 +28,7 @@ enum class FBType : uint8_t {
     Aux = 2,
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Framebuffer Descriptor
-// ═══════════════════════════════════════════════════════════════
+// --- Framebuffer Descriptor ---
 
 struct FramebufferDesc {
     uint32_t address = 0;  // RDRAM address
@@ -51,28 +47,22 @@ struct FramebufferDesc {
     }
 
     bool operator==(const FramebufferDesc& other) const {
-        // MUST include type: N64 games routinely repurpose one RDRAM region
-        // for different roles at different times -- most commonly, MM's
-        // pause menu reuses the Z-buffer's address as a scratch Color target
-        // for its blurred world-snapshot mosaic once the 3D pass is done.
-        // The Depth FB and the later Color FB at that address share the same
-        // address/width/height/format (both RGBA16), so without comparing
-        // type here, FindOrCreate's exact-match branch treated them as "the
-        // same" framebuffer and returned the pre-existing Depth entry for
-        // every OnSetColorImage(sameAddr) call -- a separate Color-typed
-        // entry was never created at all. The later LoadTile read-back then
-        // found only the Depth entry, which CanAliasFramebuffer correctly
-        // rejects (wrong FBType), so the mosaic tiles fell through to raw
-        // (never-written) RDRAM -- solid black. This is the asymmetric
-        // black pause-menu panel bug.
+        // The comparison must include type: N64 games routinely repurpose one RDRAM region for
+        // different roles at different times, most commonly MM's pause menu reusing the Z-buffer's
+        // address as a scratch Color target for its blurred world-snapshot mosaic once the 3D pass is
+        // done. The Depth FB and the later Color FB at that address share the same
+        // address/width/height/format (both RGBA16), so without comparing type FindOrCreate's
+        // exact-match branch would treat them as the same framebuffer and return the pre-existing
+        // Depth entry for every OnSetColorImage(sameAddr) call, never creating a Color-typed entry. The
+        // later LoadTile read-back would then find only the Depth entry, which CanAliasFramebuffer
+        // correctly rejects (wrong FBType), so the mosaic tiles fall through to raw (never-written)
+        // RDRAM and render solid black: the asymmetric black pause-menu panel bug.
         return address == other.address && width == other.width && height == other.height && format == other.format &&
                type == other.type;
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  GPU Framebuffer Object
-// ═══════════════════════════════════════════════════════════════
+// --- GPU Framebuffer Object ---
 
 struct GPUFramebuffer {
     uint32_t fbo = 0;      // GL framebuffer
@@ -96,25 +86,21 @@ struct GPUFramebuffer {
     bool isAux = false;
     bool gpuModified = false;         // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
     // Separate from gpuModified: LoadBlock/LoadTile's FB-as-texture sync path
-    // (RDPProcessor_Texture.cpp) also gates on and clears gpuModified for its
-    // own purpose (e.g. every-frame CfB/AA-resolve copy-back reads). If that
-    // path runs first in a frame, it silently starves HandleSetColorImage's
-    // pre-switch inventory-background snapshot, which never fires because it
-    // shares the same flag. This flag is set alongside gpuModified but is
-    // only ever cleared by the inventory-snapshot consumer, so the two never
-    // steal from each other.
+    // (RDPProcessor_Texture.cpp) also gates on and clears gpuModified for its own purpose (e.g.
+    // every-frame CfB/AA-resolve copy-back reads). If the two shared a flag, that path running
+    // first in a frame would starve HandleSetColorImage's pre-switch inventory-background
+    // snapshot. This flag is set alongside gpuModified but only cleared by the inventory-snapshot
+    // consumer, so the two never steal from each other.
     bool needsInventorySnapshot = false;
-    // Same problem, third victim: ExecuteLoadTile/ExecuteLoadBlock's own
-    // RDRAM-sync trigger (CopyFromGPU / CopyFramebufferToRDRAM) ALSO gates on
-    // and clears the plain gpuModified flag -- so it too can be starved by an
-    // unrelated earlier read of the SAME address (e.g. MM's routine per-frame
-    // Z-buffer-clear-via-color-pipeline trick reuses 0x383AC0, the same
-    // address as the pause-menu scratch snapshot, for an unrelated purpose
-    // every single frame). Dedicated flag, set alongside the other two, only
-    // ever cleared by ExecuteLoadTile/ExecuteLoadBlock's own RDRAM sync, so
-    // it can't be pre-consumed by anything else touching this address.
+    // Same problem, third consumer: ExecuteLoadTile/ExecuteLoadBlock's own RDRAM-sync trigger
+    // (CopyFromGPU / CopyFramebufferToRDRAM) also gates on and clears gpuModified, so it could be
+    // starved by an unrelated earlier read of the same address (e.g. MM's routine per-frame
+    // Z-buffer-clear-via-color-pipeline trick reuses 0x383AC0, the same address as the pause-menu
+    // scratch snapshot, for an unrelated purpose every frame). This dedicated flag is set alongside
+    // the other two and only cleared by ExecuteLoadTile/ExecuteLoadBlock's own RDRAM sync, so
+    // nothing else touching the address can consume it first.
     bool needsRdramResync = false;
-    // Sticky: has the RDP EVER rendered into this buffer? `gpuModified` is
+    // Sticky: has the RDP ever rendered into this buffer? `gpuModified` is
     // cleared by the RDRAM read-back, so it cannot answer "is the GPU the
     // author of this buffer's contents". Gating the CPU->GPU upload on this
     // instead prevents re-uploading an N64-resolution RDRAM copy over a
@@ -135,9 +121,7 @@ struct GPUFramebuffer {
     FramebufferDesc desc;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  VI (Video Interface) Configuration
-// ═══════════════════════════════════════════════════════════════
+// --- VI (Video Interface) Configuration ---
 
 struct VIConfig {
     uint32_t origin = 0;       // VI_ORIGIN_REG
@@ -171,9 +155,7 @@ struct VIConfig {
     float GetScaleY() const { return static_cast<float>(yScale & 0xFFF) / 1024.0f; }
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Framebuffer Manager
-// ═══════════════════════════════════════════════════════════════
+// --- Framebuffer Manager ---
 
 class FramebufferManager {
 public:
@@ -183,12 +165,12 @@ public:
     FramebufferManager() = default;
     ~FramebufferManager();
 
-    // ── Lifecycle ──
+    // --- Lifecycle ---
     bool Init(uint32_t resolutionScale = 1);
     void Shutdown();
     void Reset();
 
-    // ── Framebuffer Tracking ──
+    // --- Framebuffer Tracking ---
     /// Called when RDP sets color/depth image — tracks the FB
     void OnSetColorImage(uint32_t address, uint32_t width, uint32_t format, uint32_t size);
     void OnSetDepthImage(uint32_t address);
@@ -220,14 +202,14 @@ public:
     GPUFramebuffer* GetFB(uint32_t idx) { return idx < m_fbCount ? &m_framebuffers[idx] : nullptr; }
     uint64_t GetFrameCounter() const { return m_frameCounter; }
 
-    // ── GPU ↔ CPU Sync ──
+    // --- GPU ↔ CPU Sync ---
     /// Copy N64 RDRAM data into GPU color buffer
     void CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram);
     /// Vulkan counterpart of CopyToGPU: converts the N64 framebuffer at this
     /// entry's address from RDRAM into RGBA8 and hands it to the backend for
     /// upload into that address's canvas. CopyToGPU itself is GL-only
-    /// (`if (!m_isGL) return;`), which left the whole CPU->GPU direction absent
-    /// on Vulkan. Returns false if unavailable.
+    /// (`if (!m_isGL) return;`), so without this the CPU->GPU direction would be
+    /// absent on Vulkan. Returns false if unavailable.
     bool CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram, class IRenderer* renderer);
 
     /// Read GPU color buffer back to N64 RDRAM (synchronous — stalls GPU)
@@ -258,7 +240,7 @@ public:
     /// Mark RDRAM region as clean (synced with GPU)
     void ClearRDRAMDirty(uint32_t address, uint32_t size);
 
-    // ── Display (VI Output) ──
+    // --- Display (VI Output) ---
     /// Update VI configuration from N64 registers
     void UpdateVI(const VIConfig& config);
 
@@ -274,7 +256,7 @@ public:
     /// Apply gamma correction
     void ApplyGammaCorrection(GPUFramebuffer* fb, float gamma);
 
-    // ── Format Conversion ──
+    // --- Format Conversion ---
     /// Convert RGBA16 RDRAM data to RGBA8 for GPU upload
     void ConvertRGBA16ToRGBA8(const uint16_t* src, uint8_t* dst, uint32_t pixelCount);
     void ConvertRGBA32ToRGBA8(const uint32_t* src, uint8_t* dst, uint32_t pixelCount);
@@ -285,7 +267,7 @@ public:
     void ConvertDepthN64ToFloat(const uint16_t* src, float* dst, uint32_t pixelCount);
     void ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount, uint32_t width = 0);
 
-    // ── Framebuffer Effects ──
+    // --- Framebuffer Effects ---
     /// Copy between framebuffers (used by some games for effects)
     void CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst);
 
@@ -302,10 +284,9 @@ public:
     /// clear (common in N64 DLs) does not destroy the completed frame.
     void SnapshotForPresentation();
 
-    /// Resolve MSAA framebuffer
     void ResolveMSAA(GPUFramebuffer* msaaFB, GPUFramebuffer* resolved);
 
-    // ── Statistics ──
+    // --- Statistics ---
     struct Stats {
         uint64_t gpuToRdramCopies = 0;
         uint64_t rdramToGpuCopies = 0;
@@ -319,7 +300,7 @@ public:
     const Stats& GetStats() const { return m_stats; }
     void ResetStats() { m_stats = {}; }
 
-    // ── Configuration ──
+    // --- Configuration ---
     void SetResolutionScale(uint32_t scale) { m_resScale = scale; }
     uint32_t GetResolutionScale() const { return m_resScale; }
 
@@ -332,7 +313,7 @@ public:
     void SetMSAASamples(uint32_t samples) { m_msaaSamples = samples; }
     uint32_t GetMSAASamples() const { return m_msaaSamples; }
 
-    // ── Game-Specific Hack Flags ──
+    // --- Game-Specific Hack Flags ---
     struct FBHacks {
         bool paperMarioBlueBoost = false; // Add 4 to blue channel on FB→RDRAM copy
         bool conkerBlurDetect = false;    // Detect colorImage==depthImage pause blur
@@ -355,8 +336,6 @@ public:
     /// Store the RDRAM base pointer for RDRAM→GPU uploads in UpdateVI
     void SetRDRAM(const uint8_t* rdram) { m_rdram = rdram; }
 
-    /// Enable widescreen stretch: BlitToScreen fills the entire window
-    /// instead of preserving the FBO's native aspect ratio.
     /// Width / height of the picture on screen; 0 fills the window. See IRenderer::SetOutputAspect.
     void SetOutputAspect(float aspect) { m_outputAspect = aspect; }
 

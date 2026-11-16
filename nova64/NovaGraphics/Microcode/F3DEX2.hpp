@@ -41,7 +41,7 @@ protected:
     MicrocodeType m_type = MicrocodeType::F3DEX2;
     const char* m_name = "F3DEX2";
 
-    // ─── GBI2 command handlers ───────────────────────────────────────
+    // --- GBI2 command handlers ---
     void Cmd_G_NOOP(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MODIFYVTX(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -70,9 +70,7 @@ protected:
     void Cmd_G_SPECIAL_3(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  F3DZEX Handler (Zelda variant — inherits from F3DEX2)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- F3DZEX Handler (Zelda variant — inherits from F3DEX2) ---
 
 class F3DZEXHandler : public F3DEX2Handler {
 public:
@@ -81,18 +79,15 @@ public:
         m_name = "F3DZEX (Zelda)";
     }
 
-    // F3DZEX is essentially F3DEX2 with a few extensions
-    // Any Zelda-specific overrides can go here
+    // F3DZEX adds G_BRANCH_W (opcode 0x04) and handles the G_SPECIAL_3 slot (0xD3) itself
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
 
 private:
-    // Zelda-specific: point lighting
+    // Zelda-specific G_SPECIAL_3 slot (a no-op, as in GLideN64)
     void Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, uint32_t w1);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  F3DCBFD Handler (Conker variant — inherits from F3DEX2)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- F3DCBFD Handler (Conker variant — inherits from F3DEX2) ---
 
 class F3DCBFDHandler : public F3DEX2Handler {
 public:
@@ -120,9 +115,7 @@ private:
     float m_coordMod[16] = {};
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation — F3DEX2
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation — F3DEX2 ---
 
 inline void F3DEX2Handler::Initialize(const MicrocodeInfo& info) {
     m_type = info.type;
@@ -130,22 +123,19 @@ inline void F3DEX2Handler::Initialize(const MicrocodeInfo& info) {
     ResetStats();
 }
 
-inline void F3DEX2Handler::OnFrameBegin(DListContext& ctx) {
-    (void)ctx;
-    // Reset per-frame state if needed
-}
+inline void F3DEX2Handler::OnFrameBegin(DListContext& ctx) { (void)ctx; }
 
 inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
 
-    // RDP pass-through commands (0xC0-0xFF except GBI2 commands)
+    // RDP pass-through commands (0xC0-0xCF)
     if (opcode >= 0xC0 && opcode <= 0xCF) {
         HandleRDPCommand(ctx, w0, w1);
         return true;
     }
 
     switch (opcode) {
-    // ─── Low opcodes (0x00-0x08): vertex & triangle commands ─────────
+    // --- Low opcodes (0x00-0x08): vertex & triangle commands ---
     case 0x00: Cmd_G_NOOP(ctx, w0, w1); break;
     case 0x01: Cmd_G_VTX(ctx, w0, w1); break;
     case 0x02: Cmd_G_MODIFYVTX(ctx, w0, w1); break;
@@ -156,7 +146,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0x07: Cmd_G_QUAD(ctx, w0, w1); break;
     case 0x08: Cmd_G_LINE3D(ctx, w0, w1); break;
 
-    // ─── High opcodes (0xD0-0xFF): state & control commands ──────────
+    // --- High opcodes (0xD0-0xFF): state & control commands ---
     case 0xD3: Cmd_G_SPECIAL_3(ctx, w0, w1); break;
     case 0xD4: Cmd_G_SPECIAL_2(ctx, w0, w1); break;
     case 0xD5: Cmd_G_SPECIAL_1(ctx, w0, w1); break;
@@ -172,7 +162,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0xDF: Cmd_G_ENDDL(ctx, w0, w1); break;
 
     case 0xE1: Cmd_G_RDPHALF_1(ctx, w0, w1); break;
-    // F3DEX2 swaps the opcodes vs F3D: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
+    // GBI2: 0xE2 = SetOtherMode_L, 0xE3 = SetOtherMode_H
     case 0xE2: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
     case 0xE3: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
 
@@ -213,7 +203,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     return !ctx.halted;
 }
 
-// ─── GBI2 Command Implementations ───────────────────────────────────────
+// --- GBI2 Command Implementations ---
 
 inline void F3DEX2Handler::Cmd_G_NOOP(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)ctx;
@@ -272,19 +262,16 @@ inline void F3DEX2Handler::Cmd_G_TRI2(DListContext& ctx, uint32_t w0, uint32_t w
 }
 
 inline void F3DEX2Handler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // GBI2 G_QUAD carries TWO full triangles, exactly like G_TRI2:
+    // GBI2 G_QUAD carries two full triangles, exactly like G_TRI2:
     //   w0 = [07][v00*2][v01*2][v02*2]      first  triangle
     //   w1 = [00][v10*2][v11*2][v12*2]      second triangle
-    // gSP1Quadrangle(v0,v1,v2,v3) emits w1 = (v0*2)<<16|(v2*2)<<8|(v3*2):
-    // the QUAD'S FOURTH VERTEX IS w1's LOW BYTE. The previous decode took
-    // w1[23:16] as "v3" — but that byte holds the DUPLICATED v0 of the
-    // shared edge — and dismissed the real low byte as padding. Every
-    // quad's second half decoded as the degenerate (v0, v2, v0) and was
-    // silently dropped, deleting half of every gSP1Quadrangle mesh: the
-    // OoT/MM skyboxes and pre-rendered background meshes rendered as
-    // alternating drawn/missing right triangles — the "shattered glass"
-    // pattern. (GLideN64's F3DEX2_Quad likewise feeds both words through
-    // the same two-triangle path as F3DEX2_Tri2.)
+    // gSP1Quadrangle(v0,v1,v2,v3) emits w1 = (v0*2)<<16|(v2*2)<<8|(v3*2): the quad's fourth vertex
+    // is w1's low byte, and w1[23:16] holds the duplicated v0 of the shared edge. Decoding w1[23:16]
+    // as "v3" and treating the real low byte as padding turns every quad's second half into the
+    // degenerate (v0, v2, v0), which is silently dropped and deletes half of every gSP1Quadrangle
+    // mesh: the OoT/MM skyboxes and pre-rendered background meshes rendered as alternating
+    // drawn/missing right triangles (the "shattered glass" pattern). GLideN64's F3DEX2_Quad likewise
+    // feeds both words through the same two-triangle path as F3DEX2_Tri2.
     int v0 = ((w0 >> 16) & 0xFF) / 2;
     int v1 = ((w0 >> 8) & 0xFF) / 2;
     int v2 = (w0 & 0xFF) / 2;
@@ -295,10 +282,8 @@ inline void F3DEX2Handler::Cmd_G_QUAD(DListContext& ctx, uint32_t w0, uint32_t w
 }
 
 inline void F3DEX2Handler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // G_LINE3D is not a renderable primitive in HLE — the N64 line rasterizer
-    // uses a proprietary microcode path with no triangle equivalent.
-    // Prior code emitted DrawTriangle(v0,v1,v0) which is silently culled by
-    // the v0==v2 degenerate guard; making it an explicit no-op is cleaner.
+    // G_LINE3D is an explicit no-op: a DrawTriangle(v0,v1,v0) stand-in would be silently culled by
+    // the v0==v2 degenerate guard anyway.
     (void)ctx;
     (void)w0;
     (void)w1;
@@ -306,7 +291,6 @@ inline void F3DEX2Handler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_DMA_IO(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // Direct DMA to/from RSP DMEM
-    // This is rarely used by games, mostly for custom effects
     bool isWrite = (w0 >> 23) & 1;
     uint32_t dmemAddr = (w0 >> 13) & 0x3FF;
     uint32_t length = ((w0 & 0x1FFF) + 1);
@@ -403,17 +387,15 @@ inline void F3DEX2Handler::Cmd_G_SPECIAL_1(DListContext& ctx, uint32_t w0, uint3
     (void)ctx;
     (void)w0;
     (void)w1;
-    // Reserved for game-specific extensions.  GLideN64's real F3DEX2_Special_1
-    // is NOT a no-op: it's gSPCombineMatrices (explicit projection*modelview
-    // recombine) when the detected ucode string has combineMatrices=true, or
-    // gSPDlistCount (jump to a sub-DL, auto-return after exactly N commands
-    // via a per-command counter checked in the main RSP loop) when false --
-    // which is the case for F3DZEX (Zelda OoT/MM).  Confirmed via a live
-    // 12000-frame MM capture (title through early gameplay, ~15M RDP commands)
-    // that this ROM never issues opcode 0xD5 at all in that content, so this
-    // stays a no-op rather than adding an unconfirmed, architecturally
-    // nontrivial (auto-return-after-N-commands) feature no observed content
-    // exercises. Revisit if a specific missing-content symptom ever points here.
+    // Reserved for game-specific extensions. GLideN64's real F3DEX2_Special_1 is not a no-op: it is
+    // gSPCombineMatrices (explicit projection*modelview recombine) when the detected ucode string
+    // has combineMatrices=true, or gSPDlistCount (jump to a sub-DL, auto-return after exactly N
+    // commands via a per-command counter checked in the main RSP loop) when false, which is the
+    // case for F3DZEX (Zelda OoT/MM). A live 12000-frame MM capture (title through early gameplay,
+    // ~15M RDP commands) never issued opcode 0xD5, so this stays a no-op rather than adding an
+    // unconfirmed, architecturally nontrivial (auto-return-after-N-commands) feature that no
+    // observed content exercises. If a missing-content symptom points here, implement it as
+    // GLideN64 does.
 }
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_2(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -428,9 +410,7 @@ inline void F3DEX2Handler::Cmd_G_SPECIAL_3(DListContext& ctx, uint32_t w0, uint3
     (void)w1;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation — F3DZEX (Zelda variant)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation — F3DZEX (Zelda variant) ---
 
 inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
@@ -456,20 +436,16 @@ inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
 }
 
 inline void F3DZEXHandler::Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    // Opcode 0xD3 = G_SPECIAL_3 slot. Verified against GLideN64's real
-    // F3DEX2_Special_3: it's a genuine no-op there too (not a torch/fire
-    // point-light extension as an earlier version of this comment claimed --
-    // no such mechanism exists in GLideN64's F3DZEX/F3DEX2 handling of this
-    // opcode). Kept as a no-op to match.
+    // Opcode 0xD3 is the G_SPECIAL_3 slot. GLideN64's F3DEX2_Special_3 is a no-op, and so is this:
+    // there is no torch/fire point-light extension behind this opcode in GLideN64's F3DZEX/F3DEX2
+    // handling.
     (void)ctx;
     (void)w0;
     (void)w1;
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3DZEX: Zelda special command");
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Implementation — F3DCBFD (Conker variant)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Implementation — F3DCBFD (Conker variant) ---
 
 inline bool F3DCBFDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
@@ -500,10 +476,10 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
     LoadVertices(ctx, w1, count, vbidx);
 
     // CBFD-specific fixups:
-    // 1) Bytes 12-15 are ALWAYS colors in CBFD (LoadVertices treats them as normals
-    //    when lighting is on — we must fix that)
-    // 2) When lighting is enabled, normals come from a separate RDRAM table at
-    //    vertexNormalBase, NZ is in the vertex flag field (offset 6, low byte)
+    // 1) Bytes 12-15 are always colors in CBFD (LoadVertices treats them as normals when lighting
+    //    is on, so that has to be corrected)
+    // 2) When lighting is enabled, normals come from a separate RDRAM table at vertexNormalBase,
+    //    NZ is in the vertex flag field (offset 6, low byte)
     if (ctx.state && ctx.rdram) {
         auto& geo = ctx.state->geometry;
         uint32_t resolvedAddr = ctx.ResolveAddress(w1);
@@ -544,12 +520,11 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
             }
         }
 
-        // ---- CBFD Lighting ----
-        // Standard lighting was already applied by TransformVertexBatch but used
-        // wrong normals (bytes 12-15 are colors in CBFD, not normals).  The fixup
-        // above overwrote the lit colors with the raw vertex RGBA and loaded the
-        // correct normals from the external table.  Now apply CBFD-specific
-        // position-based lighting, multiplying onto the raw vertex colors.
+        // --- CBFD Lighting ---
+        // Standard lighting was already applied by TransformVertexBatch but used the wrong normals
+        // (bytes 12-15 are colors in CBFD, not normals). The fixup above overwrote the lit colors with
+        // the raw vertex RGBA and loaded the correct normals from the external table; CBFD-specific
+        // position-based lighting is applied here, multiplying onto the raw vertex colors.
         if (lighting) {
             constexpr float FIXED2FLOATRECIP16 = 1.0f / 65536.0f;
             const int numLights = geo.numLights;

@@ -83,12 +83,12 @@ public:
      */
     void OnFrameEnd();
 
-    // ─── Registry Access ─────────────────────────────────────────────
+    // --- Registry Access ---
 
     MicrocodeRegistry& GetRegistry() { return m_registry; }
     const MicrocodeRegistry& GetRegistry() const { return m_registry; }
 
-    // ─── Current State ───────────────────────────────────────────────
+    // --- Current State ---
 
     MicrocodeType GetCurrentType() const;
     const MicrocodeInfo& GetCurrentInfo() const;
@@ -98,7 +98,7 @@ public:
     /// Pass nullptr to detach.
     void SetGeometryConsumer(RT::ISceneGeometryConsumer* consumer) { m_context.geometryConsumer = consumer; }
 
-    // ─── Handler Cache ───────────────────────────────────────────────
+    // --- Handler Cache ---
 
     /// Get or create a handler for the given microcode type
     GBIHandler* GetHandler(MicrocodeType type);
@@ -106,7 +106,7 @@ public:
     /// Clear handler cache (e.g., on ROM change)
     void ClearHandlerCache();
 
-    // ─── Statistics ──────────────────────────────────────────────────
+    // --- Statistics ---
 
     struct DispatcherStats {
         uint64_t totalDLsProcessed = 0;
@@ -147,7 +147,6 @@ private:
     // cannot corrupt the live LLE RDPState.
     RDPState m_shadowState;
 
-    // Statistics
     DispatcherStats m_stats;
 };
 

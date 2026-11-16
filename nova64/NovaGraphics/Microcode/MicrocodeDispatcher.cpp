@@ -17,16 +17,12 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Constructor / Destructor
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Constructor / Destructor ---
 
 MicrocodeDispatcher::MicrocodeDispatcher() = default;
 MicrocodeDispatcher::~MicrocodeDispatcher() { Shutdown(); }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Initialization
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Initialization ---
 
 void MicrocodeDispatcher::Initialize(const uint8_t* rdram, uint32_t rdramSize, RDPState* state,
                                      RDPProcessor* rdpProcessor) {
@@ -56,9 +52,7 @@ void MicrocodeDispatcher::Shutdown() {
              m_stats.totalDLsProcessed);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Graphics Task Processing
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Graphics Task Processing ---
 
 void MicrocodeDispatcher::ProcessGraphicsTask(uint32_t taskDataAddr, uint32_t ucodeAddr, uint32_t ucodeSize,
                                               uint32_t ucodeDataAddr, uint32_t ucodeDataSize, uint32_t dlAddr) {
@@ -83,10 +77,8 @@ void MicrocodeDispatcher::ProcessGraphicsTask(uint32_t taskDataAddr, uint32_t uc
         return;
     }
 
-    // Detect type
     DetectionResult detection = m_registry.Detect(imemData, ucodeSize, dmemData, ucodeDataSize);
 
-    // Get full info
     MicrocodeInfo info = m_registry.GetInfo(detection.type, ucodeAddr, ucodeSize, ucodeDataAddr, ucodeDataSize);
     info.crc = detection.crc;
     info.name = detection.matchDetails;
@@ -94,7 +86,6 @@ void MicrocodeDispatcher::ProcessGraphicsTask(uint32_t taskDataAddr, uint32_t uc
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "Graphics task: ucode={} crc=0x{:08X} conf={:.0f}% dl=0x{:08X}",
              MicrocodeTypeName(detection.type), detection.crc, detection.confidence * 100.0f, dlAddr);
 
-    // Activate handler
     ActivateHandler(detection.type, info);
 
     if (!m_activeHandler) {
@@ -107,31 +98,26 @@ void MicrocodeDispatcher::ProcessGraphicsTask(uint32_t taskDataAddr, uint32_t uc
     m_context.microcodeInfo = info;
     m_context.halted = false;
     m_context.dlStackDepth = 0;
-    // Reset S2DEX status registers at the start of each RSP task.
-    // On real N64 the CPU writes SP_STATUS signal bits before each DL
-    // submission; our HLE approximates this by zeroing the four status
-    // words so SELECT_DL deduplication is scoped to one task at a time.
-    // This allows animated DLs to re-execute every VI frame (inter-task)
-    // while still preventing intra-task DL cycles that would loop forever
-    // and flood the GPU with draws (triggering Intel Iris Xe TDR).
+    // Reset the S2DEX status registers at the start of each RSP task. On real N64 the CPU writes
+    // SP_STATUS signal bits before each DL submission; the HLE approximates this by zeroing the
+    // four status words so SELECT_DL deduplication is scoped to one task at a time. This lets
+    // animated DLs re-execute every VI frame (inter-task) while still preventing intra-task DL
+    // cycles that would loop forever and flood the GPU with draws (triggering Intel Iris Xe TDR).
     m_context.s2dexStatusRegs[0] = 0;
     m_context.s2dexStatusRegs[1] = 0;
     m_context.s2dexStatusRegs[2] = 0;
     m_context.s2dexStatusRegs[3] = 0;
     m_context.dlBranchVisited.clear();
 
-    // Execute
     m_activeHandler->OnFrameBegin(m_context);
     m_activeHandler->ExecuteDisplayList(m_context, dlAddr);
     m_activeHandler->OnFrameEnd(m_context);
 
-    // Update stats
     ++m_stats.totalDLsProcessed;
     m_stats.totalCommandsProcessed += m_activeHandler->GetCommandsProcessed();
     m_stats.totalTrianglesProcessed += m_activeHandler->GetTrianglesProcessed();
     m_stats.totalVerticesLoaded += m_activeHandler->GetVerticesLoaded();
 
-    // Track per-type usage
     bool found = false;
     for (auto& usage : m_stats.usageByType) {
         if (usage.type == detection.type) {
@@ -146,9 +132,7 @@ void MicrocodeDispatcher::ProcessGraphicsTask(uint32_t taskDataAddr, uint32_t uc
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Shadow HLE (RT geometry extraction, no RDP output)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Shadow HLE (RT geometry extraction, no RDP output) ---
 
 void MicrocodeDispatcher::RunShadow(uint32_t taskDataAddr, uint32_t ucodeAddr, uint32_t ucodeSize,
                                     uint32_t ucodeDataAddr, uint32_t ucodeDataSize, uint32_t dlAddr,
@@ -178,7 +162,6 @@ void MicrocodeDispatcher::RunShadow(uint32_t taskDataAddr, uint32_t ucodeAddr, u
 
     ProcessGraphicsTask(taskDataAddr, ucodeAddr, ucodeSize, ucodeDataAddr, ucodeDataSize, dlAddr);
 
-    // Restore
     m_context.rdpProcessor = savedRdp;
     m_context.state = savedState;
     m_context.geometryConsumer = savedConsumer;
@@ -205,9 +188,7 @@ void MicrocodeDispatcher::ProcessDisplayList(MicrocodeType type, uint32_t dlAddr
     m_stats.totalVerticesLoaded += m_activeHandler->GetVerticesLoaded();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Mid-Frame Microcode Switch
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Mid-Frame Microcode Switch ---
 
 void MicrocodeDispatcher::HandleUcodeSwitch(uint32_t textAddr, uint32_t textSize, uint32_t dataAddr,
                                             uint32_t dataSize) {
@@ -251,7 +232,6 @@ void MicrocodeDispatcher::HandleUcodeSwitch(uint32_t textAddr, uint32_t textSize
         m_activeHandler->OnFrameEnd(m_context);
     }
 
-    // Switch to new handler
     ActivateHandler(detection.type, newInfo);
     m_activeInfo = newInfo;
     m_context.microcodeInfo = newInfo;
@@ -263,15 +243,11 @@ void MicrocodeDispatcher::HandleUcodeSwitch(uint32_t textAddr, uint32_t textSize
     ++m_stats.microcodesSwitched;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Frame End
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Frame End ---
 
 void MicrocodeDispatcher::OnFrameEnd() { ++m_stats.framesProcessed; }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Handler Management
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Handler Management ---
 
 MicrocodeType MicrocodeDispatcher::GetCurrentType() const { return m_activeInfo.type; }
 
@@ -375,9 +351,7 @@ void MicrocodeDispatcher::ClearHandlerCache() {
     m_handlerCache.clear();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Statistics
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Statistics ---
 
 void MicrocodeDispatcher::ResetStats() { m_stats = {}; }
 

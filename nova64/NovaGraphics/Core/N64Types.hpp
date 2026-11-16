@@ -1,9 +1,6 @@
 /**
  * @file N64Types.hpp
  * @brief N64 hardware types, RDP register definitions, and memory map constants
- *
- * This header defines the complete set of N64 video-related hardware constants,
- * register layouts, and fundamental data types used throughout NovaGraphics.
  */
 
 #pragma once
@@ -14,9 +11,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  N64 Memory Map Constants
-// ═══════════════════════════════════════════════════════════════════════════
+// --- N64 Memory Map Constants ---
 
 constexpr uint32_t RDRAM_BASE = 0x00000000;
 constexpr uint32_t RDRAM_SIZE = 0x00800000;     // 8 MB (expanded)
@@ -32,9 +27,7 @@ constexpr uint32_t DPS_END = 0x04200010;
 constexpr uint32_t VI_BASE = 0x04400000;        // Video interface
 constexpr uint32_t VI_END = 0x04400038;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Command Processor Registers (DPC)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Command Processor Registers (DPC) ---
 
 constexpr uint32_t DPC_START_REG = 0x04100000;
 constexpr uint32_t DPC_END_REG = 0x04100004;
@@ -70,10 +63,8 @@ constexpr uint32_t DPC_CLR_PIPE_CTR = 0x0080;
 constexpr uint32_t DPC_CLR_CMD_CTR = 0x0100;
 constexpr uint32_t DPC_CLR_CLOCK_CTR = 0x0200;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Video Interface — register offsets are in VideoInterface.hpp (VIRegister enum)
-//  Absolute addresses live with their respective hardware handlers in N64SYS.
-// ═══════════════════════════════════════════════════════════════════════════
+// VI register offsets are in VideoInterface.hpp (VIRegister enum); absolute addresses live with the hardware
+// handlers in N64SYS.
 
 // VI Status bits
 constexpr uint32_t VI_STATUS_TYPE_MASK = 0x0003;
@@ -93,17 +84,13 @@ constexpr uint32_t VI_STATUS_AA_RESAMP_ONLY = 0x0200;
 constexpr uint32_t VI_STATUS_AA_NONE = 0x0300;
 constexpr uint32_t VI_STATUS_DITHER_FILTER = 0x10000;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TMEM Layout Constants
-// ═══════════════════════════════════════════════════════════════════════════
+// --- TMEM Layout Constants ---
 
 constexpr uint32_t TMEM_SIZE = 4096;         // 4 KB total
 constexpr uint32_t TMEM_PALETTE_BASE = 2048; // 256 bytes × 8 palettes
 constexpr uint32_t TMEM_LINE_SIZE = 8;       // 8 bytes per TMEM line
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  N64 Pixel Format Types
-// ═══════════════════════════════════════════════════════════════════════════
+// --- N64 Pixel Format Types ---
 
 enum class ImageFormat : uint8_t {
     RGBA = 0,
@@ -116,21 +103,18 @@ enum class ImageFormat : uint8_t {
 
 enum class ImageSize : uint8_t { Bpp4 = 0, Bpp8 = 1, Bpp16 = 2, Bpp32 = 3, Count = 4 };
 
-/// Get bytes per pixel for a given size (returns fraction for 4bpp)
+/// Bytes per pixel for a texel size (0.5 for 4bpp); the format does not change it.
 constexpr float GetBytesPerPixel(ImageFormat fmt, ImageSize size) {
-    // Most formats: 4bpp=0.5, 8bpp=1, 16bpp=2, 32bpp=4
     constexpr float kBPP[] = {0.5f, 1.0f, 2.0f, 4.0f};
     (void)fmt;
     return kBPP[static_cast<int>(size)];
 }
 
-/// Get the number of bits per pixel
 constexpr int GetBitsPerPixel(ImageSize size) {
     constexpr int kBits[] = {4, 8, 16, 32};
     return kBits[static_cast<int>(size)];
 }
 
-/// Get format name string
 inline const char* GetImageFormatName(ImageFormat fmt) {
     static const char* names[] = {"RGBA", "YUV", "CI", "IA", "I"};
     return names[static_cast<int>(fmt)];
@@ -141,9 +125,7 @@ inline const char* GetImageSizeName(ImageSize size) {
     return names[static_cast<int>(size)];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Cycle Types
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Cycle Types ---
 
 enum class CycleType : uint8_t {
     Cycle1 = 0,
@@ -157,9 +139,7 @@ inline const char* GetCycleTypeName(CycleType ct) {
     return names[static_cast<int>(ct)];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Other Mode Bits (SetOtherModes)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Other Mode Bits (SetOtherModes) ---
 
 // High word bits
 constexpr uint32_t OTHERMODE_ALPHA_DITHER_MASK = 0x00000030;
@@ -230,9 +210,7 @@ enum class AlphaCompare : uint8_t {
     Dither = 3,
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Geometry Mode Bits
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Geometry Mode Bits ---
 
 constexpr uint32_t G_ZBUFFER = 0x00000001;
 constexpr uint32_t G_SHADE = 0x00000004;
@@ -248,19 +226,17 @@ constexpr uint32_t G_SHADING_SMOOTH = 0x00200000;
 constexpr uint32_t G_POINT_LIGHTING = 0x00400000;
 constexpr uint32_t G_CLIPPING = 0x00800000;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fundamental Geometry Types
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Fundamental Geometry Types ---
 
 /// N64 vertex as received from display list (16 bytes raw) + transformed data
 struct N64Vertex {
-    // ── Raw N64 vertex data (16 bytes) ──
+    // --- Raw N64 vertex data (16 bytes) ---
     int16_t x, y, z;    // Position (s15 integer)
     uint16_t flag;
     int16_t s, t;       // Texture coordinates (s10.5)
     uint8_t r, g, b, a; // Color / normal
 
-    // ── Transformed/processed fields ──
+    // --- Transformed/processed fields ---
     float sx, sy, sz;   // Screen-space position
     float w;            // W coordinate (clip space)
     float invW;         // 1/w for perspective correction
@@ -269,8 +245,8 @@ struct N64Vertex {
     float nx, ny, nz;   // Normal vector (after transform)
     float fog;          // Fog factor
     uint32_t clipFlags; // Clipping flags
-    bool transformed;   // Has this vertex been transformed?
-    bool lit;           // Has this vertex been lit?
+    bool transformed;
+    bool lit;
 };
 
 /// Transformed vertex (after modelview/projection)
@@ -321,19 +297,16 @@ struct TransformedVertex {
     bool modifiedXY;    // True when gSPModifyVertex XYSCREEN was applied
     bool modifiedZ;     // True when gSPModifyVertex ZSCREEN was applied
 
-    // World-space position (ModelView * object-pos) captured BEFORE MVP projection.
+    // World-space position (ModelView * object-pos) captured before MVP projection.
     // Used by the hardware raytracing pipeline via ISceneGeometryConsumer.
     float worldPos[3];
 
-    // Eye-space normal (normal * ModelView upper-3x3, normalized), captured
-    // from the SAME modelview matrix snapshot as worldPos above (zero when
-    // lighting/texgen are off). Used by the raytracing pipeline so RT normals
-    // stay consistent with worldPos even when the modelview stack changes
-    // between this vertex's load (G_VTX) and the triangle draw that
-    // references it (G_TRI1/G_TRI2) — common in segmented actor display
-    // lists (F3DZEX) that interleave per-limb matrix loads with vertex
-    // batches. Re-deriving the normal at draw time from the *current* stack
-    // top used the wrong matrix in exactly that case.
+    // Eye-space normal (normal * ModelView upper-3x3, normalized), captured from the same
+    // modelview snapshot as worldPos (zero when lighting and texgen are off). It is stored per
+    // vertex because the modelview stack can change between G_VTX and the G_TRI1/G_TRI2 that
+    // draws the vertex, as in segmented actor display lists (F3DZEX) that interleave per-limb
+    // matrix loads with vertex batches. Deriving the normal at draw time from the current stack
+    // top used the wrong matrix in that case.
     float eyeNormal[3];
 
     static constexpr uint32_t CLIP_LEFT = 0x01;
@@ -372,16 +345,11 @@ struct RDPRect {
     int tileIndex;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Tile Descriptor — canonical definition in TileManager.hpp
-//  (TMEMController.hpp has TMEMTileEntry)
-// ═══════════════════════════════════════════════════════════════════════════
+// Tile descriptor: canonical definition in TileManager.hpp (TMEMController.hpp has TMEMTileEntry).
 
 constexpr int MAX_TILES = 8;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Color Combiner Modes
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Color Combiner Modes ---
 
 /// Color combine mode formula:  (A - B) * C + D
 /// Two cycles, RGB + Alpha each
@@ -416,12 +384,12 @@ struct CombineMode {
         // gbi.h layout for lo word [17:0]:
         //   d0  at [17:15], Ab0 at [14:12], Ad0 at [11:9]
         //   d1  at [8:6],   Ab1 at [5:3],   Ad1 at [2:0]
-        d_rgb0 = (lo >> 15) & 0x07;   // gbi.h: d0  at [17:15]
-        b_alpha0 = (lo >> 12) & 0x07; // gbi.h: Ab0 at [14:12]
-        d_alpha0 = (lo >> 9) & 0x07;  // gbi.h: Ad0 at [11:9]
-        d_rgb1 = (lo >> 6) & 0x07;    // gbi.h: d1  at [8:6]
-        b_alpha1 = (lo >> 3) & 0x07;  // gbi.h: Ab1 at [5:3]
-        d_alpha1 = (lo >> 0) & 0x07;  // gbi.h: Ad1 at [2:0]
+        d_rgb0 = (lo >> 15) & 0x07;
+        b_alpha0 = (lo >> 12) & 0x07;
+        d_alpha0 = (lo >> 9) & 0x07;
+        d_rgb1 = (lo >> 6) & 0x07;
+        b_alpha1 = (lo >> 3) & 0x07;
+        d_alpha1 = (lo >> 0) & 0x07;
     }
 
     /// Encode back to a 64-bit combine mode word
@@ -437,7 +405,7 @@ struct CombineMode {
         return (static_cast<uint64_t>(hi) << 32) | lo;
     }
 
-    /// Check if this is a simple pass-through (Texel0, 0, Shade, 0)
+    /// True for texture modulated by shade (A=Texel0, B=0, C=Shade, D=0 as field values)
     bool IsModulateTexShade() const { return a_rgb0 == 1 && b_rgb0 == 0 && c_rgb0 == 4 && d_rgb0 == 0; }
 
     /// Check if this uses Texel1 (requires 2-cycle mode)
@@ -446,7 +414,7 @@ struct CombineMode {
                d_rgb1 == 2;
     }
 
-    /// Check if a specific cycle's RGB formula is identity (output = 0)
+    /// True if the given cycle's RGB output is always 0
     bool IsCycleRGBZero(int cycle) const {
         if (cycle == 0) {
             // (A-B)*C+D = 0 when: A==B and D is zero, or C is zero and D is zero
@@ -462,9 +430,7 @@ struct CombineMode {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Blender Mode
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Blender Mode ---
 
 struct BlenderMode {
     // Cycle 0: P0, A0, M0, B0
@@ -486,9 +452,7 @@ struct BlenderMode {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Light Structure
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Light Structure ---
 
 /// Raw N64 light structure (hardware layout, 12 bytes)
 struct N64LightRaw {
@@ -521,17 +485,13 @@ struct N64Light {
 
 constexpr int MAX_LIGHTS = 12; // Up to 11 directional + 1 ambient (matches GLideN64)
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Matrix Types (for modelview/projection)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Matrix Types (for modelview/projection) ---
 
-/// 4x4 float matrix with ROW-major indexing: m[row][col].
-/// NOTE: Math/Matrix4x4.hpp provides a richer Matrix4x4 with column-major
-/// indexing (m[col][row]) and SIMD.  The two are memory-transposed, so they
-/// are NOT interchangeable.  This struct is kept for the N64 emulation core
-/// where row-major access matches the RSP pipeline.  The separation is
-/// intentional: RSP commands store matrices row-major, while the rendering
-/// backend uses column-major for GPU-friendly SIMD operations.
+/// 4x4 float matrix with row-major indexing: m[row][col].
+/// Math/Matrix4x4.hpp has a different Matrix4x4 with column-major indexing (m[col][row]) and
+/// SIMD; the two are memory-transposed and not interchangeable. This one is used by the N64
+/// emulation core because RSP commands store matrices row-major, while the rendering backend
+/// uses column-major for GPU-friendly SIMD operations.
 struct Matrix4x4 {
     float m[4][4]; // m[row][col]
 
@@ -550,7 +510,6 @@ struct Matrix4x4 {
         return r;
     }
 
-    /// Transform a 4D vector
     void Transform(const float in[4], float out[4]) const {
         for (int i = 0; i < 4; i++) out[i] = m[i][0] * in[0] + m[i][1] * in[1] + m[i][2] * in[2] + m[i][3] * in[3];
     }
@@ -559,16 +518,14 @@ struct Matrix4x4 {
     void LoadFromN64(const uint8_t* rdram, uint32_t address);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Viewport
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Viewport ---
 
 struct N64Viewport {
     float scaleX, scaleY, scaleZ;
     float transX, transY, transZ;
 
     void LoadFromN64(const uint8_t* rdram, uint32_t address) {
-        // VP is 4 scale values + 4 translate values, s15.16 packed as s.10.2
+        // Vp is 4 scale + 4 translate int16 values in 10.2 fixed point; the fourth of each is unused.
         auto Read = [rdram, address](int offset) -> float {
             int16_t raw = static_cast<int16_t>((rdram[address + offset] << 8) | rdram[address + offset + 1]);
             return static_cast<float>(raw) / 4.0f;
@@ -582,13 +539,9 @@ struct N64Viewport {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Scissor Rectangle — canonical definition in ScissorManager.hpp
-// ═══════════════════════════════════════════════════════════════════════════
+// Scissor rectangle: canonical definition in ScissorManager.hpp.
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fill / Prim / Env / Fog Colors
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Fill / Prim / Env / Fog Colors ---
 
 struct RDPColor {
     uint8_t r, g, b, a;
@@ -613,13 +566,11 @@ struct RDPColor {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Texture State
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Texture State ---
 
 struct TextureState {
     bool enabled;
-    uint16_t scaleS;   // s10.5 fixed point
+    uint16_t scaleS;   // gSPTexture S scale, 0.16 fixed point (0xFFFF = 1.0)
     uint16_t scaleT;
     uint8_t level;     // Mipmap level count
     uint8_t tileIndex; // gSPTexture tile override
@@ -634,9 +585,7 @@ struct TextureState {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Frame Buffer Info (for ReadFrameBuffer / GetFrameBufferInfo)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Frame Buffer Info (for ReadFrameBuffer / GetFrameBufferInfo) ---
 
 struct FrameBufferInfo {
     uint32_t address; // RDRAM address
@@ -647,9 +596,7 @@ struct FrameBufferInfo {
 
 constexpr int MAX_FRAME_BUFFERS = 6;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Command IDs
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Command IDs ---
 
 enum class RDPCommandID : uint8_t {
     Nop = 0x00,
@@ -700,7 +647,7 @@ enum class RDPCommandID : uint8_t {
     SetColorImage = 0x3F, // Framebuffer image
 };
 
-/// Get the word count for an RDP command
+/// Length of an RDP command in 32-bit words
 constexpr int GetRDPCommandWordCount(RDPCommandID cmd) {
     int id = static_cast<int>(cmd);
     if (id >= 0x08 && id <= 0x0F) {
@@ -712,7 +659,7 @@ constexpr int GetRDPCommandWordCount(RDPCommandID cmd) {
         if (shade) words += 8;
         if (texture) words += 8;
         if (zbuffer) words += 4;
-        return words * 2;                   // Each "word" is actually a 32-bit pair → total in 32-bit words
+        return words * 2;                   // 64-bit units to 32-bit words
     }
     if (id == 0x24 || id == 0x25) return 4; // TextureRect
     return 2;                               // All other commands are 64-bit (2 words)
@@ -720,8 +667,8 @@ constexpr int GetRDPCommandWordCount(RDPCommandID cmd) {
 
 /// Calculate triangle command size in bytes
 constexpr int GetTriangleSizeBytes(bool shade, bool texture, bool zbuffer) {
-    [[maybe_unused]] int coeffs = 2; // edge coefficients (2 64-bit words = 16 bytes) - actually more complex
-    // Real sizes: base = 32 bytes, shade +64, tex +64, z +16
+    [[maybe_unused]] int coeffs = 2;
+    // Base 32 bytes (edge coefficients), shade +64, texture +64, z-buffer +16.
     int bytes = 32;
     if (shade) bytes += 64;
     if (texture) bytes += 64;

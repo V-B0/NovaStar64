@@ -19,9 +19,7 @@ namespace Nova64::Video {
 
 FramebufferManager g_fbManager;
 
-// ═══════════════════════════════════════════════════════════════
-//  Lifecycle
-// ═══════════════════════════════════════════════════════════════
+// --- Lifecycle ---
 
 FramebufferManager::~FramebufferManager() { Shutdown(); }
 
@@ -296,9 +294,7 @@ void FramebufferManager::Reset() {
     m_stats = {};
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GPU Framebuffer Create / Destroy
-// ═══════════════════════════════════════════════════════════════
+// --- GPU Framebuffer Create / Destroy ---
 
 void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     fb.scaledWidth = fb.width * m_resScale;
@@ -433,9 +429,7 @@ void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Sampleable Texture Resolution
-// ═══════════════════════════════════════════════════════════════
+// --- Sampleable Texture Resolution ---
 
 uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSelfTexture) {
     if (!m_isGL || !fb || fb->colorTex == 0) return 0;
@@ -504,9 +498,7 @@ void FramebufferManager::SnapshotForPresentation() {
                        GL_TEXTURE_2D, 0, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 1);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Framebuffer Tracking
-// ═══════════════════════════════════════════════════════════════
+// --- Framebuffer Tracking ---
 
 void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width, [[maybe_unused]] uint32_t format,
                                          uint32_t size) {
@@ -527,18 +519,14 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width, [[may
         }
     }
     desc.height = height;
-    // `size` is the RAW RDP size ENCODING (0=4bpp,1=8bpp,2=16bpp,3=32bpp,
-    // see ImageSize in N64Types.hpp), not bytes-per-pixel -- the caller
-    // (RDPProcessor_State.cpp's HandleSetColorImage) passes
-    // static_cast<uint32_t>(colorImage.size) straight through. Comparing it
-    // to 4 to detect 32-bit color images was always false (the real 32-bit
-    // encoding is 3), so every color image was treated as RGBA16 regardless
-    // of its actual format, and `stride = width * size` used the encoding
-    // (3) instead of real bytes-per-pixel (4) for genuine 32-bit
-    // framebuffers -- understriding them by 25% (wrong ByteSize/EndAddress,
-    // wrong overlap detection, wrong readback bounds). Convert to real
-    // bytes-per-pixel first. RGBA16 games (the overwhelming majority) were
-    // unaffected since encoding 2 happens to equal 2 bytes.
+    // `size` is the raw RDP size encoding (0=4bpp, 1=8bpp, 2=16bpp, 3=32bpp, see ImageSize in
+    // N64Types.hpp), not bytes-per-pixel: the caller (RDPProcessor_State.cpp's HandleSetColorImage)
+    // passes static_cast<uint32_t>(colorImage.size) straight through. It is converted to real
+    // bytes-per-pixel first, because comparing the encoding to 4 to detect 32-bit color images is
+    // always false (the 32-bit encoding is 3), which would treat every color image as RGBA16 and
+    // stride genuine 32-bit framebuffers by the encoding (3) instead of bytes-per-pixel (4),
+    // understriding them by 25% (wrong ByteSize/EndAddress, overlap detection and readback
+    // bounds).
     uint32_t bytesPerPixel = static_cast<uint32_t>(GetBitsPerPixel(static_cast<ImageSize>(size & 3))) / 8;
     if (bytesPerPixel == 0) bytesPerPixel = 2; // 4bpp isn't a valid color-image size; default safely
     desc.format = (bytesPerPixel == 4) ? FBFormat::RGBA32 : FBFormat::RGBA16;
@@ -621,11 +609,10 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
         }
     }
 
-    // Search by overlapping address (reuse slot with updated desc)
+    // Same address and type: reuse the slot with the updated desc
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (m_framebuffers[i].desc.address == desc.address && m_framebuffers[i].desc.type == desc.type) {
-            // Same address, different format/size — recreate.
-            // Migrate the presentation snapshot so it survives the rebuild.
+            // Different format/size: recreate.
             // Migrate the presentation and snapshot textures so they survive the rebuild.
             GLuint savedPresentation = m_framebuffers[i].presentationTex;
             GLuint savedSnapshot = m_framebuffers[i].snapshotTex;
@@ -765,9 +752,7 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
     m_fbCount = writeIdx;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GPU ↔ CPU Sync
-// ═══════════════════════════════════════════════════════════════
+// --- GPU ↔ CPU Sync ---
 
 bool FramebufferManager::CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram, IRenderer* renderer) {
     if (!fb || !rdram || !renderer || m_isGL) return false;
@@ -913,9 +898,7 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     m_stats.bytesTransferred += pixelCount * 4;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth Readback (GPU → RDRAM)
-// ═══════════════════════════════════════════════════════════════
+// --- Depth Readback (GPU → RDRAM) ---
 
 void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     if (!fb || !rdram || !fb->depthTex || !m_isGL) return;
@@ -967,7 +950,7 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + depthAddr);
     ConvertDepthFloatToN64(depthFloat.data(), dst, pixelCount, w);
 
-    // Trace depth readback
+    // Diagnostic trace: log readbacks that overlap two hard-coded RDRAM ranges (0x35CC00, 0x1CAA00)
     {
         uint32_t depthEnd = depthAddr + pixelCount * 2;
         if (depthAddr <= 0x35CCFF && depthEnd > 0x35CC00) {
@@ -985,17 +968,15 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     m_stats.bytesTransferred += pixelCount * sizeof(float);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Async PBO Readback
-// ═══════════════════════════════════════════════════════════════
+// --- Async PBO Readback ---
 
 void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
     if (!fb || !m_isGL) return;
 
-    // If a readback is already pending, we must finish it first
+    // A readback is still pending: it is abandoned, not finished
     if (m_pboFence) {
         NOVA_LOG_WARN("BeginAsyncReadback: previous readback still pending, forcing sync");
-        // Delete old fence without completing — data is lost
+        // Delete the old fence without completing it; its data is lost
         glDeleteSync(static_cast<GLsync>(m_pboFence));
         m_pboFence = nullptr;
         m_pboFB = nullptr;
@@ -1108,9 +1089,7 @@ bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Tile Copy (RDP COPY_MODE region transfer)
-// ═══════════════════════════════════════════════════════════════
+// --- Tile Copy (RDP COPY_MODE region transfer) ---
 
 void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int32_t srcX, int32_t srcY, int32_t dstX,
                                   int32_t dstY, int32_t w, int32_t h) {
@@ -1128,9 +1107,7 @@ void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int3
                            GL_NEAREST);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  RDRAM Dirty Tracking
-// ═══════════════════════════════════════════════════════════════
+// --- RDRAM Dirty Tracking ---
 
 bool FramebufferManager::IsRDRAMDirty(uint32_t address, uint32_t size) const {
     uint32_t startPage = address / kPageSize;
@@ -1163,9 +1140,7 @@ void FramebufferManager::ClearRDRAMDirty(uint32_t address, uint32_t size) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  VI Output
-// ═══════════════════════════════════════════════════════════════
+// --- VI Output ---
 
 void FramebufferManager::UpdateVI(const VIConfig& config) {
     // Detect VI geometry change — if width or height changed, existing
@@ -1413,9 +1388,7 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Format Conversion
-// ═══════════════════════════════════════════════════════════════
+// --- Format Conversion ---
 
 void FramebufferManager::ConvertRGBA16ToRGBA8(const uint16_t* src, uint8_t* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
@@ -1512,9 +1485,7 @@ void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst,
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Framebuffer Effects
-// ═══════════════════════════════════════════════════════════════
+// --- Framebuffer Effects ---
 
 void FramebufferManager::CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst) {
     if (!src || !dst) return;

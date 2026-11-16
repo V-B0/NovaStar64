@@ -28,16 +28,13 @@
 
 namespace Nova64::Video {
 
-// Forward declarations
 class MicrocodeHandler;
 
 namespace Shader {
 class ShaderManager;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Render Batch — accumulated draw calls to send to GPU
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Render Batch — accumulated draw calls to send to GPU ---
 
 struct DrawCall {
     enum class Type : uint8_t {
@@ -46,10 +43,9 @@ struct DrawCall {
         FillRect,
     };
 
-    // Default constructor: zero-init everything, then set non-zero defaults.
-    // All initialization is in the body (no default member initializers) to
-    // prevent MSVC from emitting post-body initialization code that can
-    // overwrite a preceding memcpy in user-defined copy/move constructors.
+    // Zero-initializes everything in the body, then sets the non-zero defaults. There are no
+    // default member initializers on purpose: with them MSVC emits post-body initialization code
+    // that can overwrite a preceding memcpy in the user-defined copy/move constructors.
     DrawCall() {
         std::memset(this, 0, sizeof(DrawCall));
         texCoordBounds0[2] = 1.0f;
@@ -103,17 +99,14 @@ struct DrawCall {
     uint32_t textureImageAddr;  // RDRAM address for tile0 at draw time
     uint32_t textureImageAddr1; // RDRAM address for tile1 (2-cycle mode)
 
-    // Vulkan FB-snapshot ring slot resolved AT ENQUEUE TIME (not flush time).
-    // Multiple ring slots can share the same RDRAM address (e.g. MM's pause
-    // menu issues several SetColorImage switches to the SAME physical FB
-    // within one frame -- a full world redraw, then smaller UI-only overlay
-    // passes onto that same target), so an address-only lookup at flush time
-    // is ambiguous: it can't tell which of several same-address generations
-    // this specific draw call actually intended to sample. Resolving here,
-    // synchronously in DL-execution order, captures whichever slot was the
-    // CURRENT snapshot for that address at the moment this draw was issued --
-    // exactly what the RDP would have read on real hardware. -1 = unresolved
-    // (flush time falls back to the address search for non-FB textures).
+    // Vulkan FB-snapshot ring slot, resolved at enqueue time rather than flush time. Several ring
+    // slots can share the same RDRAM address (e.g. MM's pause menu issues several SetColorImage
+    // switches to the same physical FB within one frame: a full world redraw, then smaller UI-only
+    // overlay passes onto that target), so an address-only lookup at flush time cannot tell which
+    // same-address generation this draw intended to sample. Resolving here, in display-list
+    // execution order, captures the slot that was current for that address when the draw was issued,
+    // which is what the RDP would have read on real hardware. -1 = unresolved (flush time falls back
+    // to the address search for non-FB textures).
     int32_t snapshotSlot0;
     int32_t snapshotSlot1;
 
@@ -186,9 +179,7 @@ struct RenderBatch {
     bool IsFull() const { return drawCalls.size() >= MAX_DRAW_CALLS || vertices.size() >= MAX_VERTICES; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Processor Statistics
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Processor Statistics ---
 
 struct RDPProcessorStats {
     uint64_t commandsProcessed;
@@ -220,9 +211,7 @@ struct RDPProcessorStats {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Display List Info
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Display List Info ---
 
 struct DisplayListInfo {
     uint32_t startAddress;
@@ -231,28 +220,26 @@ struct DisplayListInfo {
     bool fromDMEM; // True if from SP DMEM, false if RDRAM
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  RDP Processor
-// ═══════════════════════════════════════════════════════════════════════════
+// --- RDP Processor ---
 
 class RDPProcessor {
 public:
     RDPProcessor();
     ~RDPProcessor();
 
-    // ─── Initialization ───
+    // --- Initialization ---
 
     /// Initialize with RDRAM pointer and renderer backend
     bool Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* renderer, Tex::TextureCache* textureCache,
                     Shader::ShaderManager* shaderManager = nullptr);
 
-    /// Shutdown and release resources
     void Shutdown();
 
-    /// Reset state (e.g., on game reset)
+    /// Reset state. A warm reset (coldReset = false) keeps TMEM, colors, texture source tracking, the
+    /// frame counter and the widescreen scale across display lists.
     void Reset(bool coldReset);
 
-    // ─── Display List Processing ───
+    // --- Display List Processing ---
 
     /// Process a display list from RDRAM
     void ProcessDList(uint32_t startAddress, uint32_t endAddress);
@@ -266,25 +253,21 @@ public:
     /// Notify that a frame is being presented (flush + render)
     void OnFrameEnd();
 
-    /// Set a callback invoked immediately when SyncFull is processed, before the
-    /// batch flush. Used to signal the DP_FULL (MI_INTR_DP) interrupt to the CPU
-    /// at the correct N64-hardware-accurate point within a display list rather
-    /// than only at the very end of ProcessDList.
+    /// Set a callback invoked immediately when SyncFull is processed, before the batch flush. It
+    /// signals the DP_FULL (MI_INTR_DP) interrupt to the CPU at the point SyncFull executes rather
+    /// than only at the end of ProcessDList.
     using SyncFullCallback = std::function<void()>;
     void SetSyncFullCallback(SyncFullCallback cb) { m_syncFullCallback = std::move(cb); }
 
-    // ─── Texture Loading ───
+    // --- Texture Loading ---
 
-    /// Execute a LoadBlock into TMEM
     void ExecuteLoadBlock(int tile, int uls, int ult, int texels, int dxt);
 
-    /// Execute a LoadTile into TMEM
     void ExecuteLoadTile(int tile, float sl, float tl, float sh, float th);
 
-    /// Execute a LoadTLUT into TMEM (palette load)
     void ExecuteLoadTLUT(int tile, int count);
 
-    // ─── Drawing Primitives ───
+    // --- Drawing Primitives ---
 
     /// Draw a decoded triangle
     void DrawTriangle(const DecodedTriangle& tri);
@@ -296,21 +279,18 @@ public:
     void DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1, const RenderBatch::Vertex& rv2,
                          uint32_t geometryMode, uint8_t tileIndex = 0);
 
-    /// Draw a texture rectangle
     void DrawTextureRect(const DecodedRectangle& rect);
 
-    /// Draw a fill rectangle
     void DrawFillRect(float x0, float y0, float x1, float y1);
 
-    // ─── Batch Management ───
+    // --- Batch Management ---
 
-    /// Flush the current render batch to the GPU
     void FlushBatch();
 
     /// Check if state change requires a batch flush
     bool NeedsBatchFlush(const DrawCall& newCall) const;
 
-    // ─── State Access ───
+    // --- State Access ---
 
     const RDPState& GetRDPState() const { return m_state.rdp; }
     const GeometryState& GetGeometryState() const { return m_state.rdp.geometry; }
@@ -321,18 +301,14 @@ public:
     /// Get current framebuffer info
     void GetFrameBufferInfo(FrameBufferInfo* info, int maxBuffers) const;
 
-    /// Read framebuffer pixels
     bool ReadFrameBuffer(uint32_t address, uint32_t size, void* data);
 
-    /// Write to framebuffer
     bool WriteFrameBuffer(uint32_t address, uint32_t size, const void* data);
 
-    // ─── Debug ───
+    // --- Debug ---
 
-    /// Enable/disable command logging
     void SetCommandLogging(bool enable) { m_logCommands = enable; }
 
-    /// Get description of last processed command
     const std::string& GetLastCommandDesc() const { return m_lastCommandDesc; }
 
     /// Attach an MLEDirector to classify each batch before flushing.
@@ -340,7 +316,7 @@ public:
     void SetMLEDirector(MLEDirector* d) { m_mleDirector = d; }
 
 private:
-    // ─── Command Handlers ───
+    // --- Command Handlers ---
 
     void HandleSetOtherModes(const uint32_t* words);
     void HandleSetCombine(const uint32_t* words);
@@ -373,7 +349,7 @@ private:
     void HandleTextureRectFlip(const uint32_t* words);
     void HandleFillRect(const uint32_t* words);
 
-    // ─── Internal State ───
+    // --- Internal State ---
 
     VideoState m_state;
     RDPCommandDecoder m_decoder;
@@ -381,7 +357,7 @@ private:
     RenderBatch m_batch;
     RDPProcessorStats m_stats;
 
-    // Persistent ring VBO for batched rendering (Task 2)
+    // Persistent ring VBO for batched rendering
     std::unique_ptr<IVertexBuffer> m_ringVBO;
     size_t m_ringOffset = 0;
     static constexpr size_t RING_VBO_SIZE = RenderBatch::MAX_VERTICES * 64; // 64 = sizeof(FlushBatch local GPUVertex)
@@ -407,23 +383,19 @@ private:
     uint32_t m_shadowTLUTTexture = 0;               // 256×1 R8 — shadow map palette from TMEM
 
     // Vulkan framebuffer-as-texture snapshot.
-    // When the inventory (or any draw) reads the previously-rendered N64 framebuffer
-    // as a source texture, the GL path can directly sample the GL FBO color texture.
-    // In the Vulkan path there is no per-N64-FB texture — all rendering goes to the
-    // swapchain — so we snapshot the swapchain via ReadPixels and keep it here.
-    //
-    // Ring buffer, not just a double-buffer: two independent concerns share it.
-    // (1) With kFramesInFlight=2 the GPU may still be sampling the previously-
-    // bound snapshot when the CPU records a new capture, so writing into the
-    // same VkImage would race -- each new capture flips the index FIRST then
-    // writes, leaving the previously-bound slot untouched until its frame's
-    // fence is signalled. (2) Multi-panel UI (MM's pause menu) can need SEVERAL
-    // distinct FB addresses (world background + more than one peek panel)
-    // alive at once, each looked up later by address match (see
-    // RDPProcessor_Batch.cpp). Two slots is exactly enough for (1) but not (2):
-    // a third concurrently-needed address gets evicted by round-robin before
-    // its panel ever samples it, going black. Sized to 4 to give (2) headroom
-    // without giving up the race safety from (1).
+    // When the inventory (or any draw) reads the previously rendered N64 framebuffer as a source
+    // texture, the GL path can sample the GL FBO color texture directly. The Vulkan path has no
+    // per-N64-FB texture (all rendering goes to the swapchain), so the swapchain is snapshotted via
+    // ReadPixels and kept here.
+    // A ring rather than a double buffer, because two independent concerns share it.
+    // (1) With kFramesInFlight=2 the GPU may still be sampling the previously bound snapshot when
+    // the CPU records a new capture, so writing into the same VkImage would race: each new capture
+    // flips the index first and then writes, leaving the previously bound slot untouched until its
+    // frame's fence is signalled. (2) Multi-panel UI (MM's pause menu) can need several distinct FB
+    // addresses (world background plus more than one peek panel) alive at once, each looked up later
+    // by address match (see RDPProcessor_Batch.cpp). Two slots are enough for (1) but not (2): a
+    // third concurrently needed address would be evicted by the round-robin before its panel samples
+    // it, and render black. Four slots give (2) headroom without losing the race safety of (1).
     static constexpr uint32_t kVkFBSnapshotSlots = 4;
     std::array<std::unique_ptr<ITexture>, kVkFBSnapshotSlots> m_vkFBSnapshots;
     std::array<uint32_t, kVkFBSnapshotSlots> m_vkFBSnapshotAddrs{};
@@ -446,17 +418,15 @@ private:
 
     bool m_initialized = false;
 
-    // Callback fired on each SyncFull, before FlushBatch.
-    // Used to deliver the DP interrupt to the CPU at the correct time.
     SyncFullCallback m_syncFullCallback;
 
 public:
-    // ─── Debug output mode ───
+    // --- Debug output mode ---
     int GetDebugOutputMode() const { return m_debugOutputMode; }
     void SetDebugOutputMode(int mode) { m_debugOutputMode = (mode >= 0 && mode < kDebugModeCount) ? mode : 0; }
     void CycleDebugOutputMode() { m_debugOutputMode = (m_debugOutputMode + 1) % kDebugModeCount; }
 
-    // ─── Diagnostic debug toggles ───
+    // --- Diagnostic debug toggles ---
     void ToggleDebugForceOpaque() { m_debugForceOpaque = !m_debugForceOpaque; }
     void ToggleDebugDisableDepth() { m_debugDisableDepth = !m_debugDisableDepth; }
     void ToggleDebugDisableCulling() { m_debugDisableCulling = !m_debugDisableCulling; }
@@ -466,7 +436,7 @@ public:
     bool IsDebugDisableCulling() const { return m_debugDisableCulling; }
     bool IsDebugMagenta() const { return m_debugMagenta; }
 
-    // ─── Game Hack Flags ───
+    // --- Game Hack Flags ---
     // Set by VideoPlugin based on GameProfile. Checked in hot paths.
     struct GameHacks {
         bool skipTexRect = false;           // WinBack: skip TEXRECT entirely
@@ -491,7 +461,7 @@ public:
     } m_hacks;
 
 private:
-    // ─── Helpers ───
+    // --- Helpers ---
 
     /// Snapshot current tile descriptors and compute texture hashes for a draw call.
     /// Uses the RDP state at the time of call to capture tile0/tile1 info.
