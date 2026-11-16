@@ -32,7 +32,7 @@ constexpr float kNavbarHeight = 40.0f;
 constexpr float kRewindThumbW = 144.0f;
 constexpr float kRewindThumbH = 108.0f;
 constexpr float kRewindBarHeight = 208.0f;
-constexpr ImU32 kAccent = IM_COL32(217, 110, 66, 255); // the top bar's orange
+constexpr ImU32 kAccent = IM_COL32(255, 122, 26, 255); // the accent orange
 
 bool AnyKeyHeld() {
     int count = 0;
@@ -498,7 +498,7 @@ void NovaLauncher::RenderPauseMenu() {
 
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kBrown);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kViolet);
     const bool controlsOpen = ImGui::CollapsingHeader("Controls");
     ImGui::PopStyleColor(2);
     if (controlsOpen) {

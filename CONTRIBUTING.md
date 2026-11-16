@@ -568,8 +568,10 @@ audio driver the frame numbers a screenshot lands on can shift by one between tw
 
 ## The launcher's art
 
-The launcher is drawn in a pixel-art style from five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
-5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed. The art is made in
+The launcher is drawn in a pixel-art style (the same approach as FluxCore) from five colours, a 5x7 bitmap
+font and 16x16 sprites, scaled by whole numbers and never smoothed. The colours are ink `0B0B1E`, violet
+`4B3BB5`, orange `FF7A1A`, cream `F6F0DC` and teal `3FC5B0`. They are set in two places that must agree:
+`scripts/ui-art/seed.lua` (the art) and `UI/UiKit.hpp` (the interface). The art is made in
 [Aseprite](https://www.aseprite.org/):
 
 | File in `nova64/assets/ui/` | What it holds |

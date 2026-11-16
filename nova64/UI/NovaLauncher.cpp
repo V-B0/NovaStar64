@@ -419,7 +419,7 @@ void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
         const ImVec2 origin = ImGui::GetWindowPos();
         ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(origin.x, origin.y + kNavbarHeight - p),
                                                   ImVec2(origin.x + ImGui::GetWindowWidth(), origin.y + kNavbarHeight),
-                                                  ImGui::GetColorU32(color::kBrown));
+                                                  ImGui::GetColorU32(color::kViolet));
     }
 
     // File menu
@@ -451,7 +451,7 @@ void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
         }
         if (!m_showPauseMenu && !m_rewindOpen) put("Esc: menu   Backspace: rewind", color::kTextMuted);
     }
-    if (!m_statusText.empty() && SDL_GetTicks() < m_statusUntil) put(m_statusText, color::kPeach);
+    if (!m_statusText.empty() && SDL_GetTicks() < m_statusUntil) put(m_statusText, color::kCream);
 
     // Window controls
     const ImVec2 buttonSize(windowButton, kNavbarHeight - p);
@@ -524,7 +524,7 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
     ImGui::EndChild();
     // The panel is drawn after its contents are submitted but, as a child draws after its parent, it lies behind them.
     DrawFrame(ImGui::GetWindowDrawList(), contentPos,
-              ImVec2(contentPos.x + contentSize.x, contentPos.y + contentSize.y), Frame::Brown,
+              ImVec2(contentPos.x + contentSize.x, contentPos.y + contentSize.y), Frame::Violet,
               ImGui::GetColorU32(color::kPanel));
     ImGui::End();
 }

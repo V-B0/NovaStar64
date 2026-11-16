@@ -99,8 +99,8 @@ Correctness and robustness
 ## 4. Launcher and in-game UI
 
 - [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
-- [x] Pixel-art look, the same language as FluxCore: five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
-      5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed
+- [x] Pixel-art look, the same approach as FluxCore: five clearly different colours (ink, violet, orange, cream,
+      teal), a 5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed
 - [x] The art drawn in Aseprite: `.aseprite` files in `assets/ui/` are the sources, exported PNG sheets are
       what the build embeds (the build never needs Aseprite), and a script re-exports them
 - [x] Icons: home, games, settings, scripts, memory, achievements, simulator, play, stop, rewind, add, edit,

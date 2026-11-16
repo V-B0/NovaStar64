@@ -33,13 +33,13 @@ local function blocks(text)
     return out
 end
 
--- The launcher's five colours. K and B and O and L and G are the letters used in the text art.
+-- The launcher's five colours, by the letters the text art uses: K ink, B violet, O orange, L cream, G teal.
 local palette = {
-    K = { 0x04, 0x04, 0x04 },
-    B = { 0x6A, 0x2B, 0x09 },
-    O = { 0xC5, 0x62, 0x0B },
-    L = { 0xFC, 0xB8, 0x61 },
-    G = { 0x6F, 0x77, 0x81 },
+    K = { 0x0B, 0x0B, 0x1E }, -- ink
+    B = { 0x4B, 0x3B, 0xB5 }, -- violet
+    O = { 0xFF, 0x7A, 0x1A }, -- orange
+    L = { 0xF6, 0xF0, 0xDC }, -- cream
+    G = { 0x3F, 0xC5, 0xB0 }, -- teal
     ["#"] = { 0xFF, 0xFF, 0xFF }, -- font pixels: white, tinted by the program
 }
 local function rgba(letter)

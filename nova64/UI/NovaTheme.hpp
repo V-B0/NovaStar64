@@ -9,12 +9,12 @@ namespace NovaUI {
 inline void ApplyNodeEditorTheme() {
     namespace ed = ax::NodeEditor;
     ed::Style& s = ed::GetStyle();
-    s.Colors[ed::StyleColor_Bg] = ImColor(45, 20, 6, 255);
-    s.Colors[ed::StyleColor_Grid] = ImColor(106, 43, 9, 110);
-    s.Colors[ed::StyleColor_NodeBg] = ImColor(4, 4, 4, 245);
-    s.Colors[ed::StyleColor_NodeBorder] = ImColor(197, 98, 11, 255);
-    s.Colors[ed::StyleColor_HovNodeBorder] = ImColor(252, 184, 97, 255);
-    s.Colors[ed::StyleColor_SelNodeBorder] = ImColor(252, 184, 97, 255);
+    s.Colors[ed::StyleColor_Bg] = ImColor(27, 23, 68, 255);
+    s.Colors[ed::StyleColor_Grid] = ImColor(75, 59, 181, 110);
+    s.Colors[ed::StyleColor_NodeBg] = ImColor(11, 11, 30, 245);
+    s.Colors[ed::StyleColor_NodeBorder] = ImColor(255, 122, 26, 255);
+    s.Colors[ed::StyleColor_HovNodeBorder] = ImColor(246, 240, 220, 255);
+    s.Colors[ed::StyleColor_SelNodeBorder] = ImColor(246, 240, 220, 255);
 }
 
 } // namespace NovaUI

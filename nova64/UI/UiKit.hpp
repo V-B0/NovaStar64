@@ -33,28 +33,28 @@ constexpr ImVec4 Rgb(unsigned hex, float alpha = 1.0f) {
 
 namespace color {
 // The five colours of the palette.
-inline constexpr ImVec4 kBlack = Rgb(0x040404);
-inline constexpr ImVec4 kBrown = Rgb(0x6A2B09);
-inline constexpr ImVec4 kOrange = Rgb(0xC5620B);
-inline constexpr ImVec4 kPeach = Rgb(0xFCB861);
-inline constexpr ImVec4 kGrey = Rgb(0x6F7781);
+inline constexpr ImVec4 kInk = Rgb(0x0B0B1E);    ///< near-black navy: the window, outlines, the darkest text
+inline constexpr ImVec4 kViolet = Rgb(0x4B3BB5); ///< borders, hover and selection
+inline constexpr ImVec4 kOrange = Rgb(0xFF7A1A); ///< the accent: primary actions, focus
+inline constexpr ImVec4 kCream = Rgb(0xF6F0DC);  ///< text and light fills
+inline constexpr ImVec4 kTeal = Rgb(0x3FC5B0);   ///< a second accent, mostly in the icons
 
 // What they are used for.
-inline constexpr ImVec4 kBackground = kBlack;
-inline constexpr ImVec4 kPanel = Rgb(0x2D1406); ///< the dark brown inside panels: black with a little brown
+inline constexpr ImVec4 kBackground = kInk;
+inline constexpr ImVec4 kPanel = Rgb(0x1B1744); ///< inside panels: ink with some violet
 inline constexpr ImVec4 kSidebar = kPanel;
 inline constexpr ImVec4 kSurface = kPanel;
-inline constexpr ImVec4 kSurfaceHover = kBrown;
-inline constexpr ImVec4 kBorder = kBrown;
-inline constexpr ImVec4 kText = kPeach;
-inline constexpr ImVec4 kTextMuted = kOrange;
-inline constexpr ImVec4 kTextDisabled = kGrey;
+inline constexpr ImVec4 kSurfaceHover = kViolet;
+inline constexpr ImVec4 kBorder = kViolet;
+inline constexpr ImVec4 kText = kCream;
+inline constexpr ImVec4 kTextMuted = Rgb(0xA39FB8); ///< cream at 60% over the panel
+inline constexpr ImVec4 kTextDisabled = Rgb(0x6E6C88);
 inline constexpr ImVec4 kAccent = kOrange;
-inline constexpr ImVec4 kAccentHover = kPeach;
-inline constexpr ImVec4 kAccentPressed = kPeach;
-inline constexpr ImVec4 kAccentSoft = kBrown; ///< a selected row or chip
+inline constexpr ImVec4 kAccentHover = kCream;
+inline constexpr ImVec4 kAccentPressed = kCream;
+inline constexpr ImVec4 kAccentSoft = kViolet; ///< a selected row or chip
 inline constexpr ImVec4 kDanger = kOrange;
-inline constexpr ImVec4 kOnAccent = kBlack;   ///< text on the accent colour
+inline constexpr ImVec4 kOnAccent = kInk;      ///< text on the accent colour
 } // namespace color
 
 /// Dear ImGui's colours and metrics set to the launcher's palette. Call once after creating the
@@ -120,7 +120,7 @@ void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 tint
 // --- Frames ---
 
 /// Which of the frame sprites to draw: the colour of the border.
-enum class Frame { Brown, Orange, Peach, Grey };
+enum class Frame { Violet, Orange, Cream, Teal };
 
 /// Draws a stepped-corner frame around [min, max], filled with `fill` (the fill can be transparent).
 /// Corners are cut in two steps, as in the rest of the interface.
@@ -157,7 +157,7 @@ bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip,
 /// A framed panel. Everything up to EndCard is drawn inside it. `size` of 0 in a dimension
 /// takes the available space; `autoHeight` fits the content instead. Always call EndCard.
 bool BeginCard(const char* id, ImVec2 size = ImVec2(0, 0), bool autoHeight = true,
-               ImVec2 padding = ImVec2(16.0f, 14.0f), Frame frame = Frame::Brown);
+               ImVec2 padding = ImVec2(16.0f, 14.0f), Frame frame = Frame::Violet);
 void EndCard();
 
 /// The title of a page: heading text, an optional muted line under it, then a rule.

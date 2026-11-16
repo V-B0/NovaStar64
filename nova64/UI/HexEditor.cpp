@@ -3,6 +3,7 @@
  * @brief Read-only ImGui memory viewer implementation.
  */
 #include "HexEditor.hpp"
+#include "UiKit.hpp"
 
 #include <imgui.h>
 
@@ -125,7 +126,7 @@ void HexEditor::DrawToolbar(const uint8_t* mem, size_t size, uint32_t baseAddr, 
     }
     if (!m_status.empty()) {
         ImGui::SameLine(0, 20);
-        ImGui::TextColored(ImVec4(0.75f, 0.25f, 0.15f, 1.0f), "%s", m_status.c_str());
+        ImGui::TextColored(kit::color::kOrange, "%s", m_status.c_str());
     }
 }
 
@@ -144,7 +145,7 @@ void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, boo
     while (clipper.Step()) {
         for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
             const size_t rowBase = static_cast<size_t>(row) * bpr;
-            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.60f, 1.0f), "%08X", static_cast<unsigned>(baseAddr + rowBase));
+            ImGui::TextColored(kit::color::kTeal, "%08X", static_cast<unsigned>(baseAddr + rowBase));
 
             for (int col = 0; col < bpr && rowBase + col < size; ++col) {
                 const size_t i = rowBase + col;

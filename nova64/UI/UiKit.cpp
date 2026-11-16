@@ -127,48 +127,48 @@ void ApplyTheme() {
     c[ImGuiCol_PopupBg] = color::kPanel;
     c[ImGuiCol_Border] = color::kOrange;
     c[ImGuiCol_BorderShadow] = clear;
-    c[ImGuiCol_FrameBg] = color::kBlack;
+    c[ImGuiCol_FrameBg] = color::kInk;
     c[ImGuiCol_FrameBgHovered] = color::kPanel;
-    c[ImGuiCol_FrameBgActive] = color::kBrown;
+    c[ImGuiCol_FrameBgActive] = color::kViolet;
     c[ImGuiCol_TitleBg] = color::kPanel;
     c[ImGuiCol_TitleBgActive] = color::kPanel;
     c[ImGuiCol_TitleBgCollapsed] = color::kPanel;
     c[ImGuiCol_MenuBarBg] = color::kBackground;
-    c[ImGuiCol_ScrollbarBg] = color::kBlack;
-    c[ImGuiCol_ScrollbarGrab] = color::kBrown;
+    c[ImGuiCol_ScrollbarBg] = color::kInk;
+    c[ImGuiCol_ScrollbarGrab] = color::kViolet;
     c[ImGuiCol_ScrollbarGrabHovered] = color::kOrange;
-    c[ImGuiCol_ScrollbarGrabActive] = color::kPeach;
-    c[ImGuiCol_CheckMark] = color::kPeach;
+    c[ImGuiCol_ScrollbarGrabActive] = color::kCream;
+    c[ImGuiCol_CheckMark] = color::kCream;
     c[ImGuiCol_SliderGrab] = color::kOrange;
-    c[ImGuiCol_SliderGrabActive] = color::kPeach;
+    c[ImGuiCol_SliderGrabActive] = color::kCream;
     c[ImGuiCol_Button] = color::kPanel;
-    c[ImGuiCol_ButtonHovered] = color::kBrown;
+    c[ImGuiCol_ButtonHovered] = color::kViolet;
     c[ImGuiCol_ButtonActive] = color::kOrange;
-    c[ImGuiCol_Header] = color::kBrown;
-    c[ImGuiCol_HeaderHovered] = Rgb(0x8A4A1C);
+    c[ImGuiCol_Header] = color::kViolet;
+    c[ImGuiCol_HeaderHovered] = Rgb(0x7567BC);
     c[ImGuiCol_HeaderActive] = color::kOrange;
-    c[ImGuiCol_Separator] = color::kBrown;
+    c[ImGuiCol_Separator] = color::kViolet;
     c[ImGuiCol_SeparatorHovered] = color::kOrange;
-    c[ImGuiCol_SeparatorActive] = color::kPeach;
-    c[ImGuiCol_ResizeGrip] = color::kBrown;
+    c[ImGuiCol_SeparatorActive] = color::kCream;
+    c[ImGuiCol_ResizeGrip] = color::kViolet;
     c[ImGuiCol_ResizeGripHovered] = color::kOrange;
-    c[ImGuiCol_ResizeGripActive] = color::kPeach;
+    c[ImGuiCol_ResizeGripActive] = color::kCream;
     c[ImGuiCol_Tab] = color::kPanel;
-    c[ImGuiCol_TabHovered] = Rgb(0x8A4A1C);
-    c[ImGuiCol_TabActive] = color::kBrown;
+    c[ImGuiCol_TabHovered] = Rgb(0x7567BC);
+    c[ImGuiCol_TabActive] = color::kViolet;
     c[ImGuiCol_TabUnfocused] = color::kPanel;
-    c[ImGuiCol_TabUnfocusedActive] = color::kBrown;
+    c[ImGuiCol_TabUnfocusedActive] = color::kViolet;
     c[ImGuiCol_TabSelectedOverline] = color::kOrange;
     c[ImGuiCol_TabDimmedSelectedOverline] = color::kOrange;
-    c[ImGuiCol_TableHeaderBg] = color::kBrown;
-    c[ImGuiCol_TableBorderStrong] = color::kBrown;
-    c[ImGuiCol_TableBorderLight] = Rgb(0x4A1E07);
+    c[ImGuiCol_TableHeaderBg] = color::kViolet;
+    c[ImGuiCol_TableBorderStrong] = color::kViolet;
+    c[ImGuiCol_TableBorderLight] = Rgb(0x2A2560);
     c[ImGuiCol_TableRowBg] = clear;
-    c[ImGuiCol_TableRowBgAlt] = Rgb(0xFCB861, 0.04f);
-    c[ImGuiCol_TextSelectedBg] = Rgb(0xC5620B, 0.45f);
-    c[ImGuiCol_NavCursor] = color::kPeach;
-    c[ImGuiCol_DragDropTarget] = color::kPeach;
-    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x000000, 0.65f);
+    c[ImGuiCol_TableRowBgAlt] = Rgb(0xF6F0DC, 0.04f);
+    c[ImGuiCol_TextSelectedBg] = Rgb(0xFF7A1A, 0.40f);
+    c[ImGuiCol_NavCursor] = color::kCream;
+    c[ImGuiCol_DragDropTarget] = color::kCream;
+    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x05050F, 0.70f);
 
     // Square, outlined, and sized in whole art pixels. Antialiasing is off so edges stay hard.
     const float px = Px(1.0f);
@@ -412,20 +412,20 @@ struct ButtonLook {
 ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
     switch (style) {
     case ButtonStyle::Primary:
-        if (held) return {color::kPeach, color::kBlack, Frame::Orange, true};
-        return {hovered ? color::kPeach : color::kOrange, color::kBlack, Frame::Peach, true};
+        if (held) return {color::kCream, color::kInk, Frame::Orange, true};
+        return {hovered ? color::kCream : color::kOrange, color::kInk, Frame::Cream, true};
     case ButtonStyle::Ghost:
-        if (held) return {color::kOrange, color::kBlack, Frame::Orange, false};
-        return {hovered ? color::kBrown : ImVec4(0, 0, 0, 0), color::kPeach, Frame::Brown, false};
+        if (held) return {color::kOrange, color::kInk, Frame::Orange, false};
+        return {hovered ? color::kViolet : ImVec4(0, 0, 0, 0), color::kCream, Frame::Violet, false};
     case ButtonStyle::Danger:
-        if (held) return {color::kPeach, color::kBlack, Frame::Peach, true};
-        if (hovered) return {color::kOrange, color::kBlack, Frame::Peach, true};
-        return {color::kBlack, color::kOrange, Frame::Orange, true};
+        if (held) return {color::kCream, color::kInk, Frame::Cream, true};
+        if (hovered) return {color::kOrange, color::kInk, Frame::Cream, true};
+        return {color::kInk, color::kOrange, Frame::Orange, true};
     case ButtonStyle::Secondary:
     default:
-        if (held) return {color::kOrange, color::kBlack, Frame::Peach, true};
-        if (hovered) return {color::kBrown, color::kPeach, Frame::Orange, true};
-        return {color::kPanel, color::kPeach, Frame::Brown, true};
+        if (held) return {color::kOrange, color::kInk, Frame::Cream, true};
+        if (hovered) return {color::kViolet, color::kCream, Frame::Orange, true};
+        return {color::kPanel, color::kCream, Frame::Violet, true};
     }
 }
 
@@ -441,7 +441,7 @@ void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max) {
     const ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible) {
         const float p = Px(1.0f);
-        draw->AddRect(ImVec2(min.x - p, min.y - p), ImVec2(max.x + p, max.y + p), Col(color::kPeach), 0.0f, 0, p);
+        draw->AddRect(ImVec2(min.x - p, min.y - p), ImVec2(max.x + p, max.y + p), Col(color::kCream), 0.0f, 0, p);
     }
 }
 
@@ -510,7 +510,7 @@ bool NavItem(Icon icon, const char* label, bool selected) {
     const bool hovered = ImGui::IsItemHovered();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (selected) draw->AddRectFilled(min, max, Col(color::kBrown));
+    if (selected) draw->AddRectFilled(min, max, Col(color::kViolet));
     else if (hovered) draw->AddRectFilled(min, max, Col(color::kPanel));
     if (selected) draw->AddRectFilled(min, ImVec2(min.x + 2.0f * p, max.y), Col(color::kOrange));
     FocusRing(draw, min, max);
@@ -530,7 +530,7 @@ bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip,
     const bool held = ImGui::IsItemActive();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (hovered) draw->AddRectFilled(min, max, Col(isClose ? (held ? color::kPeach : color::kOrange) : color::kBrown));
+    if (hovered) draw->AddRectFilled(min, max, Col(isClose ? (held ? color::kCream : color::kOrange) : color::kViolet));
     DrawIcon(draw, icon, ImVec2(min.x + size.x * 0.5f, min.y + size.y * 0.5f), 16.0f * Px(1.0f), Tint());
     if (tooltip && hovered) ImGui::SetTooltip("%s", tooltip);
     return clicked;
@@ -558,7 +558,7 @@ void EndCard() {
     const ImVec2 pos = ImGui::GetWindowPos();
     const ImVec2 size = ImGui::GetWindowSize();
     ImGui::EndChild();
-    const Frame frame = g_cardFrames.empty() ? Frame::Brown : g_cardFrames.back();
+    const Frame frame = g_cardFrames.empty() ? Frame::Violet : g_cardFrames.back();
     if (!g_cardFrames.empty()) g_cardFrames.pop_back();
     // A child window draws after its parent, so this lands behind the card's contents.
     DrawFrame(ImGui::GetWindowDrawList(), pos, ImVec2(pos.x + size.x, pos.y + size.y), frame, Col(color::kPanel));
@@ -580,7 +580,7 @@ void PageTitle(const char* title, const char* subtitle) {
     ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddRectFilled(min, ImVec2(min.x + ImGui::GetContentRegionAvail().x, min.y + Px(1.0f)),
-                                              Col(color::kBrown));
+                                              Col(color::kViolet));
     ImGui::Dummy(ImVec2(0.0f, Px(5.0f)));
 }
 
@@ -600,7 +600,7 @@ void Keycap(const char* text) {
     const ImVec2 max(min.x + size.x, min.y + size.y);
     ImGui::Dummy(size);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    DrawFrame(draw, min, max, Frame::Orange, Col(color::kBlack));
+    DrawFrame(draw, min, max, Frame::Orange, Col(color::kInk));
     draw->AddText(ImVec2(Snap(min.x + (size.x - textSize.x) * 0.5f), Snap(min.y + (size.y - textSize.y) * 0.5f)),
                   Col(color::kText), text);
 }
@@ -660,8 +660,8 @@ std::string Initials(const std::string& title) {
 }
 
 ImU32 PlaceholderColor(const std::string& title) {
-    // Shades of the interface's own browns and greys, so placeholder art belongs with the rest.
-    static const unsigned kColors[] = {0x6A2B09, 0x8A4A1C, 0x6F7781, 0x555B64, 0x9A5420, 0x4A1E07};
+    // Colours from the interface's family but clearly apart from each other, so games are easy to tell apart.
+    static const unsigned kColors[] = {0x4B3BB5, 0x2A6F97, 0xB5541A, 0x1E8A7A, 0x8A3F8F, 0x9A3B5A};
     unsigned hash = 2166136261u;
     for (unsigned char ch : title) hash = (hash ^ ch) * 16777619u;
     const unsigned rgb = kColors[hash % (sizeof(kColors) / sizeof(kColors[0]))];

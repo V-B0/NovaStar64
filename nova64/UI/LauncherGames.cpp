@@ -417,22 +417,22 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& ti
     const float p = Px(1.0f);
 
     if (const CoverTexture* cover = GetCoverTexture(coverPath)) {
-        draw->AddRectFilled(origin, corner, ImGui::GetColorU32(color::kBlack));
+        draw->AddRectFilled(origin, corner, ImGui::GetColorU32(color::kInk));
         // Fit inside the box without stretching the picture.
         const float scale = std::min((width - 4.0f * p) / cover->width, (height - 4.0f * p) / cover->height);
         const float w = cover->width * scale, h = cover->height * scale;
         const ImVec2 p0(std::round(origin.x + (width - w) * 0.5f), std::round(origin.y + (height - h) * 0.5f));
         draw->AddImage(static_cast<ImTextureID>(cover->texture), p0, ImVec2(p0.x + w, p0.y + h));
-        DrawFrame(draw, origin, corner, hovered ? Frame::Peach : Frame::Brown, 0);
+        DrawFrame(draw, origin, corner, hovered ? Frame::Cream : Frame::Violet, 0);
     } else {
         // No picture: the title's initials on a colour that is always the same for this game.
-        DrawFrame(draw, origin, corner, hovered ? Frame::Peach : Frame::Orange, PlaceholderColor(title));
+        DrawFrame(draw, origin, corner, hovered ? Frame::Cream : Frame::Orange, PlaceholderColor(title));
         const std::string initials = Initials(title);
         ImGui::PushFont(GetFonts().display);
         const ImVec2 textSize = ImGui::CalcTextSize(initials.c_str());
         draw->AddText(ImVec2(std::round(origin.x + (width - textSize.x) * 0.5f),
                              std::round(origin.y + (height - textSize.y) * 0.5f)),
-                      ImGui::GetColorU32(color::kPeach), initials.c_str());
+                      ImGui::GetColorU32(color::kCream), initials.c_str());
         ImGui::PopFont();
     }
 
@@ -440,7 +440,7 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& ti
         // A play mark over the middle of the cover
         const ImVec2 mid(origin.x + width * 0.5f, origin.y + height * 0.5f);
         const float half = 12.0f * p;
-        DrawFrame(draw, ImVec2(mid.x - half, mid.y - half), ImVec2(mid.x + half, mid.y + half), Frame::Peach,
+        DrawFrame(draw, ImVec2(mid.x - half, mid.y - half), ImVec2(mid.x + half, mid.y + half), Frame::Cream,
                   ImGui::GetColorU32(color::kOrange));
         DrawIcon(draw, Icon::Play, mid, 16.0f * p);
     }
@@ -484,7 +484,7 @@ void NovaLauncher::RenderGamesTab() {
             kit::HintText(fs::path(rom.path).filename().string().c_str());
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", rom.path.c_str());
             if (!exists) {
-                ImGui::PushStyleColor(ImGuiCol_Text, kit::color::kPeach);
+                ImGui::PushStyleColor(ImGuiCol_Text, kit::color::kCream);
                 ImGui::TextUnformatted("File not found");
                 ImGui::PopStyleColor();
             }

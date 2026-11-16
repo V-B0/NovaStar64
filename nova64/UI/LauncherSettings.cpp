@@ -530,7 +530,7 @@ void NovaLauncher::RenderSettingsTab() {
         }
         const bool selectedUnavailable = (m_gfx.backendType == 1) ? !kVulkanAvailable : !kOpenGLAvailable;
         if (selectedUnavailable) {
-            ImGui::TextColored(ImVec4(0.75f, 0.25f, 0.15f, 1.0f),
+            ImGui::TextColored(kit::color::kOrange,
                                "%s isn't available here; games won't start until you pick the other driver.", current);
         }
         {
@@ -574,7 +574,7 @@ void NovaLauncher::RenderSettingsTab() {
 
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kBrown);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kViolet);
         const bool accuracyOpen = ImGui::CollapsingHeader("Accuracy");
         ImGui::PopStyleColor(2);
         if (accuracyOpen) {
