@@ -387,6 +387,7 @@ one, add its row.
 | `NOVA64_SHOT_FRAME=a,b,c` | Save a screenshot on each listed presented frame |
 | `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
 | `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
+| `NOVA64_AUDIO_DUMP=<file.wav>` | Write everything the game plays to a 16-bit stereo WAV file, for recording footage with its sound (use with a dummy audio driver for a silent capture run) |
 | `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher tab to a PNG and exit |
 | `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |
 | `NOVA64_UI_KEYS=600:Backspace,660:Return` | Press launcher keys on the given launcher frames |

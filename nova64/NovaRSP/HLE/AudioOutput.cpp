@@ -9,11 +9,90 @@
  */
 #include "AudioOutput.hpp"
 #include <SDL.h>
-#include <cstdio>
-#include <thread>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <thread>
 
 namespace Nova64::RSP::HLE {
+
+namespace {
+
+/// Writes everything the game plays to a 16-bit stereo WAV file when NOVA64_AUDIO_DUMP=<file> is
+/// set, so a run can be recorded with its sound. The file is complete when the program exits.
+class WavDump {
+public:
+    ~WavDump() { Close(); }
+
+    void Write(const int16_t* samples, uint32_t count, uint32_t rate) {
+        if (m_failed) return;
+        if (!m_file && !Open(rate)) return;
+        if (rate != m_rate && !m_warnedRate) {
+            std::fprintf(stderr, "[AudioOutput] sample rate changed from %u to %u; the WAV keeps the first\n", m_rate,
+                         rate);
+            m_warnedRate = true;
+        }
+        m_bytes += static_cast<uint32_t>(std::fwrite(samples, sizeof(int16_t), count, m_file) * sizeof(int16_t));
+    }
+
+    void Close() {
+        if (!m_file) return;
+        WriteHeader();
+        std::fclose(m_file);
+        m_file = nullptr;
+        m_failed = true; // do not reopen and overwrite the finished file
+    }
+
+private:
+    bool Open(uint32_t rate) {
+        const char* path = std::getenv("NOVA64_AUDIO_DUMP");
+        if (!path || !*path) return (m_failed = true, false);
+        m_file = std::fopen(path, "wb");
+        if (!m_file) {
+            std::fprintf(stderr, "[AudioOutput] cannot write %s\n", path);
+            return (m_failed = true, false);
+        }
+        m_rate = rate;
+        WriteHeader(); // sizes are filled in on Close
+        return true;
+    }
+
+    void WriteHeader() {
+        auto u32 = [](uint8_t* out, uint32_t v) {
+            for (int i = 0; i < 4; ++i) out[i] = static_cast<uint8_t>(v >> (8 * i));
+        };
+        auto u16 = [](uint8_t* out, uint16_t v) {
+            out[0] = static_cast<uint8_t>(v);
+            out[1] = static_cast<uint8_t>(v >> 8);
+        };
+        uint8_t h[44] = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' '};
+        u32(h + 4, 36 + m_bytes);
+        u32(h + 16, 16);
+        u16(h + 20, 1); // PCM
+        u16(h + 22, 2); // stereo
+        u32(h + 24, m_rate);
+        u32(h + 28, m_rate * 4);
+        u16(h + 32, 4);
+        u16(h + 34, 16);
+        std::memcpy(h + 36, "data", 4);
+        u32(h + 40, m_bytes);
+        std::fseek(m_file, 0, SEEK_SET);
+        std::fwrite(h, 1, sizeof(h), m_file);
+        std::fseek(m_file, 0, SEEK_END);
+    }
+
+    std::FILE* m_file = nullptr;
+    uint32_t m_rate = 0;
+    uint32_t m_bytes = 0;
+    bool m_failed = false;
+    bool m_warnedRate = false;
+};
+
+WavDump g_dump;
+
+} // namespace
 
 CAudioOutput::CAudioOutput() = default;
 
@@ -67,11 +146,13 @@ void CAudioOutput::Shutdown() {
         SDL_CloseAudioDevice(m_sdlDeviceId);
         m_sdlDeviceId = 0;
     }
+    g_dump.Close();
 }
 
 void CAudioOutput::QueueSamples(const int16_t* samples, uint32_t sampleCount, uint32_t sourceRate) {
     if (!m_initialized.load() || sampleCount == 0 || samples == nullptr) return;
     if (sourceRate > 0) m_sourceRate = sourceRate;
+    g_dump.Write(samples, sampleCount, m_sourceRate);
 
     // Back-pressure: if SDL2 has more than ~200ms queued, wait.
     const uint32_t maxQueueBytes = m_sourceRate * 4 / 5; // ~200ms of stereo 16-bit
