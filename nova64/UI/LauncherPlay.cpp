@@ -5,6 +5,7 @@
  */
 #include "../NovaRSP/Settings/RspSettings.hpp"
 #include "NovaLauncher.hpp"
+#include "UiKit.hpp"
 #include "LauncherInternal.hpp"
 
 #include <SDL.h>
@@ -453,26 +454,31 @@ void NovaLauncher::RenderPauseMenu() {
         ImGui::SetNextWindowFocus();
         m_focusPauseMenu = false;
     }
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
     ImGui::Begin("##PauseMenu", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PopStyleVar(3);
 
-    ImGui::SetWindowFontScale(1.4f);
-    ImGui::TextColored(ImVec4(0.85f, 0.43f, 0.26f, 1.0f), "Paused");
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PushFont(kit::GetFonts().heading);
+    ImGui::TextColored(kit::color::kAccent, "Paused");
+    ImGui::PopFont();
     ImGui::SameLine();
     ImGui::TextDisabled("  %s", m_emuTitle.c_str());
     ImGui::Separator();
     ImGui::Spacing();
 
     bool quit = false;
-    if (ImGui::Button("Resume (Esc)", ImVec2(180, 34))) ClosePauseMenu();
+    if (kit::Button("Resume (Esc)", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(180, 36))) ClosePauseMenu();
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_launch.rewind);
-    if (ImGui::Button("Rewind (Backspace)", ImVec2(180, 34))) OpenRewind();
+    if (kit::Button("Rewind (Backspace)", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(180, 36)))
+        OpenRewind();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Quit Game", ImVec2(180, 34))) quit = true;
+    if (kit::Button("Quit Game", kit::ButtonStyle::Danger, kit::Icon::Close, ImVec2(180, 36))) quit = true;
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -491,7 +497,11 @@ void NovaLauncher::RenderPauseMenu() {
     ImGui::EndDisabled();
 
     ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Controls")) {
+    ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kSidebar);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::Rgb(0xE4DFD3));
+    const bool controlsOpen = ImGui::CollapsingHeader("Controls");
+    ImGui::PopStyleColor(2);
+    if (controlsOpen) {
         // The binding table is tall; it scrolls inside the menu instead of stretching it.
         ImGui::BeginChild("##Controls", ImVec2(0, std::min(300.0f, maxH * 0.5f)), ImGuiChildFlags_Borders);
         RenderInputSettingsWidget();
@@ -597,7 +607,7 @@ void NovaLauncher::RenderRewindBar() {
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoScrollWithMouse);
 
-    ImGui::TextColored(ImVec4(0.85f, 0.43f, 0.26f, 1.0f), "Rewind");
+    ImGui::TextColored(kit::color::kAccent, "Rewind");
     ImGui::SameLine();
     ImGui::TextDisabled("Scroll or press Left/Right to pick a moment. Enter plays from there, Esc cancels.");
 
