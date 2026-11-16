@@ -3,8 +3,9 @@
  * @brief Minimal INI configuration reader/writer.
  *
  * Supports the usual INI shape: `[section]` headers, `key = value` pairs, and
- * `;` / `#` line comments. Section and key lookups are case-insensitive.
- * Values are written back only when something actually changed.
+ * `;` / `#` comments (a whole line, or inline after whitespace). Section and key
+ * lookups are case-insensitive. The file is written back only when something
+ * changed, and writing regenerates it, so comments in it are not preserved.
  */
 
 #pragma once
@@ -33,6 +34,7 @@ public:
     [[nodiscard]] std::string GetString(std::string_view section, std::string_view key,
                                         std::string_view defaultValue) const;
 
+    /// Decimal, or hexadecimal with a 0x prefix. Empty if the value is not entirely a number.
     [[nodiscard]] std::optional<int32_t> GetNumber(std::string_view section, std::string_view key) const;
     [[nodiscard]] int32_t GetNumber(std::string_view section, std::string_view key, int32_t defaultValue) const;
 

@@ -22,17 +22,17 @@ namespace NovaUI {
 
 LuaEngine* g_luaEngine = nullptr;
 
-// ── Registry key for frame callback table ────────────────────────────────────
+// Registry key of the table that holds the scripts' frame callbacks.
 static const char* kFrameCBKey = "nova64_frame_callbacks";
 
-// ── Constructor / Destructor ──────────────────────────────────────────────────
+// --- Constructor / Destructor ---
 LuaEngine::LuaEngine() { g_luaEngine = this; }
 LuaEngine::~LuaEngine() {
     Shutdown();
     if (g_luaEngine == this) g_luaEngine = nullptr;
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// --- Init ---
 bool LuaEngine::Init(uint8_t* rdram, size_t rdramSize) {
     if (m_L) Shutdown();
     m_rdram = rdram;
@@ -42,7 +42,6 @@ bool LuaEngine::Init(uint8_t* rdram, size_t rdramSize) {
     if (!m_L) return false;
     luaL_openlibs(m_L);
 
-    // Create frame-callback table in the registry
     lua_newtable(m_L);
     lua_setfield(m_L, LUA_REGISTRYINDEX, kFrameCBKey);
 
@@ -86,7 +85,6 @@ void LuaEngine::OnFrame() {
     if (!m_L) return;
     m_hasInputOverride = false; // reset per frame
 
-    // Call each registered frame callback
     lua_getfield(m_L, LUA_REGISTRYINDEX, kFrameCBKey);
     int tbl = lua_gettop(m_L);
     lua_pushnil(m_L);
@@ -105,9 +103,8 @@ void LuaEngine::OnFrame() {
     lua_pop(m_L, 1); // pop table
 }
 
-// ── API Registration ──────────────────────────────────────────────────────────
+// --- API Registration ---
 void LuaEngine::RegisterAPI() {
-    // -- mem table --
     static const luaL_Reg mem_lib[] = {
         {"read8", lua_mem_read8},   {"read16", lua_mem_read16},   {"read32", lua_mem_read32},
         {"write8", lua_mem_write8}, {"write16", lua_mem_write16}, {"write32", lua_mem_write32},
@@ -115,7 +112,6 @@ void LuaEngine::RegisterAPI() {
     luaL_newlib(m_L, mem_lib);
     lua_setglobal(m_L, "mem");
 
-    // -- emu table --
     static const luaL_Reg emu_lib[] = {{"frame_count", lua_emu_frame_count},
                                        {"rom_name", lua_emu_rom_name},
                                        {"register_frame_callback", lua_emu_register_frame_callback},
@@ -123,19 +119,17 @@ void LuaEngine::RegisterAPI() {
     luaL_newlib(m_L, emu_lib);
     lua_setglobal(m_L, "emu");
 
-    // -- input table --
     static const luaL_Reg input_lib[] = {
         {"get_buttons", lua_input_get_buttons}, {"override_buttons", lua_input_override_buttons}, {nullptr, nullptr}};
     luaL_newlib(m_L, input_lib);
     lua_setglobal(m_L, "input");
 
-    // -- console table --
     static const luaL_Reg console_lib[] = {{"print", lua_console_print}, {nullptr, nullptr}};
     luaL_newlib(m_L, console_lib);
     lua_setglobal(m_L, "console");
 }
 
-// ── Lua API implementations ───────────────────────────────────────────────────
+// --- Lua API implementations ---
 static inline uint32_t luaAddr(lua_State* L, int idx) {
     return (uint32_t)luaL_checkinteger(L, idx) & 0x1FFFFFFF; // mask to physical
 }

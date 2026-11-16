@@ -97,8 +97,8 @@ static std::filesystem::path GetUserDataDir() {
 
 // A copy is "portable" -- it keeps its data in its own folder -- if a portable.txt
 // sits next to the executable (the build and the portable download put one there),
-// or if that folder already holds settings, games or saves, which is how every copy
-// before the installers behaved and keeps working unchanged.
+// or if that folder already holds settings, games or saves, so a copy that has always
+// kept its data in its own folder keeps working unchanged.
 static bool IsPortableInstall(const std::filesystem::path& exeDir) {
     std::error_code ec;
     return std::filesystem::exists(exeDir / "portable.txt", ec) ||
@@ -241,7 +241,6 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++)
         if (!std::strcmp(argv[i], "--rsp-selftest")) return RunRspSelfTest(argc, argv);
 
-    // Initialize logging
     LoggingConfig::set_min_level(Logging::Level::Info);
     LoggingConfig::enable_console_output(true);
 
@@ -259,14 +258,13 @@ int main(int argc, char* argv[]) {
     int targetFPS = 60;      // Default: 60 FPS (NTSC)
     int windowWidth = 1280;  // Default: 16:9 HD (1280x720)
     int windowHeight = 720;
-    // Sentinel 0 means "don't override config". A non-zero value comes from
-    // an explicit --scale CLI flag and overrides NovaGraphics.ini.  Resolution
-    // presets only set window size now — they used to also force scale, which
-    // silently overwrote the ini every run.
+    // Sentinel 0 means "don't override config". A non-zero value comes from an
+    // explicit --scale flag and overrides NovaGraphics.ini. Resolution presets set
+    // only the window size, because forcing the scale as well would overwrite the
+    // ini on every run.
     int internalResScale = 0;
     int fullscreenMode = 1; // 0 = windowed, 1 = borderless fullscreen (default), 2 = exclusive fullscreen
 
-    // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             PrintUsage(argv[0]);
@@ -285,8 +283,7 @@ int main(int argc, char* argv[]) {
             Log::infof("Target FPS set to: %d", targetFPS);
         } else if (std::strcmp(argv[i], "--resolution") == 0 && i + 1 < argc) {
             const char* res = argv[++i];
-            // Window size only — internal scale is governed by NovaGraphics.ini
-            // (or by an explicit --scale flag below).
+            // Window size only; the internal scale comes from NovaGraphics.ini or --scale.
             if (std::strcmp(res, "480p") == 0) {
                 windowWidth = 854;
                 windowHeight = 480;
@@ -398,7 +395,6 @@ int main(int argc, char* argv[]) {
         // When it returns, emulation has ended.
     }
 
-    // Cleanup
     Log::info("NovaStar64 shutting down...");
     CN64System::CloseSystem();
     Logging::stop_logging();

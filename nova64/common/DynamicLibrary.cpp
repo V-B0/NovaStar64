@@ -1,6 +1,6 @@
 /**
  * @file DynamicLibrary.cpp
- * @brief Dynamic Library implementation.
+ * @brief DynamicLibrary implementation on top of LoadLibrary (Windows) or dlopen (POSIX).
  */
 #include "DynamicLibrary.hpp"
 

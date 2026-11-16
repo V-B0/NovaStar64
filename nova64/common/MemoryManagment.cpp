@@ -23,9 +23,6 @@
 
 namespace {
 
-/**
- * @brief Translate MEM_PROTECTION to OS-specific protection flags
- */
 bool TranslateToOsProtection(MEM_PROTECTION memProtection, int& osProtection) {
 #if PLATFORM_WINDOWS
     switch (memProtection) {
@@ -47,7 +44,7 @@ bool TranslateToOsProtection(MEM_PROTECTION memProtection, int& osProtection) {
     case MEM_EXECUTE_READ:      osProtection = PROT_READ | PROT_EXEC; return true;
     case MEM_EXECUTE_READWRITE: osProtection = PROT_READ | PROT_WRITE | PROT_EXEC; return true;
     case MEM_GUARD:
-        // POSIX doesn't have guard pages directly, use no access
+        // POSIX has no guard pages; PROT_NONE is the closest equivalent.
         osProtection = PROT_NONE;
         return true;
     default: return false;
@@ -56,9 +53,6 @@ bool TranslateToOsProtection(MEM_PROTECTION memProtection, int& osProtection) {
 }
 
 #if PLATFORM_WINDOWS
-/**
- * @brief Translate OS protection flags back to MEM_PROTECTION
- */
 bool TranslateFromOsProtection(DWORD osProtection, MEM_PROTECTION& memProtection) {
     // Strip off guard and nocache flags for comparison
     const DWORD baseProtection = osProtection & ~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
@@ -88,7 +82,6 @@ void* AllocateAddressSpace(size_t size, void* base_address) {
     if (ptr == MAP_FAILED) {
         return nullptr;
     }
-    // Ensure mapping is synchronized
     msync(ptr, size, MS_SYNC | MS_INVALIDATE);
     return ptr;
 #endif
@@ -139,8 +132,8 @@ bool DecommitMemory(void* addr, size_t size) {
 #if PLATFORM_WINDOWS
     return VirtualFree(addr, size, MEM_DECOMMIT) != 0;
 #else
-    // On POSIX, we use mmap with PROT_NONE to effectively decommit
-    // This allows the OS to reclaim physical pages via demand paging
+    // POSIX has no decommit: remapping the range as PROT_NONE anonymous memory
+    // lets the OS reclaim its pages.
     void* result = mmap(addr, size, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (result == MAP_FAILED) {
         return false;
@@ -185,9 +178,8 @@ bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection, MEM_PR
     }
     return TranslateFromOsProtection(oldOsProtect, oldProtection);
 #else
-    // POSIX doesn't provide a way to query old protection, so we just set it
-    // This is a limitation of the POSIX API
-    oldProtection = MEM_NOACCESS; // Can't determine on POSIX
+    // POSIX cannot report the previous protection, so oldProtection is always MEM_NOACCESS.
+    oldProtection = MEM_NOACCESS;
     return mprotect(addr, size, osProtection) == 0;
 #endif
 }
@@ -306,12 +298,10 @@ bool FlushInstructionCache(void* address, size_t size) {
 #if PLATFORM_WINDOWS
     return ::FlushInstructionCache(GetCurrentProcess(), address, size) != 0;
 #elif defined(__GNUC__) || defined(__clang__)
-    // GCC/Clang builtin for cache flush
     __builtin___clear_cache(static_cast<char*>(address), static_cast<char*>(address) + size);
     return true;
 #else
-    // Generic fallback - sync instruction and data caches
-    // This may not work on all architectures
+    // No known way to flush the instruction cache with this compiler; does nothing.
     (void)address;
     (void)size;
     return true;
@@ -347,7 +337,7 @@ bool ZeroMemoryRange(void* address, size_t size) {
         return false;
     }
 
-    // Use secure zero if available to prevent optimization
+    // Not memset(): the compiler may optimise a plain memset away.
 #if PLATFORM_WINDOWS
     SecureZeroMemory(address, size);
     return true;
@@ -387,7 +377,6 @@ MemoryInfo QueryMemory(void* address) {
     info.allocation_base = mbi.AllocationBase;
     info.region_size = mbi.RegionSize;
 
-    // Translate protection
     if (mbi.State == MEM_COMMIT) {
         info.is_committed = true;
         info.is_free = false;
@@ -400,8 +389,7 @@ MemoryInfo QueryMemory(void* address) {
         info.is_free = true;
     }
 #else
-    // POSIX doesn't have a direct equivalent to VirtualQuery
-    // We can only provide limited information
+    // POSIX has no equivalent of VirtualQuery, so only limited information is available.
     info.base_address = address;
     info.allocation_base = address;
     info.region_size = GetPageSize(); // Minimum granularity

@@ -1,8 +1,6 @@
 /**
  * @file log.hpp
- * @brief Logging system
- *
- * Provides a thread-safe logging system with file output and log level filtering.
+ * @brief Thread-safe logging with level filtering and console and file output.
  */
 
 #pragma once
@@ -45,6 +43,7 @@ public:
      */
     static FileSystem::File log_file;
 
+    /// A logger that discards everything: every method is empty.
     class Logger {
     public:
         template <typename... Args> void debug(const char*, Args&&...) {}
@@ -105,74 +104,20 @@ const std::string& get_log_filename();
 
 } // namespace LoggingConfig
 
-/**
- * @brief Convenience logging functions
- */
+/// Convenience wrappers around Logging::log, one per level. The `...f` variants
+/// take a printf-style format.
 namespace Log {
 
-/**
- * @brief Log a debug message
- * @param message Message to log
- */
 void debug(const std::string& message);
-
-/**
- * @brief Log an info message
- * @param message Message to log
- */
 void info(const std::string& message);
-
-/**
- * @brief Log a warning message
- * @param message Message to log
- */
 void warning(const std::string& message);
-
-/**
- * @brief Log an error message
- * @param message Message to log
- */
 void error(const std::string& message);
-
-/**
- * @brief Log a critical message
- * @param message Message to log
- */
 void critical(const std::string& message);
 
-/**
- * @brief Log a debug message with printf-style formatting
- * @param format Format string
- * @param ... Format arguments
- */
 void debugf(const char* format, ...);
-
-/**
- * @brief Log an info message with printf-style formatting
- * @param format Format string
- * @param ... Format arguments
- */
 void infof(const char* format, ...);
-
-/**
- * @brief Log a warning message with printf-style formatting
- * @param format Format string
- * @param ... Format arguments
- */
 void warningf(const char* format, ...);
-
-/**
- * @brief Log an error message with printf-style formatting
- * @param format Format string
- * @param ... Format arguments
- */
 void errorf(const char* format, ...);
-
-/**
- * @brief Log a critical message with printf-style formatting
- * @param format Format string
- * @param ... Format arguments
- */
 void criticalf(const char* format, ...);
 
 } // namespace Log

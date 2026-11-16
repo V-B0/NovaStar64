@@ -1,6 +1,7 @@
 /**
  * @file trace.hpp
- * @brief trace declarations and types.
+ * @brief Trace manager with severity and module filtering and pluggable sinks (file, console,
+ *        memory), plus the CLog file logger.
  */
 #pragma once
 
@@ -20,9 +21,8 @@
 #include <cstdarg>
 #include <cstdio>
 
-/**
- * @brief Simple file logger used by the recompiler and sync-CPU subsystems
- */
+/// Line-oriented file logger: Open() truncates the file and each Log() call
+/// (printf-style, at most 2047 characters) appends one line.
 class CLog {
 public:
     CLog() = default;
@@ -71,7 +71,7 @@ private:
 
 namespace Trace {
 
-// ================ C++17-compatible Source Location ================
+// --- C++17-compatible source location ---
 struct SourceLocation {
     const char* m_file;
     int m_line;
@@ -86,7 +86,7 @@ struct SourceLocation {
     [[nodiscard]] constexpr const char* function_name() const noexcept { return m_function; }
 };
 
-// ================ Severity Levels ================
+// --- Severity levels ---
 enum class Severity : uint8_t {
     None = 0,
     Error = 1,
@@ -96,7 +96,7 @@ enum class Severity : uint8_t {
     Debug = 5,
     Verbose = 6,
 
-    // Aliases for backward compatibility
+    // Legacy names for the severities above
     TraceEmmitError = Error,
     TraceEmmitWarning = Warning,
     TraceEmmitNotice = Notice,
@@ -105,11 +105,11 @@ enum class Severity : uint8_t {
     TraceEmmitVerbose = Verbose
 };
 
-// Severity level names
+// Indexed by Severity
 constexpr std::array<std::string_view, 7> SeverityNames = {"NONE", "ERROR", "WARNING", "NOTICE",
                                                            "INFO", "DEBUG", "VERBOSE"};
 
-// ================ Module Management ================
+// --- Module management ---
 using ModuleID = uint32_t;
 
 // Default module IDs (can be extended by applications)
@@ -126,10 +126,10 @@ constexpr ModuleID Plugin = 8;
 constexpr ModuleID Config = 9;
 constexpr ModuleID Debug = 10;
 constexpr ModuleID Network = 11;
-constexpr ModuleID Max = 64; // Maximum number of modules
+constexpr ModuleID Max = 64; // Size of the per-module tables; valid IDs are below this
 } // namespace Module
 
-// ================ Log Entry Structure ================
+// --- Log entry ---
 struct LogEntry {
     std::chrono::system_clock::time_point timestamp;
     ModuleID module;
@@ -143,7 +143,7 @@ struct LogEntry {
     [[nodiscard]] std::string FormatShort() const;
 };
 
-// ================ Base Trace Interface ================
+// --- Sink interface ---
 class ITraceSink {
 public:
     virtual ~ITraceSink() = default;
@@ -154,7 +154,7 @@ public:
     virtual void SetMinSeverity(Severity severity) noexcept = 0;
 };
 
-// ================ File Trace Sink ================
+// --- File sink ---
 class FileTraceSink final : public ITraceSink {
 public:
     struct Options {
@@ -204,7 +204,7 @@ private:
     [[nodiscard]] std::string GenerateArchiveName(size_t index) const;
 };
 
-// ================ Console Trace Sink ================
+// --- Console sink ---
 class ConsoleTraceSink final : public ITraceSink {
 public:
     enum class OutputTarget { StdOut, StdErr, Both };
@@ -245,13 +245,13 @@ private:
     void ResetColor() const;
 };
 
-// ================ Memory Trace Sink (Ring Buffer) ================
+// --- Memory sink (ring buffer) ---
 class MemoryTraceSink final : public ITraceSink {
 public:
     explicit MemoryTraceSink(size_t capacity = 1000);
 
     void Write(const LogEntry& entry) override;
-    void Flush() override {} // No-op for memory sink
+    void Flush() override {} // Nothing to flush
 
     [[nodiscard]] Severity GetMinSeverity() const noexcept override {
         return m_MinSeverity.load(std::memory_order_relaxed);
@@ -275,7 +275,7 @@ private:
     std::atomic<Severity> m_MinSeverity{Severity::Info};
 };
 
-// ================ Trace Manager ================
+// --- Trace manager ---
 class TraceManager {
 public:
     static TraceManager& Instance();
@@ -334,8 +334,7 @@ private:
                                        const SourceLocation& location) const;
 };
 
-// ================ Convenience Macros ================
-// Main logging macro
+// --- Convenience macros ---
 #define TRACE_LOG(module, severity, ...)                                                                               \
     do {                                                                                                               \
         if (Trace::TraceManager::Instance().ShouldLog((module), (severity))) {                                         \
@@ -368,8 +367,7 @@ private:
         }                                                                                                              \
     } while (0)
 
-// ================ Backward Compatibility ================
-// Legacy function names
+// --- Legacy API ---
 inline void WriteTraceFull(Trace::ModuleID module, Trace::Severity severity, const char* file, int line,
                            const char* function, const char* format, ...) {
     if (Trace::TraceManager::Instance().ShouldLog(module, severity)) {
@@ -393,7 +391,7 @@ inline void TraceSetMaxModule(Trace::ModuleID maxModule, Trace::Severity default
     }
 }
 
-// Legacy macro for backward compatibility
+// Legacy printf-style macro
 #ifdef _WIN32
 #define WriteTrace(module, severity, format, ...)                                                                      \
     do {                                                                                                               \
@@ -412,8 +410,8 @@ inline void TraceSetMaxModule(Trace::ModuleID maxModule, Trace::Severity default
 
 } // namespace Trace
 
-// ================ Global Convenience Functions ================
-// These maintain compatibility with the original API
+// --- Global convenience functions ---
+// Free-function wrappers around TraceManager, matching the original trace API.
 inline Trace::ITraceSink* TraceAddModule(std::unique_ptr<Trace::ITraceSink> sink) {
     auto* ptr = sink.get();
     Trace::TraceManager::Instance().AddSink(std::move(sink));

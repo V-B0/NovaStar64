@@ -1,6 +1,6 @@
 /**
  * @file TimeStamp.cpp
- * @brief Time Stamp implementation.
+ * @brief HighResolutionTimestamp implementation.
  */
 #include "Timestamp.hpp"
 

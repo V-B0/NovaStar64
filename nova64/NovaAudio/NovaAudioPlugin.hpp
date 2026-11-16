@@ -15,7 +15,6 @@
 #include <memory>
 #include <vector>
 
-// Forward declarations
 class CN64System;
 class AudioInterfaceHandler;
 
@@ -26,9 +25,7 @@ public:
     NovaAudioPlugin();
     ~NovaAudioPlugin() override;
 
-    // ════════════════════════════════════════════════════════════
-    //  PluginBase interface
-    // ════════════════════════════════════════════════════════════
+    // --- PluginBase interface ---
 
     ::Plugins::PluginInfo GetPluginInfo() const override;
     bool Initialize(CN64System* system) override;
@@ -41,9 +38,7 @@ public:
     size_t SaveState(uint8_t* data, size_t size) override;
     bool LoadState(const uint8_t* data, size_t size) override;
 
-    // ════════════════════════════════════════════════════════════
-    //  AudioPlugin interface
-    // ════════════════════════════════════════════════════════════
+    // --- AudioPlugin interface ---
 
     bool InitializeAudio(const ::Plugins::AudioSettings& settings) override;
     void SetAudioInfo(const ::Plugins::AudioInfo& info) override;

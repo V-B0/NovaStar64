@@ -13,6 +13,7 @@
 
 namespace NovaInput {
 
+/// Every input of the N64 controller; the analog stick counts as four directions.
 enum class N64Input : uint8_t {
     A,
     B,
@@ -48,6 +49,7 @@ struct KeyBinding {
 const char* InputLabel(N64Input input);  ///< e.g. "A Button"
 const char* InputIniKey(N64Input input); ///< e.g. "A", the key in settings files
 
+/// One KeyBinding per N64 input, indexed by N64Input.
 struct KeyBindings {
     std::array<KeyBinding, kN64InputCount> keys;
 

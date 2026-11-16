@@ -18,9 +18,7 @@
 
 namespace Nova64::Audio {
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Construction
-// ═══════════════════════════════════════════════════════════════════════
+// --- Construction ---
 
 NovaAudioPlugin::NovaAudioPlugin() { std::memset(&m_audioInfo, 0, sizeof(m_audioInfo)); }
 
@@ -28,9 +26,7 @@ NovaAudioPlugin::~NovaAudioPlugin() {
     if (m_initialized) Shutdown();
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  PluginBase interface
-// ═══════════════════════════════════════════════════════════════════════
+// --- PluginBase interface ---
 
 ::Plugins::PluginInfo NovaAudioPlugin::GetPluginInfo() const {
     ::Plugins::PluginInfo info{};
@@ -55,14 +51,13 @@ bool NovaAudioPlugin::Initialize(CN64System* system) {
         return false;
     }
 
-    // Grab AudioInterfaceHandler from the memory subsystem
     if (auto* mem = system->GetMemory()) {
         m_aiHandler = mem->AudioInterface();
     }
 
     if (!m_aiHandler) {
         Log::warning("NovaAudioPlugin: No AudioInterfaceHandler found - audio output unavailable");
-        // Not fatal — the plugin can still stub out calls
+        // Not fatal: without a handler the plugin's calls do nothing.
     }
 
     m_initialized = true;
@@ -95,7 +90,7 @@ void NovaAudioPlugin::Resume() {
 bool NovaAudioPlugin::IsInitialized() const { return m_initialized; }
 
 void NovaAudioPlugin::ShowConfigDialog(void* /*hwndParent*/) {
-    // No config dialog yet
+    // No configuration dialog (SupportsConfigDialog is false).
 }
 
 size_t NovaAudioPlugin::SaveState(uint8_t* data, size_t size) {
@@ -158,9 +153,7 @@ bool NovaAudioPlugin::LoadState(const uint8_t* data, size_t size) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  AudioPlugin interface
-// ═══════════════════════════════════════════════════════════════════════
+// --- AudioPlugin interface ---
 
 bool NovaAudioPlugin::InitializeAudio(const ::Plugins::AudioSettings& settings) {
     m_frequency = settings.Frequency;
@@ -180,16 +173,9 @@ void NovaAudioPlugin::SetAudioInfo(const ::Plugins::AudioInfo& info) {
 }
 
 void NovaAudioPlugin::ProcessAICommand() {
-    // Called when the game writes AI_LEN_REG to start a DMA transfer.
-    // The AudioInterfaceHandler already handles the DMA scheduling and
-    // sample output in Write32(), so this is a notification hook.
-    //
-    // If we have direct register pointers from SetAudioInfo, we could
-    // read AI_DRAM_ADDR and AI_LEN here. But since AIH handles it,
-    // we only need to ensure the audio device is fed.
-
-    // FeedDevice is called from the frame loop (MainSYS) — not here,
-    // to let audio accumulate in the ring buffer.
+    // Called when the game writes AI_LEN_REG to start a DMA transfer. The
+    // AudioInterfaceHandler already schedules the DMA and queues the samples in
+    // Write32(), so there is nothing left to do here.
 }
 
 uint32_t NovaAudioPlugin::GetAILength() {
@@ -221,11 +207,10 @@ void NovaAudioPlugin::SetDACRate(uint32_t dacRate) {
 void NovaAudioPlugin::SetBitRate(uint32_t bitrate) { m_bitRate = bitrate; }
 
 void NovaAudioPlugin::AddAudioSamples(const int16_t* buffer, uint32_t length) {
-    // Forward raw PCM samples to the AudioInterfaceHandler's output device
+    // Forward raw PCM samples to the AudioInterfaceHandler's output device.
     if (!m_aiHandler || !buffer || length == 0) return;
 
     m_aiHandler->AudioOutput().QueueSamples(buffer, length);
-    // FeedDevice is called from the frame loop (MainSYS) — not here.
 }
 
 bool NovaAudioPlugin::IsPlaying() const {
@@ -238,14 +223,12 @@ bool NovaAudioPlugin::IsPlaying() const {
 }
 
 uint32_t NovaAudioPlugin::GetBufferLevel() const {
-    // Return approximate number of samples queued in the output buffer
-    // For now return 0 — the audio output doesn't expose buffer level yet
+    // Always 0: the audio output does not expose its buffer level.
     return 0;
 }
 
 void NovaAudioPlugin::WaitForBuffer() {
-    // In sync mode, we could block until the audio buffer drains.
-    // For now, non-blocking — the AI timer pacing handles sync naturally.
+    // Never blocks: the AI timer pacing already handles synchronisation.
 }
 
 void NovaAudioPlugin::SetSyncMode(bool sync) { m_syncAudio = sync; }
@@ -260,9 +243,7 @@ void NovaAudioPlugin::SetMute(bool mute) {
     Nova64::RSP::HLE::CAudioOutput::SetMuted(mute);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Factory
-// ═══════════════════════════════════════════════════════════════════════
+// --- Factory ---
 
 std::unique_ptr<::Plugins::AudioPlugin> CreateNovaAudioPlugin() { return std::make_unique<NovaAudioPlugin>(); }
 

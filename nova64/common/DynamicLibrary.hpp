@@ -1,6 +1,6 @@
 /**
  * @file DynamicLibrary.hpp
- * @brief Platform-independent dynamic library loader declarations.
+ * @brief RAII wrapper and C-style helpers for loading DLLs and shared objects.
  */
 #pragma once
 
@@ -42,22 +42,11 @@ public:
      */
     explicit DynamicLibrary(const std::filesystem::path& libraryPath, int loadFlags = 0);
 
-    /**
-     * @brief Move constructor
-     */
     DynamicLibrary(DynamicLibrary&& other) noexcept;
-
-    /**
-     * @brief Move assignment operator
-     */
     DynamicLibrary& operator=(DynamicLibrary&& other) noexcept;
-
-    /**
-     * @brief Destructor - automatically unloads the library
-     */
     ~DynamicLibrary();
 
-    // Non-copyable
+    // Move-only: the object owns the handle.
     DynamicLibrary(const DynamicLibrary&) = delete;
     DynamicLibrary& operator=(const DynamicLibrary&) = delete;
 
@@ -131,12 +120,12 @@ public:
         DEFAULT = 0,
 
 #ifdef _WIN32
-        // Windows-specific flags
+        // Windows: passed to LoadLibraryExW
         LOAD_LIBRARY_AS_DATAFILE = 0x00000002,
         LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008,
         LOAD_IGNORE_CODE_AUTHZ_LEVEL = 0x00000010,
 #else
-        // POSIX-specific flags
+        // POSIX: glibc's numeric values, passed to dlopen() unchanged
         RTLD_LAZY = 0x00001,     // Lazy binding
         RTLD_NOW = 0x00002,      // Immediate binding
         RTLD_LOCAL = 0x00000,    // Symbols not available globally
@@ -176,6 +165,6 @@ void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept;
                                                            const char* symbolName) noexcept;
 
 /**
- * @brief Type alias for backward compatibility
+ * @brief Short alias for DynamicLibrary::Handle.
  */
 using DynLibHandle = DynamicLibrary::Handle;

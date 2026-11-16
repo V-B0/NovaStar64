@@ -1,8 +1,7 @@
 /**
  * @file LockGuard.cpp
- * @brief Lock Guard implementation.
+ * @brief RecursiveMutex implementation (CRITICAL_SECTION on Windows, a recursive pthread mutex elsewhere).
  */
-// LockGuard.cpp - RecursiveMutex implementation
 #include "LockGuard.hpp"
 
 #ifdef _WIN32

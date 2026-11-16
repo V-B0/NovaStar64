@@ -180,9 +180,8 @@ void ApplyScriptedInput(PIF::ControllerState& state, uint64_t viFrame) {
         return;
     }
 
-    // These scripts used to live in the DLL input plugin's GetControllerState,
-    // which the PIF never calls (it reads PollKeyboard directly), so they had
-    // no effect at all.
+    // The built-in scripts live here because the PIF reads PollKeyboard directly
+    // and never calls the DLL input plugin's GetControllerState.
     static const bool s_mm = std::getenv("NOVA64_AUTOINPUT_MM") != nullptr;
     static const bool s_generic = std::getenv("NOVA64_AUTOINPUT") != nullptr;
     if (!s_mm && !s_generic) return;

@@ -1,6 +1,6 @@
 /**
  * @file Span.hpp
- * @brief Span declarations and types.
+ * @brief Minimal non-owning view over contiguous memory, modelled on std::span.
  */
 #pragma once
 #include <cstddef>
@@ -10,7 +10,7 @@
 
 namespace Common {
 
-// Define dynamic_extent locally to avoid <span dependency
+// Defined here so the file does not depend on <span>.
 inline constexpr std::size_t dynamic_extent = static_cast<std::size_t>(-1);
 
 template <typename T, std::size_t Extent = dynamic_extent> class Span {

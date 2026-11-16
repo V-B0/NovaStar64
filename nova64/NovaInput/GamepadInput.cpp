@@ -335,8 +335,7 @@ void Gamepads::OpenLocked(int deviceIndex) {
 
     RefreshSettingsLocked();
 
-    // This device's preferred slot, if it has one and the slot isn't already
-    // held by this same device (can't happen here, but keeps the intent clear).
+    // The player slot this device's GUID is configured for, if any.
     int preferred = -1;
     for (int p = 0; p < kMaxPlayers; ++p) {
         if (!m_settings.preferredGuid[p].empty() && m_settings.preferredGuid[p] == guidBuf) {

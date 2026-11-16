@@ -1,6 +1,6 @@
 /**
  * @file trace.cpp
- * @brief trace implementation.
+ * @brief Trace manager, log entry formatting, and the file, console and memory sinks.
  */
 #include "trace.hpp"
 #include <algorithm>
@@ -22,13 +22,12 @@
 
 namespace Trace {
 
-// ================ LogEntry Implementation ================
+// --- LogEntry ---
 
 std::string LogEntry::Format(bool includeTimestamp) const {
     std::ostringstream oss;
 
     if (includeTimestamp) {
-        // Format timestamp
         auto time = std::chrono::system_clock::to_time_t(timestamp);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
@@ -43,17 +42,14 @@ std::string LogEntry::Format(bool includeTimestamp) const {
             << ' ';
     }
 
-    // Severity
     if (static_cast<size_t>(severity) < SeverityNames.size()) {
         oss << '[' << SeverityNames[static_cast<size_t>(severity)] << "] ";
     }
 
-    // Module name
     oss << '[' << TraceModule(module) << "] ";
 
-    // Location info
     if (!file.empty()) {
-        // Extract just the filename from the path
+        // Only the file name, not the full path.
         size_t lastSlash = file.find_last_of("/\\");
         std::string_view filename = (lastSlash != std::string_view::npos) ? file.substr(lastSlash + 1) : file;
 
@@ -66,7 +62,6 @@ std::string LogEntry::Format(bool includeTimestamp) const {
         oss << ": ";
     }
 
-    // Message
     oss << message;
 
     return oss.str();
@@ -75,7 +70,6 @@ std::string LogEntry::Format(bool includeTimestamp) const {
 std::string LogEntry::FormatShort() const {
     std::ostringstream oss;
 
-    // Just severity and message for compact output
     if (static_cast<size_t>(severity) < SeverityNames.size()) {
         oss << '[' << SeverityNames[static_cast<size_t>(severity)] << "] ";
     }
@@ -85,7 +79,7 @@ std::string LogEntry::FormatShort() const {
     return oss.str();
 }
 
-// ================ FileTraceSink Implementation ================
+// --- FileTraceSink ---
 
 FileTraceSink::FileTraceSink(std::string_view filename, const Options& options) :
     m_Filename(filename), m_Options(options) {
@@ -123,7 +117,7 @@ void FileTraceSink::OpenFile() {
     m_FileStream.open(m_Filename, std::ios::out | std::ios::app);
 
     if (!m_FileStream.is_open()) {
-        // Failed to open file - try creating directory
+        // The directory may not exist yet: create it (one level only) and retry.
         size_t lastSlash = m_Filename.find_last_of("/\\");
         if (lastSlash != std::string::npos) {
             std::string dir = m_Filename.substr(0, lastSlash);
@@ -134,7 +128,6 @@ void FileTraceSink::OpenFile() {
             mkdir(dir.c_str(), 0755);
 #endif
 
-            // Try again
             m_FileStream.open(m_Filename, std::ios::out | std::ios::app);
         }
     }
@@ -151,7 +144,6 @@ void FileTraceSink::Write(const LogEntry& entry) {
         return;
     }
 
-    // Write formatted entry
     std::string formatted = entry.Format(true);
     m_FileStream << formatted << '\n';
 
@@ -159,7 +151,6 @@ void FileTraceSink::Write(const LogEntry& entry) {
         m_FileStream.flush();
     }
 
-    // Check if rotation is needed
     if (m_Options.maxFileSize > 0) {
         RotateIfNeeded();
     }
@@ -177,19 +168,16 @@ bool FileTraceSink::RotateIfNeeded() {
         return false;
     }
 
-    // Check current file size
     auto currentPos = m_FileStream.tellp();
     if (currentPos < 0 || static_cast<size_t>(currentPos) < m_Options.maxFileSize) {
         return false;
     }
 
-    // Close current file
     m_FileStream.close();
 
-    // Rotate archived logs
     RotateFile();
 
-    // Reopen file
+    // Start a fresh, empty log file.
     m_FileStream.open(m_Filename, std::ios::out | std::ios::trunc);
 
     return true;
@@ -248,7 +236,7 @@ std::string FileTraceSink::GenerateArchiveName(size_t index) const {
     return result;
 }
 
-// ================ ConsoleTraceSink Implementation ================
+// --- ConsoleTraceSink ---
 
 ConsoleTraceSink::ConsoleTraceSink(const Options& options) : m_Options(options) {}
 
@@ -261,7 +249,6 @@ std::string ConsoleTraceSink::GetColorCode(Severity severity) const {
         return "";
     }
 
-    // ANSI color codes
     switch (severity) {
     case Severity::Error:   return "\033[1;31m"; // Bold Red
     case Severity::Warning: return "\033[1;33m"; // Bold Yellow
@@ -291,12 +278,10 @@ void ConsoleTraceSink::Write(const LogEntry& entry) {
 
     std::ostringstream oss;
 
-    // Color
     if (m_Options.useColors) {
         oss << GetColorCode(entry.severity);
     }
 
-    // Timestamp
     if (m_Options.showTimestamp) {
         auto time = std::chrono::system_clock::to_time_t(entry.timestamp);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(entry.timestamp.time_since_epoch()) % 1000;
@@ -311,19 +296,16 @@ void ConsoleTraceSink::Write(const LogEntry& entry) {
         oss << std::put_time(&tm_time, "%H:%M:%S") << '.' << std::setfill('0') << std::setw(3) << ms.count() << ' ';
     }
 
-    // Severity
     if (m_Options.showSeverity) {
         if (static_cast<size_t>(entry.severity) < SeverityNames.size()) {
             oss << '[' << SeverityNames[static_cast<size_t>(entry.severity)] << "] ";
         }
     }
 
-    // Module
     if (m_Options.showModule) {
         oss << '[' << TraceModule(entry.module) << "] ";
     }
 
-    // Location
     if (m_Options.showLocation && !entry.file.empty()) {
         size_t lastSlash = entry.file.find_last_of("/\\");
         std::string_view filename =
@@ -332,17 +314,14 @@ void ConsoleTraceSink::Write(const LogEntry& entry) {
         oss << filename << ':' << entry.line << ' ';
     }
 
-    // Message
     oss << entry.message;
 
-    // Reset color
     if (m_Options.useColors) {
         oss << "\033[0m";
     }
 
     oss << '\n';
 
-    // Output to appropriate stream
     std::string output = oss.str();
 
     switch (m_Options.target) {
@@ -376,7 +355,7 @@ void ConsoleTraceSink::SetOptions(const Options& options) noexcept {
     m_Options = options;
 }
 
-// ================ MemoryTraceSink Implementation ================
+// --- MemoryTraceSink ---
 
 MemoryTraceSink::MemoryTraceSink(size_t capacity) : m_Capacity(capacity) { m_Entries.reserve(capacity); }
 
@@ -417,12 +396,9 @@ void MemoryTraceSink::Clear() {
     m_Index = 0;
 }
 
-size_t MemoryTraceSink::GetCount() const noexcept {
-    // No lock needed for reading size (atomic operation on most platforms)
-    return m_Entries.size();
-}
+size_t MemoryTraceSink::GetCount() const noexcept { return m_Entries.size(); }
 
-// ================ TraceManager Implementation ================
+// --- TraceManager ---
 
 TraceManager::TraceManager() {
     // Initialize module severities to Info by default
@@ -553,7 +529,6 @@ void TraceManager::Log(ModuleID module, Severity severity, std::string_view mess
             m_Stats.moduleCounts[module]++;
         }
 
-        // Write to all sinks
         for (const auto& sink : m_Sinks) {
             if (sink) {
                 sink->Write(entry);

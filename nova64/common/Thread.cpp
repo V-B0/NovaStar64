@@ -1,6 +1,6 @@
 /**
  * @file Thread.cpp
- * @brief Thread implementation.
+ * @brief CThread implementation on top of CreateThread (Windows) or pthreads (POSIX).
  */
 #include "Thread.hpp"
 #include "trace.hpp"
@@ -15,8 +15,6 @@
 #include <cerrno>
 #endif
 
-// Constructor: Initializes thread with start routine
-// The start routine will be called when Start() is invoked
 CThread::CThread(CTHREAD_START_ROUTINE lpStartAddress) :
     m_StartAddress(lpStartAddress), m_lpThreadParameter(nullptr), m_thread(nullptr), m_threadID(0)
 #ifndef _WIN32
@@ -31,44 +29,36 @@ CThread::CThread(CTHREAD_START_ROUTINE lpStartAddress) :
     }
 }
 
-// Destructor: Cleans up thread resources
-// Terminates thread if still running (except when called from within the thread itself)
+// Terminates the thread if it is still running, unless the destructor runs on that thread.
 CThread::~CThread() {
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "CThread destructor start");
 
-    // Check if we're destroying the thread from within itself
-    // This would cause deadlock, so we log an error
+    // Deleting a CThread from its own thread would deadlock; log it and let the
+    // thread finish on its own.
     if (GetCurrentThreadId() == m_threadID) {
         WriteTrace(Trace::Module::Core, Trace::Severity::Error,
                    "Attempting to delete CThread from within its own thread context - potential deadlock!");
-        // Don't terminate - let the thread finish naturally
     } else if (IsRunning()) {
-        // Thread is still running and we're calling from a different thread
         WriteTrace(Trace::Module::Core, Trace::Severity::Warning,
                    "Thread still running during destruction - forcing termination");
         Terminate();
     }
 
 #ifdef _WIN32
-    // Close the Windows thread handle
     if (m_thread != nullptr) {
         CloseHandle(m_thread);
         m_thread = nullptr;
     }
 #else
-    // POSIX: pthread_t is cleaned up in ThreadWrapper after thread exits
-    // No explicit cleanup needed here as ThreadWrapper already deletes it
+    // POSIX: ThreadWrapper deletes the pthread_t when the thread exits.
 #endif
 
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "CThread destructor done");
 }
 
-// Start: Begins thread execution with the given parameter
-// Returns true on successful thread creation, false otherwise
 bool CThread::Start(void* lpThreadParameter) {
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Starting thread");
 
-    // Validate that we're not trying to start an already running thread
     if (IsRunning()) {
         WriteTrace(Trace::Module::Core, Trace::Severity::Warning, "Attempted to start thread that is already running");
         return false;
@@ -77,8 +67,7 @@ bool CThread::Start(void* lpThreadParameter) {
     m_lpThreadParameter = lpThreadParameter;
 
 #ifdef _WIN32
-    // Windows: Use CreateThread to spawn a new thread
-    // The thread ID is set by CreateThread
+    // CreateThread writes the thread ID into m_threadID.
     m_thread = CreateThread(nullptr,                               // Default security attributes
                             0,                                     // Default stack size
                             (LPTHREAD_START_ROUTINE)ThreadWrapper, // Thread function
@@ -95,8 +84,7 @@ bool CThread::Start(void* lpThreadParameter) {
 
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Thread created successfully, ID: %u", m_threadID);
 #else
-    // POSIX: Use pthread_create to spawn a new thread
-    // Allocate pthread_t on heap to avoid lifetime issues
+    // The pthread_t lives on the heap so it outlives this call; ThreadWrapper frees it.
     pthread_t* thread_id = nullptr;
 
     try {
@@ -108,7 +96,6 @@ bool CThread::Start(void* lpThreadParameter) {
 
     m_thread = static_cast<void*>(thread_id);
 
-    // Create the thread with default attributes
     int result = pthread_create(thread_id,                       // Thread ID output
                                 nullptr,                         // Default attributes
                                 (void* (*)(void*))ThreadWrapper, // Thread function
@@ -129,8 +116,7 @@ bool CThread::Start(void* lpThreadParameter) {
     return true;
 }
 
-// ThreadWrapper: Internal wrapper function that calls the user's thread routine
-// Handles platform-specific setup/cleanup and exception handling
+// Runs the start routine on the new thread and logs any exception that escapes it.
 void* CThread::ThreadWrapper(CThread* pThis) {
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Thread wrapper start");
 
@@ -139,21 +125,17 @@ void* CThread::ThreadWrapper(CThread* pThis) {
         return nullptr;
     }
 
-    // Set the thread ID now that we're executing in the thread context
+    // Record the ID from inside the new thread (on Windows CreateThread has already set it).
     pThis->m_threadID = GetCurrentThreadId();
 
 #ifndef _WIN32
-    // POSIX: Set running flag
     pThis->m_running = true;
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Thread is now running (POSIX), ID: %u", pThis->m_threadID);
 #endif
 
-    // Call the user's thread routine with exception handling
     void* result = nullptr;
 
     try {
-        // Execute the actual thread function
-        // Need to handle different pointer sizes on different architectures
 #if defined(__i386__) || defined(_M_IX86) || defined(__arm__) || defined(_M_ARM)
         // 32-bit architectures: direct cast
         result = reinterpret_cast<void*>(pThis->m_StartAddress(pThis->m_lpThreadParameter));
@@ -170,17 +152,14 @@ void* CThread::ThreadWrapper(CThread* pThis) {
     }
 
 #ifndef _WIN32
-    // POSIX: Clear running flag and clean up pthread_t
     pThis->m_running = false;
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Thread finished running (POSIX)");
 
-    // Clean up the dynamically allocated pthread_t
     pthread_t* thread_id = static_cast<pthread_t*>(pThis->m_thread);
     delete thread_id;
     pThis->m_thread = nullptr;
 #else
-    // Windows: CloseHandle is called in destructor
-    // We don't close it here because the thread is still technically running
+    // The destructor closes the handle; it is not closed here because the thread is still technically running.
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Thread finished running (Windows)");
 #endif
 
@@ -188,8 +167,6 @@ void* CThread::ThreadWrapper(CThread* pThis) {
     return result;
 }
 
-// IsRunning: Checks if the thread is currently executing
-// Returns true if thread is active, false if finished or never started
 bool CThread::IsRunning() const {
     WriteTrace(Trace::Module::Core, Trace::Severity::Verbose, "Checking if thread is running");
 
@@ -199,8 +176,7 @@ bool CThread::IsRunning() const {
     }
 
 #ifdef _WIN32
-    // Windows: Query the thread exit code
-    // If exit code is STILL_ACTIVE (259), the thread is still running
+    // A thread whose exit code is STILL_ACTIVE (259) is still running.
     DWORD exitCode = 0;
     if (GetExitCodeThread(m_thread, &exitCode)) {
         if (exitCode == STILL_ACTIVE) {
@@ -215,17 +191,13 @@ bool CThread::IsRunning() const {
     WriteTrace(Trace::Module::Core, Trace::Severity::Verbose, "Thread is not running (Windows)");
     return false;
 #else
-    // POSIX: Use our m_running flag
-    // This is more reliable than trying to query pthread status
+    // POSIX: use the m_running flag, which is more reliable than querying the pthread.
     WriteTrace(Trace::Module::Core, Trace::Severity::Verbose, "Thread is %s (POSIX)",
                m_running ? "running" : "not running");
     return m_running;
 #endif
 }
 
-// Terminate: Forcefully stops thread execution
-// WARNING: This is dangerous and should only be used as a last resort
-// Prefer using signaling mechanisms to allow threads to exit gracefully
 void CThread::Terminate() {
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Attempting to terminate thread");
 
@@ -235,7 +207,7 @@ void CThread::Terminate() {
     }
 
 #ifdef _WIN32
-    // Windows: Use TerminateThread (dangerous - can leak resources)
+    // TerminateThread can leak resources.
     WriteTrace(Trace::Module::Core, Trace::Severity::Warning,
                "Force terminating thread (Windows) - this may leak resources");
 
@@ -248,8 +220,7 @@ void CThread::Terminate() {
         }
     }
 #else
-    // POSIX: pthread_cancel is also dangerous, but better than nothing
-    // Modern practice would be to use condition variables or signals
+    // pthread_cancel is as dangerous as TerminateThread; prefer signalling the thread to exit.
     WriteTrace(Trace::Module::Core, Trace::Severity::Warning,
                "Force terminating thread (POSIX) - using pthread_cancel");
 
@@ -272,11 +243,8 @@ void CThread::Terminate() {
     WriteTrace(Trace::Module::Core, Trace::Severity::Debug, "Terminate completed");
 }
 
-// GetCurrentThreadId: Returns the ID of the calling thread
-// Static method - can be called without a CThread instance
 uint32_t CThread::GetCurrentThreadId() {
 #ifdef _WIN32
-    // Windows: Use GetCurrentThreadId API
     return ::GetCurrentThreadId();
 #elif defined(__APPLE__)
     // macOS: pthread_t is opaque; use pthread_threadid_np.  (Checked before the
@@ -289,8 +257,7 @@ uint32_t CThread::GetCurrentThreadId() {
     // Linux: Use syscall to get thread ID (GLIBC doesn't always wrap this)
     return static_cast<uint32_t>(syscall(SYS_gettid));
 #else
-    // Fallback: Use pthread_self (returns pthread_t, not ideal but works)
-    // Note: pthread_t might not be an integer type on all platforms
+    // Fallback: pthread_self(), which is not an integer type on every platform.
     return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(pthread_self()));
 #endif
 }

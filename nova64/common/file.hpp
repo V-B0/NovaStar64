@@ -1,6 +1,6 @@
 /**
  * @file file.hpp
- * @brief file declarations and types.
+ * @brief FileSystem::File, a small RAII wrapper over native file handles (Win32 HANDLE or POSIX fd).
  */
 #pragma once
 #include <cstdint>
@@ -27,6 +27,7 @@ using NativeHandle = int;
 
 namespace FileSystem {
 
+/// Flag set; combine values with operator|.
 enum class OpenMode : uint32_t {
     Read = 0x01,
     Write = 0x02,
@@ -37,6 +38,8 @@ enum class OpenMode : uint32_t {
     CreateNew = 0x40
 };
 
+/// What other openers may do while the file is open. Honoured on Windows only;
+/// ignored on POSIX.
 enum class ShareMode : uint32_t { None = 0x00, Read = 0x01, Write = 0x02, Delete = 0x04, All = 0x07 };
 
 enum class SeekOrigin : uint32_t { Begin = 0, Current = 1, End = 2 };
@@ -88,6 +91,8 @@ public:
 
 class FileImpl;
 
+/// An open file. open() throws FileError on failure. read() and write() return
+/// the number of bytes transferred, or 0 on error with the cause in last_error().
 class File {
 public:
     File();
@@ -105,6 +110,7 @@ public:
     [[nodiscard]] bool is_open() const noexcept;
 
     [[nodiscard]] size_t read(void* buffer, size_t count);
+    /// The whole file from the start; empty on error or for an empty file.
     [[nodiscard]] std::vector<uint8_t> read_all();
     [[nodiscard]] std::string read_text();
 
@@ -134,7 +140,9 @@ public:
         return write(&value, sizeof(T));
     }
 
+    /// Current position, or -1 on error.
     [[nodiscard]] int64_t tell() const;
+    /// Moves the position and returns the new one, or -1 on error.
     [[nodiscard]] int64_t seek(int64_t offset, SeekOrigin origin = SeekOrigin::Begin);
     void seek_to_begin();
     [[nodiscard]] int64_t seek_to_end();
@@ -143,6 +151,7 @@ public:
     [[nodiscard]] int64_t size() const;
     void resize(int64_t new_size);
     [[nodiscard]] bool is_eof() const;
+    /// Forces written data to disk (FlushFileBuffers / fsync).
     void flush();
 
     [[nodiscard]] NativeHandle native_handle() const;

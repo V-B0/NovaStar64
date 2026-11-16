@@ -1,6 +1,6 @@
 /**
  * @file DateTime.hpp
- * @brief Date Time declarations and types.
+ * @brief A wall-clock time (seconds since the epoch) with local-time formatting helpers.
  */
 #pragma once
 
@@ -14,9 +14,11 @@ public:
     explicit DateTime(std::time_t time);
 
     DateTime& SetToNow();
+    /// strftime() in the local time zone. Empty if the time can't be converted or
+    /// the result does not fit in 256 bytes.
     std::string Format(std::string_view format) const;
 
-    std::string ToString() const;    // Default format
+    std::string ToString() const;    // YYYY-MM-DD HH:MM:SS
     std::string ToISO8601() const;   // YYYY-MM-DDTHH:MM:SS
     std::string ToShortDate() const; // YYYY-MM-DD
     std::string ToShortTime() const; // HH:MM:SS

@@ -1,6 +1,6 @@
 /**
  * @file File.cpp
- * @brief File implementation.
+ * @brief FileSystem::File implementation on top of CreateFileW (Windows) or open() (POSIX).
  */
 #include "file.hpp"
 
@@ -531,7 +531,7 @@ void File::set_last_write_time(const std::chrono::system_clock::time_point& time
 
     ::SetFileTime(m_impl->hFile, nullptr, nullptr, &ft);
 #else
-    // POSIX: use utimensat via fd
+    // POSIX: futimens() on the open descriptor.
     const auto tt = std::chrono::system_clock::to_time_t(time);
     struct timespec times[2];
     times[0].tv_sec = 0;
@@ -570,7 +570,7 @@ bool File::remove(const std::string& filename) {
     auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
     MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
 
-    // Remove read-only attribute if present
+    // DeleteFileW refuses read-only files, so clear that attribute first.
     const DWORD attrs = ::GetFileAttributesW(wideName.get());
     if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY)) {
         ::SetFileAttributesW(wideName.get(), attrs & ~FILE_ATTRIBUTE_READONLY);

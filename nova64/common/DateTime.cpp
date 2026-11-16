@@ -1,6 +1,6 @@
 /**
  * @file DateTime.cpp
- * @brief Date Time implementation.
+ * @brief Local-time conversion and formatting for DateTime.
  */
 #include "DateTime.hpp"
 

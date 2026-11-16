@@ -1,6 +1,6 @@
 /**
  * @file LockGuard.hpp
- * @brief Recursive mutex and lock guard declarations.
+ * @brief A recursive mutex with timed locking, and a scoped lock for it.
  */
 #pragma once
 
@@ -40,14 +40,11 @@ public:
      */
     bool TryLock(uint32_t timeoutMs);
 
-    /**
-     * @brief Unlocks the mutex
-     */
     void Unlock();
 
     /**
-     * @brief Gets the recursion count for the current thread
-     * @return Number of times current thread has locked this mutex
+     * @brief Gets the current lock depth
+     * @return Lock depth of the thread that holds the mutex, or 0 when it is unlocked
      */
     uint32_t GetRecursionCount() const;
 
@@ -103,9 +100,6 @@ public:
         }
     }
 
-    /**
-     * @brief Re-lock the mutex
-     */
     void Relock() {
         if (!m_locked) {
             m_lockable.Lock();
@@ -113,9 +107,6 @@ public:
         }
     }
 
-    /**
-     * @brief Check if the lock is currently held
-     */
     [[nodiscard]] bool IsLocked() const { return m_locked; }
 
 private:
