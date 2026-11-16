@@ -53,14 +53,11 @@ void cicx105_ucode(CHle* hle) {
     hle->rsp_break(0);
 }
 
-// ══════════════════════════════════════════════
-// Standard Audio list processing (original ABI)
-// ══════════════════════════════════════════════
+// --- Standard Audio list processing (original ABI) ---
 
-// Forward declarations of command handlers
 static void SPNOOP(CHle*, uint32_t, uint32_t) {}
 
-// ── Audio ABI ──────────────────────────────────
+// --- Audio ABI ---
 
 static void AUDIO_SEGMENTS(CHle* hle, uint32_t w1, uint32_t w2) {
     auto& state = hle->alist_audio();
@@ -216,7 +213,7 @@ void alist_process_audio(CHle* hle) {
     alist_process(hle, ABI, 32);
 }
 
-// ── GoldenEye variant ─────────────────────────
+// --- GoldenEye variant ---
 // GE uses the GE-specific envelope mixer (fixed linear ramp)
 
 static void AUDIO_ENVMIXER_GE(CHle* hle, uint32_t w1, uint32_t w2) {
@@ -242,7 +239,7 @@ void alist_process_audio_ge(CHle* hle) {
     alist_process(hle, ABI_GE, 32);
 }
 
-// ── Banjo-Conker variant ──────────────────────
+// --- Banjo-Conker variant ---
 // BC also uses the GE-style envelope mixer
 
 void alist_process_audio_bc(CHle* hle) {
@@ -259,10 +256,8 @@ void alist_process_audio_bc(CHle* hle) {
     alist_process(hle, ABI_BC, 32);
 }
 
-// ══════════════════════════════════════════════
-// Naudio processing variants
+// --- Naudio processing variants ---
 // Complete ABI with all commands from Project64
-// ══════════════════════════════════════════════
 
 static void NAUDIO_SETBUFF(CHle* hle, uint32_t w1, uint32_t w2) {
     auto& s = hle->alist_naudio();
@@ -370,7 +365,7 @@ static void NAUDIO_CLEARBUFF(CHle* hle, uint32_t w1, uint32_t w2) {
     alist_clear(hle, dmem, count);
 }
 
-// ── Banjo-Kazooie / DK64 Naudio envmixer variant ──
+// --- Banjo-Kazooie / DK64 Naudio envmixer variant ---
 // Uses the GE-style (exponential) envelope mixer instead of linear
 static void NAUDIO_ENVMIXER_GE(CHle* hle, uint32_t w1, uint32_t w2) {
     auto& s = hle->alist_naudio();
@@ -432,9 +427,7 @@ void alist_process_naudio_cbfd(CHle* hle) {
     alist_process(hle, ABI_CBFD, 16);
 }
 
-// ══════════════════════════════════════════════
-// NEAD processing variants
-// ══════════════════════════════════════════════
+// --- NEAD processing variants ---
 
 static void NEAD_SETBUFF(CHle* hle, uint32_t w1, uint32_t w2) {
     auto& s = hle->alist_nead();
@@ -548,7 +541,7 @@ static void NEAD_HILOGAIN(CHle* hle, uint32_t w1, uint32_t w2) {
     (void)w2;
 }
 
-// ── OoT NEAD-specific command handlers ──
+// --- OoT NEAD-specific command handlers ---
 // These handlers extract parameters from the command words (w1/w2) rather
 // than from the SETBUFF state struct, matching the actual N64 RSP microcode.
 
@@ -683,7 +676,7 @@ static void NEAD_OOT_FILTER(CHle* hle, uint32_t w1, uint32_t w2) {
     }
 }
 
-// ── Per-game NEAD ABI tables ──
+// --- Per-game NEAD ABI tables ---
 // Different games' RSP audio ucodes use different command-index-to-handler mappings.
 // The index (0-23) is extracted from the high byte of the audio command word,
 // and the corresponding callback is invoked.
@@ -765,9 +758,7 @@ void alist_process_nead_mmb(CHle* hle) { alist_process(hle, NEAD_ABI_OOT, 24); }
 
 void alist_process_nead_ac(CHle* hle) { alist_process(hle, NEAD_ABI_OOT, 24); }
 
-// ══════════════════════════════════════════════
-// MP3 microcode task
-// ══════════════════════════════════════════════
+// --- MP3 microcode task ---
 
 // MP3 quantization scale factors (N64 RSP variant)
 // The N64's MP3 ucode uses a custom 14-bit quantization
@@ -858,9 +849,7 @@ void mp3_task(CHle* hle, unsigned int index, uint32_t address) {
     hle->rsp_break(0);
 }
 
-// ══════════════════════════════════════════════
-// Musyx microcodes
-// ══════════════════════════════════════════════
+// --- Musyx microcodes ---
 
 // Musyx voice data structure
 // Factor5's Musyx audio engine uses a per-voice
@@ -1048,10 +1037,8 @@ void musyx_v2_task(CHle* hle) {
     hle->rsp_break(0);
 }
 
-// ══════════════════════════════════════════════
-// JPEG decode microcodes
+// --- JPEG decode microcodes ---
 // Based on mupen64plus-rsp-hle jpeg.c
-// ══════════════════════════════════════════════
 
 static constexpr unsigned int SUBBLOCK_SIZE = 64;
 
@@ -1090,7 +1077,7 @@ static constexpr float IDCT_K[10] = {
     -2.562915448f  // -C1-C3
 };
 
-// ── Pixel helpers ──
+// --- Pixel helpers ---
 
 static uint8_t clamp_u8(int16_t x) { return (x & 0xff00) ? ((-x) >> 15) & 0xff : static_cast<uint8_t>(x); }
 
@@ -1123,7 +1110,7 @@ static uint16_t GetRGBA(int16_t y, int16_t u, int16_t v) {
     return static_cast<uint16_t>((r << 4) | (g >> 1) | (b >> 6) | 1);
 }
 
-// ── Tile line emitters ──
+// --- Tile line emitters ---
 
 static void EmitYUVTileLine(CHle* hle, const int16_t* y, const int16_t* u, uint32_t address) {
     uint32_t uyvy[8];
@@ -1167,7 +1154,7 @@ static void EmitRGBATileLine(CHle* hle, const int16_t* y, const int16_t* u, uint
     dram_store_u16(hle, rgba, address, 16);
 }
 
-// ── Tile emitters ──
+// --- Tile emitters ---
 
 using tile_line_emitter_t = void (*)(CHle*, const int16_t*, const int16_t*, uint32_t);
 using subblock_transform_t = void (*)(int16_t*, const int16_t*);
@@ -1198,7 +1185,7 @@ static void EmitTilesMode2(CHle* hle, tile_line_emitter_t emit_line, const int16
     }
 }
 
-// ── Subblock operations ──
+// --- Subblock operations ---
 
 static void ReorderSubBlock(int16_t* dst, const int16_t* src, const unsigned int* table) {
     for (unsigned int i = 0; i < SUBBLOCK_SIZE; ++i) dst[i] = src[table[i]];
@@ -1226,7 +1213,7 @@ static void RShiftSubBlock(int16_t* dst, const int16_t* src, unsigned int shift)
     for (unsigned int i = 0; i < SUBBLOCK_SIZE; ++i) dst[i] = src[i] >> shift;
 }
 
-// ── IDCT ──
+// --- IDCT ---
 
 static void InverseDCT1D(const float* x, float* dst, unsigned int stride) {
     float e[4], f[4];
@@ -1283,7 +1270,7 @@ static void InverseDCTSubBlock(int16_t* dst, const int16_t* src) {
     }
 }
 
-// ── Rescale transforms (for PS0 / Pokemon Stadium JP) ──
+// --- Rescale transforms (for PS0 / Pokemon Stadium JP) ---
 
 static void RescaleYSubBlock(int16_t* dst, const int16_t* src) {
     for (unsigned int i = 0; i < SUBBLOCK_SIZE; ++i)
@@ -1295,7 +1282,7 @@ static void RescaleUVSubBlock(int16_t* dst, const int16_t* src) {
         dst[i] = static_cast<int16_t>(((static_cast<int32_t>(clamp_s12(src[i])) * 0xe00) >> 16) + 0x80);
 }
 
-// ── Macroblock decoders ──
+// --- Macroblock decoders ---
 
 static void decode_macroblock_std(subblock_transform_t transform_luma, subblock_transform_t transform_chroma,
                                   int16_t* macroblock, unsigned int subblock_count,
@@ -1356,7 +1343,7 @@ static void decode_macroblock_ob(int16_t* macroblock, int32_t* y_dc, int32_t* u_
     }
 }
 
-// ── Standard JPEG decoder (used by PS and PS0) ──
+// --- Standard JPEG decoder (used by PS and PS0) ---
 
 static void jpeg_decode_std(CHle* hle, const char* version, subblock_transform_t transform_luma,
                             subblock_transform_t transform_chroma, tile_line_emitter_t emit_line) {
@@ -1402,7 +1389,7 @@ static void jpeg_decode_std(CHle* hle, const char* version, subblock_transform_t
     }
 }
 
-// ── Public JPEG decode entry points ──
+// --- Public JPEG decode entry points ---
 
 void jpeg_decode_PS0(CHle* hle) {
     // Pokemon Stadium (Japan) - YUV output with rescaling

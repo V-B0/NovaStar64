@@ -52,7 +52,7 @@ inline constexpr auto kCrc32Table = GenerateCrc32Table();
     return crc ^ 0xFFFFFFFFu;
 }
 
-// Legacy additive checksum (for backward compatibility with boot ROM detection)
+// Plain sum of 32-bit words (not a CRC).
 [[nodiscard]] inline uint32_t AdditiveChecksum(const uint32_t* data, size_t count) noexcept {
     uint32_t sum = 0;
     for (size_t i = 0; i < count; ++i) {

@@ -65,9 +65,7 @@ static inline uint32_t clz32(uint32_t val) {
 #endif
 }
 
-// ══════════════════════════════════════════════
-// Constructor / Destructor
-// ══════════════════════════════════════════════
+// --- Constructor / Destructor ---
 
 RSPOp::RSPOp(CRSPSystem& system) :
     m_System(system), m_RSPRegisterHandler(system.m_RSPRegisterHandler), m_OpCode(system.m_OpCode), m_Reg(system.m_Reg),
@@ -85,12 +83,10 @@ RSPOp::RSPOp(CRSPSystem& system) :
 
 RSPOp::~RSPOp() = default;
 
-// ══════════════════════════════════════════════
-// Dispatch Table Initialization
-// ══════════════════════════════════════════════
+// --- Dispatch Table Initialization ---
 
 void RSPOp::BuildInterpreter() {
-    // ── Primary Opcode Table [64] ──
+    // --- Primary Opcode Table [64] ---
     std::fill_n(Jump_Opcode, 64, &RSPOp::UnknownOpcode);
     Jump_Opcode[RSP_SPECIAL] = &RSPOp::SPECIAL;
     Jump_Opcode[RSP_REGIMM] = &RSPOp::REGIMM;
@@ -122,7 +118,7 @@ void RSPOp::BuildInterpreter() {
     Jump_Opcode[RSP_LC2] = &RSPOp::LC2;
     Jump_Opcode[RSP_SC2] = &RSPOp::SC2;
 
-    // ── SPECIAL Function Table [64] ──
+    // --- SPECIAL Function Table [64] ---
     std::fill_n(Jump_Special, 64, &RSPOp::UnknownOpcode);
     Jump_Special[RSP_SPECIAL_SLL] = &RSPOp::Special_SLL;
     Jump_Special[RSP_SPECIAL_SRL] = &RSPOp::Special_SRL;
@@ -144,19 +140,19 @@ void RSPOp::BuildInterpreter() {
     Jump_Special[RSP_SPECIAL_SLT] = &RSPOp::Special_SLT;
     Jump_Special[RSP_SPECIAL_SLTU] = &RSPOp::Special_SLTU;
 
-    // ── REGIMM Table [32] ──
+    // --- REGIMM Table [32] ---
     std::fill_n(Jump_RegImm, 32, &RSPOp::UnknownOpcode);
     Jump_RegImm[RSP_REGIMM_BLTZ] = &RSPOp::BLTZ;
     Jump_RegImm[RSP_REGIMM_BGEZ] = &RSPOp::BGEZ;
     Jump_RegImm[RSP_REGIMM_BLTZAL] = &RSPOp::BLTZAL;
     Jump_RegImm[RSP_REGIMM_BGEZAL] = &RSPOp::BGEZAL;
 
-    // ── COP0 Table [32] ──
+    // --- COP0 Table [32] ---
     std::fill_n(Jump_Cop0, 32, &RSPOp::UnknownOpcode);
     Jump_Cop0[RSP_COP0_MF] = &RSPOp::Cop0_MF;
     Jump_Cop0[RSP_COP0_MT] = &RSPOp::Cop0_MT;
 
-    // ── COP2 Table [32] ──
+    // --- COP2 Table [32] ---
     // Indices 0-15: scalar/control moves; 16-31: vector compute dispatch
     std::fill_n(Jump_Cop2, 32, &RSPOp::UnknownOpcode);
     Jump_Cop2[RSP_COP2_MF] = &RSPOp::Cop2_MF;
@@ -165,7 +161,7 @@ void RSPOp::BuildInterpreter() {
     Jump_Cop2[RSP_COP2_CT] = &RSPOp::Cop2_CT;
     for (int i = 16; i < 32; i++) Jump_Cop2[i] = &RSPOp::Cop2_VECTOR;
 
-    // ── Vector Compute Table [64] ──
+    // --- Vector Compute Table [64] ---
     std::fill_n(Jump_Vector, 64, &RSPOp::Vector_Reserved);
     Jump_Vector[RSP_VECTOR_VMULF] = &RSPOp::Vector_VMULF;
     Jump_Vector[RSP_VECTOR_VMULU] = &RSPOp::Vector_VMULU;
@@ -214,7 +210,7 @@ void RSPOp::BuildInterpreter() {
     // slot 63 = VNULL → noop
     Jump_Vector[RSP_VECTOR_VNULL] = &RSPOp::Vector_VNOOP;
 
-    // ── LC2 Vector Load Table [32] ──
+    // --- LC2 Vector Load Table [32] ---
     std::fill_n(Jump_Lc2, 32, &RSPOp::UnknownOpcode);
     Jump_Lc2[RSP_LSC2_BV] = &RSPOp::LBV;
     Jump_Lc2[RSP_LSC2_SV] = &RSPOp::LSV;
@@ -229,7 +225,7 @@ void RSPOp::BuildInterpreter() {
     Jump_Lc2[RSP_LSC2_WV] = &RSPOp::LWV;
     Jump_Lc2[RSP_LSC2_TV] = &RSPOp::LTV;
 
-    // ── SC2 Vector Store Table [32] ──
+    // --- SC2 Vector Store Table [32] ---
     std::fill_n(Jump_Sc2, 32, &RSPOp::UnknownOpcode);
     Jump_Sc2[RSP_LSC2_BV] = &RSPOp::SBV;
     Jump_Sc2[RSP_LSC2_SV] = &RSPOp::SSV;
@@ -245,9 +241,7 @@ void RSPOp::BuildInterpreter() {
     Jump_Sc2[RSP_LSC2_TV] = &RSPOp::STV;
 }
 
-// ══════════════════════════════════════════════
-// Primary Opcode Dispatch
-// ══════════════════════════════════════════════
+// --- Primary Opcode Dispatch ---
 
 void RSPOp::SPECIAL() { (this->*Jump_Special[m_OpCode.funct])(); }
 void RSPOp::REGIMM() { (this->*Jump_RegImm[m_OpCode.rt])(); }
@@ -256,9 +250,7 @@ void RSPOp::COP2() { (this->*Jump_Cop2[m_OpCode.rs])(); }
 void RSPOp::LC2() { (this->*Jump_Lc2[m_OpCode.rd])(); }
 void RSPOp::SC2() { (this->*Jump_Sc2[m_OpCode.rd])(); }
 
-// ══════════════════════════════════════════════
-// Branch & Jump Instructions
-// ══════════════════════════════════════════════
+// --- Branch & Jump Instructions ---
 
 void RSPOp::J() {
     m_NextInstruction = PipelineStage::DoDelaySlot;
@@ -291,9 +283,7 @@ void RSPOp::BGTZ() {
     m_JumpTo = BranchIf(m_GPR[m_OpCode.rs].W > 0);
 }
 
-// ══════════════════════════════════════════════
-// Immediate Arithmetic & Logic
-// ══════════════════════════════════════════════
+// --- Immediate Arithmetic & Logic ---
 
 void RSPOp::ADDI() { m_GPR[m_OpCode.rt].W = m_GPR[m_OpCode.rs].W + static_cast<int16_t>(m_OpCode.immediate); }
 
@@ -316,9 +306,7 @@ void RSPOp::XORI() { m_GPR[m_OpCode.rt].W = m_GPR[m_OpCode.rs].W ^ m_OpCode.imme
 
 void RSPOp::LUI() { m_GPR[m_OpCode.rt].W = m_OpCode.immediate << 16; }
 
-// ══════════════════════════════════════════════
-// Scalar Memory Access (DMEM, big-endian)
-// ══════════════════════════════════════════════
+// --- Scalar Memory Access (DMEM, big-endian) ---
 
 void RSPOp::LB() {
     uint32_t addr = static_cast<uint32_t>(m_GPR[m_OpCode.base].W + static_cast<int16_t>(m_OpCode.offset)) & 0xFFF;
@@ -403,9 +391,7 @@ void RSPOp::SW() {
     }
 }
 
-// ══════════════════════════════════════════════
-// SPECIAL Function Instructions
-// ══════════════════════════════════════════════
+// --- SPECIAL Function Instructions ---
 
 void RSPOp::Special_SLL() { m_GPR[m_OpCode.rd].W = m_GPR[m_OpCode.rt].W << m_OpCode.sa; }
 void RSPOp::Special_SRL() { m_GPR[m_OpCode.rd].UW = m_GPR[m_OpCode.rt].UW >> m_OpCode.sa; }
@@ -428,11 +414,10 @@ void RSPOp::Special_JALR() {
 void RSPOp::Special_BREAK() {
     RSP_Running = false;
     *m_SP_STATUS_REG |= (SPStatus::Halt | SPStatus::Broke);
-    // NOTE: Do NOT set MI_INTR_SP or call CheckInterrupts() here.
-    // The SP interrupt is delivered via a deferred RspTimer scheduled by
-    // ClearHalt() after DoRspCycles() returns. ClearHalt accumulates the
-    // SP bit in m_deferred_mi_intr. If we set MI_INTR_SP here, the CPU's
-    // interrupt polling would fire the exception immediately.
+    // Do not set MI_INTR_SP or call CheckInterrupts() here. The SP interrupt is delivered
+    // via a deferred RspTimer scheduled by ClearHalt() after DoRspCycles() returns;
+    // ClearHalt accumulates the SP bit in m_deferred_mi_intr. Setting MI_INTR_SP here
+    // would make the CPU's interrupt polling fire the exception immediately.
 }
 
 void RSPOp::Special_ADD() { m_GPR[m_OpCode.rd].W = m_GPR[m_OpCode.rs].W + m_GPR[m_OpCode.rt].W; }
@@ -446,9 +431,7 @@ void RSPOp::Special_NOR() { m_GPR[m_OpCode.rd].UW = ~(m_GPR[m_OpCode.rs].UW | m_
 void RSPOp::Special_SLT() { m_GPR[m_OpCode.rd].UW = (m_GPR[m_OpCode.rs].W < m_GPR[m_OpCode.rt].W) ? 1u : 0u; }
 void RSPOp::Special_SLTU() { m_GPR[m_OpCode.rd].UW = (m_GPR[m_OpCode.rs].UW < m_GPR[m_OpCode.rt].UW) ? 1u : 0u; }
 
-// ══════════════════════════════════════════════
-// RegImm Branch Instructions
-// ══════════════════════════════════════════════
+// --- RegImm Branch Instructions ---
 
 void RSPOp::BLTZ() {
     m_NextInstruction = PipelineStage::DoDelaySlot;
@@ -472,9 +455,7 @@ void RSPOp::BGEZAL() {
     m_GPR[31].UW = (*m_SP_PC_REG + 8) & 0xFFC;
 }
 
-// ══════════════════════════════════════════════
-// COP0 - System Control (SP/DPC registers)
-// ══════════════════════════════════════════════
+// --- COP0 - System Control (SP/DPC registers) ---
 
 void RSPOp::Cop0_MF() {
     if (g_RSPDebugger != nullptr) {
@@ -556,9 +537,7 @@ void RSPOp::Cop0_MT() {
     }
 }
 
-// ══════════════════════════════════════════════
-// COP2 - Scalar ↔ Vector Register Moves
-// ══════════════════════════════════════════════
+// --- COP2 - Scalar ↔ Vector Register Moves ---
 
 void RSPOp::Cop2_MF() {
     uint8_t element = static_cast<uint8_t>(m_OpCode.sa >> 1);
@@ -601,9 +580,7 @@ void RSPOp::Cop2_CT() {
 
 void RSPOp::Cop2_VECTOR() { (this->*Jump_Vector[m_OpCode.funct])(); }
 
-// ══════════════════════════════════════════════
-// Vector Multiply Instructions
-// ══════════════════════════════════════════════
+// --- Vector Multiply Instructions ---
 
 void RSPOp::Vector_VMULF() {
     RSPVector Result;
@@ -698,9 +675,7 @@ void RSPOp::Vector_VMUDH() {
     m_Vect[m_OpCode.vd] = Result;
 }
 
-// ══════════════════════════════════════════════
-// Vector Multiply-Accumulate Instructions
-// ══════════════════════════════════════════════
+// --- Vector Multiply-Accumulate Instructions ---
 
 void RSPOp::Vector_VMACF() {
     RSPVector Result;
@@ -796,9 +771,7 @@ void RSPOp::Vector_VMADH() {
     m_Vect[m_OpCode.vd] = Result;
 }
 
-// ══════════════════════════════════════════════
-// Vector Add / Subtract / Absolute
-// ══════════════════════════════════════════════
+// --- Vector Add / Subtract / Absolute ---
 
 void RSPOp::Vector_VADD() {
     RSPVector Result;
@@ -902,9 +875,7 @@ void RSPOp::Vector_VSAW() {
     m_Vect[m_OpCode.vd] = Result;
 }
 
-// ══════════════════════════════════════════════
-// Vector Compare / Select Instructions
-// ══════════════════════════════════════════════
+// --- Vector Compare / Select Instructions ---
 
 void RSPOp::Vector_VLT() {
     RSPVector Result;
@@ -975,9 +946,7 @@ void RSPOp::Vector_VGE() {
     VCOH.Clear();
 }
 
-// ══════════════════════════════════════════════
-// Vector Clip Instructions
-// ══════════════════════════════════════════════
+// --- Vector Clip Instructions ---
 
 void RSPOp::Vector_VCL() {
     RSPVector Result;
@@ -1056,9 +1025,7 @@ void RSPOp::Vector_VCR() {
     VCE.Clear();
 }
 
-// ══════════════════════════════════════════════
-// Vector Merge & Logical Instructions
-// ══════════════════════════════════════════════
+// --- Vector Merge & Logical Instructions ---
 
 void RSPOp::Vector_VMRG() {
     RSPVector Result;
@@ -1125,9 +1092,7 @@ void RSPOp::Vector_VNXOR() {
     m_Vect[m_OpCode.vd] = Result;
 }
 
-// ══════════════════════════════════════════════
-// Vector Reciprocal / Inverse Square Root
-// ══════════════════════════════════════════════
+// --- Vector Reciprocal / Inverse Square Root ---
 
 void RSPOp::Vector_VRCP() {
     int32_t input = m_Vect[m_OpCode.vt].s16(7 - (m_OpCode.e & 0x7));
@@ -1252,9 +1217,7 @@ void RSPOp::Vector_VNOOP() {
     // No operation
 }
 
-// ══════════════════════════════════════════════
-// LC2 - Vector Memory Loads
-// ══════════════════════════════════════════════
+// --- LC2 - Vector Memory Loads ---
 
 void RSPOp::LBV() {
     uint32_t addr = static_cast<uint32_t>(m_GPR[m_OpCode.base].W + (m_OpCode.voffset << 0)) & 0xFFF;
@@ -1367,9 +1330,7 @@ void RSPOp::LTV() {
     }
 }
 
-// ══════════════════════════════════════════════
-// SC2 - Vector Memory Stores
-// ══════════════════════════════════════════════
+// --- SC2 - Vector Memory Stores ---
 
 void RSPOp::SBV() {
     uint32_t addr = static_cast<uint32_t>(m_GPR[m_OpCode.base].W + (m_OpCode.voffset << 0)) & 0xFFF;
@@ -1499,9 +1460,7 @@ void RSPOp::SWV() {
     }
 }
 
-// ══════════════════════════════════════════════
-// Utility Functions
-// ══════════════════════════════════════════════
+// --- Utility Functions ---
 
 void RSPOp::UnknownOpcode() {
     if (g_RSPDebugger != nullptr) {

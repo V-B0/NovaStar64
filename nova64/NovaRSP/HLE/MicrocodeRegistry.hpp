@@ -69,7 +69,7 @@ struct MicrocodeEntry {
 // Known microcode database
 // CRC values from Project64's RSP HLE and Mupen64Plus HLE RSP
 inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
-    // ── Standard Audio ABI ──
+    // --- Standard Audio ABI ---
     {0x1DC6CB36, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard 1.0"},
     {0x1A13A51A, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard 1.0 (SM64)"},
     {0x4A90240B, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard 1.1"},
@@ -77,29 +77,29 @@ inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
     {0xA1A44F91, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard 1.3 (MK64)"},
     {0x1E26E925, 0, UcodeType::AudioStandard, alist_process_audio, "ABI Standard (WR64)"},
 
-    // ── GoldenEye Audio ──
+    // --- GoldenEye Audio ---
     {0x1AE8143C, 0, UcodeType::AudioGE, alist_process_audio_ge, "ABI GoldenEye"},
 
-    // ── Banjo / Conker Audio ──
+    // --- Banjo / Conker Audio ---
     {0xB7C2E69B, 0, UcodeType::AudioBC, alist_process_audio_bc, "ABI Banjo-Conker"},
 
-    // ── Naudio ──
+    // --- Naudio ---
     {0xAE044800, 0, UcodeType::NaudioStandard, alist_process_naudio, "Naudio Standard"},
     {0xA740E404, 0, UcodeType::NaudioStandard, alist_process_naudio, "Naudio Standard 1.1"},
 
-    // ── Naudio Banjo ──
+    // --- Naudio Banjo ---
     {0x20394D79, 0, UcodeType::NaudioBK, alist_process_naudio_bk, "Naudio Banjo-Kazooie"},
 
-    // ── Naudio DK64 ──
+    // --- Naudio DK64 ---
     {0x42253F38, 0, UcodeType::NaudioDK, alist_process_naudio_dk, "Naudio DK64"},
 
-    // ── Naudio MP3 ──
+    // --- Naudio MP3 ---
     {0x4B836E04, 0, UcodeType::NaudioMP3, alist_process_naudio_mp3, "Naudio MP3"},
 
-    // ── Naudio CBFD ──
+    // --- Naudio CBFD ---
     {0x2E902AB4, 0, UcodeType::NaudioCBFD, alist_process_naudio_cbfd, "Naudio CBFD"},
 
-    // ── NEAD variants ──
+    // --- NEAD variants ---
     {0xE8A20B42, 0, UcodeType::NeadMK, alist_process_nead_mk, "NEAD MK64"},
     {0x8681F3E3, 0, UcodeType::NeadSFJ, alist_process_nead_sfj, "NEAD Star Fox J"},
     {0x6D218E4C, 0, UcodeType::NeadSF, alist_process_nead_sf, "NEAD Star Fox 64"},
@@ -115,11 +115,11 @@ inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
     {0x68EC50E1, 0, UcodeType::NeadMMB, alist_process_nead_mmb, "NEAD Majora's Mask B"},
     {0x15EF3C70, 0, UcodeType::NeadAC, alist_process_nead_ac, "NEAD Animal Crossing"},
 
-    // ── MusyX (Factor 5 games: Rogue Squadron etc.) ──
+    // --- MusyX (Factor 5 games: Rogue Squadron etc.) ---
     {0xDD560AC4, 0, UcodeType::MusyxV1, musyx_v1_task, "MusyX v1"},
     {0x8D29B33E, 0, UcodeType::MusyxV2, musyx_v2_task, "MusyX v2"},
 
-    // ── JPEG ──
+    // --- JPEG ---
     {0xC824C504, 0, UcodeType::JPEG_PS0, jpeg_decode_PS0, "JPEG PS0"},
     {0xD7B4860C, 0, UcodeType::JPEG_PS, jpeg_decode_PS, "JPEG PS"},
     {0x8C2D11B4, 0, UcodeType::JPEG_OB, jpeg_decode_OB, "JPEG OB"},
@@ -128,7 +128,7 @@ inline constexpr MicrocodeEntry kMicrocodeDatabase[] = {
 inline constexpr size_t kMicrocodeCount = sizeof(kMicrocodeDatabase) / sizeof(kMicrocodeDatabase[0]);
 
 // Boot ROM identification checksums
-// (Legacy additive checksums of first 44 IMEM words)
+// (Additive checksums of the first 44 IMEM words)
 namespace BootChecksum {
 inline constexpr uint32_t Standard = 0xB4C62BFC;  // Standard boot microcode
 inline constexpr uint32_t Alternate = 0xCAB15710; // Alternate boot microcode (CIC-specific)
@@ -136,7 +136,6 @@ inline constexpr uint32_t Alternate = 0xCAB15710; // Alternate boot microcode (C
 
 // --- Lookup functions ---
 
-// Find a microcode entry by CRC32
 [[nodiscard]] inline const MicrocodeEntry* FindMicrocode(uint32_t crc) noexcept {
     for (size_t i = 0; i < kMicrocodeCount; ++i) {
         if (kMicrocodeDatabase[i].ucode_crc == crc) return &kMicrocodeDatabase[i];
@@ -144,7 +143,7 @@ inline constexpr uint32_t Alternate = 0xCAB15710; // Alternate boot microcode (C
     return nullptr;
 }
 
-// Find by both ucode CRC and data CRC (for disambiguation)
+// Prefers the entry whose data CRC also matches; falls back to an entry that does not check the data CRC.
 [[nodiscard]] inline const MicrocodeEntry* FindMicrocode(uint32_t crc, uint32_t data_crc) noexcept {
     const MicrocodeEntry* fallback = nullptr;
     for (size_t i = 0; i < kMicrocodeCount; ++i) {
@@ -159,16 +158,13 @@ inline constexpr uint32_t Alternate = 0xCAB15710; // Alternate boot microcode (C
     return fallback;
 }
 
-// Check if a microcode type is audio
 [[nodiscard]] inline constexpr bool IsAudioUcode(UcodeType type) noexcept {
     return type >= UcodeType::AudioStandard && type <= UcodeType::MP3;
 }
 
-// Check if a microcode type is graphics
 [[nodiscard]] inline constexpr bool IsGraphicsUcode(UcodeType type) noexcept {
-    // Graphics task type=1 is now handled via GfxProcessor
-    // This still returns false since graphics ucodes are in a separate DB (GraphicsUcodes.hpp)
-    // Audio-only microcode types are tracked here.
+    // Always false: graphics microcodes are identified through the separate database in
+    // GraphicsUcodes.hpp, not through this registry.
     return false;
 }
 

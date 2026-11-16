@@ -125,10 +125,11 @@ RspJit::CodeSet* RspJit::SelectSet(uint64_t imemHash) {
         if (!set.valid) victim = &set; // prefer an empty one
         else if (victim->valid && set.lastUse < victim->lastUse) victim = &set;
     }
+    // Recycle the least recently used set.
     if (victim->valid) {
         ClearSet(*victim);
         ++m_Stats.flushes;
-    } // recycle the least recently used
+    }
     victim->hash = imemHash;
     victim->valid = true;
     victim->lastUse = ++m_Clock;

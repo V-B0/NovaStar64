@@ -25,7 +25,7 @@
 namespace Nova64::RSP::HLE {
 
 // Endian-aware buffer access helpers (mupen64plus compatible)
-// alist_buffer now stores raw DRAM byte order (memcpy'd).
+// alist_buffer stores raw DRAM byte order (memcpy'd).
 // S=1 on LE: pair-swap 16-bit indices within 32-bit words.
 // S8=3 on LE: byte-swap within 32-bit words.
 // S16=2 on LE: pair-swap byte addresses within 32-bit words.
@@ -117,7 +117,7 @@ void alist_load(CHle* hle, uint16_t dmem, uint32_t address, uint16_t count) {
     address &= ~7u;
     count = static_cast<uint16_t>(align(count, 8));
     // Raw memcpy from DRAM to alist_buffer (mupen64plus style).
-    // Buffer now holds DRAM byte order; DSP functions use ^S/^S8/^S16 for access.
+    // The buffer holds DRAM byte order; DSP functions use ^S/^S8/^S16 for access.
     std::memcpy(hle->alist_buffer() + dmem, hle->dram() + (address & 0x7FFFFF), count);
 }
 
@@ -995,13 +995,12 @@ void alist_chorus(CHle* hle, uint16_t dmemo, uint16_t dmemi, uint16_t count, uin
     uint32_t phase = 0;
 
     for (uint16_t i = 0; i < samples; i++) {
-        // LFO generates a triangle-ish modulation via sine approximation
-        // Use simple triangle: phase [0..0xFFFF] → [-depth..+depth]
+        // LFO: triangle wave derived from the phase accumulator
         int32_t lfo;
         uint16_t ph16 = static_cast<uint16_t>(phase >> 16);
-        if (ph16 < 0x8000) lfo = (static_cast<int32_t>(ph16) * depth) >> 14; // 0..+depth
+        if (ph16 < 0x8000) lfo = (static_cast<int32_t>(ph16) * depth) >> 14;
         else lfo = (static_cast<int32_t>(0xFFFF - ph16) * depth) >> 14;
-        lfo -= depth / 2;                                                    // center around 0
+        lfo -= depth / 2;
 
         // Modulated delay tap
         int32_t tap = static_cast<int32_t>(delay_base) + lfo;
@@ -1110,8 +1109,8 @@ void alist_pan(CHle* hle, uint16_t dmem_left, uint16_t dmem_right, uint16_t coun
         int32_t L = left[i];
         int32_t R = right[i];
 
-        // Cross-fade: each output = L * pan_L + R * pan_R
-        // For center pan: pan_left=0x5A82, pan_right=0x5A82 (≈0.707 ≈ -3dB)
+        // Cross-fade (Q15): left = L * pan_left + R * (1 - pan_right),
+        // right = R * pan_right + L * (1 - pan_left)
         left[i] = clamp_s16((L * pan_left + R * (0x7FFF - pan_right)) >> 15);
         right[i] = clamp_s16((R * pan_right + L * (0x7FFF - pan_left)) >> 15);
     }

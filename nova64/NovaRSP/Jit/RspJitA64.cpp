@@ -7,6 +7,7 @@
  *   x20  DMEM
  *   x21  the CRSPSystem, for calls into the interpreter
  *   w22  where a pending branch goes (set before its delay slot runs)
+ *   x23  the CRSPRegisters, for the vector kernels
  *   w9..w15, x16  scratch
  */
 

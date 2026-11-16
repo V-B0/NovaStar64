@@ -27,7 +27,6 @@
 
 namespace Nova64::RSP {
 
-// Global RSP system instance
 CRSPSystem RSPSystem;
 
 // --- Construction / Destruction ---
@@ -93,20 +92,16 @@ void CRSPSystem::Reset(RSP_INFO& info) {
         }
     }
 
-    // (Re)create register handler
     m_RSPRegisterHandler = std::make_unique<RSPRegisterHandlerPlugin>(*this);
 
-    // Propagate reset to sync system if present
     if (m_SyncSystem != nullptr) {
         m_SyncSystem->Reset(info);
     }
 }
 
 void CRSPSystem::RomClosed() {
-    // Per-game cleanup
+    // Nothing to release per game.
 }
-
-// --- Recompiler Execution ---
 
 // --- Main Execution Loop (Interpreter) ---
 void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
@@ -119,8 +114,8 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
     uint32_t& gprR0 = m_Reg.m_GPR[0].UW;
     uint32_t& pc = *m_SP_PC_REG;
 
-    // ── LLE diagnostic: trace first 4 graphics-task interpreter runs ──
-    // Detects where F3D microcode stalls/halts before reaching MTC0→DPC_END.
+    // LLE diagnostic: traces the first 4 graphics-task interpreter runs, to show where
+    // F3D microcode stalls or halts before reaching MTC0 to DPC_END.
     static uint32_t s_lleTraceCount = 0;
     const uint32_t taskType = m_DMEM ? *reinterpret_cast<const uint32_t*>(m_DMEM + 0xFC0) : 0xFFFFFFFF;
     const bool lleTrace = (taskType == 1) &&                // graphics task
@@ -149,15 +144,14 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
             break;
         }
 
-        // Fetch instruction from IMEM
         m_OpCode.Value = *reinterpret_cast<uint32_t*>(m_IMEM + (pc & 0xFFC));
 
         // LLE diag: detect undefined opcodes (unknown primary op or vector reserved)
         if (lleTrace) {
             const uint32_t op = m_OpCode.op;
-            // Primary opcodes that route to UnknownOpcode (after Init_RSP_Opcode):
-            // we can't easily tell from here, but raw op==0 with funct outside Jump_Special
-            // would also be unknown. Cheap heuristic: a fetched word of 0x00000000 is NOP.
+            // Cheap heuristic: flags an all-ones word or an out-of-range primary opcode.
+            // Opcodes that route to UnknownOpcode (for example op 0 with a funct outside
+            // Jump_Special) are not detected here; a word of 0 is a NOP.
             if (m_OpCode.Value == 0xFFFFFFFFu || op >= 64) {
                 if (unknownCount < 4) {
                     Log::infof("RSPLLE[%u] suspicious-op pc=0x%03X word=0x%08X", s_lleTraceCount, pc & 0xFFC,
@@ -168,7 +162,6 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
             }
         }
 
-        // Dispatch through primary opcode table
         (m_Op.*(m_Op.Jump_Opcode[m_OpCode.op]))();
 
         // MIPS $zero hard-wired to 0
@@ -180,9 +173,9 @@ void CRSPSystem::ExecuteOps(uint32_t cycles, uint32_t targetPC) {
         }
 
         if (lleTrace) ++insnCount;
-        // Bail out for runaway interpreter (prevents the host hang we saw under
-        // LLE smoke testing). Pure safety net; should never trip under healthy
-        // F3D microcode which halts via BREAK within thousands of cycles.
+        // Safety net for a runaway interpreter, which hung the host under LLE smoke testing.
+        // Healthy F3D microcode halts via BREAK within thousands of cycles, so this should
+        // never trip. insnCount only advances while tracing, so only traced runs are covered.
         if (insnCount > 5'000'000ull) {
             Log::warningf("RSPLLE[%u] runaway interpreter at pc=0x%03X insn=%llu — forcing halt", s_lleTraceCount,
                           pc & 0xFFC, static_cast<unsigned long long>(insnCount));
@@ -264,11 +257,9 @@ void CRSPSystem::SetupSyncCPU() {
         m_SyncSystem->m_RSPRegisterHandler = std::make_unique<RSPRegisterHandlerPlugin>(*m_SyncSystem);
     }
 
-    // Copy memory state
     if (m_IMEM != nullptr) std::memcpy(m_SyncSystem->m_IMEM, m_IMEM, IMEM_SIZE);
     if (m_DMEM != nullptr) std::memcpy(m_SyncSystem->m_DMEM, m_DMEM, DMEM_SIZE);
 
-    // Copy hardware register state
     auto copyReg = [](uint32_t* dst, uint32_t* src) {
         if (dst && src) *dst = *src;
     };
@@ -307,7 +298,6 @@ void CRSPSystem::BasicSyncCheck() {
 
     bool syncFailed = false;
 
-    // Compare vector registers
     const RSPVector* vect = m_Reg.m_Vect;
     const RSPVector* vectSync = m_SyncSystem->m_Reg.m_Vect;
     for (int i = 0; i < 32; i++) {
@@ -317,7 +307,6 @@ void CRSPSystem::BasicSyncCheck() {
         }
     }
 
-    // Compare IMEM / DMEM
     if (std::memcmp(m_IMEM, m_SyncSystem->m_IMEM, IMEM_SIZE) != 0) {
         syncFailed = true;
     }
@@ -325,7 +314,6 @@ void CRSPSystem::BasicSyncCheck() {
         syncFailed = true;
     }
 
-    // Compare key hardware registers
     auto checkReg = [&](uint32_t* a, uint32_t* b) {
         if (a && b && *a != *b) syncFailed = true;
     };
@@ -346,7 +334,6 @@ void CRSPSystem::BasicSyncCheck() {
     }
 
     if (syncFailed) {
-        // Detailed sync failure report
         char msg[512];
         std::snprintf(msg, sizeof(msg), "RSP Sync FAILED at PC=0x%03X (sync PC=0x%03X)",
                       m_SP_PC_REG ? (*m_SP_PC_REG & 0xFFC) : 0u,
@@ -398,8 +385,7 @@ void CRSPSystem::NullProcessDList() {}
 void CRSPSystem::NullProcessRdpList() {}
 void CRSPSystem::NullCheckInterrupts() {}
 
-// DMA Transfer Helpers
-// SP ↔ RDRAM transfers as done by the hardware
+// --- DMA transfers between SP memory and RDRAM ---
 
 void CRSPSystem::SP_DMA_READ() {
     // DMA from RDRAM → IMEM/DMEM
@@ -432,7 +418,6 @@ void CRSPSystem::SP_DMA_READ() {
         mem_addr &= 0xFFF;
     }
 
-    // Clear DMA flags
     if (m_SP_DMA_BUSY_REG) *m_SP_DMA_BUSY_REG = 0;
     if (m_SP_DMA_FULL_REG) *m_SP_DMA_FULL_REG = 0;
 }
@@ -478,13 +463,10 @@ void CRSPSystem::DumpSyncState(char* buf, size_t bufSize) const {
     int pos = 0;
     pos += std::snprintf(buf + pos, bufSize - pos, "=== RSP Sync State Dump ===\n");
 
-    // PC
     if (m_SP_PC_REG) pos += std::snprintf(buf + pos, bufSize - pos, "PC: 0x%03X\n", *m_SP_PC_REG & 0xFFC);
 
-    // SP Status
     if (m_SP_STATUS_REG) pos += std::snprintf(buf + pos, bufSize - pos, "SP_STATUS: 0x%08X\n", *m_SP_STATUS_REG);
 
-    // GPRs
     pos += std::snprintf(buf + pos, bufSize - pos, "GPRs:\n");
     for (int i = 0; i < 32 && pos < static_cast<int>(bufSize) - 20; i++) {
         pos += std::snprintf(buf + pos, bufSize - pos, "  R%02d: 0x%08X", i, m_Reg.m_GPR[i].UW);
@@ -499,7 +481,6 @@ void CRSPSystem::DumpSyncState(char* buf, size_t bufSize) const {
                              static_cast<unsigned long long>(m_Reg.m_Vect[i].u64(1)));
     }
 
-    // DMA registers
     pos += std::snprintf(buf + pos, bufSize - pos, "DMA:\n");
     if (m_SP_MEM_ADDR_REG) pos += std::snprintf(buf + pos, bufSize - pos, "  MEM_ADDR: 0x%08X\n", *m_SP_MEM_ADDR_REG);
     if (m_SP_DRAM_ADDR_REG)
@@ -531,7 +512,7 @@ void CRSPSystem::ExecuteOne(uint32_t word) {
     m_Reg.m_GPR[0].UW = 0; // $zero is hard-wired, as in ExecuteOps
 }
 
-extern uint64_t g_rspRdpNanos; // RSPInterpreterOps.cpp
+extern uint64_t g_rspRdpNanos; // defined in RSPInterpreterOps.cpp
 
 namespace {
 // NOVA64_RSP_TIME=1: how long the RSP takes, to compare the engines.

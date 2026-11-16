@@ -12,7 +12,7 @@
 
 namespace Nova64::RSP {
 
-// ── Compile-time validation ─────────────────────────────────────
+// --- Compile-time validation ---
 static_assert(Clamp16(INT16_MIN) == static_cast<uint16_t>(INT16_MIN));
 static_assert(Clamp16(INT16_MAX) == static_cast<uint16_t>(INT16_MAX));
 static_assert(Clamp16(INT16_MIN - 1) == static_cast<uint16_t>(INT16_MIN));

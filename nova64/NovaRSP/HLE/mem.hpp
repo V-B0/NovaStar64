@@ -76,7 +76,7 @@ void store_u32(uint8_t* buffer, unsigned address, const uint32_t* src, size_t co
 uint32_t* dmem_u32(CHle* hle, uint16_t address);
 void dmem_store_u32(CHle* hle, const uint32_t* src, uint16_t address, size_t count);
 
-// --- DRAM convenience accessors (masked to 16MB) ---
+// --- DRAM convenience accessors (masked to 8 MB) ---
 uint8_t* dram_u8(CHle* hle, uint32_t address);
 uint16_t* dram_u16(CHle* hle, uint32_t address);
 uint32_t* dram_u32(CHle* hle, uint32_t address);

@@ -1,3 +1,8 @@
+/**
+ * @file RSPRomTables.hpp
+ * @brief Reciprocal and inverse-square-root ROM tables used by the RSP divide instructions.
+ */
+
 #pragma once
 #include <cstdint>
 

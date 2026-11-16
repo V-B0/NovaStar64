@@ -10,10 +10,6 @@
 
 namespace Nova64::RSP {
 
-// Global debugger instance
-// nullptr = debugging disabled
-// Set externally by the host application
-
 IRSPDebugger* g_RSPDebugger = nullptr;
 
 } // namespace Nova64::RSP

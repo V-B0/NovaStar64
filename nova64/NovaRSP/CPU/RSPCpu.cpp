@@ -1,6 +1,6 @@
 /**
  * @file RSPCpu.cpp
- * @brief RSP CPU - Build tables, DoRspCycles dispatch.
+ * @brief RSP element-selection tables and ROM table setup.
  *
  * Derived from Project64 (https://github.com/project64/project64),
  * licensed under the GNU General Public License v2.0 -- see LICENSE.
@@ -22,7 +22,8 @@ uint32_t RSP_Running = 0;
 uint32_t Mfc0Count = 0;
 uint32_t SemaphoreExit = 0;
 
-// Build_RSP - Populate element selection tables
+// Fills the VT element-selection tables and loads the reciprocal and
+// inverse-square-root ROM tables.
 //
 // EleSpec[e][i] gives the *element index* to read from VT
 // when the vector instruction specifies element field 'e'.
@@ -33,15 +34,13 @@ uint32_t SemaphoreExit = 0;
 // For e = 4..7    : broadcast quads
 // For e = 8..15   : single-element broadcast
 void Build_RSP() {
-    // Identity mapping for Indx
+    // Start both tables as the identity mapping.
     for (int e = 0; e < 16; e++) {
         for (int i = 0; i < 8; i++) {
             Indx[e].UB[i] = static_cast<uint8_t>(i);
             EleSpec[e].UB[i] = static_cast<uint8_t>(i);
         }
     }
-
-    // e = 0,1: scalar / no broadcast (identity already set)
 
     // e = 2,3: broadcast even/odd pairs
     // In reversed internal layout: e=2 selects odd internal indices (even N64 elements)
@@ -67,8 +66,8 @@ void Build_RSP() {
         }
     }
 
-    // Byte-reverse the Indx table for big-endian element ordering
-    // NOTE: EleSpec is NOT reversed — it uses u16 indices directly
+    // Byte-reverse the Indx table for big-endian element ordering.
+    // EleSpec is not reversed: it holds u16 element indices directly.
     for (int e = 0; e < 16; e++) {
         for (int i = 0; i < 4; i++) {
             uint8_t tmp = Indx[e].UB[i];

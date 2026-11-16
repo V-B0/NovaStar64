@@ -21,7 +21,7 @@ namespace {
 // An SP DMA row can be longer than what is left of the 4 KB memory bank it starts in,
 // and its RDRAM side can run past the installed memory. The hardware wraps inside the
 // bank, so the copies below do too, and anything outside RDRAM reads as zero and
-// is not written. (Copying with a plain memcpy overran the bank and the RDRAM buffer.)
+// is not written. A plain memcpy would overrun the bank and the RDRAM buffer.
 void CopyRdramToSp(uint8_t* bank, uint32_t spOffset, const uint8_t* rdram, uint32_t rdramSize, uint32_t dramAddr,
                    uint32_t length) {
     while (length != 0) {
@@ -79,8 +79,6 @@ void RSPRegisterHandler::SP_DMA_READ() {
         spOffset = (spOffset + length) & 0x0FFF;
         dramAddr = (dramAddr + length + skip) & 0x00FFFFF8;
     }
-
-    // Log RSP-initiated DMA reads
 
     // Update registers after DMA
     SP_MEM_ADDR_REG = (SP_MEM_ADDR_REG & 0x1000) | spOffset;

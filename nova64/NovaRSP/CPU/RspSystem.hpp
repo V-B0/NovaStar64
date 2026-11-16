@@ -25,8 +25,7 @@ namespace HLE {
 class CHle;
 }
 
-// RSP Info structure (passed from main system)
-// Mirrors N64's RSP_INFO plugin spec
+/// Pointers and callbacks the host passes to CRSPSystem::Reset; mirrors the N64 RSP plugin spec's RSP_INFO.
 struct RSP_INFO {
     uint8_t* HEADER;
     uint8_t* RDRAM;
@@ -57,12 +56,11 @@ struct RSP_INFO {
     void (*ProcessDListShadow)(); // Optional: shadow HLE for RT geometry under LLE
 };
 
-// CRSPSystem - Central RSP subsystem
-// Owns interpreter, registers, recompiler, and HLE
 namespace Jit {
 class RspJit;
 }
 
+/// Central RSP subsystem: owns the interpreter, register file, recompiler and register handler.
 class CRSPSystem {
     friend class RSPOp;
     friend class Jit::RspJit;

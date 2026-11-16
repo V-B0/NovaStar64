@@ -16,7 +16,6 @@
 
 namespace Nova64::RSP {
 
-// --- Helper: GPR name from register index ---
 static inline const char* GPR_Name(uint32_t reg) { return (reg < 32) ? GPR_Names[reg] : "???"; }
 
 // --- Construction / Copy ---
@@ -26,7 +25,7 @@ RSPInstruction::RSPInstruction(uint32_t address, uint32_t instruction) :
 
 RSPInstruction::RSPInstruction(const RSPInstruction& other) :
     m_Address(other.m_Address), m_Instruction(other.m_Instruction) {
-    // Reset lazy analysis state — callers must re-analyze
+    // The lazy analysis state starts cleared; callers must re-analyze.
 }
 
 RSPInstruction& RSPInstruction::operator=(const RSPInstruction& other) {
@@ -34,7 +33,6 @@ RSPInstruction& RSPInstruction::operator=(const RSPInstruction& other) {
         m_Address = other.m_Address;
         m_Instruction = other.m_Instruction;
 
-        // Reset lazy caches
         m_Flag = RSPInstructionFlag::Unknown;
         m_Name[0] = '\0';
         m_Param[0] = '\0';
@@ -266,12 +264,9 @@ std::string RSPInstruction::NameAndParam() const {
     return std::string(n) + " " + p;
 }
 
-// ══════════════════════════════════════════════
-// Instruction Analysis (full opcode classification)
-// ══════════════════════════════════════════════
+// --- Instruction Analysis (full opcode classification) ---
 
 void RSPInstruction::AnalyzeInstruction() const {
-    // Reset all classification fields
     m_isGprOp = false;
     m_isVectorOp = false;
     m_isVectorStoreOp = false;
@@ -292,7 +287,7 @@ void RSPInstruction::AnalyzeInstruction() const {
     m_Analyzed = true;
 
     switch (m_Instruction.op) {
-    // ── SPECIAL ──────────────────────────────
+    // --- SPECIAL ---
     case RSP_SPECIAL:
         switch (m_Instruction.funct) {
         case RSP_SPECIAL_BREAK: m_Flag = RSPInstructionFlag::Break; break;
@@ -334,7 +329,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         }
         break;
 
-    // ── REGIMM ───────────────────────────────
+    // --- REGIMM ---
     case RSP_REGIMM:
         switch (m_Instruction.rt) {
         case RSP_REGIMM_BLTZ:
@@ -350,7 +345,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         }
         break;
 
-    // ── Unconditional jumps ──────────────────
+    // --- Unconditional jumps ---
     case RSP_J:
     case RSP_JAL:
         m_Flag = RSPInstructionFlag::Jump;
@@ -358,7 +353,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_isGprOp = true;
         break;
 
-    // ── Conditional branches (two-register) ──
+    // --- Conditional branches (two-register) ---
     case RSP_BEQ:
     case RSP_BNE:
         m_Flag = RSPInstructionFlag::Branch;
@@ -368,7 +363,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_SourceReg1 = m_Instruction.rs;
         break;
 
-    // ── Conditional branches (one-register) ──
+    // --- Conditional branches (one-register) ---
     case RSP_BLEZ:
     case RSP_BGTZ:
         m_Flag = RSPInstructionFlag::Branch;
@@ -378,7 +373,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_SourceReg1 = UNUSED_OPERAND;
         break;
 
-    // ── Immediate ALU ────────────────────────
+    // --- Immediate ALU ---
     case RSP_ADDI:
     case RSP_ADDIU:
     case RSP_SLTI:
@@ -398,7 +393,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_Flag = RSPInstructionFlag::GPROperation;
         break;
 
-    // ── COP0 ─────────────────────────────────
+    // --- COP0 ---
     case RSP_CP0:
         switch (m_Instruction.rs) {
         case RSP_COP0_MF:
@@ -415,7 +410,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         }
         break;
 
-    // ── COP2 (Vector Unit) ───────────────────
+    // --- COP2 (Vector Unit) ---
     case RSP_CP2:
         if ((m_Instruction.rs & 0x10) != 0) {
             AnalyzeVectorOp();
@@ -424,7 +419,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         }
         break;
 
-    // ── Scalar loads ─────────────────────────
+    // --- Scalar loads ---
     case RSP_LB:
     case RSP_LH:
     case RSP_LW:
@@ -437,7 +432,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_Flag = RSPInstructionFlag::Load;
         break;
 
-    // ── Scalar stores ────────────────────────
+    // --- Scalar stores ---
     case RSP_SB:
     case RSP_SH:
     case RSP_SW:
@@ -447,7 +442,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         m_Flag = RSPInstructionFlag::Store;
         break;
 
-    // ── Vector loads (LC2) ───────────────────
+    // --- Vector loads (LC2) ---
     case RSP_LC2:
         switch (m_Instruction.rd) {
         case RSP_LSC2_BV:
@@ -469,7 +464,7 @@ void RSPInstruction::AnalyzeInstruction() const {
         }
         break;
 
-    // ── Vector stores (SC2) ──────────────────
+    // --- Vector stores (SC2) ---
     case RSP_SC2:
         switch (m_Instruction.rd) {
         case RSP_LSC2_BV:
@@ -497,8 +492,7 @@ void RSPInstruction::AnalyzeInstruction() const {
     }
 }
 
-// Vector computational sub-analysis
-// Extracted for readability (called from AnalyzeInstruction)
+// Vector computational sub-analysis (called from AnalyzeInstruction)
 void RSPInstruction::AnalyzeVectorOp() const {
     switch (m_Instruction.funct) {
     case RSP_VECTOR_VNOP: m_Flag = RSPInstructionFlag::Vector; break;
@@ -660,9 +654,7 @@ void RSPInstruction::AnalyzeCop2ScalarOp() const {
     }
 }
 
-// ══════════════════════════════════════════════
-// Disassembly
-// ══════════════════════════════════════════════
+// --- Disassembly ---
 
 void RSPInstruction::DecodeName() const {
     switch (m_Instruction.op) {
@@ -1004,7 +996,7 @@ void RSPInstruction::DecodeCop2Name() const {
     const char* elemStr = ElementSpecifier(m_Instruction.e);
 
     switch (m_Instruction.funct) {
-    // ── Multiply ops ─────────────────────────
+    // --- Multiply ops ---
     case RSP_VECTOR_VMULF:
         std::strcpy(m_Name, "VMULF");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1046,7 +1038,7 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Multiply-accumulate ──────────────────
+    // --- Multiply-accumulate ---
     case RSP_VECTOR_VMACF:
         std::strcpy(m_Name, "VMACF");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1088,7 +1080,7 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Add / subtract ───────────────────────
+    // --- Add / subtract ---
     case RSP_VECTOR_VADD:
         std::strcpy(m_Name, "VADD");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1119,7 +1111,7 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Reserved add/sub ─────────────────────
+    // --- Reserved add/sub ---
     case RSP_VECTOR_VADDB:
         std::strcpy(m_Name, "Reserved (VADDB)");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1166,14 +1158,14 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Accumulator read ─────────────────────
+    // --- Accumulator read ---
     case RSP_VECTOR_VSAW:
         std::strcpy(m_Name, "VSAW");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Compare / select ─────────────────────
+    // --- Compare / select ---
     case RSP_VECTOR_VLT:
         std::strcpy(m_Name, "VLT");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1195,7 +1187,7 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Clip ─────────────────────────────────
+    // --- Clip ---
     case RSP_VECTOR_VCL:
         std::strcpy(m_Name, "VCL");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1212,14 +1204,14 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Merge ────────────────────────────────
+    // --- Merge ---
     case RSP_VECTOR_VMRG:
         std::strcpy(m_Name, "VMRG");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Logical ──────────────────────────────
+    // --- Logical ---
     case RSP_VECTOR_VAND:
         std::strcpy(m_Name, "VAND");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d, $v%d, $v%d%s", m_Instruction.vd, m_Instruction.vs,
@@ -1261,7 +1253,7 @@ void RSPInstruction::DecodeCop2Name() const {
                       m_Instruction.vt, elemStr);
         break;
 
-    // ── Reciprocal / square-root / move ──────
+    // --- Reciprocal / square-root / move ---
     case RSP_VECTOR_VRCP:
         std::strcpy(m_Name, "VRCP");
         std::snprintf(m_Param, sizeof(m_Param), "$v%d[%d], $v%d[%d]", m_Instruction.vd, m_Instruction.rd & 0x7,
@@ -1302,7 +1294,7 @@ void RSPInstruction::DecodeCop2Name() const {
         m_Param[0] = '\0';
         break;
 
-    // ── Reserved pack/extract/insert ─────────
+    // --- Reserved pack/extract/insert ---
     case RSP_VECTOR_VEXTT:
         std::strcpy(m_Name, "Reserved (VEXTT)");
         m_Param[0] = '\0';

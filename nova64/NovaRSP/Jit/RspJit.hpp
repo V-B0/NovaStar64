@@ -5,8 +5,8 @@
  * The RSP is a small MIPS-like core with 1024 instructions of IMEM, so the
  * recompiler is block-at-a-time and lazy: a block is compiled the first time
  * execution reaches its start, and the code cache is a flat table indexed by
- * IMEM address. Execution is checked against the interpreter instruction for
- * instruction by `nova64 --rsp-selftest`.
+ * IMEM address. Whole programs are checked against the interpreter by
+ * `nova64 --rsp-selftest`.
  *
  * Anything a backend doesn't translate natively is executed by calling the
  * interpreter's implementation of that one instruction, so the recompiler is

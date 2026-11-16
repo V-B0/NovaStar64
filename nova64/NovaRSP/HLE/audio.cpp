@@ -16,11 +16,6 @@
 
 namespace Nova64::RSP::HLE {
 
-// Resample LUT
-// 64 entries × 4 taps = 256 int16_t values
-// Windowed-sinc interpolation coefficients for
-// fractional-sample audio resampling
-
 const int16_t RESAMPLE_LUT[64 * 4] = {
     (int16_t)0x0c39, (int16_t)0x66ad, (int16_t)0x0d46, (int16_t)0xffdf, (int16_t)0x0b39, (int16_t)0x6696,
     (int16_t)0x0e5f, (int16_t)0xffd8, (int16_t)0x0a44, (int16_t)0x6669, (int16_t)0x0f83, (int16_t)0xffd0,
@@ -67,7 +62,6 @@ const int16_t RESAMPLE_LUT[64 * 4] = {
     (int16_t)0xffdf, (int16_t)0x0d46, (int16_t)0x66ad, (int16_t)0x0c39,
 };
 
-// Dot product for audio filtering
 // Matches mupen64plus: y += n, then x++ * --y
 
 int32_t rdot(size_t n, const int16_t* x, const int16_t* y) {
@@ -80,7 +74,6 @@ int32_t rdot(size_t n, const int16_t* x, const int16_t* y) {
     return accu;
 }
 
-// ADPCM residual computation
 // Matches mupen64plus exactly:
 //   accu = src[i] << 11
 //   accu += book1[i]*l1 + book2[i]*l2 + rdot(i, book2, src)

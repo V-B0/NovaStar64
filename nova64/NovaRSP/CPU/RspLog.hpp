@@ -19,8 +19,7 @@ void StartCPULog();
 void StopCPULog();
 void CPU_Message(const char* message, ...);
 
-// RDP Command Logger
-// Logs display list commands, COP0 register access
+/// Writes display list commands and COP0 register accesses to RSP_RDP.log.
 class CRDPLog {
 public:
     explicit CRDPLog(CRSPSystem& system);

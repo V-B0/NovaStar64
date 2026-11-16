@@ -25,9 +25,12 @@ public:
     CAudioOutput(const CAudioOutput&) = delete;
     CAudioOutput& operator=(const CAudioOutput&) = delete;
 
+    /// Opens the SDL audio device at `sampleRate`. The device is always stereo; `channels` is ignored.
     bool Initialize(uint32_t sampleRate = 44100, uint32_t channels = 2);
     void Shutdown();
 
+    /// Queues `sampleCount` 16-bit values (not stereo frames), optionally updating the source rate.
+    /// Waits while about 200 ms is already queued.
     void QueueSamples(const int16_t* samples, uint32_t sampleCount, uint32_t sourceRate = 0);
 
     void SetSourceRate(uint32_t rate) { m_sourceRate = rate; }

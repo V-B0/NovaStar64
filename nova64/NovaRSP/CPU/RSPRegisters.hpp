@@ -171,7 +171,8 @@ public:
     RSPAccumulator m_ACCUM;
     RSPVector m_Vect[32];
 
-    // Reciprocal / inverse-sqrt lookup tables
+    // Divide unit: reciprocal / inverse-sqrt ROM tables, the high half of the last result,
+    // the input half latched by VRCPH/VRSQH, and whether such a half is pending.
     uint16_t m_Reciprocals[512]{};
     uint16_t m_InverseSquareRoots[512]{};
     uint16_t m_Result{0};

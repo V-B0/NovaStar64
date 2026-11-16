@@ -17,7 +17,7 @@ struct GameOverrides {
     const char* name{nullptr};
     std::optional<bool> graphicsHle;   // Override graphics HLE on/off
     std::optional<bool> audioHle;      // Override audio HLE on/off
-    std::optional<uint32_t> cpuMethod; // Override CPU method (0=interp, 2=recomp, 3=HLE)
+    std::optional<uint32_t> cpuMethod; // Override CPU method (0=interpreter, 2=HLE with fallback, 3=HLE)
 };
 
 // --- Game database entry: CRC1 + CRC2 → overrides ---
@@ -27,18 +27,16 @@ struct GameDBEntry {
     GameOverrides overrides;
 };
 
-// Known game overrides
-//
-// Games that need specific RSP settings to work correctly.
+// Known game overrides: games that need specific RSP settings to work correctly.
 // CRC values are from the ROM header (big-endian at 0x10/0x14).
 //
 // Categories:
-//   - Audio-only HLE: Games where graphics HLE causes issues
-//   - LLE required: Games with custom RSP microcodes
-//   - Full HLE safe: Games known to work with both audio + graphics HLE
+//   - Audio LLE: games with custom audio microcodes
+//   - Graphics LLE: games with custom graphics microcodes
+//   - Full HLE: games known to work with both audio and graphics HLE
 
 inline constexpr GameDBEntry kGameDatabase[] = {
-    // ── Games needing LLE for audio (custom audio microcodes) ──
+    // --- Games needing LLE for audio (custom audio microcodes) ---
 
     // Rogue Squadron (Factor 5 custom RSP microcode — no standard audio ucode)
     {0x66A24BEC, 0xF3E1C252, {"Star Wars: Rogue Squadron (U)", std::nullopt, false, std::nullopt}},
@@ -50,7 +48,7 @@ inline constexpr GameDBEntry kGameDatabase[] = {
     // Indiana Jones and the Infernal Machine (Factor 5 engine)
     {0x3C3AA14B, 0x0D19C6E0, {"Indiana Jones: Infernal Machine (U)", std::nullopt, false, std::nullopt}},
 
-    // ── Games needing graphics LLE (custom graphics microcodes) ──
+    // --- Games needing graphics LLE (custom graphics microcodes) ---
 
     // Conker's Bad Fur Day (unique RSP geometry processing)
     {0x30C7E1BF, 0x087E92B7, {"Conker's Bad Fur Day (U)", false, std::nullopt, std::nullopt}},
@@ -63,7 +61,7 @@ inline constexpr GameDBEntry kGameDatabase[] = {
     {0xDCBC50D1, 0x09FD1AA3, {"GoldenEye 007 (U)", false, std::nullopt, std::nullopt}},
     {0x69CF1A4C, 0x47F5BFBA, {"GoldenEye 007 (E)", false, std::nullopt, std::nullopt}},
 
-    // ── Games safe for full HLE ──
+    // --- Games safe for full HLE ---
 
     // Super Mario 64
     {0x635A42C5, 0xB66C0B72, {"Super Mario 64 (U)", true, true, 3}},
@@ -78,12 +76,10 @@ inline constexpr GameDBEntry kGameDatabase[] = {
     {0x09465AC8, 0xB7BB0B5C, {"Zelda: Ocarina of Time (U) v1.2", true, true, 3}},
 
     // The Legend of Zelda: Majora's Mask
-    // Audio HLE re-enabled: MM uses NEAD audio ucode (CRC 0x4FC2E19E)
-    // which we DO have registered (alist_process_nead_mm). The previous
-    // false setting silently dropped audio tasks without signaling
-    // SP_INTR, blocking MM's audio thread and causing downstream state
-    // corruption (Link instant-dies after item-get / cutscene events
-    // because the audio thread block stalls game-state update propagation).
+    // Audio HLE must stay on: MM uses the NEAD audio ucode (CRC 0x4FC2E19E), which is
+    // registered (alist_process_nead_mm). With audio HLE off, audio tasks were dropped
+    // without signalling SP_INTR, which blocked MM's audio thread and stalled game-state
+    // updates (Link died instantly after item-get and cutscene events).
     {0x5354631C, 0x03A2DEF0, {"Zelda: Majora's Mask (U)", true, true, 3}},
 
     // Banjo-Kazooie
@@ -98,8 +94,7 @@ inline constexpr GameDBEntry kGameDatabase[] = {
 
 inline constexpr size_t kGameDatabaseSize = sizeof(kGameDatabase) / sizeof(kGameDatabase[0]);
 
-// Lookup function
-// Returns nullptr if no match found
+/// Returns the overrides for the given ROM header CRCs, or nullptr if the game is not listed.
 inline const GameOverrides* LookupGameOverrides(uint32_t crc1, uint32_t crc2) {
     for (size_t i = 0; i < kGameDatabaseSize; ++i) {
         if (kGameDatabase[i].crc1 == crc1 && kGameDatabase[i].crc2 == crc2) return &kGameDatabase[i].overrides;

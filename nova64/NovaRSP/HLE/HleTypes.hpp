@@ -18,8 +18,7 @@ enum class HLETaskBooter : uint32_t {
     Boot_CAB15710,
 };
 
-// Task Info structure (from DMEM 0xFC0)
-// Maps directly to the N64 OSTask structure layout
+/// Task info read from DMEM at 0xFC0; matches the N64 OSTask structure layout.
 struct TaskInfo {
     uint32_t Type;
     uint32_t Flags;

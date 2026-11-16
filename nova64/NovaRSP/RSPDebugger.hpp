@@ -11,8 +11,7 @@
 
 namespace Nova64::RSP {
 
-// RSP Debugger Abstract Interface
-// Implement this to hook into RSP execution events
+/// Hooks into RSP execution events; implement it and assign the instance to g_RSPDebugger.
 class IRSPDebugger {
 public:
     virtual ~IRSPDebugger() = default;
@@ -27,7 +26,7 @@ public:
     virtual void SyncError(const char* msg) = 0;
 };
 
-// Global debugger instance (nullptr when debugging disabled)
+// Global debugger instance, set by the host application (nullptr when debugging is disabled)
 extern IRSPDebugger* g_RSPDebugger;
 
 } // namespace Nova64::RSP

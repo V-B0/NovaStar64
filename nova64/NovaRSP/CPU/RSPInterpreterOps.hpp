@@ -19,8 +19,7 @@ class CRSPSystem;
 class CRSPRegisters;
 class RSPRegisterHandlerPlugin;
 
-// RSP Interpreter - Executes all RSP opcodes
-// Function pointer tables for O(1) opcode dispatch
+/// RSP interpreter: executes every RSP opcode through function pointer tables (O(1) dispatch).
 class RSPOp {
     friend class CRSPSystem;
 
@@ -38,7 +37,7 @@ private:
 
     using Func = void (RSPOp::*)();
 
-    // ── Primary opcode handlers ──
+    // --- Primary opcode handlers ---
     void SPECIAL();
     void REGIMM();
     void J();
@@ -69,7 +68,7 @@ private:
     void LC2();
     void SC2();
 
-    // ── SPECIAL function handlers ──
+    // --- SPECIAL function handlers ---
     void Special_SLL();
     void Special_SRL();
     void Special_SRA();
@@ -90,24 +89,24 @@ private:
     void Special_SLT();
     void Special_SLTU();
 
-    // ── RegImm handlers ──
+    // --- RegImm handlers ---
     void BLTZ();
     void BGEZ();
     void BLTZAL();
     void BGEZAL();
 
-    // ── COP0 handlers ──
+    // --- COP0 handlers ---
     void Cop0_MF();
     void Cop0_MT();
 
-    // ── COP2 handlers (scalar ↔ vector moves) ──
+    // --- COP2 handlers (scalar ↔ vector moves) ---
     void Cop2_MF();
     void Cop2_CF();
     void Cop2_MT();
     void Cop2_CT();
     void Cop2_VECTOR();
 
-    // ── Vector computational handlers ──
+    // --- Vector computational handlers ---
     void Vector_VMULF();
     void Vector_VMULU();
     void Vector_VRNDP();
@@ -154,7 +153,7 @@ private:
     void Vector_VRSQH();
     void Vector_VNOOP();
 
-    // ── LC2 (vector load) handlers ──
+    // --- LC2 (vector load) handlers ---
     void LBV();
     void LSV();
     void LLV();
@@ -168,7 +167,7 @@ private:
     void LWV();
     void LTV();
 
-    // ── SC2 (vector store) handlers ──
+    // --- SC2 (vector store) handlers ---
     void SBV();
     void SSV();
     void SLV();
@@ -182,11 +181,11 @@ private:
     void STV();
     void SWV();
 
-    // ── Utility ──
+    // --- Utility ---
     void UnknownOpcode();
     uint32_t BranchIf(bool condition);
 
-    // ── Dispatch tables ──
+    // --- Dispatch tables ---
     Func Jump_Opcode[64]{};
     Func Jump_RegImm[32]{};
     Func Jump_Special[64]{};
@@ -196,7 +195,7 @@ private:
     Func Jump_Lc2[32]{};
     Func Jump_Sc2[32]{};
 
-    // ── System references ──
+    // --- System references ---
     CRSPSystem& m_System;
     std::unique_ptr<RSPRegisterHandlerPlugin>& m_RSPRegisterHandler;
     RSPOpcode& m_OpCode;

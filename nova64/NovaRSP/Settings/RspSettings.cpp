@@ -66,11 +66,9 @@ void CRSPSettings::InitializeRspSetting() {
     s_RomOpen = false;
 }
 
-// Refresh settings from config
-// Reads from CSettings or IniFile if available
+// Reads the [RSP] section of NovaStar64.ini in the working directory, if the file exists.
 
 void CRSPSettings::RefreshSettings() {
-    // Attempt to read RSP settings from config file
     static const char* kSection = "RSP";
 
     std::filesystem::path configPath = std::filesystem::current_path() / "NovaStar64.ini";

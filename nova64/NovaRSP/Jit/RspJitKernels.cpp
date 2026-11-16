@@ -524,7 +524,7 @@ void VCR(CRSPRegisters* r, uint8_t*, uint32_t w) {
 // ---- reciprocal, reciprocal square root and element moves (scalar by nature) -------------
 inline uint32_t Clz32(uint32_t v) {
     return static_cast<uint32_t>(std::countl_zero(v));
-} // 32 for zero, as the interpreter's
+} // 32 for zero, as in the interpreter's clz32
 inline int16_t* Lanes(CRSPRegisters* r, unsigned reg) { return static_cast<int16_t*>(r->m_Vect[reg].Data()); }
 
 void FinishReciprocal(CRSPRegisters* r, const Op& o, uint32_t w, int32_t result) {

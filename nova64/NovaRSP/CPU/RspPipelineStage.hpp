@@ -39,7 +39,7 @@ enum class PipelineStage : uint32_t {
     FinishTaskSubBlock, // End of HLE task sub-block
 };
 
-// Alias for backward compatibility with legacy code
+// Alias for the original RSPPIPELINE_STAGE name.
 using RSPPIPELINE_STAGE = PipelineStage;
 
 } // namespace Nova64::RSP

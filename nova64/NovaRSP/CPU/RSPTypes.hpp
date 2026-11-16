@@ -50,9 +50,7 @@ union DWord64 {
     constexpr explicit DWord64(int64_t v) : DW(v) {}
 };
 
-// RSP Accumulator - 48-bit per element, 8 elements
-// x64: stored as 6 × uint64_t (3 pairs of 8×16-bit lanes: High, Mid, Low)
-// x86: stored as 8 × UDWORD
+/// RSP accumulator: 8 elements of 48 bits each, stored as three 8 x 16-bit lanes (High, Mid, Low).
 class alignas(16) RSPAccumulator {
 public:
     RSPAccumulator() { Reset(); }
@@ -117,7 +115,6 @@ public:
     [[nodiscard]] const void* HighData() const { return &m_High; }
 
 private:
-    // 3 × 128-bit lanes storing 8 × int16 each
     alignas(16) uint64_t m_High[2]{}; // Accumulator high (8 × 16-bit)
     alignas(16) uint64_t m_Mid[2]{};  // Accumulator mid  (8 × 16-bit)
     alignas(16) uint64_t m_Low[2]{};  // Accumulator low  (8 × 16-bit)
@@ -167,9 +164,8 @@ private:
     alignas(16) uint64_t m_Data[2];
 };
 
-// RSP Flag Register - 8 element boolean flags
-// x64: stored as 8 × uint16_t (SIMD-friendly)
-// Packed format: 8-bit for serialization
+/// RSP flag register: 8 per-element boolean flags, each stored as a uint16_t of 0x0000 or 0xFFFF for
+/// SIMD use. GetPacked/SetPacked convert to the 8-bit CTC2/CFC2 form (element 0 in bit 7).
 class alignas(16) RSPFlag {
 public:
     RSPFlag() { Clear(); }

@@ -20,8 +20,7 @@ enum class RSPCpuMethod : uint32_t {
     HighLevelEmulation = 3,
 };
 
-// RSP Settings - Static configuration singleton
-// Thread-safe reads, single-writer pattern
+/// Static configuration for the RSP: execution method, HLE switches and debug flags.
 class CRSPSettings {
 public:
     CRSPSettings() = default;
@@ -30,7 +29,7 @@ public:
     CRSPSettings(const CRSPSettings&) = delete;
     CRSPSettings& operator=(const CRSPSettings&) = delete;
 
-    // ── Accessors (inline, hot path) ──
+    // --- Accessors (inline, hot path) ---
     [[nodiscard]] static RSPCpuMethod CPUMethod() { return s_CPUMethod; }
     /// Interpreter or recompiler for the RSP's own code (not the same as CPUMethod, which
     /// also decides whether known microcode runs as HLE).
@@ -48,14 +47,14 @@ public:
     [[nodiscard]] static bool IsLogAsmCode() { return s_LogAsmCode; }
     [[nodiscard]] static bool IsSyncCPU() { return s_SyncCPU; }
 
-    // ── Mutators ──
+    // --- Mutators ---
     static void EnableDebugging(bool enabled);
     static void InitializeRspSetting();
     static void RefreshSettings();
     static void SetRomOpen(bool opened);
     static void ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2);
 
-    // ── MLE pivot mutators ──
+    // --- MLE pivot mutators ---
     // Driven by the video plugin from NovaGraphics.ini renderingMode key.
     // Must be called before DoRspCycles processes the first task.
     // These set a *sticky user override* that suppresses the matching

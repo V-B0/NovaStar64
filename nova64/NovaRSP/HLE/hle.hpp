@@ -17,8 +17,7 @@ class CRSPSystem;
 
 namespace Nova64::RSP::HLE {
 
-// CHle - High-Level Emulation engine
-// Dispatches RSP tasks to audio/video HLE handlers
+/// High-level emulation engine: dispatches RSP tasks to the audio/video HLE handlers.
 class CHle {
 public:
     explicit CHle(CRSPSystem& system);
@@ -27,43 +26,43 @@ public:
     CHle(const CHle&) = delete;
     CHle& operator=(const CHle&) = delete;
 
-    // ── Memory access ──
+    // --- Memory access ---
     [[nodiscard]] uint8_t* dram() { return m_dram; }
     [[nodiscard]] uint32_t dram_size() const { return m_dram_size; }
     [[nodiscard]] uint8_t* dmem() { return m_dmem; }
     [[nodiscard]] uint8_t* imem() { return m_imem; }
 
-    // ── Settings queries ──
+    // --- Settings queries ---
     [[nodiscard]] bool AudioHle() const { return m_AudioHle; }
     [[nodiscard]] bool GraphicsHle() const { return m_GraphicsHle; }
 
-    // ── Audio state ──
+    // --- Audio state ---
     [[nodiscard]] AlistAudio& alist_audio() { return m_alist_audio; }
     [[nodiscard]] AlistNaudio& alist_naudio() { return m_alist_naudio; }
     [[nodiscard]] AlistNead& alist_nead() { return m_alist_nead; }
     [[nodiscard]] uint8_t* mp3_buffer() { return m_mp3_buffer; }
     [[nodiscard]] uint8_t* alist_buffer() { return m_alist_buffer; }
 
-    // ── Logging ──
+    // --- Logging ---
     void VerboseMessage(const char* message, ...);
     void WarnMessage(const char* message, ...);
     void ErrorMessage(const char* message, ...);
 
-    // ── RSP control ──
+    // --- RSP control ---
     void rsp_break(uint32_t setbits);
     bool try_fast_audio_dispatching();
 
-    // ── Main HLE execution entry point ──
-    // Detects task type and dispatches to appropriate HLE handler.
-    // Returns true if HLE handled the task, false if LLE fallback is needed.
+    // --- Main HLE execution entry point ---
+    /// Detects the task type and dispatches it to the matching HLE handler. Returns true if HLE
+    /// handled the task, false if the LLE fallback is needed.
     bool Execute();
 
-    // ── Audio output ──
+    // --- Audio output ---
     [[nodiscard]] CAudioOutput& audioOutput() { return m_audioOutput; }
     void QueueAudioOutput(const int16_t* samples, uint32_t count);
     void FeedAudioDevice();
 
-    // ── Plugin callbacks ──
+    // --- Plugin callbacks ---
     void CallProcessDList() {
         if (m_ProcessDList != nullptr) m_ProcessDList();
     }
@@ -76,14 +75,14 @@ public:
         if (m_ProcessDListShadow != nullptr) m_ProcessDListShadow();
     }
 
-    // ── SP Hardware Register Access (for HLE mem.hpp) ──
+    // --- SP Hardware Register Access (for HLE mem.hpp) ---
     [[nodiscard]] uint32_t*& sp_mem_addr() { return m_sp_mem_addr; }
     [[nodiscard]] uint32_t*& sp_dram_addr() { return m_sp_dram_addr; }
     [[nodiscard]] uint32_t*& sp_status() { return m_sp_status; }
     [[nodiscard]] uint32_t*& sp_pc() { return m_sp_pc; }
     [[nodiscard]] uint32_t*& mi_intr() { return m_mi_intr; }
 
-    // ── DPC Register Access (for GfxProcessor RDP command buffer) ──
+    // --- DPC Register Access (for GfxProcessor RDP command buffer) ---
     [[nodiscard]] uint32_t*& dpc_start() { return m_dpc_start; }
     [[nodiscard]] uint32_t*& dpc_end() { return m_dpc_end; }
     [[nodiscard]] uint32_t*& dpc_current() { return m_dpc_current; }

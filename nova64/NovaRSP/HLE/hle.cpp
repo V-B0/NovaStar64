@@ -80,14 +80,14 @@ void CHle::ErrorMessage(const char* message, ...) {
 // --- RSP control ---
 
 void CHle::rsp_break(uint32_t setbits) {
-    // Feed audio device before halting RSP (ensures processed audio reaches output)
+    // Feed the audio device before halting the RSP (CAudioOutput::FeedDevice is currently empty).
     FeedAudioDevice();
 
     if (m_sp_status == nullptr) return;
     *m_sp_status |= setbits;
     *m_sp_status |= SPStatus::Halt | SPStatus::Broke;
 
-    // ── Signal management matching real N64 RSP microcode behavior ──
+    // --- Signal management matching real N64 RSP microcode behavior ---
     // All RSP microcode sets SIG1 before BREAK (task-done indicator).
     *m_sp_status |= SPStatus::Signal1;
 
@@ -95,8 +95,8 @@ void CHle::rsp_break(uint32_t setbits) {
     //   SIG2 SET   → GFX task completion   (dispatched to video event queue)
     //   SIG2 CLEAR → Audio task completion  (dispatched to audio event queue)
     // GFX microcode (F3DEX2, etc.) sets SIG2 before BREAK; Audio microcode
-    // does NOT.  If we force SIG2 for audio tasks, audio completions are
-    // misrouted to the video queue, causing the audio thread to deadlock
+    // does not.  If we forced SIG2 for audio tasks, audio completions would be
+    // misrouted to the video queue, deadlocking the audio thread
     // during scene transitions (e.g., OoT cutscene loop).
     if (m_dmem) {
         const uint32_t taskType = *u32(m_dmem, TaskOffset::Type);
@@ -106,13 +106,12 @@ void CHle::rsp_break(uint32_t setbits) {
     }
 
     if ((*m_sp_status & SPStatus::IntrBreak) != 0) {
-        // NOTE: Do NOT set MI_INTR_SP or call CheckInterrupts here.
-        // Both SP and DP interrupt bits are deferred to an RspTimer scheduled
-        // by ClearHalt() after DoRspCycles() returns. If we set MI_INTR_SP
-        // here, the CPU's normal interrupt polling would see the pending bit
-        // and fire the exception immediately, before the game returns from
-        // the CLR_HALT write. ClearHalt accumulates bits in
-        // m_Reg.m_deferred_mi_intr and the timer applies them later.
+        // Do not set MI_INTR_SP or call CheckInterrupts here. Both SP and DP interrupt
+        // bits are deferred to an RspTimer scheduled by ClearHalt() after DoRspCycles()
+        // returns. Setting MI_INTR_SP here would let the CPU's normal interrupt polling see
+        // the pending bit and fire the exception immediately, before the game returns from
+        // the CLR_HALT write. ClearHalt accumulates the bits in m_Reg.m_deferred_mi_intr
+        // and the timer applies them later.
         m_sp_interrupt_pending = true;
     }
 }
@@ -259,7 +258,7 @@ bool CHle::Execute() {
             return true;
         }
 
-        // Full task dispatch (video → GfxProcessor/plugin, audio → HLE, etc.)
+        // Full task dispatch (video -> plugin, audio -> HLE, etc.)
         handled = normal_task_dispatching();
     } else {
         // Non-task microcode (e.g. CIC-X105 boot code)

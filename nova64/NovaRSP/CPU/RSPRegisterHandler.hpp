@@ -39,9 +39,9 @@ union DMALengthReg {
     constexpr DMALengthReg() : Value(0) {}
     constexpr explicit DMALengthReg(uint32_t v) : Value(v) {}
 
-    // Decoded accessors — N64 hardware rounds DMA length UP to next 8-byte boundary.
-    // Real hardware ignores bits 0-2 so the formula is: (field | 7) + 1
-    // giving a minimum transfer of 8 bytes and a maximum of 4096 (0x1000).
+    // Decoded accessors. The hardware rounds the DMA length up to the next 8-byte
+    // boundary: it ignores bits 0-2, so the length is (field | 7) + 1, giving a
+    // minimum transfer of 8 bytes and a maximum of 4096 (0x1000).
     [[nodiscard]] constexpr uint32_t ActualLength() const { return (Length | 7u) + 1; }
     [[nodiscard]] constexpr uint32_t ActualCount() const { return Count + 1; }
     [[nodiscard]] constexpr uint32_t ActualSkip() const { return Skip; }
@@ -50,8 +50,8 @@ union DMALengthReg {
 #pragma warning(pop)
 #endif
 
-// Abstract RSP Register Handler
-// Manages SP interface registers and DMA transfers
+/// Abstract handler for the SP interface registers and DMA transfers; the subclass supplies
+/// the interrupt, halt and DMA-completion hooks.
 class RSPRegisterHandler {
 public:
     RSPRegisterHandler(uint32_t* signalProcessorInterface, uint8_t*& rdram, const uint32_t& rdramSize, uint8_t* imem,

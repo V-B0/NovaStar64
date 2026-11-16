@@ -13,23 +13,25 @@ namespace Nova64::RSP {
 
 // --- RSP Module Lifecycle ---
 
-// Initialize RSP system with hardware register pointers
+/// Binds the RSP system to the hardware registers. Call after N64 memory is allocated and
+/// the SP interface is set up.
 void InitializeRSP(RSP_INFO& rspInfo);
 
-// Called when RSP plugin DLL is loaded (one-time setup)
+/// One-time setup when the RSP plugin is loaded: global state and default settings.
 void RspPluginLoaded();
 
-// Called when ROM is opened (per-game setup)
+/// Per-game setup when a ROM is opened: applies per-game overrides and creates the persistent HLE context.
 void RspRomOpened();
 
-// Called when ROM is closed (cleanup per-game state)
+/// Per-game cleanup when the ROM is closed: destroys the HLE context.
 void RspRomClosed();
 
-// Free all RSP resources
+/// Frees all RSP resources (module unload).
 void FreeRSP();
 
-// Execute RSP until BREAK/halt (main entry point called when halt is cleared)
-// Returns the number of cycles consumed (0 = HLE handled instantly)
+/// Entry point called when the RSP halt bit is cleared. Tries HLE dispatch first, otherwise runs the
+/// task on the RSP engine until BREAK or halt. Returns `cycles` when HLE handled the task and 0 after
+/// the engine ran it.
 uint32_t DoRspCycles(uint32_t cycles);
 
 } // namespace Nova64::RSP

@@ -16,7 +16,8 @@
 
 namespace Nova64::RSP::HLE {
 
-// --- Resampling lookup table (64 × 4 entries) ---
+// --- Resampling lookup table (64 entries x 4 taps) ---
+// Windowed-sinc interpolation coefficients for fractional-sample audio resampling.
 extern const int16_t RESAMPLE_LUT[64 * 4];
 
 // --- Dot product for audio filtering ---

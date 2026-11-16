@@ -230,9 +230,9 @@ inline constexpr uint8_t SPECIAL_3 = 0xD3;
 
 // --- N64 Geometry Mode Flags ---
 namespace GeometryMode {
-// GBI 1 (F3D/F3DEX) — INTERNAL (translated) values used by the Video Plugin.
+// GBI 1 (F3D/F3DEX): internal (translated) values used by the Video Plugin.
 // Raw GBI1 commands use different bit positions: CULL_FRONT=0x1000, CULL_BACK=0x2000.
-// The RSP HLE stores raw bits, so use the RAW constants below for GBI1 checks.
+// The RSP HLE stores raw bits, so use the raw constants below for GBI1 checks.
 inline constexpr uint32_t G_ZBUFFER = 0x00000001;
 inline constexpr uint32_t G_SHADE = 0x00000004;
 inline constexpr uint32_t G_CULL_FRONT = 0x00000200;
@@ -336,10 +336,10 @@ inline constexpr uint32_t Copy = 2;
 inline constexpr uint32_t Fill = 3;
 } // namespace CycleType
 
-// NOTE: The graphics microcode CRC database was removed from this
-// RSP-layer header. The single canonical CRC database lives in:
+// The graphics microcode CRC database is not kept at the RSP layer. The single canonical
+// database lives in:
 //   NovaGraphics/Microcode/MicrocodeRegistry.cpp  (MicrocodeRegistry::InitializeDatabase)
-// All graphics ucode detection goes through MicrocodeDispatcher → MicrocodeRegistry.
+// All graphics ucode detection goes through MicrocodeDispatcher -> MicrocodeRegistry.
 
 // --- Helper: is this a GBI2 microcode? ---
 [[nodiscard]] inline constexpr bool IsGBI2(GfxUcodeType type) noexcept {

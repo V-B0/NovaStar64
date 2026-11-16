@@ -11,7 +11,6 @@
 #include <cstdio>
 #include <set>
 
-// Audio task dispatch counter
 static uint32_t s_audioTaskCount = 0;
 
 namespace Nova64::RSP::HLE {
@@ -71,7 +70,6 @@ const MicrocodeEntry* CTaskDispatcher::IdentifyMicrocode(CHle* hle, const TaskIn
         }
     }
 
-    // Compute both CRCs upfront
     uint32_t data_crc = ComputeUcodeDataCrc(hle, task.UcodeData, task.UcodeDataSize);
     uint32_t text_crc = ComputeUcodeCrc(hle, task.Ucode, task.UcodeSize);
 
@@ -135,22 +133,17 @@ bool CTaskDispatcher::DispatchTask(CHle* hle) {
     hle->VerboseMessage("RSP HLE: DispatchTask #%u type=%u ucode=0x%08X data=0x%08X dataptr=0x%08X", m_TasksDispatched,
                         type, task.Ucode, task.UcodeData, task.DataPtr);
 
-    // ── Reference parity: identify SPECIALIZED tasks by ucode checksum BEFORE
-    // trusting the type field ────────────────────────────────────────────────
+    // Identify specialized tasks by ucode checksum before trusting the type field.
     // mupen64plus-rsp-hle's task_detection() calls try_normal_task_detection()
     // for EVERY task, ahead of any type-based routing, precisely because the
     // type word is unreliable -- its own table says so in as many words:
     //     case 0x278:   StoreVe12: found in Zelda Ocarina of Time
     //                              [misleading task->type == 4]
     //     case 0x212ee: GFX: Twintris [misleading task->type == 0]
-    // Our dispatcher did the reverse: it switched on `type` first, and only
-    // reached the checksum detector (TrySumBytesFallback, inside
-    // IdentifyMicrocode) for type 2 and type 4. A type==1 task was handed
-    // straight to DispatchVideoTask without ever identifying its microcode, so
-    // a specialized non-display-list routine wearing type==1 was fed to the
-    // display-list processor: it would be consumed, emit no draws, and leave
-    // its target buffer untouched -- which is exactly the measured signature of
-    // the black pause-menu panel (color image set to the buffer, zero draws
+    // Switching on `type` first would send a specialized non-display-list routine that
+    // wears type 1 straight to DispatchVideoTask: the display-list processor would consume
+    // it, emit no draws and leave its target buffer untouched, which is the measured
+    // signature of the black pause-menu panel (color image set to the buffer, zero draws
     // ever flushed to it, contents all zero).
     if (task.Ucode != 0 && task.UcodeSize > 0 && hle->dram() != nullptr) {
         if (const MicrocodeEntry* special = TrySumBytesFallback(hle, task)) {
@@ -274,15 +267,13 @@ static UcodeHandler IdentifyAudioBySignature(CHle* hle, uint32_t ucodeData) {
 
 bool CTaskDispatcher::DispatchAudioTask(CHle* hle, const TaskInfo& task, const MicrocodeEntry* ucode) {
     if (!hle->AudioHle()) {
-        // BUG-FIX: when audio HLE is disabled but we have no LLE RSP path
-        // wired up to actually run the audio ucode, returning false here
-        // and letting the task drop on the floor causes the game's audio
-        // thread to block forever waiting for SP_INTR. That backpressure
-        // stalls the OS message queue and corrupts dependent thread state
-        // (notably MM's gSaveContext updates after item-get cutscenes,
-        // producing the "Link instant-dies after magic bar" symptom).
-        // Always signal task complete so the audio thread can drain its
-        // queue. Cost: silent audio. Benefit: stable game logic.
+        // With audio HLE disabled there is no LLE RSP path wired up to run the audio ucode.
+        // Returning false and dropping the task would block the game's audio thread forever
+        // waiting for SP_INTR; that backpressure stalls the OS message queue and corrupts
+        // dependent thread state (notably MM's gSaveContext updates after item-get
+        // cutscenes, the "Link instant-dies after magic bar" symptom). Always signal task
+        // complete so the audio thread can drain its queue. Cost: silent audio. Benefit:
+        // stable game logic.
         hle->rsp_break(0);
         return true;
     }

@@ -25,8 +25,7 @@ struct MicrocodeCache {
     bool valid{false};
 };
 
-// CTaskDispatcher
-// Identifies RSP microcodes and routes tasks to HLE handlers
+/// Identifies RSP microcodes and routes tasks to HLE handlers.
 class CTaskDispatcher {
 public:
     CTaskDispatcher() = default;
@@ -35,17 +34,17 @@ public:
     CTaskDispatcher(const CTaskDispatcher&) = delete;
     CTaskDispatcher& operator=(const CTaskDispatcher&) = delete;
 
-    // ── Main dispatch entry point ──
-    // Returns true if task was handled by HLE
+    // --- Main dispatch entry point ---
+    /// Returns true if the task was handled by HLE.
     bool DispatchTask(CHle* hle);
 
-    // ── Task info parsing ──
+    // --- Task info parsing ---
     [[nodiscard]] static TaskInfo ParseTask(const uint8_t* dmem);
 
-    // ── Microcode identification ──
+    // --- Microcode identification ---
     [[nodiscard]] const MicrocodeEntry* IdentifyMicrocode(CHle* hle, const TaskInfo& task);
 
-    // ── Cache management ──
+    // --- Cache management ---
     void InvalidateCache() {
         m_Cache.valid = false;
         m_UcodeCache.clear();
@@ -53,20 +52,20 @@ public:
         m_GfxHleAutoDisabled = false;
     }
 
-    // ── Graphics HLE state ──
+    // --- Graphics HLE state ---
     [[nodiscard]] bool GfxHleAutoDisabled() const { return m_GfxHleAutoDisabled; }
     void ResetGfxHle() {
         m_GfxHleConsecutiveFailures = 0;
         m_GfxHleAutoDisabled = false;
     }
 
-    // ── Statistics ──
+    // --- Statistics ---
     [[nodiscard]] uint32_t TasksDispatched() const { return m_TasksDispatched; }
     [[nodiscard]] uint32_t TasksFallback() const { return m_TasksFallback; }
     [[nodiscard]] uint32_t CacheHits() const { return m_CacheHits; }
 
 private:
-    // Compute CRC32 of microcode data from DRAM
+    // CRC32 of microcode data from DRAM
     [[nodiscard]] uint32_t ComputeUcodeCrc(CHle* hle, uint32_t addr, uint32_t size);
     [[nodiscard]] uint32_t ComputeUcodeDataCrc(CHle* hle, uint32_t addr, uint32_t size);
 
