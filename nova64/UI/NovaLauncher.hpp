@@ -223,7 +223,7 @@ private:
     void ForgetCoverTexture(const std::string& path);
     void ReleaseCoverTextures();
     /// Draws a game's cover, or a placeholder, in a box of the given width. Returns true if clicked.
-    bool DrawCover(const std::string& coverPath, float width);
+    bool DrawCover(const std::string& coverPath, const std::string& title, float width);
 
     Nova64::Video::PluginConfig m_gfx;
     LaunchOptions m_launch;

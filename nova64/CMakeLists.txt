@@ -57,22 +57,27 @@ endif()
 include(cmake/Dependencies.cmake)    # downloads, pinned; sets up the library targets
 include(cmake/Sources.cmake)         # NOVA64_SOURCES
 
-# The NovaStar icon: compiled into the binary as a list of bytes that
-# UI/AppIcon.cpp includes, so the launcher and every window can use it without
-# a file next to the executable. Rewritten only when the picture changes, so an
-# ordinary reconfigure doesn't recompile it.
+# Files compiled into the binary as a list of bytes that a source file #includes, so the
+# program needs nothing next to the executable. The output is rewritten only when the
+# file changes, so an ordinary reconfigure doesn't recompile its users.
+function(nova64_embed_file SOURCE_FILE OUTPUT_NAME)
+    set(inc "${CMAKE_CURRENT_BINARY_DIR}/generated/${OUTPUT_NAME}")
+    file(READ "${SOURCE_FILE}" hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
+    set(old "")
+    if(EXISTS "${inc}")
+        file(READ "${inc}" old)
+    endif()
+    if(NOT old STREQUAL "${bytes}\n")
+        file(WRITE "${inc}" "${bytes}\n")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SOURCE_FILE}")
+endfunction()
+
+# The NovaStar icon (UI/AppIcon.cpp) and the interface font, Roboto (UI/UiKit.cpp).
 set(NOVA_ICON_PNG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/Novastar.png")
-set(NOVA_ICON_INC "${CMAKE_CURRENT_BINARY_DIR}/generated/NovastarIcon.inc")
-file(READ "${NOVA_ICON_PNG}" NOVA_ICON_HEX HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," NOVA_ICON_BYTES "${NOVA_ICON_HEX}")
-set(NOVA_ICON_OLD "")
-if(EXISTS "${NOVA_ICON_INC}")
-    file(READ "${NOVA_ICON_INC}" NOVA_ICON_OLD)
-endif()
-if(NOT NOVA_ICON_OLD STREQUAL "${NOVA_ICON_BYTES}\n")
-    file(WRITE "${NOVA_ICON_INC}" "${NOVA_ICON_BYTES}\n")
-endif()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${NOVA_ICON_PNG}")
+nova64_embed_file("${NOVA_ICON_PNG}" NovastarIcon.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Roboto-Medium.ttf" RobotoMedium.inc)
 
 # Windows: the executable's own icon comes from a resource script.
 if(WIN32)
@@ -82,8 +87,8 @@ endif()
 
 # ── The executable ──
 add_executable(nova64 ${NOVA64_SOURCES})
-# Only main.cpp reads the version, so only it is recompiled when it changes.
-set_source_files_properties(main.cpp PROPERTIES COMPILE_DEFINITIONS "NOVA64_VERSION=\"${NOVA64_VERSION}\"")
+# Only main.cpp and the launcher read the version, so only they are recompiled when it changes.
+set_source_files_properties(main.cpp UI/NovaLauncher.cpp PROPERTIES COMPILE_DEFINITIONS "NOVA64_VERSION=\"${NOVA64_VERSION}\"")
 
 # The RSP recompiler's vector kernels use compiler vector types where there are any (GCC,
 # Clang) and a portable stand-in elsewhere (MSVC). This switch forces the stand-in, so

@@ -6,6 +6,7 @@
 #include "LauncherInternal.hpp"
 #include "NovaTheme.hpp"
 #include "AppIcon.hpp"
+#include "UiKit.hpp"
 
 #include <SDL.h>
 #include <glad/gl.h>
@@ -17,6 +18,7 @@
 #include "../NovaGraphics/Texture/ImageWrite.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -24,6 +26,10 @@
 
 namespace ed = ax::NodeEditor;
 namespace fs = std::filesystem;
+
+#ifndef NOVA64_VERSION
+#define NOVA64_VERSION "unknown"
+#endif
 
 namespace NovaUI {
 
@@ -48,7 +54,6 @@ GLuint UploadIconTexture() {
 }
 
 constexpr float kNavbarHeight = 40.0f;
-constexpr float kWindowButton = 34.0f;
 
 // The launcher is borderless, so it provides its own drag area (the top bar,
 // clear of the File menu and window buttons) and resize edges.
@@ -228,20 +233,15 @@ void NovaLauncher::Run() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = capturing ? nullptr : "settings/imgui.ini";
-    ApplyWin95Theme();
+    kit::ApplyTheme();
 
-    // Rasterize the font at the display's pixel density; otherwise text is
+    // Rasterize the fonts at the display's pixel density; otherwise text is
     // rendered at 1x and scaled up, which is blurry on Retina displays.
     int winW = 0, winH = 0, drawW = 0, drawH = 0;
     SDL_GetWindowSize(window, &winW, &winH);
     SDL_GL_GetDrawableSize(window, &drawW, &drawH);
     const float dpiScale = winW > 0 ? static_cast<float>(drawW) / static_cast<float>(winW) : 1.0f;
-    if (dpiScale > 1.0f) {
-        ImFontConfig fontConfig;
-        fontConfig.SizePixels = 13.0f * dpiScale;
-        io.Fonts->AddFontDefault(&fontConfig);
-        io.FontGlobalScale = 1.0f / dpiScale;
-    }
+    kit::LoadFonts(dpiScale);
 
     ImGui_ImplSDL2_InitForOpenGL(window, glContext);
     ImGui_ImplOpenGL3_Init("#version 330");
@@ -396,91 +396,107 @@ void NovaLauncher::Run() {
 }
 
 // --- Layout ---
+namespace {
+constexpr float kSidebarWidth = 200.0f;
+constexpr float kBodyMargin = 12.0f;
+constexpr float kWindowButtonWidth = 46.0f;
+} // namespace
+
 void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    // Taller frame padding makes the menu bar fill the whole strip instead of
-    // its top half, which also centres the menu and buttons vertically.
-    const ImVec2 normalPadding = ImGui::GetStyle().FramePadding;
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2(normalPadding.x, (kNavbarHeight - ImGui::GetFontSize()) * 0.5f));
+    using namespace kit;
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, color::kBackground);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::BeginChild("TopNavbar", ImVec2(0, kNavbarHeight), ImGuiChildFlags_None,
-                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar);
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, normalPadding);
-            // The bar pushes white text, which the menu popup would inherit.
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
-            if (ImGui::MenuItem("Open ROM...")) OpenRomWithPicker();
-            if (m_emuRunning.load() && ImGui::MenuItem("Stop Game")) StopEmbedded();
-            ImGui::Separator();
-            if (ImGui::MenuItem("Quit")) m_animState = AnimState::FadeOut;
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            ImGui::EndMenu();
-        }
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 
-        if (m_emuRunning.load()) {
-            ImGui::Text("  %s%s", m_emuTitle.c_str(), m_turboMode ? "  [2x]" : "");
-            if (m_launch.showFps && m_fps > 0.0f) {
-                ImGui::SameLine();
-                ImGui::Text("  %.0f fps", m_fps);
-            }
-            if (!m_showPauseMenu && !m_rewindOpen) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.75f), "   Esc: menu   Backspace: rewind");
-            }
-        }
-        if (!m_statusText.empty() && SDL_GetTicks() < m_statusUntil) {
-            ImGui::SameLine();
-            ImGui::Text("   %s", m_statusText.c_str());
-        }
-
-        // Right-align the window buttons, counting the spacing ImGui puts
-        // between them so the last one doesn't spill past the edge.
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const float buttonsWidth = kWindowButton * 3.0f + style.ItemSpacing.x * 2.0f;
-        ImGui::SameLine(ImGui::GetWindowWidth() - buttonsWidth - style.WindowPadding.x);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.2f));
-        if (ImGui::Button("_##min", ImVec2(kWindowButton, 0))) m_animState = AnimState::MinimizeOut;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimize");
-        ImGui::SameLine();
-        const bool maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
-        if (ImGui::Button(maximized ? "[=]##max" : "[ ]##max", ImVec2(kWindowButton, 0))) {
-            if (maximized) SDL_RestoreWindow(window);
-            else SDL_MaximizeWindow(window);
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(maximized ? "Restore" : "Maximize");
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.1f, 0.1f, 0.8f));
-        if (ImGui::Button("X##close", ImVec2(kWindowButton, 0))) m_animState = AnimState::FadeOut;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Quit");
-        ImGui::PopStyleColor(3);
-        ImGui::EndMenuBar();
+    // File menu
+    ImGui::SetCursorPos(ImVec2(10.0f, 5.0f));
+    if (Button("File", ButtonStyle::Ghost, Icon::None, ImVec2(58.0f, kNavbarHeight - 10.0f)))
+        ImGui::OpenPopup("FileMenu");
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y + 2.0f));
+    if (ImGui::BeginPopup("FileMenu")) {
+        if (ImGui::MenuItem("Open ROM...")) OpenRomWithPicker();
+        if (m_emuRunning.load() && ImGui::MenuItem("Stop Game")) StopEmbedded();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Quit")) m_animState = AnimState::FadeOut;
+        ImGui::EndPopup();
     }
+
+    // What is running, and the latest status message
+    float x = 82.0f;
+    auto put = [&](const std::string& text, const ImVec4& col) {
+        ImGui::SetCursorPos(ImVec2(x, (kNavbarHeight - ImGui::GetTextLineHeight()) * 0.5f));
+        ImGui::TextColored(col, "%s", text.c_str());
+        x += ImGui::CalcTextSize(text.c_str()).x + 16.0f;
+    };
+    if (m_emuRunning.load()) {
+        put(m_emuTitle + (m_turboMode ? "  [2x]" : ""), color::kText);
+        if (m_launch.showFps && m_fps > 0.0f) {
+            char fps[32];
+            std::snprintf(fps, sizeof(fps), "%.0f fps", m_fps);
+            put(fps, color::kTextMuted);
+        }
+        if (!m_showPauseMenu && !m_rewindOpen) put("Esc: menu   Backspace: rewind", color::kTextMuted);
+    }
+    if (!m_statusText.empty() && SDL_GetTicks() < m_statusUntil) put(m_statusText, color::kAccentPressed);
+
+    // Window controls
+    const ImVec2 buttonSize(kWindowButtonWidth, kNavbarHeight);
+    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - kWindowButtonWidth * 3.0f, 0.0f));
+    if (WindowControl("##min", Icon::Minimize, false, "Minimize", buttonSize)) m_animState = AnimState::MinimizeOut;
+    ImGui::SameLine(0.0f, 0.0f);
+    const bool maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
+    if (WindowControl("##max", maximized ? Icon::Restore : Icon::Maximize, false, maximized ? "Restore" : "Maximize",
+                      buttonSize)) {
+        if (maximized) SDL_RestoreWindow(window);
+        else SDL_MaximizeWindow(window);
+    }
+    ImGui::SameLine(0.0f, 0.0f);
+    if (WindowControl("##close", Icon::Close, true, "Quit", buttonSize)) m_animState = AnimState::FadeOut;
+
     ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(4);
 }
 
 void NovaLauncher::RenderUI(SDL_Window* window) {
+    using namespace kit;
+
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::Begin("MainLayout", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus);
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
     RenderTopNavbar(window);
 
-    ImGui::Columns(2, "LayoutColumns", false);
-    ImGui::SetColumnWidth(0, 190.0f);
-    ImGui::BeginChild("Sidebar", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    const float bodyHeight = ImGui::GetIO().DisplaySize.y - kNavbarHeight - kBodyMargin;
+    ImGui::SetCursorPos(ImVec2(kBodyMargin, kNavbarHeight));
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 4.0f));
+    ImGui::BeginChild("Sidebar", ImVec2(kSidebarWidth, bodyHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
     RenderSidebar();
     ImGui::EndChild();
-    ImGui::NextColumn();
-    ImGui::BeginChild("Content", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+
+    ImGui::SameLine(0.0f, 8.0f);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, color::kSurface);
+    ImGui::PushStyleColor(ImGuiCol_Border, color::kBorder);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f, 24.0f));
+    ImGui::BeginChild("Content", ImVec2(-kBodyMargin, bodyHeight),
+                      ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(2);
     switch (m_activeTab) {
     case Tab::Home:         RenderHomeTab(); break;
     case Tab::Games:        RenderGamesTab(); break;
@@ -491,70 +507,141 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
     case Tab::Simulator:    RenderSimulatorTab(); break;
     }
     ImGui::EndChild();
-    ImGui::Columns(1);
     ImGui::End();
 }
 
 void NovaLauncher::RenderSidebar() {
+    using namespace kit;
+    const Fonts& fonts = GetFonts();
+
+    // The name, with the icon
+    constexpr float kLogo = 30.0f;
+    const float top = ImGui::GetCursorPosY() + 6.0f;
+    ImGui::SetCursorPos(ImVec2(10.0f, top));
     if (m_iconTex) {
-        constexpr float kIcon = 26.0f;
-        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(kIcon, kIcon));
-        ImGui::SameLine();
-        ImGui::AlignTextToFramePadding();
+        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(kLogo, kLogo));
+        ImGui::SameLine(0.0f, 10.0f);
     }
-    ImGui::TextDisabled("NOVASTAR64");
-    ImGui::Spacing();
-    ImGui::Spacing();
+    ImGui::PushFont(fonts.heading);
+    ImGui::SetCursorPosY(top + (kLogo - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::TextUnformatted("NovaStar64");
+    ImGui::PopFont();
+    ImGui::SetCursorPos(ImVec2(0.0f, top + kLogo + 18.0f));
 
     struct Entry {
         const char* label;
+        Icon icon;
         Tab tab;
     };
-    static constexpr Entry kEntries[] = {
-        {"Home", Tab::Home},
-        {"Games", Tab::Games},
-        {"Settings", Tab::Settings},
-        {"Scripts", Tab::Scripts},
-        {"Memory Viewer", Tab::HexEditor},
-        {"Achievements", Tab::Achievements},
-        {"Simulator", Tab::Simulator},
+    static constexpr Entry kMain[] = {
+        {"Home", Icon::Home, Tab::Home},
+        {"Games", Icon::Games, Tab::Games},
+        {"Settings", Icon::Settings, Tab::Settings},
     };
-    for (const auto& e : kEntries) {
-        if (ImGui::Selectable(e.label, m_activeTab == e.tab)) m_activeTab = e.tab;
-    }
+    static constexpr Entry kTools[] = {
+        {"Scripts", Icon::Scripts, Tab::Scripts},
+        {"Memory Viewer", Icon::Memory, Tab::HexEditor},
+        {"Achievements", Icon::Trophy, Tab::Achievements},
+        {"Simulator", Icon::Simulator, Tab::Simulator},
+    };
+    for (const auto& e : kMain)
+        if (NavItem(e.icon, e.label, m_activeTab == e.tab)) m_activeTab = e.tab;
+
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+    ImGui::SetCursorPosX(12.0f);
+    SectionLabel("TOOLS");
+    for (const auto& e : kTools)
+        if (NavItem(e.icon, e.label, m_activeTab == e.tab)) m_activeTab = e.tab;
+
+    ImGui::PushFont(fonts.small);
+    ImGui::SetCursorPos(ImVec2(12.0f, ImGui::GetWindowHeight() - ImGui::GetTextLineHeight() - 14.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, color::kTextMuted);
+    ImGui::Text("Version %s", NOVA64_VERSION);
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
 }
 
 void NovaLauncher::RenderHomeTab() {
+    using namespace kit;
+    const Fonts& fonts = GetFonts();
+
     if (m_iconTex) {
-        constexpr float kIcon = 60.0f;
-        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(kIcon, kIcon));
-        ImGui::SameLine();
+        ImGui::Image(static_cast<ImTextureID>(m_iconTex), ImVec2(64.0f, 64.0f));
+        ImGui::SameLine(0.0f, 18.0f);
     }
     ImGui::BeginGroup();
-    ImGui::SetWindowFontScale(1.5f);
-    ImGui::Text("NovaStar64");
-    ImGui::SetWindowFontScale(1.0f);
-    ImGui::TextDisabled("Nintendo 64 emulator");
+    ImGui::PushFont(fonts.display);
+    ImGui::TextUnformatted("NovaStar64");
+    ImGui::PopFont();
+    ImGui::PushStyleColor(ImGuiCol_Text, color::kTextMuted);
+    ImGui::TextUnformatted("Nintendo 64 emulator");
+    ImGui::PopStyleColor();
     ImGui::EndGroup();
-    ImGui::Separator();
-    ImGui::Spacing();
 
-    if (ImGui::Button("Open ROM...", ImVec2(160, 36))) OpenRomWithPicker();
+    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+    if (Button("Open ROM...", ButtonStyle::Primary, Icon::Folder, ImVec2(0.0f, 40.0f))) OpenRomWithPicker();
     ImGui::SameLine();
-    if (ImGui::Button("Browse Games", ImVec2(160, 36))) m_activeTab = Tab::Games;
-    ImGui::TextDisabled("You can also drag a ROM file onto this window.");
+    if (Button("Browse games", ButtonStyle::Secondary, Icon::Games, ImVec2(0.0f, 40.0f))) m_activeTab = Tab::Games;
+    HintText("You can also drag a ROM file onto this window.");
 
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    // The library: the first few games, ready to play
+    ImGui::Dummy(ImVec2(0.0f, 14.0f));
     const int games = static_cast<int>(m_library.size());
-    ImGui::Text("%d game%s in your library", games, games == 1 ? "" : "s");
+    SectionLabel("YOUR LIBRARY");
+    if (games == 0) {
+        BeginCard("EmptyLibrary", ImVec2(0, 0), true, ImVec2(24.0f, 22.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, color::kTextMuted);
+        ImGui::TextUnformatted("No games yet.");
+        ImGui::PopStyleColor();
+        HintText("Open a ROM, or drop a file onto this window, and it appears here.");
+        EndCard();
+    } else {
+        constexpr int kTiles = 4;
+        constexpr float kGap = 14.0f;
+        const float avail = ImGui::GetContentRegionAvail().x;
+        const float tileWidth = std::clamp((avail - kGap * (kTiles - 1)) / kTiles, 110.0f, 220.0f);
+        const int shown = std::min(games, kTiles);
+        for (int i = 0; i < shown; ++i) {
+            const auto& rom = m_library[i];
+            if (i > 0) ImGui::SameLine(0.0f, kGap);
+            ImGui::PushID(i);
+            ImGui::BeginGroup();
+            std::error_code ec;
+            const bool playable = fs::exists(rom.path, ec);
+            if (DrawCover(rom.cover, rom.name, tileWidth) && playable) PlayRom(rom.path, rom.name);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + tileWidth);
+            ImGui::TextWrapped("%s", rom.name.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndGroup();
+            ImGui::PopID();
+        }
+        if (games > shown) {
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+            if (Button("View all games", ButtonStyle::Ghost, Icon::ChevronRight)) m_activeTab = Tab::Games;
+        }
+    }
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("While playing:");
-    ImGui::BulletText("Esc opens the pause menu, with save states.");
-    ImGui::BulletText("Backspace rewinds: pick a moment from the pictures along the bottom.");
-    ImGui::BulletText("Tab switches to double speed and back.");
+    // What the keys do while a game runs
+    ImGui::Dummy(ImVec2(0.0f, 16.0f));
+    SectionLabel("WHILE PLAYING");
+    struct Shortcut {
+        const char* key;
+        const char* does;
+    };
+    static constexpr Shortcut kShortcuts[] = {
+        {"Esc", "Opens the pause menu, with save states."},
+        {"Backspace", "Rewinds: pick a moment from the pictures along the bottom."},
+        {"Tab", "Switches to double speed and back."},
+    };
+    for (const auto& sc : kShortcuts) {
+        const float rowTop = ImGui::GetCursorPosY();
+        Keycap(sc.key);
+        const float capHeight = ImGui::GetItemRectSize().y;
+        ImGui::SameLine(110.0f);
+        ImGui::SetCursorPosY(rowTop + (capHeight - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::TextUnformatted(sc.does);
+        ImGui::SetCursorPosY(rowTop + capHeight + 6.0f);
+    }
 }
 
 } // namespace NovaUI

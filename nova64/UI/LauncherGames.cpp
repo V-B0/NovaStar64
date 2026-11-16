@@ -4,6 +4,7 @@
  */
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
+#include "UiKit.hpp"
 
 #include <glad/gl.h>
 #include <imgui.h>
@@ -405,27 +406,43 @@ void NovaLauncher::ReleaseCoverTextures() {
     m_coverTextures.clear();
 }
 
-bool NovaLauncher::DrawCover(const std::string& coverPath, float width) {
+bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& title, float width) {
+    using namespace kit;
+    constexpr float kRounding = 8.0f;
     const float height = width * 0.72f; // N64 boxes are wider than tall
     const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 corner(origin.x + width, origin.y + height);
     const bool clicked = ImGui::InvisibleButton("##cover", ImVec2(width, height));
+    const bool hovered = ImGui::IsItemHovered();
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), IM_COL32(40, 36, 34, 255), 3.0f);
 
     if (const CoverTexture* cover = GetCoverTexture(coverPath)) {
+        draw->AddRectFilled(origin, corner, IM_COL32(38, 34, 31, 255), kRounding);
         // Fit inside the box without stretching the picture.
         const float scale = std::min(width / cover->width, height / cover->height);
         const float w = cover->width * scale, h = cover->height * scale;
         const ImVec2 p0(origin.x + (width - w) * 0.5f, origin.y + (height - h) * 0.5f);
-        draw->AddImage(static_cast<ImTextureID>(cover->texture), p0, ImVec2(p0.x + w, p0.y + h));
-    } else if (m_iconTex) {
-        const float size = height * 0.45f;
-        const ImVec2 p0(origin.x + (width - size) * 0.5f, origin.y + (height - size) * 0.5f);
-        draw->AddImage(static_cast<ImTextureID>(m_iconTex), p0, ImVec2(p0.x + size, p0.y + size), ImVec2(0, 0),
-                       ImVec2(1, 1), IM_COL32(255, 255, 255, 70));
+        draw->AddImageRounded(static_cast<ImTextureID>(cover->texture), p0, ImVec2(p0.x + w, p0.y + h), ImVec2(0, 0),
+                              ImVec2(1, 1), IM_COL32_WHITE, w >= width - 1.0f && h >= height - 1.0f ? kRounding : 0.0f);
+    } else {
+        // No picture: the title's initials on a colour that is always the same for this game.
+        draw->AddRectFilled(origin, corner, PlaceholderColor(title), kRounding);
+        const std::string initials = Initials(title);
+        ImFont* font = GetFonts().display;
+        const float fontSize = font ? font->FontSize * ImGui::GetIO().FontGlobalScale : ImGui::GetFontSize();
+        ImGui::PushFont(font);
+        const ImVec2 textSize = ImGui::CalcTextSize(initials.c_str());
+        draw->AddText(ImVec2(origin.x + (width - textSize.x) * 0.5f, origin.y + (height - fontSize) * 0.5f),
+                      IM_COL32(255, 255, 255, 235), initials.c_str());
+        ImGui::PopFont();
     }
-    if (ImGui::IsItemHovered())
-        draw->AddRect(origin, ImVec2(origin.x + width, origin.y + height), IM_COL32(217, 110, 66, 255), 3.0f, 0, 2.0f);
+
+    if (hovered) {
+        draw->AddRectFilled(origin, corner, IM_COL32(0, 0, 0, 70), kRounding);
+        const ImVec2 mid(origin.x + width * 0.5f, origin.y + height * 0.5f);
+        draw->AddCircleFilled(mid, 24.0f, ImGui::GetColorU32(color::kAccent));
+        DrawIcon(draw, Icon::Play, ImVec2(mid.x + 2.0f, mid.y), 22.0f, ImGui::GetColorU32(color::kOnAccent));
+    }
     return clicked;
 }
 
@@ -433,13 +450,17 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, float width) {
 void NovaLauncher::RenderGamesTab() {
     const ImVec4 kWarn(0.75f, 0.25f, 0.15f, 1.0f);
 
-    ImGui::Text("Games");
-    const char* addLabel = "Add Game...";
-    const float addWidth = ImGui::CalcTextSize(addLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - addWidth);
-    if (ImGui::Button(addLabel)) OpenAddDialog();
-    ImGui::Separator();
-    ImGui::Spacing();
+    const float titleTop = ImGui::GetCursorPosY();
+    char count[48];
+    std::snprintf(count, sizeof(count), "%d game%s in your library", static_cast<int>(m_library.size()),
+                  m_library.size() == 1 ? "" : "s");
+    ImGui::BeginGroup();
+    kit::PageTitleText("Games", count);
+    ImGui::EndGroup();
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - 124.0f);
+    ImGui::SetCursorPosY(titleTop + 4.0f);
+    if (kit::Button("Add game", kit::ButtonStyle::Primary, kit::Icon::Plus, ImVec2(124.0f, 0.0f))) OpenAddDialog();
+    ImGui::Dummy(ImVec2(0.0f, 6.0f));
 
     if (m_library.empty()) ImGui::TextDisabled("No games yet. Add one, or drag a ROM file onto this window.");
 
@@ -450,32 +471,39 @@ void NovaLauncher::RenderGamesTab() {
             const auto& rom = m_library[i];
             ImGui::TableNextColumn();
             ImGui::PushID(i);
-            ImGui::BeginChild("GameCard", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-            {
-                std::error_code fileEc;
-                const bool playable = fs::exists(rom.path, fileEc);
-                if (DrawCover(rom.cover, ImGui::GetContentRegionAvail().x) && playable) PlayRom(rom.path, rom.name);
-                if (ImGui::IsItemHovered() && playable) ImGui::SetTooltip("Click to play");
-            }
-            ImGui::TextWrapped("%s", rom.name.c_str());
-            ImGui::TextDisabled("%s", fs::path(rom.path).filename().string().c_str());
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", rom.path.c_str());
-
+            kit::BeginCard("GameCard", ImVec2(0, 0), true, ImVec2(12.0f, 12.0f));
             std::error_code ec;
             const bool exists = fs::exists(rom.path, ec);
-            if (!exists) ImGui::TextColored(kWarn, "File not found");
+            if (DrawCover(rom.cover, rom.name, ImGui::GetContentRegionAvail().x) && exists) PlayRom(rom.path, rom.name);
+            if (ImGui::IsItemHovered() && !exists) ImGui::SetTooltip("The ROM file is missing.");
 
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+            ImGui::TextWrapped("%s", rom.name.c_str());
+            kit::HintText(fs::path(rom.path).filename().string().c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", rom.path.c_str());
+            if (!exists) {
+                ImGui::PushStyleColor(ImGuiCol_Text, kit::color::kDanger);
+                ImGui::TextUnformatted("File not found");
+                ImGui::PopStyleColor();
+            }
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+            constexpr float kIconButton = 34.0f;
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
             ImGui::BeginDisabled(!exists);
-            if (ImGui::Button("Play", ImVec2(-1, 0))) PlayRom(rom.path, rom.name);
+            if (kit::Button("Play", kit::ButtonStyle::Primary, kit::Icon::Play,
+                            ImVec2(ImGui::GetContentRegionAvail().x - (kIconButton + spacing) * 2.0f, kIconButton)))
+                PlayRom(rom.path, rom.name);
             ImGui::EndDisabled();
-
-            const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-            if (ImGui::Button("Edit", ImVec2(half, 0))) OpenEditDialog(i);
             ImGui::SameLine();
-            if (ImGui::Button("Remove", ImVec2(-1, 0))) removeIndex = i;
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Removes it from the library. The file is not deleted.");
+            if (kit::IconButton("##edit", kit::Icon::Edit, kit::ButtonStyle::Secondary, "Edit name and cover"))
+                OpenEditDialog(i);
+            ImGui::SameLine();
+            if (kit::IconButton("##remove", kit::Icon::Trash, kit::ButtonStyle::Danger,
+                                "Remove from the library (the file is not deleted)"))
+                removeIndex = i;
 
-            ImGui::EndChild();
+            kit::EndCard();
             ImGui::PopID();
         }
         ImGui::EndTable();

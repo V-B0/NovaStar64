@@ -208,6 +208,7 @@ set(NOVA64_SOURCES
     UI/LauncherSimulator.cpp
     UI/LauncherTools.cpp
     UI/NovaLauncher.cpp
+    UI/UiKit.cpp
 
     main.cpp
 )

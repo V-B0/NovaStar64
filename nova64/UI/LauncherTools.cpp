@@ -3,6 +3,7 @@
  * @brief Scripts, Memory Viewer and Achievements tabs.
  */
 #include "NovaLauncher.hpp"
+#include "UiKit.hpp"
 
 #include "../N64SYS/MainSYS.hpp"
 #include "../N64SYS/MIPSY/Vmem.hpp"
@@ -29,10 +30,7 @@ void NovaLauncher::RefreshScriptFiles() {
 }
 
 void NovaLauncher::RenderScriptsTab() {
-    ImGui::Text("Lua Scripts");
-    ImGui::TextDisabled("Put .lua files in the scripts/ folder.");
-    ImGui::Separator();
-    ImGui::Spacing();
+    kit::PageTitle("Lua Scripts", "Put .lua files in the scripts/ folder.");
 
     if (ImGui::Button("Refresh List")) RefreshScriptFiles();
     ImGui::SameLine();
@@ -71,10 +69,7 @@ void NovaLauncher::RenderScriptsTab() {
 }
 
 void NovaLauncher::RenderHexEditorTab() {
-    ImGui::Text("Memory Viewer");
-    ImGui::TextDisabled("Read-only view of the running game's RDRAM.");
-    ImGui::Separator();
-    ImGui::Spacing();
+    kit::PageTitle("Memory Viewer", "Read-only view of the running game's RDRAM.");
     Nova64::MipsMemoryVM* mem = (m_emuRunning.load() && g_System) ? g_System->GetMemory() : nullptr;
     const uint8_t* rdram = mem ? mem->Rdram() : nullptr;
     if (!rdram) {
@@ -86,9 +81,7 @@ void NovaLauncher::RenderHexEditorTab() {
 }
 
 void NovaLauncher::RenderAchievementsTab() {
-    ImGui::Text("Achievements");
-    ImGui::Separator();
-    ImGui::Spacing();
+    kit::PageTitle("Achievements");
     ImGui::TextWrapped("RetroAchievements support isn't available yet.");
 }
 

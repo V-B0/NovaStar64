@@ -3,6 +3,7 @@
  * @brief Settings tab: launch options, graphics options and keyboard controls.
  */
 #include "NovaLauncher.hpp"
+#include "UiKit.hpp"
 #include "LauncherInternal.hpp"
 
 #include "../N64SYS/MainSYS.hpp"
@@ -425,10 +426,8 @@ void NovaLauncher::RenderControllerSettingsWidget() {
 }
 
 void NovaLauncher::RenderSettingsTab() {
-    ImGui::Text("Settings");
-    ImGui::TextDisabled("Changes save immediately. Video and emulation settings apply to the next game you start.");
-    ImGui::Separator();
-    ImGui::Spacing();
+    kit::PageTitle("Settings",
+                   "Changes save immediately. Video and emulation settings apply to the next game you start.");
 
     const bool forcing = m_frameCount < 3;
     auto forced = [&](const char* name) {
@@ -579,7 +578,11 @@ void NovaLauncher::RenderSettingsTab() {
         if (ImGui::Checkbox("Show frame rate while playing", &m_launch.showFps)) SaveLaunchOptions();
 
         ImGui::Spacing();
-        if (ImGui::CollapsingHeader("Accuracy")) {
+        ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kSidebar);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::Rgb(0xE4DFD3));
+        const bool accuracyOpen = ImGui::CollapsingHeader("Accuracy");
+        ImGui::PopStyleColor(2);
+        if (accuracyOpen) {
             static const char* kEmulation[] = {"High-level (recommended)", "Low-level (experimental)"};
             int emulation = (m_gfx.renderingMode == Nova64::Video::RenderingMode::HLE) ? 0 : 1;
             ImGui::SetNextItemWidth(220);
