@@ -1,10 +1,11 @@
 /**
  * @file UiKit.hpp
- * @brief The launcher's look: colours, fonts, vector icons and the few widgets built on them.
+ * @brief The launcher's look: a pixel-art interface drawn from five colours, a 5x7 bitmap font and 16x16 sprites.
  *
- * Everything the launcher draws that is not plain Dear ImGui lives here, so the pages only
- * say what they show and the style can change in one place. Icons are drawn as vector
- * shapes, so they stay sharp at any size and DPI and need no image files.
+ * The art lives in assets/ui/*.aseprite (edit it in Aseprite, then run scripts/ui-art/export.sh); the
+ * exported PNG sheets are compiled into the program. Everything is drawn by whole numbers of "art
+ * pixels" (Px() display pixels each) and never smoothed, so it stays crisp at any display scale.
+ * Everything the launcher draws that is not plain Dear ImGui lives here, so the pages only say what they show.
  */
 
 #pragma once
@@ -15,6 +16,14 @@
 
 namespace NovaUI::kit {
 
+// --- Scale ---
+
+/// Display pixels per art pixel. All layout is in multiples of this.
+int Px();
+
+/// `n` art pixels, in display pixels.
+inline float Px(float n) { return n * static_cast<float>(Px()); }
+
 // --- Colours ---
 
 /// 0xRRGGBB as an ImGui colour with the given alpha.
@@ -23,39 +32,52 @@ constexpr ImVec4 Rgb(unsigned hex, float alpha = 1.0f) {
 }
 
 namespace color {
-inline constexpr ImVec4 kBackground = Rgb(0xF4F1EA);   ///< window
-inline constexpr ImVec4 kSidebar = Rgb(0xECE8DF);      ///< navigation column
-inline constexpr ImVec4 kSurface = Rgb(0xFFFFFF);      ///< cards, inputs
-inline constexpr ImVec4 kSurfaceHover = Rgb(0xF7F3EA); ///< a surface under the pointer
-inline constexpr ImVec4 kBorder = Rgb(0xDDD7CA);
-inline constexpr ImVec4 kText = Rgb(0x2A2723);
-inline constexpr ImVec4 kTextMuted = Rgb(0x7B746A);
-inline constexpr ImVec4 kAccent = Rgb(0xD96E42);
-inline constexpr ImVec4 kAccentHover = Rgb(0xE37E52);
-inline constexpr ImVec4 kAccentPressed = Rgb(0xBF5A31);
-inline constexpr ImVec4 kAccentSoft = Rgb(0xF6E0D4); ///< a selected row or chip
-inline constexpr ImVec4 kDanger = Rgb(0xC0392B);
-inline constexpr ImVec4 kDangerSoft = Rgb(0xF8E1DE);
-inline constexpr ImVec4 kSuccess = Rgb(0x3C8D5A);
-inline constexpr ImVec4 kOnAccent = Rgb(0xFFFFFF); ///< text on the accent colour
+// The five colours of the palette.
+inline constexpr ImVec4 kBlack = Rgb(0x040404);
+inline constexpr ImVec4 kBrown = Rgb(0x6A2B09);
+inline constexpr ImVec4 kOrange = Rgb(0xC5620B);
+inline constexpr ImVec4 kPeach = Rgb(0xFCB861);
+inline constexpr ImVec4 kGrey = Rgb(0x6F7781);
+
+// What they are used for.
+inline constexpr ImVec4 kBackground = kBlack;
+inline constexpr ImVec4 kPanel = Rgb(0x2D1406); ///< the dark brown inside panels: black with a little brown
+inline constexpr ImVec4 kSidebar = kPanel;
+inline constexpr ImVec4 kSurface = kPanel;
+inline constexpr ImVec4 kSurfaceHover = kBrown;
+inline constexpr ImVec4 kBorder = kBrown;
+inline constexpr ImVec4 kText = kPeach;
+inline constexpr ImVec4 kTextMuted = kOrange;
+inline constexpr ImVec4 kTextDisabled = kGrey;
+inline constexpr ImVec4 kAccent = kOrange;
+inline constexpr ImVec4 kAccentHover = kPeach;
+inline constexpr ImVec4 kAccentPressed = kPeach;
+inline constexpr ImVec4 kAccentSoft = kBrown; ///< a selected row or chip
+inline constexpr ImVec4 kDanger = kOrange;
+inline constexpr ImVec4 kOnAccent = kBlack;   ///< text on the accent colour
 } // namespace color
 
-/// Dear ImGui's colours and metrics set to the launcher's palette. Call once after creating the context.
+/// Dear ImGui's colours and metrics set to the launcher's palette. Call once after creating the
+/// context and after the pixel scale is known (see LoadFonts).
 void ApplyTheme();
 
-// --- Fonts ---
+// --- Fonts and art ---
 
 struct Fonts {
-    ImFont* body = nullptr;    ///< default text
-    ImFont* small = nullptr;   ///< captions, hints
+    ImFont* body = nullptr;    ///< default text, 5x7 pixels at 2 art pixels each
+    ImFont* small = nullptr;   ///< captions and hints (the same size: a pixel font does not shrink)
     ImFont* heading = nullptr; ///< page and card titles
     ImFont* display = nullptr; ///< the wordmark on the home page
 };
 
-/// Loads the interface fonts at `pixelScale` times their logical size (the display's pixel
-/// density), makes the body font the default and sets the global scale so text lines up with
-/// layout in logical units. Falls back to ImGui's built-in font if the embedded one fails.
+/// Loads the pixel art (needs the GL context) and builds the fonts from it for a display with the given
+/// pixel density (1 on an ordinary screen, 2 on Retina). Makes the body font the default and sets the
+/// global font scale so text lines up with layout in display pixels. Call before the first frame.
 void LoadFonts(float pixelScale);
+
+/// Call once per frame after the GL backend's NewFrame. The first time, it switches the font texture
+/// to unsmoothed sampling.
+void OnNewFrame();
 
 /// The loaded fonts (all null before LoadFonts).
 const Fonts& GetFonts();
@@ -91,16 +113,29 @@ enum class Icon {
     Restore,
 };
 
-/// Draws an icon centred on `center`, `size` pixels square.
-void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 color);
+/// Draws an icon sprite centred on `center`, `size` pixels square (use 16 * Px() for whole-pixel scaling).
+/// The sprite keeps its own colours; `tint` only fades it (for example with the alpha of a disabled widget).
+void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 tint = IM_COL32_WHITE);
+
+// --- Frames ---
+
+/// Which of the frame sprites to draw: the colour of the border.
+enum class Frame { Brown, Orange, Peach, Grey };
+
+/// Draws a stepped-corner frame around [min, max], filled with `fill` (the fill can be transparent).
+/// Corners are cut in two steps, as in the rest of the interface.
+void DrawFrame(ImDrawList* draw, ImVec2 min, ImVec2 max, Frame frame, ImU32 fill);
+
+/// A strip of dither along the bottom edge of [min, max], denser towards the bottom.
+void DrawDitherBand(ImDrawList* draw, ImVec2 min, ImVec2 max, int rows);
 
 // --- Widgets ---
 
 enum class ButtonStyle {
     Primary,   ///< the main action of a screen: filled with the accent colour
-    Secondary, ///< ordinary actions: a light button with a border
-    Ghost,     ///< quiet actions and toolbars: no background until hovered
-    Danger,    ///< destructive actions: red outline, filled on hover
+    Secondary, ///< ordinary actions: a dark button with a border
+    Ghost,     ///< quiet actions and toolbars: no frame until hovered
+    Danger,    ///< destructive actions: outlined, filled on hover
 };
 
 /// A button with an optional icon before the label. `size` of 0 fits the content; a negative
@@ -116,13 +151,13 @@ bool IconButton(const char* id, Icon icon, ButtonStyle style = ButtonStyle::Ghos
 bool NavItem(Icon icon, const char* label, bool selected);
 
 /// A title-bar button (minimise, maximise, close): flat and as tall as the bar. The close button
-/// turns red under the pointer.
+/// is filled when the pointer is over it.
 bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip, ImVec2 size);
 
-/// A rounded panel. Everything up to EndCard is drawn inside it. `size` of 0 in a dimension
+/// A framed panel. Everything up to EndCard is drawn inside it. `size` of 0 in a dimension
 /// takes the available space; `autoHeight` fits the content instead. Always call EndCard.
 bool BeginCard(const char* id, ImVec2 size = ImVec2(0, 0), bool autoHeight = true,
-               ImVec2 padding = ImVec2(18.0f, 16.0f));
+               ImVec2 padding = ImVec2(16.0f, 14.0f), Frame frame = Frame::Brown);
 void EndCard();
 
 /// The title of a page: heading text, an optional muted line under it, then a rule.
@@ -143,6 +178,9 @@ void FormLabel(const char* label, float labelWidth = 180.0f);
 
 /// Text in the muted style, wrapped to the available width.
 void HintText(const char* text);
+
+/// The same with printf formatting.
+void Muted(const char* fmt, ...) IM_FMTARGS(1);
 
 // --- Game artwork ---
 

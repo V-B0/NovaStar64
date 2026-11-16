@@ -549,6 +549,27 @@ between NTSC and PAL before hardcoding it.
 
 ---
 
+## The launcher's art
+
+The launcher is drawn in a pixel-art style from five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
+5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed. The art is made in
+[Aseprite](https://www.aseprite.org/):
+
+| File in `nova64/assets/ui/` | What it holds |
+|---|---|
+| `ui_icons.aseprite` | The icons, 16x16 in an 8-column grid, one named slice each; `ui_icons.txt` lists the names in sheet order |
+| `ui_font.aseprite` | The glyphs, 5x7 in 8x8 cells, 16 columns; a glyph sits at cell number (ASCII code - 32). Lower case uses the capitals |
+| `ui_frames.aseprite` | The 10x10 frames the panels and buttons are cut from (corner 4), and the 4x4 dither tiles |
+
+Edit a `.aseprite` file, then run `nova64/scripts/ui-art/export.sh` (it finds the Aseprite command line, or
+set `ASEPRITE=/path/to/aseprite`) to refresh the PNG sheets next to it. Those PNGs are what CMake embeds, so
+building the program never needs Aseprite. Keep an icon's position in the sheet when you edit it, and add
+new icons at the end with their name in `ui_icons.txt`. `icons.txt` and `font.txt` are only the text
+form the files were first made from, and `scripts/ui-art/seed.lua` rebuilds the `.aseprite` files from them
+(which discards any edits made in Aseprite).
+
+The code that draws it is `UI/UiKit.*`. Lay things out in multiples of `kit::Px()` display pixels.
+
 ## Code style
 
 - C++20. Match the style of the file you're editing.

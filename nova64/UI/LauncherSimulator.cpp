@@ -3,6 +3,7 @@
  * @brief Simulator tab: wire up a virtual console, cartridge and TV, then run it.
  */
 #include "NovaLauncher.hpp"
+#include "UiKit.hpp"
 
 #include <imgui.h>
 #include <imgui_node_editor.h>
@@ -118,7 +119,7 @@ void NovaLauncher::RenderSimNode(SimNode& node) {
         ImGui::Spacing();
         ImGui::Checkbox("Power", &node.isPowered);
         if (node.hasExpansionPak) {
-            ImGui::TextDisabled("Expansion Pak inserted");
+            kit::Muted("Expansion Pak inserted");
             if (ImGui::Button("Remove Expansion Pak")) {
                 node.hasExpansionPak = false;
                 node.ramMB = 4;
@@ -126,10 +127,10 @@ void NovaLauncher::RenderSimNode(SimNode& node) {
             }
         }
         if (node.cartPath[0] != '\0') {
-            ImGui::TextDisabled("Cartridge: %s", node.cartName);
+            kit::Muted("Cartridge: %s", node.cartName);
             if (ImGui::Button("Eject cartridge")) node.cartPath[0] = '\0';
         } else {
-            ImGui::TextDisabled("No cartridge");
+            kit::Muted("No cartridge");
         }
         if (node.isPowered && node.cartPath[0] != '\0') {
             if (ImGui::Button("Run", ImVec2(-1, 0))) LaunchEmulator(node);
@@ -225,7 +226,7 @@ void NovaLauncher::RenderSimulatorTab() {
     if (ImGui::Button("Cartridge...")) ImGui::OpenPopup("CartridgePicker");
 
     if (ImGui::BeginPopup("CartridgePicker")) {
-        if (m_library.empty()) ImGui::TextDisabled("Add games in the Games tab first.");
+        if (m_library.empty()) kit::Muted("Add games in the Games tab first.");
         for (int i = 0; i < static_cast<int>(m_library.size()); ++i) {
             ImGui::PushID(i);
             if (ImGui::Selectable(m_library[i].name.c_str())) SpawnNode(SimNodeKind::Cartridge, i);
@@ -253,7 +254,7 @@ void NovaLauncher::RenderSimulatorTab() {
     if (ready) {
         if (ImGui::Button("Run on TV")) LaunchEmulator(*ready);
     } else {
-        ImGui::TextDisabled("To run: connect a powered console with a cartridge to a powered TV.");
+        kit::Muted("To run: connect a powered console with a cartridge to a powered TV.");
     }
     ImGui::EndChild();
 }

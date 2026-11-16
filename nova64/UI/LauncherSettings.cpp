@@ -165,9 +165,9 @@ void NovaLauncher::RenderInputSettingsWidget() {
     const ImVec4 kWarn(0.75f, 0.25f, 0.15f, 1.0f);
 
     if (ImGui::BeginTable("InputTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
         ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120 * 1.4f);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < kCount; ++i) {
@@ -206,7 +206,7 @@ void NovaLauncher::RenderInputSettingsWidget() {
         ImGui::EndTable();
     }
 
-    if (m_rebindTarget >= 0) ImGui::TextDisabled("Press the new key, or Esc to cancel.");
+    if (m_rebindTarget >= 0) kit::Muted("Press the new key, or Esc to cancel.");
     if (ImGui::Button("Reset to defaults")) {
         m_bindings.ResetToDefaults();
         m_bindings.SaveToFile(NovaInput::kKeyBindingsPath);
@@ -217,10 +217,7 @@ void NovaLauncher::RenderInputSettingsWidget() {
 // --- Settings tab ---
 namespace {
 
-void Hint(const char* text) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", text);
-}
+void Hint(const char* text) { kit::Muted("%s", text); }
 
 // A file:// URL for a folder, with everything outside the unreserved set escaped
 // (the user data folder has a space in it on macOS, and URLs may not).
@@ -282,10 +279,10 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     static const char* kAccessories[] = {"Automatic", "Nothing", "Rumble Pak"};
     static const char* kPlayerNames[] = {"Player 1", "Player 2", "Player 3", "Player 4"};
     if (ImGui::BeginTable("PadPlayers", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 60);
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 60 * 1.4f);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 110);
-        ImGui::TableSetupColumn("Accessory", ImGuiTableColumnFlags_WidthFixed, 150);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
+        ImGui::TableSetupColumn("Accessory", ImGuiTableColumnFlags_WidthFixed, 150 * 1.4f);
         ImGui::TableHeadersRow();
         for (int p = 0; p < kMaxPlayers; ++p) {
             ImGui::TableNextRow();
@@ -299,11 +296,10 @@ void NovaLauncher::RenderControllerSettingsWidget() {
             if (hasPad) {
                 ImGui::TextUnformatted(pad->name.c_str());
                 if (pad->canRumble) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("(rumble)");
+                    kit::Muted("(rumble)");
                 }
             } else {
-                ImGui::TextDisabled("%s", p == 0 ? "Keyboard only" : "Not connected");
+                kit::Muted("%s", p == 0 ? "Keyboard only" : "Not connected");
             }
 
             // A controller's player is decided by connection order, which can
@@ -345,18 +341,18 @@ void NovaLauncher::RenderControllerSettingsWidget() {
         }
         ImGui::EndTable();
     }
-    ImGui::TextDisabled("A new controller takes the first free player, in whatever order the operating\n"
-                        "system reports them -- if the wrong one gets a slot (for example a stale\n"
-                        "Bluetooth pairing macOS still calls connected), move it above; the choice is\n"
-                        "remembered for that controller. Player 1 also uses the keyboard.\n"
-                        "Automatic plugs in a Rumble Pak for a controller that can rumble. Games look\n"
-                        "for it when they start. With a game running, Back or Guide opens the pause menu.");
+    kit::Muted("A new controller takes the first free player, in whatever order the operating\n"
+               "system reports them -- if the wrong one gets a slot (for example a stale\n"
+               "Bluetooth pairing macOS still calls connected), move it above; the choice is\n"
+               "remembered for that controller. Player 1 also uses the keyboard.\n"
+               "Automatic plugs in a Rumble Pak for a controller that can rumble. Games look\n"
+               "for it when they start. With a game running, Back or Guide opens the pause menu.");
 
     ImGui::Spacing();
-    ImGui::SetNextItemWidth(220);
+    ImGui::SetNextItemWidth(220 * 1.4f);
     ImGui::SliderInt("Stick deadzone", &m_padSettings.deadzone, 0, 50, "%d%%");
     if (ImGui::IsItemDeactivatedAfterEdit()) SaveControllerSettings();
-    ImGui::SetNextItemWidth(220);
+    ImGui::SetNextItemWidth(220 * 1.4f);
     ImGui::SliderInt("Stick range", &m_padSettings.range, 50, 150, "%d%%");
     if (ImGui::IsItemDeactivatedAfterEdit()) SaveControllerSettings();
     Hint("100% reaches the edge of a real N64 stick");
@@ -386,9 +382,9 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     ImGui::Spacing();
     constexpr int kCount = static_cast<int>(kN64InputCount);
     if (ImGui::BeginTable("PadTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120 * 1.4f);
         ImGui::TableHeadersRow();
         for (int i = 0; i < kCount; ++i) {
             const auto input = static_cast<N64Input>(i);
@@ -416,8 +412,7 @@ void NovaLauncher::RenderControllerSettingsWidget() {
         }
         ImGui::EndTable();
     }
-    if (m_padRebindTarget >= 0)
-        ImGui::TextDisabled("Press a button, or push a stick or trigger, on a controller. Esc cancels.");
+    if (m_padRebindTarget >= 0) kit::Muted("Press a button, or push a stick or trigger, on a controller. Esc cancels.");
     if (ImGui::Button("Reset controller settings")) {
         m_padSettings = ControllerSettings{};
         m_padRebindTarget = -1;
@@ -443,23 +438,23 @@ void NovaLauncher::RenderSettingsTab() {
         int speedIndex = 1;
         for (int i = 0; i < 4; ++i)
             if (kSpeeds[i] == m_launch.speed) speedIndex = i;
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::Combo("Speed", &speedIndex, kSpeedLabels, 4)) {
             m_launch.speed = kSpeeds[speedIndex];
             SaveLaunchOptions();
         }
 
         static const char* kCores[] = {"Automatic", "Interpreter", "Dynamic recompiler"};
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::Combo("CPU core", &m_launch.cpuCore, kCores, 3)) SaveLaunchOptions();
-        ImGui::TextDisabled("Automatic uses the recompiler on x86-64 and the interpreter on Apple Silicon,\n"
-                            "where the recompiler is still incomplete.");
+        kit::Muted("Automatic uses the recompiler on x86-64 and the interpreter on Apple Silicon, where the recompiler "
+                   "is still incomplete.");
 
         static const char* kRsp[] = {"Recompiler (faster)", "Interpreter"};
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::Combo("RSP engine", &m_launch.rspEngine, kRsp, 2)) SaveLaunchOptions();
-        ImGui::TextDisabled("Runs the graphics and audio microcode when it isn't emulated at a higher level\n"
-                            "(the LLE rendering mode). Both give identical results; applies to the next game.");
+        kit::Muted("Runs the graphics and audio microcode when it isn't emulated at a higher level\n"
+                   "(the LLE rendering mode). Both give identical results; applies to the next game.");
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -496,7 +491,7 @@ void NovaLauncher::RenderSettingsTab() {
     if (ImGui::BeginTabItem("Video", nullptr, forced("video"))) {
         ImGui::Spacing();
         static const char* kModes[] = {"In the launcher window", "Fullscreen"};
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::Combo("Play games", &m_launch.displayMode, kModes, 2)) SaveLaunchOptions();
 
         // Graphics driver. OpenGL can't run on macOS: Apple stopped at OpenGL
@@ -520,7 +515,7 @@ void NovaLauncher::RenderSettingsTab() {
             {"OpenGL", 0, kOpenGLAvailable, kOpenGLUnavailable},
         };
         const char* current = (m_gfx.backendType == 1) ? "Vulkan" : "OpenGL";
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::BeginCombo("Graphics driver", current)) {
             for (const auto& d : kDrivers) {
                 const ImGuiSelectableFlags flags = d.available ? 0 : ImGuiSelectableFlags_Disabled;
@@ -544,13 +539,13 @@ void NovaLauncher::RenderSettingsTab() {
                 std::lock_guard<std::mutex> lock(Nova64::Video::g_frameMutex);
                 running = Nova64::Video::g_rendererDescription;
             }
-            if (!running.empty()) ImGui::TextDisabled("Last game ran on %s.", running.c_str());
+            if (!running.empty()) kit::Muted("Last game ran on %s.", running.c_str());
         }
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::SliderInt("Resolution scale", &m_gfx.internalResScale, 1, 8, "%dx")) SaveGraphicsSettings();
 
         bool widescreen = (m_gfx.aspectRatio == Nova64::Video::AspectRatio::Widescreen16_9);
@@ -578,14 +573,14 @@ void NovaLauncher::RenderSettingsTab() {
         if (ImGui::Checkbox("Show frame rate while playing", &m_launch.showFps)) SaveLaunchOptions();
 
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kSidebar);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::Rgb(0xE4DFD3));
+        ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kBrown);
         const bool accuracyOpen = ImGui::CollapsingHeader("Accuracy");
         ImGui::PopStyleColor(2);
         if (accuracyOpen) {
             static const char* kEmulation[] = {"High-level (recommended)", "Low-level (experimental)"};
             int emulation = (m_gfx.renderingMode == Nova64::Video::RenderingMode::HLE) ? 0 : 1;
-            ImGui::SetNextItemWidth(220);
+            ImGui::SetNextItemWidth(220 * 1.4f);
             if (ImGui::Combo("Graphics emulation", &emulation, kEmulation, 2)) {
                 m_gfx.renderingMode =
                     (emulation == 0) ? Nova64::Video::RenderingMode::HLE : Nova64::Video::RenderingMode::LLE;
@@ -597,23 +592,23 @@ void NovaLauncher::RenderSettingsTab() {
             Hint("for games that read the screen, such as pause-menu backgrounds");
             if (ImGui::Checkbox("Show frames the game draws itself", &m_gfx.fbWriteAccess)) SaveGraphicsSettings();
             Hint("for games that draw the picture on the CPU");
-            ImGui::TextDisabled("Some games turn these two on regardless, because they need them.");
+            kit::Muted("Some games turn these two on regardless, because they need them.");
         }
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Audio", nullptr, forced("audio"))) {
         ImGui::Spacing();
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(220 * 1.4f);
         if (ImGui::SliderInt("Volume", &m_launch.volume, 0, 100, "%d%%")) SaveLaunchOptions();
         if (ImGui::Checkbox("Mute", &m_launch.muted)) SaveLaunchOptions();
-        ImGui::TextDisabled("Takes effect immediately, including in a game that's running.");
+        kit::Muted("Takes effect immediately, including in a game that's running.");
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Controls", nullptr, forced("controls"))) {
         ImGui::Spacing();
-        ImGui::TextDisabled("Games that are already running pick up changes within a second.");
+        kit::Muted("Games that are already running pick up changes within a second.");
         ImGui::Spacing();
         ImGui::SeparatorText("Game controllers");
         RenderControllerSettingsWidget();

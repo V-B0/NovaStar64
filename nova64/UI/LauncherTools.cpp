@@ -37,7 +37,7 @@ void NovaLauncher::RenderScriptsTab() {
     if (ImGui::Button("Unload All")) m_lua.UnloadAll();
 
     ImGui::BeginChild("ScriptList", ImVec2(0, 160), ImGuiChildFlags_Borders);
-    if (m_scriptFiles.empty()) ImGui::TextDisabled("No scripts found.");
+    if (m_scriptFiles.empty()) kit::Muted("No scripts found.");
     for (const auto& file : m_scriptFiles) {
         ImGui::PushID(file.c_str());
         if (ImGui::Button("Load")) {
@@ -73,7 +73,7 @@ void NovaLauncher::RenderHexEditorTab() {
     Nova64::MipsMemoryVM* mem = (m_emuRunning.load() && g_System) ? g_System->GetMemory() : nullptr;
     const uint8_t* rdram = mem ? mem->Rdram() : nullptr;
     if (!rdram) {
-        ImGui::TextDisabled("Start a game to browse its memory.");
+        kit::Muted("Start a game to browse its memory.");
         return;
     }
     // RDRAM is kept as host-order 32-bit words; show it in the N64's byte order.

@@ -1,139 +1,278 @@
 #include "UiKit.hpp"
 
+#include <glad/gl.h>
 #include <imgui_internal.h> // FindRenderedTextEnd
+#include <stb_image.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <iterator>
+#include <string>
+#include <vector>
 
 namespace NovaUI::kit {
 
 namespace {
 
-// Generated from assets/fonts/Roboto-Medium.ttf by CMake: a comma-separated list of byte values.
-// Roboto is licensed under the Apache License 2.0 (see assets/fonts/README.md).
-const unsigned char kRobotoMedium[] = {
-#include "RobotoMedium.inc"
+// The art: PNG sheets exported from assets/ui/*.aseprite, compiled in by CMake as lists of byte values.
+const unsigned char kIconsPng[] = {
+#include "UiIcons.inc"
+};
+const unsigned char kFontPng[] = {
+#include "UiFont.inc"
+};
+const unsigned char kFramesPng[] = {
+#include "UiFrames.inc"
+};
+// The names of the icons in the icon sheet, one per line, in sheet order.
+const char kIconNames[] = {
+#include "UiIconNames.inc"
+    0};
+
+// Sheet layouts (see scripts/ui-art/seed.lua).
+constexpr int kIconCell = 16;
+constexpr int kIconColumns = 8;
+constexpr int kGlyphCell = 8;
+constexpr int kGlyphColumns = 16;
+constexpr int kGlyphWidth = 5;
+constexpr int kGlyphHeight = 7;
+constexpr int kFrameCell = 10;
+constexpr int kFrameCorner = 4;
+constexpr int kDitherX = 0;
+constexpr int kDitherY = 10;
+constexpr int kDitherCell = 4;
+
+struct Sheet {
+    GLuint texture = 0;
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> pixels; ///< RGBA, kept so the font can be rebuilt at other sizes
 };
 
+Sheet g_icons, g_font, g_frames;
+std::vector<std::string> g_iconNames;
 Fonts g_fonts;
+int g_px = 2;
+bool g_fontFilterDone = false;
+
+Sheet LoadSheet(const unsigned char* png, size_t size) {
+    Sheet sheet;
+    int w = 0, h = 0, channels = 0;
+    unsigned char* data = stbi_load_from_memory(png, static_cast<int>(size), &w, &h, &channels, 4);
+    if (!data) return sheet;
+    sheet.width = w;
+    sheet.height = h;
+    sheet.pixels.assign(data, data + static_cast<size_t>(w) * h * 4);
+    stbi_image_free(data);
+
+    glGenTextures(1, &sheet.texture);
+    glBindTexture(GL_TEXTURE_2D, sheet.texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, sheet.pixels.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return sheet;
+}
 
 // Colour with the current style alpha applied, so disabled widgets fade with everything else.
 ImU32 Col(const ImVec4& c) { return ImGui::GetColorU32(c); }
 
-constexpr float kPi = 3.14159265358979f;
+ImU32 Tint() { return ImGui::GetColorU32(ImVec4(1, 1, 1, 1)); }
+
+bool GlyphPresent(int code) {
+    if (g_font.pixels.empty() || code < 32 || code > 127) return false;
+    const int cell = code - 32;
+    const int cx = (cell % kGlyphColumns) * kGlyphCell, cy = (cell / kGlyphColumns) * kGlyphCell;
+    for (int y = 0; y < kGlyphHeight; ++y)
+        for (int x = 0; x < kGlyphWidth; ++x)
+            if (g_font.pixels[(static_cast<size_t>(cy + y) * g_font.width + cx + x) * 4 + 3] != 0) return true;
+    return false;
+}
+
+bool GlyphPixel(int code, int x, int y) {
+    const int cell = code - 32;
+    const int cx = (cell % kGlyphColumns) * kGlyphCell, cy = (cell / kGlyphColumns) * kGlyphCell;
+    return g_font.pixels[(static_cast<size_t>(cy + y) * g_font.width + cx + x) * 4 + 3] != 0;
+}
+
+struct PendingGlyph {
+    int rect; ///< ImGui custom rectangle
+    int code; ///< ASCII glyph whose bitmap goes there; 0 for blank
+    int scale;
+};
 
 } // namespace
+
+int Px() { return g_px; }
 
 // --- Theme ---
 
 void ApplyTheme() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* c = style.Colors;
+    const ImVec4 clear(0, 0, 0, 0);
 
     c[ImGuiCol_Text] = color::kText;
-    c[ImGuiCol_TextDisabled] = color::kTextMuted;
+    c[ImGuiCol_TextDisabled] = color::kTextDisabled;
     c[ImGuiCol_WindowBg] = color::kBackground;
-    c[ImGuiCol_ChildBg] = color::kSurface;
-    c[ImGuiCol_PopupBg] = color::kSurface;
-    c[ImGuiCol_Border] = color::kBorder;
-    c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg] = color::kSurface;
-    c[ImGuiCol_FrameBgHovered] = color::kSurfaceHover;
-    c[ImGuiCol_FrameBgActive] = color::kSurfaceHover;
-    c[ImGuiCol_TitleBg] = color::kSidebar;
-    c[ImGuiCol_TitleBgActive] = color::kSidebar;
-    c[ImGuiCol_TitleBgCollapsed] = color::kSidebar;
+    c[ImGuiCol_ChildBg] = color::kPanel;
+    c[ImGuiCol_PopupBg] = color::kPanel;
+    c[ImGuiCol_Border] = color::kOrange;
+    c[ImGuiCol_BorderShadow] = clear;
+    c[ImGuiCol_FrameBg] = color::kBlack;
+    c[ImGuiCol_FrameBgHovered] = color::kPanel;
+    c[ImGuiCol_FrameBgActive] = color::kBrown;
+    c[ImGuiCol_TitleBg] = color::kPanel;
+    c[ImGuiCol_TitleBgActive] = color::kPanel;
+    c[ImGuiCol_TitleBgCollapsed] = color::kPanel;
     c[ImGuiCol_MenuBarBg] = color::kBackground;
-    c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab] = Rgb(0xCFC8B9);
-    c[ImGuiCol_ScrollbarGrabHovered] = Rgb(0xB9B1A0);
-    c[ImGuiCol_ScrollbarGrabActive] = Rgb(0xA39A88);
-    c[ImGuiCol_CheckMark] = color::kAccent;
-    c[ImGuiCol_SliderGrab] = color::kAccent;
-    c[ImGuiCol_SliderGrabActive] = color::kAccentPressed;
-    c[ImGuiCol_Button] = color::kSurface;
-    c[ImGuiCol_ButtonHovered] = color::kSurfaceHover;
-    c[ImGuiCol_ButtonActive] = color::kSidebar;
-    c[ImGuiCol_Header] = color::kAccentSoft;
-    c[ImGuiCol_HeaderHovered] = Rgb(0xF0D2C2);
-    c[ImGuiCol_HeaderActive] = Rgb(0xE9C2AE);
-    c[ImGuiCol_Separator] = color::kBorder;
-    c[ImGuiCol_SeparatorHovered] = Rgb(0xC4BCAB);
-    c[ImGuiCol_SeparatorActive] = color::kAccent;
-    c[ImGuiCol_ResizeGrip] = color::kBorder;
-    c[ImGuiCol_ResizeGripHovered] = color::kAccent;
-    c[ImGuiCol_ResizeGripActive] = color::kAccentPressed;
-    c[ImGuiCol_Tab] = color::kSidebar;
-    c[ImGuiCol_TabHovered] = color::kAccentSoft;
-    c[ImGuiCol_TabActive] = color::kSurface;
-    c[ImGuiCol_TabUnfocused] = color::kSidebar;
-    c[ImGuiCol_TabUnfocusedActive] = color::kSurface;
-    c[ImGuiCol_TabSelectedOverline] = color::kAccent;
-    c[ImGuiCol_TabDimmedSelectedOverline] = color::kAccent;
-    c[ImGuiCol_TableHeaderBg] = color::kSidebar;
-    c[ImGuiCol_TableBorderStrong] = color::kBorder;
-    c[ImGuiCol_TableBorderLight] = Rgb(0xE8E3D8);
-    c[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_TableRowBgAlt] = Rgb(0x000000, 0.025f);
-    c[ImGuiCol_TextSelectedBg] = Rgb(0xD96E42, 0.30f);
-    c[ImGuiCol_NavCursor] = color::kAccent;
-    c[ImGuiCol_DragDropTarget] = color::kAccent;
-    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x1F1C18, 0.40f);
+    c[ImGuiCol_ScrollbarBg] = color::kBlack;
+    c[ImGuiCol_ScrollbarGrab] = color::kBrown;
+    c[ImGuiCol_ScrollbarGrabHovered] = color::kOrange;
+    c[ImGuiCol_ScrollbarGrabActive] = color::kPeach;
+    c[ImGuiCol_CheckMark] = color::kPeach;
+    c[ImGuiCol_SliderGrab] = color::kOrange;
+    c[ImGuiCol_SliderGrabActive] = color::kPeach;
+    c[ImGuiCol_Button] = color::kPanel;
+    c[ImGuiCol_ButtonHovered] = color::kBrown;
+    c[ImGuiCol_ButtonActive] = color::kOrange;
+    c[ImGuiCol_Header] = color::kBrown;
+    c[ImGuiCol_HeaderHovered] = Rgb(0x8A4A1C);
+    c[ImGuiCol_HeaderActive] = color::kOrange;
+    c[ImGuiCol_Separator] = color::kBrown;
+    c[ImGuiCol_SeparatorHovered] = color::kOrange;
+    c[ImGuiCol_SeparatorActive] = color::kPeach;
+    c[ImGuiCol_ResizeGrip] = color::kBrown;
+    c[ImGuiCol_ResizeGripHovered] = color::kOrange;
+    c[ImGuiCol_ResizeGripActive] = color::kPeach;
+    c[ImGuiCol_Tab] = color::kPanel;
+    c[ImGuiCol_TabHovered] = Rgb(0x8A4A1C);
+    c[ImGuiCol_TabActive] = color::kBrown;
+    c[ImGuiCol_TabUnfocused] = color::kPanel;
+    c[ImGuiCol_TabUnfocusedActive] = color::kBrown;
+    c[ImGuiCol_TabSelectedOverline] = color::kOrange;
+    c[ImGuiCol_TabDimmedSelectedOverline] = color::kOrange;
+    c[ImGuiCol_TableHeaderBg] = color::kBrown;
+    c[ImGuiCol_TableBorderStrong] = color::kBrown;
+    c[ImGuiCol_TableBorderLight] = Rgb(0x4A1E07);
+    c[ImGuiCol_TableRowBg] = clear;
+    c[ImGuiCol_TableRowBgAlt] = Rgb(0xFCB861, 0.04f);
+    c[ImGuiCol_TextSelectedBg] = Rgb(0xC5620B, 0.45f);
+    c[ImGuiCol_NavCursor] = color::kPeach;
+    c[ImGuiCol_DragDropTarget] = color::kPeach;
+    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x000000, 0.65f);
 
+    // Square, outlined, and sized in whole art pixels. Antialiasing is off so edges stay hard.
+    const float px = Px(1.0f);
     style.WindowRounding = 0.0f;
-    style.ChildRounding = 10.0f;
-    style.FrameRounding = 6.0f;
-    style.PopupRounding = 8.0f;
-    style.ScrollbarRounding = 6.0f;
-    style.GrabRounding = 6.0f;
-    style.TabRounding = 6.0f;
+    style.ChildRounding = 0.0f;
+    style.FrameRounding = 0.0f;
+    style.PopupRounding = 0.0f;
+    style.ScrollbarRounding = 0.0f;
+    style.GrabRounding = 0.0f;
+    style.TabRounding = 0.0f;
     style.WindowBorderSize = 0.0f;
-    style.ChildBorderSize = 1.0f;
-    style.FrameBorderSize = 1.0f;
-    style.PopupBorderSize = 1.0f;
-    style.WindowPadding = ImVec2(16.0f, 14.0f);
-    style.FramePadding = ImVec2(11.0f, 7.0f);
-    style.ItemSpacing = ImVec2(10.0f, 9.0f);
-    style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
-    style.CellPadding = ImVec2(8.0f, 6.0f);
-    style.ScrollbarSize = 12.0f;
-    style.GrabMinSize = 12.0f;
-    style.IndentSpacing = 18.0f;
-    style.SeparatorTextBorderSize = 1.0f;
+    style.ChildBorderSize = px;
+    style.FrameBorderSize = px;
+    style.PopupBorderSize = px;
+    style.TabBorderSize = 0.0f;
+    style.WindowPadding = ImVec2(Px(8.0f), Px(7.0f));
+    style.FramePadding = ImVec2(Px(4.0f), Px(3.0f));
+    style.ItemSpacing = ImVec2(Px(5.0f), Px(4.0f));
+    style.ItemInnerSpacing = ImVec2(Px(3.0f), Px(3.0f));
+    style.CellPadding = ImVec2(Px(4.0f), Px(3.0f));
+    style.ScrollbarSize = Px(5.0f);
+    style.GrabMinSize = Px(6.0f);
+    style.IndentSpacing = Px(8.0f);
+    style.SeparatorTextBorderSize = px;
     style.DisabledAlpha = 0.45f;
+    style.AntiAliasedLines = false;
+    style.AntiAliasedLinesUseTex = false;
+    style.AntiAliasedFill = false;
 }
 
-// --- Fonts ---
+// --- Fonts and art ---
 
 void LoadFonts(float pixelScale) {
     ImGuiIO& io = ImGui::GetIO();
-    const float scale = pixelScale >= 1.0f ? pixelScale : 1.0f;
+    const float dpi = pixelScale >= 1.0f ? pixelScale : 1.0f;
 
-    ImFontConfig config;
-    config.FontDataOwnedByAtlas = false; // the bytes are static
-    auto add = [&](float logicalSize) {
-        return io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(kRobotoMedium),
-                                              static_cast<int>(sizeof(kRobotoMedium)), logicalSize * scale, &config);
+    g_icons = LoadSheet(kIconsPng, sizeof(kIconsPng));
+    g_font = LoadSheet(kFontPng, sizeof(kFontPng));
+    g_frames = LoadSheet(kFramesPng, sizeof(kFramesPng));
+    g_iconNames.clear();
+    for (size_t start = 0, n = std::strlen(kIconNames); start < n;) {
+        const size_t end = std::min(n, std::string(kIconNames).find('\n', start));
+        if (end > start) g_iconNames.emplace_back(kIconNames + start, end - start);
+        start = end + 1;
+    }
+
+    // One font per size. Each glyph is a rectangle in Dear ImGui's atlas; the bitmaps are written into
+    // those rectangles after the atlas is built, scaled up by whole numbers so nothing is smoothed.
+    std::vector<PendingGlyph> pending;
+    auto make = [&](int artScale) -> ImFont* {
+        const int pd = std::max(1, static_cast<int>(std::lround(static_cast<float>(artScale) * dpi)));
+        ImFontConfig config;
+        config.SizePixels = 9.0f * static_cast<float>(pd); // 7 rows of glyph and 2 of leading
+        config.OversampleH = 1;
+        config.OversampleV = 1;
+        ImFont* font = io.Fonts->AddFontDefault(&config);
+        const float advance = 6.0f * static_cast<float>(pd);
+        const ImVec2 offset(0.0f, static_cast<float>(pd)); // centre 7 rows in the 9-row line
+        for (int code = 33; code <= 126; ++code) {
+            int source = code;
+            if (code >= 'a' && code <= 'z') source = code - 32; // the font has capitals only
+            if (!GlyphPresent(source)) continue;
+            const int rect = io.Fonts->AddCustomRectFontGlyph(font, static_cast<ImWchar>(code), kGlyphWidth * pd,
+                                                              kGlyphHeight * pd, advance, offset);
+            pending.push_back({rect, source, pd});
+        }
+        const int space = io.Fonts->AddCustomRectFontGlyph(font, ' ', 1, 1, 4.0f * static_cast<float>(pd), offset);
+        pending.push_back({space, 0, pd});
+        return font;
     };
+    g_fonts.body = make(2);
+    g_fonts.small = g_fonts.body;
+    g_fonts.heading = make(3);
+    g_fonts.display = make(5);
 
-    g_fonts.body = add(15.0f);
-    g_fonts.small = add(13.0f);
-    g_fonts.heading = add(21.0f);
-    g_fonts.display = add(32.0f);
-
-    if (!g_fonts.body || !g_fonts.small || !g_fonts.heading || !g_fonts.display) {
-        // Fall back to ImGui's own font for everything rather than draw with a null font.
-        io.Fonts->Clear();
-        ImFontConfig fallback;
-        fallback.SizePixels = 13.0f * scale;
-        ImFont* builtin = io.Fonts->AddFontDefault(&fallback);
-        g_fonts = Fonts{builtin, builtin, builtin, builtin};
+    unsigned char* atlas = nullptr;
+    int atlasWidth = 0, atlasHeight = 0;
+    io.Fonts->GetTexDataAsRGBA32(&atlas, &atlasWidth, &atlasHeight);
+    for (const PendingGlyph& glyph : pending) {
+        const ImFontAtlasCustomRect* rect = io.Fonts->GetCustomRectByIndex(glyph.rect);
+        if (!rect || !atlas) continue;
+        for (int y = 0; y < rect->Height; ++y) {
+            for (int x = 0; x < rect->Width; ++x) {
+                const bool on = glyph.code != 0 && GlyphPixel(glyph.code, x / glyph.scale, y / glyph.scale);
+                auto* out =
+                    reinterpret_cast<uint32_t*>(atlas) + static_cast<size_t>(rect->Y + y) * atlasWidth + rect->X + x;
+                *out = on ? 0xFFFFFFFFu : 0x00FFFFFFu;
+            }
+        }
     }
 
     io.FontDefault = g_fonts.body;
-    io.FontGlobalScale = 1.0f / scale;
+    io.FontGlobalScale = 1.0f / dpi;
+}
+
+void OnNewFrame() {
+    if (g_fontFilterDone) return;
+    const ImTextureID id = ImGui::GetIO().Fonts->TexID;
+    if (!id) return;
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(id));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    g_fontFilterDone = true;
 }
 
 const Fonts& GetFonts() { return g_fonts; }
@@ -142,204 +281,120 @@ const Fonts& GetFonts() { return g_fonts; }
 
 namespace {
 
-/// Strokes shapes laid out in a unit square onto a square of `size` pixels.
-class Painter {
-public:
-    Painter(ImDrawList* draw, ImVec2 center, float size, ImU32 col) :
-        m_draw(draw), m_origin(center.x - size * 0.5f, center.y - size * 0.5f), m_size(size), m_col(col),
-        m_width(std::max(1.4f, size * 0.085f)) {}
+const char* IconSpriteName(Icon icon) {
+    switch (icon) {
+    case Icon::Home:         return "home";
+    case Icon::Games:        return "games";
+    case Icon::Settings:     return "settings";
+    case Icon::Scripts:      return "console";
+    case Icon::Memory:       return "chip";
+    case Icon::Trophy:       return "trophy";
+    case Icon::Simulator:    return "controller";
+    case Icon::Play:         return "play";
+    case Icon::Stop:         return "stop";
+    case Icon::Rewind:       return "rewind";
+    case Icon::Plus:         return "plus";
+    case Icon::Edit:         return "edit";
+    case Icon::Trash:        return "trash";
+    case Icon::Folder:       return "folder";
+    case Icon::Image:        return "camera";
+    case Icon::Search:       return "search";
+    case Icon::Check:        return "check";
+    case Icon::Info:         return "info";
+    case Icon::Warning:      return "warning";
+    case Icon::ChevronRight: return "chevron_right";
+    case Icon::ChevronDown:  return "chevron_down";
+    case Icon::Close:        return "cross";
+    case Icon::Minimize:     return "minimize";
+    case Icon::Maximize:     return "maximize";
+    case Icon::Restore:      return "restore";
+    case Icon::None:         break;
+    }
+    return nullptr;
+}
 
-    ImVec2 P(float x, float y) const { return ImVec2(m_origin.x + x * m_size, m_origin.y + y * m_size); }
-    float Len(float u) const { return u * m_size; }
-
-    void Line(float x0, float y0, float x1, float y1) { Path({{x0, y0}, {x1, y1}}, false); }
-
-    /// A stroked path through points given in unit coordinates, with round ends when open.
-    void Path(std::initializer_list<ImVec2> unitPoints, bool closed) {
-        ImVec2 pts[24];
-        int n = 0;
-        for (const ImVec2& u : unitPoints) {
-            if (n == 24) break;
-            pts[n++] = P(u.x, u.y);
+int IconCell(Icon icon) {
+    static int cache[64];
+    static bool filled[64] = {};
+    const int key = static_cast<int>(icon);
+    if (key < 0 || key >= 64) return -1;
+    if (!filled[key]) {
+        cache[key] = -1;
+        if (const char* name = IconSpriteName(icon)) {
+            for (size_t i = 0; i < g_iconNames.size(); ++i)
+                if (g_iconNames[i] == name) cache[key] = static_cast<int>(i);
         }
-        m_draw->AddPolyline(pts, n, m_col, closed ? ImDrawFlags_Closed : ImDrawFlags_None, m_width);
-        if (!closed && n >= 2) {
-            m_draw->AddCircleFilled(pts[0], m_width * 0.5f, m_col, 8);
-            m_draw->AddCircleFilled(pts[n - 1], m_width * 0.5f, m_col, 8);
-        }
+        filled[key] = true;
     }
+    return cache[key];
+}
 
-    void Circle(float cx, float cy, float r) { m_draw->AddCircle(P(cx, cy), Len(r), m_col, 0, m_width); }
-    void Dot(float cx, float cy, float r) { m_draw->AddCircleFilled(P(cx, cy), std::max(Len(r), 1.0f), m_col); }
-
-    void Rect(float x0, float y0, float x1, float y1, float rounding) {
-        m_draw->AddRect(P(x0, y0), P(x1, y1), m_col, Len(rounding), 0, m_width);
-    }
-    void FillRect(float x0, float y0, float x1, float y1, float rounding) {
-        m_draw->AddRectFilled(P(x0, y0), P(x1, y1), m_col, Len(rounding));
-    }
-    void FillTriangle(ImVec2 a, ImVec2 b, ImVec2 c) {
-        m_draw->AddTriangleFilled(P(a.x, a.y), P(b.x, b.y), P(c.x, c.y), m_col);
-    }
-
-    void Curve(ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d) {
-        m_draw->AddBezierCubic(P(a.x, a.y), P(b.x, b.y), P(c.x, c.y), P(d.x, d.y), m_col, m_width);
-    }
-
-    ImDrawList* Draw() const { return m_draw; }
-    float Width() const { return m_width; }
-    ImVec2 Origin() const { return m_origin; }
-    float Size() const { return m_size; }
-
-private:
-    ImDrawList* m_draw;
-    ImVec2 m_origin;
-    float m_size;
-    ImU32 m_col;
-    float m_width;
-};
+float Snap(float v) { return std::round(v); }
 
 } // namespace
 
-void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 col) {
-    Painter p(draw, center, size, col);
+void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 tint) {
+    if (icon == Icon::None || !g_icons.texture) return;
+    const int cell = IconCell(icon);
+    if (cell < 0) return;
+    const float cx = static_cast<float>((cell % kIconColumns) * kIconCell);
+    const float cy = static_cast<float>((cell / kIconColumns) * kIconCell);
+    const float w = static_cast<float>(g_icons.width), h = static_cast<float>(g_icons.height);
+    const ImVec2 p0(Snap(center.x - size * 0.5f), Snap(center.y - size * 0.5f));
+    draw->AddImage(static_cast<ImTextureID>(g_icons.texture), p0, ImVec2(p0.x + size, p0.y + size),
+                   ImVec2(cx / w, cy / h), ImVec2((cx + kIconCell) / w, (cy + kIconCell) / h), tint);
+}
 
-    switch (icon) {
-    case Icon::None: break;
+// --- Frames ---
 
-    case Icon::Home:
-        p.Path({{0.14f, 0.50f}, {0.50f, 0.18f}, {0.86f, 0.50f}}, false);
-        p.Path({{0.24f, 0.44f}, {0.24f, 0.82f}, {0.76f, 0.82f}, {0.76f, 0.44f}}, false);
-        p.Path({{0.42f, 0.82f}, {0.42f, 0.60f}, {0.58f, 0.60f}, {0.58f, 0.82f}}, false);
-        break;
-
-    case Icon::Games:
-        p.Rect(0.08f, 0.30f, 0.92f, 0.74f, 0.20f);
-        p.Line(0.22f, 0.52f, 0.38f, 0.52f);
-        p.Line(0.30f, 0.44f, 0.30f, 0.60f);
-        p.Dot(0.64f, 0.48f, 0.045f);
-        p.Dot(0.76f, 0.57f, 0.045f);
-        break;
-
-    case Icon::Settings: {
-        constexpr int kTeeth = 8;
-        ImVec2 pts[kTeeth * 4];
-        int n = 0;
-        for (int k = 0; k < kTeeth; ++k) {
-            const float a = static_cast<float>(k) * (2.0f * kPi / kTeeth);
-            const float spans[4][2] = {{0.30f, -0.24f}, {0.43f, -0.13f}, {0.43f, 0.13f}, {0.30f, 0.24f}};
-            for (const auto& s : spans)
-                pts[n++] = p.P(0.5f + s[0] * std::cos(a + s[1]), 0.5f + s[0] * std::sin(a + s[1]));
-        }
-        draw->AddPolyline(pts, n, col, ImDrawFlags_Closed, p.Width());
-        p.Circle(0.5f, 0.5f, 0.13f);
-        break;
+void DrawFrame(ImDrawList* draw, ImVec2 min, ImVec2 max, Frame frame, ImU32 fill) {
+    const float p = Px(1.0f);
+    const float x0 = Snap(min.x), y0 = Snap(min.y), x1 = Snap(max.x), y1 = Snap(max.y);
+    if (x1 - x0 < p * 2 * kFrameCorner || y1 - y0 < p * 2 * kFrameCorner) {
+        if ((fill >> IM_COL32_A_SHIFT) != 0) draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), fill);
+        return;
     }
+    if ((fill >> IM_COL32_A_SHIFT) != 0) {
+        draw->AddRectFilled(ImVec2(x0 + 2 * p, y0 + p), ImVec2(x1 - 2 * p, y1 - p), fill);
+        draw->AddRectFilled(ImVec2(x0 + p, y0 + 2 * p), ImVec2(x1 - p, y1 - 2 * p), fill);
+    }
+    if (!g_frames.texture) return;
 
-    case Icon::Scripts:
-        p.Path({{0.36f, 0.30f}, {0.16f, 0.50f}, {0.36f, 0.70f}}, false);
-        p.Path({{0.64f, 0.30f}, {0.84f, 0.50f}, {0.64f, 0.70f}}, false);
-        p.Line(0.56f, 0.24f, 0.44f, 0.76f);
-        break;
+    const float ox = static_cast<float>(static_cast<int>(frame) * kFrameCell);
+    const float sw = static_cast<float>(g_frames.width), sh = static_cast<float>(g_frames.height);
+    const ImTextureID tex = static_cast<ImTextureID>(g_frames.texture);
+    const ImU32 tint = Tint();
+    const float c = kFrameCorner * p;
+    auto piece = [&](float dx0, float dy0, float dx1, float dy1, float ux0, float uy0, float ux1, float uy1) {
+        draw->AddImage(tex, ImVec2(dx0, dy0), ImVec2(dx1, dy1), ImVec2((ox + ux0) / sw, uy0 / sh),
+                       ImVec2((ox + ux1) / sw, uy1 / sh), tint);
+    };
+    const float k = static_cast<float>(kFrameCorner), e = static_cast<float>(kFrameCell - kFrameCorner);
+    const float f = static_cast<float>(kFrameCell);
+    piece(x0, y0, x0 + c, y0 + c, 0, 0, k, k); // corners
+    piece(x1 - c, y0, x1, y0 + c, e, 0, f, k);
+    piece(x0, y1 - c, x0 + c, y1, 0, e, k, f);
+    piece(x1 - c, y1 - c, x1, y1, e, e, f, f);
+    piece(x0 + c, y0, x1 - c, y0 + c, k, 0, e, k); // edges
+    piece(x0 + c, y1 - c, x1 - c, y1, k, e, e, f);
+    piece(x0, y0 + c, x0 + c, y1 - c, 0, k, k, e);
+    piece(x1 - c, y0 + c, x1, y1 - c, e, k, f, e);
+}
 
-    case Icon::Memory:
-        p.Rect(0.28f, 0.28f, 0.72f, 0.72f, 0.05f);
-        for (float t : {0.38f, 0.50f, 0.62f}) {
-            p.Line(t, 0.28f, t, 0.14f);
-            p.Line(t, 0.72f, t, 0.86f);
-            p.Line(0.28f, t, 0.14f, t);
-            p.Line(0.72f, t, 0.86f, t);
-        }
-        break;
-
-    case Icon::Trophy:
-        p.Path({{0.30f, 0.42f}, {0.30f, 0.18f}, {0.70f, 0.18f}, {0.70f, 0.42f}}, false);
-        p.Curve({0.70f, 0.42f}, {0.70f, 0.62f}, {0.30f, 0.62f}, {0.30f, 0.42f});
-        p.Path({{0.30f, 0.26f}, {0.14f, 0.26f}, {0.14f, 0.36f}, {0.30f, 0.46f}}, false);
-        p.Path({{0.70f, 0.26f}, {0.86f, 0.26f}, {0.86f, 0.36f}, {0.70f, 0.46f}}, false);
-        p.Line(0.50f, 0.58f, 0.50f, 0.74f);
-        p.Line(0.36f, 0.82f, 0.64f, 0.82f);
-        break;
-
-    case Icon::Simulator:
-        p.Circle(0.24f, 0.50f, 0.10f);
-        p.Circle(0.76f, 0.26f, 0.10f);
-        p.Circle(0.76f, 0.74f, 0.10f);
-        p.Line(0.33f, 0.46f, 0.67f, 0.30f);
-        p.Line(0.33f, 0.54f, 0.67f, 0.70f);
-        break;
-
-    case Icon::Play: p.FillTriangle({0.34f, 0.20f}, {0.34f, 0.80f}, {0.82f, 0.50f}); break;
-
-    case Icon::Stop: p.FillRect(0.26f, 0.26f, 0.74f, 0.74f, 0.08f); break;
-
-    case Icon::Rewind:
-        p.FillTriangle({0.50f, 0.24f}, {0.50f, 0.76f}, {0.12f, 0.50f});
-        p.FillTriangle({0.88f, 0.24f}, {0.88f, 0.76f}, {0.50f, 0.50f});
-        break;
-
-    case Icon::Plus:
-        p.Line(0.50f, 0.22f, 0.50f, 0.78f);
-        p.Line(0.22f, 0.50f, 0.78f, 0.50f);
-        break;
-
-    case Icon::Edit:
-        p.Path({{0.20f, 0.80f}, {0.26f, 0.58f}, {0.64f, 0.20f}, {0.80f, 0.36f}, {0.42f, 0.74f}}, true);
-        p.Line(0.56f, 0.28f, 0.72f, 0.44f);
-        break;
-
-    case Icon::Trash:
-        p.Line(0.18f, 0.28f, 0.82f, 0.28f);
-        p.Path({{0.40f, 0.28f}, {0.40f, 0.17f}, {0.60f, 0.17f}, {0.60f, 0.28f}}, false);
-        p.Path({{0.26f, 0.28f}, {0.31f, 0.84f}, {0.69f, 0.84f}, {0.74f, 0.28f}}, false);
-        p.Line(0.43f, 0.44f, 0.43f, 0.70f);
-        p.Line(0.57f, 0.44f, 0.57f, 0.70f);
-        break;
-
-    case Icon::Folder:
-        p.Path({{0.12f, 0.24f}, {0.38f, 0.24f}, {0.47f, 0.35f}, {0.88f, 0.35f}, {0.88f, 0.78f}, {0.12f, 0.78f}}, true);
-        break;
-
-    case Icon::Image:
-        p.Rect(0.14f, 0.22f, 0.86f, 0.78f, 0.08f);
-        p.Dot(0.34f, 0.42f, 0.055f);
-        p.Path({{0.18f, 0.74f}, {0.42f, 0.50f}, {0.58f, 0.64f}, {0.70f, 0.54f}, {0.84f, 0.70f}}, false);
-        break;
-
-    case Icon::Search:
-        p.Circle(0.44f, 0.44f, 0.24f);
-        p.Line(0.62f, 0.62f, 0.84f, 0.84f);
-        break;
-
-    case Icon::Check: p.Path({{0.20f, 0.52f}, {0.42f, 0.72f}, {0.82f, 0.30f}}, false); break;
-
-    case Icon::Info:
-        p.Circle(0.50f, 0.50f, 0.36f);
-        p.Dot(0.50f, 0.33f, 0.04f);
-        p.Line(0.50f, 0.46f, 0.50f, 0.70f);
-        break;
-
-    case Icon::Warning:
-        p.Path({{0.50f, 0.16f}, {0.88f, 0.82f}, {0.12f, 0.82f}}, true);
-        p.Line(0.50f, 0.40f, 0.50f, 0.60f);
-        p.Dot(0.50f, 0.71f, 0.04f);
-        break;
-
-    case Icon::ChevronRight: p.Path({{0.38f, 0.24f}, {0.64f, 0.50f}, {0.38f, 0.76f}}, false); break;
-    case Icon::ChevronDown:  p.Path({{0.24f, 0.38f}, {0.50f, 0.64f}, {0.76f, 0.38f}}, false); break;
-
-    case Icon::Close:
-        p.Line(0.26f, 0.26f, 0.74f, 0.74f);
-        p.Line(0.74f, 0.26f, 0.26f, 0.74f);
-        break;
-
-    case Icon::Minimize: p.Line(0.24f, 0.60f, 0.76f, 0.60f); break;
-    case Icon::Maximize: p.Rect(0.26f, 0.26f, 0.74f, 0.74f, 0.0f); break;
-
-    case Icon::Restore:
-        p.Rect(0.20f, 0.34f, 0.66f, 0.80f, 0.0f);
-        p.Path({{0.34f, 0.34f}, {0.34f, 0.20f}, {0.80f, 0.20f}, {0.80f, 0.66f}, {0.66f, 0.66f}}, false);
-        break;
+void DrawDitherBand(ImDrawList* draw, ImVec2 min, ImVec2 max, int rows) {
+    if (!g_frames.texture || rows <= 0) return;
+    const float tile = static_cast<float>(kDitherCell) * Px(1.0f);
+    const float sw = static_cast<float>(g_frames.width), sh = static_cast<float>(g_frames.height);
+    const ImTextureID tex = static_cast<ImTextureID>(g_frames.texture);
+    for (int r = 0; r < rows; ++r) {
+        const int density = std::min(3, r * 4 / rows);
+        const float y = Snap(max.y - static_cast<float>(rows - r) * tile);
+        if (y + tile < min.y) continue;
+        const float u0 = static_cast<float>(kDitherX + density * kDitherCell);
+        const float v0 = static_cast<float>(kDitherY);
+        for (float x = Snap(min.x); x < max.x; x += tile)
+            draw->AddImage(tex, ImVec2(x, y), ImVec2(x + tile, y + tile), ImVec2(u0 / sw, v0 / sh),
+                           ImVec2((u0 + kDitherCell) / sw, (v0 + kDitherCell) / sh), IM_COL32_WHITE);
     }
 }
 
@@ -347,61 +402,63 @@ void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 col)
 
 namespace {
 
-struct ButtonColors {
+struct ButtonLook {
     ImVec4 fill;
     ImVec4 text;
-    ImVec4 border;
+    Frame frame;
+    bool framed;
 };
 
-ButtonColors ColorsFor(ButtonStyle style, bool hovered, bool held) {
+ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
     switch (style) {
     case ButtonStyle::Primary:
-        return {held      ? color::kAccentPressed
-                : hovered ? color::kAccentHover
-                          : color::kAccent,
-                color::kOnAccent, ImVec4(0, 0, 0, 0)};
+        if (held) return {color::kPeach, color::kBlack, Frame::Orange, true};
+        return {hovered ? color::kPeach : color::kOrange, color::kBlack, Frame::Peach, true};
     case ButtonStyle::Ghost:
-        return {held      ? Rgb(0x000000, 0.10f)
-                : hovered ? Rgb(0x000000, 0.06f)
-                          : ImVec4(0, 0, 0, 0),
-                color::kText, ImVec4(0, 0, 0, 0)};
+        if (held) return {color::kOrange, color::kBlack, Frame::Orange, false};
+        return {hovered ? color::kBrown : ImVec4(0, 0, 0, 0), color::kPeach, Frame::Brown, false};
     case ButtonStyle::Danger:
-        return {held      ? Rgb(0xC0392B, 0.22f)
-                : hovered ? color::kDangerSoft
-                          : color::kSurface,
-                color::kDanger, held || hovered ? color::kDanger : Rgb(0xC0392B, 0.45f)};
+        if (held) return {color::kPeach, color::kBlack, Frame::Peach, true};
+        if (hovered) return {color::kOrange, color::kBlack, Frame::Peach, true};
+        return {color::kBlack, color::kOrange, Frame::Orange, true};
     case ButtonStyle::Secondary:
     default:
-        return {held      ? color::kSidebar
-                : hovered ? color::kSurfaceHover
-                          : color::kSurface,
-                color::kText, hovered ? Rgb(0xC9C1B0) : color::kBorder};
+        if (held) return {color::kOrange, color::kBlack, Frame::Peach, true};
+        if (hovered) return {color::kBrown, color::kPeach, Frame::Orange, true};
+        return {color::kPanel, color::kPeach, Frame::Brown, true};
     }
 }
 
-constexpr float kButtonHeight = 34.0f;
-constexpr float kButtonRounding = 7.0f;
+void PaintButton(ImDrawList* draw, ImVec2 min, ImVec2 max, const ButtonLook& look) {
+    if (look.framed) {
+        DrawFrame(draw, min, max, look.frame, Col(look.fill));
+    } else if (look.fill.w > 0.0f) {
+        draw->AddRectFilled(min, max, Col(look.fill));
+    }
+}
 
-void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding) {
+void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max) {
     const ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible)
-        draw->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2), Col(color::kAccent), rounding + 2.0f,
-                      0, 2.0f);
+    if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible) {
+        const float p = Px(1.0f);
+        draw->AddRect(ImVec2(min.x - p, min.y - p), ImVec2(max.x + p, max.y + p), Col(color::kPeach), 0.0f, 0, p);
+    }
 }
 
 } // namespace
 
 bool Button(const char* label, ButtonStyle style, Icon icon, ImVec2 size) {
+    const float p = Px(1.0f);
     const char* labelEnd = ImGui::FindRenderedTextEnd(label);
     const ImVec2 textSize = ImGui::CalcTextSize(label, labelEnd);
-    const float iconSize = icon != Icon::None ? std::round(ImGui::GetFontSize() * 1.2f) : 0.0f;
-    const float gap = (icon != Icon::None && textSize.x > 0.0f) ? 8.0f : 0.0f;
+    const float iconSize = icon != Icon::None ? 16.0f * p : 0.0f;
+    const float gap = (icon != Icon::None && textSize.x > 0.0f) ? 3.0f * p : 0.0f;
     const float contentWidth = iconSize + gap + textSize.x;
 
     float width = size.x;
-    if (width == 0.0f) width = contentWidth + 32.0f;
-    else if (width < 0.0f) width = std::max(4.0f, ImGui::GetContentRegionAvail().x + width);
-    const float height = size.y > 0.0f ? size.y : kButtonHeight;
+    if (width == 0.0f) width = contentWidth + 14.0f * p;
+    else if (width < 0.0f) width = std::max(8.0f * p, ImGui::GetContentRegionAvail().x + width);
+    const float height = size.y > 0.0f ? size.y : 20.0f * p;
 
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + width, min.y + height);
@@ -409,62 +466,59 @@ bool Button(const char* label, ButtonStyle style, Icon icon, ImVec2 size) {
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
 
-    const ButtonColors colors = ColorsFor(style, hovered, held);
+    const ButtonLook look = LookFor(style, hovered, held);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (colors.fill.w > 0.0f) draw->AddRectFilled(min, max, Col(colors.fill), kButtonRounding);
-    if (colors.border.w > 0.0f) draw->AddRect(min, max, Col(colors.border), kButtonRounding, 0, 1.0f);
-    FocusRing(draw, min, max, kButtonRounding);
+    PaintButton(draw, min, max, look);
+    FocusRing(draw, min, max);
 
-    const float midY = min.y + height * 0.5f;
-    float x = min.x + (width - contentWidth) * 0.5f;
+    const float midY = min.y + height * 0.5f + (held ? p : 0.0f);
+    float x = Snap(min.x + (width - contentWidth) * 0.5f);
     if (icon != Icon::None) {
-        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize, Col(colors.text));
+        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize, Tint());
         x += iconSize + gap;
     }
-    if (textSize.x > 0.0f)
-        draw->AddText(ImVec2(x, std::round(midY - textSize.y * 0.5f)), Col(colors.text), label, labelEnd);
+    if (textSize.x > 0.0f) draw->AddText(ImVec2(x, Snap(midY - textSize.y * 0.5f)), Col(look.text), label, labelEnd);
     return clicked;
 }
 
 bool IconButton(const char* id, Icon icon, ButtonStyle style, const char* tooltip, float size) {
-    const float side = size > 0.0f ? size : kButtonHeight;
+    const float p = Px(1.0f);
+    const float side = size > 0.0f ? size : 20.0f * p;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + side, min.y + side);
     const bool clicked = ImGui::InvisibleButton(id, ImVec2(side, side));
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
 
-    const ButtonColors colors = ColorsFor(style, hovered, held);
+    const ButtonLook look = LookFor(style, hovered, held);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (colors.fill.w > 0.0f) draw->AddRectFilled(min, max, Col(colors.fill), kButtonRounding);
-    if (colors.border.w > 0.0f) draw->AddRect(min, max, Col(colors.border), kButtonRounding, 0, 1.0f);
-    FocusRing(draw, min, max, kButtonRounding);
-    DrawIcon(draw, icon, ImVec2(min.x + side * 0.5f, min.y + side * 0.5f), side * 0.52f, Col(colors.text));
+    PaintButton(draw, min, max, look);
+    FocusRing(draw, min, max);
+    DrawIcon(draw, icon, ImVec2(min.x + side * 0.5f, min.y + side * 0.5f + (held ? p : 0.0f)), 16.0f * p, Tint());
 
     if (tooltip && hovered) ImGui::SetTooltip("%s", tooltip);
     return clicked;
 }
 
 bool NavItem(Icon icon, const char* label, bool selected) {
-    constexpr float kHeight = 38.0f;
+    const float p = Px(1.0f);
+    const float height = 22.0f * p;
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 min = ImGui::GetCursorScreenPos();
-    const ImVec2 max(min.x + width, min.y + kHeight);
-    const bool clicked = ImGui::InvisibleButton(label, ImVec2(width, kHeight));
+    const ImVec2 max(min.x + width, min.y + height);
+    const bool clicked = ImGui::InvisibleButton(label, ImVec2(width, height));
     const bool hovered = ImGui::IsItemHovered();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (selected) draw->AddRectFilled(min, max, Col(color::kAccentSoft), 8.0f);
-    else if (hovered) draw->AddRectFilled(min, max, Col(Rgb(0x000000, 0.05f)), 8.0f);
-    if (selected)
-        draw->AddRectFilled(ImVec2(min.x, min.y + 9), ImVec2(min.x + 3, max.y - 9), Col(color::kAccent), 2.0f);
-    FocusRing(draw, min, max, 8.0f);
+    if (selected) draw->AddRectFilled(min, max, Col(color::kBrown));
+    else if (hovered) draw->AddRectFilled(min, max, Col(color::kPanel));
+    if (selected) draw->AddRectFilled(min, ImVec2(min.x + 2.0f * p, max.y), Col(color::kOrange));
+    FocusRing(draw, min, max);
 
-    const ImVec4& fg = selected ? color::kAccentPressed : color::kText;
-    const float midY = min.y + kHeight * 0.5f;
-    DrawIcon(draw, icon, ImVec2(min.x + 26.0f, midY), 20.0f, Col(selected ? color::kAccent : color::kTextMuted));
+    const float midY = min.y + height * 0.5f;
+    DrawIcon(draw, icon, ImVec2(min.x + 14.0f * p, midY), 16.0f * p, Tint());
     const ImVec2 textSize = ImGui::CalcTextSize(label);
-    draw->AddText(ImVec2(min.x + 44.0f, std::round(midY - textSize.y * 0.5f)), Col(fg), label);
+    draw->AddText(ImVec2(min.x + 26.0f * p, Snap(midY - textSize.y * 0.5f)), Col(color::kText), label);
     return clicked;
 }
 
@@ -476,33 +530,39 @@ bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip,
     const bool held = ImGui::IsItemActive();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    ImVec4 fg = color::kText;
-    if (isClose && hovered) {
-        draw->AddRectFilled(min, max, Col(held ? Rgb(0xA82317) : Rgb(0xC42B1C)));
-        fg = color::kOnAccent;
-    } else if (hovered) {
-        draw->AddRectFilled(min, max, Col(Rgb(0x000000, held ? 0.12f : 0.07f)));
-    }
-    DrawIcon(draw, icon, ImVec2(min.x + size.x * 0.5f, min.y + size.y * 0.5f), 15.0f, Col(fg));
+    if (hovered) draw->AddRectFilled(min, max, Col(isClose ? (held ? color::kPeach : color::kOrange) : color::kBrown));
+    DrawIcon(draw, icon, ImVec2(min.x + size.x * 0.5f, min.y + size.y * 0.5f), 16.0f * Px(1.0f), Tint());
     if (tooltip && hovered) ImGui::SetTooltip("%s", tooltip);
     return clicked;
 }
 
-bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, color::kSurface);
-    ImGui::PushStyleColor(ImGuiCol_Border, color::kBorder);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+namespace {
+std::vector<Frame> g_cardFrames;
+}
+
+bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding, Frame frame) {
+    // The panel itself is drawn in EndCard, once the final size is known.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
-    ImGuiChildFlags flags = ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding;
+    ImGuiChildFlags flags = ImGuiChildFlags_AlwaysUseWindowPadding;
     if (autoHeight) flags |= ImGuiChildFlags_AutoResizeY;
     const bool visible = ImGui::BeginChild(id, size, flags, ImGuiWindowFlags_NoScrollbar);
-    ImGui::PopStyleVar(3);
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+    g_cardFrames.push_back(frame);
     return visible;
 }
 
-void EndCard() { ImGui::EndChild(); }
+void EndCard() {
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    ImGui::EndChild();
+    const Frame frame = g_cardFrames.empty() ? Frame::Brown : g_cardFrames.back();
+    if (!g_cardFrames.empty()) g_cardFrames.pop_back();
+    // A child window draws after its parent, so this lands behind the card's contents.
+    DrawFrame(ImGui::GetWindowDrawList(), pos, ImVec2(pos.x + size.x, pos.y + size.y), frame, Col(color::kPanel));
+}
 
 void PageTitleText(const char* title, const char* subtitle) {
     ImGui::PushFont(g_fonts.heading);
@@ -517,9 +577,11 @@ void PageTitleText(const char* title, const char* subtitle) {
 
 void PageTitle(const char* title, const char* subtitle) {
     PageTitleText(title, subtitle);
-    ImGui::Dummy(ImVec2(0.0f, 4.0f));
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+    ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddRectFilled(min, ImVec2(min.x + ImGui::GetContentRegionAvail().x, min.y + Px(1.0f)),
+                                              Col(color::kBrown));
+    ImGui::Dummy(ImVec2(0.0f, Px(5.0f)));
 }
 
 void SectionLabel(const char* text) {
@@ -531,17 +593,16 @@ void SectionLabel(const char* text) {
 }
 
 void Keycap(const char* text) {
+    const float p = Px(1.0f);
     const ImVec2 textSize = ImGui::CalcTextSize(text);
-    const ImVec2 size(std::max(textSize.x + 16.0f, 28.0f), textSize.y + 8.0f);
+    const ImVec2 size(std::max(textSize.x + 8.0f * p, 13.0f * p), 13.0f * p);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + size.x, min.y + size.y);
     ImGui::Dummy(size);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(ImVec2(min.x, min.y + 1), ImVec2(max.x, max.y + 1), Col(Rgb(0xD5CEBF)), 5.0f); // the key's edge
-    draw->AddRectFilled(min, max, Col(color::kSurface), 5.0f);
-    draw->AddRect(min, max, Col(color::kBorder), 5.0f);
-    draw->AddText(ImVec2(min.x + (size.x - textSize.x) * 0.5f, min.y + (size.y - textSize.y) * 0.5f), Col(color::kText),
-                  text);
+    DrawFrame(draw, min, max, Frame::Orange, Col(color::kBlack));
+    draw->AddText(ImVec2(Snap(min.x + (size.x - textSize.x) * 0.5f), Snap(min.y + (size.y - textSize.y) * 0.5f)),
+                  Col(color::kText), text);
 }
 
 void FormLabel(const char* label, float labelWidth) {
@@ -557,6 +618,15 @@ void HintText(const char* text) {
     ImGui::TextWrapped("%s", text);
     ImGui::PopStyleColor();
     ImGui::PopFont();
+}
+
+void Muted(const char* fmt, ...) {
+    char text[512];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(text, sizeof(text), fmt, args);
+    va_end(args);
+    HintText(text);
 }
 
 // --- Game artwork ---
@@ -590,8 +660,8 @@ std::string Initials(const std::string& title) {
 }
 
 ImU32 PlaceholderColor(const std::string& title) {
-    static const unsigned kColors[] = {0x6B7F99, 0x5F8575, 0x9A6B6B, 0x7A6C99, 0xA2814B,
-                                       0x4F7F8F, 0x8A7461, 0x697A52, 0x9B6A88, 0x607A9E};
+    // Shades of the interface's own browns and greys, so placeholder art belongs with the rest.
+    static const unsigned kColors[] = {0x6A2B09, 0x8A4A1C, 0x6F7781, 0x555B64, 0x9A5420, 0x4A1E07};
     unsigned hash = 2166136261u;
     for (unsigned char ch : title) hash = (hash ^ ch) * 16777619u;
     const unsigned rgb = kColors[hash % (sizeof(kColors) / sizeof(kColors[0]))];

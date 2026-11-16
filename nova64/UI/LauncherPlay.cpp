@@ -454,9 +454,9 @@ void NovaLauncher::RenderPauseMenu() {
         ImGui::SetNextWindowFocus();
         m_focusPauseMenu = false;
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, kit::Px(1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kit::Px(10.0f), kit::Px(9.0f)));
     ImGui::Begin("##PauseMenu", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_AlwaysAutoResize);
@@ -465,20 +465,20 @@ void NovaLauncher::RenderPauseMenu() {
     ImGui::PushFont(kit::GetFonts().heading);
     ImGui::TextColored(kit::color::kAccent, "Paused");
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextDisabled("  %s", m_emuTitle.c_str());
+    kit::Muted("  %s", m_emuTitle.c_str());
     ImGui::Separator();
     ImGui::Spacing();
 
     bool quit = false;
-    if (kit::Button("Resume (Esc)", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(180, 36))) ClosePauseMenu();
+    if (kit::Button("Resume", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(0.0f, kit::Px(20.0f))))
+        ClosePauseMenu();
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_launch.rewind);
-    if (kit::Button("Rewind (Backspace)", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(180, 36)))
+    if (kit::Button("Rewind", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(0.0f, kit::Px(20.0f))))
         OpenRewind();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (kit::Button("Quit Game", kit::ButtonStyle::Danger, kit::Icon::Close, ImVec2(180, 36))) quit = true;
+    if (kit::Button("Quit game", kit::ButtonStyle::Danger, kit::Icon::Close, ImVec2(0.0f, kit::Px(20.0f)))) quit = true;
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -497,8 +497,8 @@ void NovaLauncher::RenderPauseMenu() {
     ImGui::EndDisabled();
 
     ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kSidebar);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::Rgb(0xE4DFD3));
+    ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kBrown);
     const bool controlsOpen = ImGui::CollapsingHeader("Controls");
     ImGui::PopStyleColor(2);
     if (controlsOpen) {
@@ -520,8 +520,7 @@ void NovaLauncher::RenderSaveSlots() {
     const bool busy = service.RequestPending();
 
     ImGui::Text("Save states");
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", busy ? "  working..." : "  kept in the saves folder");
+    kit::Muted("%s", busy ? "  working..." : "  kept in the saves folder");
     ImGui::Spacing();
 
     constexpr ImVec2 kThumb(96.0f, 72.0f);
@@ -536,7 +535,7 @@ void NovaLauncher::RenderSaveSlots() {
             ImGui::SameLine();
             ImGui::BeginGroup();
             ImGui::Text("Slot %d", i + 1);
-            ImGui::TextDisabled("%s", slot.SavedAtText().c_str());
+            kit::Muted("%s", slot.SavedAtText().c_str());
             ImGui::BeginDisabled(busy);
             if (ImGui::Button("Save", ImVec2(64, 0))) {
                 if (slot.exists) {
@@ -608,8 +607,7 @@ void NovaLauncher::RenderRewindBar() {
                      ImGuiWindowFlags_NoScrollWithMouse);
 
     ImGui::TextColored(kit::color::kAccent, "Rewind");
-    ImGui::SameLine();
-    ImGui::TextDisabled("Scroll or press Left/Right to pick a moment. Enter plays from there, Esc cancels.");
+    kit::Muted("Scroll or press Left/Right to pick a moment. Enter plays from there, Esc cancels.");
 
     bool play = false, cancel = false;
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -624,8 +622,8 @@ void NovaLauncher::RenderRewindBar() {
     ImGui::BeginChild("##RewindStrip", ImVec2(0, 0), ImGuiChildFlags_None,
                       ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (count == 0) {
-        ImGui::TextDisabled("No rewind points yet. One is kept every %d seconds of play.",
-                            Nova64::StateService::kRewindIntervalSeconds);
+        kit::Muted("No rewind points yet. One is kept every %d seconds of play.",
+                   Nova64::StateService::kRewindIntervalSeconds);
     }
     const float fps = static_cast<float>(std::max(1, service.FieldsPerSecond()));
     const uint64_t now = std::max<uint64_t>(service.CurrentFrame(), count ? m_rewindPoints.back().frame : 0);
@@ -656,7 +654,7 @@ void NovaLauncher::RenderRewindBar() {
         const float labelW = ImGui::CalcTextSize(label).x;
         ImGui::SetCursorScreenPos(ImVec2(pos.x + (thumbSize.x - labelW) * 0.5f, pos.y + thumbSize.y + 4.0f));
         if (selected) ImGui::TextUnformatted(label);
-        else ImGui::TextDisabled("%s", label);
+        else kit::Muted("%s", label);
         ImGui::EndGroup();
 
         if (selected && m_rewindScrollToSelection) {
