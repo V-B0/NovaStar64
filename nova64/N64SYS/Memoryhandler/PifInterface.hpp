@@ -103,7 +103,6 @@ public:
 
     // State management
     void reset();
-    void soft_reset();
     void set_cic_type(PIF::CicType type) {
         m_cic_type = type;
         m_config.cic_type = type;
@@ -112,21 +111,6 @@ public:
     void load_state(std::istream& is);
     /// Save states and rewind (see StateArchive.hpp).
     void SerializeState(Nova64::StateArchive& ar);
-
-    // Controller management
-    void set_controller_state(size_t port, const PIF::ControllerState& state);
-    [[nodiscard]] PIF::ControllerState get_controller_state(size_t port) const;
-    void set_controller_pak_data(size_t port, const std::vector<uint8_t>& data);
-    [[nodiscard]] std::vector<uint8_t> get_controller_pak_data(size_t port) const;
-
-    // EEPROM access
-    [[nodiscard]] std::vector<uint8_t> read_eeprom() const;
-    void write_eeprom(const std::vector<uint8_t>& data);
-
-    // Debug information
-    [[nodiscard]] std::string get_pif_status() const;
-    [[nodiscard]] std::string dump_ram() const;
-    [[nodiscard]] std::string dump_controllers() const;
 
     // Statistics
     struct Statistics {
@@ -144,7 +128,6 @@ public:
 
     // Callbacks
     using SystemResetCallback = std::function<void()>;
-    void set_system_reset_callback(SystemResetCallback callback);
 
 private:
     PifRamHandler() = delete;
@@ -209,14 +192,11 @@ private:
 
     // Declared but not defined.
     void process_controller_command(size_t port, Common::Span<uint8_t> command);
-    void process_eeprom_command(Common::Span<uint8_t> command);
 
     // CIC security
     void CicNus6105(const char* Challenge, char* Response, int Length);
-    void cic_nus_6105_challenge(Common::Span<const uint8_t> challenge, Common::Span<uint8_t> response);
     void cic_nus_6102_challenge(Common::Span<const uint8_t> challenge, Common::Span<uint8_t> response);
     void cic_nus_6106_challenge(Common::Span<const uint8_t> challenge, Common::Span<uint8_t> response);
-    [[nodiscard]] bool validate_cic() const;
 
     // Controller input handling
     void update_controller_inputs();
@@ -228,8 +208,6 @@ private:
 
         bool read(uint32_t address, uint8_t& value);
         bool write(uint32_t address, uint8_t value);
-        [[nodiscard]] std::vector<uint8_t> get_data() const;
-        void set_data(const std::vector<uint8_t>& data);
         [[nodiscard]] bool is_present() const { return m_present; }
         void set_present(bool present) { m_present = present; }
 
@@ -241,11 +219,6 @@ private:
     };
 
     std::array<ControllerPak, 4> m_controller_paks;
-
-    // Helper methods
-    [[nodiscard]] bool is_pif_address(uint32_t address) const;
-    [[nodiscard]] uint32_t pif_address_to_index(uint32_t address) const;
-    void log_pif_command(const std::string& description, Common::Span<const uint8_t> data);
 
     // Byte swapping (N64 is big-endian)
     static constexpr uint32_t swap_bytes_32(uint32_t value) noexcept {

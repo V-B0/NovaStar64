@@ -90,8 +90,6 @@ public:
 
     // --- Current State ---
 
-    MicrocodeType GetCurrentType() const;
-    const MicrocodeInfo& GetCurrentInfo() const;
     GBIHandler* GetCurrentHandler() const { return m_activeHandler; }
 
     /// Set the RT scene geometry consumer on the shared DListContext.

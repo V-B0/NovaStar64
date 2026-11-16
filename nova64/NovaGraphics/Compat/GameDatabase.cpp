@@ -64,13 +64,6 @@ const GameProfile* GameDatabase::FindByCRC(uint32_t crc1, uint32_t crc2) const {
     return nullptr;
 }
 
-const GameProfile* GameDatabase::FindByName(const std::string& name) const {
-    for (const auto& p : m_profiles) {
-        if (p.name == name) return &p;
-    }
-    return nullptr;
-}
-
 void GameDatabase::AddProfile(const GameProfile& profile) {
     m_profiles.push_back(profile);
     int idx = static_cast<int>(m_profiles.size()) - 1;
@@ -202,31 +195,6 @@ bool GameDatabase::LoadCustomProfiles(const std::string& path) {
 
     BuildIndices();
     LOG_INFO("Loaded custom profiles from {}", path);
-    return true;
-}
-
-bool GameDatabase::SaveCustomProfiles(const std::string& path) const {
-    std::ofstream file(path);
-    if (!file) return false;
-
-    file << "# NovaGraphics Game Compatibility Overrides\n";
-    file << "# Auto-generated — edit with caution\n\n";
-
-    for (const auto& p : m_profiles) {
-        file << "[" << p.gameId << "]\n";
-        file << "name = " << p.name << "\n";
-        file << "rating = " << static_cast<int>(p.rating) << "\n";
-        if (p.crc1) file << "crc1 = " << std::hex << p.crc1 << std::dec << "\n";
-        if (p.crc2) file << "crc2 = " << std::hex << p.crc2 << std::dec << "\n";
-        if (p.flags) file << "flags = " << std::hex << p.flags << std::dec << "\n";
-        if (!p.forcedMicrocode.empty()) file << "microcode = " << p.forcedMicrocode << "\n";
-        if (!p.knownIssues.empty()) file << "issues = " << p.knownIssues << "\n";
-        if (p.depthBias) file << "depthBias = " << p.depthBias << "\n";
-        if (p.textureLodBias != 0.0f) file << "texLodBias = " << p.textureLodBias << "\n";
-        if (p.aspectRatioOverride != 0.0f) file << "aspect = " << p.aspectRatioOverride << "\n";
-        file << "\n";
-    }
-
     return true;
 }
 

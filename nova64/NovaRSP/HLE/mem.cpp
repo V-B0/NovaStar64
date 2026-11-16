@@ -34,12 +34,6 @@ void load_u16(uint16_t* dst, const uint8_t* buffer, unsigned address, size_t cou
     }
 }
 
-void load_u32(uint32_t* dst, const uint8_t* buffer, unsigned address, size_t count, unsigned mask) {
-    for (size_t i = 0; i < count; i++) {
-        dst[i] = *u32(buffer, (address + static_cast<unsigned>(i * 4)) & mask);
-    }
-}
-
 void store_u16(uint8_t* buffer, unsigned address, const uint16_t* src, size_t count, unsigned mask) {
     for (size_t i = 0; i < count; i++) {
         *u16(buffer, (address + static_cast<unsigned>(i * 2)) & mask) = src[i];
@@ -56,13 +50,7 @@ void store_u32(uint8_t* buffer, unsigned address, const uint32_t* src, size_t co
 
 uint32_t* dmem_u32(CHle* hle, uint16_t address) { return u32(hle->dmem(), address & 0xFFC); }
 
-void dmem_store_u32(CHle* hle, const uint32_t* src, uint16_t address, size_t count) {
-    store_u32(hle->dmem(), address & 0xFFC, src, count, 0xFFF);
-}
-
 // --- DRAM convenience accessors (masked to 8 MB) ---
-
-uint8_t* dram_u8(CHle* hle, uint32_t address) { return u8(hle->dram(), address & DRAM_MASK); }
 
 uint16_t* dram_u16(CHle* hle, uint32_t address) { return u16(hle->dram(), (address & DRAM_MASK) & ~1u); }
 
@@ -74,10 +62,6 @@ void dram_load_u8(CHle* hle, uint8_t* dst, uint32_t address, size_t count) {
 
 void dram_load_u16(CHle* hle, uint16_t* dst, uint32_t address, size_t count) {
     load_u16(dst, hle->dram(), (address & DRAM_MASK) & ~1u, count, DRAM_MASK);
-}
-
-void dram_load_u32(CHle* hle, uint32_t* dst, uint32_t address, size_t count) {
-    load_u32(dst, hle->dram(), (address & DRAM_MASK) & ~3u, count, DRAM_MASK);
 }
 
 void dram_store_u16(CHle* hle, const uint16_t* src, uint32_t address, size_t count) {

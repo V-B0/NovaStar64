@@ -23,12 +23,6 @@ void RspPluginLoaded();
 /// Per-game setup when a ROM is opened: applies per-game overrides and creates the persistent HLE context.
 void RspRomOpened();
 
-/// Per-game cleanup when the ROM is closed: destroys the HLE context.
-void RspRomClosed();
-
-/// Frees all RSP resources (module unload).
-void FreeRSP();
-
 /// Entry point called when the RSP halt bit is cleared. Tries HLE dispatch first, otherwise runs the
 /// task on the RSP engine until BREAK or halt. Returns `cycles` when HLE handled the task and 0 after
 /// the engine ran it.

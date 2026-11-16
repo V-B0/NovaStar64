@@ -64,7 +64,6 @@ class RspJit;
 class CRSPSystem {
     friend class RSPOp;
     friend class Jit::RspJit;
-    friend class CRDPLog;
     friend class RSPRegisterHandler;
     friend class RSPRegisterHandlerPlugin;
     friend class HLE::CHle;
@@ -109,20 +108,11 @@ public:
 
     // Sync CPU support (for debugging / verification)
     void SetupSyncCPU();
-    [[nodiscard]] bool IsSyncSystem() const;
     [[nodiscard]] CRSPSystem* SyncSystem() const;
-    void BasicSyncCheck();
 
     // DMA transfer helpers
     void SP_DMA_READ();
     void SP_DMA_WRITE();
-
-    // Debug utilities
-    void DumpSyncState(char* buf, size_t bufSize) const;
-
-    // Profiling
-    void ResetProfilingStats();
-    void GetProfilingStats(uint64_t& opsExecuted, uint64_t& cyclesUsed, uint32_t& dmaTransfers, uint32_t& breaks) const;
 
     // Custom allocator for alignment
     void* operator new(size_t size);
@@ -138,10 +128,6 @@ public:
     [[nodiscard]] const uint8_t* Header() const { return m_HEADER; }
 
 private:
-    static void NullProcessDList();
-    static void NullProcessRdpList();
-    static void NullCheckInterrupts();
-
     void RunUntimed(uint32_t cycles);
 
     RSPEngine m_Engine{RSPEngine::Interpreter};

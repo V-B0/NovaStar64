@@ -159,48 +159,17 @@ public:
         bool IsValid() const noexcept { return label.is_valid(); }
     };
 
-    /**
-     * @brief Define a new symbol
-     * @param name Symbol name
-     * @param isExported Whether symbol is exported
-     * @return Label for the symbol
-     */
-    asmjit::Label DefineSymbol(std::string_view name, bool isExported = false);
-
     std::optional<SymbolInfo> GetSymbol(std::string_view name) const;
 
     std::optional<SymbolInfo> GetSymbol(asmjit::Label label) const;
-
-    /**
-     * @brief Resolve symbol address (for linking)
-     */
-    bool ResolveSymbol(std::string_view name, uint64_t address);
 
     // Logging and debugging
     void EnableLogging(bool enable) noexcept { m_Options.enableLogging = enable; }
     bool IsLoggingEnabled() const noexcept { return m_Options.enableLogging; }
 
-    void SetLogOutput(std::ostream& output) noexcept;
     void SetLogCallback(std::function<void(std::string_view)> callback) noexcept;
 
-    std::string GenerateDisassembly() const;
-
     void AddComment(std::string_view comment);
-
-    // Code generation helpers
-    /**
-     * @brief Emit prologue code
-     * @param stackSize Stack frame size
-     * @param preserveRegs Mask of registers to preserve
-     */
-    void EmitPrologue(uint32_t stackSize, uint32_t preserveRegs = 0);
-
-    /**
-     * @brief Emit epilogue code
-     * @param stackSize Stack frame size
-     * @param preserveRegs Mask of registers to restore
-     */
-    void EmitEpilogue(uint32_t stackSize, uint32_t restoreRegs = 0);
 
     /**
      * @brief Emit call to native function
@@ -209,47 +178,13 @@ public:
      */
     void EmitCall(void* target, bool isTailCall = false);
 
-    /**
-     * @brief Emit conditional jump with fallback
-     * @param condition AsmJit condition code
-     * @param target Jump target label
-     * @param fallback Fallback label (for likely branches)
-     */
-    void EmitConditionalJump(asmjit::x86::CondCode condition, asmjit::Label target,
-                             asmjit::Label fallback = asmjit::Label());
-
-    /**
-     * @brief Emit memory load with bounds checking
-     * @param dest Destination register
-     * @param src Memory operand
-     * @param size Size of load (1, 2, 4, 8)
-     * @param isSigned Whether load is signed
-     */
-    void EmitSafeLoad(asmjit::x86::Gp dest, const asmjit::x86::Mem& src, uint32_t size, bool isSigned);
-
-    /**
-     * @brief Emit memory store with bounds checking
-     * @param dest Memory operand
-     * @param src Source register
-     * @param size Size of store (1, 2, 4, 8)
-     */
-    void EmitSafeStore(const asmjit::x86::Mem& dest, asmjit::x86::Gp src, uint32_t size);
-
     // Register allocation helpers
     class RegisterAllocator {
     public:
         explicit RegisterAllocator(CX64Ops& assembler);
 
-        asmjit::x86::Gp AllocateGp();
-        asmjit::x86::Vec AllocateXmm();
-        asmjit::x86::Gp AllocateGp64(); // 64-bit GP
-        asmjit::x86::Gp AllocateGp32(); // 32-bit GP
-
-        void Free(asmjit::x86::Gp reg);
-        void Free(asmjit::x86::Vec reg);
-
-        bool IsAllocated(asmjit::x86::Gp reg) const;
-        bool IsAllocated(asmjit::x86::Vec reg) const;
+        // 64-bit GP
+        // 32-bit GP
 
         void Reset();
 
@@ -276,8 +211,6 @@ public:
     bool HasError() const noexcept { return m_LastError != asmjit::kErrorOk; }
 
     asmjit::Error GetLastError() const noexcept { return m_LastError; }
-
-    std::string GetLastErrorMessage() const;
 
     void ClearError() noexcept { m_LastError = asmjit::kErrorOk; }
 
@@ -317,9 +250,6 @@ private:
 
     // Internal helpers
     void InitializeSymbols();
-    bool ValidateInstruction(const asmjit::BaseInst& inst) const;
-    void ApplyOptimizations();
-    void EmitDebugTrap();
 
     // Error handling
     void HandleError(asmjit::Error error, std::string_view context = "");

@@ -395,16 +395,12 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height);
 
     // --- Effect management ---
-    void AddEffect(std::unique_ptr<PostEffect> effect);
-    void RemoveEffect(PostEffectType type);
-    PostEffect* GetEffect(PostEffectType type);
-    void SetEffectEnabled(PostEffectType type, bool enabled);
     void ClearEffects();
 
     // --- Quick setup ---
-    void SetupDefaultChain();  // Empty chain: no effects
-    void SetupRetroChain();    // CRT + Gamma
-    void SetupEnhancedChain(); // Bloom + Sharpen + Gamma + FXAA
+    void SetupDefaultChain(); // Empty chain: no effects
+    // CRT + Gamma
+    // Bloom + Sharpen + Gamma + FXAA
 
     int GetEffectCount() const { return static_cast<int>(m_effects.size()); }
     bool HasEnabledEffects() const;

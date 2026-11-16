@@ -61,12 +61,6 @@ public:
     LoopAnalysis& operator=(const LoopAnalysis&) = delete;
 
     /**
-     * @brief Check loop register usage and set up entry/continue register sets
-     * @return true if analysis successful and optimizations can be applied
-     */
-    bool CheckLoopRegisterUsage();
-
-    /**
      * @brief Get the recommended register set for loop entry  
      * @return Reference to optimized register set for loop entry
      */
@@ -91,32 +85,6 @@ private:
     static uint32_t Cmd_funct(const R4300iOps& c) { return c.Value & 0x3F; }
     static uint32_t Cmd_imm(const R4300iOps& c) { return c.Itype.imm; }
     static int16_t Cmd_imm_s(const R4300iOps& c) { return static_cast<int16_t>(c.Value & 0xFFFF); }
-
-    // Core analysis: walk through a section checking register usage
-    bool CheckSectionRegisterUsage(CodeSection* section);
-
-    // Set up the "enter" register set from the analysis section mappings
-    void SetupEnterSection(CodeSection* section, bool bRecursive);
-
-    // Set up register states for the loop from section analysis
-    void SetupRegisterForLoop(CodeSection* section);
-
-    // Synchronize register state between analysis and stored section state
-    bool SyncRegState(CRegBase& RegSet, const CRegBase& SyncReg);
-
-    // Set the jump target register set for a section
-    void SetJumpRegSet(CodeSection* section, const CRegBase& Reg);
-
-    // Set the continue register set for a section
-    void SetContinueRegSet(CodeSection* section, const CRegBase& Reg);
-
-    // Get the jump register set for a section (nullptr if not set)
-    CRegBase* GetJumpRegSet(CodeSection* section);
-    const CRegBase* GetJumpRegSet(CodeSection* section) const;
-
-    // Get the continue register set for a section (nullptr if not set)
-    CRegBase* GetContinueRegSet(CodeSection* section);
-    const CRegBase* GetContinueRegSet(CodeSection* section) const;
 
     // SPECIAL opcode instruction handlers for register analysis
     void SPECIAL_SLL(CRegBase& Reg);
@@ -150,20 +118,11 @@ private:
     void SPECIAL_DSRA32(CRegBase& Reg);
 
     [[maybe_unused]] CodeBlock& m_CodeBlock;
-    CodeSection* m_EntrySection;
 
     // The command being analyzed
     R4300iOps m_Command{};
 
-    // Pipeline tracking during analysis
-    // Uses N64Types::PipelineStage for recompiler-level pipeline tracking
-    // (Normal, DelaySlot, EndBlock etc.) - NOT the ExitInfo PipelineStage
-    N64Types::PipelineStage m_PipelineStage = N64Types::PipelineStage::Normal;
-
-    // PC during analysis walk
-    uint32_t m_PC = 0;
     [[maybe_unused]] uint32_t m_NextInstruction = 0;
-    uint32_t m_Test = 0;
 
     // Result register sets
     CRegBase m_EnterRegisters;
@@ -173,8 +132,6 @@ private:
     std::unordered_map<CodeSection*, CRegBase*> m_JumpRegSets;
     std::unordered_map<CodeSection*, CRegBase*> m_ContinueRegSets;
     std::unordered_map<CodeSection*, CRegBase*> m_EnterRegSets;
-
-    bool m_Changed = false;
 };
 
 } // namespace Recompiler

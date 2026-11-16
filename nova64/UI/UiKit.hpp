@@ -172,10 +172,6 @@ void SectionLabel(const char* text);
 /// Draws `text` as a keyboard key.
 void Keycap(const char* text);
 
-/// A label on the left and the control on the right, aligned across rows. Call before the
-/// widget; the widget should be given an ID that starts with "##". `labelWidth` is in pixels.
-void FormLabel(const char* label, float labelWidth = 180.0f);
-
 /// Text in the muted style, wrapped to the available width.
 void HintText(const char* text);
 

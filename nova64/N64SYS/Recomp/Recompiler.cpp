@@ -13,7 +13,6 @@
 #include "../StateTrace.hpp"
 #include "RecompilerMemory.hpp"
 #include "FunctionMap.hpp"
-#include "FunctionInfo.hpp"
 
 #include "CompiledFunc.hpp"
 #include "LoopAnalysis.hpp"
@@ -248,64 +247,6 @@ void CRecompiler::ClearAllCode() {
     ++m_Stats.codeInvalidations;
 }
 
-void CRecompiler::ResetMemoryStackPos() noexcept { m_MemoryStack = GetWritePosition(); }
-
-void CRecompiler::ResetFunctionTimes() {
-    Log::info("CRecompiler: Resetting function profiling times");
-
-    for (auto& pair : m_FunctionProfiles) {
-        pair.second.Reset();
-    }
-
-    m_LastProfilingReset = std::chrono::high_resolution_clock::now();
-}
-
-void CRecompiler::DumpFunctionTimes() {
-    if (m_FunctionProfiles.empty()) {
-        Log::info("CRecompiler: No profiling data available");
-        return;
-    }
-
-    Log::info("CRecompiler: Function Profiling Report");
-    Log::info("========================================");
-
-    std::vector<std::pair<CCompiledFunc*, FunctionProfile>> sorted;
-    sorted.reserve(m_FunctionProfiles.size());
-
-    for (const auto& pair : m_FunctionProfiles) {
-        sorted.push_back(pair);
-    }
-
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto& a, const auto& b) { return a.second.totalTime > b.second.totalTime; });
-
-    size_t count = std::min<size_t>(20, sorted.size());
-    for (size_t i = 0; i < count; ++i) {
-        const auto& profile = sorted[i].second;
-        double avgTimeUs = profile.totalTime.count() / static_cast<double>(profile.callCount) / 1000.0;
-
-        Log::infof("Address: 0x%08X, Calls: %llu, Total: %lld us, Avg: %.2f us", profile.address, profile.callCount,
-                   profile.totalTime.count() / 1000, avgTimeUs);
-    }
-}
-
-void CRecompiler::StartLog() {
-    if (m_LogFile) {
-        Log::warning("CRecompiler: Logging already active");
-        return;
-    }
-
-    m_LogFile = new CLog();
-    if (!m_LogFile->Open("recompiler.log")) {
-        Log::error("CRecompiler: Failed to create log file");
-        delete m_LogFile;
-        m_LogFile = nullptr;
-        return;
-    }
-
-    Log::info("CRecompiler: Started logging");
-}
-
 void CRecompiler::StopLog() {
     if (!m_LogFile) {
         Log::warning("CRecompiler: Logging not active");
@@ -317,22 +258,6 @@ void CRecompiler::StopLog() {
     m_LogFile = nullptr;
 
     Log::info("CRecompiler: Stopped logging");
-}
-
-void CRecompiler::ResetLog() {
-    bool wasLogging = (m_LogFile != nullptr);
-
-    if (wasLogging) {
-        StopLog();
-    }
-
-    std::filesystem::remove("recompiler.log");
-
-    if (wasLogging) {
-        StartLog();
-    }
-
-    Log::info("CRecompiler: Log reset");
 }
 
 // --- Core Compilation ---
@@ -985,11 +910,6 @@ void CRecompiler::Execute_Lookup_Validate() {
 
 // --- Interpreter Fallback ---
 
-void CRecompiler::FallbackToInterpreter() {
-    Log::info("CRecompiler: Falling back to interpreter for remaining execution");
-    m_System.ExecuteInterpret();
-}
-
 void CRecompiler::InterpretSingleInstruction() {
     // Execute exactly one instruction via the interpreter.
     // Routed through CN64System to avoid include conflicts.
@@ -1047,32 +967,6 @@ void CRecompiler::ProcessPendingDeletions() {
         delete func;
     }
     m_PendingDeletions.clear();
-}
-
-void CRecompiler::HandleSelfModifyingCode(uint32_t address, RemoveReason reason) {
-    Log::debugf("CRecompiler: Detected self-modifying code at 0x%08X", address);
-
-    ClearRecompCode_Virt(address, 4, reason); // Clear at least one instruction
-}
-
-void CRecompiler::UpdateProfiling(CCompiledFunc* func, std::chrono::nanoseconds time) {
-    if (!m_ProfilingEnabled || !func) {
-        return;
-    }
-
-    auto& profile = m_FunctionProfiles[func];
-
-    if (profile.address == 0) {
-        // There is no reverse lookup, so scan KSEG0 for the function's entry address.
-        for (uint32_t addr = 0x80000000; addr < 0x80800000; addr += 4) {
-            if (Lookup(addr) == func) {
-                profile.address = addr;
-                break;
-            }
-        }
-    }
-
-    profile.Update(time);
 }
 
 } // namespace Nova64::Recompiler

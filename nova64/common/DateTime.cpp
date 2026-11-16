@@ -27,11 +27,6 @@ DateTime::DateTime() : m_time(std::time(nullptr)) {}
 
 DateTime::DateTime(std::time_t time) : m_time(time) {}
 
-DateTime& DateTime::SetToNow() {
-    m_time = std::time(nullptr);
-    return *this;
-}
-
 std::string DateTime::Format(std::string_view format) const {
     std::tm tm{};
     if (!SafeLocalTime(m_time, tm)) {
@@ -49,15 +44,3 @@ std::string DateTime::Format(std::string_view format) const {
 }
 
 std::string DateTime::ToString() const { return Format("%Y-%m-%d %H:%M:%S"); }
-
-std::string DateTime::ToISO8601() const { return Format("%Y-%m-%dT%H:%M:%S"); }
-
-std::string DateTime::ToShortDate() const { return Format("%Y-%m-%d"); }
-
-std::string DateTime::ToShortTime() const { return Format("%H:%M:%S"); }
-
-DateTime DateTime::Now() { return DateTime(std::time(nullptr)); }
-
-std::time_t DateTime::CurrentTime() { return std::time(nullptr); }
-
-std::string DateTime::FormatTime(std::time_t time, std::string_view format) { return DateTime(time).Format(format); }

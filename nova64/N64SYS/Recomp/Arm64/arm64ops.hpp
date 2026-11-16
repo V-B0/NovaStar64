@@ -97,7 +97,6 @@ public:
         bool IsValid() const noexcept { return label.is_valid(); }
     };
 
-    asmjit::Label DefineSymbol(std::string_view name, bool isExported = false);
     std::optional<SymbolInfo> GetSymbol(std::string_view name) const;
 
     // --- Logging / debugging ---

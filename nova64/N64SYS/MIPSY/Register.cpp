@@ -255,10 +255,6 @@ void CRegisters::Reset(bool bPostPif, Nova64::MipsMemoryVM& MMU) {
 
 // --- COP0 Register Access ---
 
-uint64_t& CRegisters::GetCop0RegRef(COP0Reg reg) { return m_CP0[static_cast<uint8_t>(reg)]; }
-
-const uint64_t& CRegisters::GetCop0RegRef(COP0Reg reg) const { return m_CP0[static_cast<uint8_t>(reg)]; }
-
 uint64_t CRegisters::Cop0_MF(COP0Reg Reg) {
     uint8_t regIndex = static_cast<uint8_t>(Reg);
 

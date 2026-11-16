@@ -144,8 +144,6 @@ public:
 
     // Device management
     [[nodiscard]] size_t get_device_count() const { return m_device_count; }
-    [[nodiscard]] const RDRAM::DeviceState& get_device_state(size_t index) const;
-    void set_device_present(size_t index, bool present);
 
     // Expansion Pak support
     void enable_expansion_pak(bool enable);
@@ -155,11 +153,6 @@ public:
     void reset();
     void save_state(std::ostream& os) const;
     void load_state(std::istream& is);
-
-    // Debug information
-    [[nodiscard]] std::string get_device_info(size_t index) const;
-    [[nodiscard]] std::string get_all_devices_info() const;
-    [[nodiscard]] std::string get_memory_configuration() const;
 
     // Statistics
     struct Statistics {
@@ -206,18 +199,11 @@ private:
 
     // Special register handling
     void handle_mode_register_write(size_t device_index, uint32_t value, uint32_t mask);
-    void handle_config_register_write(size_t device_index, uint32_t value, uint32_t mask);
 
     // Power management
     void update_device_power_state(size_t device_index);
     void enter_self_refresh(size_t device_index);
     void exit_self_refresh(size_t device_index);
-    void enter_power_down(size_t device_index);
-    void exit_power_down(size_t device_index);
-
-    // Timing calculations
-    [[nodiscard]] uint32_t calculate_device_delay(size_t device_index) const;
-    [[nodiscard]] uint32_t calculate_refresh_rate(size_t device_index) const;
 
     void log_device_access(size_t device_index, RDRAM::DeviceRegister reg, uint32_t value, bool is_write) const;
     void log_power_state_change(size_t device_index, const std::string& old_state, const std::string& new_state) const;

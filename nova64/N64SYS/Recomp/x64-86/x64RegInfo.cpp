@@ -174,26 +174,6 @@ void CX64RegInfo::UnmapRegister(uint32_t mipsReg, bool writeBack, bool force) {
     m_HostRegistersUsed.reset(static_cast<size_t>(hostReg));
 }
 
-void CX64RegInfo::UnmapHostRegister(X64RegisterType hostReg, bool writeBack) {
-    auto hostIdx = static_cast<size_t>(hostReg);
-    if (hostIdx >= m_HostToMips.size()) return;
-    if (!m_HostToMips[hostIdx].has_value()) return;
-
-    uint32_t mipsReg = m_HostToMips[hostIdx].value();
-    UnmapRegister(mipsReg, writeBack);
-}
-
-X64RegisterType CX64RegInfo::GetMappedHostRegister(uint32_t mipsReg) const noexcept {
-    if (mipsReg >= 32 || !m_MipsToHost[mipsReg].has_value()) return X64RegisterType::Invalid;
-    return m_MipsToHost[mipsReg]->GetHostReg();
-}
-
-uint32_t CX64RegInfo::GetMappedMipsRegister(X64RegisterType hostReg) const noexcept {
-    auto idx = static_cast<size_t>(hostReg);
-    if (idx >= m_HostToMips.size() || !m_HostToMips[idx].has_value()) return UINT32_MAX;
-    return m_HostToMips[idx].value();
-}
-
 bool CX64RegInfo::IsMapped(uint32_t mipsReg) const noexcept {
     return mipsReg < 32 && m_MipsToHost[mipsReg].has_value();
 }
@@ -223,22 +203,6 @@ void CX64RegInfo::ReloadRegister(uint32_t mipsReg) {
     m_Stats.totalReloads++;
 }
 
-void CX64RegInfo::SpillAllDirtyRegisters() {
-    for (uint32_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value() && m_MipsToHost[i]->IsDirty()) {
-            SpillRegister(i);
-        }
-    }
-}
-
-void CX64RegInfo::ReloadAllRegisters() {
-    for (uint32_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value()) {
-            ReloadRegister(i);
-        }
-    }
-}
-
 void CX64RegInfo::FlushRegisters(bool writeBack) {
     for (uint32_t i = 0; i < 32; ++i) {
         if (m_MipsToHost[i].has_value()) {
@@ -266,24 +230,6 @@ void CX64RegInfo::FreeHostRegister(X64RegisterType reg) {
         RemoveMapping(m_HostToMips[idx].value());
     }
     m_HostRegistersUsed.reset(idx);
-}
-
-void CX64RegInfo::LockRegister(uint32_t mipsReg) {
-    if (mipsReg < 32) {
-        m_LockedRegisters.set(mipsReg);
-        if (m_MipsToHost[mipsReg].has_value()) {
-            m_MipsToHost[mipsReg]->SetLocked(true);
-        }
-    }
-}
-
-void CX64RegInfo::UnlockRegister(uint32_t mipsReg) {
-    if (mipsReg < 32) {
-        m_LockedRegisters.reset(mipsReg);
-        if (m_MipsToHost[mipsReg].has_value()) {
-            m_MipsToHost[mipsReg]->SetLocked(false);
-        }
-    }
 }
 
 // --- State Management ---
@@ -359,25 +305,6 @@ size_t CX64RegInfo::GetDirtyRegisterCount() const noexcept {
     return count;
 }
 
-uint32_t CX64RegInfo::GetUsedGeneralPurposeMask() const noexcept {
-    uint32_t mask = 0;
-    for (uint32_t i = 0; i < 16; ++i) {
-        if (m_HostRegistersUsed.test(i)) mask |= (1u << i);
-    }
-    return mask;
-}
-
-uint64_t CX64RegInfo::GetUsedFloatingPointMask() const noexcept {
-    uint64_t mask = 0;
-    for (uint32_t i = 0; i < 16; ++i) {
-        auto base = static_cast<size_t>(X64RegisterType::XMM0) + i;
-        if (base < 256 && m_HostRegistersUsed.test(base)) {
-            mask |= (1ull << i);
-        }
-    }
-    return mask;
-}
-
 std::string CX64RegInfo::ToString() const {
     std::ostringstream oss;
     oss << "CX64RegInfo: " << GetMappedRegisterCount() << " mapped, " << GetDirtyRegisterCount() << " dirty\n";
@@ -400,12 +327,6 @@ bool CX64RegInfo::Validate() const noexcept {
         }
     }
     return true;
-}
-
-void CX64RegInfo::DumpState() const { Log::debug(ToString().c_str()); }
-
-void CX64RegInfo::SetAllocationStrategy(std::unique_ptr<IRegisterAllocationStrategy> strategy) {
-    m_AllocationStrategy = std::move(strategy);
 }
 
 // --- Internal Helpers ---

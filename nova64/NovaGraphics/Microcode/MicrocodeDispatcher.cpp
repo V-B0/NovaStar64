@@ -249,10 +249,6 @@ void MicrocodeDispatcher::OnFrameEnd() { ++m_stats.framesProcessed; }
 
 // --- Handler Management ---
 
-MicrocodeType MicrocodeDispatcher::GetCurrentType() const { return m_activeInfo.type; }
-
-const MicrocodeInfo& MicrocodeDispatcher::GetCurrentInfo() const { return m_activeInfo; }
-
 GBIHandler* MicrocodeDispatcher::GetHandler(MicrocodeType type) {
     auto it = m_handlerCache.find(type);
     if (it != m_handlerCache.end()) {

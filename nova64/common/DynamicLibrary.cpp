@@ -14,63 +14,6 @@
 #endif
 #include <utility>
 
-DynamicLibrary::Handle DynamicLibraryOpen(const char* libraryPath, bool showErrors) {
-    if (libraryPath == nullptr) {
-        return nullptr;
-    }
-
-#ifdef _WIN32
-    UINT prevErrorMode = 0;
-    if (!showErrors) {
-        prevErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS);
-    }
-
-    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, nullptr, 0);
-    if (wideLen <= 0) {
-        if (!showErrors) {
-            SetErrorMode(prevErrorMode);
-        }
-        return nullptr;
-    }
-
-    auto widePath = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
-    MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, widePath.get(), wideLen);
-
-    DynamicLibrary::Handle lib = static_cast<DynamicLibrary::Handle>(LoadLibraryW(widePath.get()));
-
-    if (!showErrors) {
-        SetErrorMode(prevErrorMode);
-    }
-#else
-    (void)showErrors;
-    DynamicLibrary::Handle lib = dlopen(libraryPath, RTLD_NOW);
-#endif
-
-    return lib;
-}
-
-void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept {
-    if (libraryHandle != nullptr) {
-#ifdef _WIN32
-        FreeLibrary(static_cast<HMODULE>(libraryHandle));
-#else
-        dlclose(libraryHandle);
-#endif
-    }
-}
-
-DynamicLibrary::Symbol DynamicLibraryGetProc(DynamicLibrary::Handle libraryHandle, const char* symbolName) noexcept {
-    if (libraryHandle == nullptr || symbolName == nullptr) {
-        return nullptr;
-    }
-
-#ifdef _WIN32
-    return reinterpret_cast<DynamicLibrary::Symbol>(GetProcAddress(static_cast<HMODULE>(libraryHandle), symbolName));
-#else
-    return dlsym(libraryHandle, symbolName);
-#endif
-}
-
 DynamicLibrary::DynamicLibrary() noexcept = default;
 
 DynamicLibrary::DynamicLibrary(const std::filesystem::path& libraryPath, int loadFlags) {
@@ -139,15 +82,6 @@ DynamicLibrary::Symbol DynamicLibrary::GetSymbol(std::string_view symbolName) co
 #else
     return dlsym(m_handle, name.c_str());
 #endif
-}
-
-DynamicLibrary::Symbol DynamicLibrary::GetSymbolOrThrow(std::string_view symbolName) const {
-    Symbol sym = GetSymbol(symbolName);
-    if (sym == nullptr) {
-        throw std::system_error(std::make_error_code(std::errc::function_not_supported),
-                                "Symbol not found: " + std::string(symbolName) + " - " + GetLastError());
-    }
-    return sym;
 }
 
 std::string DynamicLibrary::GetLastError() noexcept {

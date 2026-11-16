@@ -266,15 +266,6 @@ void MIPSYInterfaceHandler::ProcessMaskWrite(uint32_t val) {
 
 // --- Interrupt Management ---
 
-void MIPSYInterfaceHandler::SetInterrupt(uint32_t interruptBit) {
-    *MI_INTR_REG |= interruptBit;
-
-    WriteLog(LogLevel::Debug, "MIPSYInterface: Set interrupt bit 0x%02X (INTR=0x%02X, MASK=0x%02X)", interruptBit,
-             *MI_INTR_REG, *MI_INTR_MASK_REG);
-
-    m_Reg.CheckInterrupts();
-}
-
 void MIPSYInterfaceHandler::ClearInterrupt(uint32_t interruptBit) {
     *MI_INTR_REG &= ~interruptBit;
 
@@ -289,17 +280,9 @@ void MIPSYInterfaceHandler::ClearInterrupt(uint32_t interruptBit) {
     m_Reg.CheckInterrupts();
 }
 
-bool MIPSYInterfaceHandler::IsInterruptPending() const { return (*MI_INTR_REG & *MI_INTR_MASK_REG) != 0; }
-
-uint32_t MIPSYInterfaceHandler::GetPendingInterrupts() const { return *MI_INTR_REG & *MI_INTR_MASK_REG; }
-
 // --- Status Queries ---
 
 bool MIPSYInterfaceHandler::IsInitMode() const { return (*MI_MODE_REG & MIMode::INIT) != 0; }
-
-bool MIPSYInterfaceHandler::IsEBusMode() const { return (*MI_MODE_REG & MIMode::EBUS) != 0; }
-
-bool MIPSYInterfaceHandler::IsRDRAMRegMode() const { return (*MI_MODE_REG & MIMode::RDRAM) != 0; }
 
 // --- Reset ---
 

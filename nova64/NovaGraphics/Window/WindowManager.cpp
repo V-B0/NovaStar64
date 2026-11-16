@@ -251,15 +251,6 @@ void WindowManager::Shutdown() {
     m_window = nullptr;
 }
 
-WindowManager* WindowManager::WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx) {
-    if (!sdlWindow) return nullptr;
-    auto* wm = new WindowManager();
-    wm->m_window = sdlWindow;
-    wm->m_glContext = glCtx;
-    wm->m_isExternal = true; // not destroyed on Shutdown
-    return wm;
-}
-
 // --- WINDOW PROPERTIES ---
 
 void WindowManager::GetSize(int32_t& width, int32_t& height) const {
@@ -277,37 +268,6 @@ void WindowManager::GetDrawableSize(int32_t& width, int32_t& height) const {
     } else {
         GetSize(width, height);
     }
-}
-
-void WindowManager::SetSize(int32_t width, int32_t height) {
-    if (m_window) {
-        SDL_SetWindowSize(m_window, width, height);
-    }
-}
-
-void WindowManager::GetPosition(int32_t& x, int32_t& y) const {
-    if (m_window) {
-        SDL_GetWindowPosition(m_window, &x, &y);
-    }
-}
-
-void WindowManager::SetPosition(int32_t x, int32_t y) {
-    if (m_window) {
-        SDL_SetWindowPosition(m_window, x, y);
-    }
-}
-
-void WindowManager::SetTitle(const std::string& title) {
-    if (m_window) {
-        SDL_SetWindowTitle(m_window, title.c_str());
-    }
-}
-
-std::string WindowManager::GetTitle() const {
-    if (m_window) {
-        return SDL_GetWindowTitle(m_window);
-    }
-    return m_config.title;
 }
 
 // --- DISPLAY MODES ---
@@ -332,42 +292,6 @@ void WindowManager::SetFullscreen(bool fullscreen, bool borderless) {
 
     m_fullscreen = fullscreen;
 }
-
-std::vector<DisplayMode> WindowManager::GetDisplayModes(int32_t displayIndex) const {
-    std::vector<DisplayMode> modes;
-    int count = SDL_GetNumDisplayModes(displayIndex);
-
-    for (int i = 0; i < count; i++) {
-        SDL_DisplayMode sdlMode;
-        if (SDL_GetDisplayMode(displayIndex, i, &sdlMode) == 0) {
-            DisplayMode mode;
-            mode.width = sdlMode.w;
-            mode.height = sdlMode.h;
-            mode.refreshRate = sdlMode.refresh_rate;
-            mode.pixelFormat = sdlMode.format;
-            modes.push_back(mode);
-        }
-    }
-
-    return modes;
-}
-
-DisplayMode WindowManager::GetCurrentDisplayMode() const {
-    DisplayMode result{};
-    int displayIdx = m_window ? SDL_GetWindowDisplayIndex(m_window) : 0;
-
-    SDL_DisplayMode sdlMode;
-    if (SDL_GetCurrentDisplayMode(displayIdx, &sdlMode) == 0) {
-        result.width = sdlMode.w;
-        result.height = sdlMode.h;
-        result.refreshRate = sdlMode.refresh_rate;
-        result.pixelFormat = sdlMode.format;
-    }
-
-    return result;
-}
-
-int32_t WindowManager::GetDisplayCount() const { return SDL_GetNumVideoDisplays(); }
 
 // --- GL CONTEXT ---
 
@@ -541,98 +465,9 @@ void WindowManager::HandleSDLEvent(const void* sdlEventPtr) {
     }
 }
 
-bool WindowManager::PollWindowEvent(WindowEventData& event) {
-    if (m_pendingEvents.empty()) {
-        event.type = WindowEvent::None;
-        return false;
-    }
-    event = m_pendingEvents.front();
-    m_pendingEvents.erase(m_pendingEvents.begin());
-    return true;
-}
-
 // --- SCREENSHOTS ---
 
-bool WindowManager::CaptureFramebuffer(std::vector<uint32_t>& pixels, int32_t& width, int32_t& height) {
-    GetDrawableSize(width, height);
-    if (width <= 0 || height <= 0) return false;
-
-    pixels.resize(width * height);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-    // Flip vertically (OpenGL reads bottom-to-top)
-    for (int y = 0; y < height / 2; y++) {
-        int topRow = y * width;
-        int bottomRow = (height - 1 - y) * width;
-        for (int x = 0; x < width; x++) {
-            std::swap(pixels[topRow + x], pixels[bottomRow + x]);
-        }
-    }
-
-    return true;
-}
-
-bool WindowManager::SaveScreenshot(const std::string& path) {
-    int32_t w, h;
-    std::vector<uint32_t> pixels;
-    if (!CaptureFramebuffer(pixels, w, h)) return false;
-
-    const uint32_t fileHeaderSize = 14;
-    const uint32_t infoHeaderSize = 40;
-    const uint32_t pixelDataOffset = fileHeaderSize + infoHeaderSize;
-    const uint32_t rowSize = ((w * 3 + 3) / 4) * 4; // BMP rows are 4-byte aligned
-    const uint32_t imageSize = rowSize * h;
-    const uint32_t fileSize = pixelDataOffset + imageSize;
-
-    std::vector<uint8_t> bmp(fileSize);
-
-    // File header
-    bmp[0] = 'B';
-    bmp[1] = 'M';
-    memcpy(&bmp[2], &fileSize, 4);
-    memcpy(&bmp[10], &pixelDataOffset, 4);
-
-    // Info header
-    memcpy(&bmp[14], &infoHeaderSize, 4);
-    memcpy(&bmp[18], &w, 4);
-    memcpy(&bmp[22], &h, 4);
-    uint16_t planes = 1;
-    memcpy(&bmp[26], &planes, 2);
-    uint16_t bpp = 24;
-    memcpy(&bmp[28], &bpp, 2);
-    memcpy(&bmp[34], &imageSize, 4);
-
-    // Pixel data, BGR. CaptureFramebuffer returns rows top to bottom and BMP
-    // stores them bottom to top, so the rows are written in reverse order.
-    for (int y = 0; y < h; y++) {
-        uint8_t* row = &bmp[pixelDataOffset + (h - 1 - y) * rowSize];
-        for (int x = 0; x < w; x++) {
-            uint32_t pixel = pixels[y * w + x];
-            row[x * 3 + 0] = (pixel >> 16) & 0xFF; // B
-            row[x * 3 + 1] = (pixel >> 8) & 0xFF;  // G
-            row[x * 3 + 2] = pixel & 0xFF;         // R
-        }
-    }
-
-    FILE* f = fopen(path.c_str(), "wb");
-    if (!f) return false;
-    fwrite(bmp.data(), 1, bmp.size(), f);
-    fclose(f);
-
-    return true;
-}
-
 // --- CURSOR ---
-
-void WindowManager::ShowCursor(bool show) { SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
-
-void WindowManager::GrabCursor(bool grab) {
-    if (m_window) {
-        SDL_SetWindowGrab(m_window, grab ? SDL_TRUE : SDL_FALSE);
-    }
-}
-
-void WindowManager::SetRelativeMouseMode(bool relative) { SDL_SetRelativeMouseMode(relative ? SDL_TRUE : SDL_FALSE); }
 
 } // namespace Video
 } // namespace Nova64

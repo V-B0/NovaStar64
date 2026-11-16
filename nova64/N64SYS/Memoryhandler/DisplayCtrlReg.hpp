@@ -76,10 +76,6 @@ public:
     void SetGraphicsPlugin(Plugins::GFXPlugin* plugin);
     Plugins::GFXPlugin* GetGraphicsPlugin() const;
 
-    // Status Queries
-    bool IsProcessing() const;
-    bool IsFrozen() const;
-    bool IsFlushed() const;
     uint32_t GetStatus() const;
 
     /// Get a mutable pointer to a specific DPC register (for plugin wiring)

@@ -182,11 +182,9 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
 
-    Nova64::MipsMemoryVM& m_mmu;
     CRegisters& m_registers;
     PifRamHandler& m_pif_handler;
     Config m_config;
-    Logging::Logger m_logger;
 
     // SI registers
     SerialInterfaceReg m_si_regs;
@@ -197,35 +195,19 @@ private:
     // Statistics
     Statistics m_stats;
 
-    // Timing
-    uint64_t m_last_cycle_update = 0;
-
     void handle_dma_read();
     void handle_dma_write();
-    void process_dma_transfer();
     void complete_dma_transfer();
     void trigger_si_interrupt();
 
     // Address validation
     [[nodiscard]] bool validate_dma_address(uint32_t dram_addr) const;
-    [[nodiscard]] bool validate_pif_address(uint32_t pif_addr) const;
 
     // Timing calculations
     [[nodiscard]] uint64_t calculate_dma_duration() const;
     [[nodiscard]] uint64_t get_current_cycle() const;
 
-    // Register access helpers
-    [[nodiscard]] bool is_si_register_address(uint32_t address) const;
-    [[nodiscard]] SI::Register address_to_register(uint32_t address) const;
     void handle_status_register_write(uint32_t value, uint32_t mask);
-
-    // PIF access helpers
-    [[nodiscard]] bool read_from_pif(uint32_t pif_addr, uint8_t* buffer, size_t size);
-    [[nodiscard]] bool write_to_pif(uint32_t pif_addr, const uint8_t* buffer, size_t size);
-
-    // RDRAM access helpers
-    [[nodiscard]] bool read_from_rdram(uint32_t dram_addr, uint8_t* buffer, size_t size);
-    [[nodiscard]] bool write_to_rdram(uint32_t dram_addr, const uint8_t* buffer, size_t size);
 
     // Logging
     void log_dma_start(const DMAState& state) const;

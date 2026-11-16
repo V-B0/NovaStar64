@@ -7,7 +7,6 @@
 #pragma once
 
 #include "../Core/N64Types.hpp"
-#include "../Common/Memory.hpp"
 #include "ShaderManager.hpp"
 
 #include <cstdint>
@@ -711,9 +710,6 @@ public:
 // --- RENDERER FACTORY ---
 
 std::unique_ptr<IRenderer> CreateRenderer(BackendType type);
-
-/// Auto-detect the best available backend
-BackendType DetectBestBackend();
 
 const char* GetBackendName(BackendType type);
 

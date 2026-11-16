@@ -18,17 +18,7 @@
 #include <cstdio>
 #include <algorithm>
 
-namespace {
-std::string bytes_to_string(Common::Span<const uint8_t> data) {
-    std::string result;
-    char buffer[4];
-    for (uint8_t byte : data) {
-        snprintf(buffer, sizeof(buffer), "%02X ", byte);
-        result += buffer;
-    }
-    return result;
-}
-} // namespace
+namespace {} // namespace
 
 // Unused PIMPL stub: the members live in the header.
 class PifRamHandler::Impl {};
@@ -361,25 +351,6 @@ void PifRamHandler::pif_control_write() {
 
 // --- Controller Processing ---
 
-void PifRamHandler::process_eeprom_command(Common::Span<uint8_t> command) {
-    // EEPROM is usually on channel 4
-    if (command.empty()) return;
-
-    // The CEeprom::EepromCommand method expects a pointer to the start of the JoyBus block
-    // (including TX/RX lengths) to parse commands correctly.
-    // 'command' span starts at the Command byte (Offset 2).
-    // We recover the pointer to the header (Offset 0).
-
-    uint8_t* pRawCmd = command.data() - 2;
-
-    // Boundary check
-    if (pRawCmd >= m_pif_ram.data() && pRawCmd < (m_pif_ram.data() + m_pif_ram.size())) {
-        m_eeprom.EepromCommand(pRawCmd);
-    } else {
-        Log::error("PifRamHandler: EEPROM command pointer out of PIF RAM bounds");
-    }
-}
-
 // --- Callbacks & Updates ---
 
 void PifRamHandler::reset() {
@@ -454,58 +425,11 @@ void PifRamHandler::CicNus6105(const char* Challenge, char* Response, int Length
     }
 }
 
-// Span-based wrapper around CicNus6105().
-void PifRamHandler::cic_nus_6105_challenge(Common::Span<const uint8_t> challenge, Common::Span<uint8_t> response) {
-    size_t len = std::min(challenge.size(), response.size());
-    if (len > 30) len = 30;
-    // Convert to char arrays
-    char ch[30] = {}, rsp[30] = {};
-    for (size_t i = 0; i < len; i++) ch[i] = (char)challenge[i];
-    CicNus6105(ch, rsp, (int)len);
-    for (size_t i = 0; i < len; i++) response[i] = (uint8_t)rsp[i];
-}
-
 // --- Accessors & Stubs ---
 
-void PifRamHandler::set_controller_state(size_t port, const PIF::ControllerState& state) {
-    if (port < m_controllers.size()) m_controllers[port] = state;
-}
-
-PIF::ControllerState PifRamHandler::get_controller_state(size_t port) const {
-    if (port < m_controllers.size()) return m_controllers[port];
-    return {};
-}
-
-std::string PifRamHandler::get_pif_status() const { return "Active"; }
-std::string PifRamHandler::dump_ram() const { return bytes_to_string(m_pif_ram); }
-std::string PifRamHandler::dump_controllers() const { return "Connected"; }
-void PifRamHandler::soft_reset() {}
 void PifRamHandler::save_state(std::ostream& os) const {}
 void PifRamHandler::load_state(std::istream& is) {}
 
-void PifRamHandler::set_controller_pak_data(size_t port, const std::vector<uint8_t>& data) {
-    if (port < m_controller_paks.size()) {
-        m_controller_paks[port].set_data(data);
-    }
-}
-
-std::vector<uint8_t> PifRamHandler::get_controller_pak_data(size_t port) const {
-    if (port < m_controller_paks.size()) {
-        return m_controller_paks[port].get_data();
-    }
-    return {};
-}
-
-std::vector<uint8_t> PifRamHandler::read_eeprom() const { return {}; }
-void PifRamHandler::write_eeprom(const std::vector<uint8_t>& data) {}
-void PifRamHandler::set_system_reset_callback(SystemResetCallback callback) { m_system_reset_callback = callback; }
-bool PifRamHandler::validate_cic() const { return true; }
-
-bool PifRamHandler::is_pif_address(uint32_t address) const {
-    return address >= PIF::PIF_RAM_START && address <= PIF::PIF_RAM_END;
-}
-uint32_t PifRamHandler::pif_address_to_index(uint32_t address) const { return address - PIF::PIF_RAM_START; }
-void PifRamHandler::log_pif_command(const std::string& description, Common::Span<const uint8_t> data) {}
 void PifRamHandler::on_system_reset() {}
 
 // --- Controller Pak Implementation ---
@@ -548,15 +472,6 @@ bool PifRamHandler::ControllerPak::write(uint32_t address, uint8_t value) {
         return true;
     }
     return false;
-}
-
-std::vector<uint8_t> PifRamHandler::ControllerPak::get_data() const {
-    return std::vector<uint8_t>(m_data.begin(), m_data.end());
-}
-
-void PifRamHandler::ControllerPak::set_data(const std::vector<uint8_t>& data) {
-    size_t copy_len = std::min(data.size(), m_data.size());
-    std::copy(data.begin(), data.begin() + copy_len, m_data.begin());
 }
 
 bool PifRamHandler::PakPresent(int channel) const {

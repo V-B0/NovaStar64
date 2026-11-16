@@ -21,7 +21,6 @@
 #include "RegInfo.hpp"
 #include "CodeBlock.hpp"
 #include "CodeSection.hpp"
-#include "JumpInfo.hpp"
 #include "ExitInfo.hpp"
 #include "../MainSYS.hpp"
 #include "../SysGlobals.hpp"
@@ -249,37 +248,6 @@ void CRegBase::SetMipsRegState(int32_t reg, REG_STATE state) noexcept {
     Log::debugf("CRegBase: Set register $%d state to 0x%02X", reg, state);
 }
 
-CRegBase::REG_STATE CRegBase::GetMipsRegState(int32_t reg) const noexcept {
-    if (reg < 0 || reg >= static_cast<int32_t>(RegisterSet::NUM_GPR)) {
-        return STATE_UNKNOWN;
-    }
-
-    const auto& state = m_Registers.GetState(reg);
-    REG_STATE result = STATE_UNKNOWN;
-
-    if (state.IsKnown()) {
-        result = STATE_KNOWN_VALUE;
-
-        if (state.IsMapped()) {
-            result = static_cast<REG_STATE>(result | STATE_X86_MAPPED);
-        }
-
-        if (state.Is32Bit()) {
-            result = static_cast<REG_STATE>(result | STATE_32BIT);
-        }
-
-        if (state.isSigned) {
-            result = static_cast<REG_STATE>(result | STATE_SIGN);
-        }
-    }
-
-    if (state.isModified) {
-        result = static_cast<REG_STATE>(result | STATE_MODIFIED);
-    }
-
-    return result;
-}
-
 bool CRegBase::IsSigned(int32_t reg) const noexcept {
     if (reg < 0 || reg >= static_cast<int32_t>(RegisterSet::NUM_GPR)) {
         return false;
@@ -287,24 +255,6 @@ bool CRegBase::IsSigned(int32_t reg) const noexcept {
 
     const auto& state = m_Registers.GetState(reg);
     return state.isSigned;
-}
-
-bool CRegBase::Is32BitMapped(int32_t reg) const noexcept {
-    if (reg < 0 || reg >= static_cast<int32_t>(RegisterSet::NUM_GPR)) {
-        return false;
-    }
-
-    const auto& state = m_Registers.GetState(reg);
-    return state.IsMapped() && state.Is32Bit();
-}
-
-bool CRegBase::Is64BitMapped(int32_t reg) const noexcept {
-    if (reg < 0 || reg >= static_cast<int32_t>(RegisterSet::NUM_GPR)) {
-        return false;
-    }
-
-    const auto& state = m_Registers.GetState(reg);
-    return state.IsMapped() && state.Is64Bit();
 }
 
 const char* CRegBase::RoundingModelName(FpuRoundingMode roundType) const noexcept {
@@ -374,175 +324,15 @@ namespace {
  * Returns false when both states hold the same constant; true when the
  * transition needs work (unknown to known, constant to mapped, width change).
  */
-bool AnalyzeRegisterTransition(const RegisterState& from, const RegisterState& to, uint64_t fromValue,
-                               uint64_t toValue) {
-    // If both are constant with same value, no transition needed
-    if (from.IsConstant() && to.IsConstant() && fromValue == toValue) {
-        Log::debug("RegBase: Constant value unchanged, no transition needed");
-        return false;
-    }
-
-    // If transitioning from unknown to known, that's always worthwhile
-    if (from.IsUnknown() && to.IsKnown()) {
-        Log::debug("RegBase: Transitioning from unknown to known state");
-        return true;
-    }
-
-    // If transitioning from constant to mapped, need to load
-    if (from.IsConstant() && to.IsMapped()) {
-        Log::debug("RegBase: Transitioning from constant to mapped");
-        return true;
-    }
-
-    // If width changes, need to handle extension
-    if (from.width != to.width && from.width != RegisterWidth::Unknown) {
-        Log::debugf("RegBase: Width transition %s -> %s", from.Is32Bit() ? "32" : "64", to.Is32Bit() ? "32" : "64");
-        return true;
-    }
-
-    return false;
-}
 
 /**
  * @brief Check if register needs synchronization at section boundary
  */
-bool NeedsSynchronizationAtBoundary(const RegisterState& state, uint64_t value) {
-    // Dirty registers always need sync
-    if (state.isDirty) {
-        Log::debug("RegBase: Register is dirty, needs sync");
-        return true;
-    }
-
-    // Modified but already written back: nothing to sync.
-    if (state.isModified && !state.isDirty) {
-        Log::debug("RegBase: Register is modified but clean");
-        return false;
-    }
-
-    // Mapped registers are conservatively treated as needing sync.
-    if (state.IsMapped()) {
-        Log::debug("RegBase: Mapped register may need sync");
-        return true;
-    }
-
-    return false;
-}
 
 } // anonymous namespace
 
 // --- Register usage and synchronization analysis ---
 
-/**
- * @brief Analyze register usage across a code section
- * 
- * Logs how many registers are constant, mapped, modified and dirty.
- */
-void AnalyzeRegisterUsage(const CRegBase& regBase, const char* contextName) {
-    Log::debugf("RegBase: Analyzing register usage in context '%s'", contextName);
-
-    size_t constantRegs = 0;
-    size_t mappedRegs = 0;
-    size_t modifiedRegs = 0;
-    size_t dirtyRegs = 0;
-
-    for (int32_t i = 1; i < static_cast<int32_t>(RegisterSet::NUM_GPR); ++i) {
-        const auto& state = regBase.GetRegisterSet().GetState(i);
-
-        if (state.IsConstant()) constantRegs++;
-        if (state.IsMapped()) mappedRegs++;
-        if (state.isModified) modifiedRegs++;
-        if (state.isDirty) dirtyRegs++;
-    }
-
-    Log::debugf("RegBase: %zu constant, %zu mapped, %zu modified, %zu dirty", constantRegs, mappedRegs, modifiedRegs,
-                dirtyRegs);
-
-    // Use CRegInfo to compare against platform capabilities
-    CRegInfo regInfo;
-
-    Log::debugf("RegBase: Platform: %s (using %zu mapped registers)", regInfo.GetPlatformName().c_str(), mappedRegs);
-
-    if (mappedRegs > regInfo.GetNumGeneralPurposeRegisters()) {
-        Log::warning("RegBase: More MIPS regs mapped than host regs available - spilling needed");
-    }
-}
-
-/**
- * @brief Synchronize register state between code sections
- * 
- * Logs which registers would need synchronizing between the two states.
- */
-void SynchronizeRegisterState(CRegBase& sourceBase, const CRegBase& targetBase, const char* sourceName,
-                              const char* targetName) {
-    Log::debugf("RegBase: Synchronizing state from '%s' to '%s'", sourceName, targetName);
-
-    size_t syncedRegs = 0;
-
-    for (int32_t i = 0; i < static_cast<int32_t>(RegisterSet::NUM_GPR); ++i) {
-        const auto& srcState = sourceBase.GetRegisterSet().GetState(i);
-        const auto& dstState = targetBase.GetRegisterSet().GetState(i);
-
-        uint64_t srcValue = sourceBase.GetMipsReg(i);
-        uint64_t dstValue = targetBase.GetMipsReg(i);
-
-        if (NeedsSynchronizationAtBoundary(srcState, srcValue)) {
-            Log::debugf("RegBase: Syncing register $%d", i);
-            syncedRegs++;
-        }
-
-        if (AnalyzeRegisterTransition(srcState, dstState, srcValue, dstValue)) {
-            Log::debugf("RegBase: Register $%d requires transition handling", i);
-        }
-    }
-
-    Log::debugf("RegBase: Synchronized %zu registers", syncedRegs);
-
-    // Diagnostic only: the jump and register infos below are placeholders.
-    CJumpInfo jumpInfo(0x80000000, 0x80000004, std::nullopt, JumpType::Direct);
-
-    CRegInfo sourceInfo, targetInfo;
-    bool needsSync = jumpInfo.NeedsRegisterSynchronization(sourceInfo, targetInfo);
-
-    if (needsSync) {
-        Log::debug("RegBase: Jump requires full register synchronization");
-    }
-}
-
 // --- Module Initialization ---
-
-/**
- * @brief Initialize register base subsystem
- * 
- * Logs sample register states as a smoke test of RegisterState, RegisterSet and
- * CRegBase.
- */
-void InitializeRegBase() {
-    Log::info("RegBase: Initializing register state tracking subsystem");
-
-    // Test that RegisterState works correctly
-    RegisterState testState;
-    testState.mapping = RegisterMapping::Constant;
-    testState.width = RegisterWidth::Bits32;
-    testState.constantValue = 0x12345678;
-
-    Log::debugf("RegBase: Test state: %s", testState.ToString().c_str());
-
-    // Test RegisterSet functionality
-    RegisterSet testSet;
-    testSet.SetConstant(1, 0xDEADBEEF, RegisterWidth::Bits32, false);
-    testSet.SetMapped(2, RegisterWidth::Bits64, true);
-
-    Log::debugf("RegBase: Test $1: %s", testSet.RegisterToString(1).c_str());
-    Log::debugf("RegBase: Test $2: %s", testSet.RegisterToString(2).c_str());
-
-    // Test CRegBase legacy interface
-    CRegBase testBase;
-    testBase.SetMipsRegState(3, CRegBase::STATE_CONST_32_ZERO);
-    testBase.SetMipsRegLo(3, 0x11223344);
-
-    Log::debugf("RegBase: Test $3: %s", testBase.RegisterToString(3).c_str());
-
-    Log::info("RegBase: Initialization complete");
-}
 
 } // namespace Nova64::Recompiler

@@ -113,8 +113,6 @@ public:
 
     const MemoryStats& GetStats() const noexcept { return m_Stats; }
 
-    void ShowMemoryUsage() const;
-
 protected:
     static constexpr uint32_t DEFAULT_INITIAL_SIZE = 32 * 1024 * 1024; // 32 MB
     static constexpr uint32_t MAX_BUFFER_SIZE = 60 * 1024 * 1024;      // 60 MB

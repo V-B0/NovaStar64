@@ -439,8 +439,6 @@ private:
 
 // --- Factory function ---
 
-std::unique_ptr<GFXPlugin> CreateDefaultGFXPlugin() { return std::make_unique<DefaultGFXPlugin>(); }
-
 std::unique_ptr<GFXPlugin> CreateGFXPluginFromDLL(const std::string& path) {
     auto plugin = std::make_unique<DynLibGFXPlugin>(path);
     return plugin;

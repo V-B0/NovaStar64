@@ -230,7 +230,6 @@ struct ExitRegisterState {
 
     // Comparison and merging
     bool operator==(const ExitRegisterState& other) const;
-    void merge(const ExitRegisterState& other);
     void reset();
 
     // String representation for debugging
@@ -246,8 +245,6 @@ struct ExceptionInfo {
     uint64_t timestamp = 0;
 
     std::string description() const;
-    bool is_recoverable() const;
-    bool requires_rollback() const;
 };
 
 // Branch prediction information
@@ -290,39 +287,20 @@ public:
     ExitInfo(ExitInfo&&) noexcept;
     ExitInfo& operator=(ExitInfo&&) noexcept;
 
-    // Basic properties
-    void set_target(uint32_t target_pc, ExitReason reason, ExitCategory category);
     void set_label(asmjit::Label label) { jump_label_ = label; }
     void set_flags(ExitFlags flags) { flags_ = flags; }
 
-    // Exception handling
-    void set_exception_info(const ExceptionInfo& exception);
     void set_pipeline_stage(PipelineStage stage) { pipeline_stage_ = stage; }
 
-    // Register state management
-    void capture_register_state(const ::CRegisters& registers);
-    void restore_register_state(::CRegisters& registers) const;
     const ExitRegisterState& get_register_state() const { return register_state_; }
 
-    // Branch prediction
-    void predict_branch();
-    void update_prediction(bool taken, uint32_t actual_target);
     BranchPrediction get_prediction() const { return prediction_; }
 
     // Statistics and profiling
     void record_execution(uint64_t cycles = 1);
     const ExitStatistics& statistics() const { return stats_; }
 
-    // Optimization
-    void optimize();
     bool can_inline() const;
-    bool should_speculate() const;
-    bool is_profitable_to_link() const;
-
-    // Debug information
-    std::string get_description() const;
-    std::string get_register_state_string() const;
-    std::string get_statistics_string() const;
 
     ExitId id() const { return id_; }
     uint32_t target_pc() const { return target_pc_; }
@@ -343,18 +321,11 @@ public:
 
     // Validation
     bool validate() const;
-    bool is_consistent_with(const ExitInfo& other) const;
 
 private:
     // Helper methods
     void update_flags();
     void update_probability();
-    void log_exit(const std::string& message);
-
-    // Optimization helpers
-    void apply_peephole_optimization();
-    void apply_profile_guided_optimization();
-    void apply_speculative_optimization();
 
 private:
     // Parent relationship
@@ -404,31 +375,7 @@ public:
     explicit ExitManager(CodeBlock& parent_block, size_t initial_capacity = 16);
     ~ExitManager();
 
-    // Exit management
-    ExitInfo& create_exit(uint32_t target_pc, ExitReason reason, ExitCategory category);
-    std::optional<ExitInfo*> find_exit(uint32_t target_pc) const;
-    std::optional<ExitInfo*> find_exit(ExitReason reason) const;
-    std::optional<ExitInfo*> find_exit(asmjit::Label label) const;
-
-    void remove_exit(ExitId id);
-    void remove_exit(uint32_t target_pc);
     void clear();
-
-    // Bulk operations
-    void optimize_all_exits();
-    void profile_all_exits();
-    void reset_all_statistics();
-
-    // Query operations
-    ExitList get_exits_by_category(ExitCategory category) const;
-    ExitList get_exits_by_reason(ExitReason reason) const;
-    ExitList get_hot_exits() const;
-    ExitList get_cold_exits() const;
-
-    // Control flow analysis
-    std::vector<uint32_t> get_all_targets() const;
-    std::vector<uint32_t> get_likely_targets() const;
-    std::vector<uint32_t> get_unlikely_targets() const;
 
     // Statistics
     struct ManagerStats {
@@ -462,9 +409,6 @@ public:
         std::vector<SerializedExit> exits;
     };
 
-    SerializedExitManager serialize() const;
-    bool deserialize(const SerializedExitManager& data);
-
     size_t count() const { return exits_.size(); }
     bool empty() const { return exits_.empty(); }
 
@@ -484,7 +428,6 @@ private:
 
     // Helper methods
     ExitId generate_id();
-    void rebuild_indexes();
 };
 
 /**
@@ -501,22 +444,6 @@ public:
     };
 
     ExitPredictor(size_t history_size = 4096);
-
-    // Prediction
-    PredictionResult predict(uint32_t current_pc, uint32_t branch_pc, ExitReason last_reason,
-                             const ExitRegisterState& state);
-
-    // Training
-    void train(uint32_t branch_pc, bool taken, uint32_t target, ExitReason reason);
-
-    // Analysis
-    double get_branch_probability(uint32_t branch_pc) const;
-    std::vector<uint32_t> get_likely_targets(uint32_t branch_pc) const;
-    bool is_branch_predictable(uint32_t branch_pc) const;
-
-    // Optimization suggestions
-    ExitFlags suggest_flags(uint32_t branch_pc, ExitReason reason) const;
-    bool suggest_inlining(uint32_t branch_pc, uint32_t target_pc) const;
 
     // Statistics
     struct PredictorStats {
@@ -542,21 +469,6 @@ private:
         uint64_t total_executions = 0;
         uint64_t taken_count = 0;
 
-        void record(bool taken, uint32_t target, ExitReason reason) {
-            taken_history.push_back(taken);
-            target_history.push_back(target);
-            reason_history.push_back(reason);
-            ++total_executions;
-            if (taken) ++taken_count;
-
-            // Keep history size bounded
-            if (taken_history.size() > max_history) {
-                taken_history.erase(taken_history.begin());
-                target_history.erase(target_history.begin());
-                reason_history.erase(reason_history.begin());
-            }
-        }
-
         double taken_probability() const {
             return total_executions > 0 ? static_cast<double>(taken_count) / total_executions : 0.5;
         }
@@ -566,9 +478,6 @@ private:
 
     std::unordered_map<uint32_t, BranchHistory> branch_histories_;
     size_t max_history_size_;
-
-    // Pattern matching
-    bool matches_pattern(const BranchHistory& history, const std::vector<bool>& pattern) const;
 
     mutable std::shared_mutex mutex_;
 };

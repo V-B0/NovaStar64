@@ -102,16 +102,6 @@ void RDRAMInterfaceHandler::handle_mode_write(uint32_t value, uint32_t mask) {
     }
 }
 
-uint32_t RDRAMInterfaceHandler::calculate_refresh_cycles() const {
-    // RI_REFRESH: 0x04700010
-    // Contains "Refresh Interval" count.
-    return m_regs.refresh();
-}
-
-uint32_t RDRAMInterfaceHandler::calculate_ras_cycles() const { return 0; }
-
-uint32_t RDRAMInterfaceHandler::calculate_cas_cycles() const { return 0; }
-
 void RDRAMInterfaceHandler::log_register_access(uint32_t address, uint32_t value, bool is_write) const {}
 
 std::string RDRAMInterfaceHandler::get_register_dump() const {
@@ -126,21 +116,6 @@ std::string RDRAMInterfaceHandler::get_register_dump() const {
     ss << "RERROR: " << std::setw(8) << m_regs.rerror() << std::endl;
     ss << "WERROR: " << std::setw(8) << m_regs.werror() << std::endl;
     return ss.str();
-}
-
-RDRAM::Register RDRAMInterfaceHandler::address_to_register(uint32_t address) const {
-    uint32_t offset = address & 0x1F;
-    switch (offset) {
-    case 0x00: return RDRAM::Register::MODE;
-    case 0x04: return RDRAM::Register::CONFIG;
-    case 0x08: return RDRAM::Register::CURRENT_LOAD;
-    case 0x0C: return RDRAM::Register::SELECT;
-    case 0x10: return RDRAM::Register::REFRESH;
-    case 0x14: return RDRAM::Register::LATENCY;
-    case 0x18: return RDRAM::Register::RERROR;
-    case 0x1C: return RDRAM::Register::WERROR;
-    default:   return RDRAM::Register::MODE;
-    }
 }
 
 void RDRAMInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {

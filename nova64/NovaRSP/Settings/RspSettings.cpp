@@ -191,6 +191,4 @@ void CRSPSettings::ApplyPerGameOverrides(uint32_t crc1, uint32_t crc2) {
 
 // --- Debug toggle ---
 
-void CRSPSettings::EnableDebugging(bool enabled) { s_DebuggingEnabled = enabled; }
-
 } // namespace Nova64::RSP

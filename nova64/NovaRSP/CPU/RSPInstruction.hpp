@@ -50,50 +50,13 @@ public:
     [[nodiscard]] uint32_t Value() const { return m_Instruction.Value; }
 
     [[nodiscard]] uint32_t ConditionalBranchTarget() const;
-    [[nodiscard]] uint32_t StaticCallTarget() const;
-    [[nodiscard]] uint32_t JumpTarget() const;
-
-    // Classification queries
-    [[nodiscard]] bool DelaySlotAffectBranch() const;
-    [[nodiscard]] bool IsBranch() const;
-    [[nodiscard]] bool IsJump() const;
-    [[nodiscard]] bool IsJumpReturn() const;
-    [[nodiscard]] bool IsRegisterJump() const;
-    [[nodiscard]] bool IsStaticCall() const;
-    [[nodiscard]] bool IsConditionalBranch() const;
-    [[nodiscard]] bool IsNop() const;
-
-    // Vector operation queries
-    [[nodiscard]] bool IsVectorOp() const;
-    [[nodiscard]] bool IsVectorStoreOp() const;
-    [[nodiscard]] bool IsMfCop2() const;
-    [[nodiscard]] bool IsMtCop2() const;
-
-    // Accumulator dependency analysis (for recompiler optimization)
-    [[nodiscard]] bool ReadAccumLow() const;
-    [[nodiscard]] bool ReadAccumMid() const;
-    [[nodiscard]] bool ReadAccumHigh() const;
-    [[nodiscard]] bool SetAccumLow() const;
-    [[nodiscard]] bool SetAccumMid() const;
-    [[nodiscard]] bool SetAccumHigh() const;
 
     // Disassembly
     [[nodiscard]] const char* Name() const;
-    [[nodiscard]] const char* Param() const;
-    [[nodiscard]] std::string NameAndParam() const;
-
-    // Register dependency info for scheduling
-    [[nodiscard]] RSPInstructionFlag Flag() const;
-    [[nodiscard]] uint32_t DestReg() const;
-    [[nodiscard]] uint32_t SourceReg0() const;
-    [[nodiscard]] uint32_t SourceReg1() const;
 
 private:
     RSPInstruction() = delete;
 
-    void AnalyzeInstruction() const;
-    void AnalyzeVectorOp() const;
-    void AnalyzeCop2ScalarOp() const;
     void DecodeName() const;
     void DecodeSpecialName() const;
     void DecodeRegImmName() const;

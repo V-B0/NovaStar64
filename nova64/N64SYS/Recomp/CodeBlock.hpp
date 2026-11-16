@@ -11,7 +11,6 @@
 #include "../MIPSY/R4300Instruction.hpp"
 #include "RegInfo.hpp"
 #include "ExitInfo.hpp"
-#include "JumpInfo.hpp"
 #include "CodeSection.hpp"
 #include "../../common/MemoryManagment.hpp"
 #include <cstdint>
@@ -211,7 +210,6 @@ public:
     // Instruction access
     size_t instruction_count() const noexcept { return statistics_.instruction_count; }
     const std::vector<uint32_t>& instructions() const noexcept { return instructions_; }
-    std::optional<uint32_t> get_instruction(uint32_t address) const;
 
     // Statistics
     struct Statistics {
@@ -277,17 +275,12 @@ public:
 
     // Debug information
     std::string disassembly() const;
-    std::string control_flow_graph() const;
     std::string get_code_log() const { return code_log_; }
 
     // Hot/cold classification
     bool is_hot() const noexcept { return statistics_.execution_count > 1000; }
     bool is_cold() const noexcept { return statistics_.execution_count < 10; }
     bool should_reoptimize() const noexcept { return is_hot() && statistics_.execution_count % 10000 == 0; }
-
-    // Linking and patching
-    bool link_to(CodeBlock& target, uint32_t branch_address);
-    void patch_branch(uint32_t from_address, uint32_t to_address);
 
     // Serialization (for save states)
     struct SerializedBlock {
@@ -300,9 +293,6 @@ public:
         Statistics stats;
         BlockFlags flags;
     };
-
-    SerializedBlock serialize() const;
-    bool deserialize(const SerializedBlock& data);
 
 private:
     // Analysis
@@ -344,10 +334,6 @@ private:
         bool generate_prologue();
         bool generate_epilogue();
         bool generate_instruction(uint32_t address, uint32_t opcode);
-        bool generate_branch(const AnalysisResult::BranchInfo& branch);
-        bool generate_delay_slot(uint32_t address, uint32_t opcode);
-        bool generate_linkage();
-        bool generate_exception_handler();
 
         size_t generated_bytes() const noexcept { return generated_bytes_; }
         const std::vector<uint8_t>& generated_code() const noexcept { return generated_code_; }
@@ -370,17 +356,13 @@ private:
         };
         std::array<RegisterState, 16> register_states_;
 
-        Recomp::Gp allocate_register(uint8_t mips_reg);
         void free_register(Recomp::Gp reg);
-        void spill_dirty_registers();
     };
 
     bool generate_code(const AnalysisResult& analysis, const CompileOptions& options);
-    bool optimize_code(const AnalysisResult& analysis);
 
     // Hashing
     BlockHash calculate_hash() const noexcept;
-    uint64_t calculate_fast_hash() const noexcept;
 
     // Error handling
     void handleError(asmjit::Error error, const char* message, asmjit::BaseEmitter* origin);
@@ -452,19 +434,11 @@ public:
     explicit CodeBlockCache(const Config& config = Config());
     ~CodeBlockCache();
 
-    // Block management
-    std::shared_ptr<CodeBlock> get_or_compile(uint32_t address);
     std::shared_ptr<CodeBlock> get(uint32_t address) const;
     void insert(std::shared_ptr<CodeBlock> block);
     void remove(uint32_t address);
     void invalidate(uint32_t address);
-    void invalidate_range(uint32_t start, uint32_t end);
-    void invalidate_all();
     void clear();
-
-    // Batch operations
-    void prefetch(const std::vector<uint32_t>& addresses);
-    void compress_cold_blocks();
 
     // Statistics
     struct CacheStats {
@@ -490,10 +464,6 @@ public:
 
     CacheStats statistics() const;
     void reset_statistics();
-
-    // Memory management
-    size_t memory_usage() const;
-    void set_memory_limit(size_t bytes);
 
 private:
     struct CacheEntry {
@@ -529,8 +499,6 @@ private:
     void touch(uint32_t address, bool is_hit);
     void evict_oldest();
     void promote_to_hot(uint32_t address);
-    void demote_from_hot(uint32_t address);
-    bool should_promote(uint32_t address) const;
 
     // Timestamp generation
     uint64_t get_timestamp() const noexcept {
@@ -558,28 +526,7 @@ public:
         size_t total_executions = 0;
     };
 
-    static std::unique_ptr<CodeBlock> create_block(N64System& system, uint32_t address,
-                                                   OptimizationLevel level = OptimizationLevel::Aggressive,
-                                                   const ProfileData* profile = nullptr);
-
-    // Block templates for common patterns
-    static std::shared_ptr<CodeBlock> create_nop_block(N64System& system);
-    static std::shared_ptr<CodeBlock> create_delay_slot_block(N64System& system);
-    static std::shared_ptr<CodeBlock> create_branch_likely_block(N64System& system);
-    static std::shared_ptr<CodeBlock> create_exception_handler(N64System& system);
-    static std::shared_ptr<CodeBlock> create_tlb_miss_handler(N64System& system);
-
-    // Optimization passes
-    static bool apply_dead_code_elimination(CodeBlock& block);
-    static bool apply_constant_folding(CodeBlock& block);
-    static bool apply_common_subexpression_elimination(CodeBlock& block);
-    static bool apply_loop_invariant_code_motion(CodeBlock& block);
-    static bool apply_strength_reduction(CodeBlock& block);
-
 private:
-    static bool is_nop_sequence(const std::vector<uint32_t>& instructions);
-    static bool is_branch_likely_pattern(const std::vector<uint32_t>& instructions);
-    static bool is_exception_handler_pattern(const std::vector<uint32_t>& instructions);
 };
 
 } // namespace Recompiler

@@ -61,8 +61,6 @@ public:
      */
     void DMAWrite();
 
-    CSram& GetSram();
-
     CFlashRam& GetFlashRam();
 
 private:

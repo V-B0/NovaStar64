@@ -65,7 +65,6 @@ namespace Recompiler {
 class CRecompiler;
 class CodeBlock;
 class CodeSection;
-class FunctionInfo;
 class FunctionMap;
 class RecompilerOps;
 class RegInfo;
@@ -184,37 +183,7 @@ std::string to_string(PipelineStage stage);
 
 // --- Formatting Utilities (implemented in SysGlobals.cpp) ---
 
-std::string FormatAddress(uint32_t address);
-
-std::string FormatAddress64(uint64_t address);
-
-std::string FormatHex8(uint8_t value);
-
-std::string FormatHex16(uint16_t value);
-
-std::string FormatHex32(uint32_t value);
-
-std::string FormatHex64(uint64_t value);
-
-std::string FormatSize(size_t bytes);
-
 // --- Memory Utilities (implemented in SysGlobals.cpp) ---
-
-std::string GetMemoryRegionName(uint32_t address);
-
-bool IsValidRdramAddress(uint32_t address, uint32_t rdramSize);
-
-/**
- * @brief Check if address is in cached segment (KSEG0)
- */
-bool IsCachedAddress(uint32_t address);
-
-/**
- * @brief Check if address is in uncached segment (KSEG1)
- */
-bool IsUncachedAddress(uint32_t address);
-
-bool IsTlbMappedAddress(uint32_t address);
 
 } // namespace N64Types
 

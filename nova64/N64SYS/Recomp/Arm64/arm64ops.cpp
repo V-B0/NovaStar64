@@ -46,22 +46,6 @@ bool CArm64Ops::Initialize(asmjit::CodeHolder& codeHolder) {
 
 // --- Symbol Management ---
 
-asmjit::Label CArm64Ops::DefineSymbol(std::string_view name, bool isExported) {
-    auto label = asmjit::a64::Assembler::new_label();
-    if (!label.is_valid()) {
-        HandleError(asmjit::Error::kOutOfMemory, "DefineSymbol");
-        return label;
-    }
-
-    SymbolInfo info;
-    info.name = std::string(name);
-    info.label = label;
-    info.isExported = isExported;
-
-    m_Symbols[info.name] = info;
-    return label;
-}
-
 // --- Logging ---
 
 asmjit::Error CArm64Ops::_log(const char* data, size_t size) noexcept {

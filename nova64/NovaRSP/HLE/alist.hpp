@@ -26,7 +26,6 @@ void alist_process(CHle* hle, const AcmdCallback abi[], unsigned int abi_size);
 
 // --- Segment address resolution ---
 uint32_t alist_get_address(CHle* hle, uint32_t so, const uint32_t* segments, size_t n);
-void alist_set_address(CHle* hle, uint32_t so, uint32_t* segments, size_t n);
 
 // --- Audio buffer operations ---
 void alist_clear(CHle* hle, uint16_t dmem, uint16_t count);

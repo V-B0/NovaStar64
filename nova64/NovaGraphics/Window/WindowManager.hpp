@@ -94,11 +94,6 @@ public:
     /// Initialize SDL and create window with OpenGL context
     bool Initialize(const WindowConfig& config);
 
-    /// Create a WindowManager that wraps an already-existing SDL_Window and GL context.
-    /// The returned instance does not own the window or context — it will not
-    /// destroy them on Shutdown(). Used by the launcher to share its window with VideoPlugin.
-    static WindowManager* WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx);
-
     void Shutdown();
 
     bool IsInitialized() const { return m_window != nullptr; }
@@ -111,26 +106,10 @@ public:
     /// Get drawable size (may differ from window size on HiDPI)
     void GetDrawableSize(int32_t& width, int32_t& height) const;
 
-    void SetSize(int32_t width, int32_t height);
-
-    /// Get/Set window position
-    void GetPosition(int32_t& x, int32_t& y) const;
-    void SetPosition(int32_t x, int32_t y);
-
-    void SetTitle(const std::string& title);
-
-    std::string GetTitle() const;
-
     // --- Display Modes ---
 
     void SetFullscreen(bool fullscreen, bool borderless = false);
     bool IsFullscreen() const { return m_fullscreen; }
-
-    std::vector<DisplayMode> GetDisplayModes(int32_t displayIndex = 0) const;
-
-    DisplayMode GetCurrentDisplayMode() const;
-
-    int32_t GetDisplayCount() const;
 
     // --- OpenGL Context ---
 
@@ -157,8 +136,6 @@ public:
     /// Process pending SDL events. Returns false if quit requested.
     bool ProcessEvents();
 
-    bool PollWindowEvent(WindowEventData& event);
-
     using EventCallback = std::function<void(const WindowEventData&)>;
     void SetEventCallback(EventCallback callback) { m_eventCallback = callback; }
 
@@ -168,20 +145,7 @@ public:
 
     // --- Screenshots ---
 
-    /// Capture the current framebuffer to pixels (RGBA8)
-    bool CaptureFramebuffer(std::vector<uint32_t>& pixels, int32_t& width, int32_t& height);
-
-    /// Save framebuffer to BMP file
-    bool SaveScreenshot(const std::string& path);
-
     // --- Cursor ---
-
-    void ShowCursor(bool show);
-
-    void GrabCursor(bool grab);
-
-    /// Set relative mouse mode (for FPS-style mouse look)
-    void SetRelativeMouseMode(bool relative);
 
 private:
     void HandleSDLEvent(const void* sdlEvent); // really an SDL_Event*

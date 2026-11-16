@@ -99,18 +99,6 @@ SIMDLevel DetectSIMDLevel() {
 #endif
 }
 
-const char* SIMDLevelName(SIMDLevel level) {
-    switch (level) {
-    case SIMDLevel::Scalar: return "Scalar";
-    case SIMDLevel::SSE2:   return "SSE2";
-    case SIMDLevel::SSE41:  return "SSE4.1";
-    case SIMDLevel::AVX:    return "AVX";
-    case SIMDLevel::AVX2:   return "AVX2+FMA";
-    case SIMDLevel::AVX512: return "AVX-512";
-    default:                return "Unknown";
-    }
-}
-
 // --- Mat4x4 static methods ---
 Mat4x4 Mat4x4::Identity() { return Mat4x4(); }
 
@@ -230,107 +218,6 @@ Mat4x4 MatTranspose(const Mat4x4& m) {
     Mat4x4 r;
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++) r(i, j) = m(j, i);
-    return r;
-}
-
-Mat4x4 MatInverse(const Mat4x4& m) {
-    // Cofactor expansion for 4x4 matrix inverse
-    [[maybe_unused]] const float* s = m.col[0].f;
-    // Copy into row-major order.
-    float a[16];
-    for (int c = 0; c < 4; c++)
-        for (int r = 0; r < 4; r++) a[r * 4 + c] = m(r, c);
-
-    float inv[16];
-
-    inv[0] = a[5] * a[10] * a[15] - a[5] * a[11] * a[14] - a[9] * a[6] * a[15] + a[9] * a[7] * a[14] +
-             a[13] * a[6] * a[11] - a[13] * a[7] * a[10];
-    inv[4] = -a[4] * a[10] * a[15] + a[4] * a[11] * a[14] + a[8] * a[6] * a[15] - a[8] * a[7] * a[14] -
-             a[12] * a[6] * a[11] + a[12] * a[7] * a[10];
-    inv[8] = a[4] * a[9] * a[15] - a[4] * a[11] * a[13] - a[8] * a[5] * a[15] + a[8] * a[7] * a[13] +
-             a[12] * a[5] * a[11] - a[12] * a[7] * a[9];
-    inv[12] = -a[4] * a[9] * a[14] + a[4] * a[10] * a[13] + a[8] * a[5] * a[14] - a[8] * a[6] * a[13] -
-              a[12] * a[5] * a[10] + a[12] * a[6] * a[9];
-
-    inv[1] = -a[1] * a[10] * a[15] + a[1] * a[11] * a[14] + a[9] * a[2] * a[15] - a[9] * a[3] * a[14] -
-             a[13] * a[2] * a[11] + a[13] * a[3] * a[10];
-    inv[5] = a[0] * a[10] * a[15] - a[0] * a[11] * a[14] - a[8] * a[2] * a[15] + a[8] * a[3] * a[14] +
-             a[12] * a[2] * a[11] - a[12] * a[3] * a[10];
-    inv[9] = -a[0] * a[9] * a[15] + a[0] * a[11] * a[13] + a[8] * a[1] * a[15] - a[8] * a[3] * a[13] -
-             a[12] * a[1] * a[11] + a[12] * a[3] * a[9];
-    inv[13] = a[0] * a[9] * a[14] - a[0] * a[10] * a[13] - a[8] * a[1] * a[14] + a[8] * a[2] * a[13] +
-              a[12] * a[1] * a[10] - a[12] * a[2] * a[9];
-
-    inv[2] = a[1] * a[6] * a[15] - a[1] * a[7] * a[14] - a[5] * a[2] * a[15] + a[5] * a[3] * a[14] +
-             a[13] * a[2] * a[7] - a[13] * a[3] * a[6];
-    inv[6] = -a[0] * a[6] * a[15] + a[0] * a[7] * a[14] + a[4] * a[2] * a[15] - a[4] * a[3] * a[14] -
-             a[12] * a[2] * a[7] + a[12] * a[3] * a[6];
-    inv[10] = a[0] * a[5] * a[15] - a[0] * a[7] * a[13] - a[4] * a[1] * a[15] + a[4] * a[3] * a[13] +
-              a[12] * a[1] * a[7] - a[12] * a[3] * a[5];
-    inv[14] = -a[0] * a[5] * a[14] + a[0] * a[6] * a[13] + a[4] * a[1] * a[14] - a[4] * a[2] * a[13] -
-              a[12] * a[1] * a[6] + a[12] * a[2] * a[5];
-
-    inv[3] = -a[1] * a[6] * a[11] + a[1] * a[7] * a[10] + a[5] * a[2] * a[11] - a[5] * a[3] * a[10] -
-             a[9] * a[2] * a[7] + a[9] * a[3] * a[6];
-    inv[7] = a[0] * a[6] * a[11] - a[0] * a[7] * a[10] - a[4] * a[2] * a[11] + a[4] * a[3] * a[10] +
-             a[8] * a[2] * a[7] - a[8] * a[3] * a[6];
-    inv[11] = -a[0] * a[5] * a[11] + a[0] * a[7] * a[9] + a[4] * a[1] * a[11] - a[4] * a[3] * a[9] -
-              a[8] * a[1] * a[7] + a[8] * a[3] * a[5];
-    inv[15] = a[0] * a[5] * a[10] - a[0] * a[6] * a[9] - a[4] * a[1] * a[10] + a[4] * a[2] * a[9] + a[8] * a[1] * a[6] -
-              a[8] * a[2] * a[5];
-
-    float det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
-
-    Mat4x4 result;
-    if (std::fabs(det) < 1e-20f) {
-        // Singular: return identity.
-        return result;
-    }
-
-    float invDet = 1.0f / det;
-    for (int r = 0; r < 4; r++)
-        for (int c = 0; c < 4; c++) result(r, c) = inv[r * 4 + c] * invDet;
-
-    return result;
-}
-
-float MatDeterminant(const Mat4x4& m) {
-    float a[16];
-    for (int c = 0; c < 4; c++)
-        for (int r = 0; r < 4; r++) a[r * 4 + c] = m(r, c);
-
-    float s0 = a[0] * a[5] - a[1] * a[4];
-    float s1 = a[0] * a[6] - a[2] * a[4];
-    float s2 = a[0] * a[7] - a[3] * a[4];
-    float s3 = a[1] * a[6] - a[2] * a[5];
-    float s4 = a[1] * a[7] - a[3] * a[5];
-    float s5 = a[2] * a[7] - a[3] * a[6];
-
-    float c5 = a[10] * a[15] - a[11] * a[14];
-    float c4 = a[9] * a[15] - a[11] * a[13];
-    float c3 = a[9] * a[14] - a[10] * a[13];
-    float c2 = a[8] * a[15] - a[11] * a[12];
-    float c1 = a[8] * a[14] - a[10] * a[12];
-    float c0 = a[8] * a[13] - a[9] * a[12];
-
-    return s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
-}
-
-Mat4x4 MatAdd(const Mat4x4& a, const Mat4x4& b) {
-    Mat4x4 r;
-    for (int c = 0; c < 4; c++) r.col[c] = Add(a.col[c], b.col[c]);
-    return r;
-}
-
-Mat4x4 MatSub(const Mat4x4& a, const Mat4x4& b) {
-    Mat4x4 r;
-    for (int c = 0; c < 4; c++) r.col[c] = Sub(a.col[c], b.col[c]);
-    return r;
-}
-
-Mat4x4 MatScale(const Mat4x4& m, float s) {
-    Mat4x4 r;
-    for (int c = 0; c < 4; c++) r.col[c] = MulScalar(m.col[c], s);
     return r;
 }
 
@@ -1032,7 +919,6 @@ Vec4f Normalize3(const Vec4f& v) {
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b) { return s_MatMul(a, b); }
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v) { return s_MatVecMul(m, v); }
 Mat4x4 MatTranspose(const Mat4x4& m) { return s_MatTranspose(m); }
-Mat4x4 MatInverse(const Mat4x4& m) { return Scalar::MatInverse(m); }
 
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count) {
     s_TransformVerts(mvp, posIn, posOut, count);
@@ -1061,103 +947,6 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b) { return s_MaxI(a, b); }
 
 // --- N64-SPECIFIC SIMD UTILITIES ---
 namespace N64SIMD {
-
-Vec4f FixedToFloat_S15_16(const Vec4i& fixed) {
-    Vec4f result;
-    for (int i = 0; i < 4; i++) {
-        result.f[i] = static_cast<float>(fixed.i[i]) / 65536.0f;
-    }
-    return result;
-}
-
-Vec4f FixedToFloat_S10_5(const Vec4i& fixed) {
-    Vec4f result;
-    for (int i = 0; i < 4; i++) {
-        result.f[i] = static_cast<float>(static_cast<int16_t>(fixed.i[i])) / 32.0f;
-    }
-    return result;
-}
-
-Vec4f FixedToFloat_S10_2(const Vec4i& fixed) {
-    Vec4f result;
-    for (int i = 0; i < 4; i++) {
-        result.f[i] = static_cast<float>(static_cast<int16_t>(fixed.i[i])) / 4.0f;
-    }
-    return result;
-}
-
-Vec4i FloatToFixed_S15_16(const Vec4f& f) {
-    Vec4i result;
-    for (int i = 0; i < 4; i++) {
-        result.i[i] = static_cast<int32_t>(f.f[i] * 65536.0f);
-    }
-    return result;
-}
-
-void ProcessVertexBatch(const uint8_t* rdram, uint32_t dramAddr, const Mat4x4& mvp, const Mat4x4& mv, float* outPos,
-                        float* outTC, uint8_t* outColor, int startVtx, int count) {
-    // N64 vertex format: 16 bytes per vertex
-    // [0-1] x (s16), [2-3] y (s16), [4-5] z (s16), [6-7] padding/flag
-    // [8-9] tc_s (s16), [10-11] tc_t (s16)
-    // [12] r/nx, [13] g/ny, [14] b/nz, [15] a
-
-    float positions[4 * 80]; // max 80 verts * 4 components
-    float clipspace[4 * 80];
-
-    // Load positions from RDRAM (word-swapped storage)
-    for (int i = 0; i < count; i++) {
-        uint32_t addr = dramAddr + i * 16;
-        int16_t x = RDRAMReadHalfSigned(rdram, addr);
-        int16_t y = RDRAMReadHalfSigned(rdram, addr + 2);
-        int16_t z = RDRAMReadHalfSigned(rdram, addr + 4);
-        positions[i * 4 + 0] = static_cast<float>(x);
-        positions[i * 4 + 1] = static_cast<float>(y);
-        positions[i * 4 + 2] = static_cast<float>(z);
-        positions[i * 4 + 3] = 1.0f;
-
-        int16_t tcS = RDRAMReadHalfSigned(rdram, addr + 8);
-        int16_t tcT = RDRAMReadHalfSigned(rdram, addr + 10);
-        outTC[(startVtx + i) * 2 + 0] = static_cast<float>(tcS) / 32.0f;
-        outTC[(startVtx + i) * 2 + 1] = static_cast<float>(tcT) / 32.0f;
-
-        // Color (or normal) bytes
-        outColor[(startVtx + i) * 4 + 0] = RDRAMReadByte(rdram, addr + 12); // r / nx
-        outColor[(startVtx + i) * 4 + 1] = RDRAMReadByte(rdram, addr + 13); // g / ny
-        outColor[(startVtx + i) * 4 + 2] = RDRAMReadByte(rdram, addr + 14); // b / nz
-        outColor[(startVtx + i) * 4 + 3] = RDRAMReadByte(rdram, addr + 15); // a
-    }
-
-    Dispatch::TransformVertices(mvp, positions, clipspace, count);
-
-    std::memcpy(outPos + startVtx * 4, clipspace, count * 4 * sizeof(float));
-}
-
-void ComputeLighting(const float* normals, int vertexCount, const float* ambientColor, const float* lightDirs,
-                     const float* lightColors, int numLights, float* outColors) {
-    for (int v = 0; v < vertexCount; v++) {
-        float r = ambientColor[0];
-        float g = ambientColor[1];
-        float b = ambientColor[2];
-
-        Vec4f normal(normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2], 0.0f);
-
-        for (int l = 0; l < numLights; l++) {
-            Vec4f lightDir(lightDirs[l * 3], lightDirs[l * 3 + 1], lightDirs[l * 3 + 2], 0.0f);
-            float dot = Dispatch::Dot3(normal, lightDir);
-            if (dot < 0.0f) dot = 0.0f;
-            if (dot > 1.0f) dot = 1.0f;
-
-            r += lightColors[l * 3 + 0] * dot;
-            g += lightColors[l * 3 + 1] * dot;
-            b += lightColors[l * 3 + 2] * dot;
-        }
-
-        outColors[v * 4 + 0] = std::min(r, 1.0f);
-        outColors[v * 4 + 1] = std::min(g, 1.0f);
-        outColors[v * 4 + 2] = std::min(b, 1.0f);
-        outColors[v * 4 + 3] = 1.0f;
-    }
-}
 
 Vec4i ComputeClipFlags(const float* clipSpaceVerts4) {
     Vec4i flags;
@@ -1224,122 +1013,6 @@ int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount
     return outCount;
 }
 
-void ProcessTexCoords(const int16_t* rawTC, float* outTC, float scaleS, float scaleT, int shiftS, int shiftT,
-                      int count) {
-    for (int i = 0; i < count; i++) {
-        float s = static_cast<float>(rawTC[i * 2]) / 32.0f;
-        float t = static_cast<float>(rawTC[i * 2 + 1]) / 32.0f;
-
-        // Shifts 11..15 are left shifts by (16 - shift); 1..10 are right shifts.
-        if (shiftS > 10) {
-            s = std::ldexp(s, 16 - shiftS);
-        } else if (shiftS > 0) {
-            s = std::ldexp(s, -shiftS);
-        }
-        if (shiftT > 10) {
-            t = std::ldexp(t, 16 - shiftT);
-        } else if (shiftT > 0) {
-            t = std::ldexp(t, -shiftT);
-        }
-
-        outTC[i * 2] = s * scaleS;
-        outTC[i * 2 + 1] = t * scaleT;
-    }
-}
-
-void DecodeRGBA5551_Batch(const uint16_t* src, float* dst, int count) {
-#if defined(__AVX2__)
-    if (g_SIMDLevel >= SIMDLevel::AVX2) {
-        AVX2::BatchColorConvert_RGBA16_to_Float(src, dst, count);
-        return;
-    }
-#endif
-    for (int i = 0; i < count; i++) {
-        uint16_t px = src[i];
-        dst[i * 4 + 0] = ((px >> 11) & 0x1F) / 31.0f;
-        dst[i * 4 + 1] = ((px >> 6) & 0x1F) / 31.0f;
-        dst[i * 4 + 2] = ((px >> 1) & 0x1F) / 31.0f;
-        dst[i * 4 + 3] = static_cast<float>(px & 1);
-    }
-}
-
-void DecodeIA8_Batch(const uint8_t* src, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        float intensity = (src[i] >> 4) / 15.0f;
-        float alpha = (src[i] & 0x0F) / 15.0f;
-        dst[i * 4 + 0] = intensity;
-        dst[i * 4 + 1] = intensity;
-        dst[i * 4 + 2] = intensity;
-        dst[i * 4 + 3] = alpha;
-    }
-}
-
-void DecodeI4_Batch(const uint8_t* src, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        int byteIdx = i / 2;
-        float val;
-        if (i & 1) val = (src[byteIdx] & 0x0F) / 15.0f;
-        else val = (src[byteIdx] >> 4) / 15.0f;
-        dst[i * 4 + 0] = val;
-        dst[i * 4 + 1] = val;
-        dst[i * 4 + 2] = val;
-        dst[i * 4 + 3] = val;
-    }
-}
-
-void DecodeCI4_Batch(const uint8_t* src, const uint16_t* tlut, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        int byteIdx = i / 2;
-        uint8_t idx;
-        if (i & 1) idx = src[byteIdx] & 0x0F;
-        else idx = src[byteIdx] >> 4;
-        uint16_t color = tlut[idx];
-        // Decode as RGBA5551
-        dst[i * 4 + 0] = ((color >> 11) & 0x1F) / 31.0f;
-        dst[i * 4 + 1] = ((color >> 6) & 0x1F) / 31.0f;
-        dst[i * 4 + 2] = ((color >> 1) & 0x1F) / 31.0f;
-        dst[i * 4 + 3] = static_cast<float>(color & 1);
-    }
-}
-
-void DecodeCI8_Batch(const uint8_t* src, const uint16_t* tlut, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        uint16_t color = tlut[src[i]];
-        dst[i * 4 + 0] = ((color >> 11) & 0x1F) / 31.0f;
-        dst[i * 4 + 1] = ((color >> 6) & 0x1F) / 31.0f;
-        dst[i * 4 + 2] = ((color >> 1) & 0x1F) / 31.0f;
-        dst[i * 4 + 3] = static_cast<float>(color & 1);
-    }
-}
-
-void DecodeRGBA32_Batch(const uint32_t* src, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        uint32_t px = src[i];
-        dst[i * 4 + 0] = ((px >> 24) & 0xFF) / 255.0f;
-        dst[i * 4 + 1] = ((px >> 16) & 0xFF) / 255.0f;
-        dst[i * 4 + 2] = ((px >> 8) & 0xFF) / 255.0f;
-        dst[i * 4 + 3] = (px & 0xFF) / 255.0f;
-    }
-}
-
-void DecodeIA16_Batch(const uint16_t* src, float* dst, int count) {
-    for (int i = 0; i < count; i++) {
-        float intensity = (src[i] >> 8) / 255.0f;
-        float alpha = (src[i] & 0xFF) / 255.0f;
-        dst[i * 4 + 0] = intensity;
-        dst[i * 4 + 1] = intensity;
-        dst[i * 4 + 2] = intensity;
-        dst[i * 4 + 3] = alpha;
-    }
-}
-
-void ConvertDepthBatch(const uint16_t* n64Depth, float* outDepth, int count) {
-    // Linear scaling only; the N64's compressed depth encoding is not decoded.
-    for (int i = 0; i < count; i++) {
-        outDepth[i] = static_cast<float>(n64Depth[i]) / 65535.0f;
-    }
-}
-
 uint32_t CalculateDXT(uint32_t width, uint32_t size) {
     // DXT = number of 64-bit TMEM words per row
     uint32_t bitsPerTexel = 0;
@@ -1354,32 +1027,6 @@ uint32_t CalculateDXT(uint32_t width, uint32_t size) {
     if (wordsPerRow == 0) return 0;
     // DXT is a 1.11 fixed-point value: (1 << 11) / wordsPerRow
     return (1 << 11) / wordsPerRow;
-}
-
-uint32_t CRC32_SIMD(const uint8_t* data, size_t length, uint32_t seed) {
-    // Plain table-driven software CRC32 (IEEE polynomial), despite the SIMD name.
-    static const uint32_t crc_table[256] = {
-        0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3, 0x0EDB8832,
-        0x79DCB8A4, 0xE0D5E91B, 0x97D2D988, 0x09B64C2B, 0x7EB17CBF, 0xE7B82D09, 0x90BF1D9F, 0x1DB71064, 0x6AB020F2,
-        0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7, 0x136C9856, 0x646BA8C0, 0xFD62F97A,
-        0x8A65C9EC, 0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5, 0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172,
-        0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B, 0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940, 0x32D86CE3,
-        0x45DF5C75, 0xDCD60DCF, 0xABD13D59, 0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116, 0x21B4F0B5, 0x56B3C423,
-        0xCFBA9599, 0xB8BDA50F, 0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924, 0x2F6F7C87, 0x58684C11, 0xC1611DAB,
-        0xB6662D3D, 0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A, 0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
-        0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818, 0x7F6A0D6B, 0x086D3D2D, 0x91646C97, 0xE6635C01, 0x6B6B51F4,
-        0x1C6C6162, 0x856530D8, 0xF262004E, 0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457, 0x65B0D9C6, 0x12B7E950,
-        0x8BBEB8EA, 0xFCB9887C, 0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65, 0x4DB26158, 0x3AB551CE, 0xA3BC0074,
-        0xD4BB30E2, 0x4ADFA541, 0x3DD895D7, 0xA4D1C46D, 0xD3D6F4FB, 0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0,
-        0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7822, 0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172, 0x3C03E4D1,
-        0x4B04D447, 0xD20D85FD, 0xA50AB56B, 0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940, 0x32D86CE3, 0x45DF5C75,
-        0xDCD60DCF, 0xABD13D59};
-
-    uint32_t crc = seed ^ 0xFFFFFFFF;
-    for (size_t i = 0; i < length; i++) {
-        crc = crc_table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
-    }
-    return crc ^ 0xFFFFFFFF;
 }
 
 } // namespace N64SIMD

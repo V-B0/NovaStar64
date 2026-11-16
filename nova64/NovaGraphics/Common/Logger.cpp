@@ -145,19 +145,6 @@ void Logger::SetConfig(const LoggerConfig& config) {
     m_config = config;
 }
 
-void Logger::SetGlobalLevel(LogLevel level) {
-    std::lock_guard<std::mutex> lk(m_mutex);
-    m_config.globalLevel = level;
-}
-
-void Logger::SetSubsystemLevel(LogSubsystem sub, LogLevel level) {
-    std::lock_guard<std::mutex> lk(m_mutex);
-    auto idx = static_cast<size_t>(sub);
-    if (idx < m_config.subsystemLevels.size()) {
-        m_config.subsystemLevels[idx] = level;
-    }
-}
-
 // --- Level Checks ---
 
 LogLevel Logger::GetEffectiveLevel(LogSubsystem sub) const noexcept {

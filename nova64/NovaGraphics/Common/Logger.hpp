@@ -119,8 +119,6 @@ public:
     void Shutdown();
 
     void SetConfig(const LoggerConfig& config);
-    void SetGlobalLevel(LogLevel level);
-    void SetSubsystemLevel(LogSubsystem sub, LogLevel level);
 
     bool IsEnabled(LogLevel level, LogSubsystem sub) const noexcept;
     LogLevel GetEffectiveLevel(LogSubsystem sub) const noexcept;

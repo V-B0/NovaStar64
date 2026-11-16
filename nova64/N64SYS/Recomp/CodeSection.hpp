@@ -11,7 +11,6 @@
 #include "asmjit.hpp"
 #include "RegInfo.hpp"
 #include "ExitInfo.hpp"
-#include "JumpInfo.hpp"
 #include "../Types.hpp"
 #include "../SysGlobals.hpp"
 #include "../MIPSY/R4300Instruction.hpp"
@@ -43,7 +42,6 @@ namespace Recompiler {
 class CodeBlock;
 class RegisterInfo;
 class RecompilerOperations;
-class CJumpInfo;
 
 // Strongly typed identifiers
 enum class SectionId : uint32_t {};
@@ -115,9 +113,6 @@ struct RegisterEntryState {
     RegisterInfo lo;                  // LO register
 
     bool operator==(const RegisterEntryState& other) const;
-
-    // Merge two states (used for control flow merging)
-    void merge(const RegisterEntryState& other);
 
     void reset();
 
@@ -208,10 +203,6 @@ public:
     CodeSection(CodeSection&&) noexcept;
     CodeSection& operator=(CodeSection&&) noexcept;
 
-    // Setup and configuration
-    void set_delay_slot();
-    void set_jump_target(uint32_t branch_pc, uint32_t target_pc, bool permanent_loop);
-    void set_continue_target(uint32_t branch_pc, uint32_t target_pc);
     void set_type(SectionType type) { type_ = type; }
 
     // Helpers for CodeBlock construction
@@ -223,31 +214,10 @@ public:
     enum class GenerationResult { Success, FailedAnalysis, FailedCodeGen, OutOfMemory, InvalidSection };
 
     GenerationResult generate_native_code();
-    bool generate_linkage();
-    bool inline_section(const CodeSection& source);
 
-    // Control flow analysis
-    void analyze_control_flow();
-    void analyze_data_dependencies();
-    void determine_loops();
     void compute_dominance_tree();
 
-    // Section query and navigation
-    std::optional<CodeSection*> find_existing_section(uint32_t address);
-    bool is_accessible(SectionId section_id) const;
-    bool is_dominated_by(SectionId dominator) const;
-    bool post_dominates(SectionId target) const;
-
-    // Parent/child management
-    void add_parent(CodeSection* parent);
-    void remove_parent(CodeSection* parent);
-    void switch_parent(CodeSection* old_parent, CodeSection* new_parent);
-    void add_child(CodeSection* child);
-
-    // Register state management
-    void capture_entry_state();
     void propagate_constants();
-    void update_register_state(const RegisterEntryState& new_state);
     const RegisterEntryState& get_entry_state() const { return entry_state_; }
 
     // Optimization
@@ -257,11 +227,6 @@ public:
     bool fold_constants();
     bool hoist_invariants();
     bool schedule_instructions();
-
-    // Debug and information
-    std::string get_disassembly() const;
-    std::string get_control_flow_graph() const;
-    std::string get_register_state_string() const;
 
     // Statistics
     struct Statistics {
@@ -320,9 +285,6 @@ public:
         bool operator==(const PatchPoint& other) const { return mips_address == other.mips_address; }
     };
 
-    void add_patch_point(uint32_t mips_address, asmjit::Label label);
-    bool resolve_patch_points();
-
 private:
     // AsmJit error handler
     void handleError(asmjit::Error error, const char* message, asmjit::BaseEmitter* origin);
@@ -351,8 +313,6 @@ private:
         bool generate_prologue();
         bool generate_epilogue();
         bool generate_instruction(uint32_t address, uint32_t opcode);
-        bool generate_branch(const ControlFlowEdge& edge);
-        bool generate_delay_slot(uint32_t address, uint32_t opcode);
 
         size_t generated_bytes() const { return generated_bytes_; }
 
@@ -365,11 +325,6 @@ private:
     };
 
     bool generate_code(const AnalysisResult& analysis);
-
-    // Optimization helpers
-    void apply_peephole_optimizations();
-    void apply_local_optimizations();
-    void apply_global_optimizations();
 
     // Helper methods
     void log_generation(const std::string& message);
@@ -454,28 +409,9 @@ public:
     SectionGraph();
     ~SectionGraph();
 
-    // Graph operations
-    NodeId add_node(CodeSection* section);
-    EdgeId add_edge(NodeId source, NodeId target, const ControlFlowEdge& data);
-    void remove_node(NodeId node);
-    void remove_edge(EdgeId edge);
-
-    // Query operations
-    std::optional<NodeId> find_node(uint32_t entry_pc) const;
-    std::optional<EdgeId> find_edge(NodeId source, NodeId target) const;
-    std::vector<NodeId> find_path(NodeId start, NodeId end) const;
-
     // Analysis
     void compute_dominance_tree();
-    void compute_post_dominance_tree();
-    void find_loops();
-    void find_reducible_loops();
-    void compute_scc(); // Strongly Connected Components
-
-    // Optimization
-    void inline_sections(NodeId target, const std::vector<NodeId>& sources);
-    void merge_equivalent_sections();
-    void eliminate_dead_sections();
+    // Strongly Connected Components
 
     // Serialization
     struct SerializedGraph {
@@ -495,9 +431,6 @@ public:
         std::vector<SerializedNode> nodes;
         std::vector<SerializedEdge> edges;
     };
-
-    SerializedGraph serialize() const;
-    bool deserialize(const SerializedGraph& graph, CodeBlock& parent);
 
     // Statistics
     struct GraphStats {
@@ -520,10 +453,7 @@ private:
     NodeId next_node_id_ = SectionId{0};
     EdgeId next_edge_id_ = 0;
 
-    // Helper methods
-    void tarjan_scc(NodeId node, std::vector<NodeId>& stack, std::vector<std::vector<NodeId>>& components);
     void compute_dominators();
-    void compute_post_dominators();
 };
 
 } // namespace Recompiler

@@ -254,13 +254,8 @@ private:
     void DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
                    const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
 
-    /// Calculate CRC for texture data in RDRAM/TMEM
-    uint32_t CalculateTextureCRC(const uint8_t* data, uint32_t sizeBytes);
-
     /// Calculate texture size in TMEM bytes
     uint32_t CalculateTMEMSize(const TextureKey& key) const;
-
-    static uint32_t NextPow2(uint32_t v);
 
     /// Largest valid mip chain length for a w x h base level (1x1 -> 1, 8x8 -> 4, ...)
     static uint32_t MaxMipLevels(uint32_t w, uint32_t h);

@@ -7,7 +7,6 @@
  */
 
 #include "Vmem.hpp"
-#include "DDisk.hpp"
 #include "Register.hpp"
 #include "TLB.hpp"
 #include "../N64Rom.hpp"
@@ -455,8 +454,6 @@ uint8_t* MipsMemoryVM::Dmem() { return m_SPRegistersHandler->Dmem(); }
 
 uint8_t* MipsMemoryVM::Imem() { return m_SPRegistersHandler->Imem(); }
 
-CSram& MipsMemoryVM::GetSram() { return *m_Sram; }
-
 CFlashRam& MipsMemoryVM::GetFlashRam() { return *m_FlashRam; }
 
 // --- Memory Pointer Access ---
@@ -502,15 +499,6 @@ bool MipsMemoryVM::MemoryValue8(uint32_t vAddr, uint8_t& value) {
     return true;
 }
 
-bool MipsMemoryVM::MemoryValue16(uint32_t vAddr, uint16_t& value) {
-    uint8_t* ptr = MemoryPtr(vAddr ^ 2, 2, true);
-    if (ptr == nullptr) {
-        return false;
-    }
-    value = *reinterpret_cast<uint16_t*>(ptr);
-    return true;
-}
-
 bool MipsMemoryVM::MemoryValue32(uint32_t vAddr, uint32_t& value) {
     uint8_t* ptr = MemoryPtr(vAddr, 4, true);
     if (ptr == nullptr) {
@@ -532,33 +520,6 @@ bool MipsMemoryVM::MemoryValue64(uint32_t vAddr, uint64_t& value) {
 }
 
 // --- Memory Write Operations (Debugger/Tools) ---
-
-bool MipsMemoryVM::UpdateMemoryValue8(uint32_t vAddr, uint8_t value) {
-    uint8_t* ptr = MemoryPtr(vAddr ^ 3, 1, false);
-    if (ptr == nullptr) {
-        return false;
-    }
-    *ptr = value;
-    return true;
-}
-
-bool MipsMemoryVM::UpdateMemoryValue16(uint32_t vAddr, uint16_t value) {
-    uint8_t* ptr = MemoryPtr(vAddr ^ 2, 2, false);
-    if (ptr == nullptr) {
-        return false;
-    }
-    *reinterpret_cast<uint16_t*>(ptr) = value;
-    return true;
-}
-
-bool MipsMemoryVM::UpdateMemoryValue32(uint32_t vAddr, uint32_t value) {
-    uint8_t* ptr = MemoryPtr(vAddr, 4, false);
-    if (ptr == nullptr) {
-        return false;
-    }
-    *reinterpret_cast<uint32_t*>(ptr) = value;
-    return true;
-}
 
 // --- CPU Load Operations (64-bit virtual address) ---
 
@@ -1330,8 +1291,6 @@ void MipsMemoryVM::ISViewer_WriteByte(uint32_t pAddr, uint8_t value) {
 
 // --- Address Translation ---
 
-bool MipsMemoryVM::ValidVaddr(uint32_t vAddr) const { return m_TLB_ReadMap[vAddr >> 12] != static_cast<uint32_t>(-1); }
-
 bool MipsMemoryVM::VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const {
     if (m_TLB_ReadMap[vAddr >> 12] == static_cast<uint32_t>(-1)) {
         return false;
@@ -1341,29 +1300,6 @@ bool MipsMemoryVM::VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const {
 }
 
 // --- TLB Notification Functions ---
-
-void MipsMemoryVM::TLB_Mapped(uint32_t vAddr, uint32_t len, uint32_t pAddr, bool readOnly) {
-    uint64_t vEnd = static_cast<uint64_t>(vAddr) + len;
-
-    for (uint64_t address = vAddr; address < vEnd; address += 0x1000) {
-        size_t index = static_cast<size_t>(address >> 12);
-        uint32_t targetPAddr = static_cast<uint32_t>(address - vAddr + pAddr);
-
-        // Map for reading
-        if (targetPAddr < m_AllocatedRdramSize) {
-            m_MemoryReadMap[index] = reinterpret_cast<size_t>((m_RDRAM + targetPAddr) - address);
-        }
-        m_TLB_ReadMap[index] = static_cast<uint32_t>(targetPAddr - address);
-
-        // Map for writing (if not read-only)
-        if (!readOnly) {
-            if (targetPAddr < m_AllocatedRdramSize) {
-                m_MemoryWriteMap[index] = reinterpret_cast<size_t>((m_RDRAM + targetPAddr) - address);
-            }
-            m_TLB_WriteMap[index] = static_cast<uint32_t>(targetPAddr - address);
-        }
-    }
-}
 
 void MipsMemoryVM::TLB_Unmaped(uint32_t vAddr, uint32_t len) {
     uint64_t end = static_cast<uint64_t>(vAddr) + len;
@@ -1400,140 +1336,11 @@ void MipsMemoryVM::TLB_Unmaped(uint32_t vAddr, uint32_t len) {
 
 // --- Memory Map Management ---
 
-void MipsMemoryVM::ClearMemoryWriteMap(uint32_t vAddr, uint32_t length) {
-    uint32_t baseAddress = m_TLB_WriteMap[vAddr >> 12];
-    if (baseAddress == static_cast<uint32_t>(-1)) {
-        return;
-    }
-
-    uint32_t pAddr = m_TLB_WriteMap[vAddr >> 12] + vAddr;
-    for (uint32_t i = pAddr, n = (pAddr + (length & ~0xFFF)) + 0x1000; i < n; i += 0x1000) {
-        m_MemoryWriteMap[(i + 0x80000000) >> 12] = static_cast<size_t>(-1);
-        m_MemoryWriteMap[(i + 0xA0000000) >> 12] = static_cast<size_t>(-1);
-    }
-}
-
 // --- Exception Filter ---
-
-int32_t MipsMemoryVM::MemoryFilter(uint32_t exptCode, void* exceptionPointer) {
-#if defined(_WIN32)
-    if (exptCode == EXCEPTION_ACCESS_VIOLATION) {
-        PEXCEPTION_POINTERS ep = static_cast<PEXCEPTION_POINTERS>(exceptionPointer);
-        // Address that caused the fault is in ExceptionInformation[1]
-        uintptr_t accessedAddress = ep->ExceptionRecord->ExceptionInformation[1];
-
-#if defined(_M_X64)
-        X64_CONTEXT context;
-        context.Rax = &ep->ContextRecord->Rax;
-        context.Rcx = &ep->ContextRecord->Rcx;
-        context.Rdx = &ep->ContextRecord->Rdx;
-        context.Rbx = &ep->ContextRecord->Rbx;
-        context.Rsp = &ep->ContextRecord->Rsp;
-        context.Rbp = &ep->ContextRecord->Rbp;
-        context.Rsi = &ep->ContextRecord->Rsi;
-        context.Rdi = &ep->ContextRecord->Rdi;
-        context.R8 = &ep->ContextRecord->R8;
-        context.R9 = &ep->ContextRecord->R9;
-        context.R10 = &ep->ContextRecord->R10;
-        context.R11 = &ep->ContextRecord->R11;
-        context.R12 = &ep->ContextRecord->R12;
-        context.R13 = &ep->ContextRecord->R13;
-        context.R14 = &ep->ContextRecord->R14;
-        context.R15 = &ep->ContextRecord->R15;
-        context.Rip = &ep->ContextRecord->Rip;
-
-        if (FilterX64Exception(static_cast<uint32_t>(accessedAddress), context)) {
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-#elif defined(_M_IX86)
-        X86_CONTEXT context;
-        context.Eax = &ep->ContextRecord->Eax;
-        context.Ecx = &ep->ContextRecord->Ecx;
-        context.Edx = &ep->ContextRecord->Edx;
-        context.Ebx = &ep->ContextRecord->Ebx;
-        context.Esp = &ep->ContextRecord->Esp;
-        context.Ebp = &ep->ContextRecord->Ebp;
-        context.Esi = &ep->ContextRecord->Esi;
-        context.Edi = &ep->ContextRecord->Edi;
-        context.Eip = &ep->ContextRecord->Eip;
-
-        if (FilterX86Exception(static_cast<uint32_t>(accessedAddress), context)) {
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-#endif
-    }
-#endif
-    // No platform-specific fault handling: report the exception as unhandled.
-    (void)exptCode;
-    (void)exceptionPointer;
-    return 0;
-}
-
-bool MipsMemoryVM::MemoryBreakpoint() {
-    // There is no memory breakpoint support; this never reports a hit.
-    return false;
-}
 
 // --- Debug Support ---
 
-const char* MipsMemoryVM::LabelName(uint32_t address) const {
-    snprintf(m_strLabelName, sizeof(m_strLabelName), "0x%08X", address);
-    return m_strLabelName;
-}
-
 // --- Static Callbacks ---
-
-void MipsMemoryVM::RdramChanged(MipsMemoryVM* self) {
-    if (self == nullptr || self->m_RDRAMRegistersHandler == nullptr) {
-        return;
-    }
-
-    // Retrieve actual RDRAM size from registers handler
-    // Ensure RDRAM is practically a flat 8MB array so pointers above 4MB aren't dropped
-    uint32_t newSize = 0x800000;
-
-    if (newSize != self->m_AllocatedRdramSize) {
-        char buffer[128];
-        snprintf(buffer, sizeof(buffer), "RdramChanged: Size changing from 0x%X to 0x%X", self->m_AllocatedRdramSize,
-                 newSize);
-        Logging::log(Logging::Level::Info, buffer);
-
-        if (newSize > self->m_AllocatedRdramSize) {
-            // Expansion: Commit new memory
-            if (CommitMemory(self->m_RDRAM + self->m_AllocatedRdramSize, newSize - self->m_AllocatedRdramSize,
-                             MEM_READWRITE) == nullptr) {
-                Logging::log(Logging::Level::Error, "RdramChanged: Failed to commit memory for expansion");
-                return;
-            }
-        } else {
-            // Reduction: Decommit extra memory
-            DecommitMemory(self->m_RDRAM + newSize, self->m_AllocatedRdramSize - newSize);
-        }
-
-        self->m_AllocatedRdramSize = newSize;
-
-        // Update SP RDRAM pointers
-        if (self->m_SPRegistersHandler) {
-            self->m_SPRegistersHandler->SetRDRAM(self->m_RDRAM, self->m_AllocatedRdramSize);
-        }
-
-        // Remap virtual memory
-        self->Reset(false);
-    }
-}
-
-void MipsMemoryVM::ChangeMiIntrMask() {
-    if (g_System) {
-        MipsMemoryVM* vm = g_System->GetMemory();
-        if (vm && vm->m_MIPSInterfaceHandler) {
-            // Apply interrupt mask changes (Set/Clear bits are in RegModValue)
-            // MI_INTR_MASK_REG is at offset 0xC from MI base (0x04300000)
-            vm->m_MIPSInterfaceHandler->Write32(0x0430000C, RegModValue, 0xFFFFFFFF);
-        }
-    }
-
-    RegModValue = 0;
-}
 
 // --- Platform-Specific Exception Handlers ---
 

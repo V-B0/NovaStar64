@@ -30,10 +30,6 @@ public:
     [[nodiscard]] bool IsFileOpen() const { return m_open; }
     [[nodiscard]] bool IsReadOnly() const { return m_readOnly; }
 
-    [[nodiscard]] std::optional<std::string> GetString(std::string_view section, std::string_view key) const;
-    [[nodiscard]] std::string GetString(std::string_view section, std::string_view key,
-                                        std::string_view defaultValue) const;
-
     /// Decimal, or hexadecimal with a 0x prefix. Empty if the value is not entirely a number.
     [[nodiscard]] std::optional<int32_t> GetNumber(std::string_view section, std::string_view key) const;
     [[nodiscard]] int32_t GetNumber(std::string_view section, std::string_view key, int32_t defaultValue) const;
@@ -43,7 +39,6 @@ public:
     [[nodiscard]] bool GetBool(std::string_view section, std::string_view key, bool defaultValue) const;
 
     void SetString(std::string_view section, std::string_view key, std::string_view value);
-    void SetNumber(std::string_view section, std::string_view key, int32_t value);
     void SetBool(std::string_view section, std::string_view key, bool value);
 
     /// Writes pending changes to disk. A no-op when read-only or unmodified.

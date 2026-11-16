@@ -166,10 +166,6 @@ void RDRAMRegistersHandler::handle_mode_register_write(size_t device_index, uint
     update_device_power_state(device_index);
 }
 
-void RDRAMRegistersHandler::handle_config_register_write(size_t device_index, uint32_t value, uint32_t mask) {
-    // No side effects are modelled for configuration writes.
-}
-
 void RDRAMRegistersHandler::log_device_access(size_t device_index, RDRAM::DeviceRegister reg, uint32_t value,
                                               bool is_write) const {
     if (!m_config.enable_debug_logging) return;
@@ -220,14 +216,6 @@ void RDRAMRegistersHandler::exit_self_refresh(size_t device_index) {
     }
 }
 
-void RDRAMRegistersHandler::enter_power_down(size_t device_index) {
-    Log::debugf("RDRAMDev[%zu] Entered Power Down", device_index);
-}
-
-void RDRAMRegistersHandler::exit_power_down(size_t device_index) {
-    Log::debugf("RDRAMDev[%zu] Exited Power Down", device_index);
-}
-
 void RDRAMRegistersHandler::enable_expansion_pak(bool enable) {
     m_expansion_pak_enabled = enable;
     if (m_device_count < 8 && enable) {
@@ -235,49 +223,6 @@ void RDRAMRegistersHandler::enable_expansion_pak(bool enable) {
         m_device_count = 8; // all eight device slots
         initialize_devices();
     }
-}
-
-void RDRAMRegistersHandler::set_device_present(size_t index, bool present) {
-    if (index < m_devices.size()) {
-        m_devices[index].present = present;
-    }
-}
-
-const RDRAM::DeviceState& RDRAMRegistersHandler::get_device_state(size_t index) const {
-    if (index < m_devices.size()) return m_devices[index];
-    return m_devices[0];
-}
-
-uint32_t RDRAMRegistersHandler::calculate_device_delay(size_t device_index) const {
-    // Fixed delay: the device type is not considered.
-    return 10;
-}
-
-uint32_t RDRAMRegistersHandler::calculate_refresh_rate(size_t device_index) const {
-    if (device_index >= m_devices.size()) return 0;
-    // Refresh Interval * Constant
-    return m_devices[device_index].refresh_interval * 4;
-}
-
-std::string RDRAMRegistersHandler::get_device_info(size_t index) const {
-    if (index >= m_devices.size()) return "Invalid Device";
-
-    std::stringstream ss;
-    const auto& dev = m_devices[index];
-    ss << "ID: " << dev.device_id << " Type: " << static_cast<int>(dev.type);
-    return ss.str();
-}
-
-std::string RDRAMRegistersHandler::get_all_devices_info() const {
-    std::stringstream ss;
-    for (size_t i = 0; i < m_device_count; i++) {
-        ss << "Dev " << i << ": " << get_device_info(i) << "\n";
-    }
-    return ss.str();
-}
-
-std::string RDRAMRegistersHandler::get_memory_configuration() const {
-    return m_expansion_pak_enabled ? "8MB (Expansion Present)" : "4MB (Standard)";
 }
 
 void RDRAMRegistersHandler::reset() {

@@ -298,26 +298,6 @@ void CachedRom::HardReset() {
     m_DiskSize = 0;
 }
 
-bool CachedRom::ReadDiskSector(uint32_t sector, uint8_t* buffer, uint32_t length) {
-    if (!m_DiskData || sector * 512 >= m_DiskSize) {
-        return false;
-    }
-
-    uint32_t offset = sector * 512;
-    uint32_t bytesToRead = (offset + length > m_DiskSize) ? (m_DiskSize - offset) : length;
-
-    std::memcpy(buffer, m_DiskData + offset, bytesToRead);
-    return true;
-}
-
-bool CachedRom::WriteDiskSector(uint32_t sector, const uint8_t* buffer, uint32_t length) {
-    if (!m_DiskData || sector * 512 >= m_DiskSize) {
-        return false;
-    }
-
-    return false;
-}
-
 void CachedRom::StartDMARead() {
     if (!m_RDRAM || !IsDiskPresent()) {
         ASIC_STATUS |= static_cast<uint32_t>(DDStatus::BUFFER_ERROR);

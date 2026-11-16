@@ -19,7 +19,6 @@ namespace Nova64::Video::GL {
 enum class ShaderStage : uint8_t { Vertex, Fragment, Geometry, TessControl, TessEval, Compute };
 
 uint32_t ShaderStageToGL(ShaderStage stage);
-const char* ShaderStageName(ShaderStage stage);
 
 // --- Shader Object — individual compiled shader ---
 
@@ -34,7 +33,6 @@ public:
     GLShader& operator=(GLShader&& other) noexcept;
 
     bool CompileFromSource(ShaderStage stage, const std::string& source);
-    bool CompileFromSPIRV(ShaderStage stage, const std::vector<uint32_t>& spirv, const char* entry = "main");
     void Destroy();
 
     uint32_t Handle() const { return m_handle; }
@@ -149,21 +147,13 @@ public:
     // Build from individual shaders
     bool Link(const GLShader& vertex, const GLShader& fragment);
     bool Link(const GLShader& vertex, const GLShader& geometry, const GLShader& fragment);
-    bool LinkCompute(const GLShader& compute);
-    bool LinkFromStages(const std::vector<const GLShader*>& shaders);
 
     // Build from source (compile + link in one call)
     bool BuildFromSource(const std::string& vertSrc, const std::string& fragSrc);
-    bool BuildComputeFromSource(const std::string& src);
-
-    // Build with #define injection
-    bool BuildFromSourceWithDefines(const std::string& vertSrc, const std::string& fragSrc,
-                                    const std::vector<std::pair<std::string, std::string>>& defines);
 
     void Destroy();
 
     void Use() const;
-    static void UseNone();
 
     uint32_t Handle() const { return m_handle; }
     bool IsValid() const { return m_handle != 0; }
@@ -177,7 +167,6 @@ public:
     int32_t GetUniformLocation(const char* name) const;
     int32_t GetUniformBlockIndex(const std::string& name) const;
     int32_t GetSSBOIndex(const std::string& name) const;
-    int32_t GetAttribLocation(const std::string& name) const;
 
     // Uniform setters (by location — fast)
     void SetFloat(int32_t loc, float v) const;
@@ -222,10 +211,6 @@ public:
     bool LoadBinary(const std::vector<uint8_t>& data, uint32_t format);
 
     void SetLabel(const std::string& label);
-
-    std::string DumpUniforms() const;
-    std::string DumpAttributes() const;
-    std::string DumpBlocks() const;
 
 private:
     bool CheckLinkStatus();
@@ -279,15 +264,10 @@ public:
     void UnregisterInclude(const std::string& path);
     void ClearAll();
     bool HasInclude(const std::string& path) const;
-    const std::string& GetInclude(const std::string& path) const;
-
-    // Expands #include directives from the registered sources in software, without GL_ARB_shading_language_include.
-    std::string PreprocessIncludes(const std::string& source, int maxDepth = 16) const;
 
 private:
     std::unordered_map<std::string, std::string> m_includes;
     std::string m_empty;
-    std::string ResolveIncludes(const std::string& src, int depth, int maxDepth) const;
 };
 
 // --- Shader Preprocessor — #define injection & version management ---
@@ -302,8 +282,6 @@ public:
     void ClearDefines();
 
     void SetIncludeManager(const ShaderIncludeManager* mgr) { m_includes = mgr; }
-
-    std::string Process(const std::string& source) const;
 
     // Common define sets
     void SetN64Defines(bool twoPoint, bool fog, bool noise, bool lod);
@@ -330,9 +308,6 @@ public:
     void RemoveWatch(const std::string& path);
     void ClearAll();
     void SetEnabled(bool enabled) { m_enabled = enabled; }
-
-    // Returns the paths that changed since the last check.
-    std::vector<std::string> CheckForChanges();
 
     // Reloads the file and recompiles the shader.
     bool ReloadShader(GLShader& shader, const std::string& path);

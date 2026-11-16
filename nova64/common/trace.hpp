@@ -140,7 +140,6 @@ struct LogEntry {
     std::string message;
 
     [[nodiscard]] std::string Format(bool includeTimestamp = true) const;
-    [[nodiscard]] std::string FormatShort() const;
 };
 
 // --- Sink interface ---
@@ -234,15 +233,12 @@ public:
         m_MinSeverity.store(severity, std::memory_order_relaxed);
     }
 
-    void SetOptions(const Options& options) noexcept;
-
 private:
     Options m_Options;
     std::atomic<Severity> m_MinSeverity{Severity::Info};
     std::mutex m_Mutex;
 
     [[nodiscard]] std::string GetColorCode(Severity severity) const;
-    void ResetColor() const;
 };
 
 // --- Memory sink (ring buffer) ---
@@ -261,8 +257,6 @@ public:
         m_MinSeverity.store(severity, std::memory_order_relaxed);
     }
 
-    [[nodiscard]] std::vector<LogEntry> GetEntries() const;
-    [[nodiscard]] std::vector<LogEntry> GetEntries(Severity minSeverity) const;
     void Clear();
     [[nodiscard]] size_t GetCount() const noexcept;
     [[nodiscard]] size_t GetCapacity() const noexcept { return m_Capacity; }
@@ -287,7 +281,6 @@ public:
 
     // Configuration
     void SetModuleSeverity(ModuleID module, Severity severity);
-    [[nodiscard]] Severity GetModuleSeverity(ModuleID module) const;
 
     void SetModuleName(ModuleID module, std::string_view name);
     [[nodiscard]] std::string_view GetModuleName(ModuleID module) const;

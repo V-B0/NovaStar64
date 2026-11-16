@@ -27,11 +27,6 @@ set(NOVA64_SOURCES
     N64SYS/Interpreter/InterpreterOps.cpp
     N64SYS/MIPSY/TLB.cpp
     N64SYS/MIPSY/Systiming.cpp
-    N64SYS/MIPSY/DDisk.cpp
-    N64SYS/MIPSY/GBcart.cpp
-    N64SYS/MIPSY/Mempak.cpp
-    N64SYS/MIPSY/Rumblepak.cpp
-    N64SYS/MIPSY/TransferPak.cpp
     N64SYS/MIPSY/R4300Instruction.cpp
     N64SYS/MIPSY/Register.cpp
     N64SYS/MIPSY/Vmem.cpp
@@ -65,9 +60,7 @@ set(NOVA64_SOURCES
     N64SYS/Recomp/CodeBlock.cpp
     N64SYS/Recomp/CodeSection.cpp
     N64SYS/Recomp/ExitInfo.cpp
-    N64SYS/Recomp/FunctionInfo.cpp
     N64SYS/Recomp/FunctionMap.cpp
-    N64SYS/Recomp/JumpInfo.cpp
     N64SYS/Recomp/LoopAnalysis.cpp
     N64SYS/Recomp/RegBase.cpp
     N64SYS/Recomp/Recompiler.cpp
@@ -88,7 +81,6 @@ set(NOVA64_SOURCES
     NovaRSP/CPU/RSPCpu.cpp
     NovaRSP/CPU/RSPInstruction.cpp
     NovaRSP/CPU/RSPInterpreterOps.cpp
-    NovaRSP/CPU/RspLog.cpp
     NovaRSP/CPU/RSPRegisterHandler.cpp
     NovaRSP/CPU/RspSystem.cpp
 
@@ -127,7 +119,6 @@ set(NOVA64_SOURCES
     NovaGraphics/Common/BitUtils.cpp
     NovaGraphics/Common/ClipMath.cpp
     NovaGraphics/Common/Logger.cpp
-    NovaGraphics/Common/Memory.cpp
     NovaGraphics/Common/SIMDMath.cpp
     NovaGraphics/Common/VectorMath.cpp
 

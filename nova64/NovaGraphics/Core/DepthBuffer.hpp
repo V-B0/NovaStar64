@@ -57,18 +57,6 @@ public:
     // Get the dZ value for a given 14-bit Z (precision band)
     static uint8_t GetDeltaZ(uint16_t z14);
 
-    // Convert N64 18-bit value (14 Z + 4 dZ) to a single 32-bit integer
-    static uint32_t Pack18Bit(uint16_t z14, uint8_t dz4);
-
-    // Unpack 18-bit Z into z14 and dz4
-    static void Unpack18Bit(uint32_t packed, uint16_t& z14, uint8_t& dz4);
-
-    // Convert from full 32-bit float depth to 18-bit packed N64 format
-    static uint32_t FloatToN64Packed(float depth);
-
-    // Convert from 18-bit packed N64 format to float
-    static float N64PackedToFloat(uint32_t packed);
-
     // Encode/decode the 16-bit RDRAM representation: z14 in bits 15:2, low 2 bits of dZ in bits 1:0
     static uint16_t EncodeRDRAM16(uint16_t z14, uint8_t dz4);
     static void DecodeRDRAM16(uint16_t rdram, uint16_t& z14, uint8_t& dz4Lower);
@@ -151,14 +139,8 @@ public:
     // for anti-aliasing and decal rendering
     static bool CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ, uint16_t storedZ14, uint8_t storedDZ, ZMode zMode);
 
-    // Get the maximum dZ from two dZ values (used in interpenetrating mode)
-    static uint8_t MaxDeltaZ(uint8_t dz1, uint8_t dz2);
-
     // Compute the per-pixel dZ from triangle gradients
     static uint8_t ComputePixelDeltaZ(float dZdx, float dZdy);
-
-    // Check if depth test should be skipped entirely
-    static bool ShouldSkipTest(const DepthBufferConfig& config);
 
 private:
     // Delta-Z decoding: 4-bit dZ → actual delta value

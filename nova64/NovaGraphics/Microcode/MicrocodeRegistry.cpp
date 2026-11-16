@@ -850,42 +850,11 @@ MicrocodeInfo MicrocodeRegistry::GetInfo(MicrocodeType type, uint32_t textAddr, 
 
 // --- Custom Registration ---
 
-void MicrocodeRegistry::RegisterCustomCRC(uint32_t crc, MicrocodeType type, const char* name) {
-    m_customCRCs.push_back({crc, type, name});
-
-    NOVA_LOG(LogLevel::Info, LogSubsystem::Core, "Registered custom microcode CRC: 0x{:08X} -> {} ({})", crc,
-             MicrocodeTypeName(type), name);
-}
-
-void MicrocodeRegistry::SetForced(MicrocodeType type) {
-    m_forcedType = type;
-    ClearCache();
-
-    NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "Microcode type forced to: {}", MicrocodeTypeName(type));
-}
-
-void MicrocodeRegistry::ClearForced() {
-    m_forcedType = MicrocodeType::Unknown;
-    ClearCache();
-
-    NOVA_LOG(LogLevel::Info, LogSubsystem::Core, "Microcode force override cleared");
-}
-
 // --- Cache Management ---
-
-bool MicrocodeRegistry::HasCachedResult(uint32_t crc) const {
-    std::lock_guard<std::mutex> lock(m_cacheMutex);
-    return m_cache.find(crc) != m_cache.end();
-}
 
 void MicrocodeRegistry::CacheResult(uint32_t crc, const DetectionResult& result) const {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
     m_cache[crc] = result;
-}
-
-void MicrocodeRegistry::ClearCache() {
-    std::lock_guard<std::mutex> lock(m_cacheMutex);
-    m_cache.clear();
 }
 
 } // namespace Nova64::Video

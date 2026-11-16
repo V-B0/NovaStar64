@@ -68,15 +68,6 @@ void CHle::WarnMessage(const char* message, ...) {
     std::fputc('\n', stderr);
 }
 
-void CHle::ErrorMessage(const char* message, ...) {
-    va_list args;
-    va_start(args, message);
-    std::fprintf(stderr, "[RSP HLE ERROR] ");
-    std::vfprintf(stderr, message, args);
-    va_end(args);
-    std::fputc('\n', stderr);
-}
-
 // --- RSP control ---
 
 void CHle::rsp_break(uint32_t setbits) {

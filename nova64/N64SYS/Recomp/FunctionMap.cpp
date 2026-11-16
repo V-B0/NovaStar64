@@ -10,7 +10,6 @@
  */
 
 #include "FunctionMap.hpp"
-#include "FunctionInfo.hpp"
 #include "../Types.hpp"
 #include "../SysGlobals.hpp"
 #include "../../common/log.hpp"
@@ -74,19 +73,6 @@ void CFunctionMap::Reset(bool preserveStructure) {
     }
 }
 
-CFunctionMap::CompiledFuncPtr& CFunctionMap::GetOrCreateEntry(uint32_t vaddr) {
-    if (!m_JumpTable) {
-        throw std::runtime_error("CFunctionMap: Not initialized");
-    }
-
-    uint32_t dirIndex = GetPageDirectoryIndex(vaddr);
-    uint32_t tblIndex = GetPageTableIndex(vaddr);
-
-    auto& pageTable = EnsurePageTable(dirIndex);
-
-    return pageTable[tblIndex];
-}
-
 CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
     if (!m_JumpTable) {
         return nullptr;
@@ -111,23 +97,5 @@ CFunctionMap::CompiledFuncPtr CFunctionMap::Remove(uint32_t vaddr) noexcept {
 }
 
 bool CFunctionMap::Contains(uint32_t vaddr) const noexcept { return m_ExactLookup.count(vaddr) != 0; }
-
-size_t CFunctionMap::GetAllocatedPageTables() const noexcept { return m_AllocatedPageTables; }
-
-CFunctionMap::PageTable& CFunctionMap::EnsurePageTable(uint32_t dirIndex) {
-    auto& pageTable = m_PageDirectory[dirIndex];
-
-    if (!pageTable) {
-        pageTable = std::make_unique<CompiledFuncPtr[]>(PAGE_TABLE_SIZE);
-
-        std::memset(pageTable.get(), 0, PAGE_TABLE_SIZE * sizeof(CompiledFuncPtr));
-
-        ++m_AllocatedPageTables;
-
-        Log::debugf("CFunctionMap: Allocated page table %u (total: %zu)", dirIndex, m_AllocatedPageTables);
-    }
-
-    return pageTable;
-}
 
 } // namespace Nova64::Recompiler

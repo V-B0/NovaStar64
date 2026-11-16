@@ -923,11 +923,6 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptio
 #endif
 }
 
-bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/) {
-    // No-op: no optimization passes are implemented.
-    return true;
-}
-
 // --- CodeGenerator Implementation ---
 
 CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const AnalysisResult& analysis,
@@ -962,40 +957,9 @@ bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32
     return true;
 }
 
-bool CodeBlock::CodeGenerator::generate_branch(const AnalysisResult::BranchInfo& /*branch*/) {
-    // No-op: branch linkage is not generated here.
-    return true;
-}
-
-bool CodeBlock::CodeGenerator::generate_delay_slot(uint32_t /*address*/, uint32_t /*opcode*/) { return true; }
-
-bool CodeBlock::CodeGenerator::generate_linkage() { return true; }
-
-bool CodeBlock::CodeGenerator::generate_exception_handler() { return true; }
-
-Recomp::Gp CodeBlock::CodeGenerator::allocate_register(uint8_t /*mips_reg*/) {
-    return Recomp::Gp{}; // Placeholder (legacy stub path; arch-neutral)
-}
-
 void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/) {}
 
-void CodeBlock::CodeGenerator::spill_dirty_registers() {}
-
 // --- Instruction Access ---
-
-std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const {
-    if (address < start_address_ || address > end_address_) {
-        return std::nullopt;
-    }
-    if ((address - start_address_) % 4 != 0) {
-        return std::nullopt;
-    }
-    size_t index = (address - start_address_) / 4;
-    if (index >= instructions_.size()) {
-        return std::nullopt;
-    }
-    return instructions_[index];
-}
 
 // --- Memory Snapshot (Self-Modifying Code Detection) ---
 
@@ -1040,52 +1004,9 @@ std::string CodeBlock::disassembly() const {
     return result;
 }
 
-std::string CodeBlock::control_flow_graph() const {
-    std::string result;
-    result += "CodeBlock CFG: entry=0x" + std::to_string(entry_address_) + "\n";
-    result += "  Range: 0x" + std::to_string(start_address_) + " - 0x" + std::to_string(end_address_) + "\n";
-    result += "  Instructions: " + std::to_string(instructions_.size()) + "\n";
-    return result;
-}
-
 // --- Linking and Patching ---
 
-bool CodeBlock::link_to(CodeBlock& /*target*/, uint32_t /*branch_address*/) {
-    // No-op: blocks are not linked.
-    return true;
-}
-
-void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/) {
-    // No-op: compiled branches are not patched.
-}
-
 // --- Serialization ---
-
-CodeBlock::SerializedBlock CodeBlock::serialize() const {
-    SerializedBlock data;
-    data.hash = hash_;
-    data.entry_address = entry_address_;
-    data.start_address = start_address_;
-    data.end_address = end_address_;
-    data.instructions = instructions_;
-    data.snapshot = memory_snapshot_;
-    data.stats = statistics_;
-    data.flags = flags_;
-    return data;
-}
-
-bool CodeBlock::deserialize(const SerializedBlock& data) {
-    hash_ = data.hash;
-    entry_address_ = data.entry_address;
-    start_address_ = data.start_address;
-    end_address_ = data.end_address;
-    instructions_ = data.instructions;
-    memory_snapshot_ = data.snapshot;
-    statistics_ = data.stats;
-    flags_ = data.flags;
-    is_valid_ = true;
-    return true;
-}
 
 // --- Hashing ---
 
@@ -1102,8 +1023,6 @@ BlockHash CodeBlock::calculate_hash() const noexcept {
 
     return {low, high};
 }
-
-uint64_t CodeBlock::calculate_fast_hash() const noexcept { return calculate_hash().low; }
 
 void CodeBlock::update_hash() { hash_ = calculate_hash(); }
 
@@ -1129,14 +1048,6 @@ void CodeBlock::log_error(const std::string& message) { code_log_ += "[ERROR] " 
 CodeBlockCache::CodeBlockCache(const Config& config) : config_(config) {}
 
 CodeBlockCache::~CodeBlockCache() = default;
-
-std::shared_ptr<CodeBlock> CodeBlockCache::get_or_compile(uint32_t address) {
-    auto existing = get(address);
-    if (existing) {
-        return existing;
-    }
-    return nullptr;
-}
 
 std::shared_ptr<CodeBlock> CodeBlockCache::get(uint32_t address) const {
     std::shared_lock lock(mutex_);
@@ -1184,24 +1095,6 @@ void CodeBlockCache::remove(uint32_t address) {
 
 void CodeBlockCache::invalidate(uint32_t address) { remove(address); }
 
-void CodeBlockCache::invalidate_range(uint32_t start, uint32_t end) {
-    std::unique_lock lock(mutex_);
-    for (auto it = blocks_.begin(); it != blocks_.end();) {
-        if (it->first >= start && it->first <= end) {
-            auto lru_it = lru_map_.find(it->first);
-            if (lru_it != lru_map_.end()) {
-                lru_list_.erase(lru_it->second);
-                lru_map_.erase(lru_it);
-            }
-            it = blocks_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void CodeBlockCache::invalidate_all() { clear(); }
-
 void CodeBlockCache::clear() {
     std::unique_lock lock(mutex_);
     blocks_.clear();
@@ -1210,14 +1103,6 @@ void CodeBlockCache::clear() {
     hot_lru_list_.clear();
     hot_lru_map_.clear();
     hot_block_count_ = 0;
-}
-
-void CodeBlockCache::prefetch(const std::vector<uint32_t>& /*addresses*/) {
-    // No-op: no blocks are pre-compiled.
-}
-
-void CodeBlockCache::compress_cold_blocks() {
-    // No-op: cold blocks keep their generated code.
 }
 
 CodeBlockCache::CacheStats CodeBlockCache::statistics() const {
@@ -1229,18 +1114,6 @@ void CodeBlockCache::reset_statistics() {
     std::lock_guard lock(stats_mutex_);
     stats_.reset();
 }
-
-size_t CodeBlockCache::memory_usage() const {
-    std::shared_lock lock(mutex_);
-    size_t total = 0;
-    for (const auto& [addr, entry] : blocks_) {
-        total += entry.block->statistics().generated_bytes;
-        total += entry.block->instruction_count() * sizeof(uint32_t);
-    }
-    return total;
-}
-
-void CodeBlockCache::set_memory_limit(size_t bytes) { config_.max_total_size = bytes; }
 
 void CodeBlockCache::touch(uint32_t address, bool is_hit) {
     auto lru_it = lru_map_.find(address);
@@ -1285,75 +1158,7 @@ void CodeBlockCache::promote_to_hot(uint32_t address) {
     }
 }
 
-void CodeBlockCache::demote_from_hot(uint32_t address) {
-    auto it = blocks_.find(address);
-    if (it != blocks_.end() && it->second.is_hot) {
-        it->second.is_hot = false;
-        if (hot_block_count_ > 0) hot_block_count_--;
-    }
-}
-
-bool CodeBlockCache::should_promote(uint32_t address) const {
-    auto it = blocks_.find(address);
-    if (it == blocks_.end()) return false;
-    return it->second.access_count > 100 && !it->second.is_hot;
-}
-
 // --- CodeBlockFactory Implementation ---
-
-std::unique_ptr<CodeBlock> CodeBlockFactory::create_block(N64System& system, uint32_t address, OptimizationLevel level,
-                                                          const ProfileData* /*profile*/) {
-    CodeBlock::Config config;
-    switch (level) {
-    case OptimizationLevel::None:       config.enable_optimizations = false; break;
-    case OptimizationLevel::Basic:
-    case OptimizationLevel::Aggressive: config.enable_optimizations = true; break;
-    case OptimizationLevel::ProfileGuided:
-        config.enable_optimizations = true;
-        config.enable_profiling = true;
-        break;
-    }
-
-    return std::make_unique<CodeBlock>(system, address, config);
-}
-
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_nop_block(N64System& system) {
-    return std::make_shared<CodeBlock>(system, 0);
-}
-
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_delay_slot_block(N64System& system) {
-    return std::make_shared<CodeBlock>(system, 0);
-}
-
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_branch_likely_block(N64System& system) {
-    return std::make_shared<CodeBlock>(system, 0);
-}
-
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_exception_handler(N64System& system) {
-    return std::make_shared<CodeBlock>(system, 0);
-}
-
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_tlb_miss_handler(N64System& system) {
-    return std::make_shared<CodeBlock>(system, 0);
-}
-
-bool CodeBlockFactory::apply_dead_code_elimination(CodeBlock& /*block*/) { return true; }
-bool CodeBlockFactory::apply_constant_folding(CodeBlock& /*block*/) { return true; }
-bool CodeBlockFactory::apply_common_subexpression_elimination(CodeBlock& /*block*/) { return true; }
-bool CodeBlockFactory::apply_loop_invariant_code_motion(CodeBlock& /*block*/) { return true; }
-bool CodeBlockFactory::apply_strength_reduction(CodeBlock& /*block*/) { return true; }
-
-bool CodeBlockFactory::is_nop_sequence(const std::vector<uint32_t>& instructions) {
-    return std::all_of(instructions.begin(), instructions.end(), [](uint32_t i) { return i == 0; });
-}
-
-bool CodeBlockFactory::is_branch_likely_pattern(const std::vector<uint32_t>& instructions) {
-    if (instructions.empty()) return false;
-    uint32_t op = mips_op(instructions[0]);
-    return op == R4300_BEQL || op == R4300_BNEL || op == R4300_BLEZL || op == R4300_BGTZL;
-}
-
-bool CodeBlockFactory::is_exception_handler_pattern(const std::vector<uint32_t>& /*instructions*/) { return false; }
 
 } // namespace Recompiler
 } // namespace Nova64

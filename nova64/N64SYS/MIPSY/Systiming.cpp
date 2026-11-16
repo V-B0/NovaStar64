@@ -24,16 +24,6 @@ void HighResolutionTimer::reset() { start_time = Clock::now(); }
 
 HighResolutionTimer::Duration HighResolutionTimer::elapsed() const { return Clock::now() - start_time; }
 
-double HighResolutionTimer::elapsed_seconds() const {
-    auto duration = elapsed();
-    return std::chrono::duration<double>(duration).count();
-}
-
-double HighResolutionTimer::elapsed_milliseconds() const {
-    auto duration = elapsed();
-    return std::chrono::duration<double, std::milli>(duration).count();
-}
-
 // --- SystemTimer Implementation ---
 
 SystemTimer::SystemTimer(CN64System& system) : system(system) {}
@@ -80,16 +70,6 @@ void SystemTimer::set_timer_periodic(TimerType type, uint32_t period, const std:
 uint32_t SystemTimer::get_timer(TimerType type) const {
     if (static_cast<size_t>(type) >= static_cast<size_t>(TimerType::MaxTimers)) return 0;
     return static_cast<uint32_t>(timers[static_cast<size_t>(type)].cycles_to_fire);
-}
-
-void SystemTimer::stop_timer(TimerType type) {
-    if (static_cast<size_t>(type) >= static_cast<size_t>(TimerType::MaxTimers)) return;
-    timers[static_cast<size_t>(type)].active = false;
-}
-
-bool SystemTimer::is_timer_active(TimerType type) const {
-    if (static_cast<size_t>(type) >= static_cast<size_t>(TimerType::MaxTimers)) return false;
-    return timers[static_cast<size_t>(type)].active;
 }
 
 void SystemTimer::update_timers(uint32_t cycles_executed) {
@@ -247,16 +227,6 @@ void SystemTimer::update_compare_timer() {
     set_timer(TimerType::Compare, cycles, false);
 }
 
-void SystemTimer::set_compare_timer(uint32_t value) {
-    // Called when the Compare register is written via MTC0
-    // Clear IP7 pending interrupt and recalculate timer
-    if (!registers) registers = system.GetRegisters();
-    if (registers) {
-        registers->CAUSE_REGISTER.PendingInterrupts &= ~COP0Flags::CAUSE_IP7;
-    }
-    update_compare_timer();
-}
-
 void SystemTimer::update_next_timer() {
     // Find the active timer with the fewest cycles remaining
     // and set system.m_NextTimer to that value
@@ -288,8 +258,6 @@ void SystemTimer::PerformanceStats::reset() {
     for (auto& f : timer_firings) f = 0;
     total_firings = 0;
 }
-
-void SystemTimer::reset_performance_stats() { performance_stats.reset(); }
 
 void SystemTimer::UpdateTimers() {
     if (!registers) registers = system.GetRegisters();
@@ -347,39 +315,6 @@ void SystemTimer::reset() {
     last_real_time_sync = 0;
     real_time_timer.reset();
     performance_stats.reset();
-}
-
-void SystemTimer::sync_to_real_time() {
-
-    uint64_t cycles_since_sync = total_cycles - last_real_time_sync;
-    double expected_seconds = static_cast<double>(cycles_since_sync) / CPU_CLOCK_FREQUENCY;
-    double actual_seconds = real_time_timer.elapsed_seconds();
-
-    if (actual_seconds < expected_seconds) {
-
-        double sleep_time = expected_seconds - actual_seconds;
-        if (sleep_time > 0.0 && sleep_time < 0.1) {
-            std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(sleep_time * 1000000.0)));
-        }
-    }
-
-    if (actual_seconds > expected_seconds + 0.5 || cycles_since_sync > REAL_TIME_SYNC_INTERVAL * 100) {
-        last_real_time_sync = total_cycles;
-        real_time_timer.reset();
-    }
-}
-
-uint32_t SystemTimer::get_current_count() const {
-    // Calculate the current Count register value by adding elapsed cycles since last update.
-    // This is read-only — it doesn't modify timer state.
-    // Count increments at half the CPU clock rate (once per 2 cycles).
-    int32_t nextTimer = system.m_NextTimer;
-    int32_t elapsed = static_cast<int32_t>(last_update_cycles) - nextTimer;
-    uint32_t count = registers ? static_cast<uint32_t>(registers->COUNT_REGISTER) : 0;
-    if (elapsed > 0) {
-        count += static_cast<uint32_t>(elapsed);
-    }
-    return count;
 }
 
 void SystemTimer::SerializeState(Nova64::StateArchive& ar) {

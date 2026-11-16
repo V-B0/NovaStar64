@@ -27,26 +27,7 @@ public:
      */
     void Lock();
 
-    /**
-     * @brief Attempts to lock the mutex without blocking
-     * @return true if lock was acquired, false otherwise
-     */
-    bool TryLock();
-
-    /**
-     * @brief Attempts to lock the mutex with timeout
-     * @param timeoutMs Timeout in milliseconds (0 = no wait, UINT32_MAX = infinite)
-     * @return true if lock was acquired, false if timed out
-     */
-    bool TryLock(uint32_t timeoutMs);
-
     void Unlock();
-
-    /**
-     * @brief Gets the current lock depth
-     * @return Lock depth of the thread that holds the mutex, or 0 when it is unlocked
-     */
-    uint32_t GetRecursionCount() const;
 
 private:
     void* m_mutex;                             ///< Platform-specific mutex

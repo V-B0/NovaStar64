@@ -193,23 +193,9 @@ bool CRegInfo::SupportsFeature(std::string_view /*feature*/) const {
     return false;
 }
 
-void CRegInfo::SetRegisterAllocator(std::unique_ptr<IRegisterAllocator> allocator) {
-    m_Allocator = std::move(allocator);
-}
-
 IRegisterAllocator* CRegInfo::GetAllocator() noexcept { return m_Allocator.get(); }
 
 const IRegisterAllocator* CRegInfo::GetAllocator() const noexcept { return m_Allocator.get(); }
-
-void CRegInfo::ResetRegisterState(RegisterSet& /*regSet*/) { m_Stats.Reset(); }
-
-void CRegInfo::SaveRegisterState(RegisterSet& /*regSet*/) {
-    // No-op.
-}
-
-void CRegInfo::RestoreRegisterState(RegisterSet& /*regSet*/) {
-    // No-op.
-}
 
 // --- Static methods ---
 
@@ -227,15 +213,6 @@ PlatformType CRegInfo::DetectPlatform() noexcept {
 #endif
 }
 
-bool CRegInfo::IsPlatformSupported(PlatformType platform) noexcept {
-    switch (platform) {
-    case PlatformType::x64:
-    case PlatformType::x86:
-    case PlatformType::ARM64: return true;
-    default:                  return false;
-    }
-}
-
 std::string CRegInfo::GetPlatformDescription(PlatformType platform) {
     switch (platform) {
     case PlatformType::x86:     return "Intel/AMD x86 (32-bit)";
@@ -246,13 +223,6 @@ std::string CRegInfo::GetPlatformDescription(PlatformType platform) {
     case PlatformType::RISCV64: return "RISC-V (64-bit)";
     default:                    return "Unsupported platform";
     }
-}
-
-std::unique_ptr<CRegInfo> CRegInfo::CreateForCurrentPlatform() { return std::make_unique<CRegInfo>(); }
-
-std::unique_ptr<CRegInfo> CRegInfo::CreateForPlatform(PlatformType /*platform*/) {
-    // All platforms share one CRegInfo; the platform is detected at compile time.
-    return std::make_unique<CRegInfo>();
 }
 
 // --- Free functions ---
@@ -269,20 +239,12 @@ static PlatformInfo s_CurrentPlatformInfo(CRegInfo::DetectPlatform(),
 #endif
 );
 
-const PlatformInfo& GetCurrentPlatformInfo() noexcept { return s_CurrentPlatformInfo; }
-
-bool CheckPlatformFeature(std::string_view /*feature*/) noexcept { return false; }
-
 // --- UnsupportedPlatformException ---
 
 UnsupportedPlatformException::UnsupportedPlatformException(PlatformType platform) :
     std::runtime_error("Unsupported platform: " + CRegInfo::GetPlatformDescription(platform)), m_Platform(platform) {}
 
 // --- RegisterCustomPlatform ---
-
-void RegisterCustomPlatform(PlatformType /*type*/, std::function<std::unique_ptr<IRegInfo>()> /*factory*/) {
-    // No-op: custom platforms are not supported.
-}
 
 } // namespace Recompiler
 } // namespace Nova64

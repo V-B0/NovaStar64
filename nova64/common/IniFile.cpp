@@ -99,16 +99,6 @@ const std::string* CIniFile::Find(std::string_view section, std::string_view key
     return &k->second;
 }
 
-std::optional<std::string> CIniFile::GetString(std::string_view section, std::string_view key) const {
-    if (const std::string* v = Find(section, key)) return *v;
-    return std::nullopt;
-}
-
-std::string CIniFile::GetString(std::string_view section, std::string_view key, std::string_view defaultValue) const {
-    if (const std::string* v = Find(section, key)) return *v;
-    return std::string{defaultValue};
-}
-
 std::optional<int32_t> CIniFile::GetNumber(std::string_view section, std::string_view key) const {
     const std::string* v = Find(section, key);
     if (!v) return std::nullopt;
@@ -160,10 +150,6 @@ void CIniFile::SetString(std::string_view section, std::string_view key, std::st
 
     slot = std::string{value};
     m_dirty = true;
-}
-
-void CIniFile::SetNumber(std::string_view section, std::string_view key, int32_t value) {
-    SetString(section, key, std::to_string(value));
 }
 
 void CIniFile::SetBool(std::string_view section, std::string_view key, bool value) {

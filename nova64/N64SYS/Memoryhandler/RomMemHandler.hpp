@@ -75,8 +75,6 @@ public:
 
     // ROM decay management
     void rom_write_decayed();
-    void force_decay_all();
-    [[nodiscard]] size_t get_active_patch_count() const;
 
     // Cheat/patch system
     struct Patch {
@@ -87,20 +85,12 @@ public:
         bool enabled;
     };
 
-    bool apply_patch(uint32_t address, uint32_t value, uint32_t decay_ms = 0);
-    bool remove_patch(uint32_t address);
     void clear_all_patches();
-    [[nodiscard]] std::vector<Patch> get_active_patches() const;
 
     // State management
     void reset();
     void save_state(std::ostream& os) const;
     void load_state(std::istream& is);
-
-    // Debug information
-    [[nodiscard]] std::string get_rom_info() const;
-    [[nodiscard]] std::string get_memory_map() const;
-    [[nodiscard]] std::string get_patch_info() const;
 
     // Statistics
     struct Statistics {
@@ -116,7 +106,6 @@ public:
 
     // Callbacks
     using WriteCallback = std::function<void(uint32_t address, uint32_t value)>;
-    void set_write_callback(WriteCallback callback);
 
 private:
     RomMemoryHandler() = delete;
@@ -173,7 +162,6 @@ private:
 
     // ROM read implementations
     [[nodiscard]] uint32_t read_rom_32(uint32_t address) const;
-    [[nodiscard]] uint16_t read_rom_16(uint32_t address) const;
     [[nodiscard]] uint8_t read_rom_8(uint32_t address) const;
 
     // Endianness handling (N64 is big-endian)
@@ -188,7 +176,6 @@ private:
 
     // Logging
     void log_rom_access(uint32_t address, uint32_t value, bool is_write) const;
-    void log_patch_event(uint32_t address, uint32_t value, bool applied) const;
 
     // System event handlers
     void on_system_reset();

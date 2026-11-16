@@ -166,9 +166,6 @@ uint32_t CRC32_Software(const void* data, size_t length, uint32_t seed = 0) noex
 /// polynomial), so values must not be compared or stored across builds.
 uint32_t CRC32_Fast(const void* data, size_t length, uint32_t seed = 0) noexcept;
 
-/// CRC64 (ECMA-182) for hashing larger data, such as shader cache keys.
-uint64_t CRC64(const void* data, size_t length, uint64_t seed = 0) noexcept;
-
 // --- Tile/TMEM Address Utilities ---
 
 /// Convert N64 tile line size to bytes (N64 stores texture data in 64-bit words)

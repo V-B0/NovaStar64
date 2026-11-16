@@ -213,14 +213,6 @@ public:
     N64Disk(N64Disk&&) = delete;
     N64Disk& operator=(N64Disk&&) = delete;
 
-    // Disk loading and management
-    /**
-     * @brief Load a disk image from file
-     * @param filePath Path to disk image file
-     * @throws DiskError on failure
-     */
-    void LoadDisk(const fs::path& filePath);
-
     /**
      * @brief Save current disk image to file
      * @param filePath Optional path (uses original if not specified)
@@ -228,29 +220,7 @@ public:
      */
     void SaveDisk(const std::optional<fs::path>& filePath = std::nullopt);
 
-    /**
-     * @brief Swap to a different disk image
-     * @param filePath Path to new disk image
-     * @throws DiskError on failure
-     */
-    void SwapDisk(const fs::path& filePath);
-
     void UnloadDisk() noexcept;
-
-    DiskType GetDiskType() const;
-    uint8_t GetZoneForTrack(uint16_t track, uint16_t head) const;
-    uint32_t LBAToVZone(uint32_t lba) const;
-    uint8_t VZoneToPZone(uint32_t vzone, uint8_t diskType) const;
-    uint32_t LBAToByte(uint32_t startLba, uint32_t numLbas) const;
-    uint16_t LBAToPhys(uint32_t lba) const;
-
-    /**
-     * @brief Check if a disk image is valid
-     * @param data Pointer to disk data
-     * @param size Size of disk data
-     * @return true if valid disk image
-     */
-    static bool IsValidDisk(const uint8_t* data, size_t size) noexcept;
 
     // Disk information
     bool IsLoaded() const noexcept { return m_Image && m_Image->IsLoaded(); }
@@ -264,63 +234,9 @@ public:
      */
     size_t GetSize() const;
 
-    /**
-     * @brief Get disk header (64DD IPL header)
-     */
-    DataView GetHeader() const;
-
     DataView GetIdentifier() const;
 
-    DataView GetRomSection() const;
-
-    DataView GetRamSection() const;
-
     DataView GetSystemArea() const;
-
-    // Disk operations
-    /**
-     * @brief Convert physical address to byte offset
-     * @param address Physical disk address
-     * @return Byte offset in disk image
-     * @throws DiskError if address is invalid
-     */
-    uint32_t AddressToOffset(const DiskAddress& address) const;
-
-    /**
-     * @brief Convert LBA to physical address
-     * @param lba Logical block address
-     * @return Physical disk address
-     * @throws DiskError if LBA is invalid
-     */
-    DiskAddress LBAToAddress(uint32_t lba) const;
-
-    /**
-     * @brief Convert physical address to LBA
-     * @param address Physical disk address
-     * @return Logical block address
-     * @throws DiskError if address is invalid
-     */
-    uint32_t AddressToLBA(const DiskAddress& address) const;
-
-    /**
-     * @brief Calculate disk CRC32 checksum
-     */
-    uint32_t CalculateChecksum() const;
-
-    /**
-     * @brief Verify disk integrity
-     * @return true if disk is valid and not corrupted
-     */
-    bool VerifyIntegrity() const;
-
-    // Save management
-    /**
-     * @brief Save disk settings/identifier
-     * @param temporary If true, save to temporary location
-     */
-    void SaveDiskSettings(bool temporary = false);
-
-    void ClearDiskSettings() noexcept;
 
     // Buffer management
     uint32_t GetBufferAddress() const noexcept { return m_BufferAddress; }
@@ -331,31 +247,11 @@ public:
      */
     void SetBufferAddress(uint32_t address) noexcept { m_BufferAddress = address; }
 
-    const uint8_t* GetBuffer() const;
-
-    uint8_t* GetBuffer();
-
 private:
-    // Internal helpers
-    void DetectFormatAndGeometry();
     void ParseHeader();
-    void DetectSystemArea();
-    void DetectRamArea();
-    void GenerateLBATable();
-
-    bool IsSystemSectorValid(uint32_t block, uint32_t sectorSize) const;
-    CountryCode DetectCountryCode() const;
-
-    void InitializeD64Data();
-    void CleanupD64Data();
-
-    // Byte swapping
-    void ByteSwapIfNeeded();
-    void ForceByteSwap();
 
     // Memory management
     void AllocateImage(size_t size);
-    void AllocateHeader();
 
     // Conversion tables
     struct ConversionTables {
@@ -378,10 +274,6 @@ private:
     // LBA conversion table
     std::vector<uint16_t> m_LBAToPhysTable;
 
-    // Helper methods
-    bool AllocateAndLoadDiskImage(const fs::path& filePath);
-    bool LoadDiskRAMImage();
-
     // D64-specific data
     struct D64Data;
     std::unique_ptr<D64Data> m_D64Data;
@@ -394,19 +286,7 @@ private:
     std::optional<DiskError> m_LastError;
 };
 
-namespace DiskUtils {
-DiskFormat DetectFormat(const uint8_t* data, size_t size) noexcept;
-
-size_t GetExpectedSize(DiskFormat format) noexcept;
-
-uint32_t CalculateCRC32(const uint8_t* data, size_t size) noexcept;
-
-void ByteSwapDisk(uint8_t* data, size_t size, DiskFormat format);
-
-std::string ExtractRomName(const uint8_t* header);
-
-std::string ExtractIdentifier(const uint8_t* diskData, size_t size);
-} // namespace DiskUtils
+namespace DiskUtils {} // namespace DiskUtils
 
 } // namespace Disk
 } // namespace N64

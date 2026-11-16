@@ -29,7 +29,6 @@ namespace Nova64 {
 namespace Recompiler {
 
 class CX64Ops;
-class CJumpInfo;
 
 /**
  * @enum TranslationResult
@@ -131,15 +130,11 @@ public:
         Maximum     ///< Maximum optimizations (may be unsafe)
     };
 
-    void SetOptimizationLevel(OptimizationLevel level) noexcept;
     OptimizationLevel GetOptimizationLevel() const noexcept { return m_OptimizationLevel; }
 
     // Control flow management
     void EnterCodeBlock();
     void ExitCodeBlock(ExitReason reason = ExitReason::NormalBlockEnd);
-    void LinkJump(CJumpInfo& jumpInfo);
-    void LinkJumpToSection(CodeSection* section);
-    void LinkJumpToUnknown(CJumpInfo* jumpInfo);
 
     // Bind the skip-delay-slot label after a branch-likely instruction.
     // Called from generate_code after each instruction's compilation.
@@ -167,12 +162,6 @@ public:
     // callbacks that may generate exceptions (SYSCALL, BREAK, MTC0, traps).
     // This ensures TriggerException saves the correct EPC.
     void EmitPCUpdate();
-
-    // Register state management
-    void SynchronizeRegisterState(const CX64RegInfo& other);
-    void PropagateRegisterState();
-    void SaveRegisterState();
-    void RestoreRegisterState();
 
     // Statistics and debugging
     struct TranslationStats {
@@ -210,150 +199,14 @@ public:
     const TranslationStats& GetStats() const noexcept { return m_Stats; }
     void ResetStats() noexcept { m_Stats.Reset(); }
 
-    std::string GenerateDisassembly() const;
-
-    bool ValidateGeneratedCode() const;
-
 private:
     // Instruction translation helpers
     using InstructionHandler = TranslationResult (CX64RecompilerOps::*)(const TranslationContext&);
     using InstructionHandlerMap = std::unordered_map<uint32_t, InstructionHandler>;
 
     void InitializeInstructionHandlers();
-    TranslationResult TranslateInstruction(const TranslationContext& ctx);
-    TranslationResult TranslateSpecialInstruction(const TranslationContext& ctx);
-    TranslationResult TranslateRegImmInstruction(const TranslationContext& ctx);
-    TranslationResult TranslateCop0Instruction(const TranslationContext& ctx);
-    TranslationResult TranslateCop1Instruction(const TranslationContext& ctx);
-    TranslationResult TranslateCop2Instruction(const TranslationContext& ctx);
-
-    // Specific instruction category handlers
-    TranslationResult HandleArithmetic(const TranslationContext& ctx);
-    TranslationResult HandleLogical(const TranslationContext& ctx);
-    TranslationResult HandleShift(const TranslationContext& ctx);
-    TranslationResult HandleLoad(const TranslationContext& ctx);
-    TranslationResult HandleStore(const TranslationContext& ctx);
-    TranslationResult HandleBranch(const TranslationContext& ctx);
-    TranslationResult HandleJump(const TranslationContext& ctx);
-    TranslationResult HandleTrap(const TranslationContext& ctx);
-    TranslationResult HandleSystem(const TranslationContext& ctx);
-    TranslationResult HandleFloatingPoint(const TranslationContext& ctx);
 
     // Individual instruction handlers (organized by category)
-
-    // SPECIAL opcodes
-    TranslationResult HandleSPECIAL_SLL(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SRL(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SRA(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SLLV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SRLV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SRAV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_JR(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_JALR(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SYSCALL(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_BREAK(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MFLO(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MTLO(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MFHI(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MTHI(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSLLV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRLV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRAV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MULT(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_MULTU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DIV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DIVU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DMULT(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DMULTU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DDIV(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DDIVU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_ADD(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_ADDU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SUB(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SUBU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_AND(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_OR(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_XOR(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_NOR(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SLT(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_SLTU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DADD(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DADDU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSUB(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSUBU(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSLL(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRL(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRA(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSLL32(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRL32(const TranslationContext& ctx);
-    TranslationResult HandleSPECIAL_DSRA32(const TranslationContext& ctx);
-
-    // REGIMM opcodes
-    TranslationResult HandleREGIMM_BLTZ(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BGEZ(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BLTZL(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BGEZL(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TGEI(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TGEIU(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TLTI(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TLTIU(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TEQI(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_TNEI(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BLTZAL(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BGEZAL(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BLTZALL(const TranslationContext& ctx);
-    TranslationResult HandleREGIMM_BGEZALL(const TranslationContext& ctx);
-
-    // Load/Store opcodes
-    TranslationResult HandleLB(const TranslationContext& ctx);
-    TranslationResult HandleLH(const TranslationContext& ctx);
-    TranslationResult HandleLWL(const TranslationContext& ctx);
-    TranslationResult HandleLW(const TranslationContext& ctx);
-    TranslationResult HandleLBU(const TranslationContext& ctx);
-    TranslationResult HandleLHU(const TranslationContext& ctx);
-    TranslationResult HandleLWR(const TranslationContext& ctx);
-    TranslationResult HandleLWU(const TranslationContext& ctx);
-    TranslationResult HandleSB(const TranslationContext& ctx);
-    TranslationResult HandleSH(const TranslationContext& ctx);
-    TranslationResult HandleSWL(const TranslationContext& ctx);
-    TranslationResult HandleSW(const TranslationContext& ctx);
-    TranslationResult HandleSWR(const TranslationContext& ctx);
-    TranslationResult HandleSDL(const TranslationContext& ctx);
-    TranslationResult HandleSDR(const TranslationContext& ctx);
-    TranslationResult HandleLD(const TranslationContext& ctx);
-    TranslationResult HandleSD(const TranslationContext& ctx);
-    TranslationResult HandleLDL(const TranslationContext& ctx);
-    TranslationResult HandleLDR(const TranslationContext& ctx);
-
-    // Immediate opcodes
-    TranslationResult HandleADDI(const TranslationContext& ctx);
-    TranslationResult HandleADDIU(const TranslationContext& ctx);
-    TranslationResult HandleSLTI(const TranslationContext& ctx);
-    TranslationResult HandleSLTIU(const TranslationContext& ctx);
-    TranslationResult HandleANDI(const TranslationContext& ctx);
-    TranslationResult HandleORI(const TranslationContext& ctx);
-    TranslationResult HandleXORI(const TranslationContext& ctx);
-    TranslationResult HandleLUI(const TranslationContext& ctx);
-    TranslationResult HandleDADDI(const TranslationContext& ctx);
-    TranslationResult HandleDADDIU(const TranslationContext& ctx);
-
-    // Branch opcodes
-    TranslationResult HandleJ(const TranslationContext& ctx);
-    TranslationResult HandleJAL(const TranslationContext& ctx);
-    TranslationResult HandleBEQ(const TranslationContext& ctx);
-    TranslationResult HandleBNE(const TranslationContext& ctx);
-    TranslationResult HandleBLEZ(const TranslationContext& ctx);
-    TranslationResult HandleBGTZ(const TranslationContext& ctx);
-    TranslationResult HandleBEQL(const TranslationContext& ctx);
-    TranslationResult HandleBNEL(const TranslationContext& ctx);
-    TranslationResult HandleBLEZL(const TranslationContext& ctx);
-    TranslationResult HandleBGTZL(const TranslationContext& ctx);
-
-    // COP1 opcodes
-    TranslationResult HandleLWC1(const TranslationContext& ctx);
-    TranslationResult HandleLDC1(const TranslationContext& ctx);
-    TranslationResult HandleSWC1(const TranslationContext& ctx);
-    TranslationResult HandleSDC1(const TranslationContext& ctx);
 
     // Helper methods
     void EmitCop1UsableCheck();
@@ -363,30 +216,12 @@ private:
     void EmitTlbCallback(void* callback, uint32_t opcVal);
     void EmitBranchCallback(void* callback, uint32_t opcVal, uint32_t pc);
     void EmitBranchLikelyCallback(void* callback, uint32_t opcVal, uint32_t pc);
-    void EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, asmjit::x86::Gp dest,
-                           const asmjit::x86::Mem& src);
-    void EmitStoreOperation(uint32_t size, bool is64Bit, const asmjit::x86::Mem& dest, asmjit::x86::Gp src);
-    void EmitBranchCondition(ConditionType condition, asmjit::Label target);
-    void EmitTrapCondition(ConditionType condition);
-    void EmitSystemCall();
-    void EmitBreak();
 
     // Register allocation and management
     void AllocateRegister(uint32_t regIndex, bool is64Bit = false);
     void FreeRegister(uint32_t regIndex);
     void SpillRegister(uint32_t regIndex);
     void ReloadRegister(uint32_t regIndex);
-
-    // Memory access helpers
-    asmjit::x86::Mem CreateMemoryOperand(uint32_t baseReg, int32_t offset, uint32_t size, bool is64Bit);
-    void EmitMemoryBoundsCheck(uint32_t address);
-
-    // Optimization helpers
-    void OptimizeCurrentBlock();
-    void PeepholeOptimize();
-    void ConstantPropagation();
-    void DeadCodeElimination();
-    void RedundantMoveElimination();
 
     // Branch comparison instructions
     void BNE_Compare();
@@ -608,11 +443,7 @@ private:
 
     // Cached labels and jump targets
     std::unordered_map<uint32_t, asmjit::Label> m_JumpTargets;
-    std::vector<CJumpInfo*> m_PendingJumps;
 };
-
-// Factory function
-std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock);
 
 } // namespace Recompiler
 } // namespace Nova64

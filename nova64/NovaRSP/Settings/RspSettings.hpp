@@ -48,7 +48,6 @@ public:
     [[nodiscard]] static bool IsSyncCPU() { return s_SyncCPU; }
 
     // --- Mutators ---
-    static void EnableDebugging(bool enabled);
     static void InitializeRspSetting();
     static void RefreshSettings();
     static void SetRomOpen(bool opened);

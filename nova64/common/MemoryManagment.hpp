@@ -56,25 +56,6 @@ void* CommitMemory(void* addr, size_t size, MEM_PROTECTION memProtection);
  */
 bool DecommitMemory(void* addr, size_t size);
 
-/**
- * @brief Change protection of a memory region
- * @param addr Address of the memory region
- * @param size Size of the memory region
- * @param memProtection New protection flags
- * @return True on success, false on failure
- */
-bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection);
-
-/**
- * @brief Change protection of a memory region and retrieve old protection
- * @param addr Address of the memory region
- * @param size Size of the memory region
- * @param memProtection New protection flags
- * @param oldProtection Output: previous protection flags
- * @return True on success, false on failure
- */
-bool ProtectMemory(void* addr, size_t size, MEM_PROTECTION memProtection, MEM_PROTECTION& oldProtection);
-
 // --- Extended Memory Management API ---
 
 namespace MemoryManagement {
@@ -93,83 +74,11 @@ struct MemoryInfo {
 };
 
 /**
- * @brief Get the system page size
- * @return Page size in bytes
- */
-size_t GetPageSize();
-
-/**
- * @brief Get the allocation granularity
- * @return Allocation granularity in bytes
- */
-size_t GetAllocationGranularity();
-
-/**
- * @brief Allocate aligned memory
- * @param size Size of the allocation
- * @param alignment Required alignment (must be power of 2)
- * @return Pointer to aligned memory, or nullptr on failure
- */
-void* AllocateAligned(size_t size, size_t alignment);
-
-/**
- * @brief Free aligned memory
- * @param ptr Pointer to aligned memory
- */
-void FreeAligned(void* ptr);
-
-/**
- * @brief Allocate executable memory
- * @param size Size of the allocation
- * @return Pointer to executable memory, or nullptr on failure
- */
-void* AllocateExecutable(size_t size);
-
-/**
- * @brief Free executable memory
- * @param address Pointer to executable memory
- * @param size Size of the allocation
- * @return True on success, false on failure
- */
-bool FreeExecutable(void* address, size_t size);
-
-/**
  * @brief Flush the instruction cache
  * @param address Address of the code region
  * @param size Size of the code region
  * @return True on success, false on failure
  */
 bool FlushInstructionCache(void* address, size_t size);
-
-/**
- * @brief Lock memory pages in physical RAM
- * @param address Address of the memory region
- * @param size Size of the memory region
- * @return True on success, false on failure
- */
-bool LockMemory(void* address, size_t size);
-
-/**
- * @brief Unlock memory pages
- * @param address Address of the memory region
- * @param size Size of the memory region
- * @return True on success, false on failure
- */
-bool UnlockMemory(void* address, size_t size);
-
-/**
- * @brief Zero a memory range
- * @param address Address of the memory region
- * @param size Size of the memory region
- * @return True on success, false on failure
- */
-bool ZeroMemoryRange(void* address, size_t size);
-
-/**
- * @brief Query information about a memory region
- * @param address Address to query
- * @return Memory information structure
- */
-MemoryInfo QueryMemory(void* address);
 
 } // namespace MemoryManagement

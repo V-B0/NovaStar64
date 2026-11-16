@@ -284,77 +284,11 @@ void CRSPSystem::SetupSyncCPU() {
     copyReg(m_SyncSystem->m_DPC_TMEM_REG, m_DPC_TMEM_REG);
 }
 
-bool CRSPSystem::IsSyncSystem() const { return m_BaseSystem != nullptr; }
-
 CRSPSystem* CRSPSystem::SyncSystem() const {
     if (m_SyncSystem == nullptr) {
         const_cast<CRSPSystem*>(this)->SetupSyncCPU();
     }
     return m_SyncSystem;
-}
-
-void CRSPSystem::BasicSyncCheck() {
-    if (m_SyncSystem == nullptr) return;
-
-    bool syncFailed = false;
-
-    const RSPVector* vect = m_Reg.m_Vect;
-    const RSPVector* vectSync = m_SyncSystem->m_Reg.m_Vect;
-    for (int i = 0; i < 32; i++) {
-        if (vect[i].u64(0) != vectSync[i].u64(0) || vect[i].u64(1) != vectSync[i].u64(1)) {
-            syncFailed = true;
-            break;
-        }
-    }
-
-    if (std::memcmp(m_IMEM, m_SyncSystem->m_IMEM, IMEM_SIZE) != 0) {
-        syncFailed = true;
-    }
-    if (std::memcmp(m_DMEM, m_SyncSystem->m_DMEM, DMEM_SIZE) != 0) {
-        syncFailed = true;
-    }
-
-    auto checkReg = [&](uint32_t* a, uint32_t* b) {
-        if (a && b && *a != *b) syncFailed = true;
-    };
-
-    checkReg(m_MI_INTR_REG, m_SyncSystem->m_MI_INTR_REG);
-    checkReg(m_SP_MEM_ADDR_REG, m_SyncSystem->m_SP_MEM_ADDR_REG);
-    checkReg(m_SP_DRAM_ADDR_REG, m_SyncSystem->m_SP_DRAM_ADDR_REG);
-    checkReg(m_SP_RD_LEN_REG, m_SyncSystem->m_SP_RD_LEN_REG);
-    checkReg(m_SP_WR_LEN_REG, m_SyncSystem->m_SP_WR_LEN_REG);
-    checkReg(m_SP_STATUS_REG, m_SyncSystem->m_SP_STATUS_REG);
-    checkReg(m_SP_DMA_FULL_REG, m_SyncSystem->m_SP_DMA_FULL_REG);
-    checkReg(m_SP_DMA_BUSY_REG, m_SyncSystem->m_SP_DMA_BUSY_REG);
-    checkReg(m_SP_SEMAPHORE_REG, m_SyncSystem->m_SP_SEMAPHORE_REG);
-
-    // PC comparison (masked to 12 bits)
-    if (m_SP_PC_REG && m_SyncSystem->m_SP_PC_REG && (*m_SP_PC_REG & 0xFFC) != (*m_SyncSystem->m_SP_PC_REG & 0xFFC)) {
-        syncFailed = true;
-    }
-
-    if (syncFailed) {
-        char msg[512];
-        std::snprintf(msg, sizeof(msg), "RSP Sync FAILED at PC=0x%03X (sync PC=0x%03X)",
-                      m_SP_PC_REG ? (*m_SP_PC_REG & 0xFFC) : 0u,
-                      m_SyncSystem->m_SP_PC_REG ? (*m_SyncSystem->m_SP_PC_REG & 0xFFC) : 0u);
-
-        // Log which subsystem diverged
-        if (std::memcmp(m_IMEM, m_SyncSystem->m_IMEM, IMEM_SIZE) != 0)
-            std::snprintf(msg + std::strlen(msg), sizeof(msg) - std::strlen(msg), " [IMEM mismatch]");
-        if (std::memcmp(m_DMEM, m_SyncSystem->m_DMEM, DMEM_SIZE) != 0)
-            std::snprintf(msg + std::strlen(msg), sizeof(msg) - std::strlen(msg), " [DMEM mismatch]");
-        for (int i = 0; i < 32; i++) {
-            if (m_Reg.m_Vect[i].u64(0) != m_SyncSystem->m_Reg.m_Vect[i].u64(0) ||
-                m_Reg.m_Vect[i].u64(1) != m_SyncSystem->m_Reg.m_Vect[i].u64(1)) {
-                std::snprintf(msg + std::strlen(msg), sizeof(msg) - std::strlen(msg), " [VR%d]", i);
-            }
-        }
-
-        if (g_RSPDebugger != nullptr) {
-            g_RSPDebugger->SyncError(msg);
-        }
-    }
 }
 
 // --- Aligned allocation (16-byte alignment for SIMD) ---
@@ -380,10 +314,6 @@ void CRSPSystem::operator delete(void* ptr) {
 }
 
 // --- Null callbacks (used before real ones are set) ---
-
-void CRSPSystem::NullProcessDList() {}
-void CRSPSystem::NullProcessRdpList() {}
-void CRSPSystem::NullCheckInterrupts() {}
 
 // --- DMA transfers between SP memory and RDRAM ---
 
@@ -457,54 +387,7 @@ void CRSPSystem::SP_DMA_WRITE() {
 
 // --- Debug: dump sync state to buffer ---
 
-void CRSPSystem::DumpSyncState(char* buf, size_t bufSize) const {
-    if (buf == nullptr || bufSize == 0) return;
-
-    int pos = 0;
-    pos += std::snprintf(buf + pos, bufSize - pos, "=== RSP Sync State Dump ===\n");
-
-    if (m_SP_PC_REG) pos += std::snprintf(buf + pos, bufSize - pos, "PC: 0x%03X\n", *m_SP_PC_REG & 0xFFC);
-
-    if (m_SP_STATUS_REG) pos += std::snprintf(buf + pos, bufSize - pos, "SP_STATUS: 0x%08X\n", *m_SP_STATUS_REG);
-
-    pos += std::snprintf(buf + pos, bufSize - pos, "GPRs:\n");
-    for (int i = 0; i < 32 && pos < static_cast<int>(bufSize) - 20; i++) {
-        pos += std::snprintf(buf + pos, bufSize - pos, "  R%02d: 0x%08X", i, m_Reg.m_GPR[i].UW);
-        if ((i & 3) == 3) pos += std::snprintf(buf + pos, bufSize - pos, "\n");
-    }
-
-    // First 8 vector registers (full contents would be too large)
-    pos += std::snprintf(buf + pos, bufSize - pos, "Vector Regs (0-7):\n");
-    for (int i = 0; i < 8 && pos < static_cast<int>(bufSize) - 40; i++) {
-        pos += std::snprintf(buf + pos, bufSize - pos, "  V%02d: %016llX %016llX\n", i,
-                             static_cast<unsigned long long>(m_Reg.m_Vect[i].u64(0)),
-                             static_cast<unsigned long long>(m_Reg.m_Vect[i].u64(1)));
-    }
-
-    pos += std::snprintf(buf + pos, bufSize - pos, "DMA:\n");
-    if (m_SP_MEM_ADDR_REG) pos += std::snprintf(buf + pos, bufSize - pos, "  MEM_ADDR: 0x%08X\n", *m_SP_MEM_ADDR_REG);
-    if (m_SP_DRAM_ADDR_REG)
-        pos += std::snprintf(buf + pos, bufSize - pos, "  DRAM_ADDR: 0x%08X\n", *m_SP_DRAM_ADDR_REG);
-    if (m_SP_RD_LEN_REG) pos += std::snprintf(buf + pos, bufSize - pos, "  RD_LEN: 0x%08X\n", *m_SP_RD_LEN_REG);
-    if (m_SP_WR_LEN_REG) pos += std::snprintf(buf + pos, bufSize - pos, "  WR_LEN: 0x%08X\n", *m_SP_WR_LEN_REG);
-}
-
 // --- Execution profiling stats ---
-
-void CRSPSystem::ResetProfilingStats() {
-    m_ProfileOpsExecuted = 0;
-    m_ProfileCyclesUsed = 0;
-    m_ProfileDMATransfers = 0;
-    m_ProfileBreaks = 0;
-}
-
-void CRSPSystem::GetProfilingStats(uint64_t& opsExecuted, uint64_t& cyclesUsed, uint32_t& dmaTransfers,
-                                   uint32_t& breaks) const {
-    opsExecuted = m_ProfileOpsExecuted;
-    cyclesUsed = m_ProfileCyclesUsed;
-    dmaTransfers = m_ProfileDMATransfers;
-    breaks = m_ProfileBreaks;
-}
 
 void CRSPSystem::ExecuteOne(uint32_t word) {
     m_OpCode.Value = word;

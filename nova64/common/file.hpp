@@ -110,9 +110,6 @@ public:
     [[nodiscard]] bool is_open() const noexcept;
 
     [[nodiscard]] size_t read(void* buffer, size_t count);
-    /// The whole file from the start; empty on error or for an empty file.
-    [[nodiscard]] std::vector<uint8_t> read_all();
-    [[nodiscard]] std::string read_text();
 
     template <typename T> [[nodiscard]] T read_as() {
         static_assert(std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>,
@@ -140,40 +137,22 @@ public:
         return write(&value, sizeof(T));
     }
 
-    /// Current position, or -1 on error.
-    [[nodiscard]] int64_t tell() const;
     /// Moves the position and returns the new one, or -1 on error.
     [[nodiscard]] int64_t seek(int64_t offset, SeekOrigin origin = SeekOrigin::Begin);
-    void seek_to_begin();
-    [[nodiscard]] int64_t seek_to_end();
 
     // File properties
     [[nodiscard]] int64_t size() const;
     void resize(int64_t new_size);
-    [[nodiscard]] bool is_eof() const;
     /// Forces written data to disk (FlushFileBuffers / fsync).
     void flush();
-
-    [[nodiscard]] NativeHandle native_handle() const;
 
     [[nodiscard]] static bool exists(const std::string& filename);
     [[nodiscard]] static bool remove(const std::string& filename);
     [[nodiscard]] static bool rename(const std::string& old_name, const std::string& new_name);
-    [[nodiscard]] static int64_t get_size(const std::string& filename);
-    [[nodiscard]] static std::string get_current_directory();
-    [[nodiscard]] static bool set_current_directory(const std::string& path);
 
-    [[nodiscard]] const std::error_code& last_error() const noexcept;
     void clear_error() noexcept;
-    [[nodiscard]] bool has_error() const noexcept;
 
     [[nodiscard]] std::string filename() const;
-    [[nodiscard]] OpenMode open_mode() const;
-    [[nodiscard]] ShareMode share_mode() const;
-
-    [[nodiscard]] std::chrono::system_clock::time_point get_last_write_time() const;
-
-    void set_last_write_time(const std::chrono::system_clock::time_point& time);
 
 private:
     std::unique_ptr<FileImpl> m_impl;

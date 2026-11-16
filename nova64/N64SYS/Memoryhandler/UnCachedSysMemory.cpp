@@ -313,6 +313,4 @@ void UnCachedSysMemory::CompleteDMA(bool error) {
 
 // --- Save Access ---
 
-CSram& UnCachedSysMemory::GetSram() { return m_Sram; }
-
 CFlashRam& UnCachedSysMemory::GetFlashRam() { return m_FlashRam; }

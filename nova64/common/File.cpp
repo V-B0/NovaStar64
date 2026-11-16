@@ -261,42 +261,6 @@ size_t File::read(void* buffer, size_t count) {
 #endif
 }
 
-std::vector<uint8_t> File::read_all() {
-    if (!is_open()) {
-        return {};
-    }
-
-    const int64_t fileSize = size();
-    if (fileSize <= 0) {
-        return {};
-    }
-
-    seek_to_begin();
-
-    std::vector<uint8_t> data(static_cast<size_t>(fileSize));
-    const size_t bytesRead = read(data.data(), data.size());
-    data.resize(bytesRead);
-    return data;
-}
-
-std::string File::read_text() {
-    if (!is_open()) {
-        return {};
-    }
-
-    const int64_t fileSize = size();
-    if (fileSize <= 0) {
-        return {};
-    }
-
-    seek_to_begin();
-
-    std::string text(static_cast<size_t>(fileSize), '\0');
-    const size_t bytesRead = read(text.data(), text.size());
-    text.resize(bytesRead);
-    return text;
-}
-
 // --- File - Write operations ---
 
 size_t File::write(const void* buffer, size_t count) {
@@ -326,23 +290,6 @@ size_t File::write(const std::string& text) { return write(text.data(), text.siz
 size_t File::write(const std::vector<uint8_t>& data) { return write(data.data(), data.size()); }
 
 // --- File - Seek / Position operations ---
-
-int64_t File::tell() const {
-    if (!is_open()) {
-        return -1;
-    }
-
-#ifdef _WIN32
-    LARGE_INTEGER pos;
-    LARGE_INTEGER zero{};
-    if (!::SetFilePointerEx(m_impl->hFile, zero, &pos, FILE_CURRENT)) {
-        return -1;
-    }
-    return pos.QuadPart;
-#else
-    return static_cast<int64_t>(::lseek(m_impl->fd, 0, SEEK_CUR));
-#endif
-}
 
 int64_t File::seek(int64_t offset, SeekOrigin origin) {
     if (!is_open()) {
@@ -380,10 +327,6 @@ int64_t File::seek(int64_t offset, SeekOrigin origin) {
     return static_cast<int64_t>(result);
 #endif
 }
-
-void File::seek_to_begin() { (void)seek(0, SeekOrigin::Begin); }
-
-int64_t File::seek_to_end() { return seek(0, SeekOrigin::End); }
 
 // --- File - Properties ---
 
@@ -423,16 +366,6 @@ void File::resize(int64_t new_size) {
 #endif
 }
 
-bool File::is_eof() const {
-    if (!is_open()) {
-        return true;
-    }
-
-    const int64_t current = const_cast<File*>(this)->tell();
-    const int64_t fileSize = size();
-    return current >= fileSize;
-}
-
 void File::flush() {
     if (!is_open()) {
         return;
@@ -445,102 +378,15 @@ void File::flush() {
 #endif
 }
 
-NativeHandle File::native_handle() const {
-    if (!is_open()) {
-#ifdef _WIN32
-        return INVALID_HANDLE_VALUE;
-#else
-        return -1;
-#endif
-    }
-
-#ifdef _WIN32
-    return m_impl->hFile;
-#else
-    return m_impl->fd;
-#endif
-}
-
 // --- File - Error state ---
 
-const std::error_code& File::last_error() const noexcept { return m_impl->lastError; }
-
 void File::clear_error() noexcept { m_impl->clear_error(); }
-
-bool File::has_error() const noexcept { return static_cast<bool>(m_impl->lastError); }
 
 // --- File - Metadata accessors ---
 
 std::string File::filename() const { return m_impl->fileName; }
 
-OpenMode File::open_mode() const { return m_impl->mode; }
-
-ShareMode File::share_mode() const { return m_impl->share; }
-
 // --- File - Timestamps ---
-
-std::chrono::system_clock::time_point File::get_last_write_time() const {
-    if (!is_open()) {
-        return {};
-    }
-
-#ifdef _WIN32
-    FILETIME ftWrite;
-    if (!::GetFileTime(m_impl->hFile, nullptr, nullptr, &ftWrite)) {
-        return {};
-    }
-
-    // Convert FILETIME (100ns intervals since 1601-01-01) to system_clock
-    // Windows epoch offset: 11644473600 seconds between 1601 and 1970
-    constexpr int64_t kWindowsTicksPerSecond = 10'000'000LL;
-    constexpr int64_t kEpochDifference = 11'644'473'600LL;
-
-    ULARGE_INTEGER uli;
-    uli.LowPart = ftWrite.dwLowDateTime;
-    uli.HighPart = ftWrite.dwHighDateTime;
-
-    const int64_t unixSeconds = static_cast<int64_t>(uli.QuadPart / kWindowsTicksPerSecond) - kEpochDifference;
-
-    return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(unixSeconds));
-#else
-    struct stat st;
-    if (::fstat(m_impl->fd, &st) != 0) {
-        return {};
-    }
-    return std::chrono::system_clock::from_time_t(st.st_mtime);
-#endif
-}
-
-void File::set_last_write_time(const std::chrono::system_clock::time_point& time) {
-    if (!is_open()) {
-        return;
-    }
-
-#ifdef _WIN32
-    constexpr int64_t kWindowsTicksPerSecond = 10'000'000LL;
-    constexpr int64_t kEpochDifference = 11'644'473'600LL;
-
-    const auto tt = std::chrono::system_clock::to_time_t(time);
-    const int64_t windowsTicks = (static_cast<int64_t>(tt) + kEpochDifference) * kWindowsTicksPerSecond;
-
-    FILETIME ft;
-    ULARGE_INTEGER uli;
-    uli.QuadPart = static_cast<ULONGLONG>(windowsTicks);
-    ft.dwLowDateTime = uli.LowPart;
-    ft.dwHighDateTime = uli.HighPart;
-
-    ::SetFileTime(m_impl->hFile, nullptr, nullptr, &ft);
-#else
-    // POSIX: futimens() on the open descriptor.
-    const auto tt = std::chrono::system_clock::to_time_t(time);
-    struct timespec times[2];
-    times[0].tv_sec = 0;
-    times[0].tv_nsec = UTIME_OMIT; // Don't change access time
-    times[1].tv_sec = tt;
-    times[1].tv_nsec = 0;
-    ::futimens(m_impl->fd, times);
-#endif
-}
 
 // --- File - Static utility methods ---
 
@@ -598,72 +444,6 @@ bool File::rename(const std::string& old_name, const std::string& new_name) {
     return ::MoveFileW(wideOld.get(), wideNew.get()) != 0;
 #else
     return ::rename(old_name.c_str(), new_name.c_str()) == 0;
-#endif
-}
-
-int64_t File::get_size(const std::string& filename) {
-#ifdef _WIN32
-    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0) {
-        return -1;
-    }
-    auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
-    MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
-
-    WIN32_FILE_ATTRIBUTE_DATA fad;
-    if (!::GetFileAttributesExW(wideName.get(), GetFileExInfoStandard, &fad)) {
-        return -1;
-    }
-    LARGE_INTEGER fileSize;
-    fileSize.HighPart = static_cast<LONG>(fad.nFileSizeHigh);
-    fileSize.LowPart = fad.nFileSizeLow;
-    return fileSize.QuadPart;
-#else
-    struct stat st;
-    if (::stat(filename.c_str(), &st) != 0) {
-        return -1;
-    }
-    return static_cast<int64_t>(st.st_size);
-#endif
-}
-
-std::string File::get_current_directory() {
-#ifdef _WIN32
-    const DWORD len = ::GetCurrentDirectoryW(0, nullptr);
-    if (len == 0) {
-        return {};
-    }
-    auto wideBuf = std::make_unique<wchar_t[]>(len);
-    ::GetCurrentDirectoryW(len, wideBuf.get());
-
-    const int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideBuf.get(), -1, nullptr, 0, nullptr, nullptr);
-    if (utf8Len <= 0) {
-        return {};
-    }
-    std::string result(static_cast<size_t>(utf8Len - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wideBuf.get(), -1, result.data(), utf8Len, nullptr, nullptr);
-    return result;
-#else
-    char buf[4096];
-    if (::getcwd(buf, sizeof(buf)) != nullptr) {
-        return std::string(buf);
-    }
-    return {};
-#endif
-}
-
-bool File::set_current_directory(const std::string& path) {
-#ifdef _WIN32
-    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0) {
-        return false;
-    }
-    auto widePath = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
-    MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, widePath.get(), wideLen);
-
-    return ::SetCurrentDirectoryW(widePath.get()) != 0;
-#else
-    return ::chdir(path.c_str()) == 0;
 #endif
 }
 

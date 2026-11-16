@@ -139,15 +139,8 @@ public:
     std::string GetABIName() const override;
     bool SupportsFeature(std::string_view feature) const override;
 
-    // Register allocation management
-    void SetRegisterAllocator(std::unique_ptr<IRegisterAllocator> allocator);
     IRegisterAllocator* GetAllocator() noexcept;
     const IRegisterAllocator* GetAllocator() const noexcept;
-
-    // Register state operations
-    void ResetRegisterState(RegisterSet& regSet);
-    void SaveRegisterState(RegisterSet& regSet);
-    void RestoreRegisterState(RegisterSet& regSet);
 
     // Debug and statistics
     struct Statistics {
@@ -164,12 +157,7 @@ public:
 
     // Platform feature queries
     static PlatformType DetectPlatform() noexcept;
-    static bool IsPlatformSupported(PlatformType platform) noexcept;
     static std::string GetPlatformDescription(PlatformType platform);
-
-    // Factory methods
-    static std::unique_ptr<CRegInfo> CreateForCurrentPlatform();
-    static std::unique_ptr<CRegInfo> CreateForPlatform(PlatformType platform);
 
 private:
     class PlatformImpl;
@@ -180,10 +168,6 @@ private:
     Statistics m_Stats;
 };
 
-const PlatformInfo& GetCurrentPlatformInfo() noexcept;
-
-bool CheckPlatformFeature(std::string_view feature) noexcept;
-
 class UnsupportedPlatformException : public std::runtime_error {
 public:
     explicit UnsupportedPlatformException(PlatformType platform);
@@ -192,11 +176,6 @@ public:
 private:
     PlatformType m_Platform;
 };
-
-/**
- * @brief Register a custom platform implementation (for testing/experimental platforms)
- */
-void RegisterCustomPlatform(PlatformType type, std::function<std::unique_ptr<IRegInfo>()> factory);
 
 } // namespace Recompiler
 } // namespace Nova64

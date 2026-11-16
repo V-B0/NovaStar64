@@ -48,12 +48,6 @@ public:
 
     // State management
     void reset();
-    bool saveState(std::ostream& os) const;
-    bool loadState(std::istream& is);
-
-    // Debug
-    std::string dumpState() const;
-    std::string getMemoryMap() const;
 
 private:
     UncachedRom() = delete;
@@ -82,7 +76,6 @@ private:
     enum class MemoryRegion { SRAM, FLASH_RAM, ROM, DD_ROM, DD_REGS, PI_REGS, UNMAPPED };
 
     MemoryRegion decodeRegion(uint32_t address) const;
-    uint32_t getRegionOffset(uint32_t address, MemoryRegion region) const;
 
     bool handleSramAccess(uint32_t address, uint32_t& value, bool is_write);
     bool handleFlashRamAccess(uint32_t address, uint32_t& value, bool is_write);

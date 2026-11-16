@@ -178,25 +178,6 @@ void VideoInterfaceHandler::handle_v_intr_register_write(uint32_t value, uint32_
     check_vi_interrupt();
 }
 
-void VideoInterfaceHandler::update_half_line() {
-    m_video_state.half_line++;
-
-    // Wrap around at V_SYNC, the total number of half-lines per frame (~525 for NTSC).
-
-    uint32_t v_sync = m_vi_regs.v_sync();
-    if (v_sync == 0) v_sync = 0x20C; // use the NTSC value until V_SYNC is written
-
-    if (m_video_state.half_line >= v_sync) {
-        m_video_state.half_line = 0;
-        end_frame();
-        begin_frame();
-    }
-
-    check_vi_interrupt();
-
-    m_video_state.current_scanline = m_video_state.half_line >> 1;
-}
-
 void VideoInterfaceHandler::check_vi_interrupt() {
     if (m_vi_regs.v_intr() == m_video_state.half_line) {
         generate_vi_interrupt();
@@ -267,34 +248,7 @@ VideoInterfaceHandler::VideoMode VideoInterfaceHandler::get_current_video_mode()
     return mode;
 }
 
-void VideoInterfaceHandler::begin_frame() {
-    m_video_state.frame_start_time = 0; // the frame start time is not tracked
-}
-
-void VideoInterfaceHandler::end_frame() { m_stats.total_frames++; }
-
 // --- Additional Helper Methods ---
-
-void VideoInterfaceHandler::update_scanline() {
-    uint32_t current_half = m_video_state.half_line;
-
-    uint32_t v_start = m_vi_regs.v_start() >> 16;
-    uint32_t v_end = m_vi_regs.v_start() & 0xFFFF;
-
-    // N64 V-Sync register contains number of half-lines
-    // If current half-line is outside active video range, we are in V-Blank
-    bool vblank = (current_half < v_start) || (current_half >= v_end);
-
-    m_video_state.vblank_active = vblank;
-
-    // H-Blank is not modelled (it would need a horizontal counter relative to H_SYNC).
-    m_video_state.hblank_active = false;
-}
-
-void VideoInterfaceHandler::wait_for_vblank() {
-    // Does not block.
-    if (!m_video_state.vblank_active) {}
-}
 
 void VideoInterfaceHandler::detect_video_mode_change() {
     VideoMode new_mode = get_current_video_mode();
@@ -317,20 +271,6 @@ void VideoInterfaceHandler::apply_video_mode(const VideoMode& mode) {
     m_stats.mode_changes++;
 
     log_video_mode_change(m_video_state.previous_mode, mode);
-}
-
-void VideoInterfaceHandler::limit_frame_rate() {
-    // Frame pacing is delegated to the system timer's real-time sync.
-    m_system_timer.sync_to_real_time();
-}
-
-void VideoInterfaceHandler::update_frame_timing() {
-    // Not implemented: no frame timing statistics are collected.
-}
-
-std::string VideoInterfaceHandler::get_video_info() const {
-    VideoMode mode = get_current_video_mode();
-    return mode.to_string();
 }
 
 std::string VideoInterfaceHandler::get_register_dump() const {
@@ -361,36 +301,12 @@ void VideoInterfaceHandler::load_state(std::istream& is) {
     is.read(reinterpret_cast<char*>(&m_stats), sizeof(Statistics));
 }
 
-uint32_t VideoInterfaceHandler::calculate_scanline_time() const {
-    // Simplified: a fixed number of cycles per scanline for the region.
-    return is_ntsc_mode() ? 1524 : 1568; // Roughly cycles per scanline
-}
-
-uint32_t VideoInterfaceHandler::calculate_vblank_start() const { return (m_vi_regs.v_start() & 0xFFFF); }
-
-uint32_t VideoInterfaceHandler::calculate_vblank_end() const { return (m_vi_regs.v_start() >> 16); }
-
-bool VideoInterfaceHandler::is_ntsc_mode() const {
-    // NTSC has ~525 half-lines and PAL ~625, so anything under 600 counts as NTSC.
-    return m_vi_regs.v_sync() < 600;
-}
-
-bool VideoInterfaceHandler::is_pal_mode() const { return !is_ntsc_mode(); }
-
-bool VideoInterfaceHandler::validate_framebuffer_address(uint32_t address) const {
-    return address < 0x00800000; // 8MB RDRAM
-}
-
 void VideoInterfaceHandler::log_video_mode_change(const VideoMode& old_mode, const VideoMode& new_mode) const {
     Log::infof("VI Mode Change: %s -> %s", old_mode.to_string().c_str(), new_mode.to_string().c_str());
 }
 
 void VideoInterfaceHandler::log_register_access(uint32_t address, uint32_t value, bool is_write) const {
     Log::debugf("VI Reg %s [0x%X] = 0x%X", (is_write ? "Write" : "Read"), address, value);
-}
-
-void VideoInterfaceHandler::log_frame_statistics() const {
-    // Not implemented.
 }
 
 void VideoInterfaceHandler::on_system_reset() { reset(); }

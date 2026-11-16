@@ -93,28 +93,6 @@ uint16_t DepthConvert::FloatToN64Z(float depth) {
 
 uint8_t DepthConvert::GetDeltaZ(uint16_t z14) { return s_zToDz[z14 & 0x3FFF]; }
 
-uint32_t DepthConvert::Pack18Bit(uint16_t z14, uint8_t dz4) {
-    return (static_cast<uint32_t>(z14 & 0x3FFF) << 4) | (dz4 & 0xF);
-}
-
-void DepthConvert::Unpack18Bit(uint32_t packed, uint16_t& z14, uint8_t& dz4) {
-    z14 = static_cast<uint16_t>((packed >> 4) & 0x3FFF);
-    dz4 = static_cast<uint8_t>(packed & 0xF);
-}
-
-uint32_t DepthConvert::FloatToN64Packed(float depth) {
-    uint16_t z14 = FloatToN64Z(depth);
-    uint8_t dz4 = GetDeltaZ(z14);
-    return Pack18Bit(z14, dz4);
-}
-
-float DepthConvert::N64PackedToFloat(uint32_t packed) {
-    uint16_t z14;
-    uint8_t dz4;
-    Unpack18Bit(packed, z14, dz4);
-    return N64ZToFloat(z14);
-}
-
 uint16_t DepthConvert::EncodeRDRAM16(uint16_t z14, uint8_t dz4) {
     // RDP stores: z[13:2] in bits 15:4, z[1:0] in bits 3:2, dz[1:0] in bits 1:0
     return static_cast<uint16_t>((z14 << 2) | (dz4 & 0x3));
@@ -223,8 +201,6 @@ bool DepthCompare::CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ, uint16_t stor
     }
 }
 
-uint8_t DepthCompare::MaxDeltaZ(uint8_t dz1, uint8_t dz2) { return std::max(dz1, dz2); }
-
 uint8_t DepthCompare::ComputePixelDeltaZ(float dZdx, float dZdy) {
     // Convert the maximum gradient to a dZ code
     float maxGrad = std::max(std::abs(dZdx), std::abs(dZdy));
@@ -236,8 +212,6 @@ uint8_t DepthCompare::ComputePixelDeltaZ(float dZdx, float dZdy) {
     }
     return 15;
 }
-
-bool DepthCompare::ShouldSkipTest(const DepthBufferConfig& config) { return !config.enabled && !config.writeEnabled; }
 
 // --- Depth Buffer Manager — Lifecycle ---
 

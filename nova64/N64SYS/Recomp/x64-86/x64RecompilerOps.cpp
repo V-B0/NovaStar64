@@ -19,11 +19,9 @@
 #include "../CodeBlock.hpp"
 #include "../CodeSection.hpp"
 #include "../ExitInfo.hpp"
-#include "../JumpInfo.hpp"
 #include "../RecompilerOps.hpp"
 #include "../RegInfo.hpp"
 #include "../RegBase.hpp"
-#include "../FunctionInfo.hpp"
 #include "../FunctionMap.hpp"
 #include "../LoopAnalysis.hpp"
 #include "../../MainSYS.hpp"
@@ -426,7 +424,6 @@ bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBl
     m_BlockEnded = false;
     m_Stats.Reset();
     m_JumpTargets.clear();
-    m_PendingJumps.clear();
     Log::debug("CX64RecompilerOps: Initialized");
     return true;
 }
@@ -434,7 +431,6 @@ bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBl
 void CX64RecompilerOps::Cleanup() {
     m_RegisterSet->FlushRegisters(true);
     m_JumpTargets.clear();
-    m_PendingJumps.clear();
     Log::debug("CX64RecompilerOps: Cleaned up");
 }
 
@@ -1123,8 +1119,6 @@ size_t CX64RecompilerOps::GetCodeSizeEstimate(const InstructionContext& /*ctx*/)
 
 // --- Extended Interface - Optimization ---
 
-void CX64RecompilerOps::SetOptimizationLevel(OptimizationLevel level) noexcept { m_OptimizationLevel = level; }
-
 // --- Extended Interface - Control Flow Management ---
 
 void CX64RecompilerOps::EnterCodeBlock() {
@@ -1187,45 +1181,9 @@ void CX64RecompilerOps::ExitCodeBlock(ExitReason reason) {
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::LinkJump(CJumpInfo& jumpInfo) {
-    auto& a = m_Assembler->GetAssembler();
-    if (jumpInfo.GetLinkLocation().is_valid()) {
-        a.bind(jumpInfo.GetLinkLocation());
-    }
-    jumpInfo.MarkResolved();
-}
-
-void CX64RecompilerOps::LinkJumpToSection(CodeSection* section) {
-    if (!section) return;
-    // Only logs; no jump is emitted.
-    Log::debugf("CX64RecompilerOps: Linking jump to section at 0x%08X", section->entry_pc());
-}
-
-void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo) {
-    if (!jumpInfo) return;
-    // For unknown targets, we emit code that exits the block and returns
-    // to the recompiler dispatcher
-    ExitCodeBlock(ExitReason::JumpRegister);
-}
-
 // --- Extended Interface - Register State Management ---
 
-void CX64RecompilerOps::SynchronizeRegisterState(const CX64RegInfo& other) { m_RegisterSet->SynchronizeWith(other); }
-
-void CX64RecompilerOps::PropagateRegisterState() {
-    // Only logs; no state is propagated.
-    Log::debug("CX64RecompilerOps: Propagating register state");
-}
-
-void CX64RecompilerOps::SaveRegisterState() { m_RegisterSet->SaveState(); }
-
-void CX64RecompilerOps::RestoreRegisterState() { m_RegisterSet->RestoreState(); }
-
 // --- Extended Interface - Disassembly & Validation ---
-
-std::string CX64RecompilerOps::GenerateDisassembly() const { return m_Assembler->GenerateDisassembly(); }
-
-bool CX64RecompilerOps::ValidateGeneratedCode() const { return !m_Assembler->HasError(); }
 
 // --- Private - Instruction Handler Initialization ---
 
@@ -1236,89 +1194,7 @@ void CX64RecompilerOps::InitializeInstructionHandlers() {
 
 // --- Private - Instruction Translation Dispatch ---
 
-TranslationResult CX64RecompilerOps::TranslateInstruction(const TranslationContext& ctx) {
-    switch (ctx.opcode.Rtype.op) {
-    case R4300_SPECIAL: return TranslateSpecialInstruction(ctx);
-    case R4300_REGIMM:  return TranslateRegImmInstruction(ctx);
-    case R4300_COP0:    return TranslateCop0Instruction(ctx);
-    case R4300_COP1:    return TranslateCop1Instruction(ctx);
-    case R4300_CP2:     return TranslateCop2Instruction(ctx);
-    default:            return HandleArithmetic(ctx); // Includes all I-type/J-type
-    }
-}
-
-TranslationResult CX64RecompilerOps::TranslateSpecialInstruction(const TranslationContext& ctx) {
-    return HandleArithmetic(ctx);
-}
-
-TranslationResult CX64RecompilerOps::TranslateRegImmInstruction(const TranslationContext& ctx) {
-    return HandleBranch(ctx);
-}
-
-TranslationResult CX64RecompilerOps::TranslateCop0Instruction(const TranslationContext& ctx) {
-    return HandleSystem(ctx);
-}
-
-TranslationResult CX64RecompilerOps::TranslateCop1Instruction(const TranslationContext& ctx) {
-    return HandleFloatingPoint(ctx);
-}
-
-TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationContext& /*ctx*/) {
-    // Emits nothing: COP2 is handled in CompileInstruction.
-    return TranslationResult::Success;
-}
-
 // --- Private - Category Handlers (using TranslationContext) ---
-
-TranslationResult CX64RecompilerOps::HandleArithmetic(const TranslationContext& ctx) {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ADDIU), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleLogical(const TranslationContext& ctx) {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_AND), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleShift(const TranslationContext& ctx) {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SLL), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleLoad(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LW), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleStore(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_SW), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleBranch(const TranslationContext& /*ctx*/) {
-    return TranslationResult::BlockBoundary;
-}
-
-TranslationResult CX64RecompilerOps::HandleJump(const TranslationContext& /*ctx*/) {
-    return TranslationResult::BlockBoundary;
-}
-
-TranslationResult CX64RecompilerOps::HandleTrap(const TranslationContext& ctx) {
-    EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleSystem(const TranslationContext& ctx) {
-    EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContext& ctx) {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_Arith), ctx.opcode.Value);
-    return TranslationResult::Success;
-}
 
 // --- Private - Individual Handle* Methods (TranslationContext variants) ---
 // Callback-only handlers taking a TranslationContext; reachable only through TranslateInstruction.
@@ -1330,71 +1206,6 @@ TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContex
         return TranslationResult::Success;                                                                             \
     }
 
-DEFINE_HANDLE_SPECIAL(SLL, SLL)
-DEFINE_HANDLE_SPECIAL(SRL, SRL)
-DEFINE_HANDLE_SPECIAL(SRA, SRA)
-DEFINE_HANDLE_SPECIAL(SLLV, SLLV)
-DEFINE_HANDLE_SPECIAL(SRLV, SRLV)
-DEFINE_HANDLE_SPECIAL(SRAV, SRAV)
-DEFINE_HANDLE_SPECIAL(MFLO, MFLO)
-DEFINE_HANDLE_SPECIAL(MTLO, MTLO)
-DEFINE_HANDLE_SPECIAL(MFHI, MFHI)
-DEFINE_HANDLE_SPECIAL(MTHI, MTHI)
-DEFINE_HANDLE_SPECIAL(DSLLV, DSLLV)
-DEFINE_HANDLE_SPECIAL(DSRLV, DSRLV)
-DEFINE_HANDLE_SPECIAL(DSRAV, DSRAV)
-DEFINE_HANDLE_SPECIAL(MULT, MULT)
-DEFINE_HANDLE_SPECIAL(MULTU, MULTU)
-DEFINE_HANDLE_SPECIAL(DIV, DIV)
-DEFINE_HANDLE_SPECIAL(DIVU, DIVU)
-DEFINE_HANDLE_SPECIAL(DMULT, DMULT)
-DEFINE_HANDLE_SPECIAL(DMULTU, DMULTU)
-DEFINE_HANDLE_SPECIAL(DDIV, DDIV)
-DEFINE_HANDLE_SPECIAL(DDIVU, DDIVU)
-DEFINE_HANDLE_SPECIAL(ADD, ADD)
-DEFINE_HANDLE_SPECIAL(ADDU, ADDU)
-DEFINE_HANDLE_SPECIAL(SUB, SUB)
-DEFINE_HANDLE_SPECIAL(SUBU, SUBU)
-DEFINE_HANDLE_SPECIAL(AND, AND)
-DEFINE_HANDLE_SPECIAL(OR, OR)
-DEFINE_HANDLE_SPECIAL(XOR, XOR)
-DEFINE_HANDLE_SPECIAL(NOR, NOR)
-DEFINE_HANDLE_SPECIAL(SLT, SLT)
-DEFINE_HANDLE_SPECIAL(SLTU, SLTU)
-DEFINE_HANDLE_SPECIAL(DADD, DADD)
-DEFINE_HANDLE_SPECIAL(DADDU, DADDU)
-DEFINE_HANDLE_SPECIAL(DSUB, DSUB)
-DEFINE_HANDLE_SPECIAL(DSUBU, DSUBU)
-DEFINE_HANDLE_SPECIAL(DSLL, DSLL)
-DEFINE_HANDLE_SPECIAL(DSRL, DSRL)
-DEFINE_HANDLE_SPECIAL(DSRA, DSRA)
-DEFINE_HANDLE_SPECIAL(DSLL32, DSLL32)
-DEFINE_HANDLE_SPECIAL(DSRL32, DSRL32)
-DEFINE_HANDLE_SPECIAL(DSRA32, DSRA32)
-
-TranslationResult CX64RecompilerOps::HandleSPECIAL_JR(const TranslationContext& ctx) {
-    // JR ends the block (reported as BlockBoundary); no code is emitted here.
-    m_Stats.branchesTranslated++;
-    return TranslationResult::BlockBoundary;
-}
-
-TranslationResult CX64RecompilerOps::HandleSPECIAL_JALR(const TranslationContext& ctx) {
-    m_Stats.branchesTranslated++;
-    return TranslationResult::BlockBoundary;
-}
-
-TranslationResult CX64RecompilerOps::HandleSPECIAL_SYSCALL(const TranslationContext& ctx) {
-    EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), ctx.opcode.Value);
-    return TranslationResult::BlockBoundary;
-}
-
-TranslationResult CX64RecompilerOps::HandleSPECIAL_BREAK(const TranslationContext& ctx) {
-    EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), ctx.opcode.Value);
-    return TranslationResult::BlockBoundary;
-}
-
 // REGIMM Handle methods
 #define DEFINE_HANDLE_REGIMM_BRANCH(name)                                                                              \
     TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& /*ctx*/) {                      \
@@ -1402,27 +1213,11 @@ TranslationResult CX64RecompilerOps::HandleSPECIAL_BREAK(const TranslationContex
         return TranslationResult::BlockBoundary;                                                                       \
     }
 
-DEFINE_HANDLE_REGIMM_BRANCH(BLTZ)
-DEFINE_HANDLE_REGIMM_BRANCH(BGEZ)
-DEFINE_HANDLE_REGIMM_BRANCH(BLTZL)
-DEFINE_HANDLE_REGIMM_BRANCH(BGEZL)
-DEFINE_HANDLE_REGIMM_BRANCH(BLTZAL)
-DEFINE_HANDLE_REGIMM_BRANCH(BGEZAL)
-DEFINE_HANDLE_REGIMM_BRANCH(BLTZALL)
-DEFINE_HANDLE_REGIMM_BRANCH(BGEZALL)
-
 #define DEFINE_HANDLE_REGIMM_TRAP(name, callback)                                                                      \
     TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& ctx) {                          \
         EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                           \
         return TranslationResult::Success;                                                                             \
     }
-
-DEFINE_HANDLE_REGIMM_TRAP(TGEI, TGEI)
-DEFINE_HANDLE_REGIMM_TRAP(TGEIU, TGEIU)
-DEFINE_HANDLE_REGIMM_TRAP(TLTI, TLTI)
-DEFINE_HANDLE_REGIMM_TRAP(TLTIU, TLTIU)
-DEFINE_HANDLE_REGIMM_TRAP(TEQI, TEQI)
-DEFINE_HANDLE_REGIMM_TRAP(TNEI, TNEI)
 
 // Load/Store Handle methods
 #define DEFINE_HANDLE_LOAD(name, callback)                                                                             \
@@ -1432,33 +1227,12 @@ DEFINE_HANDLE_REGIMM_TRAP(TNEI, TNEI)
         return TranslationResult::Success;                                                                             \
     }
 
-DEFINE_HANDLE_LOAD(LB, LB)
-DEFINE_HANDLE_LOAD(LH, LH)
-DEFINE_HANDLE_LOAD(LWL, LWL)
-DEFINE_HANDLE_LOAD(LW, LW)
-DEFINE_HANDLE_LOAD(LBU, LBU)
-DEFINE_HANDLE_LOAD(LHU, LHU)
-DEFINE_HANDLE_LOAD(LWR, LWR)
-DEFINE_HANDLE_LOAD(LWU, LWU)
-DEFINE_HANDLE_LOAD(LD, LD)
-DEFINE_HANDLE_LOAD(LDL, LDL)
-DEFINE_HANDLE_LOAD(LDR, LDR)
-
 #define DEFINE_HANDLE_STORE(name, callback)                                                                            \
     TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) {                                 \
         EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                             \
         m_Stats.loadsStoresTranslated++;                                                                               \
         return TranslationResult::Success;                                                                             \
     }
-
-DEFINE_HANDLE_STORE(SB, SB)
-DEFINE_HANDLE_STORE(SH, SH)
-DEFINE_HANDLE_STORE(SWL, SWL)
-DEFINE_HANDLE_STORE(SW, SW)
-DEFINE_HANDLE_STORE(SWR, SWR)
-DEFINE_HANDLE_STORE(SDL, SDL)
-DEFINE_HANDLE_STORE(SDR, SDR)
-DEFINE_HANDLE_STORE(SD, SD)
 
 // Immediate Handle methods
 #define DEFINE_HANDLE_IMM(name, callback)                                                                              \
@@ -1468,17 +1242,6 @@ DEFINE_HANDLE_STORE(SD, SD)
         return TranslationResult::Success;                                                                             \
     }
 
-DEFINE_HANDLE_IMM(ADDI, ADDI)
-DEFINE_HANDLE_IMM(ADDIU, ADDIU)
-DEFINE_HANDLE_IMM(SLTI, SLTI)
-DEFINE_HANDLE_IMM(SLTIU, SLTIU)
-DEFINE_HANDLE_IMM(ANDI, ANDI)
-DEFINE_HANDLE_IMM(ORI, ORI)
-DEFINE_HANDLE_IMM(XORI, XORI)
-DEFINE_HANDLE_IMM(LUI, LUI)
-DEFINE_HANDLE_IMM(DADDI, DADDI)
-DEFINE_HANDLE_IMM(DADDIU, DADDIU)
-
 // Branch Handle methods
 #define DEFINE_HANDLE_BRANCH(name)                                                                                     \
     TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& /*ctx*/) {                             \
@@ -1486,84 +1249,7 @@ DEFINE_HANDLE_IMM(DADDIU, DADDIU)
         return TranslationResult::BlockBoundary;                                                                       \
     }
 
-DEFINE_HANDLE_BRANCH(J)
-DEFINE_HANDLE_BRANCH(JAL)
-DEFINE_HANDLE_BRANCH(BEQ)
-DEFINE_HANDLE_BRANCH(BNE)
-DEFINE_HANDLE_BRANCH(BLEZ)
-DEFINE_HANDLE_BRANCH(BGTZ)
-DEFINE_HANDLE_BRANCH(BEQL)
-DEFINE_HANDLE_BRANCH(BNEL)
-DEFINE_HANDLE_BRANCH(BLEZL)
-DEFINE_HANDLE_BRANCH(BGTZL)
-
-// COP1 Load/Store Handle methods
-TranslationResult CX64RecompilerOps::HandleLWC1(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LWC1), ctx.opcode.Value);
-    m_Stats.loadsStoresTranslated++;
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleLDC1(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LDC1), ctx.opcode.Value);
-    m_Stats.loadsStoresTranslated++;
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleSWC1(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_SWC1), ctx.opcode.Value);
-    m_Stats.loadsStoresTranslated++;
-    return TranslationResult::Success;
-}
-
-TranslationResult CX64RecompilerOps::HandleSDC1(const TranslationContext& ctx) {
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_SDC1), ctx.opcode.Value);
-    m_Stats.loadsStoresTranslated++;
-    return TranslationResult::Success;
-}
-
 // --- Private - Helper Methods ---
-
-void CX64RecompilerOps::EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, asmjit::x86::Gp dest,
-                                          const asmjit::x86::Mem& src) {
-    m_Assembler->EmitSafeLoad(dest, src, size, isSigned);
-}
-
-void CX64RecompilerOps::EmitStoreOperation(uint32_t size, bool is64Bit, const asmjit::x86::Mem& dest,
-                                           asmjit::x86::Gp src) {
-    m_Assembler->EmitSafeStore(dest, src, size);
-}
-
-void CX64RecompilerOps::EmitBranchCondition(ConditionType condition, asmjit::Label target) {
-    using namespace asmjit::x86;
-
-    switch (condition) {
-    case ConditionType::Equal:              m_Assembler->EmitConditionalJump(CondCode::kEqual, target); break;
-    case ConditionType::NotEqual:           m_Assembler->EmitConditionalJump(CondCode::kNotEqual, target); break;
-    case ConditionType::LessThanZero:       m_Assembler->EmitConditionalJump(CondCode::kSign, target); break;
-    case ConditionType::GreaterOrEqualZero: m_Assembler->EmitConditionalJump(CondCode::kNotSign, target); break;
-    case ConditionType::LessOrEqualZero:    m_Assembler->EmitConditionalJump(CondCode::kSignedLE, target); break;
-    case ConditionType::GreaterThanZero:    m_Assembler->EmitConditionalJump(CondCode::kSignedGT, target); break;
-    default:                                {
-        auto& a = m_Assembler->GetAssembler();
-        a.jmp(target);
-        break;
-    }
-    }
-}
-
-void CX64RecompilerOps::EmitTrapCondition(ConditionType /*condition*/) {
-    // Trap conditions are handled by the interpreter callbacks
-}
-
-void CX64RecompilerOps::EmitSystemCall() {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL),
-                         m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
-}
-
-void CX64RecompilerOps::EmitBreak() {
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
-}
 
 // --- Private - Register Allocation and Management ---
 
@@ -1590,46 +1276,7 @@ void CX64RecompilerOps::ReloadRegister(uint32_t regIndex) {
 
 // --- Private - Memory Access Helpers ---
 
-asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_t offset, uint32_t size,
-                                                        bool /*is64Bit*/) {
-    using namespace asmjit::x86;
-    // Operand relative to RBX (the CRegisters base). baseReg is unused: the effective
-    // address is computed at runtime by the memory callbacks.
-    return ptr(rbx, offset, size);
-}
-
-void CX64RecompilerOps::EmitMemoryBoundsCheck(uint32_t /*address*/) {
-    // Bounds checking is handled within the memory callbacks (MMU TLB lookup)
-}
-
 // --- Private - Optimization Helpers ---
-
-void CX64RecompilerOps::OptimizeCurrentBlock() {
-    if (m_OptimizationLevel >= OptimizationLevel::Basic) {
-        PeepholeOptimize();
-    }
-    if (m_OptimizationLevel >= OptimizationLevel::Aggressive) {
-        ConstantPropagation();
-        DeadCodeElimination();
-        RedundantMoveElimination();
-    }
-}
-
-void CX64RecompilerOps::PeepholeOptimize() {
-    // No-op: no peephole optimizations are implemented.
-}
-
-void CX64RecompilerOps::ConstantPropagation() {
-    // No-op: constants are not propagated.
-}
-
-void CX64RecompilerOps::DeadCodeElimination() {
-    // No-op: not implemented.
-}
-
-void CX64RecompilerOps::RedundantMoveElimination(){
-    // No-op: not implemented.
-}
 
 // --- Private - Branch Comparison Instructions (True JIT - Inline x64) ---
 
@@ -3401,10 +3048,6 @@ void CX64RecompilerOps::UnknownOpcode() {
 }
 
 // --- Factory Function ---
-
-std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) {
-    return std::make_unique<CX64RecompilerOps>(context, codeBlock);
-}
 
 } // namespace Recompiler
 } // namespace Nova64

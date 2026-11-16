@@ -70,8 +70,6 @@ public:
 
     void reset();
     Duration elapsed() const;
-    double elapsed_seconds() const;
-    double elapsed_milliseconds() const;
 
     static double cycles_to_seconds(uint64_t cycles, uint32_t clock_frequency);
     static uint64_t seconds_to_cycles(double seconds, uint32_t clock_frequency);
@@ -95,16 +93,10 @@ public:
     void set_timer(TimerType type, uint32_t cycles, bool relative = true);
     void set_timer_periodic(TimerType type, uint32_t period, const std::function<void()>& callback = nullptr);
     uint32_t get_timer(TimerType type) const;
-    void stop_timer(TimerType type);
-    bool is_timer_active(TimerType type) const;
 
     // System operations
     void update_timers(uint32_t cycles_executed);
     void reset();
-    void sync_to_real_time();
-
-    // Get the current Count register value accounting for elapsed cycles since last update
-    uint32_t get_current_count() const;
 
     // Legacy compatibility wrappers (used by interpreter)
     void UpdateTimers();
@@ -112,7 +104,6 @@ public:
 
     // CPU compare timer (special handling)
     void update_compare_timer();
-    void set_compare_timer(uint32_t value);
 
     // Timer information
     TimerType get_current_timer() const { return current_timer; }
@@ -142,7 +133,6 @@ public:
     };
 
     PerformanceStats get_performance_stats() const { return performance_stats; }
-    void reset_performance_stats();
 
     // Debugging
     std::string timer_status_to_string() const;

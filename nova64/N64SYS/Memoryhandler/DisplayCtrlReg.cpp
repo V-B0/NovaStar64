@@ -285,18 +285,6 @@ Plugins::GFXPlugin* DisplayProcessorHandler::GetGraphicsPlugin() const { return 
 
 // --- Status Queries ---
 
-bool DisplayProcessorHandler::IsProcessing() const { return m_ProcessingDList; }
-
-bool DisplayProcessorHandler::IsFrozen() const {
-    using namespace DPCRegisters;
-    return isStatusSet(m_Registers[DPC_STATUS], DPCStatus::FREEZE);
-}
-
-bool DisplayProcessorHandler::IsFlushed() const {
-    using namespace DPCRegisters;
-    return isStatusSet(m_Registers[DPC_STATUS], DPCStatus::FLUSH);
-}
-
 uint32_t DisplayProcessorHandler::GetStatus() const {
     using namespace DPCRegisters;
     return m_Registers[DPC_STATUS];

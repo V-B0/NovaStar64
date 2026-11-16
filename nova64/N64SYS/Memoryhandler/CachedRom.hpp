@@ -160,8 +160,6 @@ private:
     void ProcessCommand(uint32_t Command);
     void ProcessBMControl(uint32_t Control);
     void HardReset();
-    bool ReadDiskSector(uint32_t sector, uint8_t* buffer, uint32_t length);
-    bool WriteDiskSector(uint32_t sector, const uint8_t* buffer, uint32_t length);
 
     // DMA operations
     void StartDMARead();

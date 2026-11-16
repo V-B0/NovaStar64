@@ -138,40 +138,6 @@ void UncachedRom::reset() {
     m_stats = Stats{};
 }
 
-bool UncachedRom::saveState(std::ostream& os) const {
-    os.write(reinterpret_cast<const char*>(&m_dma_state), sizeof(m_dma_state));
-    os.write(reinterpret_cast<const char*>(&m_dma_start_cycle), sizeof(m_dma_start_cycle));
-    os.write(reinterpret_cast<const char*>(&m_dma_complete_cycle), sizeof(m_dma_complete_cycle));
-    return os.good();
-}
-
-bool UncachedRom::loadState(std::istream& is) {
-    is.read(reinterpret_cast<char*>(&m_dma_state), sizeof(m_dma_state));
-    is.read(reinterpret_cast<char*>(&m_dma_start_cycle), sizeof(m_dma_start_cycle));
-    is.read(reinterpret_cast<char*>(&m_dma_complete_cycle), sizeof(m_dma_complete_cycle));
-    return is.good();
-}
-
-std::string UncachedRom::dumpState() const {
-    std::ostringstream oss;
-    oss << "UncachedRom State:\n";
-    oss << "  DMA Active: " << (m_dma_state.is_active ? "Yes" : "No") << "\n";
-    oss << "  Statistics:\n";
-    oss << "    Reads: " << m_stats.read_count << "\n";
-    oss << "    Writes: " << m_stats.write_count << "\n";
-    oss << "    SRAM accesses: " << m_stats.sram_accesses << "\n";
-    oss << "    FlashRAM accesses: " << m_stats.flashram_accesses << "\n";
-    oss << "    DMA operations: " << m_stats.dma_operations << "\n";
-    oss << "    DMA bytes: " << m_stats.dma_bytes_transferred << "\n";
-    return oss.str();
-}
-
-std::string UncachedRom::getMemoryMap() const {
-    return "Uncached ROM: 0x10000000-0x1FBFFFFF\n"
-           "  SRAM: 0x08000000-0x0800FFFF (via PI)\n"
-           "  FlashRAM: 0x08000000-0x08010000 (via PI)\n";
-}
-
 UncachedRom::MemoryRegion UncachedRom::decodeRegion(uint32_t address) const {
     if (address >= 0x10000000 && address < 0x1FC00000) return MemoryRegion::ROM;
     if (address >= 0x08000000 && address < 0x08020000) {
@@ -186,18 +152,6 @@ UncachedRom::MemoryRegion UncachedRom::decodeRegion(uint32_t address) const {
     if (address >= 0x04600000 && address < 0x04700000) return MemoryRegion::PI_REGS;
     if (address >= 0x05000000 && address < 0x06000000) return MemoryRegion::DD_REGS;
     return MemoryRegion::UNMAPPED;
-}
-
-uint32_t UncachedRom::getRegionOffset(uint32_t address, MemoryRegion region) const {
-    switch (region) {
-    case MemoryRegion::SRAM:
-    case MemoryRegion::FLASH_RAM: return address & 0x1FFFF;
-    case MemoryRegion::ROM:       return address & 0x0FFFFFFF;
-    case MemoryRegion::DD_ROM:    return address & 0x03FFFFFF;
-    case MemoryRegion::PI_REGS:   return address & 0xFFFFF;
-    case MemoryRegion::DD_REGS:   return address & 0xFFFFFF;
-    default:                      return 0;
-    }
 }
 
 bool UncachedRom::handleSramAccess(uint32_t address, uint32_t& value, bool is_write) {

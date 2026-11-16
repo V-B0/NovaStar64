@@ -235,8 +235,6 @@ public:
 
     // Video control
     void update_field_serration(uint32_t interlaced);
-    void update_half_line();
-    void update_scanline();
     void generate_vi_interrupt();
     void on_frame_timer();
 
@@ -249,7 +247,6 @@ public:
 
     // Video information
     [[nodiscard]] VideoMode get_current_video_mode() const;
-    [[nodiscard]] std::string get_video_info() const;
     [[nodiscard]] std::string get_register_dump() const;
     [[nodiscard]] uint32_t get_current_scanline() const;
     [[nodiscard]] uint32_t get_framebuffer_address() const;
@@ -260,10 +257,6 @@ public:
         return &m_registers[static_cast<size_t>(reg) >> 2];
     }
 
-    // Frame timing
-    void begin_frame();
-    void end_frame();
-    void wait_for_vblank();
     [[nodiscard]] bool is_vblank_active() const;
     [[nodiscard]] bool is_hblank_active() const;
 
@@ -347,15 +340,6 @@ private:
     void handle_origin_register_write(uint32_t value, uint32_t mask);
     void handle_v_intr_register_write(uint32_t value, uint32_t mask);
 
-    // Timing calculations
-    [[nodiscard]] uint32_t calculate_scanline_time() const;
-    [[nodiscard]] uint32_t calculate_vblank_start() const;
-    [[nodiscard]] uint32_t calculate_vblank_end() const;
-    [[nodiscard]] bool is_ntsc_mode() const;
-    [[nodiscard]] bool is_pal_mode() const;
-
-    // Framebuffer operations
-    [[nodiscard]] bool validate_framebuffer_address(uint32_t address) const;
     void notify_framebuffer_change(uint32_t new_address);
 
     // Mode detection
@@ -366,14 +350,9 @@ private:
     void check_vi_interrupt();
     void clear_vi_interrupt();
 
-    // Timing control
-    void update_frame_timing();
-    void limit_frame_rate();
-
     // Logging
     void log_video_mode_change(const VideoMode& old_mode, const VideoMode& new_mode) const;
     void log_register_access(uint32_t address, uint32_t value, bool is_write) const;
-    void log_frame_statistics() const;
 
     // System event handlers
     void on_system_reset();

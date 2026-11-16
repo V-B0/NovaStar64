@@ -39,9 +39,6 @@ public:
 
     RegisterInfo GetRegisterInfo() const;
 
-    /// True if the instruction in the delay slot writes a register (or HI/LO, or the FP condition) that this instruction reads.
-    bool AffectedByDelaySlot(uint32_t delaySlotInstruction) const;
-
 private:
     R4300iInstruction() = delete;
     R4300iInstruction(const R4300iInstruction&) = delete;

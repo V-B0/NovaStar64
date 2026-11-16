@@ -151,8 +151,6 @@ public:
 
     bool IsPal() const noexcept;
 
-    bool IsNtsc() const noexcept;
-
     bool IsDDIPL() const noexcept { return m_IsDDIPL; }
 
 private:
@@ -235,8 +233,6 @@ public:
 
     size_t GetSize() const;
 
-    DataView GetHeader() const;
-
     DataView GetBootCode() const;
 
     const uint8_t* GetRomAddress() const;
@@ -259,22 +255,16 @@ public:
      */
     static void CleanRomName(std::string& romName, bool byteswap = true);
 
-    // Settings persistence
-    void SaveRomSettingID(bool temp);
-    void ClearRomSettingID();
-
 private:
     // Internal helpers
     void DetectFormatAndByteSwap();
     void ParseHeader();
     void CalculateCICChip();
     void CalculateMD5();
-    void CalculateRomCrc();
 
     bool AllocateImage(size_t size);
     void LoadFromFile(const fs::path& filePath, bool loadBootCodeOnly);
     void LoadFromZip(const fs::path& filePath, bool loadBootCodeOnly);
-    void ByteSwapIfNeeded();
     void ByteSwapV64();
     void ByteSwapN64();
 

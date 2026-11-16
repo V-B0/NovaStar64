@@ -528,11 +528,6 @@ void GLAD_API_PTR GLRenderer::DebugCallback(GLenum source, GLenum type, GLuint i
 
 std::unique_ptr<IRenderer> CreateOpenGLRenderer() { return std::make_unique<GLRenderer>(); }
 
-bool IsOpenGL46Available() {
-    // Always true; GLRenderer::Initialize() is what rejects contexts older than 4.5.
-    return true;
-}
-
 } // namespace GL
 } // namespace Video
 } // namespace Nova64

@@ -143,7 +143,6 @@ public:
     // Lookup by ROM header info
     const GameProfile* FindByGameId(const std::string& gameId) const;
     const GameProfile* FindByCRC(uint32_t crc1, uint32_t crc2) const;
-    const GameProfile* FindByName(const std::string& name) const;
 
     // Add/update a profile
     void AddProfile(const GameProfile& profile);
@@ -151,7 +150,6 @@ public:
 
     // Load/save custom overrides
     bool LoadCustomProfiles(const std::string& path);
-    bool SaveCustomProfiles(const std::string& path) const;
 
     const std::vector<GameProfile>& GetAllProfiles() const { return m_profiles; }
     int GetProfileCount() const { return static_cast<int>(m_profiles.size()); }

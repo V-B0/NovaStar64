@@ -170,22 +170,6 @@ void MD5::Finalize() {
     m_finalized = true;
 }
 
-void MD5::GetDigest(MD5Digest& outDigest) const {
-    if (!m_finalized) {
-        outDigest.Reset();
-        return;
-    }
-    std::memcpy(outDigest.digest, m_digest, 16);
-}
-
-const uint8_t* MD5::RawDigest() const {
-    if (!m_finalized) {
-        static const uint8_t empty[16] = {0};
-        return empty;
-    }
-    return m_digest;
-}
-
 std::string MD5::HexDigest() const {
     if (!m_finalized) {
         return "";
@@ -204,21 +188,6 @@ std::string MD5::HexDigest() const {
 
     m_hexDigest = c;
     return m_hexDigest;
-}
-
-std::string MD5::HexDigestUpper() const {
-    if (!m_finalized) {
-        return "";
-    }
-
-    char c[33];
-    std::memset(c, 0, sizeof(c));
-    for (int i = 0; i < 16; i++) {
-        std::snprintf(c + i * 2, 3, "%02X", m_digest[i]);
-    }
-    c[32] = '\0';
-
-    return std::string(c);
 }
 
 // --- Private Methods ---

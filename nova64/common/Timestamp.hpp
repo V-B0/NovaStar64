@@ -15,18 +15,6 @@ class HighResolutionTimestamp {
 public:
     HighResolutionTimestamp();
 
-    // Core functionality
-    HighResolutionTimestamp& SetToNow();
-    uint64_t GetMicroseconds() const;
-    void SetMicroseconds(uint64_t microseconds);
-
-    // Utility methods
-    uint64_t GetNanoseconds() const;
-    uint64_t GetMilliseconds() const;
-    double GetSeconds() const;
-
-    // Static methods
-    static HighResolutionTimestamp Now();
     static uint64_t GetFrequency();
 
     // Comparison

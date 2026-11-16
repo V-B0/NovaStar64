@@ -523,12 +523,6 @@ void ShaderManager::SetResolutionScale(float scaleX, float scaleY) {
         m_compiler->SetUniform2f(m_currentShader->uniforms.resolutionScale, scaleX, scaleY);
 }
 
-void ShaderManager::SetTexturePersp(int persp) {
-    if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.texturePersp >= 0)
-        m_compiler->SetUniform1i(m_currentShader->uniforms.texturePersp, persp);
-}
-
 void ShaderManager::SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
@@ -584,59 +578,6 @@ void ShaderManager::SetTexHiRes(int bits) {
     if (m_currentShader->uniforms.texHiRes >= 0) m_compiler->SetUniform1i(m_currentShader->uniforms.texHiRes, bits);
 }
 
-const CompiledShader* ShaderManager::GetDepthOnlyShader() {
-    if (m_depthOnlyShader && m_depthOnlyShader->valid) return m_depthOnlyShader.get();
-    if (!m_compiler || !m_generator) return nullptr;
-
-    std::string vertSrc = m_generator->GenerateDepthOnlyVertex();
-    std::string fragSrc = m_generator->GenerateDepthOnlyFragment();
-
-    CombinerKey key = {};
-    key.features = SF_DEPTH_WRITE;
-    auto compiled = m_compiler->Compile(key, vertSrc, fragSrc);
-    if (compiled.valid) {
-        m_depthOnlyShader = std::make_unique<CompiledShader>(std::move(compiled));
-        return m_depthOnlyShader.get();
-    }
-    return nullptr;
-}
-
-const CompiledShader* ShaderManager::GetPostProcessShader(uint64_t features) {
-    auto it = m_postProcessShaders.find(features);
-    if (it != m_postProcessShaders.end() && it->second->valid) return it->second.get();
-    if (!m_compiler || !m_generator) return nullptr;
-
-    std::string vertSrc = m_generator->GeneratePostProcessVertex();
-    std::string fragSrc = m_generator->GeneratePostProcessFragment(features);
-
-    CombinerKey key = {};
-    key.features = features;
-    auto compiled = m_compiler->Compile(key, vertSrc, fragSrc);
-    if (compiled.valid) {
-        m_postProcessShaders[features] = std::make_unique<CompiledShader>(std::move(compiled));
-        return m_postProcessShaders[features].get();
-    }
-    return nullptr;
-}
-
-const CompiledShader* ShaderManager::GetUIShader() {
-    if (m_uiShader && m_uiShader->valid) return m_uiShader.get();
-    if (!m_compiler || !m_generator) return nullptr;
-
-    std::string vertSrc = m_generator->GenerateUIVertex();
-    std::string fragSrc = m_generator->GenerateUIFragment();
-
-    CombinerKey key = {};
-    auto compiled = m_compiler->Compile(key, vertSrc, fragSrc);
-    if (compiled.valid) {
-        m_uiShader = std::make_unique<CompiledShader>(std::move(compiled));
-        return m_uiShader.get();
-    }
-    return nullptr;
-}
-
-void ShaderManager::ClearCache() { m_cache.Clear(); }
-
 bool ShaderManager::SaveCache(const std::string& path) {
     bool srcOk = m_cache.SaveToDisk(path);
     // The binary cache uses GL_ARB_get_program_binary, so it is OpenGL-only:
@@ -677,21 +618,6 @@ const ShaderCacheStats& ShaderManager::GetStats() const { return m_cache.GetStat
 
 void ShaderManager::ResetStats() {
     // Not supported: the stats live in the cache and can only be cleared by re-initialising it.
-}
-
-std::string ShaderManager::DumpShaderSource(const CombinerKey& key) const {
-    if (!m_generator) return "";
-    auto tmpl = m_generator->GenerateShader(key);
-    std::string result;
-    result += "=== VERTEX SHADER ===\n";
-    for (auto& d : tmpl.defines) result += d + "\n";
-    result += tmpl.vertexHeader + "\n";
-    result += tmpl.vertexBody + "\n";
-    result += "\n=== FRAGMENT SHADER ===\n";
-    for (auto& d : tmpl.defines) result += d + "\n";
-    result += tmpl.fragmentHeader + "\n";
-    result += tmpl.fragmentBody + "\n";
-    return result;
 }
 
 const CompiledShader* ShaderManager::GetFallbackShader() {

@@ -169,19 +169,9 @@ void set_min_level(Logging::Level level) {
     State().minLevel = level;
 }
 
-Logging::Level get_min_level() {
-    std::lock_guard<std::recursive_mutex> lock(g_logMutex);
-    return State().minLevel;
-}
-
 void enable_console_output(bool enable) {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     State().consoleOutput = enable;
-}
-
-bool is_console_output_enabled() {
-    std::lock_guard<std::recursive_mutex> lock(g_logMutex);
-    return State().consoleOutput;
 }
 
 bool open_log_file(const std::string& filename, bool append) {
@@ -213,19 +203,6 @@ bool open_log_file(const std::string& filename, bool append) {
     return true;
 }
 
-void close_log_file() {
-    std::lock_guard<std::recursive_mutex> lock(g_logMutex);
-
-    if (Logging::log_file.is_open()) Logging::log_file.close();
-    State().fileOutput = false;
-    State().filename.clear();
-}
-
-const std::string& get_log_filename() {
-    std::lock_guard<std::recursive_mutex> lock(g_logMutex);
-    return State().filename;
-}
-
 } // namespace LoggingConfig
 
 namespace Log {
@@ -248,7 +225,6 @@ NOVA_LOG_VARIADIC(debugf, Debug)
 NOVA_LOG_VARIADIC(infof, Info)
 NOVA_LOG_VARIADIC(warningf, Warning)
 NOVA_LOG_VARIADIC(errorf, Error)
-NOVA_LOG_VARIADIC(criticalf, Critical)
 
 #undef NOVA_LOG_VARIADIC
 

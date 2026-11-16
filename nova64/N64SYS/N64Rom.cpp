@@ -58,14 +58,6 @@ bool RomImage::IsPal() const noexcept {
     }
 }
 
-bool RomImage::IsNtsc() const noexcept {
-    switch (m_Country) {
-    case CountryCode::USA:
-    case CountryCode::Japan: return true;
-    default:                 return false;
-    }
-}
-
 // --- N64Rom Implementation ---
 
 N64Rom::N64Rom() : m_Image(std::make_unique<RomImage>()) {}
@@ -152,13 +144,6 @@ const RomImage& N64Rom::GetImage() const {
 RomFormat N64Rom::GetFormat() const { return m_Image ? m_Image->m_Format : RomFormat::Unknown; }
 
 size_t N64Rom::GetSize() const { return m_Image ? m_Image->m_Data.size() : 0; }
-
-DataView N64Rom::GetHeader() const {
-    if (!IsLoaded() || m_Image->m_Data.size() < RomHeader::SIZE) {
-        return DataView{nullptr, 0};
-    }
-    return DataView{m_Image->m_Data.data(), RomHeader::SIZE};
-}
 
 DataView N64Rom::GetBootCode() const {
     if (!IsLoaded() || m_Image->m_Data.size() < BOOT_CODE_SIZE) {
@@ -265,14 +250,6 @@ void N64Rom::CleanRomName(std::string& romName, bool byteswap) {
         case ':':  c = ';'; break;
         }
     }
-}
-
-void N64Rom::SaveRomSettingID(bool temp) {
-    // ROM settings are not persisted.
-}
-
-void N64Rom::ClearRomSettingID() {
-    // Nothing to clear: ROM settings are not persisted.
 }
 
 void N64Rom::DetectFormatAndByteSwap() {
@@ -421,8 +398,6 @@ void N64Rom::LoadFromZip(const fs::path& filePath, bool loadBootCodeOnly) {
     throw RomError(RomError::Type::ZipError, "ZIP file support not yet implemented. Extract the ROM first.");
 }
 
-void N64Rom::ByteSwapIfNeeded() { DetectFormatAndByteSwap(); }
-
 void N64Rom::ByteSwapV64() {
     // V64 format: swap every 2 bytes
     uint8_t* data = m_Image->m_Data.data();
@@ -462,102 +437,6 @@ bool N64Rom::IsValidRomImage(const uint8_t* test) noexcept {
 }
 
 // --- ROM CRC Calculation ---
-
-void N64Rom::CalculateRomCrc() {
-    if (!IsLoaded() || m_Image->m_Data.size() < 0x101000) {
-        return;
-    }
-
-    uint32_t t0, t2, t3, t4, t5;
-    uint32_t a0, a1, a2, a3;
-    uint32_t s0;
-    uint32_t v0, v1;
-    uint32_t length = 0x00100000;
-
-    // Select initial value based on CIC chip
-    switch (m_Image->m_CICChip) {
-    case CICChip::CIC_NUS_6101:
-    case CICChip::CIC_NUS_6102: v0 = 0xF8CA4DDC; break;
-    case CICChip::CIC_NUS_6103: v0 = 0xA3886759; break;
-    case CICChip::CIC_NUS_6105: v0 = 0xDF26F436; break;
-    case CICChip::CIC_NUS_6106: v0 = 0x1FEA617A; break;
-    case CICChip::CIC_NUS_DDUS:
-        length = 0x000A0000;
-        v0 = 0x861AE3A7;
-        break;
-    case CICChip::CIC_NUS_8303:
-        length = 0x000A0000;
-        v0 = 0x8331D4CA;
-        break;
-    default: return;
-    }
-
-    v1 = 0;
-    t0 = 0;
-    t5 = 0x20;
-
-    a3 = v0;
-    t2 = v0;
-    t3 = v0;
-    s0 = v0;
-    a2 = v0;
-    t4 = v0;
-
-    uint8_t* romData = m_Image->m_Data.data();
-
-    for (t0 = 0; t0 < length; t0 += 4) {
-        v0 = *reinterpret_cast<uint32_t*>(romData + t0 + 0x1000);
-
-        v1 = a3 + v0;
-        a1 = v1;
-
-        if (v1 < a3) {
-            if (m_Image->m_CICChip == CICChip::CIC_NUS_DDUS || m_Image->m_CICChip == CICChip::CIC_NUS_8303) {
-                t2 = t2 ^ t3;
-            } else {
-                t2 += 1;
-            }
-        }
-
-        v1 = v0 & 0x001F;
-        a0 = (v0 << v1) | (v0 >> (t5 - v1));
-
-        a3 = a1;
-        t3 = t3 ^ v0;
-        s0 = s0 + a0;
-
-        if (a2 < v0) {
-            a2 = a3 ^ v0 ^ a2;
-        } else {
-            if (m_Image->m_CICChip == CICChip::CIC_NUS_8303) {
-                a2 = a2 + a0;
-            } else {
-                a2 = a2 ^ a0;
-            }
-        }
-
-        if (m_Image->m_CICChip == CICChip::CIC_NUS_6105) {
-            t4 = (v0 ^ (*reinterpret_cast<uint32_t*>(romData + (0xFF & t0) + 0x750))) + t4;
-        } else {
-            t4 = (v0 ^ s0) + t4;
-        }
-    }
-
-    if (m_Image->m_CICChip == CICChip::CIC_NUS_6103) {
-        a3 = (a3 ^ t2) + t3;
-        s0 = (s0 ^ a2) + t4;
-    } else if (m_Image->m_CICChip == CICChip::CIC_NUS_6106) {
-        a3 = 0xFFFFFFFF & (a3 * t2) + t3;
-        s0 = 0xFFFFFFFF & (s0 * a2) + t4;
-    } else {
-        a3 = a3 ^ t2 ^ t3;
-        s0 = s0 ^ a2 ^ t4;
-    }
-
-    // Write CRC to ROM header
-    *reinterpret_cast<uint32_t*>(romData + 0x10) = a3;
-    *reinterpret_cast<uint32_t*>(romData + 0x14) = s0;
-}
 
 } // namespace Rom
 } // namespace N64

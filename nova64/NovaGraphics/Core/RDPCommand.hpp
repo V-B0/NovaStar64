@@ -192,10 +192,6 @@ private:
 
     /// Read a 32-bit word from RDRAM in native word order (PJ64-style); 0 if out of range
     uint32_t ReadWord(uint32_t address) const;
-
-    /// Signed fixed point to double: s15.16 from a high/low half pair, s11.2 from a packed field
-    static double ReadFixed_S15_16(uint32_t hi, uint32_t lo);
-    static double ReadFixed_S11_2(uint32_t packed);
 };
 
 // --- RDP Command Buffer ---
@@ -212,9 +208,6 @@ public:
 
     /// Append words; if the buffer is still full after compaction, all unread data is discarded
     void Push(const uint32_t* words, int count);
-
-    /// Pointer to the next unread word, or nullptr if the buffer is empty
-    const uint32_t* Peek() const;
 
     /// Advance the read offset, clamped to the end of the data
     void Advance(int wordCount);

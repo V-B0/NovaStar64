@@ -52,14 +52,8 @@ public:
 
     void WriteLog(LogLevel level, const char* format, ...);
     void ClearInterrupt(uint32_t mask);
-    void SetInterrupt(uint32_t interruptBit);
-
-    bool IsInterruptPending() const;
-    uint32_t GetPendingInterrupts() const;
 
     bool IsInitMode() const;
-    bool IsEBusMode() const;
-    bool IsRDRAMRegMode() const;
 
     void Reset();
 

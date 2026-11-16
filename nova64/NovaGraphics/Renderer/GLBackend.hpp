@@ -460,7 +460,6 @@ private:
 // --- FACTORY FUNCTION ---
 
 std::unique_ptr<IRenderer> CreateOpenGLRenderer();
-bool IsOpenGL46Available();
 
 } // namespace GL
 } // namespace Video

@@ -570,8 +570,4 @@ private:
     CSystemEvents& m_SystemEvents;
     N64System::SystemTimer& m_SystemTimer;
     CTLB& m_TLB;
-
-    // Helper method to access COP0 registers safely
-    uint64_t& GetCop0RegRef(COP0Reg reg);
-    const uint64_t& GetCop0RegRef(COP0Reg reg) const;
 };

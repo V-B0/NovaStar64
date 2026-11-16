@@ -1336,27 +1336,6 @@ void PostProcessingPipeline::Apply(uint32_t inputTex, uint32_t outputFBO, int wi
     }
 }
 
-void PostProcessingPipeline::AddEffect(std::unique_ptr<PostEffect> effect) { m_effects.push_back(std::move(effect)); }
-
-void PostProcessingPipeline::RemoveEffect(PostEffectType type) {
-    m_effects.erase(
-        std::remove_if(m_effects.begin(), m_effects.end(), [type](const auto& e) { return e->GetType() == type; }),
-        m_effects.end());
-}
-
-PostEffect* PostProcessingPipeline::GetEffect(PostEffectType type) {
-    for (auto& e : m_effects) {
-        if (e->GetType() == type) return e.get();
-    }
-    return nullptr;
-}
-
-void PostProcessingPipeline::SetEffectEnabled(PostEffectType type, bool enabled) {
-    for (auto& e : m_effects) {
-        if (e->GetType() == type) e->SetEnabled(enabled);
-    }
-}
-
 void PostProcessingPipeline::ClearEffects() {
     for (auto& e : m_effects) e->Shutdown();
     m_effects.clear();
@@ -1373,36 +1352,6 @@ void PostProcessingPipeline::SetupDefaultChain() {
     ClearEffects();
     // No effects by default: FXAA adds significant per-frame GPU overhead on
     // integrated GPUs (Intel Iris Xe).
-}
-
-void PostProcessingPipeline::SetupRetroChain() {
-    ClearEffects();
-    auto crt = std::make_unique<CRTEffect>();
-    crt->Init(m_width, m_height);
-    AddEffect(std::move(crt));
-
-    auto gamma = std::make_unique<GammaEffect>();
-    gamma->Init(m_width, m_height);
-    AddEffect(std::move(gamma));
-}
-
-void PostProcessingPipeline::SetupEnhancedChain() {
-    ClearEffects();
-    auto bloom = std::make_unique<BloomEffect>();
-    bloom->Init(m_width, m_height);
-    AddEffect(std::move(bloom));
-
-    auto sharpen = std::make_unique<SharpenEffect>();
-    sharpen->Init(m_width, m_height);
-    AddEffect(std::move(sharpen));
-
-    auto gamma = std::make_unique<GammaEffect>();
-    gamma->Init(m_width, m_height);
-    AddEffect(std::move(gamma));
-
-    auto fxaa = std::make_unique<FXAAEffect>();
-    fxaa->Init(m_width, m_height);
-    AddEffect(std::move(fxaa));
 }
 
 } // namespace Nova64::Video

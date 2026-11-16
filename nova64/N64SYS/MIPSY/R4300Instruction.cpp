@@ -549,39 +549,3 @@ R4300iInstruction::RegisterInfo R4300iInstruction::GetRegisterInfo() const {
 
     return info;
 }
-
-bool R4300iInstruction::AffectedByDelaySlot(uint32_t delaySlotInstruction) const {
-
-    R4300iInstruction delayInstr(m_Address + 4, delaySlotInstruction);
-
-    RegisterInfo currentInfo = GetRegisterInfo();
-    RegisterInfo delayInfo = delayInstr.GetRegisterInfo();
-
-    if (delayInfo.write != 0xFFFFFFFF) {
-        if (delayInfo.write == currentInfo.read1 || delayInfo.write == currentInfo.read2) {
-            return true;
-        }
-    }
-
-    if ((delayInfo.writesHI && currentInfo.readsHI) || (delayInfo.writesLO && currentInfo.readsLO)) {
-        return true;
-    }
-
-    // Special case for COP1 branches
-    uint8_t currentOpcode = OPCODE(m_Instruction);
-    uint8_t delayOpcode = OPCODE(delaySlotInstruction);
-
-    if (currentOpcode == R4300_COP1 && COP1_FMT(m_Instruction) == 0x08) { // COP1 branch
-        if (delayOpcode == R4300_COP1) {
-            uint8_t delayFmt = COP1_FMT(delaySlotInstruction);
-            uint8_t delayFunct = COP1_FUNCT(delaySlotInstruction);
-
-            if ((delayFmt == 0x10 || delayFmt == 0x11) && // S or D format
-                (delayFunct & 0x30) == 0x30) {            // Compare operations
-                return true;
-            }
-        }
-    }
-
-    return false;
-}

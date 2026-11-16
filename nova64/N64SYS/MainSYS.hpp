@@ -79,13 +79,9 @@ public:
 
     // Static methods for ROM/Disk loading
     static bool LoadFileImage(const char* FileLoc);
-    static bool LoadFileImageIPL(const char* FileLoc);
-    static bool LoadDiskImage(const char* FileLoc, const bool Expansion);
 
     // Static methods for running emulation
     static bool RunFileImage(const char* FileLoc, uint64_t frameLimit = 0);
-    static bool RunDiskImage(const char* FileLoc);
-    static bool RunDiskComboImage(const char* FileLoc, const char* FileLocDisk);
     static void RunLoadedImage(uint64_t frameLimit = 0);
     static void CloseSystem(void);
     static bool s_UseInterpreter;

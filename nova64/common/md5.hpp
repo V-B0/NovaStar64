@@ -143,30 +143,11 @@ public:
      */
     explicit MD5(const std::string& str);
 
-    // Methods to acquire finalized result
-    /**
-     * @brief Get digest as a structure
-     * @param outDigest Output digest structure
-     */
-    void GetDigest(MD5Digest& outDigest) const;
-
-    /**
-     * @brief Get raw digest as a 16-byte array
-     * @return Pointer to 16-byte digest
-     */
-    const uint8_t* RawDigest() const;
-
     /**
      * @brief Get digest as a 32-character hex string (lowercase)
      * @return Hex string representation
      */
     std::string HexDigest() const;
-
-    /**
-     * @brief Get digest as a 32-character hex string (uppercase)
-     * @return Hex string representation
-     */
-    std::string HexDigestUpper() const;
 
 private:
     // Type definitions

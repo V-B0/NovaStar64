@@ -269,34 +269,4 @@ bool CRecompMemory::GrowBuffer(uint32_t minRequiredSize) {
 
 // --- Memory Usage & Statistics ---
 
-void CRecompMemory::ShowMemoryUsage() const {
-    uint32_t used = GetUsedMemory();
-    uint32_t available = GetRemainingSpace();
-    float usagePercent = (m_CurrentSize > 0) ? (100.0f * used / m_CurrentSize) : 0.0f;
-
-    Log::infof("=== Recompiler Memory Usage ===");
-    Log::infof("  Total allocated: %u KB (%u MB)", m_CurrentSize / 1024, m_CurrentSize / (1024 * 1024));
-    Log::infof("  Currently used:  %u KB (%u MB) [%.1f%%]", used / 1024, used / (1024 * 1024), usagePercent);
-    Log::infof("  Peak usage:      %u KB (%u MB)", m_Stats.peakUsedBytes / 1024, m_Stats.peakUsedBytes / (1024 * 1024));
-    Log::infof("  Available:       %u KB (%u MB)", available / 1024, available / (1024 * 1024));
-    Log::infof("  Growth count:    %u times", m_Stats.growthCount);
-
-    if (m_Stats.peakUsedBytes > 0) {
-        float efficiency =
-            (m_Stats.allocatedBytes > 0) ? (100.0f * m_Stats.peakUsedBytes / m_Stats.allocatedBytes) : 0.0f;
-        Log::infof("  Peak efficiency: %.1f%%", efficiency);
-
-        if (efficiency < 50.0f && m_Stats.allocatedBytes > DEFAULT_INITIAL_SIZE) {
-            Log::warning("RecompilerMemory: Low memory efficiency - consider reducing initial size");
-        }
-    }
-
-    uint32_t waste = m_Stats.allocatedBytes - m_Stats.peakUsedBytes;
-    if (waste > 10 * 1024 * 1024) { // More than 10 MB wasted
-        Log::warningf("RecompilerMemory: %u MB of allocated memory never used", waste / (1024 * 1024));
-    }
-
-    Log::infof("===============================");
-}
-
 } // namespace Nova64::Recompiler

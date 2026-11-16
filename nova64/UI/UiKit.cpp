@@ -605,13 +605,6 @@ void Keycap(const char* text) {
                   Col(color::kText), text);
 }
 
-void FormLabel(const char* label, float labelWidth) {
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::SameLine(ImGui::GetCursorStartPos().x + labelWidth);
-    ImGui::SetNextItemWidth(std::min(280.0f, ImGui::GetContentRegionAvail().x));
-}
-
 void HintText(const char* text) {
     ImGui::PushFont(g_fonts.small);
     ImGui::PushStyleColor(ImGuiCol_Text, color::kTextMuted);

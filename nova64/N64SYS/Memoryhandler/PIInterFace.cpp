@@ -25,7 +25,6 @@
 #include "../MainSYS.hpp"
 #include "../MIPSY/Register.hpp"
 #include "../MIPSY/Vmem.hpp"
-#include "../MIPSY/DDisk.hpp"
 #include "../MIPSY/Systiming.hpp"
 #include "../N64Rom.hpp"
 #include "../N64DD.hpp"

@@ -163,15 +163,6 @@ public:
      */
     const uint8_t* MemoryStackPos() const noexcept { return m_MemoryStack; }
 
-    /**
-     * @brief Reset memory stack to initial position
-     */
-    void ResetMemoryStackPos() noexcept;
-
-    // Statistics and profiling
-    void ResetFunctionTimes();
-    void DumpFunctionTimes();
-
     const RecompilerStats& GetStats() const noexcept { return m_Stats; }
 
     void ResetStats() noexcept { m_Stats.Reset(); }
@@ -192,10 +183,7 @@ public:
     void SetExecutionMode(ExecutionMode mode) noexcept { m_ExecutionMode = mode; }
     ExecutionMode GetExecutionMode() const noexcept { return m_ExecutionMode; }
 
-    // Logging
-    void StartLog();
     void StopLog();
-    void ResetLog();
     bool IsLogging() const noexcept { return m_LogFile != nullptr; }
 
 private:
@@ -212,16 +200,11 @@ private:
     void Execute_Lookup();
     void Execute_Lookup_Validate();
 
-    // Interpreter fallback when compilation fails
-    void FallbackToInterpreter();
-
     // Interpret a single instruction at current PC and advance
     void InterpretSingleInstruction();
 
     // Helper methods
     void ClearCodeRange(uint32_t start, uint32_t end, RemoveReason reason);
-    void HandleSelfModifyingCode(uint32_t address, RemoveReason reason);
-    void UpdateProfiling(CCompiledFunc* func, std::chrono::nanoseconds time);
 
     // Function profiling data
     struct FunctionProfile {

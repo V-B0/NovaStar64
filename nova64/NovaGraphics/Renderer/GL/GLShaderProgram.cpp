@@ -30,18 +30,6 @@ uint32_t ShaderStageToGL(ShaderStage stage) {
     return GL_VERTEX_SHADER;
 }
 
-const char* ShaderStageName(ShaderStage stage) {
-    switch (stage) {
-    case ShaderStage::Vertex:      return "Vertex";
-    case ShaderStage::Fragment:    return "Fragment";
-    case ShaderStage::Geometry:    return "Geometry";
-    case ShaderStage::TessControl: return "TessControl";
-    case ShaderStage::TessEval:    return "TessEval";
-    case ShaderStage::Compute:     return "Compute";
-    }
-    return "Unknown";
-}
-
 // --- GLShader ---
 
 GLShader::~GLShader() { Destroy(); }
@@ -79,39 +67,6 @@ bool GLShader::CompileFromSource(ShaderStage stage, const std::string& source) {
     const GLint length = static_cast<GLint>(source.size());
     glShaderSource(m_handle, 1, &src, &length);
     glCompileShader(m_handle);
-
-    GLint status = 0;
-    glGetShaderiv(m_handle, GL_COMPILE_STATUS, &status);
-
-    GLint logLen = 0;
-    glGetShaderiv(m_handle, GL_INFO_LOG_LENGTH, &logLen);
-    if (logLen > 1) {
-        m_infoLog.resize(logLen);
-        glGetShaderInfoLog(m_handle, logLen, nullptr, m_infoLog.data());
-    }
-
-    if (!status) {
-        glDeleteShader(m_handle);
-        m_handle = 0;
-        return false;
-    }
-
-    return true;
-}
-
-bool GLShader::CompileFromSPIRV(ShaderStage stage, const std::vector<uint32_t>& spirv, const char* entry) {
-    Destroy();
-    m_stage = stage;
-
-    m_handle = glCreateShader(ShaderStageToGL(stage));
-    if (!m_handle) {
-        m_infoLog = "Failed to create shader object for SPIR-V";
-        return false;
-    }
-
-    glShaderBinary(1, &m_handle, GL_SHADER_BINARY_FORMAT_SPIR_V, spirv.data(),
-                   static_cast<GLsizei>(spirv.size() * sizeof(uint32_t)));
-    glSpecializeShader(m_handle, entry, 0, nullptr, nullptr);
 
     GLint status = 0;
     glGetShaderiv(m_handle, GL_COMPILE_STATUS, &status);
@@ -197,36 +152,6 @@ bool GLProgram::Link(const GLShader& vertex, const GLShader& geometry, const GLS
     return true;
 }
 
-bool GLProgram::LinkCompute(const GLShader& compute) {
-    Destroy();
-    m_handle = glCreateProgram();
-    if (!m_handle) return false;
-
-    glAttachShader(m_handle, compute.Handle());
-    glLinkProgram(m_handle);
-
-    if (!CheckLinkStatus()) return false;
-    BuildUniformCache();
-    return true;
-}
-
-bool GLProgram::LinkFromStages(const std::vector<const GLShader*>& shaders) {
-    Destroy();
-    m_handle = glCreateProgram();
-    if (!m_handle) return false;
-
-    for (auto* shader : shaders) {
-        if (shader && shader->IsValid()) {
-            glAttachShader(m_handle, shader->Handle());
-        }
-    }
-    glLinkProgram(m_handle);
-
-    if (!CheckLinkStatus()) return false;
-    BuildUniformCache();
-    return true;
-}
-
 bool GLProgram::BuildFromSource(const std::string& vertSrc, const std::string& fragSrc) {
     GLShader vert, frag;
     if (!vert.CompileFromSource(ShaderStage::Vertex, vertSrc)) {
@@ -238,29 +163,6 @@ bool GLProgram::BuildFromSource(const std::string& vertSrc, const std::string& f
         return false;
     }
     return Link(vert, frag);
-}
-
-bool GLProgram::BuildComputeFromSource(const std::string& src) {
-    GLShader cs;
-    if (!cs.CompileFromSource(ShaderStage::Compute, src)) {
-        m_infoLog = "Compute: " + cs.GetInfoLog();
-        return false;
-    }
-    return LinkCompute(cs);
-}
-
-bool GLProgram::BuildFromSourceWithDefines(const std::string& vertSrc, const std::string& fragSrc,
-                                           const std::vector<std::pair<std::string, std::string>>& defines) {
-
-    ShaderPreprocessor preprocessor;
-    for (auto& [name, val] : defines) {
-        preprocessor.AddDefine(name, val);
-    }
-
-    std::string processedVert = preprocessor.Process(vertSrc);
-    std::string processedFrag = preprocessor.Process(fragSrc);
-
-    return BuildFromSource(processedVert, processedFrag);
 }
 
 void GLProgram::Destroy() {
@@ -276,8 +178,6 @@ void GLProgram::Destroy() {
 void GLProgram::Use() const {
     if (m_handle) glUseProgram(m_handle);
 }
-
-void GLProgram::UseNone() { glUseProgram(0); }
 
 bool GLProgram::CheckLinkStatus() {
     GLint status = 0;
@@ -499,11 +399,6 @@ int32_t GLProgram::GetSSBOIndex(const std::string& name) const {
     return (idx == GL_INVALID_INDEX) ? -1 : static_cast<int32_t>(idx);
 }
 
-int32_t GLProgram::GetAttribLocation(const std::string& name) const {
-    if (!m_handle) return -1;
-    return glGetAttribLocation(m_handle, name.c_str());
-}
-
 // --- Uniform Setters (by location) ---
 
 void GLProgram::SetFloat(int32_t loc, float v) const {
@@ -680,42 +575,6 @@ void GLProgram::SetLabel(const std::string& label) {
 
 // --- Debug Dump ---
 
-std::string GLProgram::DumpUniforms() const {
-    std::ostringstream ss;
-    ss << "Uniforms (" << m_reflection.uniforms.size() << "):\n";
-    for (auto& u : m_reflection.uniforms) {
-        ss << "  [" << u.location << "] " << u.name;
-        if (u.arraySize > 1) ss << "[" << u.arraySize << "]";
-        ss << "\n";
-    }
-    return ss.str();
-}
-
-std::string GLProgram::DumpAttributes() const {
-    std::ostringstream ss;
-    ss << "Attributes (" << m_reflection.attributes.size() << "):\n";
-    for (auto& a : m_reflection.attributes) {
-        ss << "  [" << a.location << "] " << a.name << "\n";
-    }
-    return ss.str();
-}
-
-std::string GLProgram::DumpBlocks() const {
-    std::ostringstream ss;
-    ss << "Uniform Blocks (" << m_reflection.uniformBlocks.size() << "):\n";
-    for (auto& b : m_reflection.uniformBlocks) {
-        ss << "  Block \"" << b.name << "\" binding=" << b.binding << " size=" << b.size << "\n";
-        for (auto& m : b.members) {
-            ss << "    " << m.name << " offset=" << m.offset << "\n";
-        }
-    }
-    ss << "SSBOs (" << m_reflection.ssbos.size() << "):\n";
-    for (auto& s : m_reflection.ssbos) {
-        ss << "  SSBO \"" << s.name << "\" binding=" << s.binding << " size=" << s.size << "\n";
-    }
-    return ss.str();
-}
-
 // --- GLProgramPipeline ---
 
 GLProgramPipeline::~GLProgramPipeline() { Destroy(); }
@@ -794,52 +653,6 @@ void ShaderIncludeManager::ClearAll() { m_includes.clear(); }
 
 bool ShaderIncludeManager::HasInclude(const std::string& path) const { return m_includes.count(path) > 0; }
 
-const std::string& ShaderIncludeManager::GetInclude(const std::string& path) const {
-    auto it = m_includes.find(path);
-    if (it != m_includes.end()) return it->second;
-    return m_empty;
-}
-
-std::string ShaderIncludeManager::PreprocessIncludes(const std::string& source, int maxDepth) const {
-    return ResolveIncludes(source, 0, maxDepth);
-}
-
-std::string ShaderIncludeManager::ResolveIncludes(const std::string& src, int depth, int maxDepth) const {
-    if (depth >= maxDepth) return src;
-
-    std::istringstream stream(src);
-    std::ostringstream result;
-    std::string line;
-
-    while (std::getline(stream, line)) {
-        // Check for #include "path" or #include <path>
-        size_t pos = line.find("#include");
-        if (pos != std::string::npos) {
-            size_t start = line.find_first_of("\"<", pos + 8);
-            size_t end = std::string::npos;
-            if (start != std::string::npos) {
-                char closeChar = (line[start] == '"') ? '"' : '>';
-                end = line.find(closeChar, start + 1);
-            }
-
-            if (start != std::string::npos && end != std::string::npos) {
-                std::string includePath = line.substr(start + 1, end - start - 1);
-                auto it = m_includes.find(includePath);
-                if (it != m_includes.end()) {
-                    result << "// [include begin: " << includePath << "]\n";
-                    result << ResolveIncludes(it->second, depth + 1, maxDepth);
-                    result << "\n// [include end: " << includePath << "]\n";
-                    continue;
-                }
-                result << "// [include not found: " << includePath << "]\n";
-                continue;
-            }
-        }
-        result << line << "\n";
-    }
-    return result.str();
-}
-
 // --- ShaderPreprocessor ---
 
 void ShaderPreprocessor::SetVersion(int version, const std::string& profile) {
@@ -871,58 +684,6 @@ void ShaderPreprocessor::RemoveDefine(const std::string& name) {
 }
 
 void ShaderPreprocessor::ClearDefines() { m_defines.clear(); }
-
-std::string ShaderPreprocessor::Process(const std::string& source) const {
-    std::ostringstream result;
-
-    std::istringstream input(source);
-    std::string line;
-    bool hasVersion = false;
-
-    // First pass: look for an existing #version directive.
-    while (std::getline(input, line)) {
-        if (line.find("#version") != std::string::npos) {
-            hasVersion = true;
-            break;
-        }
-    }
-
-    input.clear();
-    input.str(source);
-
-    if (!hasVersion) {
-        result << "#version " << m_version << " " << m_profile << "\n";
-        // Add defines right after
-        for (auto& [name, val] : m_defines) {
-            result << "#define " << name;
-            if (!val.empty()) result << " " << val;
-            result << "\n";
-        }
-    }
-
-    bool insertedDefines = hasVersion ? false : true;
-
-    while (std::getline(input, line)) {
-        result << line << "\n";
-        if (!insertedDefines && line.find("#version") != std::string::npos) {
-            for (auto& [name, val] : m_defines) {
-                result << "#define " << name;
-                if (!val.empty()) result << " " << val;
-                result << "\n";
-            }
-            insertedDefines = true;
-        }
-    }
-
-    std::string processed = result.str();
-
-    // Resolve includes if manager is set
-    if (m_includes) {
-        processed = m_includes->PreprocessIncludes(processed);
-    }
-
-    return processed;
-}
 
 void ShaderPreprocessor::SetN64Defines(bool twoPoint, bool fog, bool noise, bool lod) {
     if (twoPoint) AddDefine("N64_TWO_CYCLE", "1");
@@ -971,23 +732,6 @@ void ShaderHotReloader::RemoveWatch(const std::string& path) {
 }
 
 void ShaderHotReloader::ClearAll() { m_watches.clear(); }
-
-std::vector<std::string> ShaderHotReloader::CheckForChanges() {
-    std::vector<std::string> changed;
-    if (!m_enabled) return changed;
-
-    for (auto& entry : m_watches) {
-        try {
-            auto ftime = std::filesystem::last_write_time(entry.path);
-            uint64_t newTime = static_cast<uint64_t>(ftime.time_since_epoch().count());
-            if (newTime != entry.lastWriteTime) {
-                entry.lastWriteTime = newTime;
-                changed.push_back(entry.path);
-            }
-        } catch (...) {}
-    }
-    return changed;
-}
 
 bool ShaderHotReloader::ReloadShader(GLShader& shader, const std::string& path) {
     // Find the entry for the path to get the shader stage

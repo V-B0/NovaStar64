@@ -291,27 +291,6 @@ public:
      */
     void UnmapRegister(uint32_t mipsReg, bool writeBack = true, bool force = false);
 
-    /**
-     * @brief Unmap a specific host register
-     * @param hostReg Host register to unmap
-     * @param writeBack Whether to write value back
-     */
-    void UnmapHostRegister(X64RegisterType hostReg, bool writeBack = true);
-
-    /**
-     * @brief Get the host register for a MIPS register
-     * @param mipsReg MIPS register index
-     * @return Host register if mapped, Invalid otherwise
-     */
-    X64RegisterType GetMappedHostRegister(uint32_t mipsReg) const noexcept;
-
-    /**
-     * @brief Get the MIPS register mapped to a host register
-     * @param hostReg Host register
-     * @return MIPS register index if mapped, UINT32_MAX otherwise
-     */
-    uint32_t GetMappedMipsRegister(X64RegisterType hostReg) const noexcept;
-
     bool IsMapped(uint32_t mipsReg) const noexcept;
 
     bool IsHostRegisterUsed(X64RegisterType hostReg) const noexcept;
@@ -328,10 +307,6 @@ public:
      * @param mipsReg MIPS register to reload
      */
     void ReloadRegister(uint32_t mipsReg);
-
-    void SpillAllDirtyRegisters();
-
-    void ReloadAllRegisters();
 
     /**
      * @brief Flush all register mappings
@@ -354,18 +329,6 @@ public:
      * @param reg Register to free
      */
     void FreeHostRegister(X64RegisterType reg);
-
-    /**
-     * @brief Lock a register to prevent spilling
-     * @param mipsReg MIPS register to lock
-     */
-    void LockRegister(uint32_t mipsReg);
-
-    /**
-     * @brief Unlock a register
-     * @param mipsReg MIPS register to unlock
-     */
-    void UnlockRegister(uint32_t mipsReg);
 
     // State management
     void SaveState();
@@ -392,16 +355,10 @@ public:
 
     size_t GetDirtyRegisterCount() const noexcept;
 
-    uint32_t GetUsedGeneralPurposeMask() const noexcept;
-    uint64_t GetUsedFloatingPointMask() const noexcept;
-
     // Debug and validation
     std::string ToString() const;
     bool Validate() const noexcept;
-    void DumpState() const;
 
-    // Configuration
-    void SetAllocationStrategy(std::unique_ptr<IRegisterAllocationStrategy> strategy);
     IRegisterAllocationStrategy* GetAllocationStrategy() noexcept { return m_AllocationStrategy.get(); }
 
     // Direct access (for advanced use)

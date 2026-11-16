@@ -165,19 +165,6 @@ struct CRC64Table {
     }
 };
 
-constexpr CRC64Table sCRC64Table{};
-
 } // namespace
-
-uint64_t CRC64(const void* data, size_t length, uint64_t seed) noexcept {
-    auto* p = static_cast<const uint8_t*>(data);
-    uint64_t crc = ~seed;
-
-    while (length--) {
-        crc = sCRC64Table.tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
-    }
-
-    return ~crc;
-}
 
 } // namespace Nova64::Video

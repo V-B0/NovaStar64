@@ -46,7 +46,6 @@ public:
     // --- Logging ---
     void VerboseMessage(const char* message, ...);
     void WarnMessage(const char* message, ...);
-    void ErrorMessage(const char* message, ...);
 
     // --- RSP control ---
     void rsp_break(uint32_t setbits);

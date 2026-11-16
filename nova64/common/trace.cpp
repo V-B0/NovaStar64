@@ -67,18 +67,6 @@ std::string LogEntry::Format(bool includeTimestamp) const {
     return oss.str();
 }
 
-std::string LogEntry::FormatShort() const {
-    std::ostringstream oss;
-
-    if (static_cast<size_t>(severity) < SeverityNames.size()) {
-        oss << '[' << SeverityNames[static_cast<size_t>(severity)] << "] ";
-    }
-
-    oss << message;
-
-    return oss.str();
-}
-
 // --- FileTraceSink ---
 
 FileTraceSink::FileTraceSink(std::string_view filename, const Options& options) :
@@ -261,14 +249,6 @@ std::string ConsoleTraceSink::GetColorCode(Severity severity) const {
 #endif
 }
 
-void ConsoleTraceSink::ResetColor() const {
-#ifndef _WIN32
-    if (m_Options.useColors) {
-        std::cout << "\033[0m";
-    }
-#endif
-}
-
 void ConsoleTraceSink::Write(const LogEntry& entry) {
     if (entry.severity > m_MinSeverity.load(std::memory_order_relaxed)) {
         return;
@@ -350,11 +330,6 @@ void ConsoleTraceSink::Flush() {
     std::cerr.flush();
 }
 
-void ConsoleTraceSink::SetOptions(const Options& options) noexcept {
-    std::lock_guard<std::mutex> lock(m_Mutex);
-    m_Options = options;
-}
-
 // --- MemoryTraceSink ---
 
 MemoryTraceSink::MemoryTraceSink(size_t capacity) : m_Capacity(capacity) { m_Entries.reserve(capacity); }
@@ -373,21 +348,6 @@ void MemoryTraceSink::Write(const LogEntry& entry) {
         m_Entries[m_Index] = entry;
         m_Index = (m_Index + 1) % m_Capacity;
     }
-}
-
-std::vector<LogEntry> MemoryTraceSink::GetEntries() const {
-    std::lock_guard<std::mutex> lock(m_Mutex);
-    return m_Entries;
-}
-
-std::vector<LogEntry> MemoryTraceSink::GetEntries(Severity minSeverity) const {
-    std::lock_guard<std::mutex> lock(m_Mutex);
-
-    std::vector<LogEntry> result;
-    std::copy_if(m_Entries.begin(), m_Entries.end(), std::back_inserter(result),
-                 [minSeverity](const LogEntry& entry) { return entry.severity <= minSeverity; });
-
-    return result;
 }
 
 void MemoryTraceSink::Clear() {
@@ -466,13 +426,6 @@ void TraceManager::SetModuleSeverity(ModuleID module, Severity severity) {
     if (module < Module::Max) {
         m_ModuleSeverities[module].store(severity, std::memory_order_relaxed);
     }
-}
-
-Severity TraceManager::GetModuleSeverity(ModuleID module) const {
-    if (module < Module::Max) {
-        return m_ModuleSeverities[module].load(std::memory_order_relaxed);
-    }
-    return Severity::None;
 }
 
 void TraceManager::SetModuleName(ModuleID module, std::string_view name) {

@@ -296,7 +296,6 @@ public:
 
     // Legacy interface for backward compatibility
     void SetMipsRegState(int32_t reg, REG_STATE state) noexcept;
-    REG_STATE GetMipsRegState(int32_t reg) const noexcept;
 
     bool IsKnown(int32_t reg) const noexcept { return m_Registers.IsKnown(reg); }
     bool IsUnknown(int32_t reg) const noexcept { return !IsKnown(reg); }
@@ -307,8 +306,6 @@ public:
     bool IsUnsigned(int32_t reg) const noexcept { return !IsSigned(reg); }
     bool Is32Bit(int32_t reg) const noexcept { return m_Registers.Is32Bit(reg); }
     bool Is64Bit(int32_t reg) const noexcept { return m_Registers.Is64Bit(reg); }
-    bool Is32BitMapped(int32_t reg) const noexcept;
-    bool Is64BitMapped(int32_t reg) const noexcept;
 
     // Value accessors
     uint64_t GetMipsReg(int32_t reg) const noexcept { return m_Registers.GetValue(reg); }

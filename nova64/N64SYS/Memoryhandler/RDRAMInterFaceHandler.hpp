@@ -119,16 +119,10 @@ private:
 
     // Helper methods
     [[nodiscard]] bool is_register_address(uint32_t address) const;
-    [[nodiscard]] RDRAM::Register address_to_register(uint32_t address) const;
 
     // Register handling
     void handle_config_write(uint32_t value, uint32_t mask);
     void handle_mode_write(uint32_t value, uint32_t mask);
-
-    // Timing calculations
-    [[nodiscard]] uint32_t calculate_refresh_cycles() const;
-    [[nodiscard]] uint32_t calculate_ras_cycles() const;
-    [[nodiscard]] uint32_t calculate_cas_cycles() const;
 
     // Logging
     void log_register_access(uint32_t address, uint32_t value, bool is_write) const;

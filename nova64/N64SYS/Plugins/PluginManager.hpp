@@ -77,12 +77,6 @@ public:
     // --- Plugin Loading ---
 
     /**
-     * @brief Load all plugins from configuration
-     * @return True if all plugins loaded successfully
-     */
-    bool LoadAllPlugins();
-
-    /**
      * @brief Load specific plugin type
      * @param type Plugin type to load
      * @param path Path to plugin file (empty = use config)
@@ -98,13 +92,6 @@ public:
 
     void UnloadAllPlugins();
 
-    /**
-     * @brief Check if plugin is loaded
-     * @param type Plugin type to check
-     * @return True if loaded
-     */
-    bool IsPluginLoaded(PluginType type) const;
-
     // --- Plugin Lifecycle ---
 
     /**
@@ -116,10 +103,6 @@ public:
     void ShutdownPlugins();
 
     void ResetPlugins();
-
-    void PausePlugins();
-
-    void ResumePlugins();
 
     // --- Plugin Access ---
 
@@ -156,48 +139,7 @@ public:
 
     // --- Configuration ---
 
-    /**
-     * @brief Load plugin configuration from file
-     * @param configPath Path to configuration file
-     * @return True if loaded successfully
-     */
-    bool LoadConfiguration(const std::string& configPath);
-
-    /**
-     * @brief Save plugin configuration to file
-     * @param configPath Path to configuration file
-     * @return True if saved successfully
-     */
-    bool SaveConfiguration(const std::string& configPath) const;
-
-    /**
-     * @brief Get configuration for plugin type
-     * @param type Plugin type
-     * @return Plugin configuration
-     */
-    const PluginConfig& GetPluginConfig(PluginType type) const;
-
-    /**
-     * @brief Set configuration for plugin type
-     * @param type Plugin type
-     * @param config New configuration
-     */
-    void SetPluginConfig(PluginType type, const PluginConfig& config);
-
-    /**
-     * @brief Show configuration dialog for plugin
-     * @param type Plugin type
-     */
-    void ShowPluginConfig(PluginType type);
-
     // --- Plugin Discovery ---
-
-    /**
-     * @brief Discover available plugins in directory
-     * @param directory Directory to search
-     * @return List of discovered plugin paths
-     */
-    std::vector<std::string> DiscoverPlugins(const std::string& directory) const;
 
     /**
      * @brief Get plugin information without loading
@@ -207,14 +149,6 @@ public:
     PluginInfo GetPluginInfo(const std::string& path) const;
 
     // --- Notifications ---
-
-    /**
-     * @brief Register callback for plugin notifications
-     * @param callback Function to call on plugin events
-     */
-    void RegisterNotificationCallback(PluginNotificationCallback callback);
-
-    void ClearNotificationCallback();
 
     // --- Save States ---
 
@@ -233,18 +167,6 @@ public:
     bool LoadState(const std::vector<uint8_t>& data);
 
     // --- Status ---
-
-    /**
-     * @brief Check if all required plugins are loaded
-     * @return True if system can run
-     */
-    bool AreRequiredPluginsLoaded() const;
-
-    /**
-     * @brief Get plugin status string
-     * @return Human-readable status
-     */
-    std::string GetStatusString() const;
 
 private:
     // --- Internal Plugin Creation ---

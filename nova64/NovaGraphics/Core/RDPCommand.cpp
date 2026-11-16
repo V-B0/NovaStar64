@@ -19,17 +19,6 @@ uint32_t RDPCommandDecoder::ReadWord(uint32_t address) const {
     return *reinterpret_cast<const uint32_t*>(m_rdram + address);
 }
 
-double RDPCommandDecoder::ReadFixed_S15_16(uint32_t hi, uint32_t lo) {
-    int32_t value = (static_cast<int32_t>(hi) << 16) | (lo & 0xFFFF);
-    return static_cast<double>(value) / 65536.0;
-}
-
-double RDPCommandDecoder::ReadFixed_S11_2(uint32_t packed) {
-    int16_t raw = static_cast<int16_t>(packed & 0x3FFF);
-    if (packed & 0x2000) raw |= 0xC000; // Sign extend
-    return static_cast<double>(raw) / 4.0;
-}
-
 // --- Command ID Decoding ---
 
 RDPCommandID RDPCommandDecoder::DecodeCommand(const uint32_t* cmdWords, int /*wordCount*/) {
@@ -478,11 +467,6 @@ void RDPCommandBuffer::Push(const uint32_t* words, int count) {
 
     std::memcpy(m_buffer + m_writeOffset, words, count * sizeof(uint32_t));
     m_writeOffset += count;
-}
-
-const uint32_t* RDPCommandBuffer::Peek() const {
-    if (m_readOffset >= m_writeOffset) return nullptr;
-    return m_buffer + m_readOffset;
 }
 
 void RDPCommandBuffer::Advance(int wordCount) {

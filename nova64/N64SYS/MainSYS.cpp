@@ -250,77 +250,6 @@ bool CN64System::LoadFileImage(const char* FileLoc) {
     }
 }
 
-bool CN64System::LoadFileImageIPL(const char* FileLoc) {
-    LOG_DEBUG("LoadFileImageIPL: \"{}\"", FileLoc ? FileLoc : "(null)");
-
-    if (FileLoc == nullptr || FileLoc[0] == '\0') {
-        LOG_ERROR("Invalid file location");
-        return false;
-    }
-
-    CloseSystem();
-
-    LOG_DEBUG("Mark N64DD IPL as loading");
-
-    if (g_DDRom == nullptr) {
-        LOG_DEBUG("Allocating global N64DD IPL object");
-        g_DDRom = new N64Rom();
-    } else {
-        LOG_DEBUG("Use existing global N64DD IPL object");
-    }
-
-    Log::debugf("Loading \"%s\"", FileLoc);
-    try {
-        g_DDRom->LoadIPL(FileLoc);
-        if (!g_DDRom->GetImage().IsDDIPL()) {
-            LOG_ERROR("LoadN64ImageIPL failed - not a 64DD IPL (\"{}\")", FileLoc);
-            delete g_DDRom;
-            g_DDRom = nullptr;
-            return false;
-        }
-
-        LOG_DEBUG("64DD IPL loaded successfully");
-        return true;
-    } catch (const std::exception& e) {
-        LOG_ERROR("LoadN64ImageIPL failed (\"{}\")", FileLoc);
-        delete g_DDRom;
-        g_DDRom = nullptr;
-        return false;
-    }
-}
-
-bool CN64System::LoadDiskImage(const char* FileLoc, const bool Expansion) {
-    Log::debugf("LoadDiskImage: \"%s\" (Expansion: %s)", FileLoc ? FileLoc : "(null)", Expansion ? "true" : "false");
-
-    if (FileLoc == nullptr || FileLoc[0] == '\0') {
-        LOG_ERROR("Invalid file location");
-        return false;
-    }
-
-    CloseSystem();
-
-    LOG_DEBUG("Mark disk as loading");
-
-    if (g_Disk == nullptr) {
-        LOG_DEBUG("Allocating global disk object");
-        g_Disk = new N64Disk();
-    } else {
-        LOG_DEBUG("Use existing global disk object");
-    }
-
-    Log::debugf("Loading \"%s\"", FileLoc);
-    try {
-        g_Disk->LoadDisk(FileLoc);
-        LOG_DEBUG("Disk loaded successfully");
-        return true;
-    } catch (const std::exception& e) {
-        LOG_ERROR("LoadDiskImage failed (\"{}\")", FileLoc);
-        delete g_Disk;
-        g_Disk = nullptr;
-        return false;
-    }
-}
-
 bool CN64System::RunFileImage(const char* FileLoc, uint64_t frameLimit) {
     LOG_DEBUG("RunFileImage with frameLimit");
     Log::infof("RunFileImage: \"%s\" (frameLimit: %llu)", FileLoc ? FileLoc : "(null)", (unsigned long long)frameLimit);
@@ -347,42 +276,6 @@ bool CN64System::RunFileImage(const char* FileLoc, uint64_t frameLimit) {
     }
 
     RunLoadedImage(frameLimit);
-    return true;
-}
-
-bool CN64System::RunDiskImage(const char* FileLoc) {
-    LOG_DEBUG("RunDiskImage: \"{}\"", FileLoc ? FileLoc : "(null)");
-
-    if (!LoadDiskImage(FileLoc, false)) {
-        return false;
-    }
-
-    // A 64DD disk needs an IPL ROM; without one only a warning is logged and the boot fails.
-    if (g_Disk != nullptr) {
-        if (g_DDRom == nullptr || !g_DDRom->IsLoaded()) {
-            LOG_WARNING("No 64DD IPL ROM loaded. N64DD disk requires an IPL ROM.");
-        }
-    }
-
-    RunLoadedImage();
-    return true;
-}
-
-bool CN64System::RunDiskComboImage(const char* FileLoc, const char* FileLocDisk) {
-    Log::debugf("RunDiskComboImage: ROM=\"%s\" Disk=\"%s\"", FileLoc ? FileLoc : "(null)",
-                FileLocDisk ? FileLocDisk : "(null)");
-
-    if (!LoadDiskImage(FileLocDisk, true)) {
-        return false;
-    }
-    if (!LoadFileImage(FileLoc)) {
-        return false;
-    }
-
-    // IPL ROM is loaded as part of the combo - the ROM file serves as both
-    // the game ROM and provides the IPL boot sequence for 64DD
-
-    RunLoadedImage();
     return true;
 }
 

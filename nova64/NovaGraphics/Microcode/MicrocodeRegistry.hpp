@@ -96,35 +96,14 @@ public:
     MicrocodeInfo GetInfo(MicrocodeType type, uint32_t textAddr, uint32_t textSize, uint32_t dataAddr,
                           uint32_t dataSize) const;
 
-    /**
-     * Register a user-provided CRC mapping.
-     * Useful for unknown rom hacks or homebrew.
-     */
-    void RegisterCustomCRC(uint32_t crc, MicrocodeType type, const char* name);
-
-    /**
-     * Force a specific microcode type (game compat override).
-     */
-    void SetForced(MicrocodeType type);
-    void ClearForced();
     bool IsForced() const { return m_forcedType != MicrocodeType::Unknown; }
 
     // --- Cache ---
 
     /**
-     * True if a detection result is cached for this CRC.
-     */
-    bool HasCachedResult(uint32_t crc) const;
-
-    /**
      * Cache a detection result for future lookups.
      */
     void CacheResult(uint32_t crc, const DetectionResult& result) const;
-
-    /**
-     * Clear the detection cache (e.g., on ROM change).
-     */
-    void ClearCache();
 
     // --- Statistics ---
 

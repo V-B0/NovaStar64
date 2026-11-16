@@ -16,7 +16,6 @@
 #pragma once
 
 #include "CompiledFunc.hpp"
-#include "FunctionInfo.hpp"
 #include "../Types.hpp"
 #include "../SysGlobals.hpp"
 #include "../../common/MemoryManagment.hpp"
@@ -80,14 +79,6 @@ public:
     CompiledFuncPtr Lookup(uint32_t vaddr) const noexcept;
 
     /**
-     * @brief Get or create an entry for a virtual address
-     * @param vaddr Virtual address (32-bit)
-     * @return Reference to the function pointer slot
-     * @throws std::bad_alloc if memory allocation fails
-     */
-    CompiledFuncPtr& GetOrCreateEntry(uint32_t vaddr);
-
-    /**
      * @brief Store a compiled function at the specified address
      * @param vaddr Virtual address (32-bit)
      * @param func Pointer to compiled function
@@ -108,11 +99,6 @@ public:
      * @return true if an entry exists (even if nullptr)
      */
     bool Contains(uint32_t vaddr) const noexcept;
-
-    /**
-     * @brief Get the total number of allocated page tables (for statistics)
-     */
-    size_t GetAllocatedPageTables() const noexcept;
 
     /**
      * @brief Get the direct jump table for fast-path access
@@ -136,8 +122,6 @@ private:
     static constexpr uint32_t GetJumpTableIndex(uint32_t vaddr) noexcept {
         return vaddr & 0x3FFFF; // Lower 18 bits
     }
-
-    PageTable& EnsurePageTable(uint32_t dirIndex);
 
     // Direct jump table for fast-path lookups (lower 18 bits)
     std::unique_ptr<CompiledFuncPtr[]> m_JumpTable;

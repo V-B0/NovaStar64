@@ -520,7 +520,6 @@ public:
     void SetScreenSize(float width, float height);
     void SetFrameCount(uint32_t frame);
     void SetResolutionScale(float scaleX, float scaleY);
-    void SetTexturePersp(int persp);
     void SetFBTextureParams(int mono0, int mono1, int fixedAlpha0, int fixedAlpha1);
     void SetScreenScale(float scaleX, float scaleY);
     void SetKeyWidth(float r, float g, float b);
@@ -531,20 +530,11 @@ public:
     void SetTexCvgAlpha(int v);
     void SetTexHiRes(int bits);
 
-    // Built-in shader programs
-    const CompiledShader* GetDepthOnlyShader();
-    const CompiledShader* GetPostProcessShader(uint64_t features);
-    const CompiledShader* GetUIShader();
-
-    // Cache management
-    void ClearCache();
     bool SaveCache(const std::string& path);
     bool LoadCache(const std::string& path);
 
     const ShaderCacheStats& GetStats() const;
     void ResetStats();
-
-    std::string DumpShaderSource(const CombinerKey& key) const;
 
     void OnFrameBegin();
     void OnFrameEnd();

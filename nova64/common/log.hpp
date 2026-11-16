@@ -66,22 +66,10 @@ namespace LoggingConfig {
 void set_min_level(Logging::Level level);
 
 /**
- * @brief Get the current minimum log level
- * @return Current minimum level
- */
-Logging::Level get_min_level();
-
-/**
  * @brief Enable or disable console output
  * @param enable True to enable console output
  */
 void enable_console_output(bool enable);
-
-/**
- * @brief Check if console output is enabled
- * @return True if console output is enabled
- */
-bool is_console_output_enabled();
 
 /**
  * @brief Open a log file for output
@@ -90,17 +78,6 @@ bool is_console_output_enabled();
  * @return True on success
  */
 bool open_log_file(const std::string& filename, bool append = false);
-
-/**
- * @brief Close the log file
- */
-void close_log_file();
-
-/**
- * @brief Get the current log filename
- * @return Path to the log file
- */
-const std::string& get_log_filename();
 
 } // namespace LoggingConfig
 
@@ -118,6 +95,5 @@ void debugf(const char* format, ...);
 void infof(const char* format, ...);
 void warningf(const char* format, ...);
 void errorf(const char* format, ...);
-void criticalf(const char* format, ...);
 
 } // namespace Log

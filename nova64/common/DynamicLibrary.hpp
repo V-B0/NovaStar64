@@ -88,14 +88,6 @@ public:
     }
 
     /**
-     * @brief Gets a symbol or throws an exception if not found
-     * @param symbolName Name of the symbol to retrieve
-     * @return Pointer to the symbol
-     * @throws std::system_error if symbol is not found
-     */
-    [[nodiscard]] Symbol GetSymbolOrThrow(std::string_view symbolName) const;
-
-    /**
      * @brief Gets the platform-specific error message from the last operation
      * @return Error message string
      */
@@ -140,29 +132,6 @@ private:
     Handle m_handle = nullptr;    ///< Platform-specific library handle
     std::filesystem::path m_path; ///< Path to the loaded library
 };
-
-/**
- * @brief Loads a dynamic library with error handling
- * @param libraryPath Path to the dynamic library
- * @param showErrors Whether to log/display errors (default: true)
- * @return Library handle, or nullptr on failure
- */
-[[nodiscard]] DynamicLibrary::Handle DynamicLibraryOpen(const char* libraryPath, bool showErrors = true);
-
-/**
- * @brief Unloads a dynamic library
- * @param libraryHandle Handle to the library to unload
- */
-void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept;
-
-/**
- * @brief Gets a symbol from a dynamic library
- * @param libraryHandle Handle to the library
- * @param symbolName Name of the symbol to retrieve
- * @return Pointer to the symbol, or nullptr if not found
- */
-[[nodiscard]] DynamicLibrary::Symbol DynamicLibraryGetProc(DynamicLibrary::Handle libraryHandle,
-                                                           const char* symbolName) noexcept;
 
 /**
  * @brief Short alias for DynamicLibrary::Handle.

@@ -214,30 +214,7 @@ struct Color4f {
 
 // --- MATRIX CONSTRUCTION UTILITIES ---
 
-// Perspective projection matrix (column-major, clip space [-1,1])
-Mat4x4 PerspectiveProjection(float fovYRadians, float aspect, float nearZ, float farZ);
-
-Mat4x4 OrthographicProjection(float left, float right, float bottom, float top, float nearZ, float farZ);
-
-Mat4x4 LookAt(const Vec3f& eye, const Vec3f& target, const Vec3f& up);
-
-Mat4x4 Translation(float x, float y, float z);
-Mat4x4 Translation(const Vec3f& t);
-
-Mat4x4 Scale(float x, float y, float z);
-Mat4x4 Scale(float uniform);
-Mat4x4 Scale(const Vec3f& s);
-
-Mat4x4 RotationX(float radians);
-Mat4x4 RotationY(float radians);
-Mat4x4 RotationZ(float radians);
-Mat4x4 RotationAxis(const Vec3f& axis, float radians);
-
 // --- N64-SPECIFIC MATRIX UTILITIES ---
-
-// Load N64 matrix from RDRAM (s15.16 fixed-point, 64 bytes)
-// N64 stores matrices in a split format: first 32 bytes = integer parts, next 32 = fractional
-Mat4x4 LoadN64Matrix(const uint8_t* rdram, uint32_t address);
 
 // Convert N64 viewport parameters to OpenGL viewport + depth range
 struct N64Viewport {
@@ -245,14 +222,6 @@ struct N64Viewport {
     float width, height; // half-dimensions
     float nearZ, farZ;   // depth range
 };
-
-N64Viewport LoadN64Viewport(const uint8_t* rdram, uint32_t address);
-
-// Apply N64 viewport to clip-space vertex to get screen-space
-Vec3f ApplyN64Viewport(const Vec4f& clipSpace, const N64Viewport& vp);
-
-// Convert N64 screen coordinates to normalized device coords
-Vec2f N64ScreenToNDC(float screenX, float screenY, float screenW, float screenH);
 
 // --- GEOMETRY UTILITIES ---
 
@@ -314,36 +283,10 @@ struct VMPlane {
 struct Frustum {
     enum Side { Left = 0, Right, Bottom, Top, Near, Far, Count };
     VMPlane planes[Count];
-
-    // Extract frustum planes from view-projection matrix
-    static Frustum FromViewProjection(const Mat4x4& vp);
-
-    // Test against AABB (returns true if potentially visible)
-    bool TestAABB(const AABB& box) const;
-
-    bool TestSphere(const Vec3f& center, float radius) const;
-
-    bool TestPoint(const Vec3f& point) const;
 };
 
 // --- Triangle Utilities ---
 namespace TriangleUtil {
-
-// Compute triangle area (2D, using screen-space x,y)
-float Area2D(const Vec2f& a, const Vec2f& b, const Vec2f& c);
-
-// Compute signed area (positive = CCW, negative = CW)
-float SignedArea2D(const Vec2f& a, const Vec2f& b, const Vec2f& c);
-
-// Barycentric coordinates for a point inside triangle
-Vec3f Barycentric(const Vec2f& p, const Vec2f& a, const Vec2f& b, const Vec2f& c);
-
-bool PointInTriangle(const Vec2f& p, const Vec2f& a, const Vec2f& b, const Vec2f& c);
-
-Vec3f FaceNormal(const Vec3f& a, const Vec3f& b, const Vec3f& c);
-
-// Edge function for rasterization (positive = left side of edge)
-float EdgeFunction(const Vec2f& a, const Vec2f& b, const Vec2f& p);
 
 // Compute triangle gradients for attribute interpolation
 struct TriangleGradients {
@@ -351,16 +294,11 @@ struct TriangleGradients {
     float dAttributedY; // dAttr/dy
 };
 
-TriangleGradients ComputeGradients(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, float attr0, float attr1,
-                                   float attr2);
-
 // Setup edge equations for triangle rasterization
 struct EdgeEquation {
     float a, b, c;  // ax + by + c = 0
     bool isTopLeft; // for fill rule
 };
-
-void SetupEdgeEquations(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, EdgeEquation edges[3]);
 
 } // namespace TriangleUtil
 
@@ -376,21 +314,11 @@ inline float Bilinear(float c00, float c10, float c01, float c11, float u, float
     return Lerp(r0, r1, v);
 }
 
-Color4f BilinearColor(const Color4f& c00, const Color4f& c10, const Color4f& c01, const Color4f& c11, float u, float v);
-
-// Perspective-correct interpolation
-// Given W values (1/w), compute perspective-correct barycentric
-Vec3f PerspectiveCorrectBarycentric(const Vec3f& bary, float w0, float w1, float w2);
-
 // Smooth step (cubic Hermite interpolation)
 inline float SmoothStep(float edge0, float edge1, float x) {
     float t = std::min(std::max((x - edge0) / (edge1 - edge0), 0.0f), 1.0f);
     return t * t * (3.0f - 2.0f * t);
 }
-
-float Hermite(float p0, float p1, float t0, float t1, float t);
-
-float CatmullRom(float p0, float p1, float p2, float p3, float t);
 
 } // namespace Interp
 
@@ -415,10 +343,6 @@ inline float U5_11ToFloat(uint16_t v) { return static_cast<float>(v) / 2048.0f; 
 
 // 1.11 DXT format
 inline float DXT_1_11ToFloat(uint16_t v) { return static_cast<float>(v) / 2048.0f; }
-
-// Convert N64 fixed-point texture coordinate to float
-// shift_s/shift_t from tile descriptor
-float ApplyTexCoordShift(int16_t rawCoord, int shift);
 
 // Quantize float to N64 color precision
 inline uint8_t QuantizeColor8(float f) {

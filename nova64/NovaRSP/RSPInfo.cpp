@@ -53,18 +53,6 @@ void RspRomOpened() {
     s_HleContext = std::make_unique<HLE::CHle>(RSPSystem);
 }
 
-void RspRomClosed() {
-    CRSPSettings::SetRomOpen(false);
-
-    // Destroy HLE context (shuts down audio output, flushes buffers)
-    s_HleContext.reset();
-}
-
-void FreeRSP() {
-    s_HleContext.reset();
-    g_RSPDebugger = nullptr;
-}
-
 uint32_t DoRspCycles(uint32_t cycles) {
     const auto method = CRSPSettings::CPUMethod();
     const uint8_t* dmem = RSPSystem.DMEM();

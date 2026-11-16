@@ -46,7 +46,6 @@ static constexpr int kMaxSIMDWidth = 0;
 enum class SIMDLevel : uint8_t { Scalar = 0, SSE2 = 1, SSE41 = 2, AVX = 3, AVX2 = 4, AVX512 = 5 };
 
 SIMDLevel DetectSIMDLevel();
-const char* SIMDLevelName(SIMDLevel level);
 
 extern SIMDLevel g_SIMDLevel;
 
@@ -203,11 +202,6 @@ Vec4f Round(const Vec4f& v);
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
 Mat4x4 MatTranspose(const Mat4x4& m);
-Mat4x4 MatInverse(const Mat4x4& m);
-float MatDeterminant(const Mat4x4& m);
-Mat4x4 MatAdd(const Mat4x4& a, const Mat4x4& b);
-Mat4x4 MatSub(const Mat4x4& a, const Mat4x4& b);
-Mat4x4 MatScale(const Mat4x4& m, float s);
 
 // --- Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
@@ -396,7 +390,6 @@ Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi);
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
 Mat4x4 MatTranspose(const Mat4x4& m);
-Mat4x4 MatInverse(const Mat4x4& m);
 
 // --- Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
@@ -415,30 +408,11 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b);
 namespace N64SIMD {
 
 // --- Fixed-Point Conversion ---
-// Convert N64 s15.16 fixed-point to float (4 at once)
-Vec4f FixedToFloat_S15_16(const Vec4i& fixed);
-// Convert N64 s10.5 fixed-point to float (4 at once)
-Vec4f FixedToFloat_S10_5(const Vec4i& fixed);
-// Convert N64 s10.2 fixed-point to float (4 at once)
-Vec4f FixedToFloat_S10_2(const Vec4i& fixed);
-// Convert float to N64 s15.16 fixed-point (4 at once)
-Vec4i FloatToFixed_S15_16(const Vec4f& f);
 
 // --- Vertex Processing ---
-// Load and transform N64 vertices from RDRAM (full pipeline)
-// Reads 16-byte N64 vertex format, transforms through MVP, produces clipspace output
-void ProcessVertexBatch(const uint8_t* rdram, uint32_t dramAddr, const Mat4x4& mvp, const Mat4x4& mv, float* outPos,
-                        float* outTC, uint8_t* outColor, int startVtx, int count);
 
 // --- Lighting ---
-// Compute lighting for N64 vertices (ambient + directional * N lights)
-// normals: 3 floats per vertex (x,y,z), lights: flat array of light data
-void ComputeLighting(const float* normals, int vertexCount,
-                     const float* ambientColor, // 3 floats: R,G,B [0..1]
-                     const float* lightDirs,    // numLights * 3 floats
-                     const float* lightColors,  // numLights * 3 floats
-                     int numLights,
-                     float* outColors);         // vertexCount * 4 floats (RGBA)
+// vertexCount * 4 floats (RGBA)
 
 // --- Clipping ---
 // Compute clip flags for 4 vertices at once
@@ -449,36 +423,16 @@ Vec4i ComputeClipFlags(const float* clipSpaceVerts4); // 4 verts * 4 components
 int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount, int planeIndex, int floatsPerVert);
 
 // --- Texture Coordinate Processing ---
-// Apply texture scale, shift, and clamp/mirror/wrap for batch of coords
-void ProcessTexCoords(const int16_t* rawTC, float* outTC, float scaleS, float scaleT, int shiftS, int shiftT,
-                      int count);
 
 // --- Color Format Conversion ---
-// Batch decode RGBA5551 to float RGBA
-void DecodeRGBA5551_Batch(const uint16_t* src, float* dst, int count);
-// Batch decode IA8 to float RGBA
-void DecodeIA8_Batch(const uint8_t* src, float* dst, int count);
-// Batch decode I4 to float RGBA (2 texels per byte)
-void DecodeI4_Batch(const uint8_t* src, float* dst, int count);
-// Batch decode CI4 (4-bit indexed) with TLUT lookup
-void DecodeCI4_Batch(const uint8_t* src, const uint16_t* tlut, float* dst, int count);
-// Batch decode CI8 (8-bit indexed) with TLUT lookup
-void DecodeCI8_Batch(const uint8_t* src, const uint16_t* tlut, float* dst, int count);
-// Batch decode RGBA32 to float RGBA
-void DecodeRGBA32_Batch(const uint32_t* src, float* dst, int count);
-// Batch decode IA16 to float RGBA
-void DecodeIA16_Batch(const uint16_t* src, float* dst, int count);
 
 // --- Depth Buffer ---
-// Convert N64 18-bit depth values to float [0..1]
-void ConvertDepthBatch(const uint16_t* n64Depth, float* outDepth, int count);
 
 // --- DXT Calculation ---
 // Calculate DXT value for LoadBlock command
 uint32_t CalculateDXT(uint32_t width, uint32_t size);
 
 // --- CRC32 (for texture hashing) ---
-uint32_t CRC32_SIMD(const uint8_t* data, size_t length, uint32_t seed = 0);
 
 } // namespace N64SIMD
 

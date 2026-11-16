@@ -144,12 +144,6 @@ public:
     [[nodiscard]] uint8_t* Imem();
 
     /**
-     * @brief Get SRAM interface
-     * @return Reference to SRAM handler
-     */
-    [[nodiscard]] CSram& GetSram();
-
-    /**
      * @brief Get Flash RAM interface
      * @return Reference to Flash RAM handler
      */
@@ -177,14 +171,6 @@ public:
     bool MemoryValue8(uint32_t vAddr, uint8_t& value);
 
     /**
-     * @brief Read 16-bit value from virtual address
-     * @param vAddr Virtual address
-     * @param value Output value
-     * @return true if successful
-     */
-    bool MemoryValue16(uint32_t vAddr, uint16_t& value);
-
-    /**
      * @brief Read 32-bit value from virtual address
      * @param vAddr Virtual address
      * @param value Output value
@@ -201,30 +187,6 @@ public:
     bool MemoryValue64(uint32_t vAddr, uint64_t& value);
 
     // --- Memory Write Operations (Debugger/Tools) ---
-
-    /**
-     * @brief Write 8-bit value to virtual address
-     * @param vAddr Virtual address
-     * @param value Value to write
-     * @return true if successful
-     */
-    bool UpdateMemoryValue8(uint32_t vAddr, uint8_t value);
-
-    /**
-     * @brief Write 16-bit value to virtual address
-     * @param vAddr Virtual address
-     * @param value Value to write
-     * @return true if successful
-     */
-    bool UpdateMemoryValue16(uint32_t vAddr, uint16_t value);
-
-    /**
-     * @brief Write 32-bit value to virtual address
-     * @param vAddr Virtual address
-     * @param value Value to write
-     * @return true if successful
-     */
-    bool UpdateMemoryValue32(uint32_t vAddr, uint32_t value);
 
     // --- CPU Load Operations (64-bit virtual address) ---
 
@@ -248,33 +210,9 @@ public:
 
     // --- Exception Handling ---
 
-    /**
-     * @brief Memory exception filter for SEH/signal handling
-     * @param exptCode Exception code
-     * @param exceptionPointer Platform-specific exception info
-     * @return Filter result code
-     */
-    int32_t MemoryFilter(uint32_t exptCode, void* exceptionPointer);
-
     // --- Memory Map Management ---
 
-    /**
-     * @brief Clear memory write map for recompiler invalidation
-     * @param vAddr Starting virtual address
-     * @param length Length in bytes
-     */
-    void ClearMemoryWriteMap(uint32_t vAddr, uint32_t length);
-
     // --- TLB Notification Functions ---
-
-    /**
-     * @brief Notify that a TLB entry has been mapped
-     * @param vAddr Virtual address
-     * @param len Length of mapping
-     * @param pAddr Physical address
-     * @param readOnly If true, mapping is read-only
-     */
-    void TLB_Mapped(uint32_t vAddr, uint32_t len, uint32_t pAddr, bool readOnly);
 
     /**
      * @brief Notify that a TLB entry has been unmapped
@@ -286,13 +224,6 @@ public:
     // --- Address Translation ---
 
     /**
-     * @brief Check if virtual address is valid
-     * @param vAddr Virtual address
-     * @return true if valid
-     */
-    [[nodiscard]] bool ValidVaddr(uint32_t vAddr) const;
-
-    /**
      * @brief Translate virtual address to physical address
      * @param vAddr Virtual address
      * @param pAddr Output physical address
@@ -301,13 +232,6 @@ public:
     [[nodiscard]] bool VAddrToPAddr(uint32_t vAddr, uint32_t& pAddr) const;
 
     // --- Debug Support ---
-
-    /**
-     * @brief Get label name for address (for disassembly)
-     * @param address Address to look up
-     * @return Label name string
-     */
-    [[nodiscard]] const char* LabelName(uint32_t address) const;
 
     // --- Memory Handler Access ---
 
@@ -367,12 +291,7 @@ private:
 
     // --- Internal Callbacks ---
 
-    static void RdramChanged(MipsMemoryVM* self);
-    static void ChangeMiIntrMask();
-
     // --- Breakpoint Support ---
-
-    bool MemoryBreakpoint();
 
     // --- 32-bit Virtual Address Load Operations ---
 

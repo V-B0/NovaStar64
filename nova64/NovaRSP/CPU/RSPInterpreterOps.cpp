@@ -13,7 +13,6 @@
 #include "RSPRegisters.hpp"
 #include "RSPRegisterHandler.hpp"
 #include "RspClamp.hpp"
-#include "RspLog.hpp"
 #include "RspSystem.hpp"
 #include "../RSPDebugger.hpp"
 #include "../Settings/RspSettings.hpp"

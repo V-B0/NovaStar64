@@ -186,9 +186,9 @@ public:
 
     // Core TLB operations
     void reset(bool invalidate_tlb = true);
-    void probe();                                  // TLB probe instruction (TLBP)
-    void read_entry();                             // Read TLB entry (TLBR)
-    void write_entry(uint32_t index, bool random); // Write TLB entry (TLBWI/TLBWR)
+    void probe(); // TLB probe instruction (TLBP)
+                  // Read TLB entry (TLBR)
+                  // Write TLB entry (TLBWI/TLBWR)
 
     // Address translation
     TlbTranslationResult translate_address(uint64_t virtual_address, bool is_write = false, bool is_execute = false);
@@ -201,10 +201,6 @@ public:
     // Address conversion
     std::optional<uint32_t> virtual_to_physical(uint64_t virtual_address, bool& memory_unused);
     std::optional<uint32_t> physical_to_virtual(uint32_t physical_address, uint32_t& tlb_index);
-
-    // System state changes
-    void on_cop0_status_changed();
-    void on_privilege_mode_changed(PrivilegeMode new_mode);
 
     // Statistics and debugging
     struct TlbStatistics {
@@ -342,12 +338,10 @@ public:
 
     enum class TlbLookupResult { NoMatch, MatchInvalid, MatchValid };
 
-    bool AddressDefined(uint64_t VAddr, bool& Dirty);
     TlbLookupResult AddressLookup(uint64_t VAddr, bool& Dirty);
     TLB_ENTRY& TlbEntry(int32_t Entry);
 
     bool VAddrToPAddr(uint64_t VAddr, uint32_t& PAddr, bool& MemoryUnused);
-    bool PAddrToVAddr(uint32_t PAddr, uint32_t& VAddr, uint32_t& Index);
 
     // Debug methods
     void RecordDifference(class CLog& LogFile, const CTLB& rTLB);

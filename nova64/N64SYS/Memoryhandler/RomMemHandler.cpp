@@ -133,15 +133,6 @@ bool RomMemoryHandler::ReadBytes(uint32_t address, void* buffer, size_t size) {
     return false;
 }
 
-uint16_t RomMemoryHandler::read_rom_16(uint32_t address) const {
-    uint32_t offset = address & 0x0FFFFFFF;
-    if (offset + 2 <= m_rom_size) {
-        // ROM data is in LE word order; use ^2 for halfword access
-        return *reinterpret_cast<const uint16_t*>(&m_rom_data[offset ^ 2]);
-    }
-    return 0;
-}
-
 uint8_t RomMemoryHandler::read_rom_8(uint32_t address) const {
     uint32_t offset = address & 0x0FFFFFFF;
     if (offset < m_rom_size) {
@@ -151,54 +142,7 @@ uint8_t RomMemoryHandler::read_rom_8(uint32_t address) const {
     return 0;
 }
 
-bool RomMemoryHandler::apply_patch(uint32_t address, uint32_t value, uint32_t decay_ms) {
-    if (!is_rom_address(address)) return false;
-
-    // Add or update patch
-    auto it = std::find_if(m_active_patches.begin(), m_active_patches.end(),
-                           [address](const PatchEntry& p) { return p.address == address; });
-
-    if (it != m_active_patches.end()) {
-        it->value = value;
-        // Update expiration if needed (using current time + decay_ms)
-        // Ignoring decay logic for simple P64 emulation unless detailed.
-    } else {
-        m_active_patches.push_back({address, value, 0});
-        // Sort for faster lookup if used in read
-        std::sort(m_active_patches.begin(), m_active_patches.end());
-    }
-
-    m_stats.patch_applications++;
-    return true;
-}
-
-bool RomMemoryHandler::remove_patch(uint32_t address) {
-    auto it = std::remove_if(m_active_patches.begin(), m_active_patches.end(),
-                             [address](const PatchEntry& p) { return p.address == address; });
-
-    if (it != m_active_patches.end()) {
-        m_active_patches.erase(it, m_active_patches.end());
-        return true;
-    }
-    return false;
-}
-
 void RomMemoryHandler::clear_all_patches() { m_active_patches.clear(); }
-
-std::vector<RomMemoryHandler::Patch> RomMemoryHandler::get_active_patches() const {
-    std::vector<Patch> result;
-    for (const auto& p : m_active_patches) {
-        result.push_back({p.address, 0, p.value, p.expiration_time, true});
-    }
-    return result;
-}
-
-size_t RomMemoryHandler::get_active_patch_count() const { return m_active_patches.size(); }
-
-void RomMemoryHandler::force_decay_all() {
-    clear_all_patches();
-    rom_write_decayed();
-}
 
 void RomMemoryHandler::reset() {
     rom_write_decayed();
@@ -233,25 +177,6 @@ void RomMemoryHandler::load_state(std::istream& is) {
     }
 }
 
-std::string RomMemoryHandler::get_rom_info() const {
-    std::stringstream ss;
-    ss << "ROM Loaded: " << (m_rom_size / 1024 / 1024) << "MB"
-       << "\nPatches: " << m_active_patches.size();
-    return ss.str();
-}
-
-std::string RomMemoryHandler::get_memory_map() const { return "0x10000000 - 0x1FBFFFFF: Cartridge ROM"; }
-std::string RomMemoryHandler::get_patch_info() const {
-    std::stringstream ss;
-    ss << "Active Patches: " << m_active_patches.size();
-    return ss.str();
-}
-
-void RomMemoryHandler::set_write_callback(WriteCallback callback) { m_write_callback = callback; }
-
 void RomMemoryHandler::log_rom_access(uint32_t address, uint32_t value, bool is_write) const {
     Log::debugf("ROM 0x%08X: %08X (%s)", address, value, is_write ? "W" : "R");
-}
-void RomMemoryHandler::log_patch_event(uint32_t address, uint32_t value, bool applied) const {
-    Log::infof("Patch %s at 0x%08X: %08X", applied ? "Applied" : "Removed", address, value);
 }
