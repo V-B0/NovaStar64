@@ -549,6 +549,23 @@ between NTSC and PAL before hardcoding it.
 
 ---
 
+## Proving a change did not change the program
+
+Formatting and comment changes touch hundreds of files, and "I only changed comments" is easy to get wrong.
+Two scripts in `nova64/scripts/verify/` check it instead of trusting it:
+
+- `asm-fingerprint.py` compiles every file to assembly before and after and requires the same output, apart
+  from the `__LINE__` numbers that logging macros embed. Run it for every CPU the code is built for. See its
+  header for the three commands.
+- `code-equivalence.py --base <revision>` compares the code of every tracked C++ file, comments and layout
+  removed, with the same file at a revision. It covers files this machine does not compile, and it also fails
+  if the mentions of Project64, Mupen64Plus and the other projects credited in the code, or of a licence or
+  copyright, go down in any file.
+
+When behaviour is meant to change, use the RSP selftest and a frame comparison instead (see
+[Unattended game runs](#unattended-game-runs)). Run the game twice before trusting a difference: with a dummy
+audio driver the frame numbers a screenshot lands on can shift by one between two runs of the same binary.
+
 ## The launcher's art
 
 The launcher is drawn in a pixel-art style from five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a

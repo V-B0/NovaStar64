@@ -88,7 +88,7 @@ Correctness and robustness
 - [ ] Issue templates (bug report with log and system info, game compatibility report) and a
       pull-request template
 - [ ] `THIRD_PARTY_NOTICES.md`: SDL2, Dear ImGui, asmjit, Lua, nlohmann/json, stb, volk, glslang,
-      rcheevos, MoltenVK, Berkeley SoftFloat, Roboto, plus the Project64 and Mupen64Plus-derived
+      rcheevos, MoltenVK, Berkeley SoftFloat, plus the Project64 and Mupen64Plus-derived
       code; the same list reachable from an About dialog in the launcher
 - [ ] `docs/COMPATIBILITY.md` generated from the game database
 - [ ] `docs/` links checked, every claim in the README checked against the code
@@ -99,15 +99,15 @@ Correctness and robustness
 ## 4. Launcher and in-game UI
 
 - [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
-- [ ] Pixel-art look, the same language as FluxCore: five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
+- [x] Pixel-art look, the same language as FluxCore: five colours (`040404 6A2B09 C5620B FCB861 6F7781`), a
       5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed
-- [ ] The art drawn in Aseprite: `.aseprite` files in `assets/ui/` are the sources, exported PNG sheets are
+- [x] The art drawn in Aseprite: `.aseprite` files in `assets/ui/` are the sources, exported PNG sheets are
       what the build embeds (the build never needs Aseprite), and a script re-exports them
-- [ ] Icons: home, games, settings, scripts, memory, achievements, simulator, play, stop, rewind, add, edit,
+- [x] Icons: home, games, settings, scripts, memory, achievements, simulator, play, stop, rewind, add, edit,
       remove, folder, cover picture, search, check, warning, info, chevrons and the window controls
-- [ ] Window controls drawn as proper minimise/maximise/close glyphs instead of `_ [] x`
-- [ ] Sidebar with an icon per page, a clear selected state and the version at the bottom
-- [ ] Button hierarchy: one primary action per screen, quiet secondary buttons, a distinct
+- [x] Window controls drawn as proper minimise/maximise/close glyphs instead of `_ [] x`
+- [x] Sidebar with an icon per page, a clear selected state and the version at the bottom
+- [x] Button hierarchy: one primary action per screen, quiet secondary buttons, a distinct
       destructive style, with hover, pressed and disabled states
 - [ ] Settings as aligned forms: labels on the left, grouped in cards, helper text in one style
 - [ ] Game library: cover cards with generated artwork when a game has no cover, a play overlay
@@ -117,7 +117,9 @@ Correctness and robustness
       shader compile failure, unreadable ROM
 - [ ] Notifications for saves, rewinds and errors; keyboard and controller focus clearly visible
 - [ ] Pause menu and rewind strip visual pass; save-state slots with thumbnails
-- [ ] Colour palette reviewed for contrast (WCAG AA) and a light/dark choice
+- [ ] Check the pixel interface on a Retina display and at Windows scale settings (so far it has only been
+      rendered at 1x); add an interface-scale setting (art pixels of 2, 3 or 4 display pixels)
+- [ ] Text contrast of the muted orange on dark brown reviewed, and a high-contrast option
 - [ ] Font-size setting and a high-contrast option
 - [ ] First-run welcome: pick a game folder, test the controller
 - [ ] About dialog: version, build, licences, links
