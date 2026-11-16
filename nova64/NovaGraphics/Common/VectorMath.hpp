@@ -1,10 +1,8 @@
 /**
  * @file VectorMath.hpp
- * @brief High-Level Vector/Matrix Math Library.
+ * @brief Vector, matrix and geometry helpers for N64 display list processing, built on SIMDMath.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - High-Level Vector/Matrix Math Library
-// Builds on SIMDMath to provide N64-specific geometry operations
 
 #pragma once
 
@@ -20,7 +18,7 @@ using SIMD::Mat4x4;
 using SIMD::Vec4f;
 using SIMD::Vec4i;
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// --- Constants ---
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kTwoPi = 6.28318530717958647692f;
 static constexpr float kHalfPi = 1.57079632679489661923f;
@@ -31,7 +29,7 @@ static constexpr float kEpsilonSq = 1e-12f;
 static constexpr float kSqrt2 = 1.41421356237309504880f;
 static constexpr float kInvSqrt2 = 0.70710678118654752440f;
 
-// ─── 2D Vector ───────────────────────────────────────────────────────────────
+// --- 2D Vector ---
 struct Vec2f {
     float x, y;
 
@@ -81,7 +79,7 @@ struct Vec2f {
     static Vec2f Max(const Vec2f& a, const Vec2f& b) { return {std::max(a.x, b.x), std::max(a.y, b.y)}; }
 };
 
-// ─── 3D Vector ───────────────────────────────────────────────────────────────
+// --- 3D Vector ---
 struct Vec3f {
     float x, y, z;
 
@@ -144,7 +142,7 @@ struct Vec3f {
     static Vec3f Reflect(const Vec3f& dir, const Vec3f& normal) { return dir - normal * (2.0f * dir.Dot(normal)); }
 };
 
-// ─── Color (RGBA float) ─────────────────────────────────────────────────────
+// --- Color (RGBA float) ---
 struct Color4f {
     float r, g, b, a;
 
@@ -214,37 +212,28 @@ struct Color4f {
     static Color4f Blue() { return {0, 0, 1, 1}; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MATRIX CONSTRUCTION UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- MATRIX CONSTRUCTION UTILITIES ---
 
 // Perspective projection matrix (column-major, clip space [-1,1])
 Mat4x4 PerspectiveProjection(float fovYRadians, float aspect, float nearZ, float farZ);
 
-// Orthographic projection
 Mat4x4 OrthographicProjection(float left, float right, float bottom, float top, float nearZ, float farZ);
 
-// Look-at view matrix
 Mat4x4 LookAt(const Vec3f& eye, const Vec3f& target, const Vec3f& up);
 
-// Translation matrix
 Mat4x4 Translation(float x, float y, float z);
 Mat4x4 Translation(const Vec3f& t);
 
-// Scale matrix
 Mat4x4 Scale(float x, float y, float z);
 Mat4x4 Scale(float uniform);
 Mat4x4 Scale(const Vec3f& s);
 
-// Rotation matrices
 Mat4x4 RotationX(float radians);
 Mat4x4 RotationY(float radians);
 Mat4x4 RotationZ(float radians);
 Mat4x4 RotationAxis(const Vec3f& axis, float radians);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// N64-SPECIFIC MATRIX UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64-SPECIFIC MATRIX UTILITIES ---
 
 // Load N64 matrix from RDRAM (s15.16 fixed-point, 64 bytes)
 // N64 stores matrices in a split format: first 32 bytes = integer parts, next 32 = fractional
@@ -265,11 +254,9 @@ Vec3f ApplyN64Viewport(const Vec4f& clipSpace, const N64Viewport& vp);
 // Convert N64 screen coordinates to normalized device coords
 Vec2f N64ScreenToNDC(float screenX, float screenY, float screenW, float screenH);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GEOMETRY UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GEOMETRY UTILITIES ---
 
-// ── Bounding Box ─────────────────────────────────────────────────────────────
+// --- Bounding Box ---
 struct AABB {
     Vec3f min, max;
 
@@ -306,7 +293,7 @@ struct AABB {
     bool IsValid() const { return min.x <= max.x && min.y <= max.y && min.z <= max.z; }
 };
 
-// ── Frustum (6 planes) ──────────────────────────────────────────────────────
+// --- Frustum (6 planes) ---
 struct VMPlane {
     Vec3f normal;
     float distance;
@@ -334,14 +321,12 @@ struct Frustum {
     // Test against AABB (returns true if potentially visible)
     bool TestAABB(const AABB& box) const;
 
-    // Test against sphere
     bool TestSphere(const Vec3f& center, float radius) const;
 
-    // Test against point
     bool TestPoint(const Vec3f& point) const;
 };
 
-// ── Triangle Utilities ───────────────────────────────────────────────────────
+// --- Triangle Utilities ---
 namespace TriangleUtil {
 
 // Compute triangle area (2D, using screen-space x,y)
@@ -353,10 +338,8 @@ float SignedArea2D(const Vec2f& a, const Vec2f& b, const Vec2f& c);
 // Barycentric coordinates for a point inside triangle
 Vec3f Barycentric(const Vec2f& p, const Vec2f& a, const Vec2f& b, const Vec2f& c);
 
-// Check if point is inside triangle (2D)
 bool PointInTriangle(const Vec2f& p, const Vec2f& a, const Vec2f& b, const Vec2f& c);
 
-// Compute face normal from 3D triangle vertices
 Vec3f FaceNormal(const Vec3f& a, const Vec3f& b, const Vec3f& c);
 
 // Edge function for rasterization (positive = left side of edge)
@@ -381,10 +364,9 @@ void SetupEdgeEquations(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, EdgeE
 
 } // namespace TriangleUtil
 
-// ─── Interpolation Utilities ─────────────────────────────────────────────────
+// --- Interpolation Utilities ---
 namespace Interp {
 
-// Linear interpolation
 inline float Lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 // Bilinear interpolation (for texture filtering)
@@ -394,7 +376,6 @@ inline float Bilinear(float c00, float c10, float c01, float c11, float u, float
     return Lerp(r0, r1, v);
 }
 
-// Bilinear for colors
 Color4f BilinearColor(const Color4f& c00, const Color4f& c10, const Color4f& c01, const Color4f& c11, float u, float v);
 
 // Perspective-correct interpolation
@@ -407,15 +388,13 @@ inline float SmoothStep(float edge0, float edge1, float x) {
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Hermite interpolation
 float Hermite(float p0, float p1, float t0, float t1, float t);
 
-// Catmull-Rom spline interpolation
 float CatmullRom(float p0, float p1, float p2, float p3, float t);
 
 } // namespace Interp
 
-// ─── Fixed-Point Utilities ───────────────────────────────────────────────────
+// --- Fixed-Point Utilities ---
 namespace FixedPoint {
 
 // N64 uses various fixed-point formats

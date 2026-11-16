@@ -3,11 +3,11 @@
  * @brief GLSL sources for the three-pass compute ray tracer (MoltenVK-compatible).
  *
  * MoltenVK exposes no hardware RT, so we traverse a CPU-built compact BVH
- * (RTBVH.hpp) in compute. Geometry is EYE-SPACE (camera at origin); primary rays
+ * (RTBVH.hpp) in compute. Geometry is in eye space (camera at origin); primary rays
  * are unprojected through the inverse projection matrix.
  *
- * Rendered in THREE compute passes (see VKComputeRaytracer::RenderHybrid).
- * Passes 1–2 run at HALF RESOLUTION (¼ of the rays — the perf win); pass 3
+ * Rendered in three compute passes (see VKComputeRaytracer::RenderHybrid).
+ * Passes 1–2 run at half resolution (¼ of the rays — the perf win); pass 3
  * composites at full resolution so the game's raster image stays sharp:
  *
  *   Pass 1 — TRACE (kRTTraceSrc, half res): primary ray + soft-shadow rays
@@ -16,13 +16,13 @@
  *   pixel's temporal history builds. Writes:
  *     • lit  (rgba8)   — rgb = metal reflection color × mix (additive extras),
  *                        a = light indices (sun | point << 4; 15 = none)
- *     • shd  (rgba8)   — rgb = interpolated BAKED VERTEX SHADE at the hit
+ *     • shd  (rgba8)   — rgb = interpolated baked vertex shade at the hit
  *                        (the N64's own lighting result), a = lit flag.
- *                        Used by the composite to DIVIDE the baked lighting
+ *                        Used by the composite to divide the baked lighting
  *                        back out of the raster (de-lighting).
  *     • occ  (rgba8)   — r = shadow visibility, g = raw AO, b = reflection mix,
  *                        a = hit mask
- *     • gbuf (rgba16f) — rgb = SMOOTH eye-space shading normal (interpolated
+ *     • gbuf (rgba16f) — rgb = smooth eye-space shading normal (interpolated
  *                        vertex normals when lit, geometric fallback otherwise),
  *                        a = normalized depth.
  *
@@ -34,7 +34,7 @@
  *
  *   Pass 3 — COMPOSITE (kRTCompositeSrc, full res): DE-LIGHT + RELIGHT.
  *   This is the key to matching sm64rt/RT64: those mods patch the game to
- *   output raw albedo and REPLACE all lighting. We can't patch the ROM, but we
+ *   output raw albedo and replace all lighting. We can't patch the ROM, but we
  *   know the baked shade at every pixel (shd), so:
  *     albedo = raster / max(shade, ε)                  — remove N64 lighting
  *     final  = albedo × (ambient·AO + (1−ambient)·sun·NdotL·shadow)

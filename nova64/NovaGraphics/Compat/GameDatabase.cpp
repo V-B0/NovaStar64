@@ -1,11 +1,8 @@
 /**
  * @file GameDatabase.cpp
- * @brief Game Compatibility Database.
+ * @brief Built-in profiles for over 100 N64 titles with per-game rendering overrides, and the
+ *        profile lookup and custom-profile file I/O.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Game Compatibility Database Implementation
-// Built-in profiles for 200+ N64 titles with per-game rendering overrides.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include "GameDatabase.hpp"
 #include "../Common/Logger.hpp"
@@ -109,9 +106,7 @@ GameDatabase::DatabaseStats GameDatabase::GetStats() const {
     return stats;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Custom Profile I/O
-// ═══════════════════════════════════════════════════════════════
+// --- Custom Profile I/O ---
 
 bool GameDatabase::LoadCustomProfiles(const std::string& path) {
     std::ifstream file(path);
@@ -122,7 +117,6 @@ bool GameDatabase::LoadCustomProfiles(const std::string& path) {
     bool inProfile = false;
 
     while (std::getline(file, line)) {
-        // Trim
         size_t start = line.find_first_not_of(" \t");
         if (start == std::string::npos) continue;
         line = line.substr(start);
@@ -151,7 +145,6 @@ bool GameDatabase::LoadCustomProfiles(const std::string& path) {
         std::string key = line.substr(0, eq);
         std::string val = line.substr(eq + 1);
 
-        // Trim key/value
         key.erase(key.find_last_not_of(" \t") + 1);
         val.erase(0, val.find_first_not_of(" \t"));
 
@@ -237,9 +230,7 @@ bool GameDatabase::SaveCustomProfiles(const std::string& path) const {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Built-in Database
-// ═══════════════════════════════════════════════════════════════
+// --- Built-in Database ---
 
 // Macro for compact profile definition
 #define GAME(id, title, rat, flg) {title, id, 0, 0, 0, CompatRating::rat, "", flg}
@@ -257,9 +248,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
     using namespace VideoFlags;
 
     m_profiles = {
-        // ═══════════════════════════════════════════════
-        //  Nintendo First-Party
-        // ═══════════════════════════════════════════════
+        // --- Nintendo First-Party ---
         GAME("NZLE", "The Legend of Zelda: Ocarina of Time (U)", Perfect, None),
         GAME("NZLP", "The Legend of Zelda: Ocarina of Time (E)", Perfect, None),
         GAME("NZLJ", "The Legend of Zelda: Ocarina of Time (J)", Perfect, None),
@@ -293,9 +282,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NPFE", "Pilotwings 64 (U)", Perfect, None),
         GAME("NBCE", "Blast Corps (U)", Perfect, None),
 
-        // ═══════════════════════════════════════════════
-        //  Rare
-        // ═══════════════════════════════════════════════
+        // --- Rare ---
         GAME("NBKE", "Banjo-Kazooie (U)", Perfect, None),
         GAME("NBTE", "Banjo-Tooie (U)", Perfect, CFBReadWrite),
         GAME("NGEE", "GoldenEye 007 (U)", Perfect, None),
@@ -303,9 +290,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NDKE", "Donkey Kong 64 (U)", Playable, CFBReadWrite),
         GAME("NFUE", "Conker's Bad Fur Day (U)", Playable, CFBReadWrite | AccurateBlending),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — Action/Adventure
-        // ═══════════════════════════════════════════════
+        // --- Third Party — Action/Adventure ---
         GAME("NDOE", "Doom 64 (U)", Perfect, None),
         GAME("NQKE", "Quake 64 (U)", Perfect, None),
         GAME("NQ2E", "Quake II (U)", Playable, None),
@@ -332,9 +317,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NSDE", "Shadow Man (U)", Playable, AccurateBlending),
         GAME("NAIE", "Rayman 2: The Great Escape (U)", Perfect, None),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — Racing
-        // ═══════════════════════════════════════════════
+        // --- Third Party — Racing ---
         GAME("NCRE", "Cruis'n USA (U)", Playable, None),
         GAME("NC2E", "Cruis'n World (U)", Playable, None),
         GAME("NC3E", "Cruis'n Exotica (U)", Playable, None),
@@ -350,9 +333,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NXGE", "Extreme-G (U)", Perfect, None),
         GAME("NX2E", "Extreme-G XG2 (U)", Perfect, None),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — Sports
-        // ═══════════════════════════════════════════════
+        // --- Third Party — Sports ---
         GAME("NWXE", "WWF WrestleMania 2000 (U)", Playable, None),
         GAME("NW2E", "WWF No Mercy (U)", Playable, None),
         GAME("NTNE", "Tony Hawk's Pro Skater (U)", Perfect, None),
@@ -362,10 +343,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NFIE", "FIFA 99 (U)", Playable, None),
         GAME("NICE", "International Superstar Soccer 64 (U)", Playable, None),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — Platformer
-        // ═══════════════════════════════════════════════
-        // Third Party — Platformer (duplicates removed; use Rare section for primary entries)
+        // --- Third Party — Platformer ---
         GAME("NGNE", "Gex 64 (U)", Playable, None),
         GAME("NJDE", "Earthworm Jim 3D (U)", Playable, None),
         GAME("NMXE", "Mystical Ninja Starring Goemon (U)", Perfect, None),
@@ -374,16 +352,12 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NSLE", "Spider-Man (U)", Playable, None),
         GAME("NTLE", "Tonic Trouble (U)", Playable, None),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — RPG
-        // ═══════════════════════════════════════════════
+        // --- Third Party — RPG ---
         GAME("CLBE", "Ogre Battle 64 (U)", Perfect, None),
         GAME("CZLE", "Quest 64 (U)", Perfect, None),
         GAME("NHAE", "Harvest Moon 64 (U)", Perfect, None),
 
-        // ═══════════════════════════════════════════════
-        //  Third Party — Puzzle/Party/Other
-        // ═══════════════════════════════════════════════
+        // --- Third Party — Puzzle/Party/Other ---
         GAME("NTPE", "Tetrisphere (U)", Perfect, None),
         GAME("NPUE", "Puyo Puyo Sun 64 (J)", Perfect, None),
         GAME("NDRE", "Dr. Mario 64 (U)", Perfect, None),
@@ -394,20 +368,16 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NCUE", "Custom Robo (J)", Playable, None),
         GAME("NCWE", "Custom Robo V2 (J)", Playable, None),
 
-        // ═══════════════════════════════════════════════
-        //  Factor 5 (Advanced microcode)
-        // ═══════════════════════════════════════════════
-        // Factor 5 (Advanced microcode) — uses primary NRSE entry above
+        // --- Factor 5 (Advanced microcode) ---
+        // Uses the primary NRSE entry above.
         GAME("NISE", "Indiana Jones and the Infernal Machine (U)", Playable, AccurateBlending),
 
-        // ═══════════════════════════════════════════════
-        //  Games with Special Microcode
-        // ═══════════════════════════════════════════════
-        // Games with Special Microcode — uses primary NWRE entry above
+        // --- Games with Special Microcode ---
+        // Uses the primary NWRE entry above.
         GAME("NDPE", "Dinosaur Planet (Prototype)", InGame, CFBReadWrite | AccurateBlending),
     };
 
-    // Apply special hacks to specific entries
+    // Per-game hack flags.
     for (auto& p : m_profiles) {
         // Zelda games: special handling
         if (p.gameId == "NZLE" || p.gameId == "NZLP" || p.gameId == "NZLJ" || p.gameId == "NZSE") {

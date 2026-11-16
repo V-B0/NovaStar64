@@ -1,11 +1,7 @@
 /**
  * @file PluginConfig.hpp
- * @brief Plugin Configuration.
+ * @brief User-facing settings of the video plugin and their INI serialization.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Plugin Configuration
-// All user-facing settings for the video plugin with serialization.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 
@@ -61,10 +57,10 @@ enum class PostFilter : uint8_t {
     Sharpen,
 };
 
-//  Rendering mode (MLE pivot)
+// Rendering mode
 //
 //  HLE  — Graphics microcode runs in NovaGraphics/Microcode handlers.
-//         Display lists are intercepted at GBI level. Default for now.
+//         Display lists are intercepted at GBI level. This is the default.
 //  LLE  — RSP recompiler executes the actual graphics microcode and emits
 //         RDP commands consumed by RDPProcessor::ProcessCommandBuffer.
 //         HLE handlers remain as shadow taps for widescreen / texture-pack /
@@ -76,12 +72,10 @@ enum class RenderingMode : uint8_t {
     Auto = 2,
 };
 
-// ══════════════════════════════════════════════════════════════
-//  PluginConfig
-// ══════════════════════════════════════════════════════════════
+// --- PluginConfig ---
 
 struct PluginConfig {
-    // ── Resolution ────────────────────────────────────────────
+    // --- Resolution ---
     int windowWidth = 1280;
     int windowHeight = 960;
     int internalResScale = 4;  // 1 = native, 2 = 2x, 4 = 4x, etc.
@@ -90,34 +84,34 @@ struct PluginConfig {
     bool vsync = true;
     int targetFPS = 0;         // 0 = VI rate (60/50)
 
-    // ── Rendering backend ─────────────────────────────────────
+    // --- Rendering backend ---
 #ifdef __APPLE__
     int backendType = 1; // macOS: Vulkan via MoltenVK (GL caps at 4.1; renderer needs 4.6)
 #else
     int backendType = 0; // 0=GL, 1=VK, 2=D3D11
 #endif
 
-    // ── Anti-aliasing ─────────────────────────────────────────
+    // --- Anti-aliasing ---
     AAMode antiAliasing = AAMode::None;
 
-    // ── Texture filtering ─────────────────────────────────────
+    // --- Texture filtering ---
     TextureFilterMode texFilter = TextureFilterMode::Bilinear;
 
-    // ── Mipmapping ────────────────────────────────────────────
+    // --- Mipmapping ---
     bool enableMipmaps = true;
     float lodBias = 0.0f;
 
-    // ── HiRes textures ────────────────────────────────────────
+    // --- HiRes textures ---
     bool hiResTexEnabled = true; // use texture packs found in hiResTexPath/<game name>/
     HiResFormat hiResFormat = HiResFormat::None;
     std::string hiResTexPath = "hires_texture";
 
-    // ── Texture cache ─────────────────────────────────────────
+    // --- Texture cache ---
     int textureCacheSizeMB = 128;
     bool textureDump = false; // write every texture a game uses to textureDumpPath/<game name>/
     std::string textureDumpPath = "texture_dump";
 
-    // ── Frame buffer emulation ────────────────────────────────
+    // --- Frame buffer emulation ---
     bool fbEmulation = true;
     bool fbReadAccess = true;  // Copy from GPU → RDRAM
     bool fbWriteAccess = true; // Copy from RDRAM → GPU
@@ -131,66 +125,64 @@ struct PluginConfig {
     // on continuous CPU reads of the framebuffer (rare).
     int fbReadbackInterval = 60;
 
-    // ── Depth buffer ──────────────────────────────────────────
+    // --- Depth buffer ---
     bool depthCompare = true;
     bool n64DepthCompare = false; // Software N64-accurate depth compare
 
-    // ── Emulation level (MLE pivot) ──────────────────────────
+    // --- Emulation level ---
     RenderingMode renderingMode = RenderingMode::HLE; // the launcher's "recommended" choice
 
-    // ── Compute ray tracing (MoltenVK hybrid shadows/lighting/reflections) ──
+    // --- Compute ray tracing (MoltenVK hybrid shadows/lighting/reflections) ---
     bool rayTracing = false;
 
-    // ── Aspect ratio ──────────────────────────────────────────
+    // --- Aspect ratio ---
     AspectRatio aspectRatio = AspectRatio::Native4_3;
     float stretchFactor = 1.0f;
 
-    // ── Post-processing ───────────────────────────────────────
+    // --- Post-processing ---
     PostFilter postFilter = PostFilter::None;
     float gamma = 1.0f;
     float bloomIntensity = 0.5f;
     float sharpenStrength = 0.3f;
 
-    // ── Color dithering ───────────────────────────────────────
+    // --- Color dithering ---
     bool ditheringEnabled = true;
     int ditheringPattern = 0; // 0=N64, 1=Bayer, 2=noise
 
-    // ── Fog ───────────────────────────────────────────────────
+    // --- Fog ---
     bool fogEnabled = true;
     int fogMode = 0;        // 0=N64, 1=smooth, 2=enhanced
     float fogAdjust = 1.0f; // Fog multiplier adjustment (per-game hack)
 
-    // ── Game-specific rendering overrides ───────────────────────
+    // --- Game-specific rendering overrides ---
     bool accurateBlending = false;    // Use more precise blender (slower)
     bool forceNoAlphaTest = false;    // Disable alpha test entirely
     bool paperMarioAlphaHack = false; // Star spirits alpha test fixup
     int32_t depthBiasHack = 0;        // Polygon offset for depth fighting (DK Racing)
-    // ── Performance ───────────────────────────────────────────
+    // --- Performance ---
     bool multiThreading = true;
     bool asyncTextureLoading = true;
     int threadCount = 0; // 0 = auto
     bool batchDrawCalls = true;
     bool skipUnchangedFrames = false;
 
-    // ── Overlay / Debug ───────────────────────────────────────
+    // --- Overlay / Debug ---
     bool showFPS = false;
     bool showDebugInfo = false;
     bool showVRAM = false;
     bool wireframe = false;
     int debugOverlayPanels = 0; // Bitmask of OverlayPanel
 
-    // ── OSD  ──────────────────────────────────────────────────
+    // --- OSD ---
     uint32_t osdColor = 0xFFFFFFFF;
     float osdScale = 1.0f;
     int osdPosition = 0; // 0=top-left, 1=top-right, 2=bot-left, 3=bot-right
 
-    // ── Screenshot ────────────────────────────────────────────
+    // --- Screenshot ---
     std::string screenshotPath = "screenshots";
     int screenshotFormat = 0; // 0=PNG, 1=BMP, 2=TGA
 
-    // ═══════════════════════════════════════════════════════════
-    //  Methods
-    // ═══════════════════════════════════════════════════════════
+    // --- Methods ---
 
     void LoadDefaults();
     bool LoadFromFile(const std::string& path);
@@ -200,7 +192,6 @@ struct PluginConfig {
     bool SetValue(const std::string& key, const std::string& value);
     std::string GetValue(const std::string& key) const;
 
-    // Validation
     void Clamp();          // Clamp all values to valid ranges
     bool Validate() const; // Check for invalid combinations
 };

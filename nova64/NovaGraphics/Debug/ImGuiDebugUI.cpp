@@ -1,10 +1,7 @@
 /**
  * @file ImGuiDebugUI.cpp
- * @brief ImGui Debug UI — Nemu64-style debugger.
+ * @brief Dear ImGui debugger overlay (Nemu64-style); see ImGuiDebugUI.hpp.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — ImGui Debug UI — Nemu64-style debugger
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include "ImGuiDebugUI.hpp"
 #include "imgui.h"
@@ -31,7 +28,7 @@ using Nova64::MipsMemoryVM;
 
 ImGuiDebugUI g_imguiDebugUI;
 
-// ─── Init / Shutdown ─────────────────────────────────────────
+// --- Init / Shutdown ---
 
 void ImGuiDebugUI::Init(SDL_Window* window, void* glContext) {
     if (m_initialized) return;
@@ -110,7 +107,7 @@ void ImGuiDebugUI::ToggleMagenta() {
     fprintf(stderr, "[Debug] Magenta Highlight: %s\n", rdp->IsDebugMagenta() ? "ON" : "OFF");
 }
 
-// ─── Render ──────────────────────────────────────────────────
+// --- Render ---
 
 void ImGuiDebugUI::Render() {
     if (!m_initialized || !m_visible) return;
@@ -128,9 +125,7 @@ void ImGuiDebugUI::Render() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Commands Panel — CPU / RSP / RDP disassembly with controls
-// ═══════════════════════════════════════════════════════════════
+// --- Commands Panel — CPU / RSP / RDP disassembly with controls ---
 
 void ImGuiDebugUI::DrawCommandsPanel() {
     ImGui::SetNextWindowPos(ImVec2(580, 10), ImGuiCond_FirstUseEver);
@@ -215,7 +210,6 @@ void ImGuiDebugUI::DrawCPUDisasm(CRegisters* reg, MipsMemoryVM* mem) {
 
             ImGui::TableNextRow();
 
-            // Highlight current PC row
             if (addr == pc) {
                 ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImVec4(0.2f, 0.35f, 0.6f, 0.65f)));
             }
@@ -292,9 +286,7 @@ void ImGuiDebugUI::DrawRSPDisasm(CRegisters* reg, MipsMemoryVM* mem) {
 
 void ImGuiDebugUI::DrawRDPDisasm() { ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "(RDP command trace — future)"); }
 
-// ═══════════════════════════════════════════════════════════════
-//  Registers Panel — matches Nemu64 tab layout
-// ═══════════════════════════════════════════════════════════════
+// --- Registers Panel — matches Nemu64 tab layout ---
 
 void ImGuiDebugUI::DrawRegistersPanel() {
     ImGui::SetNextWindowPos(ImVec2(10, 440), ImGuiCond_FirstUseEver);
@@ -375,7 +367,7 @@ void ImGuiDebugUI::DrawRegistersPanel() {
     ImGui::End();
 }
 
-// Helper: draw two columns of registers like Nemu64
+// Draws two registers side by side, as Nemu64 does.
 static void DrawRegPair(const char* name1, uint64_t val1, const char* name2, uint64_t val2) {
     ImGui::Text("%-6s: %08X - %08X", name1, (uint32_t)(val1 >> 32), (uint32_t)(val1 & 0xFFFFFFFF));
     ImGui::SameLine(280);
@@ -490,13 +482,11 @@ void ImGuiDebugUI::DrawRSPGPTab(MipsMemoryVM* mem) {
         return;
     }
 
-    // RSP DMEM starts at offset 0, first 128 bytes are often GP regs
-    // But we need the actual RSP register file — which lives in the RSP processor,
-    // not in the memory handler. Show SP DMEM content for now.
+    // The RSP's own register file lives in the RSP processor, not in the memory
+    // handler, so this tab lists the SP interface registers instead.
     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "RSP GP registers (from RSP processor)");
     ImGui::Separator();
 
-    // SP register state accessible via m_SPRegs
     static const char* names[] = {"SP_MEM_ADDR", "SP_DRAM_ADDR", "SP_RD_LEN",    "SP_WR_LEN", "SP_STATUS",
                                   "SP_DMA_FULL", "SP_DMA_BUSY",  "SP_SEMAPHORE", "SP_PC",     "SP_IBIST"};
     for (int i = 0; i < 10; ++i) ImGui::Text("%-16s: %08X", names[i], sp->m_SPRegs[i]);
@@ -510,9 +500,7 @@ void ImGuiDebugUI::DrawRSPHiddenTab(MipsMemoryVM* mem) {
     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "RSP Hidden Register display (requires RSP processor link)");
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Memory Panel — hex dump with address + hex + ASCII
-// ═══════════════════════════════════════════════════════════════
+// --- Memory Panel — hex dump with address + hex + ASCII ---
 
 void ImGuiDebugUI::DrawMemoryPanel() {
     ImGui::SetNextWindowPos(ImVec2(1050, 10), ImGuiCond_FirstUseEver);
@@ -530,7 +518,6 @@ void ImGuiDebugUI::DrawMemoryPanel() {
         return;
     }
 
-    // Address input bar
     ImGui::Text("Address:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100);
@@ -546,7 +533,6 @@ void ImGuiDebugUI::DrawMemoryPanel() {
 
     ImGui::Separator();
 
-    // Memory hex dump
     ImGui::BeginChild("##memdump", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 1));
@@ -557,16 +543,13 @@ void ImGuiDebugUI::DrawMemoryPanel() {
     for (int row = 0; row < rowsToShow; ++row) {
         uint32_t rowAddr = m_memViewAddr + row * bytesPerRow;
 
-        // Address column
         ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1), "%08X:", rowAddr);
 
-        // Read bytes for this row
         uint8_t bytes[16] = {};
         for (int b = 0; b < bytesPerRow; ++b) {
             mem->MemoryValue8(rowAddr + b, bytes[b]);
         }
 
-        // Hex column
         if (m_memShowHex) {
             ImGui::SameLine();
             for (int b = 0; b < bytesPerRow; ++b) {
@@ -576,7 +559,6 @@ void ImGuiDebugUI::DrawMemoryPanel() {
             }
         }
 
-        // ASCII column
         if (m_memShowAscii) {
             ImGui::SameLine(0, 12);
             char ascii[17] = {};
@@ -591,9 +573,7 @@ void ImGuiDebugUI::DrawMemoryPanel() {
     ImGui::End();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  RDP State Panel — live RDP/rendering state tracing
-// ═══════════════════════════════════════════════════════════════
+// --- RDP State Panel — live RDP/rendering state tracing ---
 
 void ImGuiDebugUI::DrawRDPStatePanel() {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
@@ -620,7 +600,6 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
     const auto& rdpState = rdpPtr->GetRDPState();
     const auto& stats = rdpPtr->GetStats();
 
-    // Debug output mode selector
     {
         int mode = rdpPtr->GetDebugOutputMode();
         ImGui::TextColored(ImVec4(1, 1, 0.5f, 1), "Shader Debug (F8 to cycle):");
@@ -634,7 +613,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
 
     if (ImGui::BeginTabBar("RDPTabs")) {
 
-        // ─── Other Mode ───────────────────────────────────────────
+        // --- Other Mode ---
         if (ImGui::BeginTabItem("Other Mode")) {
             uint32_t otherH = rdpState.otherModeH;
             uint32_t otherL = rdpState.otherModeL;
@@ -643,25 +622,20 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::Text("otherModeL: %08X", otherL);
             ImGui::Separator();
 
-            // Cycle type
             uint32_t cycleType = (otherH >> 20) & 3;
             static const char* cycleNames[] = {"1-Cycle", "2-Cycle", "Copy", "Fill"};
             ImGui::Text("Cycle Type:  %s (%d)", cycleNames[cycleType], cycleType);
 
-            // Texture filter
             uint32_t texFilter = (otherH >> 12) & 3;
             static const char* filterNames[] = {"3-Point", "Average(std)", "Bilinear", "Reserved"};
             ImGui::Text("Tex Filter:  %s (%d)", filterNames[texFilter], texFilter);
 
-            // Texture LOD
             ImGui::Text("Tex LOD:     %s", (otherH & 0x00010000) ? "ON" : "off");
 
-            // Texture Detail
             uint32_t tdMode = (otherH >> 17) & 3;
             static const char* detailNames[] = {"Clamp", "Sharpen", "Detail", "Reserved"};
             ImGui::Text("Tex Detail:  %s (%d)", detailNames[tdMode], tdMode);
 
-            // RGB/Alpha dither
             uint32_t rgbDither = (otherH >> 6) & 3;
             uint32_t alphaDither = (otherH >> 4) & 3;
             static const char* rgbDitherNames[] = {"MagicSq", "Bayer", "Noise", "None"};
@@ -671,7 +645,6 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.8f, 1), "otherModeL flags:");
 
-            // otherModeL bit flags
             bool aaEn = (otherL & 0x0008) != 0;
             bool zCmp = (otherL & 0x0010) != 0;
             bool zUpd = (otherL & 0x0020) != 0;
@@ -713,7 +686,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::EndTabItem();
         }
 
-        // ─── Combiner ─────────────────────────────────────────────
+        // --- Combiner ---
         if (ImGui::BeginTabItem("Combiner")) {
             uint64_t mux = rdpState.combineMode.Encode();
             ImGui::Text("Combine Mux: %016llX", (unsigned long long)mux);
@@ -781,7 +754,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::EndTabItem();
         }
 
-        // ─── Tiles / Textures ─────────────────────────────────────
+        // --- Tiles / Textures ---
         if (ImGui::BeginTabItem("Tiles")) {
             static const char* fmtNames[] = {"RGBA", "YUV", "CI", "IA", "I", "?", "?", "?"};
             static const char* sizeNames[] = {"4b", "8b", "16b", "32b"};
@@ -806,7 +779,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::EndTabItem();
         }
 
-        // ─── Scissor / Geometry ───────────────────────────────────
+        // --- Scissor / Geometry ---
         if (ImGui::BeginTabItem("Geometry")) {
             ImGui::Text("GeometryMode: %08X", rdpState.geometry.geometryMode);
             ImGui::Separator();
@@ -834,7 +807,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::EndTabItem();
         }
 
-        // ─── Stats ────────────────────────────────────────────────
+        // --- Stats ---
         if (ImGui::BeginTabItem("Stats")) {
             ImGui::TextColored(ImVec4(1, 1, 0.7f, 1), "Per Frame:");
             ImGui::Text("  Triangles:  %u", stats.frameTriangles);
@@ -871,7 +844,7 @@ void ImGuiDebugUI::DrawRDPStatePanel() {
             ImGui::EndTabItem();
         }
 
-        // ─── Frame Stats ──────────────────────────────────────────
+        // --- Frame Stats ---
         if (ImGui::BeginTabItem("Frame")) {
             const auto& fs = m_videoPlugin->GetFrameStats();
             ImGui::Text("Frame Time: %.2f ms", fs.frameTimeMs);

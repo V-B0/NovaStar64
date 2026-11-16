@@ -1,9 +1,7 @@
 /**
  * @file stb_image_impl.cpp
- * @brief stb_image_impl implementation.
+ * @brief Compilation unit for stb_image (PNG and JPEG decoding) and stb_image_write (PNG output).
  */
-// stb_image implementation compilation unit
-// This file compiles the stb_image library for PNG/BMP/TGA/etc loading.
 
 #define STB_IMAGE_IMPLEMENTATION
 // PNG for texture packs and JPEG for the launcher's cover images; every other
@@ -14,7 +12,7 @@
 #define STBI_NO_GIF
 #define STBI_NO_PIC
 #define STBI_NO_PNM
-#define STBI_NO_STDIO // We'll use our own file I/O
+#define STBI_NO_STDIO // use our own file I/O
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR
 
@@ -29,7 +27,7 @@
 #pragma warning(pop)
 #endif
 
-// ── stb_image_write: headless framebuffer PNG capture (NOVA64_SHOT_*) ──
+// --- stb_image_write: headless framebuffer PNG capture (NOVA64_SHOT_*) ---
 // STBI_NO_STDIO above only gates the *read* side; stbi_write_png (stdio) stays
 // available.  Exposed via Nova::WritePNG so GPU backends don't pull in stb.
 #ifdef _MSC_VER

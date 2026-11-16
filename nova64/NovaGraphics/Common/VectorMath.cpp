@@ -1,9 +1,8 @@
 /**
  * @file VectorMath.cpp
- * @brief High-Level Vector/Matrix Math.
+ * @brief Vector, matrix and geometry helpers declared in VectorMath.hpp.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - High-Level Vector/Matrix Math Implementation
 
 #include "VectorMath.hpp"
 #include "RDRAMAccess.hpp"
@@ -13,9 +12,7 @@ namespace Nova64 {
 namespace Video {
 namespace Math {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MATRIX CONSTRUCTION UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- MATRIX CONSTRUCTION UTILITIES ---
 
 Mat4x4 PerspectiveProjection(float fovYRadians, float aspect, float nearZ, float farZ) {
     float tanHalf = std::tan(fovYRadians * 0.5f);
@@ -148,9 +145,7 @@ Mat4x4 RotationAxis(const Vec3f& axis, float radians) {
     return m;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// N64-SPECIFIC MATRIX UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64-SPECIFIC MATRIX UTILITIES ---
 
 Mat4x4 LoadN64Matrix(const uint8_t* rdram, uint32_t address) {
     // N64 matrix format: first 32 bytes = integer parts (s15 each)
@@ -207,7 +202,7 @@ N64Viewport LoadN64Viewport(const uint8_t* rdram, uint32_t address) {
 }
 
 Vec3f ApplyN64Viewport(const Vec4f& clipSpace, const N64Viewport& vp) {
-    // Perspective division
+    // Perspective divide; a w near zero maps to the viewport center.
     if (std::fabs(clipSpace.f[3]) < kEpsilon) {
         return Vec3f(vp.x, vp.y, 0.0f);
     }
@@ -229,14 +224,11 @@ Vec2f N64ScreenToNDC(float screenX, float screenY, float screenW, float screenH)
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FRUSTUM
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- FRUSTUM ---
 
 Frustum Frustum::FromViewProjection(const Mat4x4& vp) {
     Frustum f;
-    // Extract from combined view-projection matrix (column-major)
-    // Row 0: vp.Row(0), etc.
+    // Gribb-Hartmann plane extraction from the rows of the view-projection matrix.
     Vec4f r0 = vp.Row(0);
     Vec4f r1 = vp.Row(1);
     Vec4f r2 = vp.Row(2);
@@ -292,9 +284,7 @@ bool Frustum::TestPoint(const Vec3f& point) const {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TRIANGLE UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TRIANGLE UTILITIES ---
 namespace TriangleUtil {
 
 float Area2D(const Vec2f& a, const Vec2f& b, const Vec2f& c) { return std::fabs(SignedArea2D(a, b, c)); }
@@ -306,7 +296,7 @@ float SignedArea2D(const Vec2f& a, const Vec2f& b, const Vec2f& c) {
 Vec3f Barycentric(const Vec2f& p, const Vec2f& a, const Vec2f& b, const Vec2f& c) {
     float totalArea = SignedArea2D(a, b, c);
     if (std::fabs(totalArea) < kEpsilonSq) {
-        return Vec3f(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f); // Degenerate
+        return Vec3f(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f); // degenerate triangle
     }
     float invArea = 1.0f / totalArea;
     float u = SignedArea2D(p, b, c) * invArea;
@@ -375,9 +365,7 @@ void SetupEdgeEquations(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, EdgeE
 
 } // namespace TriangleUtil
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// INTERPOLATION UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- INTERPOLATION UTILITIES ---
 namespace Interp {
 
 Color4f BilinearColor(const Color4f& c00, const Color4f& c10, const Color4f& c01, const Color4f& c11, float u,
@@ -423,18 +411,15 @@ float CatmullRom(float p0, float p1, float p2, float p3, float t) {
 
 } // namespace Interp
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FIXED-POINT UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- FIXED-POINT UTILITIES ---
 namespace FixedPoint {
 
 float ApplyTexCoordShift(int16_t rawCoord, int shift) {
     float coord = static_cast<float>(rawCoord) / 32.0f; // s10.5 -> float
     if (shift > 10) {
-        // Left shift (scale up): shift = 16 - actual_shift
+        // Values above 10 encode a left shift by (16 - shift).
         coord = std::ldexp(coord, 16 - shift);
     } else if (shift > 0) {
-        // Right shift (scale down)
         coord = std::ldexp(coord, -shift);
     }
     return coord;

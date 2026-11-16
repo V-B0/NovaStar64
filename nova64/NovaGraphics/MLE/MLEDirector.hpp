@@ -14,16 +14,15 @@
  *                  Rendered by the GL/Vulkan pipeline with full shader accuracy.
  *
  *   LLE          — Patterns known to need true RDP accuracy (Banjo-Kazooie
- *                  mirror floor, OOT heat haze, etc.).  Reserved for a future
- *                  LLE RDP back-end; currently falls back to HLE_Accurate.
+ *                  mirror floor, OOT heat haze, etc.).  There is no LLE RDP
+ *                  back-end, so RDPProcessor handles it like HLE_Accurate.
  *
  * Wiring:
  *   VideoPlugin creates one MLEDirector and passes a pointer to RDPProcessor
  *   via SetMLEDirector().  RDPProcessor::FlushBatch() calls
- *   MLEDirector::Evaluate(batch, state) before drawing.
- *
- * The result is advisory — the current implementation only logs and sets a
- * per-batch classification for the RT compose pass (Phase 9) to consume.
+ *   MLEDirector::Evaluate(batch, state) before drawing, and forces the
+ *   pixel-accurate (FSI imageLoad/imageStore) blender for the whole batch when
+ *   the level is HLE_Accurate or LLE.
  */
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -39,7 +38,7 @@ namespace Nova64::Video {
 enum class MLELevel : uint8_t {
     HLE_Fast = 0,     // Rasterise with current GL/VK pipeline, no accuracy pass
     HLE_Accurate = 1, // Full combiner/blender accuracy via GL/VK shaders
-    LLE = 2,          // True RDP emulation (fallback to HLE_Accurate for now)
+    LLE = 2,          // True RDP emulation; no back-end, handled like HLE_Accurate
 };
 
 // --- RenderBatch metadata (minimal view for the director) ---
@@ -68,7 +67,7 @@ public:
     /// Classify a batch and return the recommended rendering path.
     /// Called by RDPProcessor::FlushBatch() before any GPU submission.
     MLELevel Evaluate(const BatchInfo& batch, const RDPState& state) {
-        // ── Rule 1: Fill/Copy-only batches → HLE_Fast ─────────────────
+        // --- Rule 1: Fill/Copy-only batches → HLE_Fast ---
         if (batch.hasFillOps && !batch.hasTexturedTri && !batch.hasTranslucent) {
             LogIfEnabled(MLELevel::HLE_Fast, "fill-only batch");
             return MLELevel::HLE_Fast;
@@ -78,7 +77,7 @@ public:
             return MLELevel::HLE_Fast;
         }
 
-        // ── Rule 2: Translucent / alpha coverage → HLE_Accurate ───────
+        // --- Rule 2: Translucent / alpha coverage → HLE_Accurate ---
         //   ALPHA_CVG_SEL bit 6 of otherModeL, or CVG_TIMES_ALPHA bit 12
         const bool alphaCvgSel = (state.otherModeL & (1u << 6)) != 0;
         const bool cvgTimesAlpha = (state.otherModeL & (1u << 12)) != 0;
@@ -87,31 +86,29 @@ public:
             return MLELevel::HLE_Accurate;
         }
 
-        // ── Rule 3: Known LLE patterns (game-specific heuristics) ──────
+        // --- Rule 3: Known LLE patterns (game-specific heuristics) ---
         if (IsKnownLLEPattern(batch, state)) {
-            // Currently we don't have an LLE back-end, fall back.
+            // No LLE back-end exists; RDPProcessor handles LLE like HLE_Accurate.
             LogIfEnabled(MLELevel::LLE, "known LLE pattern (fallback to HLE_Accurate)");
             return MLELevel::LLE;
         }
 
-        // ── Default: HLE_Fast ──────────────────────────────────────────
+        // --- Default: HLE_Fast ---
         LogIfEnabled(MLELevel::HLE_Fast, "default");
         return MLELevel::HLE_Fast;
     }
 
 private:
-    // ─── LLE Pattern Database ─────────────────────────────────────────────
+    // --- LLE Pattern Database ---
     // These identify batches whose visual output is known to be incorrect
     // under pure HLE due to RDP-level accuracy requirements.
-    //
-    // Patterns are matched by combine mode hash + geometry mode flags.
-    // The hashes below are indicative — they must be calibrated against
-    // real ROM captures (see dump/ directory probes).
+    // Patterns are matched on the raw combine mode plus the batch flags.
+    // The hashes below are unverified placeholders; they must be calibrated
+    // against real ROM captures (see the dump/ directory probes).
 
     bool IsKnownLLEPattern(const BatchInfo& batch, const RDPState& /*state*/) const {
         // Banjo-Kazooie mirror floor: textured with LOD + perspective correct +
         // specific combine mode involving COMBINED_ALPHA.  No geometry flags.
-        // (Placeholder hash — calibrate from ROM probe.)
         constexpr uint64_t kBKMirrorCombineHash = 0xFC121824FC65E4FFull;
         if (batch.combineModeRaw == kBKMirrorCombineHash && batch.hasTexturedTri && !batch.hasTranslucent) {
             return true;
@@ -126,7 +123,7 @@ private:
         return false;
     }
 
-    // ─── Debug logging ────────────────────────────────────────────────────
+    // --- Debug logging ---
     void LogIfEnabled(MLELevel level, const char* reason) const {
         static const bool kEnabled = []() {
 #ifdef _MSC_VER

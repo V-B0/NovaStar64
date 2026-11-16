@@ -1,10 +1,10 @@
 /**
  * @file SIMDMath.hpp
- * @brief SIMD Math Acceleration Layer.
+ * @brief SIMD math primitives (scalar, SSE2, SSE4.1, AVX, AVX2) with runtime dispatch and N64 helpers.
+ *
+ * AVX-512 is detected by DetectSIMDLevel() but has no kernels of its own.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - SIMD Math Acceleration Layer
-// Provides SSE2/SSE4.1/AVX/AVX2/AVX-512 accelerated math primitives
 
 #pragma once
 
@@ -13,7 +13,7 @@
 #include <cstring>
 #include <algorithm>
 
-// ─── Platform SIMD Headers ───────────────────────────────────────────────────
+// --- Platform SIMD Headers ---
 #if defined(_MSC_VER)
 #include <intrin.h>
 #elif defined(__GNUC__) || defined(__clang__)
@@ -26,7 +26,7 @@ namespace Nova64 {
 namespace Video {
 namespace SIMD {
 
-// ─── Compile-time capability detection ───────────────────────────────────────
+// --- Compile-time capability detection ---
 
 #if defined(__AVX512F__)
 static constexpr int kMaxSIMDWidth = 512;
@@ -42,16 +42,15 @@ static constexpr int kMaxSIMDWidth = 128;
 static constexpr int kMaxSIMDWidth = 0;
 #endif
 
-// ─── Runtime SIMD level (set during initialization) ──────────────────────────
+// --- Runtime SIMD level (set during initialization) ---
 enum class SIMDLevel : uint8_t { Scalar = 0, SSE2 = 1, SSE41 = 2, AVX = 3, AVX2 = 4, AVX512 = 5 };
 
 SIMDLevel DetectSIMDLevel();
 const char* SIMDLevelName(SIMDLevel level);
 
-// Global runtime SIMD level
 extern SIMDLevel g_SIMDLevel;
 
-// ─── 128-bit Vector Wrapper (SSE2) ──────────────────────────────────────────
+// --- 128-bit Vector Wrapper (SSE2) ---
 struct alignas(16) Vec4f {
     union {
         float f[4];
@@ -98,7 +97,7 @@ struct alignas(16) Vec4i {
     int32_t operator[](int idx) const { return i[idx]; }
 };
 
-// ─── 256-bit Vector Wrapper (AVX) ───────────────────────────────────────────
+// --- 256-bit Vector Wrapper (AVX) ---
 struct alignas(32) Vec8f {
     union {
         float f[8];
@@ -138,7 +137,7 @@ struct alignas(32) Vec8i {
     int32_t operator[](int idx) const { return i[idx]; }
 };
 
-// ─── 4x4 Matrix (column-major, SSE-friendly layout) ─────────────────────────
+// --- 4x4 Matrix (column-major, SSE-friendly layout) ---
 struct alignas(16) Mat4x4 {
     Vec4f col[4]; // column-major: col[0] = first column
 
@@ -156,7 +155,6 @@ struct alignas(16) Mat4x4 {
         col[3] = c3;
     }
 
-    // Access element at (row, column)
     float& operator()(int row, int c) { return col[c].f[row]; }
     float operator()(int row, int c) const { return col[c].f[row]; }
 
@@ -166,17 +164,14 @@ struct alignas(16) Mat4x4 {
     // Row access (gathers from columns)
     Vec4f Row(int r) const { return Vec4f(col[0][r], col[1][r], col[2][r], col[3][r]); }
 
-    // Pointer to raw float data
     const float* Data() const { return col[0].f; }
     float* Data() { return col[0].f; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SCALAR MATH OPERATIONS (fallback for all platforms)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SCALAR MATH OPERATIONS (fallback for all platforms) ---
 namespace Scalar {
 
-// ── Vector Arithmetic ────────────────────────────────────────────────────
+// --- Vector Arithmetic ---
 Vec4f Add(const Vec4f& a, const Vec4f& b);
 Vec4f Sub(const Vec4f& a, const Vec4f& b);
 Vec4f Mul(const Vec4f& a, const Vec4f& b);
@@ -184,7 +179,7 @@ Vec4f Div(const Vec4f& a, const Vec4f& b);
 Vec4f MulScalar(const Vec4f& a, float s);
 Vec4f FMA(const Vec4f& a, const Vec4f& b, const Vec4f& c); // a*b+c
 
-// ── Vector Operations ────────────────────────────────────────────────────
+// --- Vector Operations ---
 float Dot3(const Vec4f& a, const Vec4f& b);
 float Dot4(const Vec4f& a, const Vec4f& b);
 Vec4f Cross3(const Vec4f& a, const Vec4f& b);
@@ -204,7 +199,7 @@ Vec4f Floor(const Vec4f& v);
 Vec4f Ceil(const Vec4f& v);
 Vec4f Round(const Vec4f& v);
 
-// ── Matrix Operations ────────────────────────────────────────────────────
+// --- Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
 Mat4x4 MatTranspose(const Mat4x4& m);
@@ -214,12 +209,12 @@ Mat4x4 MatAdd(const Mat4x4& a, const Mat4x4& b);
 Mat4x4 MatSub(const Mat4x4& a, const Mat4x4& b);
 Mat4x4 MatScale(const Mat4x4& m, float s);
 
-// ── Batch Operations ─────────────────────────────────────────────────────
+// --- Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
 void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normOut, int count);
 void BatchLerp(const float* a, const float* b, float* out, float t, int count);
 
-// ── Integer Operations ───────────────────────────────────────────────────
+// --- Integer Operations ---
 Vec4i AddI(const Vec4i& a, const Vec4i& b);
 Vec4i SubI(const Vec4i& a, const Vec4i& b);
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b); // low 32 bits of each product
@@ -234,13 +229,11 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b);
 
 } // namespace Scalar
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SSE2 MATH OPERATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SSE2 MATH OPERATIONS ---
 #if defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64)
 namespace SSE2 {
 
-// ── Vector Arithmetic ────────────────────────────────────────────────────
+// --- Vector Arithmetic ---
 inline Vec4f Add(const Vec4f& a, const Vec4f& b) { return _mm_add_ps(a.v, b.v); }
 inline Vec4f Sub(const Vec4f& a, const Vec4f& b) { return _mm_sub_ps(a.v, b.v); }
 inline Vec4f Mul(const Vec4f& a, const Vec4f& b) { return _mm_mul_ps(a.v, b.v); }
@@ -249,7 +242,7 @@ inline Vec4f MulScalar(const Vec4f& a, float s) { return _mm_mul_ps(a.v, _mm_set
 
 Vec4f FMA(const Vec4f& a, const Vec4f& b, const Vec4f& c);
 
-// ── Vector Operations ────────────────────────────────────────────────────
+// --- Vector Operations ---
 float Dot3(const Vec4f& a, const Vec4f& b);
 float Dot4(const Vec4f& a, const Vec4f& b);
 Vec4f Cross3(const Vec4f& a, const Vec4f& b);
@@ -266,17 +259,17 @@ Vec4f Negate(const Vec4f& v);
 Vec4f Reciprocal(const Vec4f& v);
 Vec4f ReciprocalSqrt(const Vec4f& v);
 
-// ── Matrix Operations ────────────────────────────────────────────────────
+// --- Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
 Mat4x4 MatTranspose(const Mat4x4& m);
 
-// ── Batch Operations ─────────────────────────────────────────────────────
+// --- Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
 void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normOut, int count);
 void BatchLerp(const float* a, const float* b, float* out, float t, int count);
 
-// ── Integer Operations ───────────────────────────────────────────────────
+// --- Integer Operations ---
 inline Vec4i AddI(const Vec4i& a, const Vec4i& b) { return _mm_add_epi32(a.v, b.v); }
 inline Vec4i SubI(const Vec4i& a, const Vec4i& b) { return _mm_sub_epi32(a.v, b.v); }
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b);
@@ -295,9 +288,7 @@ Vec4i PackRGBA5551(const Vec4i& r, const Vec4i& g, const Vec4i& b, const Vec4i& 
 } // namespace SSE2
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SSE4.1 MATH OPERATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SSE4.1 MATH OPERATIONS ---
 #if defined(__SSE4_1__) || (defined(_MSC_VER) && defined(__AVX__))
 namespace SSE41 {
 
@@ -316,9 +307,7 @@ Vec4f BlendByMask(const Vec4f& a, const Vec4f& b, const Vec4f& mask);
 } // namespace SSE41
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// AVX MATH OPERATIONS (8-wide float)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- AVX MATH OPERATIONS (8-wide float) ---
 #if defined(__AVX__)
 namespace AVX {
 
@@ -331,7 +320,7 @@ inline Vec8f Max(const Vec8f& a, const Vec8f& b) { return _mm256_max_ps(a.v, b.v
 
 Vec8f FMA(const Vec8f& a, const Vec8f& b, const Vec8f& c);
 
-// 8-vertex batch transform (2 vertices per __m256 XYZW)
+// Batch vertex transform, two vertices per 256-bit register.
 void TransformVertices8(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
 
 // Batch triangle setup (edge equations for 8 triangles at once)
@@ -341,9 +330,7 @@ void BatchEdgeSetup(const float* v0, const float* v1, const float* v2, float* ed
 } // namespace AVX
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// AVX2 MATH OPERATIONS (8-wide integer + FMA)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- AVX2 MATH OPERATIONS (8-wide integer + FMA) ---
 #if defined(__AVX2__)
 namespace AVX2 {
 
@@ -381,16 +368,14 @@ Vec8i GatherTMEM(const uint8_t* tmem, const Vec8i& addresses);
 } // namespace AVX2
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DISPATCH LAYER - Selects best implementation at runtime
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DISPATCH LAYER - Selects best implementation at runtime ---
 namespace Dispatch {
 
-// Initialize dispatch tables based on detected SIMD level
+// Selects the implementations for the detected SIMD level, or for `forceLevel`.
 void Initialize();
 void Initialize(SIMDLevel forceLevel);
 
-// ── Vector Operations (use function pointers internally) ─────────────────
+// --- Vector Operations (use function pointers internally) ---
 Vec4f Add(const Vec4f& a, const Vec4f& b);
 Vec4f Sub(const Vec4f& a, const Vec4f& b);
 Vec4f Mul(const Vec4f& a, const Vec4f& b);
@@ -407,18 +392,18 @@ Vec4f Min(const Vec4f& a, const Vec4f& b);
 Vec4f Max(const Vec4f& a, const Vec4f& b);
 Vec4f Clamp(const Vec4f& v, const Vec4f& lo, const Vec4f& hi);
 
-// ── Matrix Operations ────────────────────────────────────────────────────
+// --- Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b);
 Vec4f MatVecMul(const Mat4x4& m, const Vec4f& v);
 Mat4x4 MatTranspose(const Mat4x4& m);
 Mat4x4 MatInverse(const Mat4x4& m);
 
-// ── Batch Operations ─────────────────────────────────────────────────────
+// --- Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count);
 void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normOut, int count);
 void BatchLerp(const float* a, const float* b, float* out, float t, int count);
 
-// ── Integer Operations ───────────────────────────────────────────────────
+// --- Integer Operations ---
 Vec4i AddI(const Vec4i& a, const Vec4i& b);
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b);
 Vec4i MinI(const Vec4i& a, const Vec4i& b);
@@ -426,12 +411,10 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b);
 
 } // namespace Dispatch
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// N64-SPECIFIC SIMD UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64-SPECIFIC SIMD UTILITIES ---
 namespace N64SIMD {
 
-// ── Fixed-Point Conversion ───────────────────────────────────────────────
+// --- Fixed-Point Conversion ---
 // Convert N64 s15.16 fixed-point to float (4 at once)
 Vec4f FixedToFloat_S15_16(const Vec4i& fixed);
 // Convert N64 s10.5 fixed-point to float (4 at once)
@@ -441,13 +424,13 @@ Vec4f FixedToFloat_S10_2(const Vec4i& fixed);
 // Convert float to N64 s15.16 fixed-point (4 at once)
 Vec4i FloatToFixed_S15_16(const Vec4f& f);
 
-// ── Vertex Processing ────────────────────────────────────────────────────
+// --- Vertex Processing ---
 // Load and transform N64 vertices from RDRAM (full pipeline)
 // Reads 16-byte N64 vertex format, transforms through MVP, produces clipspace output
 void ProcessVertexBatch(const uint8_t* rdram, uint32_t dramAddr, const Mat4x4& mvp, const Mat4x4& mv, float* outPos,
                         float* outTC, uint8_t* outColor, int startVtx, int count);
 
-// ── Lighting ─────────────────────────────────────────────────────────────
+// --- Lighting ---
 // Compute lighting for N64 vertices (ambient + directional * N lights)
 // normals: 3 floats per vertex (x,y,z), lights: flat array of light data
 void ComputeLighting(const float* normals, int vertexCount,
@@ -457,7 +440,7 @@ void ComputeLighting(const float* normals, int vertexCount,
                      int numLights,
                      float* outColors);         // vertexCount * 4 floats (RGBA)
 
-// ── Clipping ─────────────────────────────────────────────────────────────
+// --- Clipping ---
 // Compute clip flags for 4 vertices at once
 // Returns packed clip flags: bits [POSX, NEGX, POSY, NEGY, POSZ, NEGZ]
 Vec4i ComputeClipFlags(const float* clipSpaceVerts4); // 4 verts * 4 components
@@ -465,12 +448,12 @@ Vec4i ComputeClipFlags(const float* clipSpaceVerts4); // 4 verts * 4 components
 // Sutherland-Hodgman clip against single plane (SIMD-accelerated lerp)
 int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount, int planeIndex, int floatsPerVert);
 
-// ── Texture Coordinate Processing ────────────────────────────────────────
+// --- Texture Coordinate Processing ---
 // Apply texture scale, shift, and clamp/mirror/wrap for batch of coords
 void ProcessTexCoords(const int16_t* rawTC, float* outTC, float scaleS, float scaleT, int shiftS, int shiftT,
                       int count);
 
-// ── Color Format Conversion ──────────────────────────────────────────────
+// --- Color Format Conversion ---
 // Batch decode RGBA5551 to float RGBA
 void DecodeRGBA5551_Batch(const uint16_t* src, float* dst, int count);
 // Batch decode IA8 to float RGBA
@@ -486,15 +469,15 @@ void DecodeRGBA32_Batch(const uint32_t* src, float* dst, int count);
 // Batch decode IA16 to float RGBA
 void DecodeIA16_Batch(const uint16_t* src, float* dst, int count);
 
-// ── Depth Buffer ─────────────────────────────────────────────────────────
+// --- Depth Buffer ---
 // Convert N64 18-bit depth values to float [0..1]
 void ConvertDepthBatch(const uint16_t* n64Depth, float* outDepth, int count);
 
-// ── DXT Calculation ──────────────────────────────────────────────────────
+// --- DXT Calculation ---
 // Calculate DXT value for LoadBlock command
 uint32_t CalculateDXT(uint32_t width, uint32_t size);
 
-// ── CRC32 (for texture hashing) ─────────────────────────────────────────
+// --- CRC32 (for texture hashing) ---
 uint32_t CRC32_SIMD(const uint8_t* data, size_t length, uint32_t seed = 0);
 
 } // namespace N64SIMD

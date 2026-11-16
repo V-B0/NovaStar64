@@ -3,7 +3,7 @@
  * @brief World-space scene geometry types for the hardware raytracing pipeline.
  *
  * The N64 RSP flattens 3D geometry to 2D screen-space before any data reaches
- * the RDP.  For RT we intercept vertices from GBIHandler BEFORE the MVP
+ * the RDP.  For RT we intercept vertices from GBIHandler before the MVP
  * projection is applied, yielding true 3D world-space positions that can be
  * uploaded to Vulkan acceleration structures.
  */
@@ -20,7 +20,7 @@ namespace Nova64::Video::RT {
 // --- SceneVertex  —  one world-space vertex captured from the RSP ---
 
 struct SceneVertex {
-    float worldPos[3]; // Object-space position × ModelView matrix
+    float worldPos[3]; // Object-space position × ModelView matrix, i.e. eye space despite the name
     float normal[3];   // Eye-space normal (normalised)
     float uv[2];       // Texture coordinates (raw S10.5 converted to float)
     float color[4];    // Vertex color / shade (RGBA 0-1)
@@ -32,7 +32,7 @@ struct SceneVertex {
 struct SceneLight {
     bool valid = false;
     bool point = false;
-    float vec[3] = {0, 0, 0};   ///< directional: unit vector TOWARD the light; point: position
+    float vec[3] = {0, 0, 0};   ///< directional: unit vector toward the light; point: position
     float color[3] = {1, 1, 1}; ///< 0..1
     float la = 0.0f, qa = 0.0f; ///< point light: the RSP's linear/quadratic attenuation bytes
 };
@@ -57,7 +57,7 @@ struct SceneTriangle {
     uint32_t otherModeL;   // RDP otherMode low word
     bool isTranslucent;    // Blended translucent surface (water/glass)
     bool isCutout;         // Texture-alpha cutout (billboards/sprites)
-    // True when the RDP color combiner's FINAL cycle multiplicatively
+    // True when the RDP color combiner's final cycle multiplicatively
     // references SHADE (the per-vertex interpolated color — from dynamic
     // RSP lighting or raw vertex colors, whichever the DL supplied) in
     // producing this triangle's rasterized color. Only such triangles can
@@ -90,7 +90,7 @@ public:
 
     void SubmitTriangle(const SceneTriangle& tri) { SubmitTriangles(&tri, 1); }
 
-    /// Optional: report the active EYE->CLIP projection matrix (row-major,
+    /// Optional: report the active eye-to-clip projection matrix (row-major,
     /// N64 row-vector convention) when a perspective triangle is submitted.
     /// The compute ray tracer uses its inverse to generate primary rays.
     /// Default no-op so non-RT consumers are unaffected.
@@ -99,7 +99,7 @@ public:
     /// Optional: report the active N64 viewport {scaleX, transX, scaleY, transY}
     /// (N64 framebuffer units, scaleY negative = y-flip). Title screens and
     /// cutscenes render with non-fullscreen/letterboxed viewports; the ray
-    /// tracer must map window pixels through the SAME viewport or its terms
+    /// tracer must map window pixels through the same viewport or its terms
     /// land offset/scaled relative to the raster. Default no-op.
     virtual void SetViewport(const float vp[4]) { (void)vp; }
 

@@ -1,10 +1,8 @@
 /**
  * @file VideoPlugin.cpp
- * @brief Video Plugin.
+ * @brief Video plugin core: initialization, display list and RDP list processing, VI presentation
+ *        and per-game hack setup; see VideoPlugin.hpp.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Video Plugin Implementation
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include <cctype>
 #include "VideoPlugin.hpp"
@@ -68,9 +66,7 @@ VideoPlugin::~VideoPlugin() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Lifecycle
-// ═══════════════════════════════════════════════════════════════
+// --- Lifecycle ---
 
 void VideoPlugin::SetExternalWindow(WindowManager* window) { m_externalWindow = window; }
 
@@ -109,11 +105,10 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     m_sysInfo = sysInfo;
     m_callbacks = callbacks;
 
-    // Load configuration
     m_config.LoadDefaults();
-    // The file is only written here, when it doesn't exist yet, so there is one
-    // to edit. Saving at shutdown wrote per-game overrides and command-line
-    // flags back into the user's settings.
+    // The file is only written here, when it doesn't exist yet, so there is one to
+    // edit. It is not saved at shutdown, which would write per-game overrides and
+    // command-line flags back into the user's settings.
     if (!std::filesystem::exists("settings/NovaGraphics.ini")) {
         std::error_code ec;
         std::filesystem::create_directories("settings", ec);
@@ -121,16 +116,16 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     }
     m_config.LoadFromFile("settings/NovaGraphics.ini");
 
-    // ── MLE pivot: propagate renderingMode to RSP settings ───────────
-    // HLE  : graphics microcode handlers own rendering (legacy default).
+    // --- Propagate renderingMode to the RSP settings ---
+    // HLE  : graphics microcode handlers own rendering (default).
     // LLE  : RSP recompiler executes graphics ucode; RDPProcessor consumes
     //        the raw RDP FIFO produced by the RSP.
     // Auto : audio HLE, graphics LLE.
     //
     // Must run before any RSP task is dispatched. CRSPSettings::SetRomOpen
-    // (called later from N64SYS startup) will trigger RefreshSettings which
-    // re-reads NovaStar64.ini — if that file exists and defines GraphicsHLE
-    // it will override us. That's intentional: explicit per-emu config wins.
+    // (called later from N64SYS startup) triggers RefreshSettings, which
+    // re-reads NovaStar64.ini; if that file defines GraphicsHLE it overrides
+    // this. That is intentional: an explicit per-emulator config wins.
     {
         const RenderingMode mode = m_config.renderingMode;
         const bool wantGfxHle = (mode == RenderingMode::HLE);
@@ -153,7 +148,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         m_pendingResScale = 0;
     }
 
-    // Initialize game compatibility database
     GameDatabase::Instance().Init();
     GameDatabase::Instance().LoadCustomProfiles("NovaGraphics_games.ini");
 
@@ -183,7 +177,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         return false;
     }
 
-    // Create renderer
     if (!CreateDisplayRenderer()) {
         LOG_ERROR("Failed to create renderer");
         DestroyDisplayWindow();
@@ -218,7 +211,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         g_rendererDescription = std::string(GetBackendName(m_renderer->GetBackendType())) + " on " + caps.deviceName;
     }
 
-    // Create texture cache
     m_textureCache = std::make_unique<Tex::TextureCache>();
     {
         Tex::TextureCacheConfig tcConfig;
@@ -250,16 +242,14 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         m_shaderManager->LoadCache("ShaderCache/NovaGraphics_shadercache.bin");
     }
 
-    // Initialize RDP processor with real renderer, texture cache, and shader manager
     m_rdpProcessor = std::make_unique<RDPProcessor>();
     m_rdpProcessor->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize, m_renderer.get(), m_textureCache.get(),
                                m_shaderManager.get());
     m_rdpProcessor->SetMLEDirector(&m_mleDirector);
 
     // Wire SyncFull → DP interrupt. When a display list contains RDPFULLSYNC, the
-    // N64 CPU expects the DP interrupt to fire at that point (not after the whole
-    // display list). Using the checkInterrupts callback here delivers the interrupt
-    // at the architecturally-correct moment, matching real N64 hardware timing.
+    // N64 CPU expects the DP interrupt to fire at that point, not after the whole
+    // display list, as on real hardware.
     if (m_callbacks.checkInterrupts) {
         m_rdpProcessor->SetSyncFullCallback(m_callbacks.checkInterrupts);
     }
@@ -272,7 +262,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     // Initialize framebuffer manager (creates blit/filter GL resources)
     g_fbManager.Init(static_cast<uint32_t>(m_config.internalResScale));
 
-    // Apply widescreen hack if configured
     if (m_config.aspectRatio == AspectRatio::Widescreen16_9) {
         float wsScale = (16.0f / 9.0f) / (4.0f / 3.0f); // ≈ 1.333
         m_rdpProcessor->GetVideoStateMutable().rdp.geometry.widescreenScale = wsScale;
@@ -306,7 +295,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Create VI blit resources (GL-only: fullscreen triangle + texture blit shader)
     if (g_fbManager.IsGL()) {
-        // Compile blit shader
         static const char* kBlitVS = R"(#version 460 core
 layout(location = 0) out vec2 v_texCoord;
 void main() {
@@ -328,7 +316,6 @@ void main() {
     fragColor = vec4(texture(u_screenTexture, uv).rgb, 1.0);
 }
 )";
-        // Compile vertex shader
         GLuint vs = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vs, 1, &kBlitVS, nullptr);
         glCompileShader(vs);
@@ -381,7 +368,7 @@ void main() {
     m_status = PluginStatus::Initialized;
     LOG_INFO("NovaGraphics initialized successfully");
 
-    // Initialize ImGui debug UI (GL-only; Vulkan path uses no ImGui for now)
+    // Initialize ImGui debug UI (GL-only; the Vulkan path has no ImGui overlay)
     if (g_fbManager.IsGL()) {
         if (auto* activeWin = GetActiveWindow()) {
             g_imguiDebugUI.Init(activeWin->GetSDLWindow(), activeWin->GetGLContext());
@@ -410,7 +397,6 @@ void VideoPlugin::Shutdown() {
     // and buffers it can reference, so let it finish first.
     if (m_renderer) m_renderer->WaitIdle();
 
-    // Shut down ImGui debug UI
     g_imguiDebugUI.Shutdown();
 
     // Shut down subsystems in reverse order
@@ -454,7 +440,6 @@ void VideoPlugin::Shutdown() {
         }
     }
 
-    // Shut down depth buffer manager
     g_depthManager.Shutdown();
 
     // Destroy post-processing intermediate FBO (GL-only)
@@ -504,9 +489,7 @@ void VideoPlugin::Reset() {
     m_viYScale = 0;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Per-Frame Operations
-// ═══════════════════════════════════════════════════════════════
+// --- Per-Frame Operations ---
 
 void VideoPlugin::ProcessDListShadow() {
     // Shadow HLE: run the GBI display list in geometry-only mode so the RT
@@ -601,11 +584,11 @@ void VideoPlugin::ProcessDList() {
         uint32_t ucodeDataSize = readDMEM_native(0xFDC);              // UcodeDataSize
         uint32_t dlAddr = taskDataPtr;
 
-        // Notify the renderer of the window size BEFORE BeginFrame so that any
+        // Notify the renderer of the window size before BeginFrame so that any
         // swapchain recreation triggered by OnResize happens before the render
         // pass command buffer is opened.  (Swapchain recreation mid-frame would
         // leave the open command buffer referencing destroyed framebuffers.)
-        // Do NOT call glViewport here — OnSetColorImage (emitted by the DL) binds the correct
+        // Do not call glViewport here: OnSetColorImage (emitted by the DL) binds the correct
         // game FBO and sets glViewport to the FBO dimensions (320×240). Forcing 640×480 here
         // would map NDC 0..1 to window coords 320..640, clipping the right half of every draw.
         int32_t winW = 0, winH = 0;
@@ -665,7 +648,6 @@ void VideoPlugin::ProcessDList() {
         // Detach consumer before batch flush (consumer already has all triangles)
         m_dispatcher->SetGeometryConsumer(nullptr);
 
-        // After the display list, flush any remaining RDP batch
         m_rdpProcessor->FlushBatch();
 
         // Dispatch hardware ray tracing if the backend supports it and the
@@ -674,14 +656,12 @@ void VideoPlugin::ProcessDList() {
             m_renderer->ExecuteRayTracing(&m_rtScene, static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
         }
 
-        // Log RT scene stats if debug logging is enabled
         if (needsRT) m_rtScene.DebugLogIfEnabled();
 
         // Signal that HLE content was rendered — UpdateScreen will
         // present it instead of (or composited with) the VI framebuffer.
         m_hleRenderedThisFrame = true;
 
-        // Reset per-frame stats for next display list
         m_rdpProcessor->OnFrameEnd();
     }
 
@@ -696,7 +676,7 @@ void VideoPlugin::ProcessRDPList() {
     uint32_t startAddr = *m_sysInfo.dpcCurrentReg & 0x00FFFFFF;
     uint32_t endAddr = *m_sysInfo.dpcEndReg & 0x00FFFFFF;
 
-    // ── LLE diagnostic: trace first 4 ProcessRDPList invocations ──
+    // --- LLE diagnostic: trace first 4 ProcessRDPList invocations ---
     static uint32_t s_traceCount = 0;
     const bool trace = (++s_traceCount <= 4);
     if (trace) {
@@ -718,7 +698,7 @@ void VideoPlugin::ProcessRDPList() {
     std::lock_guard<std::mutex> lock(m_glMutex);
     if (auto* win = GetActiveWindow()) win->MakeContextCurrent();
 
-    // ── LLE frame open (no ProcessDList path) ───────────────────
+    // --- LLE frame open (no ProcessDList path) ---
     // Under LLE, F3D microcode runs on the RSP interpreter and emits raw RDP
     // commands directly to RDRAM. ProcessDList is never invoked, so the
     // Vulkan frame would never be opened and nothing would present.
@@ -733,13 +713,13 @@ void VideoPlugin::ProcessRDPList() {
             m_renderer->BeginFrame();
             m_vkFrameBegun = true;
         }
-        // NOTE: Do NOT call RDPProcessor::Reset(false) here. RDPState::Reset
-        // clears otherModeL/H, combiner, tiles, scissor etc. regardless of the
-        // `cold` flag, so a per-frame warm reset would wipe persistent RDP
-        // state that the N64 hardware keeps between display lists. Under LLE
-        // the RSP/RDP state must persist exactly like real hardware --
-        // otherwise the first triangles of each frame run with depthtest=0,
-        // tile=0, combiner=0 and visibly break depth/textures.
+        // Do not call RDPProcessor::Reset(false) here. RDPState::Reset clears
+        // otherModeL/H, combiner, tiles, scissor etc. regardless of the `cold`
+        // flag, so a per-frame warm reset would wipe persistent RDP state that
+        // the N64 hardware keeps between display lists. Under LLE the RSP/RDP
+        // state must persist exactly like real hardware, otherwise the first
+        // triangles of each frame run with depthtest=0, tile=0, combiner=0 and
+        // visibly break depth and textures.
         // Shadow HLE already called NewFrame for the RT scene if it ran first;
         // only call it here if shadow HLE was not active (pure LLE with no RT).
         if (!m_shadowSceneInitialized) {
@@ -764,7 +744,6 @@ void VideoPlugin::ProcessRDPList() {
                    wordCount, wordCount > 0 ? m_rdpCmdScratch[0] : 0u, m_frameStats.rdpCommandCount);
     }
 
-    // Update DPC current register
     *m_sysInfo.dpcCurrentReg = endAddr;
 
     // RDP commands were processed — mark this frame as HLE-rendered so
@@ -779,11 +758,9 @@ void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
     if (!m_renderer) return; // video disabled (no GL context)
     if (!m_rdpProcessor) return;
 
-    // Dispatch to RDP processor
     uint64_t cmd = (static_cast<uint64_t>(w0) << 32) | w1;
     m_rdpProcessor->ProcessRDPCommand(cmd);
 
-    // Track statistics
     uint8_t opcode = (w0 >> 24) & 0x3F;
     switch (opcode) {
     case 0x08:
@@ -811,13 +788,12 @@ void VideoPlugin::UpdateScreen() {
     // Advance the texture cache's frame counter. This drains its deferred-
     // destroy "zombie" queue (evicted GPU textures held a few frames so any
     // in-flight command buffer referencing them finishes first) and runs its
-    // periodic stale-texture sweep. Without this call -- which nothing in the
-    // codebase was making -- evicted textures' GPU resources were never
-    // actually freed: every cache eviction (routine once the 8192-entry/256MB
-    // budget fills, which happens well within a normal play session) leaked
-    // its Vulkan/Metal texture allocation for the rest of the process, until
-    // MoltenVK's IOGPU residency-set allocation limit was exceeded and the
-    // driver called abort() (SIGABRT) out from under a texture upload.
+    // periodic stale-texture sweep. Without it evicted textures' GPU resources
+    // are never freed: every cache eviction (routine once the 8192-entry/256MB
+    // budget fills, well within a normal play session) leaks its Vulkan/Metal
+    // texture allocation for the rest of the process, until MoltenVK's IOGPU
+    // residency-set allocation limit is exceeded and the driver calls abort()
+    // (SIGABRT) during a texture upload.
     if (m_textureCache) m_textureCache->BeginFrame();
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -908,16 +884,16 @@ void VideoPlugin::UpdateScreen() {
         viCfg.height = (yscale > 0) ? (baseH * yscale) / 1024u : baseH;
         g_fbManager.UpdateVI(viCfg);
 
-        // ── CPU->GPU framebuffer upload (Vulkan) ──
+        // --- CPU->GPU framebuffer upload (Vulkan) ---
         // UpdateVI's own upload path calls FramebufferManager::CopyToGPU, which
         // is GL-only, so on Vulkan a buffer the CPU composed in RDRAM never
         // reached the GPU and displayed as nothing. Mirror it here for the
-        // display buffer whenever the RDP has NOT rendered into it this frame
+        // display buffer whenever the RDP has not rendered into it this frame
         // (gpuModified false) -- that is exactly the "content came from the CPU,
         // not from us" case, and it avoids stomping GPU-rendered frames.
         if (m_renderer && !g_fbManager.IsGL() && m_sysInfo.rdram && m_config.fbWriteAccess) {
             if (auto* viFB = g_fbManager.GetDisplayFramebuffer()) {
-                // Sticky check, NOT gpuModified: the read-back clears
+                // Sticky check, not gpuModified: the read-back clears
                 // gpuModified, so using it would let a later frame upload an
                 // N64-resolution RDRAM copy over a GPU-rendered frame and
                 // discard the internal-resolution detail.
@@ -930,7 +906,7 @@ void VideoPlugin::UpdateScreen() {
     uint32_t viType = m_viStatus & 0x3;
     bool viActive = (viType == 2 || viType == 3); // 16-bit or 32-bit
 
-    // ── Compositing strategy ─────────────────────────────────────
+    // --- Compositing strategy ---
     // If the HLE path rendered triangles this frame (ProcessDList called
     // FlushBatch), the content is already on the default framebuffer.
     // In that case we skip the VI framebuffer blit so the HLE output is
@@ -1012,8 +988,8 @@ void VideoPlugin::UpdateScreen() {
                 // in ProcessDList.  End the frame and show the swapchain image.
                 // If no ProcessDList was called this VI period (hadVkFrameBegun==false),
                 // skip presenting — the previous frame's image stays visible.
-                // Presenting a blank clear frame here was causing 30 Hz flickering:
-                // every other VI interrupt showed black instead of the rendered scene.
+                // Presenting a blank clear frame here would flicker at 30 Hz: every
+                // other VI interrupt would show black instead of the rendered scene.
                 if (hadVkFrameBegun) {
                     m_renderer->EndFrame();
                     m_renderer->Present();
@@ -1030,7 +1006,7 @@ void VideoPlugin::UpdateScreen() {
         if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0 && g_fbManager.IsGL()) {
             m_renderer->BeginFrame();
 
-            // Set viewport/scissor AFTER BeginFrame (which may reset them)
+            // Set viewport/scissor after BeginFrame (which may reset them)
             int32_t winW = 0, winH = 0;
             GetOutputSize(winW, winH);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1043,7 +1019,7 @@ void VideoPlugin::UpdateScreen() {
             m_renderer->EndFrame();
             didRender = true;
         } else if (!g_fbManager.IsGL() && m_viWidth > 0 && outHeight > 0) {
-            // Vulkan: no VI RDRAM blit implemented yet — present a clear frame
+            // Vulkan: there is no VI RDRAM blit, so present a clear frame
             // so the swapchain advances and the game loop is not stalled.
             if (!hadVkFrameBegun) m_renderer->BeginFrame();
             m_renderer->EndFrame();
@@ -1068,10 +1044,9 @@ void VideoPlugin::UpdateScreen() {
     }
     markStage(tCompose);
 
-    // Reset HLE flag for next frame
     m_hleRenderedThisFrame = false;
 
-    // ── Post-processing pass ─────────────────────────────────
+    // --- Post-processing pass ---
     // Both render paths (VI blit and HLE BlitToScreen) output to the default
     // framebuffer. If post-processing has enabled effects, capture the default
     // FB into an intermediate texture, then run the effect chain back to FB 0.
@@ -1136,7 +1111,7 @@ void VideoPlugin::UpdateScreen() {
     m_swapPending = true;
     markStage(tFlush);
 
-    // ── Frame for the launcher ──────────────────────────────────
+    // --- Frame for the launcher ---
     // A game drawn inside the launcher hands each frame over as RGBA pixels,
     // top row first, in g_framePixels. Vulkan does that itself when it presents
     // offscreen; on OpenGL the frame is read back from the hidden window here.
@@ -1168,7 +1143,7 @@ void VideoPlugin::UpdateScreen() {
         if (g_frameCallback) g_frameCallback();
     }
 
-    // ── HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ───────────
+    // --- HLE Framebuffer Writeback (GPU → RDRAM, ASYNC) ---
     // Majora's Mask (and other games) sample the previous frame from RDRAM
     // (e.g. for the pause menu blurred background, motion blur, etc.). When
     // we render with HLE the pixels live only in GPU memory, so the game
@@ -1212,7 +1187,7 @@ void VideoPlugin::UpdateScreen() {
     m_frameStats.frameTimeMs = totalMs;
     m_frameStats.fps = (totalMs > 0.0) ? 1000.0 / totalMs : 0.0;
 
-    // Diagnostic: log when UpdateScreen is exceptionally slow
+    // Warn when UpdateScreen is exceptionally slow.
     if (totalMs > 100.0) {
         LOG_WARN("UpdateScreen slow: total={:.1f}ms swap={:.1f}ms frame={}", totalMs, m_frameStats.swapTimeMs,
                  m_frameCount);
@@ -1348,10 +1323,9 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t f
         m_viTexture->Upload(pixels.data(), fbWidth * fbHeight * 4);
     }
 
-    // Draw fullscreen blit
-    // IMPORTANT: Always bind the default framebuffer (FBO 0) before drawing.
-    // Without this, the draw targets whatever FBO is currently bound, which
-    // is the game's color FBO after ProcessDList — corrupting its content.
+    // Always bind the default framebuffer (FBO 0) before the fullscreen blit.
+    // Otherwise the draw targets whatever FBO is bound, which after ProcessDList
+    // is the game's color FBO, and corrupts its content.
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glUseProgram(m_viBlitProgram);
 
@@ -1379,9 +1353,7 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t f
     glUseProgram(0);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  VI Register Changes
-// ═══════════════════════════════════════════════════════════════
+// --- VI Register Changes ---
 
 void VideoPlugin::ViStatusChanged() {
     uint32_t newStatus = ReadVIRegister(m_sysInfo.viStatusReg);
@@ -1418,9 +1390,8 @@ uint32_t VideoPlugin::ReadVIRegister(uint32_t* reg) const { return reg ? *reg : 
 bool VideoPlugin::IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint32_t height, uint32_t bpp) const {
     if (!fbData || width == 0 || height == 0) return false;
 
-    // Quick heuristic: Check first 100 pixels to see if it's completely empty.
-    // If it's entirely filled with 0s, we consider it uninitialized to prevent
-    // garbage display when the grace period ends too early.
+    // Heuristic: if the first 100 pixels are all zero the buffer is treated as
+    // uninitialized, to avoid displaying garbage when the grace period ends too early.
     uint32_t zeroCount = 0;
     uint32_t pixelsToCheck = std::min(width * height, 100u);
     for (uint32_t i = 0; i < pixelsToCheck; i++) {
@@ -1432,16 +1403,14 @@ bool VideoPlugin::IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint
         }
     }
 
-    // Also a fully zeroed frame is technically just black, delaying it rendering
-    // just keeps the screen black. So rejecting it is safe.
+    // A fully zeroed frame is just black, so rejecting it and keeping the
+    // screen black is safe.
     if (zeroCount == pixelsToCheck) return false;
 
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  ROM Events
-// ═══════════════════════════════════════════════════════════════
+// --- ROM Events ---
 
 void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
     m_sysInfo = sysInfo;
@@ -1474,7 +1443,6 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
             !hacks.texRectShadowMap && (found("PERFECT DARK") || found("TUROK_DINOSAUR_HUNTE"));
     }
 
-    // Look up game profile
     auto& db = GameDatabase::Instance();
     m_activeProfile = db.FindByGameId(sysInfo.romGameId);
     if (!m_activeProfile) {
@@ -1490,17 +1458,13 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
 
     SetupTexturePack();
 
-    // Reset frame state
     m_frameStats = {};
     m_frameCount = 0;
     m_dlistIndex = 0;
 
-    // Start initialization grace period
+    // Start the initialization grace period.
     m_framesAfterRomOpen = 0;
     m_isInitializationPhase = true;
-
-    // Optional: Clear any uninitialized RDRAM at the VI origin or just wait
-    // We will handle skipping the render in UpdateScreen and BlitVIFramebuffer
 }
 
 // The folder a game's textures live in is named after its internal ROM name, as Rice Video and
@@ -1566,17 +1530,13 @@ void VideoPlugin::RomClosed() {
     Reset();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Configuration
-// ═══════════════════════════════════════════════════════════════
+// --- Configuration ---
 
 void VideoPlugin::ApplyConfig(const PluginConfig& config) {
     m_config = config;
     m_config.SaveToFile("settings/NovaGraphics.ini");
 
-    // Live-apply settings that can change at runtime
-    // Resolution changes require renderer recreation
-    // Filtering changes are applied on next frame
+    // Only stores and saves the settings; the renderer is not recreated here.
     LOG_INFO("Configuration applied");
 }
 
@@ -1594,9 +1554,7 @@ void VideoPlugin::OpenConfigDialog() {
 #endif
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Debug Features
-// ═══════════════════════════════════════════════════════════════
+// --- Debug Features ---
 
 void VideoPlugin::EnableWireframe(bool enable) {
     m_wireframe = enable;
@@ -1614,7 +1572,6 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
         return;
     }
 
-    // Read back the current framebuffer as RGBA8
     uint32_t w = m_config.windowWidth;
     uint32_t h = m_config.windowHeight;
     std::vector<uint8_t> pixels(w * h * 4);
@@ -1631,8 +1588,7 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
         std::memcpy(bot, rowBuf.data(), rowBytes);
     }
 
-    // Write as TGA (always available, no external deps)
-    // TGA header
+    // Written as TGA: needs no external library.
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -1679,9 +1635,7 @@ void VideoPlugin::LockRender() { m_glMutex.lock(); }
 
 void VideoPlugin::UnlockRender() { m_glMutex.unlock(); }
 
-// ═══════════════════════════════════════════════════════════════
-//  Internal: Renderer & Window
-// ═══════════════════════════════════════════════════════════════
+// --- Internal: Renderer & Window ---
 
 bool VideoPlugin::CreateDisplayWindow() {
     WindowConfig wc;
@@ -1728,7 +1682,6 @@ void VideoPlugin::GetOutputSize(int32_t& width, int32_t& height) const {
 bool VideoPlugin::CreateDisplayRenderer() {
     BackendType backend = BackendType::OpenGL46;
 
-    // Use requested backend from configuration if available
     int cfgBackend = m_config.backendType;
     if (cfgBackend == 1) {
         backend = BackendType::Vulkan;
@@ -1767,7 +1720,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
     using namespace VideoFlags;
     const auto& prof = *m_activeProfile;
 
-    // ── Framebuffer flags ────────────────────────────────────
+    // --- Framebuffer flags ---
     if (prof.flags & CFBReadWrite) {
         LOG_INFO("  Enabling CFB read/write emulation");
         m_config.fbReadAccess = true;
@@ -1792,7 +1745,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         m_config.n64DepthCompare = false;
     }
 
-    // ── Texture flags → TextureCacheConfig ──────────────────
+    // --- Texture flags → TextureCacheConfig ---
     if (m_textureCache) {
         Tex::TextureCacheConfig tcCfg = m_textureCache->GetConfig();
         bool texCfgChanged = false;
@@ -1839,7 +1792,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         }
     }
 
-    // ── Blending / rendering flags ──────────────────────────
+    // --- Blending / rendering flags ---
     if (prof.flags & AccurateBlending) {
         LOG_INFO("  Enabling accurate blending");
         m_config.accurateBlending = true;
@@ -1853,7 +1806,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         m_config.forceNoAlphaTest = true;
     }
 
-    // ── Numerical tweaks ────────────────────────────────────
+    // --- Numerical tweaks ---
     if (prof.textureLodBias != 0.0f) {
         LOG_INFO("  Texture LOD bias: {:.2f}", prof.textureLodBias);
         m_config.lodBias = prof.textureLodBias;
@@ -1872,13 +1825,13 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         m_config.stretchFactor = prof.aspectRatioOverride;
     }
 
-    // ── Performance flags ───────────────────────────────────
+    // --- Performance flags ---
     if (prof.flags & DisableAsync) {
         LOG_INFO("  Disabling async texture loads");
         m_config.asyncTextureLoading = false;
     }
 
-    // ── Game-specific hacks ─────────────────────────────────
+    // --- Game-specific hacks ---
     if (prof.zelda64Hack) {
         LOG_INFO("  Applying Zelda 64 hacks (FB copy + depth bias)");
         m_config.fbReadAccess = true;
@@ -1905,7 +1858,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         m_config.depthBiasHack = prof.depthBias != 0 ? prof.depthBias : -2;
     }
 
-    // ── RDP Processor hack flags ────────────────────────────
+    // --- RDP Processor hack flags ---
     if (m_rdpProcessor) {
         m_rdpProcessor->m_hacks.skipTexRect = prof.winBackSkipTexrect;
         m_rdpProcessor->m_hacks.noDepthFrameBuffers = prof.noDepthFrameBuffers;
@@ -1924,7 +1877,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         m_rdpProcessor->m_hacks.pdDepthCopyOnce = prof.perfectDarkHack;
     }
 
-    // ── Framebuffer Manager hack flags ──────────────────────────
+    // --- Framebuffer Manager hack flags ---
     g_fbManager.m_fbHacks.paperMarioBlueBoost = prof.paperMarioSubscreen;
     g_fbManager.m_fbHacks.conkerBlurDetect = prof.conkerHack;
     g_fbManager.m_fbHacks.pdDepthOncePerFrame = prof.perfectDarkHack;

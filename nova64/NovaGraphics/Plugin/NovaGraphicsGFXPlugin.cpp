@@ -25,9 +25,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Construction
-// ═══════════════════════════════════════════════════════════════════════
+// --- Construction ---
 
 NovaGraphicsGFXPlugin::NovaGraphicsGFXPlugin() : m_lastStatTime(std::chrono::steady_clock::now()) {}
 
@@ -35,9 +33,7 @@ NovaGraphicsGFXPlugin::~NovaGraphicsGFXPlugin() {
     if (m_initialized) Shutdown();
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  PluginBase interface
-// ═══════════════════════════════════════════════════════════════════════
+// --- PluginBase interface ---
 
 ::Plugins::PluginInfo NovaGraphicsGFXPlugin::GetPluginInfo() const {
     ::Plugins::PluginInfo info{};
@@ -59,14 +55,14 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
     SystemInfo si{};
 
     if (system) {
-        // ── Memory pointers ──────────────────────────────────────
+        // --- Memory pointers ---
         if (auto* mem = system->GetMemory()) {
             si.rdram = mem->Rdram();
             si.rdramSize = mem->RdramSize();
             si.dmem = mem->Dmem();
             si.imem = mem->Imem();
 
-            // ── VI register pointers ─────────────────────────────
+            // --- VI register pointers ---
             if (auto* vi = mem->VideoInterface()) {
                 si.viStatusReg = vi->GetRegisterPtr(VI::Register::STATUS);
                 si.viOriginReg = vi->GetRegisterPtr(VI::Register::ORIGIN);
@@ -80,7 +76,7 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
                 si.viYScaleReg = vi->GetRegisterPtr(VI::Register::Y_SCALE);
             }
 
-            // ── DPC register pointers ────────────────────────────
+            // --- DPC register pointers ---
             if (auto* dpc = mem->DPCommandRegisters()) {
                 si.dpcStartReg = dpc->GetRegisterPtr(DPCRegisters::DPC_START);
                 si.dpcEndReg = dpc->GetRegisterPtr(DPCRegisters::DPC_END);
@@ -88,13 +84,13 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
                 si.dpcStatusReg = dpc->GetRegisterPtr(DPCRegisters::DPC_STATUS);
             }
 
-            // ── MI interrupt register ────────────────────────────
+            // --- MI interrupt register ---
             if (auto* mi = mem->MIPSInterface()) {
                 si.miIntrReg = mi->MI_INTR_REG;
             }
         }
 
-        // ── ROM information ──────────────────────────────────────
+        // --- ROM information ---
         if (auto* rom = system->GetRom(); rom && rom->IsLoaded()) {
             const auto& img = rom->GetImage();
             si.romName = img.GetRomName();
@@ -104,7 +100,7 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
             // Read CRC1/CRC2 from ROM header.
             // ROM data is in host word order (each 32-bit word byte-reversed
             // from big-endian on LE hosts), so a native uint32_t read gives
-            // the correct value.  Do NOT use read32be — that double-swaps.
+            // the correct value.  Do not use read32be, which would swap twice.
             if (img.Size() >= N64::Rom::RomHeader::OFFSET_CRC2 + 4) {
                 const auto* hdr = img.Data();
                 si.romCRC1 = *reinterpret_cast<const uint32_t*>(hdr + N64::Rom::RomHeader::OFFSET_CRC1);
@@ -127,12 +123,11 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
 
     PluginCallbacks cb{};
 
-    // Wire the SyncFull → DP interrupt callback.  When the RDP encounters a
-    // SyncFull command, this fires to set MI_INTR_DP — the architecturally
-    // correct point where real N64 hardware raises the DP interrupt.  If we
-    // are inside ClearHalt's DoRspCycles (RSP interpreter path), the bit is
-    // deferred so ClearHalt can deliver it together with MI_INTR_SP at the
-    // next instruction boundary.
+    // SyncFull → DP interrupt callback.  When the RDP encounters a SyncFull
+    // command this fires to set MI_INTR_DP, the point where real N64 hardware
+    // raises the DP interrupt.  Inside ClearHalt's DoRspCycles (RSP interpreter
+    // path) the bit is deferred so ClearHalt can deliver it together with
+    // MI_INTR_SP at the next instruction boundary.
     if (system && system->GetRegisters()) {
         auto* regs = system->GetRegisters();
         cb.checkInterrupts = [regs]() {
@@ -229,15 +224,13 @@ bool NovaGraphicsGFXPlugin::LoadState(const uint8_t* data, size_t size) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  GFXPlugin interface
-// ═══════════════════════════════════════════════════════════════════════
+// --- GFXPlugin interface ---
 
 bool NovaGraphicsGFXPlugin::InitializeDisplay(void* hwnd, const ::Plugins::RenderSettings& settings) {
     (void)settings;
     (void)hwnd;
     // The window handle is already managed via SetExternalWindow().
-    // Do NOT call RomOpen here — it would overwrite the SystemInfo
+    // RomOpen must not be called here: it would overwrite the SystemInfo
     // (VI register pointers, RDRAM, etc.) that was set during Initialize().
     return true;
 }
@@ -263,7 +256,6 @@ void NovaGraphicsGFXPlugin::ProcessDListShadow(uint32_t /*start*/, uint32_t /*en
 void NovaGraphicsGFXPlugin::ProcessRDPCommand(uint64_t cmd) {
     if (!m_initialized) return;
 
-    // Forward single RDP command to VideoPlugin's RDP processor
     uint32_t w0 = static_cast<uint32_t>(cmd >> 32);
     uint32_t w1 = static_cast<uint32_t>(cmd);
     m_videoPlugin.ProcessRDPCommand(w0, w1);
@@ -279,7 +271,7 @@ void NovaGraphicsGFXPlugin::UpdateScreen() {
     m_videoPlugin.UpdateScreen();
     m_viCount++;
 
-    // Log DL count for SM64 troubleshooting
+    // Frame summary once every 60 VIs.
     const auto& stats = m_videoPlugin.GetFrameStats();
     if ((stats.viInterrupts % 60) == 0) {
         Log::infof("NovaGraphics: Last frame DLs: %u | RDPcmds: %u | Total VIs: %u | HLE Rendered: %s",
@@ -313,9 +305,7 @@ void NovaGraphicsGFXPlugin::ReadFrameBuffer(uint8_t* dest, uint32_t addr, uint32
                                             uint32_t size) {
     if (!dest) return;
 
-    // Read back from the GPU-rendered framebuffer into RDRAM.
-    // The RDPProcessor owns the RDRAM pointer and can read from it,
-    // but for GPU-rendered content we need to do a proper GPU readback.
+    // Read the GPU-rendered framebuffer back into `dest`.
     auto& rdp = m_videoPlugin.GetRDPProcessor();
     if (!rdp) return;
 
@@ -328,7 +318,7 @@ void NovaGraphicsGFXPlugin::WriteFrameBuffer(const uint8_t* src, uint32_t addr, 
                                              uint32_t size) {
     if (!src) return;
 
-    // Upload CPU-side pixel data to the GPU framebuffer (RDRAM write-back).
+    // Upload CPU-side pixel data to the GPU framebuffer.
     auto& rdp = m_videoPlugin.GetRDPProcessor();
     if (!rdp) return;
 
@@ -351,9 +341,7 @@ bool NovaGraphicsGFXPlugin::CaptureScreenshot(const std::string& filename) {
 
 double NovaGraphicsGFXPlugin::GetLastSwapTimeMs() const { return m_videoPlugin.GetLastSwapTimeMs(); }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Factory
-// ═══════════════════════════════════════════════════════════════════════
+// --- Factory ---
 
 std::unique_ptr<::Plugins::GFXPlugin> CreateNovaGraphicsPlugin() { return std::make_unique<NovaGraphicsGFXPlugin>(); }
 

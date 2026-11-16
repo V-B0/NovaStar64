@@ -35,9 +35,7 @@ Logger g_logger;
 // Diagnostics-only present index (declared in Logger.hpp).
 std::atomic<long> g_presentIndex{0};
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Static Name/Color Tables
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Static Name/Color Tables ---
 
 const char* Logger::LevelName(LogLevel level) noexcept {
     switch (level) {
@@ -84,9 +82,7 @@ const char* Logger::SubsystemName(LogSubsystem sub) noexcept {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Lifecycle
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Lifecycle ---
 
 Logger::~Logger() { Shutdown(); }
 
@@ -118,7 +114,6 @@ bool Logger::Init(const LoggerConfig& config) {
     }
 #endif
 
-    // Open log file
     if (m_config.fileOutput && !m_config.logFilePath.empty()) {
         m_file.open(m_config.logFilePath, std::ios::out | std::ios::trunc);
         if (!m_file.is_open()) {
@@ -143,9 +138,7 @@ void Logger::Shutdown() {
     m_initialized = false;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Configuration
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Configuration ---
 
 void Logger::SetConfig(const LoggerConfig& config) {
     std::lock_guard<std::mutex> lk(m_mutex);
@@ -165,9 +158,7 @@ void Logger::SetSubsystemLevel(LogSubsystem sub, LogLevel level) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Level Checks
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Level Checks ---
 
 LogLevel Logger::GetEffectiveLevel(LogSubsystem sub) const noexcept {
     auto idx = static_cast<size_t>(sub);
@@ -184,14 +175,11 @@ bool Logger::IsEnabled(LogLevel level, LogSubsystem sub) const noexcept {
     return static_cast<uint8_t>(level) <= static_cast<uint8_t>(GetEffectiveLevel(sub));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Core Logging
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Core Logging ---
 
 void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line, const char* func, const char* fmt, ...) {
     if (!IsEnabled(level, sub)) return;
 
-    // Format message via va_list
     char buf[2048];
     va_list args;
     va_start(args, fmt);
@@ -201,7 +189,6 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line, c
     if (written < 0) return;
     if (written >= static_cast<int>(sizeof(buf))) buf[sizeof(buf) - 1] = '\0';
 
-    // Build entry
     LogEntry entry;
     entry.level = level;
     entry.subsystem = sub;
@@ -224,7 +211,6 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line, c
     entry.threadId = static_cast<uint32_t>(syscall(SYS_gettid));
 #endif
 
-    // Update stats
     m_stats.totalMessages.fetch_add(1, std::memory_order_relaxed);
     switch (level) {
     case LogLevel::Fatal:   m_stats.fatalCount.fetch_add(1, std::memory_order_relaxed); break;
@@ -239,9 +225,7 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line, c
     WriteEntry(entry);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Output
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Output ---
 
 void Logger::WriteEntry(const LogEntry& entry) {
     std::lock_guard<std::mutex> lk(m_mutex);
@@ -307,9 +291,7 @@ void Logger::FormatEntry(std::string& out, const LogEntry& entry, bool color) co
     out = ss.str();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Log Rotation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Log Rotation ---
 
 void Logger::RotateLog() {
     if (!m_file.is_open()) return;

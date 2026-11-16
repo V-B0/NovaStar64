@@ -1,9 +1,8 @@
 /**
  * @file ClipMath.cpp
- * @brief Clipping Mathematics.
+ * @brief Triangle clipping, culling and viewport transform routines declared in ClipMath.hpp.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Clipping Mathematics Implementation
 
 #include "ClipMath.hpp"
 #include <cmath>
@@ -14,9 +13,7 @@ namespace Nova64 {
 namespace Video {
 namespace Clip {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CLIP FLAG COMPUTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- CLIP FLAG COMPUTATION ---
 
 uint32_t ComputeClipFlags(const Vec4f& clipPos) {
     float x = clipPos.f[0], y = clipPos.f[1], z = clipPos.f[2], w = clipPos.f[3];
@@ -89,9 +86,7 @@ bool CullVertexRange(const uint32_t* clipFlags, int startIdx, int endIdx) {
     return (andFlags & CLIP_ALL) != 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// INTERPOLATION HELPER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- INTERPOLATION HELPER ---
 
 static ClipVertex LerpClipVertex(const ClipVertex& a, const ClipVertex& b, float t) {
     ClipVertex result;
@@ -113,8 +108,8 @@ static ClipVertex LerpClipVertex(const ClipVertex& a, const ClipVertex& b, float
     return result;
 }
 
-// Get signed distance from point to clip plane
-// clipRatio scales the W comparand for X/Y planes (guard band)
+// Signed distance from a point to a clip plane (>= 0 is inside).
+// clipRatio scales the W comparand for the X/Y planes (guard band).
 static float PlaneDistance(const Vec4f& pos, ClipPlane plane, float clipRatio = 1.0f) {
     float x = pos.f[0], y = pos.f[1], z = pos.f[2], w = pos.f[3];
     float wg = w * clipRatio;         // guard-band scaled W (only used for X/Y)
@@ -126,37 +121,31 @@ static float PlaneDistance(const Vec4f& pos, ClipPlane plane, float clipRatio = 
     case PLANE_BOTTOM: return y + wg; // y >= -w*ratio
     case PLANE_TOP:
         return wg - y;                // y <= w*ratio
-    // Clip against w = 0.01 DIRECTLY (not w = 0 with a post-clamp): the
-    // old scheme interpolated the intersection vertex's xyz to the w=0
-    // crossing and then forced w to 0.01, leaving xyz ~100× too large for
-    // the stored w. The perspective divide blew the vertex across the
-    // screen (bounded only by the X/Y guard band), rasterizing a sliver
-    // with squished interpolated texcoords — the "duplicate squished tree
-    // texture" wedge, emitted whenever a billboard crossed the camera
-    // plane. Clipping at 0.01 keeps xyz consistent with the final w.
+    // Clip against w = 0.01 directly, not w = 0 followed by a clamp: interpolating
+    // the intersection vertex's xyz to the w = 0 crossing and then forcing w to
+    // 0.01 leaves xyz ~100x too large for the stored w. The perspective divide
+    // then throws the vertex across the screen (bounded only by the X/Y guard
+    // band) and rasterizes a sliver with squished interpolated texcoords: the
+    // "duplicate squished tree texture" wedge whenever a billboard crossed the
+    // camera plane. Clipping at 0.01 keeps xyz consistent with the final w.
     case PLANE_W_NEAR:
         return w - 0.01f; // w >= 0.01
-    // N64 NoN near plane: z >= 0 in clip space. For standard N64
-    // projections, z_clip = 0 is the game's actual near plane and every
-    // vertex with z > 0 also has w >= w(near) > 0 — so clipping here
-    // (instead of at the w=0.01 camera plane) never produces the
-    // pathological z/w explosion that the camera-plane cut creates for
-    // far-plane-hugging geometry (Zelda skyboxes: z/w ≈ 0.5 at the
-    // original vertices, z/w ≈ 50 at a w=0.01 cut, which the far-plane
-    // pass then deleted entirely — the missing sky cells).
+    // N64 NoN near plane: z >= 0 in clip space. For standard N64 projections
+    // z_clip = 0 is the game's actual near plane and every vertex with z > 0
+    // also has w >= w(near) > 0, so clipping here instead of at the w = 0.01
+    // camera plane never produces the z/w explosion the camera-plane cut causes
+    // for far-plane-hugging geometry (Zelda skyboxes: z/w is about 0.5 at the
+    // original vertices but about 50 at a w = 0.01 cut, which the far-plane pass
+    // then deleted entirely, leaving missing sky cells).
     case PLANE_NEAR_N64: return z; // z >= 0
     default:             return 0.0f;
     }
 }
 
 // N64 near plane: z >= 0 (instead of z >= -w)
-static float PlaneDistanceN64Near(const Vec4f& pos) {
-    return pos.f[2]; // z >= 0
-}
+static float PlaneDistanceN64Near(const Vec4f& pos) { return pos.f[2]; }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SUTHERLAND-HODGMAN POLYGON CLIPPING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SUTHERLAND-HODGMAN POLYGON CLIPPING ---
 
 int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount, ClipVertex* vertsOut, ClipPlane plane,
                             float clipRatio) {
@@ -182,7 +171,6 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount, ClipVertex
 
         // Edge crosses plane
         if (currInside != nextInside) {
-            // Compute intersection parameter
             float denom = distCurr - distNext;
             if (std::fabs(denom) > Math::kEpsilonSq) {
                 float t = distCurr / denom;
@@ -207,16 +195,15 @@ int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount, ClipVertex
 
 int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result,
                  float clipRatio) {
-    // Early trivial rejection.
-    // X/Y/Z same-side rejection is only valid when all three vertices have
-    // w > 0: for a vertex behind the camera the ±w·ratio bounds are
-    // negative and its X/Y flags fire spuriously, so a camera-plane-
-    // straddling triangle (whose near-clipped part may be fully on screen —
-    // the Zelda skybox's overhead cells) would share a spurious bit with a
-    // genuinely-flagged front vertex and be dropped instead of clipped.
-    // Only CLIP_W itself (all three behind the camera) is an unconditional
-    // reject; otherwise fall through and let the W-near plane pass sort it
-    // out geometrically.
+    // Trivial rejection. Same-side rejection on X/Y/Z is only valid when all
+    // three vertices have w > 0: for a vertex behind the camera the +-w*ratio
+    // bounds are negative and its X/Y flags fire spuriously, so a triangle
+    // straddling the camera plane (whose near-clipped part may be fully on
+    // screen, like the Zelda skybox's overhead cells) would share a spurious bit
+    // with a genuinely flagged front vertex and be dropped instead of clipped.
+    // Only CLIP_W on all three vertices (all behind the camera) is an
+    // unconditional reject; otherwise fall through and let the W-near plane pass
+    // sort it out geometrically.
     uint32_t andFlags = v0.clipFlags & v1.clipFlags & v2.clipFlags;
     bool anyBehind = ((v0.clipFlags | v1.clipFlags | v2.clipFlags) & CLIP_W) != 0;
     if ((andFlags & CLIP_W) != 0 || (!anyBehind && andFlags != 0)) {
@@ -224,7 +211,6 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
         return 0;
     }
 
-    // Early trivial acceptance
     uint32_t orFlags = v0.clipFlags | v1.clipFlags | v2.clipFlags;
     if (orFlags == 0) {
         result.vertices[0] = v0;
@@ -246,23 +232,22 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
     ClipVertex* output = bufB;
 
     // Only clip against planes that are needed.
-    // NEAR_N64 (z >= 0) runs FIRST for camera-plane-straddling triangles:
-    // cutting at the game's real near plane keeps w >= w(near) on every
-    // produced vertex, so z/w stays sane. The previous order (W_NEAR at
-    // w = 0.01 only) cut far-plane-hugging geometry at the camera plane,
-    // where the interpolated vertex kept z ≈ 0.5-0.8 but w collapsed to
-    // 0.01 → z/w ≈ 50 → the subsequent FAR pass deleted the entire
-    // polygon. That silently discarded every Zelda skybox cell whose
-    // triangle straddled w = 0 (the dome arcs overhead through the camera
-    // plane) — the black "shattered glass" sky. W_NEAR stays as a residual
-    // guard (no-op once z >= 0 clipping has run).
-    // FAR is CLIPPED: the renderer clamps beyond-far z to 0.99999 instead of
-    // GPU depth-clamping, so a triangle STRADDLING the far plane (long fence/
-    // ribbon geometry sweeping behind the camera) kept its beyond-far part,
-    // which rasterized as a giant sliver visible against the sky-cleared
-    // depth buffer — the brown "tree wedge" on the castle grounds. Real RSP
-    // clipping cuts at far; so do we. (Fully-beyond-far triangles are already
-    // trivially rejected via CLIP_POSZ in GBIHandler.)
+    // NEAR_N64 (z >= 0) runs first for camera-plane-straddling triangles:
+    // cutting at the game's real near plane keeps w >= w(near) on every produced
+    // vertex, so z/w stays sane. Cutting far-plane-hugging geometry at the camera
+    // plane (W_NEAR at w = 0.01) instead leaves the interpolated vertex with z of
+    // about 0.5-0.8 but w collapsed to 0.01, so z/w is about 50 and the FAR pass
+    // deletes the whole polygon. That discarded every Zelda skybox cell whose
+    // triangle straddled w = 0 (the dome arcs overhead through the camera plane),
+    // giving a black "shattered glass" sky. W_NEAR stays as a residual guard (a
+    // no-op once the z >= 0 clip has run).
+    // FAR is clipped because the renderer clamps beyond-far z to 0.99999 instead
+    // of using GPU depth clamping: a triangle straddling the far plane (long
+    // fence or ribbon geometry sweeping behind the camera) would keep its
+    // beyond-far part, which rasterizes as a giant sliver against the sky-cleared
+    // depth buffer (the brown "tree wedge" on the castle grounds). Real RSP
+    // clipping cuts at far too. Triangles entirely beyond far are already
+    // rejected via CLIP_POSZ in GBIHandler.
     static const ClipPlane planes[] = {PLANE_NEAR_N64, PLANE_W_NEAR, PLANE_FAR, PLANE_LEFT,
                                        PLANE_RIGHT,    PLANE_BOTTOM, PLANE_TOP};
     static const uint32_t planeFlags[] = {CLIP_W, CLIP_W, CLIP_POSZ, CLIP_NEGX, CLIP_POSX, CLIP_NEGY, CLIP_POSY};
@@ -278,13 +263,11 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
             return 0;
         }
 
-        // Swap buffers
         ClipVertex* tmp = input;
         input = output;
         output = tmp;
     }
 
-    // Copy result to output
     result.vertexCount = std::min(count, MAX_CLIPPED_VERTS);
     for (int i = 0; i < result.vertexCount; i++) {
         result.vertices[i] = input[i];
@@ -295,7 +278,6 @@ int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v
 }
 
 int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result) {
-    // Only clip against near plane (most common operation)
     uint32_t nearFlag = CLIP_NEGZ;
     uint32_t andFlags = v0.clipFlags & v1.clipFlags & v2.clipFlags;
     if (andFlags & nearFlag) {
@@ -319,7 +301,6 @@ int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const Clip
 }
 
 int ClipTriangleN64Near(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result) {
-    // N64 near plane at z = 0
     ClipVertex input[MAX_CLIPPED_VERTS] = {v0, v1, v2};
     int inCount = 3;
     int outCount = 0;
@@ -350,9 +331,7 @@ int ClipTriangleN64Near(const ClipVertex& v0, const ClipVertex& v1, const ClipVe
     return std::max(0, outCount - 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GUARD BAND CLIPPING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GUARD BAND CLIPPING ---
 
 bool InsideGuardBand(const Vec4f& clipPos, const GuardBand& gb) {
     if (clipPos.f[3] <= 0.0f) return false;
@@ -363,17 +342,16 @@ bool InsideGuardBand(const Vec4f& clipPos, const GuardBand& gb) {
 }
 
 uint32_t ComputeGuardBandFlags(const Vec4f& clipPos, const GuardBand& gb) {
-    // Guard band uses scaled X/Y planes; Z uses standard clip
     float x = clipPos.f[0], y = clipPos.f[1], z = clipPos.f[2], w = clipPos.f[3];
 
     uint32_t flags = 0;
 
-    // Standard near/far clip
+    // Near/far use the standard planes.
     if (z > w) flags |= CLIP_POSZ;
     if (z < -w) flags |= CLIP_NEGZ;
     if (w <= 0) flags |= CLIP_W;
 
-    // Guard band X/Y: only flag if outside guard band
+    // X/Y are flagged only outside the guard band, scaled by |w| / 320 and |w| / 240.
     float gbScale = std::fabs(w);
     if (x > gb.right * gbScale / 320.0f) flags |= CLIP_POSX;
     if (x < gb.left * gbScale / 320.0f) flags |= CLIP_NEGX;
@@ -390,13 +368,12 @@ int ClipTriangleGuardBand(const ClipVertex& v0, const ClipVertex& v1, const Clip
     uint32_t f1 = ComputeGuardBandFlags(v1.position, gb);
     uint32_t f2 = ComputeGuardBandFlags(v2.position, gb);
 
-    // Trivial reject
     if (f0 & f1 & f2) {
         result.vertexCount = 0;
         return 0;
     }
 
-    // Trivial accept (inside guard band)
+    // Inside the guard band on every plane.
     if ((f0 | f1 | f2) == 0) {
         result.vertices[0] = v0;
         result.vertices[1] = v1;
@@ -405,13 +382,12 @@ int ClipTriangleGuardBand(const ClipVertex& v0, const ClipVertex& v1, const Clip
         return 1;
     }
 
-    // Need to clip: use standard clipping (near/far + X/Y if outside guard band)
+    // Otherwise clip with the standard clipper, which works from the vertices' own
+    // clipFlags rather than the guard band flags.
     return ClipTriangle(v0, v1, v2, result);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SCREEN-SPACE SCISSOR CLIPPING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SCREEN-SPACE SCISSOR CLIPPING ---
 
 static ScreenVertex LerpScreenVertex(const ScreenVertex& a, const ScreenVertex& b, float t) {
     ScreenVertex r;
@@ -426,7 +402,8 @@ static ScreenVertex LerpScreenVertex(const ScreenVertex& a, const ScreenVertex& 
     return r;
 }
 
-// Clip polygon against a single axis-aligned line
+// Clips a polygon against one axis-aligned line (axis 0 = x, 1 = y); clipGreater keeps the
+// side <= value, otherwise >= value.
 static int ClipScreenPolyAgainstEdge(const ScreenVertex* in, int count, ScreenVertex* out, int axis, float value,
                                      bool clipGreater) {
     if (count < 3) return 0;
@@ -461,7 +438,6 @@ int ClipToScissor(const ScreenVertex* vertsIn, int vertCount, ScreenVertex* vert
     ScreenVertex bufA[MAX_SCREEN_CLIPPED];
     ScreenVertex bufB[MAX_SCREEN_CLIPPED];
 
-    // Start with input
     std::memcpy(bufA, vertsIn, vertCount * sizeof(ScreenVertex));
     int count = vertCount;
 
@@ -487,16 +463,13 @@ int ClipToScissor(const ScreenVertex* vertsIn, int vertCount, ScreenVertex* vert
     count = ClipScreenPolyAgainstEdge(input, count, output, 1, static_cast<float>(scissor.y1), true);
     std::swap(input, output);
 
-    // Copy result
     if (count >= 3) {
         std::memcpy(vertsOut, input, count * sizeof(ScreenVertex));
     }
     return count;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// BACKFACE CULLING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BACKFACE CULLING ---
 
 bool IsBackFacing(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, bool frontFaceCCW) {
     // 2D cross product: (v1-v0) x (v2-v0)
@@ -532,7 +505,6 @@ bool IsBackFacingClipSpace(const Vec4f& v0, const Vec4f& v1, const Vec4f& v2, bo
 }
 
 bool ShouldCullTriangle(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, uint32_t geometryMode) {
-    // N64 geometry mode culling bits
     static constexpr uint32_t G_CULL_FRONT = 0x00000200;
     static constexpr uint32_t G_CULL_BACK = 0x00000400;
 
@@ -544,16 +516,14 @@ bool ShouldCullTriangle(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, uint3
 
     float cross = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
 
-    // On N64, CW winding = front face (screen space with Y-down)
-    if (cullBack && cross > 0.0f) return true;  // CW back-face = positive cross in Y-down
-    if (cullFront && cross < 0.0f) return true; // CCW front-face
+    // With Y down, a positive cross product is clockwise on screen.
+    if (cullBack && cross > 0.0f) return true;
+    if (cullFront && cross < 0.0f) return true;
 
     return false;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM ---
 
 Vec3f PerspectiveDivide(const Vec4f& clipPos) {
     if (std::fabs(clipPos.f[3]) < Math::kEpsilon) {
@@ -594,9 +564,7 @@ void ViewportTransform::TransformBatch(const ClipVertex* clipVerts, ScreenVertex
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// BRANCH_Z TEST
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BRANCH_Z TEST ---
 
 bool BranchZTest(const Vec4f& clipPos, const ViewportTransform& vt, float zThreshold, float wThreshold) {
     if (std::fabs(clipPos.f[3]) < Math::kEpsilon) return false;
@@ -609,21 +577,17 @@ bool BranchZTest(const Vec4f& clipPos, const ViewportTransform& vt, float zThres
     return screenZ < scaledThreshold;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// COMPLETE TRIANGLE PIPELINE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- COMPLETE TRIANGLE PIPELINE ---
 
 TrianglePipelineResult ProcessTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
                                        const TrianglePipelineConfig& config) {
     TrianglePipelineResult result;
     result.triangleCount = 0;
 
-    // Step 1: Trivial rejection
     if (TrivialReject(v0.clipFlags, v1.clipFlags, v2.clipFlags)) {
         return result;
     }
 
-    // Step 2: Clip the triangle
     ClippedPolygon clipped;
     int clippedTriCount;
 
@@ -637,28 +601,24 @@ TrianglePipelineResult ProcessTriangle(const ClipVertex& v0, const ClipVertex& v
 
     if (clippedTriCount == 0) return result;
 
-    // Step 3: Viewport transform the clipped vertices
     ScreenVertex screenVerts[MAX_CLIPPED_VERTS];
     config.viewport.TransformBatch(clipped.vertices, screenVerts, clipped.vertexCount);
 
-    // Step 4: Fan triangulation of clipped polygon
+    // Fan-triangulate the clipped polygon.
     for (int i = 0; i < clipped.vertexCount - 2 && result.triangleCount < MAX_OUTPUT_TRIANGLES; i++) {
         const ScreenVertex& sv0 = screenVerts[0];
         const ScreenVertex& sv1 = screenVerts[i + 1];
         const ScreenVertex& sv2 = screenVerts[i + 2];
 
-        // Step 5: Backface culling (screen space)
         if (ShouldCullTriangle(sv0.position, sv1.position, sv2.position, config.geometryMode)) {
             continue;
         }
 
-        // Step 6: Degenerate triangle check
         float area = Math::TriangleUtil::SignedArea2D(sv0.position, sv1.position, sv2.position);
         if (std::fabs(area) < Math::kEpsilonSq) {
             continue;
         }
 
-        // Output triangle
         ScreenTriangle& tri = result.triangles[result.triangleCount];
         tri.v[0] = sv0;
         tri.v[1] = sv1;

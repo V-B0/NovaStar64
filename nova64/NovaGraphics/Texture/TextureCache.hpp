@@ -1,10 +1,9 @@
 /**
  * @file TextureCache.hpp
- * @brief Texture Cache.
+ * @brief N64 TMEM-to-GPU texture management: decoding, hash-based deduplication, LRU eviction and
+ *        hi-res texture pack replacement.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Texture Cache
-// N64 TMEM-to-GPU texture management, hash-based deduplication, LRU eviction
 
 #pragma once
 
@@ -29,9 +28,7 @@ namespace Nova64 {
 namespace Video {
 namespace Tex {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  N64 TEXTURE FORMAT DEFINITIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64 TEXTURE FORMAT DEFINITIONS ---
 
 enum class N64TexFormat : uint8_t {
     RGBA = 0, // 16b or 32b RGBA
@@ -44,9 +41,7 @@ enum class N64TexFormat : uint8_t {
 
 enum class N64TexSize : uint8_t { Bits4 = 0, Bits8 = 1, Bits16 = 2, Bits32 = 3, Count = 4 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE HASH / KEY
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE HASH / KEY ---
 
 struct TextureKey {
     uint32_t address; // RDRAM address
@@ -117,9 +112,7 @@ struct TextureKeyHash {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  CACHED TEXTURE ENTRY
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- CACHED TEXTURE ENTRY ---
 
 struct CachedTexture {
     TextureKey key;
@@ -139,9 +132,7 @@ struct CachedTexture {
     float scaleT = 1.0f;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE CACHE STATISTICS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE CACHE STATISTICS ---
 
 struct TextureCacheStats {
     uint64_t hits = 0;
@@ -162,9 +153,7 @@ struct TextureCacheStats {
     void Reset() { hits = misses = evictions = uploads = conversions = 0; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE CACHE CONFIGURATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE CACHE CONFIGURATION ---
 
 struct TextureCacheConfig {
     uint64_t maxCacheBytes = 256 * 1024 * 1024; // 256MB max GPU texture memory
@@ -179,16 +168,13 @@ struct TextureCacheConfig {
     std::string hiResTexturePath;  // Path to hi-res texture packs
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE CACHE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE CACHE ---
 
 class TextureCache {
 public:
     TextureCache();
     ~TextureCache();
 
-    /// Initialize with renderer and config
     bool Initialize(IRenderer* renderer, const TextureCacheConfig& config);
     void Shutdown();
 
@@ -219,13 +205,12 @@ public:
     /// Evict old textures to stay within memory budget
     void EvictStale(uint64_t currentFrame);
 
-    /// Frame boundary — update stats, advance frame counter
+    /// Frame boundary: advances the frame counter, destroys retired textures the GPU has finished
+    /// with, and every 64 frames evicts stale ones.
     void BeginFrame();
 
-    /// Get statistics
     const TextureCacheStats& GetStats() const { return m_stats; }
 
-    /// Get cache config (for debug display)
     const TextureCacheConfig& GetConfig() const { return m_config; }
 
     /// Update config at runtime
@@ -246,7 +231,6 @@ private:
     /// Decode N64 texture data into RGBA8888
     void DecodeTexture(const TextureKey& key, const uint8_t* tmem, std::vector<uint32_t>& outPixels, bool fromTMEM);
 
-    /// Decode specific N64 formats
     void DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
                       const uint8_t* tmemBase = nullptr, uint32_t wrapMaskQW = 0);
     void DecodeRGBA32(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t lineBytes,
@@ -276,13 +260,11 @@ private:
     /// Calculate texture size in TMEM bytes
     uint32_t CalculateTMEMSize(const TextureKey& key) const;
 
-    /// Get the next power of 2 >= value
     static uint32_t NextPow2(uint32_t v);
 
     /// Largest valid mip chain length for a w x h base level (1x1 -> 1, 8x8 -> 4, ...)
     static uint32_t MaxMipLevels(uint32_t w, uint32_t h);
 
-    /// LRU eviction — remove least recently used texture
     void EvictLRU();
 
     /// Load hi-res texture replacement
@@ -314,9 +296,9 @@ private:
     // Deferred-destruction zombie queue.
     // A texture leaving the cache may still be referenced by a GPU frame that is
     // queued or running, so its GPU resources wait here until the renderer reports that
-    // frame finished (IRenderer::CompletedFrameSerial). Counting video fields instead
-    // was the bug: a game that draws every third field retired textures within a third
-    // of a GPU frame, and the device was lost with an address fault.
+    // frame finished (IRenderer::CompletedFrameSerial). Retiring by counting video fields
+    // is not safe: a game that draws every third field would retire textures within a third
+    // of a GPU frame, and the device is lost with an address fault.
     struct Zombie {
         std::unique_ptr<ITexture> gpuTex;
         uint64_t retireSerial; // IRenderer::FrameSerial() when it left the cache

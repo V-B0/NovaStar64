@@ -7,11 +7,13 @@
  * the bridge into the Vulkan hardware raytracing pipeline.
  *
  * Lifecycle (per frame):
- *   1. VideoPlugin calls NewFrame() at the start of ProcessGraphicsTask.
+ *   1. VideoPlugin calls NewFrame() before a display list is processed.
  *   2. GBIHandler::DrawTriangle calls SubmitTriangles() for every visible tri.
- *   3. After MicrocodeDispatcher::OnFrameEnd(), VideoPlugin calls BuildAS()
- *      which uploads geometry and records BLAS + TLAS build commands.
- *   4. VulkanRenderer::DispatchRayTracing() consumes the TLAS handle.
+ *   3. After the display list, VideoPlugin calls IRenderer::ExecuteRayTracing().
+ *      With hardware RT the Vulkan backend calls BuildAS(), which uploads
+ *      geometry and records BLAS + TLAS build commands, then
+ *      DispatchRayTracing() with the TLAS handle. Without it (MoltenVK) the
+ *      compute path builds an RTBVH from GetFrameData() instead.
  */
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -38,7 +40,7 @@ public:
     RTSceneManager() = default;
     ~RTSceneManager() override = default;
 
-    // ─── ISceneGeometryConsumer ──────────────────────────────────────
+    // --- ISceneGeometryConsumer ---
     void NewFrame() override {
         m_frame.Reset();
         m_hasCamera = false;
@@ -87,7 +89,7 @@ public:
         m_curLocal = lighting.local.valid ? Intern(lighting.local, true) : kNoLight;
     }
 
-    // ─── Accessors ───────────────────────────────────────────────────
+    // --- Accessors ---
 
     /// Returns the number of world-space triangles accumulated this frame.
     uint32_t GetTriangleCount() const { return m_frame.TriangleCount(); }
@@ -121,7 +123,7 @@ public:
     bool HasSun() const { return FallbackSun() != kNoLight; }
     const float* SunDir() const { return m_lights[FallbackSun() == kNoLight ? 0 : FallbackSun()].a; }
 
-    // ─── Acceleration Structure Build ────────────────────────────────
+    // --- Acceleration Structure Build ---
 
     /**
      * Upload geometry and build BLAS+TLAS for this frame's triangles.
@@ -143,7 +145,7 @@ public:
      */
     void* GetTLAS() const { return m_tlas && m_tlas->IsBuilt() ? reinterpret_cast<void*>(m_tlas->Get()) : nullptr; }
 
-    // ─── Debug ───────────────────────────────────────────────────────
+    // --- Debug ---
 
     /// Log triangle count (activated by NOVA64_RT_SCENE_DEBUG=1 env var).
     void DebugLogIfEnabled() const {
@@ -291,11 +293,11 @@ inline bool Nova64::Video::RT::RTSceneManager::BuildAS(const Nova64::Video::VK::
     const auto& tris = m_frame.triangles;
     if (tris.empty()) return true; // nothing to build
 
-    // ── Group triangles by materialHash ─────────────────────────────────
+    // --- Group triangles by materialHash ---
     std::unordered_map<uint64_t, std::vector<const SceneTriangle*>> groups;
     for (const auto& t : tris) groups[t.materialHash].push_back(&t);
 
-    // ── Build one BLAS per material group ─────────────────────────────────
+    // --- Build one BLAS per material group ---
     std::vector<TlasInstance> tlasInstances;
     tlasInstances.reserve(groups.size());
 
@@ -326,17 +328,14 @@ inline bool Nova64::Video::RT::RTSceneManager::BuildAS(const Nova64::Video::VK::
         inst.instanceCustomIndex = customIndex & 0xFFFFFF;
         inst.mask = 0xFF;
         inst.hitGroupIndex = 0;
-        // Row 0: [1 0 0 0]
         inst.transform[0] = 1.0f;
         inst.transform[1] = 0.0f;
         inst.transform[2] = 0.0f;
         inst.transform[3] = 0.0f;
-        // Row 1: [0 1 0 0]
         inst.transform[4] = 0.0f;
         inst.transform[5] = 1.0f;
         inst.transform[6] = 0.0f;
         inst.transform[7] = 0.0f;
-        // Row 2: [0 0 1 0]
         inst.transform[8] = 0.0f;
         inst.transform[9] = 0.0f;
         inst.transform[10] = 1.0f;
@@ -349,7 +348,7 @@ inline bool Nova64::Video::RT::RTSceneManager::BuildAS(const Nova64::Video::VK::
 
     if (tlasInstances.empty()) return true;
 
-    // ── Build TLAS ─────────────────────────────────────────────────────────
+    // --- Build TLAS ---
     m_tlas = std::make_unique<VKTlas>();
     if (!m_tlas->Build(ctx, cmd, tlasInstances)) {
         Logger::Error("[RTScene] TLAS build failed");

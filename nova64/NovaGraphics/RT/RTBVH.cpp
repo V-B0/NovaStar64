@@ -1,6 +1,7 @@
 /**
  * @file RTBVH.cpp
- * @brief CPU BVH builder implementation (median split on longest centroid axis).
+ * @brief CPU BVH builder implementation (midpoint split on the longest axis of the node bounds,
+ *        median split when that degenerates).
  */
 // SPDX-License-Identifier: MIT
 #include "RTBVH.hpp"
@@ -56,7 +57,7 @@ inline GpuRTTri Pack(const SceneTriangle& t, float sceneDiagSq) {
     uint32_t mat = 0;
     if (t.isCutout) mat |= RT_MAT_CUTOUT;
     if (t.isTranslucent) {
-        // Blended translucents split by TRIANGLE SIZE: water surfaces are
+        // Blended translucents split by triangle size: water surfaces are
         // lake-scale triangles; particles and drop-shadow decals are tiny
         // alpha quads that must be ray-invisible like cutouts (any special
         // treatment seams against the relit background, and horizontal decals
@@ -69,10 +70,10 @@ inline GpuRTTri Pack(const SceneTriangle& t, float sceneDiagSq) {
         const float cy = ex[2] * ey[0] - ex[0] * ey[2];
         const float cz = ex[0] * ey[1] - ex[1] * ey[0];
         const float area = 0.5f * std::sqrt(cx * cx + cy * cy + cz * cz);
-        // Large translucents ALSO need to be roughly up/down-facing to count
+        // Large translucents also need to be roughly up/down-facing to count
         // as water (same eye-space ns.y test the shader uses to gate water
         // reflections — N64 cameras stay near-upright, so eye-space "up" is a
-        // reasonable proxy for world "up"). Without this, big CAMERA-FACING
+        // reasonable proxy for world "up"). Without this, big camera-facing
         // alpha billboards (the moon/sun sky sprite: soft round texture on an
         // oversized quad, easily bigger than a real lake) pass the pure size
         // check and get treated as solid, primary-ray-hittable "water" — the
@@ -156,7 +157,7 @@ void RTBVH::UpdateNodeBounds(GpuBVHNode& node, const std::vector<BuildPrim>& pri
 }
 
 void RTBVH::Subdivide(uint32_t nodeIdx, std::vector<BuildPrim>& prims, uint32_t start, uint32_t count, uint32_t depth) {
-    // NOTE: m_nodes may reallocate inside this function (children emplace_back),
+    // m_nodes may reallocate inside this function (children emplace_back),
     // so we never hold a GpuBVHNode& across a push_back — re-index each time.
     UpdateNodeBounds(m_nodes[nodeIdx], prims, start, count);
 
@@ -173,7 +174,7 @@ void RTBVH::Subdivide(uint32_t nodeIdx, std::vector<BuildPrim>& prims, uint32_t 
         return;
     }
 
-    // Split on the axis with the largest centroid extent, at the midpoint.
+    // Split on the axis with the largest node-bounds extent, at the midpoint.
     const GpuBVHNode& nb = m_nodes[nodeIdx];
     float extent[3] = {nb.aabbMax[0] - nb.aabbMin[0], nb.aabbMax[1] - nb.aabbMin[1], nb.aabbMax[2] - nb.aabbMin[2]};
     int axis = 0;

@@ -1,10 +1,8 @@
 /**
  * @file ClipMath.hpp
- * @brief Clipping Mathematics.
+ * @brief N64-specific clipping, culling and viewport transform routines for the RDP pipeline.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Clipping Mathematics
-// N64-specific clipping routines for the RDP pipeline
 
 #pragma once
 
@@ -23,7 +21,7 @@ using Math::Vec3f;
 using SIMD::Mat4x4;
 using SIMD::Vec4f;
 
-// ─── Clip Flags ──────────────────────────────────────────────────────────────
+// --- Clip Flags ---
 enum ClipFlag : uint32_t {
     CLIP_NONE = 0x00,
     CLIP_POSX = 0x01, // x > +w
@@ -37,7 +35,7 @@ enum ClipFlag : uint32_t {
     CLIP_ALL = 0x3F   // standard 6-plane clip
 };
 
-// ─── Clip Planes ─────────────────────────────────────────────────────────────
+// --- Clip Planes ---
 enum ClipPlane : int {
     PLANE_NEAR = 0,     // z >= -w  (GL near plane convention)
     PLANE_FAR = 1,      // z <= w
@@ -50,7 +48,7 @@ enum ClipPlane : int {
     PLANE_COUNT = 8
 };
 
-// ─── Clipped Vertex (full interpolation data) ────────────────────────────────
+// --- Clipped Vertex (full interpolation data) ---
 struct ClipVertex {
     Vec4f position;     // clip-space XYZW
     Vec4f color;        // RGBA [0..1]
@@ -62,8 +60,8 @@ struct ClipVertex {
     ClipVertex() : fog(0.0f), clipFlags(0) {}
 };
 
-// ─── Clipped Polygon Result ──────────────────────────────────────────────────
-static constexpr int MAX_CLIPPED_VERTS = 12; // 3 input + up to 6 planes = max 9, round to 12
+// --- Clipped Polygon Result ---
+static constexpr int MAX_CLIPPED_VERTS = 12; // 3 inputs + at most 1 per clip plane (7) = 10, rounded up
 
 struct ClippedPolygon {
     ClipVertex vertices[MAX_CLIPPED_VERTS];
@@ -72,7 +70,7 @@ struct ClippedPolygon {
     ClippedPolygon() : vertexCount(0) {}
 };
 
-// ─── Scissor Rectangle ──────────────────────────────────────────────────────
+// --- Scissor Rectangle ---
 struct ScissorRect {
     int x0, y0, x1, y1;
 
@@ -91,67 +89,59 @@ struct ScissorRect {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CLIP FLAG COMPUTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- CLIP FLAG COMPUTATION ---
 
-// Compute clip flags for a single clip-space vertex
+/// Clip flags of a clip-space vertex, with the near plane at z = -w.
 uint32_t ComputeClipFlags(const Vec4f& clipPos);
 
-// Compute clip flags for N64 convention (near plane at z=0 instead of z=-w)
+/// Same, but with the N64 near plane at z = 0 instead of z = -w.
 uint32_t ComputeClipFlagsN64(const Vec4f& clipPos);
 
-// Compute clip flags for a batch of vertices
+/// ComputeClipFlags for `count` vertices.
 void ComputeClipFlagsBatch(const Vec4f* clipPositions, uint32_t* flags, int count);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TRIVIAL REJECTION / ACCEPTANCE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TRIVIAL REJECTION / ACCEPTANCE ---
 
-// Triangle trivial rejection: all vertices on same side of at least one plane
+/// True if all three vertices are outside the same clip plane.
 inline bool TrivialReject(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) { return (flagV0 & flagV1 & flagV2) != 0; }
 
-// Triangle trivial acceptance: all vertices inside all planes
+/// True if all three vertices are inside every clip plane.
 inline bool TrivialAccept(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) { return (flagV0 | flagV1 | flagV2) == 0; }
 
-// Cull display list range: if all vertices share a clip flag, entire DL can be skipped
+/// True if every vertex in [startIdx, endIdx) is outside one common plane (or the range is empty),
+/// so the whole range can be skipped.
 bool CullVertexRange(const uint32_t* clipFlags, int startIdx, int endIdx);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SUTHERLAND-HODGMAN POLYGON CLIPPING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SUTHERLAND-HODGMAN POLYGON CLIPPING ---
 
-// Clip a triangle against all 6 frustum planes
-// clipRatio widens X/Y planes to match the N64 guard band (default 1.0 = exact frustum)
-// Returns number of output triangles (0 if fully clipped, 1+ if clipped polygon needs triangulation)
+/// Clips a triangle against the frustum (z >= 0 near plane, w near guard, far, and the four sides).
+/// `result` receives the clipped convex polygon; the return value is the number of triangles it
+/// fans into (0 if nothing remains). `clipRatio` scales the W bound of the X/Y planes to widen them
+/// into a guard band (1.0 = exact frustum).
 int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result,
                  float clipRatio = 1.0f);
 
-// Clip a polygon against a single plane
-// clipRatio scales the W comparand for X/Y planes (guard band)
-// Returns vertex count of clipped polygon
+/// Clips a polygon against a single plane and returns the vertex count of the result (0 if fewer
+/// than 3 vertices come in). `clipRatio` scales the W comparand for the X/Y planes (guard band).
 int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount, ClipVertex* vertsOut, ClipPlane plane,
                             float clipRatio = 1.0f);
 
-// Clip against near plane only (most common clip operation)
+/// Clips against the GL-convention near plane (z >= -w) only.
 int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result);
 
-// Clip against N64 near plane (z = 0 instead of z = -w)
+/// Clips against the N64 near plane (z = 0 instead of z = -w) only.
 int ClipTriangleN64Near(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// GUARD BAND CLIPPING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GUARD BAND CLIPPING ---
 
-// Guard band allows triangles slightly outside screen to pass without clipping
-// (they'll be clipped by the rasterizer/hardware scissor instead)
+// A guard band lets triangles slightly outside the screen pass without clipping; the
+// rasterizer or hardware scissor cuts them instead.
 struct GuardBand {
     float left, right, top, bottom;
 
     GuardBand() : left(-4096.0f), right(4096.0f), top(-4096.0f), bottom(4096.0f) {}
     GuardBand(float l, float r, float t, float b) : left(l), right(r), top(t), bottom(b) {}
 
-    // Configure guard band based on screen resolution
     static GuardBand ForResolution(int screenWidth, int screenHeight) {
         // Standard guard band: 2x screen dimensions
         float gbW = static_cast<float>(screenWidth);
@@ -160,20 +150,18 @@ struct GuardBand {
     }
 };
 
-// Test if vertex is inside guard band (only needs X/Y clip, not Z)
+/// True if the vertex is inside the guard band (X/Y only, Z is not tested).
 bool InsideGuardBand(const Vec4f& clipPos, const GuardBand& gb);
 
-// Compute guard band clip flags (for X/Y; Z uses standard clip)
+/// Clip flags using the guard band for X/Y; Z and W use the standard planes.
 uint32_t ComputeGuardBandFlags(const Vec4f& clipPos, const GuardBand& gb);
 
-// Clip triangle against guard band (only clips X/Y planes if outside guard band)
-// Returns number of triangles in output
+/// Trivially rejects or accepts using the guard band flags, otherwise falls back to ClipTriangle
+/// (exact frustum). Returns the number of triangles in the output.
 int ClipTriangleGuardBand(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result,
                           const GuardBand& gb);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SCREEN-SPACE CLIPPING (2D)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SCREEN-SPACE CLIPPING (2D) ---
 
 struct ScreenVertex {
     Vec2f position; // screen-space X, Y
@@ -193,39 +181,33 @@ struct ScreenClippedPolygon {
     ScreenClippedPolygon() : vertexCount(0) {}
 };
 
-// Clip screen-space polygon against scissor rectangle
+/// Clips a screen-space polygon against the scissor rectangle; returns the output vertex count.
 int ClipToScissor(const ScreenVertex* vertsIn, int vertCount, ScreenVertex* vertsOut, const ScissorRect& scissor);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// BACKFACE CULLING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BACKFACE CULLING ---
 
-// Screen-space backface culling (2D cross product)
-// Returns true if triangle should be culled (is back-facing given CW/CCW winding)
+/// Screen-space backface test (2D cross product). True if the triangle is back-facing for the
+/// given front-face winding.
 bool IsBackFacing(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, bool frontFaceCCW = true);
 
-// Clip-space backface culling (pre-perspective-division)
+/// Backface test in clip space, before the perspective divide.
 bool IsBackFacingClipSpace(const Vec4f& v0, const Vec4f& v1, const Vec4f& v2, bool frontFaceCCW = true);
 
-// N64 geometry mode backface culling
-// geometryMode contains G_CULL_FRONT / G_CULL_BACK flags
+/// Backface culling driven by the N64 geometry mode (G_CULL_FRONT / G_CULL_BACK bits).
 bool ShouldCullTriangle(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, uint32_t geometryMode);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM ---
 
-// Perform perspective division: clipSpace -> NDC
+/// Perspective divide, clip space to NDC. Returns zero for w near 0.
 Vec3f PerspectiveDivide(const Vec4f& clipPos);
 
-// Full viewport transform: clipSpace -> screen coordinates
+/// Viewport transform from clip space to screen coordinates.
 struct ViewportTransform {
     float scaleX, scaleY, scaleZ;
     float transX, transY, transZ;
 
     ViewportTransform() : scaleX(160), scaleY(-120), scaleZ(0.5f), transX(160), transY(120), transZ(0.5f) {}
 
-    // Configure from N64 viewport parameters
     void SetFromN64(float vpScaleX, float vpScaleY, float vpScaleZ, float vpTransX, float vpTransY, float vpTransZ) {
         scaleX = vpScaleX;
         scaleY = vpScaleY; // Usually negative (Y flip)
@@ -235,27 +217,19 @@ struct ViewportTransform {
         transZ = vpTransZ;
     }
 
-    // Transform clip-space to screen-space
     ScreenVertex Transform(const ClipVertex& cv) const;
 
-    // Batch transform
     void TransformBatch(const ClipVertex* clipVerts, ScreenVertex* screenVerts, int count) const;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// BRANCH_Z TEST (N64 specific)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BRANCH_Z TEST (N64 specific) ---
 
-// Branch_Z: compare vertex Z in screen coordinates against a threshold
-// Used by some games for LOD switching in display lists
+/// Branch_Z: compares a vertex's screen-space Z against a threshold. Some games use it to
+/// switch LOD inside display lists.
 bool BranchZTest(const Vec4f& clipPos, const ViewportTransform& vt, float zThreshold, float wThreshold);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// COMPLETE TRIANGLE PIPELINE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- COMPLETE TRIANGLE PIPELINE ---
 
-// Full clip + cull + viewport transform pipeline for a triangle
-// Returns number of screen-space triangles generated (0 = fully culled/clipped)
 struct TrianglePipelineConfig {
     ViewportTransform viewport;
     ScissorRect scissor;
@@ -267,12 +241,12 @@ struct TrianglePipelineConfig {
     TrianglePipelineConfig() : geometryMode(0), useGuardBand(true), useNearClipN64(true) {}
 };
 
-// Output triangle (screen space, ready for rasterization)
+// Screen-space triangle, ready for rasterization.
 struct ScreenTriangle {
     ScreenVertex v[3];
 };
 
-static constexpr int MAX_OUTPUT_TRIANGLES = 8; // One input triangle -> max ~8 after clipping
+static constexpr int MAX_OUTPUT_TRIANGLES = 8; // a clipped polygon of up to 10 vertices fans into 8 triangles
 
 struct TrianglePipelineResult {
     ScreenTriangle triangles[MAX_OUTPUT_TRIANGLES];
@@ -281,12 +255,13 @@ struct TrianglePipelineResult {
     TrianglePipelineResult() : triangleCount(0) {}
 };
 
-// Process a single triangle through the full pipeline
+/// Clips, culls and viewport-transforms one triangle. The result holds the screen-space triangles
+/// that survive (none if the triangle is fully clipped or culled).
 TrianglePipelineResult ProcessTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
                                        const TrianglePipelineConfig& config);
 
-// Process a batch of triangles (index buffer)
-// Returns total number of output triangles written to outTriangles
+/// ProcessTriangle over an indexed triangle list. Returns the number of triangles written to
+/// `outTriangles`, up to `maxOutput`.
 int ProcessTriangleBatch(const ClipVertex* vertices, const uint16_t* indices, int triCount,
                          ScreenTriangle* outTriangles, int maxOutput, const TrianglePipelineConfig& config);
 

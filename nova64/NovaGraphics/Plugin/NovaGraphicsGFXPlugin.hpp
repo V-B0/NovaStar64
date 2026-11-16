@@ -22,9 +22,7 @@ public:
     NovaGraphicsGFXPlugin();
     ~NovaGraphicsGFXPlugin() override;
 
-    // ════════════════════════════════════════════════════════════
-    //  PluginBase interface
-    // ════════════════════════════════════════════════════════════
+    // --- PluginBase interface ---
 
     ::Plugins::PluginInfo GetPluginInfo() const override;
     bool Initialize(CN64System* system) override;
@@ -37,9 +35,7 @@ public:
     size_t SaveState(uint8_t* data, size_t size) override;
     bool LoadState(const uint8_t* data, size_t size) override;
 
-    // ════════════════════════════════════════════════════════════
-    //  GFXPlugin interface
-    // ════════════════════════════════════════════════════════════
+    // --- GFXPlugin interface ---
 
     bool InitializeDisplay(void* hwnd, const ::Plugins::RenderSettings& settings) override;
     void ResizeDisplay(uint32_t width, uint32_t height) override;

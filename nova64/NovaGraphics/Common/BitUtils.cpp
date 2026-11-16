@@ -17,9 +17,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC32 Software Lookup Table (IEEE 802.3 polynomial 0xEDB88320)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC32 Software Lookup Table (IEEE 802.3 polynomial 0xEDB88320) ---
 
 namespace {
 
@@ -47,11 +45,9 @@ struct CRC32SliceTable {
     std::array<std::array<uint32_t, 256>, 4> tab{};
 
     constexpr CRC32SliceTable() {
-        // First table is the standard table
         for (uint32_t i = 0; i < 256; i++) {
             tab[0][i] = sCRC32Table.tab[i];
         }
-        // Remaining tables for slicing
         for (uint32_t i = 0; i < 256; i++) {
             tab[1][i] = (tab[0][i] >> 8) ^ tab[0][tab[0][i] & 0xFF];
             tab[2][i] = (tab[1][i] >> 8) ^ tab[0][tab[1][i] & 0xFF];
@@ -68,7 +64,6 @@ uint32_t CRC32_Software(const void* data, size_t length, uint32_t seed) noexcept
     auto* p = static_cast<const uint8_t*>(data);
     uint32_t crc = ~seed;
 
-    // Process 4 bytes at a time (slicing-by-4)
     while (length >= 4) {
         uint32_t word;
         std::memcpy(&word, p, 4);
@@ -81,7 +76,6 @@ uint32_t CRC32_Software(const void* data, size_t length, uint32_t seed) noexcept
         length -= 4;
     }
 
-    // Process remaining bytes
     while (length--) {
         crc = sCRC32Table.tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
     }
@@ -89,9 +83,7 @@ uint32_t CRC32_Software(const void* data, size_t length, uint32_t seed) noexcept
     return ~crc;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC32C Hardware (SSE4.2 intrinsics)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC32C Hardware (SSE4.2 intrinsics) ---
 
 #if defined(_MSC_VER) || defined(__SSE4_2__)
 
@@ -100,7 +92,6 @@ static uint32_t CRC32C_Hardware(const void* data, size_t length, uint32_t seed) 
     uint32_t crc = seed;
 
 #ifdef _M_X64
-    // Process 8 bytes at a time on 64-bit
     while (length >= 8) {
         uint64_t val;
         std::memcpy(&val, p, 8);
@@ -110,7 +101,6 @@ static uint32_t CRC32C_Hardware(const void* data, size_t length, uint32_t seed) 
     }
 #endif
 
-    // Process 4 bytes at a time
     while (length >= 4) {
         uint32_t val;
         std::memcpy(&val, p, 4);
@@ -119,7 +109,6 @@ static uint32_t CRC32C_Hardware(const void* data, size_t length, uint32_t seed) 
         length -= 4;
     }
 
-    // Process remaining bytes
     while (length--) {
         crc = _mm_crc32_u8(crc, *p++);
     }
@@ -129,15 +118,13 @@ static uint32_t CRC32C_Hardware(const void* data, size_t length, uint32_t seed) 
 
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC32 Fast (auto-selects hw or sw at runtime)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC32 Fast (auto-selects hw or sw at runtime) ---
 
 static bool HasSSE42CRC() noexcept {
 #ifdef _MSC_VER
     int regs[4];
     __cpuid(regs, 1);
-    return (regs[2] & (1 << 20)) != 0; // SSE4.2 bit
+    return (regs[2] & (1 << 20)) != 0; // CPUID leaf 1, ECX bit 20 (SSE4.2)
 #elif defined(__SSE4_2__)
     return true;
 #else
@@ -157,9 +144,7 @@ uint32_t CRC32_Fast(const void* data, size_t length, uint32_t seed) noexcept {
     return CRC32_Software(data, length, seed);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CRC64 (ECMA-182 polynomial, for shader cache keys)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- CRC64 (ECMA-182 polynomial, for shader cache keys) ---
 
 namespace {
 

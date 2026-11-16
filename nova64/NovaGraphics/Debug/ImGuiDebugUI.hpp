@@ -1,11 +1,8 @@
 /**
  * @file ImGuiDebugUI.hpp
- * @brief ImGui Debug UI  (Nemu64-style debugger).
+ * @brief Dear ImGui debugger overlay in the style of Nemu64: CPU/RSP disassembly, register tabs,
+ *        a memory viewer and live RDP state.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — ImGui Debug UI  (Nemu64-style debugger)
-// Panels: Commands (CPU/RSP/RDP disasm), Registers (all tabs), Memory viewer
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 #include <cstdint>
@@ -63,7 +60,7 @@ private:
     CN64System* m_system = nullptr;
     VideoPlugin* m_videoPlugin = nullptr;
 
-    // ─── Panel draw methods ──────────────────────────────────────
+    // --- Panel draw methods ---
     void DrawCommandsPanel();
     void DrawRegistersPanel();
     void DrawMemoryPanel();

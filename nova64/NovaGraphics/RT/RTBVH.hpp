@@ -21,7 +21,7 @@
 
 namespace Nova64::Video::RT {
 
-// 32-byte BVH node — must match the std430 layout in rt_traverse.comp.
+// 32-byte BVH node — must match the BVHNode std430 layout in the traversal shaders (RTComputeShaders.hpp).
 struct GpuBVHNode {
     float aabbMin[3];
     uint32_t leftFirst; // internal: left child node index; leaf: first tri index
@@ -30,7 +30,7 @@ struct GpuBVHNode {
 };
 static_assert(sizeof(GpuBVHNode) == 32, "GpuBVHNode must be 32 bytes for std430");
 
-// Packed, GPU-friendly triangle (eye-space). Matches rt_traverse.comp.
+// Packed, GPU-friendly triangle (eye-space). Matches RTTri in RTComputeShaders.hpp.
 // 3 positions + 3 normals + 3 colors + material word, padded to vec4 lanes.
 struct GpuRTTri {
     float v0[4]; // xyz eye-space position, w = pad

@@ -18,9 +18,7 @@ namespace Nova64 {
 namespace Video {
 namespace Tex {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  Checksum
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- Checksum ---
 
 uint32_t RiceCrc32(const uint8_t* src, int width, int height, int size, int rowStride) {
     uint32_t crc = 0;
@@ -117,9 +115,7 @@ HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address,
     return id;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  Pack index
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- Pack index ---
 
 namespace {
 

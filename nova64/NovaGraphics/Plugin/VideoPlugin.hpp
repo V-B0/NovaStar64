@@ -1,12 +1,9 @@
 /**
  * @file VideoPlugin.hpp
- * @brief Video Plugin Interface.
+ * @brief Video plugin core: lifecycle, per-frame processing and presentation of the N64 picture.
+ *
+ * NovaGraphicsGFXPlugin adapts this class to the emulator's GFXPlugin interface.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Video Plugin Interface
-// Main entry point implementing NovaStar64's GFXPlugin abstract base.
-// Handles plugin lifecycle: Initialize → ProcessDList → UpdateScreen → Shutdown.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 
@@ -104,53 +101,54 @@ struct PluginFrameStats {
     uint64_t rdramBytesWritten = 0;
 };
 
-// ══════════════════════════════════════════════════════════════════
-//  VideoPlugin — Main plugin class
-// ══════════════════════════════════════════════════════════════════
+// --- VideoPlugin — Main plugin class ---
 
+/// Owns the window, renderer, RDP processor, microcode dispatcher and texture cache, and presents
+/// a frame on each VI update. Lifecycle: Initialize, ProcessDList / ProcessRDPList, UpdateScreen,
+/// Shutdown.
 class VideoPlugin {
 public:
     VideoPlugin();
     ~VideoPlugin();
 
-    // ── Lifecycle ────────────────────────────────────────────────
+    // --- Lifecycle ---
     bool Initialize(const SystemInfo& sysInfo, const PluginCallbacks& callbacks);
     void Shutdown();
     void Reset();
 
     /// Set an external window to use instead of creating an internal one.
-    /// Must be called BEFORE Initialize().
+    /// Must be called before Initialize().
     void SetExternalWindow(WindowManager* window);
 
-    // ── Per-frame operations ─────────────────────────────────────
+    // --- Per-frame operations ---
     void ProcessDList();
     void ProcessDListShadow(); ///< Shadow HLE: geometry-only run for RT under LLE
     void ProcessRDPList();
     void UpdateScreen();
     void ShowCFB();
 
-    // ── VI register changes ──────────────────────────────────────
+    // --- VI register changes ---
     void ViStatusChanged();
     void ViWidthChanged();
 
-    // ── ROM events ───────────────────────────────────────────────
+    // --- ROM events ---
     void RomOpen(const SystemInfo& sysInfo);
     void RomClosed();
 
-    // ── Configuration ────────────────────────────────────────────
+    // --- Configuration ---
     PluginConfig& GetConfig() { return m_config; }
     const PluginConfig& GetConfig() const { return m_config; }
     void ApplyConfig(const PluginConfig& config);
     void OpenConfigDialog();
 
-    /// Override resolution after config-file load (set BEFORE Initialize).
+    /// Override resolution after config-file load (set before Initialize).
     void SetPendingResolution(int scale, int w, int h) {
         m_pendingResScale = scale;
         m_pendingWindowW = w;
         m_pendingWindowH = h;
     }
 
-    // ── Status & Info ────────────────────────────────────────────
+    // --- Status & Info ---
     PluginStatus GetStatus() const { return m_status.load(); }
     const std::string& GetName() const { return m_name; }
     const std::string& GetVersion() const { return m_version; }
@@ -158,17 +156,17 @@ public:
     double GetLastSwapTimeMs() const { return m_frameStats.swapTimeMs; }
     const GameProfile* GetActiveGameProfile() const { return m_activeProfile; }
 
-    // ── Debug ────────────────────────────────────────────────────
+    // --- Debug ---
     void EnableWireframe(bool enable);
     void EnableTextureDebug(bool enable);
     void TakeScreenshot(const std::string& path);
     void DumpFrameInfo();
 
-    // ── Thread safety ────────────────────────────────────────────
+    // --- Thread safety ---
     void LockRender();
     void UnlockRender();
 
-    // ── RDP command forwarding (called from adapter) ─────────────
+    // --- RDP command forwarding (called from adapter) ---
     void ProcessRDPCommand(uint32_t w0, uint32_t w1);
 
     // Subsystem access
@@ -199,7 +197,7 @@ private:
     /// Return whichever window is active (external or owned).
     WindowManager* GetActiveWindow() const;
 
-    // ── State ────────────────────────────────────────────────────
+    // --- State ---
     std::string m_name = "NovaGraphics";
     std::string m_version = "1.0.0";
     std::atomic<PluginStatus> m_status{PluginStatus::Uninitialized};

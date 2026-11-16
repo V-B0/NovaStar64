@@ -1,10 +1,8 @@
 /**
  * @file WindowManager.hpp
- * @brief Window Manager.
+ * @brief SDL2 window creation, OpenGL context, input, display management and screenshots.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Window Manager
-// SDL2 window creation, OpenGL context, input, display management
 
 #pragma once
 
@@ -25,9 +23,7 @@ typedef void* SDL_GLContext;
 namespace Nova64 {
 namespace Video {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  WINDOW EVENTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- WINDOW EVENTS ---
 
 enum class WindowEvent : uint32_t {
     None = 0,
@@ -48,9 +44,7 @@ struct WindowEventData {
     int32_t param2 = 0; // height for Resized, y for Moved
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  DISPLAY MODE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DISPLAY MODE ---
 
 struct DisplayMode {
     int32_t width;
@@ -59,9 +53,7 @@ struct DisplayMode {
     uint32_t pixelFormat;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  WINDOW CONFIGURATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- WINDOW CONFIGURATION ---
 
 struct WindowConfig {
     std::string title = "NovaStar64 - NovaGraphics";
@@ -88,9 +80,7 @@ struct WindowConfig {
     bool headless = false;   // If true, do not create a visible window
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  WINDOW MANAGER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- WINDOW MANAGER ---
 
 class WindowManager {
 public:
@@ -104,18 +94,16 @@ public:
     /// Initialize SDL and create window with OpenGL context
     bool Initialize(const WindowConfig& config);
 
-    /// Create a WindowManager that WRAPS an already-existing SDL_Window and GL context.
-    /// The returned instance does NOT own the window or context — it will not
+    /// Create a WindowManager that wraps an already-existing SDL_Window and GL context.
+    /// The returned instance does not own the window or context — it will not
     /// destroy them on Shutdown(). Used by the launcher to share its window with VideoPlugin.
     static WindowManager* WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx);
 
-    /// Destroy window and clean up
     void Shutdown();
 
-    /// Check if initialized
     bool IsInitialized() const { return m_window != nullptr; }
 
-    // ── Window Properties ─────────────────────────────────────────────────
+    // --- Window Properties ---
 
     /// Get current window size (client area)
     void GetSize(int32_t& width, int32_t& height) const;
@@ -123,35 +111,28 @@ public:
     /// Get drawable size (may differ from window size on HiDPI)
     void GetDrawableSize(int32_t& width, int32_t& height) const;
 
-    /// Set window size
     void SetSize(int32_t width, int32_t height);
 
     /// Get/Set window position
     void GetPosition(int32_t& x, int32_t& y) const;
     void SetPosition(int32_t x, int32_t y);
 
-    /// Set window title
     void SetTitle(const std::string& title);
 
-    /// Get window title
     std::string GetTitle() const;
 
-    // ── Display Modes ────────────────────────────────────────────────────
+    // --- Display Modes ---
 
-    /// Toggle fullscreen
     void SetFullscreen(bool fullscreen, bool borderless = false);
     bool IsFullscreen() const { return m_fullscreen; }
 
-    /// Get available display modes
     std::vector<DisplayMode> GetDisplayModes(int32_t displayIndex = 0) const;
 
-    /// Get current display mode
     DisplayMode GetCurrentDisplayMode() const;
 
-    /// Get number of connected displays
     int32_t GetDisplayCount() const;
 
-    // ── OpenGL Context ──────────────────────────────────────────────────
+    // --- OpenGL Context ---
 
     /// Make the GL context current (needed for multi-threaded rendering)
     void MakeContextCurrent();
@@ -159,7 +140,6 @@ public:
     /// Release the GL context from current thread
     void ReleaseContext();
 
-    /// Swap front/back buffers
     void SwapBuffers();
 
     /// Set VSync mode: 0 = off, 1 = on, -1 = adaptive
@@ -168,31 +148,25 @@ public:
     /// Get the native window handle (HWND on Windows)
     void* GetNativeHandle() const;
 
-    /// Get SDL window pointer
     SDL_Window* GetSDLWindow() const { return m_window; }
 
-    /// Get SDL GL context
     SDL_GLContext GetGLContext() const { return m_glContext; }
 
-    // ── Event Processing ────────────────────────────────────────────────
+    // --- Event Processing ---
 
     /// Process pending SDL events. Returns false if quit requested.
     bool ProcessEvents();
 
-    /// Poll for window events
     bool PollWindowEvent(WindowEventData& event);
 
-    /// Register a callback for window events
     using EventCallback = std::function<void(const WindowEventData&)>;
     void SetEventCallback(EventCallback callback) { m_eventCallback = callback; }
 
-    /// Check if window has focus
     bool HasFocus() const { return m_hasFocus; }
 
-    /// Check if window is minimized
     bool IsMinimized() const { return m_minimized; }
 
-    // ── Screenshots ─────────────────────────────────────────────────────
+    // --- Screenshots ---
 
     /// Capture the current framebuffer to pixels (RGBA8)
     bool CaptureFramebuffer(std::vector<uint32_t>& pixels, int32_t& width, int32_t& height);
@@ -200,19 +174,17 @@ public:
     /// Save framebuffer to BMP file
     bool SaveScreenshot(const std::string& path);
 
-    // ── Cursor ──────────────────────────────────────────────────────────
+    // --- Cursor ---
 
-    /// Show/hide cursor
     void ShowCursor(bool show);
 
-    /// Confine cursor to window
     void GrabCursor(bool grab);
 
     /// Set relative mouse mode (for FPS-style mouse look)
     void SetRelativeMouseMode(bool relative);
 
 private:
-    void HandleSDLEvent(const void* sdlEvent); // Actually SDL_Event*
+    void HandleSDLEvent(const void* sdlEvent); // really an SDL_Event*
 
     SDL_Window* m_window = nullptr;
     SDL_GLContext m_glContext = nullptr;

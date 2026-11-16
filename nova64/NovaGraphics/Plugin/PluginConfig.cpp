@@ -1,10 +1,7 @@
 /**
  * @file PluginConfig.cpp
- * @brief Plugin Configuration.
+ * @brief Defaults, validation and INI load/save for PluginConfig; see PluginConfig.hpp.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Plugin Configuration Implementation
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include "PluginConfig.hpp"
 #include "../Common/Logger.hpp"
@@ -41,9 +38,7 @@ bool PluginConfig::Validate() const {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  INI Serialization
-// ═══════════════════════════════════════════════════════════════
+// --- INI Serialization ---
 
 bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
     try {
@@ -177,7 +172,7 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
             return true;
         }
 
-        // Emulation level (MLE pivot)
+        // Emulation level
         if (key == "renderingMode") {
             int v = std::stoi(val);
             if (v < 0) v = 0;
@@ -316,7 +311,7 @@ std::string PluginConfig::GetValue(const std::string& key) const {
     if (key == "gamma") return std::to_string(gamma);
     if (key == "fbEmulation") return fbEmulation ? "1" : "0";
     if (key == "showFPS") return showFPS ? "1" : "0";
-    // ... other getters follow same pattern
+    // Only these keys have getters; any other key yields an empty string.
     return "";
 }
 
@@ -328,7 +323,6 @@ bool PluginConfig::LoadFromFile(const std::string& path) {
     std::string currentSection;
 
     while (std::getline(file, line)) {
-        // Trim whitespace
         size_t start = line.find_first_not_of(" \t\r\n");
         if (start == std::string::npos) continue;
         line = line.substr(start);
@@ -336,7 +330,6 @@ bool PluginConfig::LoadFromFile(const std::string& path) {
         // Skip comments
         if (line[0] == '#' || line[0] == ';') continue;
 
-        // Section header
         if (line[0] == '[') {
             size_t end = line.find(']');
             if (end != std::string::npos) {
@@ -345,14 +338,12 @@ bool PluginConfig::LoadFromFile(const std::string& path) {
             continue;
         }
 
-        // Key = value
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
 
         std::string key = line.substr(0, eq);
         std::string val = line.substr(eq + 1);
 
-        // Trim
         key.erase(key.find_last_not_of(" \t") + 1);
         val.erase(0, val.find_first_not_of(" \t"));
 

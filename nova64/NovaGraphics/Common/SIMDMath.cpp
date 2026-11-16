@@ -1,9 +1,8 @@
 /**
  * @file SIMDMath.cpp
- * @brief SIMD Math Acceleration Layer.
+ * @brief SIMD math implementations declared in SIMDMath.hpp: scalar, SSE2, SSE4.1, AVX, AVX2 and the dispatch tables.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - SIMD Math Acceleration Layer Implementation
 
 #include "SIMDMath.hpp"
 #include "RDRAMAccess.hpp"
@@ -14,10 +13,10 @@ namespace Nova64 {
 namespace Video {
 namespace SIMD {
 
-// ─── Global runtime SIMD level ──────────────────────────────────────────────
+// --- Global runtime SIMD level ---
 SIMDLevel g_SIMDLevel = SIMDLevel::Scalar;
 
-// ─── Detection ──────────────────────────────────────────────────────────────
+// --- Detection ---
 SIMDLevel DetectSIMDLevel() {
 #if defined(_M_X64) || defined(_M_AMD64) || defined(__x86_64__)
     int cpuInfo[4] = {0};
@@ -112,7 +111,7 @@ const char* SIMDLevelName(SIMDLevel level) {
     }
 }
 
-// ─── Mat4x4 static methods ──────────────────────────────────────────────────
+// --- Mat4x4 static methods ---
 Mat4x4 Mat4x4::Identity() { return Mat4x4(); }
 
 Mat4x4 Mat4x4::Zero() {
@@ -124,9 +123,7 @@ Mat4x4 Mat4x4::Zero() {
     return m;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SCALAR IMPLEMENTATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SCALAR IMPLEMENTATIONS ---
 namespace Scalar {
 
 Vec4f Add(const Vec4f& a, const Vec4f& b) { return Vec4f(a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]); }
@@ -207,7 +204,7 @@ Vec4f Ceil(const Vec4f& v) { return Vec4f(std::ceil(v[0]), std::ceil(v[1]), std:
 
 Vec4f Round(const Vec4f& v) { return Vec4f(std::round(v[0]), std::round(v[1]), std::round(v[2]), std::round(v[3])); }
 
-// ── Scalar Matrix Operations ─────────────────────────────────────────────────
+// --- Scalar Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b) {
     Mat4x4 r = Mat4x4::Zero();
     for (int c = 0; c < 4; c++) {
@@ -238,8 +235,8 @@ Mat4x4 MatTranspose(const Mat4x4& m) {
 
 Mat4x4 MatInverse(const Mat4x4& m) {
     // Cofactor expansion for 4x4 matrix inverse
-    [[maybe_unused]] const float* s = m.col[0].f; // raw pointer (column-major)
-    // We need row-major access, so let's build a temp
+    [[maybe_unused]] const float* s = m.col[0].f;
+    // Copy into row-major order.
     float a[16];
     for (int c = 0; c < 4; c++)
         for (int r = 0; r < 4; r++) a[r * 4 + c] = m(r, c);
@@ -286,7 +283,7 @@ Mat4x4 MatInverse(const Mat4x4& m) {
 
     Mat4x4 result;
     if (std::fabs(det) < 1e-20f) {
-        // Singular matrix, return identity
+        // Singular: return identity.
         return result;
     }
 
@@ -337,7 +334,7 @@ Mat4x4 MatScale(const Mat4x4& m, float s) {
     return r;
 }
 
-// ── Scalar Batch Operations ──────────────────────────────────────────────────
+// --- Scalar Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count) {
     for (int i = 0; i < count; i++) {
         Vec4f v(posIn[i * 4], posIn[i * 4 + 1], posIn[i * 4 + 2], posIn[i * 4 + 3]);
@@ -353,7 +350,6 @@ void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normO
     for (int i = 0; i < count; i++) {
         Vec4f n(normIn[i * 3], normIn[i * 3 + 1], normIn[i * 3 + 2], 0.0f);
         Vec4f r = MatVecMul(normalMat, n);
-        // Normalize result
         float len = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
         if (len > 1e-10f) {
             float inv = 1.0f / len;
@@ -373,7 +369,7 @@ void BatchLerp(const float* a, const float* b, float* out, float t, int count) {
     }
 }
 
-// ── Scalar Integer Operations ────────────────────────────────────────────────
+// --- Scalar Integer Operations ---
 Vec4i AddI(const Vec4i& a, const Vec4i& b) { return Vec4i(a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]); }
 
 Vec4i SubI(const Vec4i& a, const Vec4i& b) { return Vec4i(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]); }
@@ -405,14 +401,12 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b) {
 
 } // namespace Scalar
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SSE2 IMPLEMENTATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SSE2 IMPLEMENTATIONS ---
 #if defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64)
 namespace SSE2 {
 
 Vec4f FMA(const Vec4f& a, const Vec4f& b, const Vec4f& c) {
-    // No FMA instruction in SSE2, use mul+add
+    // SSE2 has no FMA instruction, so this is a separate multiply and add.
     return _mm_add_ps(_mm_mul_ps(a.v, b.v), c.v);
 }
 
@@ -482,7 +476,7 @@ Vec4f Abs(const Vec4f& v) {
 Vec4f Negate(const Vec4f& v) { return _mm_sub_ps(_mm_setzero_ps(), v.v); }
 
 Vec4f Reciprocal(const Vec4f& v) {
-    // Use rcpps + Newton-Raphson for accuracy
+    // rcpps estimate refined with one Newton-Raphson step.
     __m128 est = _mm_rcp_ps(v.v);
     __m128 two = _mm_set1_ps(2.0f);
     // x1 = est * (2 - v * est)
@@ -490,7 +484,7 @@ Vec4f Reciprocal(const Vec4f& v) {
 }
 
 Vec4f ReciprocalSqrt(const Vec4f& v) {
-    // rsqrtps + Newton-Raphson
+    // rsqrtps estimate refined with one Newton-Raphson step.
     __m128 est = _mm_rsqrt_ps(v.v);
     __m128 half = _mm_set1_ps(0.5f);
     __m128 three = _mm_set1_ps(3.0f);
@@ -499,7 +493,7 @@ Vec4f ReciprocalSqrt(const Vec4f& v) {
     return _mm_mul_ps(_mm_mul_ps(half, est), _mm_sub_ps(three, _mm_mul_ps(v.v, estSq)));
 }
 
-// ── SSE2 Matrix Operations ───────────────────────────────────────────────────
+// --- SSE2 Matrix Operations ---
 Mat4x4 MatMul(const Mat4x4& a, const Mat4x4& b) {
     Mat4x4 result;
     for (int c = 0; c < 4; c++) {
@@ -542,7 +536,7 @@ Mat4x4 MatTranspose(const Mat4x4& m) {
     return r;
 }
 
-// ── SSE2 Batch Operations ────────────────────────────────────────────────────
+// --- SSE2 Batch Operations ---
 void TransformVertices(const Mat4x4& mvp, const float* posIn, float* posOut, int count) {
     for (int i = 0; i < count; i++) {
         __m128 v = _mm_loadu_ps(posIn + i * 4);
@@ -568,7 +562,6 @@ void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normO
         __m128 r = _mm_mul_ps(normalMat.col[0].v, nx);
         r = _mm_add_ps(r, _mm_mul_ps(normalMat.col[1].v, ny));
         r = _mm_add_ps(r, _mm_mul_ps(normalMat.col[2].v, nz));
-        // Normalize
         __m128 dp = _mm_mul_ps(r, r);
         __m128 shuf1 = _mm_shuffle_ps(dp, dp, _MM_SHUFFLE(0, 0, 0, 1));
         __m128 shuf2 = _mm_shuffle_ps(dp, dp, _MM_SHUFFLE(0, 0, 0, 2));
@@ -579,7 +572,6 @@ void TransformNormals(const Mat4x4& normalMat, const float* normIn, float* normO
             __m128 inv = _mm_set1_ps(1.0f / std::sqrt(len2));
             r = _mm_mul_ps(r, inv);
         }
-        // Store 3 floats
         float tmp[4];
         _mm_storeu_ps(tmp, r);
         normOut[i * 3] = tmp[0];
@@ -592,21 +584,19 @@ void BatchLerp(const float* a, const float* b, float* out, float t, int count) {
     __m128 vt = _mm_set1_ps(t);
     __m128 ot = _mm_set1_ps(1.0f - t);
     int i = 0;
-    // Process 4 floats at a time
     for (; i + 3 < count; i += 4) {
         __m128 va = _mm_loadu_ps(a + i);
         __m128 vb = _mm_loadu_ps(b + i);
         __m128 r = _mm_add_ps(_mm_mul_ps(va, ot), _mm_mul_ps(vb, vt));
         _mm_storeu_ps(out + i, r);
     }
-    // Remainder
     for (; i < count; i++) {
         out[i] = a[i] * (1.0f - t) + b[i] * t;
     }
 }
 
 Vec4i MulLoI(const Vec4i& a, const Vec4i& b) {
-    // SSE2 doesn't have _mm_mullo_epi32, emulate it
+    // _mm_mullo_epi32 is SSE4.1; emulate it with two widening multiplies.
     __m128i t0 = _mm_mul_epu32(a.v, b.v);                                       // 0,2
     __m128i t1 = _mm_mul_epu32(_mm_srli_si128(a.v, 4), _mm_srli_si128(b.v, 4)); // 1,3
     __m128i r = _mm_unpacklo_epi32(_mm_shuffle_epi32(t0, _MM_SHUFFLE(0, 0, 2, 0)),
@@ -615,7 +605,7 @@ Vec4i MulLoI(const Vec4i& a, const Vec4i& b) {
 }
 
 Vec4i WrapTexCoord(const Vec4i& coord, const Vec4i& mask, const Vec4i& mirror, const Vec4i& clampMax) {
-    // For each lane: if mirror set and bit above mask is set, invert. Then apply mask. Then clamp.
+    // Per lane: if mirror is set and the bit just above the mask is set, invert; then apply the mask and clamp.
     Vec4i result;
     for (int i = 0; i < 4; i++) {
         int c = coord.i[i];
@@ -639,7 +629,7 @@ Vec4i WrapTexCoord(const Vec4i& coord, const Vec4i& mask, const Vec4i& mirror, c
 }
 
 Vec4i PackRGBA5551(const Vec4i& r, const Vec4i& g, const Vec4i& b, const Vec4i& a) {
-    // Pack RGBA5551: R(5) G(5) B(5) A(1) = 16 bits
+    // RGBA5551: R(5) G(5) B(5) A(1) = 16 bits.
     __m128i rv = _mm_and_si128(_mm_slli_epi32(r.v, 11), _mm_set1_epi32(0xF800));
     __m128i gv = _mm_and_si128(_mm_slli_epi32(g.v, 6), _mm_set1_epi32(0x07C0));
     __m128i bv = _mm_and_si128(_mm_slli_epi32(b.v, 1), _mm_set1_epi32(0x003E));
@@ -650,9 +640,7 @@ Vec4i PackRGBA5551(const Vec4i& r, const Vec4i& g, const Vec4i& b, const Vec4i& 
 } // namespace SSE2
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SSE4.1 IMPLEMENTATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SSE4.1 IMPLEMENTATIONS ---
 #if defined(__SSE4_1__) || (defined(_MSC_VER) && defined(__AVX__))
 namespace SSE41 {
 
@@ -683,34 +671,30 @@ Vec4f BlendByMask(const Vec4f& a, const Vec4f& b, const Vec4f& mask) { return _m
 } // namespace SSE41
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// AVX IMPLEMENTATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- AVX IMPLEMENTATIONS ---
 #if defined(__AVX__)
 namespace AVX {
 
 Vec8f FMA(const Vec8f& a, const Vec8f& b, const Vec8f& c) {
-    // AVX without FMA3: mul + add
+    // Separate multiply and add (AVX has no FMA).
     Vec8f r;
     r.v = _mm256_add_ps(_mm256_mul_ps(a.v, b.v), c.v);
     return r;
 }
 
 void TransformVertices8(const Mat4x4& mvp, const float* posIn, float* posOut, int count) {
-    // Broadcast matrix columns to 256-bit
+    // Broadcast each matrix column into both 128-bit halves.
     __m256 col0 = _mm256_broadcast_ps(&mvp.col[0].v);
     __m256 col1 = _mm256_broadcast_ps(&mvp.col[1].v);
     __m256 col2 = _mm256_broadcast_ps(&mvp.col[2].v);
     __m256 col3 = _mm256_broadcast_ps(&mvp.col[3].v);
 
     int i = 0;
-    // Process 2 vertices per iteration (8 floats)
     for (; i + 1 < count; i += 2) {
-        // Load 2 vertices: [x0,y0,z0,w0, x1,y1,z1,w1]
+        // Two vertices per iteration: [x0,y0,z0,w0, x1,y1,z1,w1].
         __m256 v = _mm256_loadu_ps(posIn + i * 4);
 
-        // Extract components for both vertices:
-        // vx = [x0,x0,x0,x0, x1,x1,x1,x1] etc
+        // Splat each component within its vertex: vx = [x0,x0,x0,x0, x1,x1,x1,x1], etc.
         __m256 vx = _mm256_shuffle_ps(v, v, _MM_SHUFFLE(0, 0, 0, 0));
         __m256 vy = _mm256_shuffle_ps(v, v, _MM_SHUFFLE(1, 1, 1, 1));
         __m256 vz = _mm256_shuffle_ps(v, v, _MM_SHUFFLE(2, 2, 2, 2));
@@ -723,7 +707,7 @@ void TransformVertices8(const Mat4x4& mvp, const float* posIn, float* posOut, in
 
         _mm256_storeu_ps(posOut + i * 4, r);
     }
-    // Handle last vertex if odd count
+    // Odd vertex count: transform the last vertex on its own.
     if (i < count) {
         Vec4f v(posIn[i * 4], posIn[i * 4 + 1], posIn[i * 4 + 2], posIn[i * 4 + 3]);
         Vec4f r = SSE2::MatVecMul(mvp, v);
@@ -733,21 +717,18 @@ void TransformVertices8(const Mat4x4& mvp, const float* posIn, float* posOut, in
 
 void BatchEdgeSetup(const float* v0, const float* v1, const float* v2, float* edgeA, float* edgeB, float* edgeC,
                     int triCount) {
-    // Edge equation: A*x + B*y + C = 0
-    // For edge (p0, p1): A = p0.y - p1.y, B = p1.x - p0.x, C = p0.x*p1.y - p1.x*p0.y
+    // Edge equation A*x + B*y + C = 0 for edge (p0, p1):
+    // A = p0.y - p1.y, B = p1.x - p0.x, C = p0.x*p1.y - p1.x*p0.y.
+    // The inputs are structure-of-arrays: all x values first, then all y values.
     int i = 0;
     for (; i + 7 < triCount; i += 8) {
-        // Load 8 v0.x, 8 v0.y etc
         __m256 v0x = _mm256_loadu_ps(v0 + i);
         __m256 v0y = _mm256_loadu_ps(v0 + triCount + i);
         __m256 v1x = _mm256_loadu_ps(v1 + i);
         __m256 v1y = _mm256_loadu_ps(v1 + triCount + i);
 
-        // A = v0y - v1y
         __m256 a = _mm256_sub_ps(v0y, v1y);
-        // B = v1x - v0x
         __m256 b = _mm256_sub_ps(v1x, v0x);
-        // C = v0x * v1y - v1x * v0y
         __m256 c = _mm256_sub_ps(_mm256_mul_ps(v0x, v1y), _mm256_mul_ps(v1x, v0y));
 
         _mm256_storeu_ps(edgeA + i, a);
@@ -767,9 +748,7 @@ void BatchEdgeSetup(const float* v0, const float* v1, const float* v2, float* ed
 } // namespace AVX
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// AVX2 IMPLEMENTATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- AVX2 IMPLEMENTATIONS ---
 #if defined(__AVX2__)
 namespace AVX2 {
 
@@ -816,11 +795,10 @@ void BatchTexCoordWrap(const int32_t* coordS, const int32_t* coordT, int32_t* ou
         __m256i s = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(coordS + i));
         __m256i t = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(coordT + i));
 
-        // Apply mask
         __m256i maskedS = _mm256_and_si256(s, vMaskBitsS);
         __m256i maskedT = _mm256_and_si256(t, vMaskBitsT);
 
-        // Mirror: if mirror bit set, invert
+        // Mirror: invert when the mirror bit is set.
         if (mirrorS) {
             __m256i mirrorFlag = _mm256_and_si256(s, vMirrorBitS);
             __m256i cmp = _mm256_cmpeq_epi32(mirrorFlag, vMirrorBitS);
@@ -834,7 +812,6 @@ void BatchTexCoordWrap(const int32_t* coordS, const int32_t* coordT, int32_t* ou
             maskedT = _mm256_blendv_epi8(maskedT, inverted, cmp);
         }
 
-        // Clamp
         maskedS = _mm256_max_epi32(vZero, _mm256_min_epi32(maskedS, vClampMaxS));
         maskedT = _mm256_max_epi32(vZero, _mm256_min_epi32(maskedT, vClampMaxT));
 
@@ -856,24 +833,20 @@ void BatchColorConvert_RGBA16_to_Float(const uint16_t* src, float* dst, int coun
     const __m256 invScale = _mm256_set1_ps(1.0f / 31.0f);
     int i = 0;
     for (; i + 7 < count; i += 8) {
-        // Load 8 RGBA5551 values
         __m128i raw = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
         __m256i wide = _mm256_cvtepu16_epi32(raw);
 
-        // Extract R, G, B, A
         __m256i r = _mm256_and_si256(_mm256_srli_epi32(wide, 11), _mm256_set1_epi32(0x1F));
         __m256i g = _mm256_and_si256(_mm256_srli_epi32(wide, 6), _mm256_set1_epi32(0x1F));
         __m256i b = _mm256_and_si256(_mm256_srli_epi32(wide, 1), _mm256_set1_epi32(0x1F));
         __m256i a = _mm256_and_si256(wide, _mm256_set1_epi32(0x01));
 
-        // Convert to float and normalize
         __m256 rf = _mm256_mul_ps(_mm256_cvtepi32_ps(r), invScale);
         __m256 gf = _mm256_mul_ps(_mm256_cvtepi32_ps(g), invScale);
         __m256 bf = _mm256_mul_ps(_mm256_cvtepi32_ps(b), invScale);
         __m256 af = _mm256_cvtepi32_ps(a); // 0 or 1
 
-        // Interleave and store as RGBARGBA...
-        // This is SoA to AoS conversion - store 8 pixels * 4 components
+        // Transpose from one register per channel to interleaved RGBA for the 8 pixels.
         for (int j = 0; j < 8; j++) {
             float tmp_r[8], tmp_g[8], tmp_b[8], tmp_a[8];
             _mm256_storeu_ps(tmp_r, rf);
@@ -900,21 +873,17 @@ void BatchColorConvert_RGBA16_to_Float(const uint16_t* src, float* dst, int coun
 }
 
 Vec8i GatherTMEM(const uint8_t* tmem, const Vec8i& addresses) {
-    // Use vgatherdps (AVX2 gather) to load 8 bytes from scattered TMEM addresses
-    // Since we need byte loads, gather as 32-bit and mask
+    // AVX2 has no byte gather: gather 32-bit words at byte stride and mask to the low byte.
     __m256i gathered = _mm256_i32gather_epi32(reinterpret_cast<const int*>(tmem), addresses.v,
                                               1 // byte stride
     );
-    // Mask to byte
     return _mm256_and_si256(gathered, _mm256_set1_epi32(0xFF));
 }
 
 } // namespace AVX2
 #endif
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DISPATCH IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DISPATCH IMPLEMENTATION ---
 namespace Dispatch {
 
 // Function pointer types
@@ -961,7 +930,7 @@ void Initialize() {
 void Initialize(SIMDLevel level) {
     g_SIMDLevel = level;
 
-    // Start with scalar
+    // Scalar defaults first; faster implementations overwrite them below.
     s_Add = Scalar::Add;
     s_Sub = Scalar::Sub;
     s_Mul = Scalar::Mul;
@@ -1090,9 +1059,7 @@ Vec4i MaxI(const Vec4i& a, const Vec4i& b) { return s_MaxI(a, b); }
 
 } // namespace Dispatch
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// N64-SPECIFIC SIMD UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64-SPECIFIC SIMD UTILITIES ---
 namespace N64SIMD {
 
 Vec4f FixedToFloat_S15_16(const Vec4i& fixed) {
@@ -1148,7 +1115,6 @@ void ProcessVertexBatch(const uint8_t* rdram, uint32_t dramAddr, const Mat4x4& m
         positions[i * 4 + 2] = static_cast<float>(z);
         positions[i * 4 + 3] = 1.0f;
 
-        // Texture coords
         int16_t tcS = RDRAMReadHalfSigned(rdram, addr + 8);
         int16_t tcT = RDRAMReadHalfSigned(rdram, addr + 10);
         outTC[(startVtx + i) * 2 + 0] = static_cast<float>(tcS) / 32.0f;
@@ -1161,10 +1127,8 @@ void ProcessVertexBatch(const uint8_t* rdram, uint32_t dramAddr, const Mat4x4& m
         outColor[(startVtx + i) * 4 + 3] = RDRAMReadByte(rdram, addr + 15); // a
     }
 
-    // Batch transform through MVP
     Dispatch::TransformVertices(mvp, positions, clipspace, count);
 
-    // Copy to output
     std::memcpy(outPos + startVtx * 4, clipspace, count * 4 * sizeof(float));
 }
 
@@ -1242,12 +1206,11 @@ int ClipPolygonAgainstPlane(const float* vertsIn, float* vertsOut, int vertCount
         bool nextInside = distNext >= 0.0f;
 
         if (currInside) {
-            // Output current vertex
             std::memcpy(vertsOut + outCount * floatsPerVert, curr, floatsPerVert * sizeof(float));
             outCount++;
         }
 
-        // If crossing edge, output intersection
+        // Edge crosses the plane: emit the intersection.
         if (currInside != nextInside) {
             float t = distCurr / (distCurr - distNext);
             float* out = vertsOut + outCount * floatsPerVert;
@@ -1267,7 +1230,7 @@ void ProcessTexCoords(const int16_t* rawTC, float* outTC, float scaleS, float sc
         float s = static_cast<float>(rawTC[i * 2]) / 32.0f;
         float t = static_cast<float>(rawTC[i * 2 + 1]) / 32.0f;
 
-        // Apply shift
+        // Shifts 11..15 are left shifts by (16 - shift); 1..10 are right shifts.
         if (shiftS > 10) {
             s = std::ldexp(s, 16 - shiftS);
         } else if (shiftS > 0) {
@@ -1279,7 +1242,6 @@ void ProcessTexCoords(const int16_t* rawTC, float* outTC, float scaleS, float sc
             t = std::ldexp(t, -shiftT);
         }
 
-        // Apply scale
         outTC[i * 2] = s * scaleS;
         outTC[i * 2 + 1] = t * scaleT;
     }
@@ -1372,8 +1334,7 @@ void DecodeIA16_Batch(const uint16_t* src, float* dst, int count) {
 }
 
 void ConvertDepthBatch(const uint16_t* n64Depth, float* outDepth, int count) {
-    // N64 depth: 16-bit value representing 18-bit depth (upper 16 bits, dz = lower 4...)
-    // Convert to [0..1] range
+    // Linear scaling only; the N64's compressed depth encoding is not decoded.
     for (int i = 0; i < count; i++) {
         outDepth[i] = static_cast<float>(n64Depth[i]) / 65535.0f;
     }
@@ -1396,7 +1357,7 @@ uint32_t CalculateDXT(uint32_t width, uint32_t size) {
 }
 
 uint32_t CRC32_SIMD(const uint8_t* data, size_t length, uint32_t seed) {
-    // Software CRC32 for texture hashing
+    // Plain table-driven software CRC32 (IEEE polynomial), despite the SIMD name.
     static const uint32_t crc_table[256] = {
         0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3, 0x0EDB8832,
         0x79DCB8A4, 0xE0D5E91B, 0x97D2D988, 0x09B64C2B, 0x7EB17CBF, 0xE7B82D09, 0x90BF1D9F, 0x1DB71064, 0x6AB020F2,

@@ -4,7 +4,7 @@
  *
  * Provides pool allocators (fixed-size blocks for vertices/tiles), a linear
  * allocator (frame-scoped scratch memory), alignment-aware allocation,
- * and an allocation tracker that reports leaks at shutdown.
+ * and, in debug builds, an allocation tracker that can report leaks.
  */
 
 #pragma once
@@ -20,9 +20,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Allocation Stats
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Allocation Stats ---
 
 struct AllocStats {
     std::atomic<uint64_t> totalAllocations{0};
@@ -38,23 +36,18 @@ struct AllocStats {
 
 extern AllocStats g_allocStats;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Aligned Allocation Helpers
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Aligned Allocation Helpers ---
 
 /// Allocate aligned memory (alignment must be power of 2)
 void* AlignedAlloc(size_t size, size_t alignment = 64);
 
-/// Free aligned memory
 void AlignedFree(void* ptr);
 
 /// Tracked allocation (updates g_allocStats)
 void* TrackedAlloc(size_t size, size_t alignment = 16);
 void TrackedFree(void* ptr, size_t size);
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Pool Allocator — Fixed-size blocks, O(1) alloc/free, no fragmentation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Pool Allocator — Fixed-size blocks, O(1) alloc/free, no fragmentation ---
 
 class PoolAllocator {
 public:
@@ -73,10 +66,9 @@ public:
     /// Free one block back to pool
     void Free(void* ptr) noexcept;
 
-    /// Reset all blocks to free (does NOT call destructors)
+    /// Reset all blocks to free (does not call destructors)
     void Reset() noexcept;
 
-    // Stats
     size_t GetBlockSize() const noexcept { return m_blockSize; }
     size_t GetBlockCount() const noexcept { return m_blockCount; }
     size_t GetFreeCount() const noexcept { return m_freeCount; }
@@ -98,9 +90,7 @@ private:
     size_t m_alignment = 16;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Linear Allocator — Bump pointer, reset per frame, zero fragmentation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Linear Allocator — Bump pointer, reset per frame, zero fragmentation ---
 
 class LinearAllocator {
 public:
@@ -110,7 +100,6 @@ public:
     /// Initialize with a fixed capacity
     bool Init(size_t capacity, size_t alignment = 16);
 
-    /// Destroy allocator
     void Destroy();
 
     /// Allocate `size` bytes (bump pointer forward)
@@ -119,13 +108,12 @@ public:
     /// Reset pointer to beginning (invalidates all previous allocations)
     void Reset() noexcept;
 
-    // Stats
     size_t GetCapacity() const noexcept { return m_capacity; }
     size_t GetUsed() const noexcept { return m_offset; }
     size_t GetRemaining() const noexcept { return m_capacity - m_offset; }
     bool IsInitialized() const noexcept { return m_memory != nullptr; }
 
-    /// Typed allocation helper
+    /// Allocates uninitialised storage for `count` objects of T.
     template <typename T> T* AllocArray(size_t count) { return static_cast<T*>(Alloc(sizeof(T) * count, alignof(T))); }
 
 private:
@@ -135,9 +123,7 @@ private:
     size_t m_alignment = 16;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Ring Buffer — Circular buffer for streaming vertex data to GPU
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Ring Buffer — Circular buffer for streaming vertex data to GPU ---
 
 class CPURingBuffer {
 public:
@@ -153,7 +139,6 @@ public:
     /// Mark space as consumed (after GPU is done with it)
     void Consume(size_t size) noexcept;
 
-    /// Reset read/write pointers
     void Reset() noexcept;
 
     size_t GetCapacity() const noexcept { return m_capacity; }
@@ -168,9 +153,7 @@ private:
     size_t m_readOffset = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Leak Detector (debug builds)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Leak Detector (debug builds) ---
 
 #ifdef _DEBUG
 

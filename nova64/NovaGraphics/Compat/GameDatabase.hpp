@@ -1,12 +1,8 @@
 /**
  * @file GameDatabase.hpp
- * @brief Game Compatibility Database.
+ * @brief Per-game compatibility profiles: rendering override flags, workarounds for known bugs,
+ *        forced microcode and a compatibility rating, looked up by ROM id, CRC or name.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Game Compatibility Database
-// Per-game overrides, known bugs workarounds, microcode detection,
-// compatibility ratings, and automatic settings adjustment.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 #include <cstdint>
@@ -18,9 +14,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════
-//  Compatibility Rating
-// ═══════════════════════════════════════════════════════════════
+// --- Compatibility Rating ---
 
 enum class CompatRating : uint8_t {
     Perfect = 5,  // No known issues
@@ -33,9 +27,7 @@ enum class CompatRating : uint8_t {
 
 const char* CompatRatingName(CompatRating rating);
 
-// ═══════════════════════════════════════════════════════════════
-//  Video Override Flags
-// ═══════════════════════════════════════════════════════════════
+// --- Video Override Flags ---
 
 // Each bit controls a specific rendering behavior override
 namespace VideoFlags {
@@ -84,9 +76,7 @@ constexpr uint64_t PALSpeedFix = 1ULL << 50;
 constexpr uint64_t SwapRB = 1ULL << 51;
 } // namespace VideoFlags
 
-// ═══════════════════════════════════════════════════════════════
-//  Game Profile
-// ═══════════════════════════════════════════════════════════════
+// --- Game Profile ---
 
 struct GameProfile {
     // Identification
@@ -139,13 +129,10 @@ struct GameProfile {
     bool noDepthFrameBuffers = false;   // Don't use depth FBs as textures
     bool doNotResetOtherMode = false;   // Keep otherMode across DLists
 
-    // Check a flag
     bool HasFlag(uint64_t flag) const { return (flags & flag) != 0; }
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Game Database
-// ═══════════════════════════════════════════════════════════════
+// --- Game Database ---
 
 class GameDatabase {
 public:
@@ -166,11 +153,9 @@ public:
     bool LoadCustomProfiles(const std::string& path);
     bool SaveCustomProfiles(const std::string& path) const;
 
-    // Get all profiles
     const std::vector<GameProfile>& GetAllProfiles() const { return m_profiles; }
     int GetProfileCount() const { return static_cast<int>(m_profiles.size()); }
 
-    // Stats
     struct DatabaseStats {
         int total = 0;
         int perfect = 0;

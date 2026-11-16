@@ -1,10 +1,8 @@
 /**
  * @file TextureCache.cpp
- * @brief Texture Cache.
+ * @brief N64 texture decoding, caching and GPU upload; see TextureCache.hpp.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Texture Cache Implementation
-// N64 texture decoding, caching, and GPU upload
 
 #include "TextureCache.hpp"
 #include "ImageWrite.hpp"
@@ -43,20 +41,15 @@ static bool ForensicEnabled() {
     return enabled;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ALPHA BLEEDING
-//  Many N64 textures use alpha=0 to mark transparent texels but leave the RGB
-//  channels at undefined values (often white).  When the GPU does bilinear
-//  filtering across the transparent edge, the white RGB bleeds into the
-//  visible color, producing a "white halo / faint white gradient" outline
-//  around foliage, paths, decals, etc.
-//
-//  Fix: for every fully transparent pixel (alpha == 0), copy the RGB from a
-//  nearby non-transparent neighbor.  This way bilinear filtering at the edge
-//  blends sensible color values together and the alpha gradient handles
-//  transparency.  This matches the "alpha bleed" pre-processing used by
-//  GLideN64 and ParaLLEl-RDP.
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- Alpha bleeding ---
+
+// Many N64 textures mark transparent texels with alpha 0 but leave the RGB at
+// undefined values (often white). Bilinear filtering across such an edge pulls
+// that RGB into the visible colour and draws a white halo around foliage, paths
+// and decals. Each fully transparent pixel therefore takes the average RGB of its
+// opaque neighbours, so filtering blends sensible colours and the alpha gradient
+// handles the transparency. This matches the "alpha bleed" pre-processing used by
+// GLideN64 and ParaLLEl-RDP.
 static void BleedAlphaEdges(uint32_t* pixels, uint32_t width, uint32_t height) {
     if (!pixels || width == 0 || height == 0) return;
     // Single 8-neighbour pass — sufficient for the 1-2 texel bleed that bilinear
@@ -68,7 +61,7 @@ static void BleedAlphaEdges(uint32_t* pixels, uint32_t width, uint32_t height) {
             uint32_t idx = y * width + x;
             uint32_t p = src[idx];
             if ((p >> 24) != 0) continue; // already opaque, skip
-            // Search 8 neighbours; pick the first opaque one.
+            // Average the RGB of the opaque 8-neighbours.
             uint32_t r = 0, g = 0, b = 0, count = 0;
             for (int dy = -1; dy <= 1; ++dy) {
                 int ny = static_cast<int>(y) + dy;
@@ -98,9 +91,7 @@ static void BleedAlphaEdges(uint32_t* pixels, uint32_t width, uint32_t height) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE CACHE LIFECYCLE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE CACHE LIFECYCLE ---
 
 TextureCache::TextureCache() = default;
 TextureCache::~TextureCache() { Shutdown(); }
@@ -133,7 +124,7 @@ void TextureCache::BeginFrame() {
     while (!m_zombies.empty() && m_zombies.front().retireSerial <= completed) {
         m_zombies.pop_front(); // unique_ptr destruction happens here -- the GPU is done
     }
-    // Periodic eviction — every 60 frames, clean stale textures
+    // Every 64 frames, evict stale textures.
     if ((m_frameCounter & 0x3F) == 0) {
         EvictStale(m_frameCounter);
     }
@@ -147,9 +138,7 @@ void TextureCache::SetConfig(const TextureCacheConfig& config) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE LOOKUP / CREATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE LOOKUP / CREATION ---
 
 namespace {
 // Replicate the edge texel past the clamp extent on each axis (no-op when the
@@ -175,7 +164,6 @@ void ApplyDecodeClamp(const TextureKey& key, std::vector<uint32_t>& pixels) {
 } // namespace
 
 CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram, const uint8_t* tmem) {
-    // Look up in cache
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
         // Cache hit — update LRU
@@ -187,7 +175,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         entry.texture.lastUsedFrame = m_frameCounter;
         entry.texture.useCount++;
 
-        // Move to front of LRU list
         m_lruList.erase(entry.lruIterator);
         m_lruList.push_front(key);
         entry.lruIterator = m_lruList.begin();
@@ -201,7 +188,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         Logger::Info("[FORENSIC] CACHE MISS crc=0x{:016X} fmt={} size={} pal={} w={} h={}", key.crc,
                      static_cast<int>(key.format), static_cast<int>(key.size), key.palette, key.width, key.height);
 
-    // Ensure we have room
+    // Make room.
     while (m_stats.currentEntries >= m_config.maxEntries || m_stats.currentBytes >= m_config.maxCacheBytes) {
         if (m_lruList.empty()) break;
         EvictLRU();
@@ -243,7 +230,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     if (pixels.empty()) return nullptr;
 
-    // ── Decode-time CLAMP (GLideN64 Textures.cpp clampSClamp/clampTClamp) ──
+    // --- Decode-time CLAMP (GLideN64 Textures.cpp clampSClamp/clampTClamp) ---
     // On a CLAMPed axis the RDP re-reads the edge texel past the loaded extent
     // rather than continuing into TMEM. GLideN64 bounds the source read while
     // decoding; replicating the edge texel across the remainder of the decoded
@@ -271,19 +258,17 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         }
     }
 
-    // Eliminate the white-halo / alpha-edge bleed produced by GPU bilinear
-    // filtering on N64 textures with undefined RGB at alpha=0 texels.
+    // Alpha bleed: see BleedAlphaEdges.
     BleedAlphaEdges(pixels.data(), key.width, key.height);
 
     // The GPU texture is exactly the tile's size, as in GLideN64. Rounding up
-    // to a power of two left a transparent margin past the tile that repeat
-    // wrapping, bilinear/3-point filtering and generated mip levels all
-    // sampled: gaps in tiled surfaces, dark seams at texture edges, and
+    // to a power of two would leave a transparent margin past the tile that
+    // repeat wrapping, bilinear/3-point filtering and generated mip levels all
+    // sample: gaps in tiled surfaces, dark seams at texture edges, and
     // surfaces fading at a distance. Vulkan and GL 4.6 mipmap any size.
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;
 
-    // Create GPU texture
     TextureDesc desc;
     desc.width = gpuWidth;
     desc.height = gpuHeight;
@@ -294,24 +279,21 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return nullptr;
 
-    // Upload pixel data
-    // If GPU texture is larger than N64 texture (power-of-2 rounding),
-    // we need to upload to the correct sub-region
+    // The sub-region path is only needed when the GPU texture is larger than the tile.
     if (gpuWidth == key.width && gpuHeight == key.height) {
         gpuTex->Upload(pixels.data(), pixels.size() * sizeof(uint32_t));
     } else {
-        // Clear to transparent first, then upload sub-region
+        // Clear to transparent, then upload the sub-region.
         std::vector<uint32_t> clearData(gpuWidth * gpuHeight, 0);
         gpuTex->Upload(clearData.data(), clearData.size() * sizeof(uint32_t));
         gpuTex->UploadSubRegion(0, 0, key.width, key.height, pixels.data(), pixels.size() * sizeof(uint32_t));
     }
 
-    // Generate mipmaps if enabled
     if (m_config.enableMipmaps && desc.mipLevels > 1) {
         gpuTex->GenerateMipmaps();
     }
 
-    // Set sampler state based on N64 tile settings
+    // Filter from the cache config.
     SamplerDesc samplerDesc;
     if (m_config.forceLinearFilter) {
         samplerDesc.minFilter = SamplerFilter::LinearMipLinear;
@@ -324,15 +306,15 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         samplerDesc.magFilter = SamplerFilter::Nearest;
     }
 
-    // Wrap modes from N64 tile
+    // Wrap modes from the N64 tile.
     // cms/cmt bits: bit0=mirror, bit1=clamp
     // When the tile has a mask (maskS/maskT > 0) the fragment shader performs
-    // ALL wrap/mirror/clamp in texel space, so the GPU sampler must be
+    // all wrap/mirror/clamp in texel space, so the GPU sampler must be
     // CLAMP_TO_EDGE to avoid re-wrapping the already-resolved UVs (matches the
-    // OpenGL path's getGLWrapMode). Without this the Vulkan sampler used
-    // REPEAT/MIRRORED_REPEAT on masked tiles and re-wrapped edge UVs into the
-    // opposite edge / transparent-black border — the MM file-select black
-    // shard mosaic on the MoltenVK backend.
+    // OpenGL path's getGLWrapMode). With REPEAT/MIRRORED_REPEAT on masked tiles
+    // the Vulkan sampler re-wraps edge UVs into the opposite edge / the
+    // transparent-black border — the MM file-select black shard mosaic on the
+    // MoltenVK backend.
     auto translateWrap = [](uint8_t mode, uint8_t mask) -> TextureWrap {
         if (mask > 0) return TextureWrap::ClampToEdge;
         if (mode & 0x2) return TextureWrap::ClampToEdge;
@@ -346,7 +328,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     gpuTex->SetSampler(samplerDesc);
 
-    // Create cache entry
     m_lruList.push_front(key);
 
     CacheEntry cacheEntry;
@@ -370,13 +351,10 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     return &result.first->second.texture;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  MIPMAPPED TEXTURE LOOKUP / CREATION (TILE-CHAIN)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- MIPMAPPED TEXTURE LOOKUP / CREATION (TILE-CHAIN) ---
 
 CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram, const uint8_t* tmem,
                                         const MipTileInfo* mipTiles, int mipCount) {
-    // Look up in cache — same as non-mip path
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
         m_stats.hits++;
@@ -396,7 +374,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         EvictLRU();
     }
 
-    // Decode base tile (level 0)
     std::vector<uint32_t> pixels;
     if (tmem) {
         DecodeTexture(key, tmem, pixels, true);
@@ -407,22 +384,15 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     }
     if (pixels.empty()) return nullptr;
 
-    // ── Decode-time CLAMP (GLideN64 Textures.cpp clampSClamp/clampTClamp) ──
-    // On a CLAMPed axis the RDP re-reads the edge texel past the loaded extent
-    // rather than continuing into TMEM. GLideN64 bounds the source read while
-    // decoding; replicating the edge texel across the remainder of the decoded
-    // image is equivalent and avoids touching all nine format decoders.
-    // Without this, texels between the loaded extent and the sampled extent
-    // came from whatever followed in TMEM (a neighbouring texture, or the
-    // palette) -- garbage/smeared columns and rows at texture edges.
+    // Decode-time CLAMP (GLideN64 clampSClamp/clampTClamp), as in the non-mip path above.
     ApplyDecodeClamp(key, pixels);
 
     // Exactly the tile's size -- see the note in the other upload path.
     uint32_t gpuWidth = key.width;
     uint32_t gpuHeight = key.height;
 
-    // Determine actual mip level count: base + mipCount additional levels,
-    // clamped to what the (post-pow2) base dimensions can actually support.
+    // Mip level count: the base level plus mipCount more, clamped to what the
+    // base dimensions can support.
     int totalLevels = 1 + std::min(mipCount, 7);
     totalLevels = std::min<uint32_t>(totalLevels, MaxMipLevels(gpuWidth, gpuHeight));
 
@@ -436,7 +406,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return nullptr;
 
-    // Upload base level (level 0)
     if (gpuWidth == key.width && gpuHeight == key.height) {
         gpuTex->Upload(pixels.data(), pixels.size() * sizeof(uint32_t), 0);
     } else {
@@ -474,7 +443,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         if (mipGpuW == mipW && mipGpuH == mipH) {
             gpuTex->Upload(mipPixels.data(), mipPixels.size() * sizeof(uint32_t), static_cast<uint32_t>(mip + 1));
         } else {
-            // Mip level dimensions don't match the GL mip size — upload as sub-region
+            // The tile does not match the GPU mip size: upload it as a sub-region.
             std::vector<uint32_t> clearMip(mipGpuW * mipGpuH, 0);
             gpuTex->Upload(clearMip.data(), clearMip.size() * sizeof(uint32_t), static_cast<uint32_t>(mip + 1));
             uint32_t uploadW = std::min(mipW, static_cast<uint16_t>(mipGpuW));
@@ -484,7 +453,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         }
     }
 
-    // Set sampler state
     SamplerDesc samplerDesc;
     if (m_config.forceLinearFilter) {
         samplerDesc.minFilter = SamplerFilter::LinearMipLinear;
@@ -508,7 +476,6 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     samplerDesc.lodBias = m_config.lodBias;
     gpuTex->SetSampler(samplerDesc);
 
-    // Create cache entry
     m_lruList.push_front(key);
     CacheEntry cacheEntry;
     cacheEntry.texture.key = key;
@@ -531,9 +498,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     return &result.first->second.texture;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  INVALIDATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- INVALIDATION ---
 
 void TextureCache::InvalidateRange(uint32_t addressStart, uint32_t sizeBytes) {
     uint32_t addressEnd = addressStart + sizeBytes;
@@ -545,7 +510,7 @@ void TextureCache::InvalidateRange(uint32_t addressStart, uint32_t sizeBytes) {
         uint32_t texEnd = key.address + CalculateTMEMSize(key);
 
         if (key.address < addressEnd && texEnd > addressStart) {
-            // Overlap — invalidate (defer GPU resource destruction)
+            // Overlap: drop the texture (GPU destruction is deferred).
             m_stats.currentBytes -= it->second.texture.sizeBytes;
             m_stats.currentEntries--;
             m_stats.evictions++;
@@ -571,16 +536,13 @@ void TextureCache::InvalidateAll() {
     m_stats.currentEntries = 0;
     m_stats.currentBytes = 0;
     // Same rule as EvictLRU: the GPU may still be executing frames that sample these
-    // textures, so they wait in the zombie queue instead of being destroyed here
-    // (clearing the cache directly destroyed them at once).
+    // textures, so they wait in the zombie queue instead of being destroyed here.
     for (auto& entry : m_cache) Retire(std::move(entry.second.texture.gpuTexture));
     m_cache.clear();
     m_lruList.clear();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  EVICTION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- EVICTION ---
 
 void TextureCache::EvictStale(uint64_t currentFrame) {
     // Evict textures not used in the last 300 frames (~5 seconds)
@@ -625,9 +587,7 @@ void TextureCache::EvictLRU() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE DECODING — DISPATCH
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE DECODING — DISPATCH ---
 
 static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset, uint32_t y, bool fromTMEM) {
     // DWordInterleave at load time models the N64 TMEM write interleave.
@@ -664,7 +624,7 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data, std
 
     // When data points to the full TMEM base, offset to this tile's start.
     // key.tmemOffset is the tile's tmemAddr (in 64-bit words). The tile's
-    // sl/tl crop origin is NOT applied here: the shader already subtracts it
+    // sl/tl crop origin is not applied here: the shader already subtracts it
     // via uTexOffset0 (tileCoord = tc*scale - GetSL()), so shifting the decode
     // by sl too would double-count it and sample past the loaded data.
     const uint8_t* tileData = data + (static_cast<uint32_t>(key.tmemOffset) * 8);
@@ -682,7 +642,7 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data, std
     }
 
     // Real N64 hardware: when a TLUT mode is active (otherModeH.textureLUT !=
-    // G_TT_NONE) and the tile is 4-bit or 8-bit, the RDP ALWAYS decodes the
+    // G_TT_NONE) and the tile is 4-bit or 8-bit, the RDP always decodes the
     // texel data as color-indexed with a palette lookup, regardless of the
     // tile's own format field. Confirmed against two independent authoritative
     // sources: angrylion-rdp-plus's cycle-accurate tile derivatives compute a
@@ -690,10 +650,9 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data, std
     // and GLideN64's texture-load dispatch table routes every non-YUV format
     // through the CI decoder at 4/8-bit once a TLUT mode is active (its own
     // comment: "Banjo-Kazooie uses this, doesn't make sense, but it works").
-    // Tiles whose format field already says CI were unaffected by this gap
-    // (decoding CI either way); tiles set up with some other format while
-    // TLUT is active decoded as raw RGBA/IA/I -- misreading palette-index
-    // bytes as pixel data -- which reads as noise/garbage.
+    // Without this, tiles set up with some other format while TLUT is active
+    // would decode as raw RGBA/IA/I, misreading palette-index bytes as pixel
+    // data, which reads as noise.
     N64TexFormat effectiveFormat = key.format;
     if (key.tlutType != 0 && key.format != N64TexFormat::YUV &&
         (key.size == N64TexSize::Bits4 || key.size == N64TexSize::Bits8)) {
@@ -754,9 +713,7 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data, std
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  FORMAT-SPECIFIC DECODERS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- FORMAT-SPECIFIC DECODERS ---
 
 // Convert N64 RGBA5551 to RGBA8888
 static inline uint32_t RGBA5551toRGBA8(uint16_t c) {
@@ -985,12 +942,10 @@ void TextureCache::DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, 
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- UTILITY FUNCTIONS ---
 
 uint32_t TextureCache::CalculateTextureCRC(const uint8_t* data, uint32_t sizeBytes) {
-    // Simple CRC32 for texture content hashing
+    // Plain bitwise CRC32 (IEEE polynomial) for texture content hashing.
     uint32_t crc = 0xFFFFFFFF;
     for (uint32_t i = 0; i < sizeBytes; i++) {
         crc ^= data[i];

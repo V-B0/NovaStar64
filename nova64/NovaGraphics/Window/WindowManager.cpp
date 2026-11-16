@@ -1,10 +1,8 @@
 /**
  * @file WindowManager.cpp
- * @brief Window Manager.
+ * @brief SDL2 window, OpenGL context, input and display management; see WindowManager.hpp.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Window Manager Implementation
-// SDL2 window, OpenGL context, input, display management
 
 #include "WindowManager.hpp"
 #include "../../NovaInput/GamepadInput.hpp"
@@ -24,9 +22,7 @@
 namespace Nova64 {
 namespace Video {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL DEBUG CALLBACK
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL DEBUG CALLBACK ---
 
 static void GLAD_API_PTR GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                          const GLchar* message, const void* userParam) {
@@ -59,9 +55,7 @@ static void GLAD_API_PTR GLDebugCallback(GLenum source, GLenum type, GLuint id, 
     std::cerr << "[GL " << sevStr << "/" << typeStr << "] " << message << std::endl;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  LIFECYCLE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- LIFECYCLE ---
 
 WindowManager::WindowManager() = default;
 
@@ -72,13 +66,13 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
 
     m_config = config;
 
-    // ── Initialize SDL Video ─────────────────────────────────────────────
+    // --- Initialize SDL Video ---
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
         return false;
     }
     NovaInput::Gamepads::Instance().Init();
-    // ── Set OpenGL attributes ────────────────────────────────────────────
+    // --- Set OpenGL attributes ---
     if (config.backendType == 0) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, config.glMajor);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, config.glMinor);
@@ -102,9 +96,9 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         }
     }
 
-    // ── Create window ────────────────────────────────────────────────────
-    // SDL_WINDOW_SHOWN and SDL_WINDOW_HIDDEN are mutually exclusive.
-    // Start with 0 and add the correct visibility flag explicitly.
+    // --- Create window ---
+    // SDL_WINDOW_SHOWN and SDL_WINDOW_HIDDEN are mutually exclusive, so
+    // exactly one visibility flag is set.
     uint32_t flags = config.headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN;
     if (config.backendType == 0) {
         flags |= SDL_WINDOW_OPENGL;
@@ -140,8 +134,8 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
 
 #ifdef _WIN32
     // Remove the 1-pixel colored border that Windows DWM draws around the
-    // window.  Without this, a thin accent-colored line appears at the very
-    // top of the window.  Use multiple strategies for different Windows versions.
+    // window, which otherwise shows as a thin accent-colored line at the very
+    // top. Multiple strategies cover different Windows versions.
     {
         SDL_SysWMinfo wmInfo;
         SDL_VERSION(&wmInfo.version);
@@ -165,7 +159,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
     }
 #endif
 
-    // ── Create OpenGL context ────────────────────────────────────────────
+    // --- Create OpenGL context ---
     if (config.backendType == 0) {
         m_glContext = SDL_GL_CreateContext(m_window);
         if (!m_glContext) {
@@ -188,7 +182,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         SDL_GL_MakeCurrent(m_window, m_glContext);
         m_glContextThread = std::this_thread::get_id(); // Track initial GL context thread
 
-        // ── Load OpenGL via glad ─────────────────────────────────────────────
+        // --- Load OpenGL via glad ---
         int version = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
         if (!version) {
             std::cerr << "gladLoadGL failed" << std::endl;
@@ -207,7 +201,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         std::cout << "  Version:  " << glGetString(GL_VERSION) << std::endl;
         std::cout << "  GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
-        // ── Enable GL debug output ───────────────────────────────────────────
+        // --- Enable GL debug output ---
         if (config.glDebug && GLAD_GL_KHR_debug) {
             glEnable(GL_DEBUG_OUTPUT);
             glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
@@ -218,11 +212,11 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         std::cout << "Vulkan window initialized." << std::endl;
     }
 
-    // ── Set VSync ────────────────────────────────────────────────────────
+    // --- Set VSync ---
     if (config.backendType == 0) {
         SetVSync(config.vsync ? 1 : 0);
 
-        // ── Set initial GL state ─────────────────────────────────────────────
+        // --- Set initial GL state ---
         glViewport(0, 0, config.width, config.height);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     }
@@ -257,19 +251,16 @@ void WindowManager::Shutdown() {
     m_window = nullptr;
 }
 
-// static
 WindowManager* WindowManager::WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx) {
     if (!sdlWindow) return nullptr;
     auto* wm = new WindowManager();
     wm->m_window = sdlWindow;
     wm->m_glContext = glCtx;
-    wm->m_isExternal = true; // do NOT destroy on Shutdown
+    wm->m_isExternal = true; // not destroyed on Shutdown
     return wm;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  WINDOW PROPERTIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- WINDOW PROPERTIES ---
 
 void WindowManager::GetSize(int32_t& width, int32_t& height) const {
     if (m_window) {
@@ -319,15 +310,12 @@ std::string WindowManager::GetTitle() const {
     return m_config.title;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  DISPLAY MODES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DISPLAY MODES ---
 
 void WindowManager::SetFullscreen(bool fullscreen, bool borderless) {
     if (!m_window) return;
 
     if (fullscreen) {
-        // Save windowed state
         if (!m_fullscreen) {
             SDL_GetWindowPosition(m_window, &m_windowedX, &m_windowedY);
             SDL_GetWindowSize(m_window, &m_windowedW, &m_windowedH);
@@ -338,7 +326,6 @@ void WindowManager::SetFullscreen(bool fullscreen, bool borderless) {
     } else {
         SDL_SetWindowFullscreen(m_window, 0);
 
-        // Restore windowed state
         SDL_SetWindowPosition(m_window, m_windowedX, m_windowedY);
         SDL_SetWindowSize(m_window, m_windowedW, m_windowedH);
     }
@@ -382,9 +369,7 @@ DisplayMode WindowManager::GetCurrentDisplayMode() const {
 
 int32_t WindowManager::GetDisplayCount() const { return SDL_GetNumVideoDisplays(); }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL CONTEXT
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL CONTEXT ---
 
 void WindowManager::MakeContextCurrent() {
     if (m_window && m_glContext) {
@@ -397,10 +382,9 @@ void WindowManager::ReleaseContext() { SDL_GL_MakeCurrent(m_window, nullptr); }
 void WindowManager::SwapBuffers() {
     if (m_window) {
         if (m_config.backendType == 1) return; // Vulkan backend manages its own swapchain
-        // Note: do NOT call SDL_GL_SetSwapInterval here. The interval is set
-        // once at init (and again whenever the user toggles vsync); calling
-        // it on every swap is pure overhead and on some drivers triggers an
-        // implicit GPU sync.
+        // Do not call SDL_GL_SetSwapInterval here. The interval is set once at
+        // init (and again whenever the user toggles vsync); calling it on every
+        // swap is pure overhead and on some drivers triggers an implicit GPU sync.
         SDL_GL_SwapWindow(m_window);
     }
 }
@@ -428,9 +412,7 @@ void* WindowManager::GetNativeHandle() const {
     return nullptr;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  EVENT PROCESSING
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- EVENT PROCESSING ---
 
 bool WindowManager::ProcessEvents() {
     // Debug-only: when NOVA64_IGNORE_QUIT is set, ignore window-close / SDL_QUIT
@@ -569,9 +551,7 @@ bool WindowManager::PollWindowEvent(WindowEventData& event) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  SCREENSHOTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SCREENSHOTS ---
 
 bool WindowManager::CaptureFramebuffer(std::vector<uint32_t>& pixels, int32_t& width, int32_t& height) {
     GetDrawableSize(width, height);
@@ -597,7 +577,6 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
     std::vector<uint32_t> pixels;
     if (!CaptureFramebuffer(pixels, w, h)) return false;
 
-    // Write BMP
     const uint32_t fileHeaderSize = 14;
     const uint32_t infoHeaderSize = 40;
     const uint32_t pixelDataOffset = fileHeaderSize + infoHeaderSize;
@@ -623,8 +602,8 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
     memcpy(&bmp[28], &bpp, 2);
     memcpy(&bmp[34], &imageSize, 4);
 
-    // Pixel data (BGR, bottom-to-top — already flipped in CaptureFramebuffer)
-    // Actually BMP is bottom-to-top, and we flipped to top-to-bottom, so flip back
+    // Pixel data, BGR. CaptureFramebuffer returns rows top to bottom and BMP
+    // stores them bottom to top, so the rows are written in reverse order.
     for (int y = 0; y < h; y++) {
         uint8_t* row = &bmp[pixelDataOffset + (h - 1 - y) * rowSize];
         for (int x = 0; x < w; x++) {
@@ -643,9 +622,7 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  CURSOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- CURSOR ---
 
 void WindowManager::ShowCursor(bool show) { SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
 

@@ -22,15 +22,13 @@
 
 namespace Nova64::Video {
 
-// Diagnostics-only: monotonic swapchain present index, incremented once per
-// presented frame by the VK backend. Lets the triangle dump (in GBIHandler)
-// and the headless screenshot capture (in VKBackend) key off the SAME frame
-// number, so a dumped triangle set can be correlated to a captured image.
+// Diagnostics only: monotonic swapchain present index, incremented once per
+// presented frame by the Vulkan backend. The triangle dump (GBIHandler) and the
+// headless screenshot capture (VKBackend) key off the same frame number, so a
+// dumped triangle set can be matched to a captured image.
 extern std::atomic<long> g_presentIndex;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Log Levels & Subsystems
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Log Levels & Subsystems ---
 
 enum class LogLevel : uint8_t { Off = 0, Fatal = 1, Error = 2, Warning = 3, Info = 4, Debug = 5, Trace = 6 };
 
@@ -53,9 +51,7 @@ enum class LogSubsystem : uint8_t {
     Count = 15
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Log Entry
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Log Entry ---
 
 struct LogEntry {
     LogLevel level = LogLevel::Info;
@@ -69,9 +65,7 @@ struct LogEntry {
     std::chrono::steady_clock::time_point timestamp;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Logger Configuration
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Logger Configuration ---
 
 struct LoggerConfig {
     LogLevel globalLevel = LogLevel::Info;
@@ -98,9 +92,7 @@ struct LoggerConfig {
     LoggerConfig() { subsystemLevels.fill(LogLevel::Off); }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Logger Statistics
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Logger Statistics ---
 
 struct LoggerStats {
     std::atomic<uint64_t> totalMessages{0};
@@ -114,9 +106,7 @@ struct LoggerStats {
     std::atomic<uint64_t> bytesWritten{0};
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Logger Class
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Logger Class ---
 
 class Logger {
 public:
@@ -125,45 +115,36 @@ public:
     Logger() = default;
     ~Logger();
 
-    // Lifecycle
     bool Init(const LoggerConfig& config);
     void Shutdown();
 
-    // Configuration
     void SetConfig(const LoggerConfig& config);
     void SetGlobalLevel(LogLevel level);
     void SetSubsystemLevel(LogSubsystem sub, LogLevel level);
 
-    // Level checking
     bool IsEnabled(LogLevel level, LogSubsystem sub) const noexcept;
     LogLevel GetEffectiveLevel(LogSubsystem sub) const noexcept;
 
-    // Core logging
     void Log(LogLevel level, LogSubsystem sub, const char* file, int line, const char* func, const char* fmt, ...);
 
-    // Frame tracking
     void SetFrameNumber(uint32_t frame) { m_frameNumber.store(frame, std::memory_order_relaxed); }
     uint32_t GetFrameNumber() const { return m_frameNumber.load(std::memory_order_relaxed); }
 
-    // Flush
     void Flush();
 
-    // Statistics
     const LoggerStats& GetStats() const { return m_stats; }
 
-    // Callback
     void SetCallback(Callback cb) {
         std::lock_guard<std::mutex> lk(m_mutex);
         m_callback = std::move(cb);
     }
 
-    // Name helpers
     static const char* LevelName(LogLevel level) noexcept;
     static const char* LevelColor(LogLevel level) noexcept;
     static const char* SubsystemName(LogSubsystem sub) noexcept;
 
-    // ── Static convenience methods ──
-    // Accept format string + args and forward to global logger.
+    // --- Static convenience methods ---
+    // Format with {} placeholders and log to the Core subsystem on the global logger.
     template <typename... Args> static void Info(const char* fmt, Args&&...);
     template <typename... Args> static void Debug(const char* fmt, Args&&...);
     template <typename... Args> static void Warn(const char* fmt, Args&&...);
@@ -191,7 +172,7 @@ private:
 /// Global video logger
 extern Logger g_logger;
 
-// ── Static method implementations (g_logger must be declared first) ──
+// --- Static method implementations (g_logger must be declared first) ---
 template <typename... Args> void Logger::Info(const char* fmt, Args&&... args) {
     if constexpr (sizeof...(Args) == 0) {
         g_logger.Log(LogLevel::Info, LogSubsystem::Core, "", 0, "", "%s", fmt);
@@ -225,12 +206,10 @@ template <typename... Args> void Logger::Error(const char* fmt, Args&&... args) 
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Type-safe logging via std::format  (replaces printf-style NOVA_LOG)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Type-safe logging via std::format ---
 
-/// Template wrapper: formats with std::vformat ({}-style) then forwards to
-/// the low-level Log() method.  Zero-arg calls pass the format string as-is.
+/// Formats with std::vformat ({} placeholders) and forwards to Log(). With no arguments the
+/// format string is passed through unformatted.
 template <typename... Args>
 inline void LogFormatted(LogLevel level, LogSubsystem sub, const char* file, int line, const char* func,
                          std::string_view fmt, Args&&... args) {
@@ -243,9 +222,7 @@ inline void LogFormatted(LogLevel level, LogSubsystem sub, const char* file, int
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Convenience Macros  (now route through LogFormatted — use {} placeholders)
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Convenience macros (format with {} placeholders through LogFormatted) ---
 
 #define NOVA_LOG(level, sub, fmt, ...)                                                                                 \
     do {                                                                                                               \
@@ -269,13 +246,13 @@ inline void LogFormatted(LogLevel level, LogSubsystem sub, const char* file, int
 #define LOG_COMPAT(fmt, ...)   NOVA_INFO(::Nova64::Video::LogSubsystem::Compat, fmt, ##__VA_ARGS__)
 #define LOG_UCODE(fmt, ...)    NOVA_INFO(::Nova64::Video::LogSubsystem::Microcode, fmt, ##__VA_ARGS__)
 
-// ── Generic level macros (no subsystem arg) ──
+// --- Generic level macros (no subsystem arg) ---
 #define LOG_INFO(fmt, ...)  NOVA_INFO(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) NOVA_ERROR(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 #define LOG_DEBUG(fmt, ...) NOVA_DEBUG(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 #define LOG_WARN(fmt, ...)  NOVA_WARN(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 
-// ── NOVA_LOG_* aliases ──
+// --- NOVA_LOG_* aliases ---
 #define NOVA_LOG_FATAL(fmt, ...) NOVA_FATAL(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 #define NOVA_LOG_ERROR(fmt, ...) NOVA_ERROR(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)
 #define NOVA_LOG_WARN(fmt, ...)  NOVA_WARN(::Nova64::Video::LogSubsystem::Core, fmt, ##__VA_ARGS__)

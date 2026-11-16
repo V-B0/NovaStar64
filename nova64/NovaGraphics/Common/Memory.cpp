@@ -18,9 +18,7 @@ namespace Nova64::Video {
 
 AllocStats g_allocStats;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Aligned Allocation
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Aligned Allocation ---
 
 void* AlignedAlloc(size_t size, size_t alignment) {
     if (size == 0) return nullptr;
@@ -48,7 +46,6 @@ void* TrackedAlloc(size_t size, size_t alignment) {
     g_allocStats.totalAllocations.fetch_add(1, std::memory_order_relaxed);
     g_allocStats.totalBytesAllocated.fetch_add(size, std::memory_order_relaxed);
     auto current = g_allocStats.currentBytesInUse.fetch_add(size, std::memory_order_relaxed) + size;
-    // Update peak
     auto peak = g_allocStats.peakBytesInUse.load(std::memory_order_relaxed);
     while (current > peak) {
         if (g_allocStats.peakBytesInUse.compare_exchange_weak(peak, current, std::memory_order_relaxed)) break;
@@ -65,9 +62,7 @@ void TrackedFree(void* ptr, size_t size) {
     AlignedFree(ptr);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Pool Allocator
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Pool Allocator ---
 
 PoolAllocator::~PoolAllocator() { Destroy(); }
 
@@ -135,7 +130,7 @@ void PoolAllocator::Reset() noexcept {
     m_freeList = nullptr;
     m_freeCount = m_blockCount;
 
-    // Build free list from end to start (so first alloc gets first block)
+    // Push every block onto the head of the list, so the last block is handed out first.
     for (size_t i = 0; i < m_blockCount; i++) {
         auto* node = reinterpret_cast<FreeNode*>(m_memory + i * m_blockSize);
         node->next = m_freeList;
@@ -143,9 +138,7 @@ void PoolAllocator::Reset() noexcept {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Linear Allocator
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Linear Allocator ---
 
 LinearAllocator::~LinearAllocator() { Destroy(); }
 
@@ -172,7 +165,6 @@ void LinearAllocator::Destroy() {
 }
 
 void* LinearAllocator::Alloc(size_t size, size_t alignment) noexcept {
-    // Align the current offset
     size_t aligned = (m_offset + alignment - 1) & ~(alignment - 1);
     if (aligned + size > m_capacity) return nullptr;
 
@@ -188,9 +180,7 @@ void LinearAllocator::Reset() noexcept {
     g_allocStats.linearResets.fetch_add(1, std::memory_order_relaxed);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Ring Buffer
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Ring Buffer ---
 
 CPURingBuffer::~CPURingBuffer() { Destroy(); }
 
@@ -220,7 +210,7 @@ void CPURingBuffer::Destroy() {
 void* CPURingBuffer::Reserve(size_t size) noexcept {
     if (!m_memory || size > m_capacity) return nullptr;
 
-    // Simple case: fits before end
+    // Fits before the end of the buffer.
     if (m_writeOffset + size <= m_capacity) {
         void* ptr = m_memory + m_writeOffset;
         m_writeOffset += size;
@@ -228,14 +218,14 @@ void* CPURingBuffer::Reserve(size_t size) noexcept {
         return ptr;
     }
 
-    // Wrap around: start from beginning
+    // Wrap to the start; only possible if the consumed region there is large enough.
     if (size <= m_readOffset) {
         void* ptr = m_memory;
         m_writeOffset = size;
         return ptr;
     }
 
-    return nullptr; // Not enough space
+    return nullptr;
 }
 
 void CPURingBuffer::Consume(size_t size) noexcept {
@@ -255,9 +245,7 @@ size_t CPURingBuffer::GetUsed() const noexcept {
 
 size_t CPURingBuffer::GetFree() const noexcept { return m_capacity - GetUsed(); }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Leak Detector
-// ═══════════════════════════════════════════════════════════════════════════
+// --- Leak Detector ---
 
 #ifdef _DEBUG
 
