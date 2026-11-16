@@ -42,8 +42,7 @@ GLuint UploadIconTexture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, icon.width, icon.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 icon.rgba.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, icon.width, icon.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, icon.rgba.data());
     glBindTexture(GL_TEXTURE_2D, 0);
     return texture;
 }
@@ -61,30 +60,29 @@ extern "C" SDL_HitTestResult SDLCALL LauncherHitTest(SDL_Window* win, const SDL_
         constexpr int kEdge = 6;
         const bool left = area->x < kEdge, right = area->x >= w - kEdge;
         const bool top = area->y < kEdge, bottom = area->y >= h - kEdge;
-        if (top && left)     return SDL_HITTEST_RESIZE_TOPLEFT;
-        if (top && right)    return SDL_HITTEST_RESIZE_TOPRIGHT;
-        if (bottom && left)  return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+        if (top && left) return SDL_HITTEST_RESIZE_TOPLEFT;
+        if (top && right) return SDL_HITTEST_RESIZE_TOPRIGHT;
+        if (bottom && left) return SDL_HITTEST_RESIZE_BOTTOMLEFT;
         if (bottom && right) return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
-        if (left)            return SDL_HITTEST_RESIZE_LEFT;
-        if (right)           return SDL_HITTEST_RESIZE_RIGHT;
-        if (top)             return SDL_HITTEST_RESIZE_TOP;
-        if (bottom)          return SDL_HITTEST_RESIZE_BOTTOM;
+        if (left) return SDL_HITTEST_RESIZE_LEFT;
+        if (right) return SDL_HITTEST_RESIZE_RIGHT;
+        if (top) return SDL_HITTEST_RESIZE_TOP;
+        if (bottom) return SDL_HITTEST_RESIZE_BOTTOM;
     }
 
-    constexpr int kLeftReserve  = 80;
+    constexpr int kLeftReserve = 80;
     constexpr int kRightReserve = 140;
-    if (area->y < kNavbarHeight && area->x > kLeftReserve && area->x < w - kRightReserve)
-        return SDL_HITTEST_DRAGGABLE;
+    if (area->y < kNavbarHeight && area->x > kLeftReserve && area->x < w - kRightReserve) return SDL_HITTEST_DRAGGABLE;
     return SDL_HITTEST_NORMAL;
 }
 
 Tab TabFromName(const std::string& name) {
-    if (name == "games")        return Tab::Games;
-    if (name == "settings")     return Tab::Settings;
-    if (name == "scripts")      return Tab::Scripts;
-    if (name == "memory")       return Tab::HexEditor;
+    if (name == "games") return Tab::Games;
+    if (name == "settings") return Tab::Settings;
+    if (name == "scripts") return Tab::Scripts;
+    if (name == "memory") return Tab::HexEditor;
     if (name == "achievements") return Tab::Achievements;
-    if (name == "simulator")    return Tab::Simulator;
+    if (name == "simulator") return Tab::Simulator;
     return Tab::Home;
 }
 
@@ -149,9 +147,7 @@ NovaLauncher::NovaLauncher() {
     }
 }
 
-NovaLauncher::~NovaLauncher() {
-    StopEmbedded();
-}
+NovaLauncher::~NovaLauncher() { StopEmbedded(); }
 
 // ============================================================
 // Window animation
@@ -159,27 +155,26 @@ NovaLauncher::~NovaLauncher() {
 void NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
     constexpr float kStep = 0.08f;
     switch (m_animState) {
-        case AnimState::FadeIn:
-            m_windowOpacity = std::min(1.0f, m_windowOpacity + kStep);
-            if (m_windowOpacity >= 1.0f) m_animState = AnimState::Stable;
-            SDL_SetWindowOpacity(window, m_windowOpacity);
-            break;
-        case AnimState::FadeOut:
-            m_windowOpacity = std::max(0.0f, m_windowOpacity - kStep);
-            if (m_windowOpacity <= 0.0f) m_shouldExit = true;
-            SDL_SetWindowOpacity(window, m_windowOpacity);
-            break;
-        case AnimState::MinimizeOut:
-            m_windowOpacity -= kStep * 1.5f;
-            if (m_windowOpacity <= 0.0f) {
-                SDL_MinimizeWindow(window);
-                m_animState = AnimState::Stable;
-                m_windowOpacity = 1.0f;
-            }
-            SDL_SetWindowOpacity(window, std::max(0.0f, m_windowOpacity));
-            break;
-        case AnimState::Stable:
-            break;
+    case AnimState::FadeIn:
+        m_windowOpacity = std::min(1.0f, m_windowOpacity + kStep);
+        if (m_windowOpacity >= 1.0f) m_animState = AnimState::Stable;
+        SDL_SetWindowOpacity(window, m_windowOpacity);
+        break;
+    case AnimState::FadeOut:
+        m_windowOpacity = std::max(0.0f, m_windowOpacity - kStep);
+        if (m_windowOpacity <= 0.0f) m_shouldExit = true;
+        SDL_SetWindowOpacity(window, m_windowOpacity);
+        break;
+    case AnimState::MinimizeOut:
+        m_windowOpacity -= kStep * 1.5f;
+        if (m_windowOpacity <= 0.0f) {
+            SDL_MinimizeWindow(window);
+            m_animState = AnimState::Stable;
+            m_windowOpacity = 1.0f;
+        }
+        SDL_SetWindowOpacity(window, std::max(0.0f, m_windowOpacity));
+        break;
+    case AnimState::Stable: break;
     }
 }
 
@@ -194,9 +189,13 @@ void NovaLauncher::Run() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
-    SDL_Window* window = SDL_CreateWindow("NovaStar64", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI);
-    if (!window) { SDL_Quit(); return; }
+    SDL_Window* window =
+        SDL_CreateWindow("NovaStar64", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1024, 768,
+                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI);
+    if (!window) {
+        SDL_Quit();
+        return;
+    }
     SDL_SetWindowMinimumSize(window, 800, 560);
     SDL_SetWindowHitTest(window, LauncherHitTest, nullptr);
     ApplyAppIcon(window);
@@ -204,11 +203,14 @@ void NovaLauncher::Run() {
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, glContext);
     SDL_GL_SetSwapInterval(1);
-    m_window    = window;
+    m_window = window;
     m_glContext = glContext;
 
     const bool capturing = !m_shotPath.empty();
-    if (capturing) { m_windowOpacity = 1.0f; m_animState = AnimState::Stable; }
+    if (capturing) {
+        m_windowOpacity = 1.0f;
+        m_animState = AnimState::Stable;
+    }
     SDL_SetWindowOpacity(window, m_windowOpacity);
 
     std::error_code ec;
@@ -321,7 +323,7 @@ void NovaLauncher::Run() {
         // game itself is reading it or a controller input is being assigned.
         const bool padNavigation = (!m_emuRunning.load() || m_showPauseMenu || m_rewindOpen) && m_padRebindTarget < 0;
         if (padNavigation) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-        else               io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+        else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
@@ -335,8 +337,9 @@ void NovaLauncher::Run() {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, kNavbarHeight));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-            ImGui::Begin("##GameBar", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground);
+            ImGui::Begin("##GameBar", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBackground);
             RenderTopNavbar(window);
             ImGui::End();
             ImGui::PopStyleVar();
@@ -351,22 +354,24 @@ void NovaLauncher::Run() {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        const bool shotNow = capturing && (m_shotFrames.empty()
-            ? m_frameCount == lastShotFrame
-            : std::binary_search(m_shotFrames.begin(), m_shotFrames.end(), m_frameCount));
+        const bool shotNow = capturing && (m_shotFrames.empty() ? m_frameCount == lastShotFrame
+                                                                : std::binary_search(m_shotFrames.begin(),
+                                                                                     m_shotFrames.end(), m_frameCount));
         if (shotNow) {
             const size_t row = static_cast<size_t>(drawW) * 4;
             std::vector<uint8_t> pixels(row * static_cast<size_t>(drawH));
             glPixelStorei(GL_PACK_ALIGNMENT, 1);
             glReadPixels(0, 0, drawW, drawH, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
             std::vector<uint8_t> image(pixels.size());
-            for (int y = 0; y < drawH; ++y)   // GL rows are bottom-up
-                std::memcpy(&image[static_cast<size_t>(y) * row], &pixels[static_cast<size_t>(drawH - 1 - y) * row], row);
+            for (int y = 0; y < drawH; ++y) // GL rows are bottom-up
+                std::memcpy(&image[static_cast<size_t>(y) * row], &pixels[static_cast<size_t>(drawH - 1 - y) * row],
+                            row);
             for (size_t i = 3; i < image.size(); i += 4) image[i] = 255;
 
             fs::path file(m_shotPath);
             if (!m_shotFrames.empty())
-                file.replace_filename(file.stem().string() + "_" + std::to_string(m_frameCount) + file.extension().string());
+                file.replace_filename(file.stem().string() + "_" + std::to_string(m_frameCount) +
+                                      file.extension().string());
             Nova::WritePNG(file.string().c_str(), drawW, drawH, 4, image.data());
         }
         if (capturing && m_frameCount >= lastShotFrame) m_shouldExit = true;
@@ -400,10 +405,10 @@ void NovaLauncher::Run() {
 // Layout
 // ============================================================
 void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg,   ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImVec4(0.85f, 0.43f, 0.26f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text,      ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Border,    ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     // Taller frame padding makes the menu bar fill the whole strip instead of
     // its top half, which also centres the menu and buttons vertically.
     const ImVec2 normalPadding = ImGui::GetStyle().FramePadding;
@@ -454,7 +459,7 @@ void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
         const bool maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
         if (ImGui::Button(maximized ? "[=]##max" : "[ ]##max", ImVec2(kWindowButton, 0))) {
             if (maximized) SDL_RestoreWindow(window);
-            else           SDL_MaximizeWindow(window);
+            else SDL_MaximizeWindow(window);
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(maximized ? "Restore" : "Maximize");
         ImGui::SameLine();
@@ -472,8 +477,9 @@ void NovaLauncher::RenderTopNavbar(SDL_Window* window) {
 void NovaLauncher::RenderUI(SDL_Window* window) {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("MainLayout", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::Begin("MainLayout", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus);
     RenderTopNavbar(window);
 
     ImGui::Columns(2, "LayoutColumns", false);
@@ -484,13 +490,13 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
     ImGui::NextColumn();
     ImGui::BeginChild("Content", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
     switch (m_activeTab) {
-        case Tab::Home:         RenderHomeTab();         break;
-        case Tab::Games:        RenderGamesTab();        break;
-        case Tab::Settings:     RenderSettingsTab();     break;
-        case Tab::Scripts:      RenderScriptsTab();      break;
-        case Tab::HexEditor:    RenderHexEditorTab();    break;
-        case Tab::Achievements: RenderAchievementsTab(); break;
-        case Tab::Simulator:    RenderSimulatorTab();    break;
+    case Tab::Home:         RenderHomeTab(); break;
+    case Tab::Games:        RenderGamesTab(); break;
+    case Tab::Settings:     RenderSettingsTab(); break;
+    case Tab::Scripts:      RenderScriptsTab(); break;
+    case Tab::HexEditor:    RenderHexEditorTab(); break;
+    case Tab::Achievements: RenderAchievementsTab(); break;
+    case Tab::Simulator:    RenderSimulatorTab(); break;
     }
     ImGui::EndChild();
     ImGui::Columns(1);
@@ -508,11 +514,18 @@ void NovaLauncher::RenderSidebar() {
     ImGui::Spacing();
     ImGui::Spacing();
 
-    struct Entry { const char* label; Tab tab; };
+    struct Entry {
+        const char* label;
+        Tab tab;
+    };
     static constexpr Entry kEntries[] = {
-        {"Home", Tab::Home},           {"Games", Tab::Games},           {"Settings", Tab::Settings},
-        {"Scripts", Tab::Scripts},     {"Memory Viewer", Tab::HexEditor},
-        {"Achievements", Tab::Achievements}, {"Simulator", Tab::Simulator},
+        {"Home", Tab::Home},
+        {"Games", Tab::Games},
+        {"Settings", Tab::Settings},
+        {"Scripts", Tab::Scripts},
+        {"Memory Viewer", Tab::HexEditor},
+        {"Achievements", Tab::Achievements},
+        {"Simulator", Tab::Simulator},
     };
     for (const auto& e : kEntries) {
         if (ImGui::Selectable(e.label, m_activeTab == e.tab)) m_activeTab = e.tab;

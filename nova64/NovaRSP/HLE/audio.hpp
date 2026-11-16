@@ -29,9 +29,8 @@ extern const int16_t RESAMPLE_LUT[64 * 4];
 // ──────────────────────────────────────────────
 // ADPCM single sample prediction
 // ──────────────────────────────────────────────
-[[nodiscard]] inline int16_t adpcm_predict_sample(
-    uint8_t byte, uint8_t mask, unsigned lshift, unsigned rshift) noexcept
-{
+[[nodiscard]] inline int16_t adpcm_predict_sample(uint8_t byte, uint8_t mask, unsigned lshift,
+                                                  unsigned rshift) noexcept {
     int16_t sample = static_cast<uint16_t>(byte & mask) << lshift;
     sample >>= rshift; // Signed shift for sign extension
     return sample;
@@ -40,11 +39,7 @@ extern const int16_t RESAMPLE_LUT[64 * 4];
 // ──────────────────────────────────────────────
 // Compute ADPCM residuals from codebook entry
 // ──────────────────────────────────────────────
-void adpcm_compute_residuals(
-    int16_t* dst,
-    const int16_t* src,
-    const int16_t* cb_entry,
-    const int16_t* last_samples,
-    size_t count);
+void adpcm_compute_residuals(int16_t* dst, const int16_t* src, const int16_t* cb_entry, const int16_t* last_samples,
+                             size_t count);
 
 } // namespace Nova64::RSP::HLE

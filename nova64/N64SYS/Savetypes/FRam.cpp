@@ -23,36 +23,28 @@
 extern N64::Rom::N64Rom* g_Rom;
 
 // Flash RAM constants
-constexpr size_t FLASHRAM_SIZE  = 128 * 1024;  // 128 KB total chip
-constexpr size_t BLOCK_SIZE     = 128;         // 128 bytes per page (program unit)
-constexpr size_t SECTOR_SIZE    = 16 * 1024;   // 16 KB sector (erase unit) — Macronix MX29L1100
+constexpr size_t FLASHRAM_SIZE = 128 * 1024; // 128 KB total chip
+constexpr size_t BLOCK_SIZE = 128;           // 128 bytes per page (program unit)
+constexpr size_t SECTOR_SIZE = 16 * 1024;    // 16 KB sector (erase unit) — Macronix MX29L1100
 
-CFlashRam::CFlashRam(bool ReadOnly)
-    : m_FlashRamPointer(nullptr)
-    , m_FlashFlag(FLASHRAM_MODE_NOPES)
-    , m_FlashStatus(0)
-    , m_FlashRAM_Offset(0)
-    , m_ReadOnly(ReadOnly)
-{
+CFlashRam::CFlashRam(bool ReadOnly) :
+    m_FlashRamPointer(nullptr), m_FlashFlag(FLASHRAM_MODE_NOPES), m_FlashStatus(0), m_FlashRAM_Offset(0),
+    m_ReadOnly(ReadOnly) {
     Log::debugf("CFlashRam initialized (ReadOnly: %s)", ReadOnly ? "true" : "false");
 }
 
-CFlashRam::~CFlashRam()
-{
-    if (m_File.is_open())
-    {
+CFlashRam::~CFlashRam() {
+    if (m_File.is_open()) {
         m_File.close();
         Log::debug("Flash RAM file closed");
     }
-    
+
     m_FlashRamPointer = nullptr;
 }
 
 // DMA from Flash RAM to RDRAM
-void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
-{
-    if (!dest)
-    {
+void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len) {
+    if (!dest) {
         Log::error("DmaFromFlashram: null destination pointer");
         return;
     }
@@ -70,25 +62,19 @@ void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
     // call stacks). Single-threaded access, so static is fine.
     static uint8_t FlipBuffer[0x10000];
 
-    switch (m_FlashFlag)
-    {
-    case FLASHRAM_MODE_READ:
-    {
-        if (!m_File.is_open() && !LoadFlashram())
-        {
+    switch (m_FlashFlag) {
+    case FLASHRAM_MODE_READ: {
+        if (!m_File.is_open() && !LoadFlashram()) {
             Log::error("DmaFromFlashram: failed to load Flash RAM");
             return;
         }
 
-        if (len > static_cast<int32_t>(sizeof(FlipBuffer)))
-        {
-            Log::errorf("DmaFromFlashram: buffer overflow attempt (len: %d, max: %zu)", 
-                       len, sizeof(FlipBuffer));
+        if (len > static_cast<int32_t>(sizeof(FlipBuffer))) {
+            Log::errorf("DmaFromFlashram: buffer overflow attempt (len: %d, max: %zu)", len, sizeof(FlipBuffer));
             len = sizeof(FlipBuffer);
         }
 
-        if ((len & 3) != 0)
-        {
+        if ((len & 3) != 0) {
             Log::warningf("DmaFromFlashram: unaligned length (%d bytes) — returning 0xFF", len);
             // dest is already pre-filled with 0xFF above.
             return;
@@ -120,14 +106,12 @@ void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
         // Fill any bytes the read could not satisfy (short file / past EOF)
         // with 0xFF (FlashRAM erased state). The buffer was pre-filled with
         // 0xFF above, so this is mostly defensive.
-        for (size_t count = bytesRead; count < static_cast<size_t>(len); count++)
-        {
+        for (size_t count = bytesRead; count < static_cast<size_t>(len); count++) {
             FlipBuffer[count] = 0xFF;
         }
 
         // Byte-swap from file format to N64 format (big-endian 32-bit words)
-        for (int32_t count = 0; count < len; count += 4)
-        {
+        for (int32_t count = 0; count < len; count += 4) {
             *(uint32_t*)(dest + count) = *(uint32_t*)&FlipBuffer[count];
         }
 
@@ -135,43 +119,33 @@ void CFlashRam::DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len)
         break;
     }
 
-    case FLASHRAM_MODE_STATUS:
-    {
-        if (StartOffset != 0 && len != 8)
-        {
-            Log::warningf("DmaFromFlashram: unexpected STATUS read (offset: %d, len: %d)", 
-                         StartOffset, len);
+    case FLASHRAM_MODE_STATUS: {
+        if (StartOffset != 0 && len != 8) {
+            Log::warningf("DmaFromFlashram: unexpected STATUS read (offset: %d, len: %d)", StartOffset, len);
         }
 
         // Return status in proper byte order
         *((uint32_t*)&dest[0]) = static_cast<uint32_t>(m_FlashStatus >> 32);
         *((uint32_t*)&dest[4]) = static_cast<uint32_t>(m_FlashStatus & 0xFFFFFFFF);
-        
+
         Log::debugf("DmaFromFlashram: read status 0x%016llX", m_FlashStatus);
         break;
     }
 
-    default:
-        Log::warningf("DmaFromFlashram: invalid mode (%d)", m_FlashFlag);
-        break;
+    default: Log::warningf("DmaFromFlashram: invalid mode (%d)", m_FlashFlag); break;
     }
 }
 
 // DMA from RDRAM to Flash RAM
-void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len)
-{
-    if (!Source)
-    {
+void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len) {
+    if (!Source) {
         Log::error("DmaToFlashram: null source pointer");
         return;
     }
 
-    switch (m_FlashFlag)
-    {
-    case FLASHRAM_MODE_WRITE:
-    {
-        if (m_ReadOnly)
-        {
+    switch (m_FlashFlag) {
+    case FLASHRAM_MODE_WRITE: {
+        if (m_ReadOnly) {
             Log::warning("DmaToFlashram: attempted write in read-only mode");
             return;
         }
@@ -192,59 +166,43 @@ void CFlashRam::DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len)
         break;
     }
 
-    default:
-        Log::warningf("DmaToFlashram: invalid mode (%d)", m_FlashFlag);
-        break;
+    default: Log::warningf("DmaToFlashram: invalid mode (%d)", m_FlashFlag); break;
     }
 }
 
 // Read Flash RAM status register
-uint32_t CFlashRam::ReadFromFlashStatus(uint32_t PAddr)
-{
-    switch (PAddr)
-    {
-    case 0x08000000:
-        return static_cast<uint32_t>(m_FlashStatus >> 32);
-    
-    default:
-        Log::warningf("ReadFromFlashStatus: unexpected address 0x%08X", PAddr);
-        break;
+uint32_t CFlashRam::ReadFromFlashStatus(uint32_t PAddr) {
+    switch (PAddr) {
+    case 0x08000000: return static_cast<uint32_t>(m_FlashStatus >> 32);
+
+    default: Log::warningf("ReadFromFlashStatus: unexpected address 0x%08X", PAddr); break;
     }
-    
+
     return static_cast<uint32_t>(m_FlashStatus >> 32);
 }
 
 // Write Flash RAM command register
-void CFlashRam::WriteToFlashCommand(uint32_t Value)
-{
+void CFlashRam::WriteToFlashCommand(uint32_t Value) {
     Log::infof("[FlashRAM] command 0x%08X (mode=%d, off=0x%X)", Value, m_FlashFlag, m_FlashRAM_Offset);
-    switch (Value & 0xFF000000)
-    {
-    case 0xD2000000:  // Execute command
-        switch (m_FlashFlag)
-        {
-        case FLASHRAM_MODE_NOPES:
-            break;
-            
-        case FLASHRAM_MODE_READ:
-            break;
-            
-        case FLASHRAM_MODE_STATUS:
-            break;
-            
-        case FLASHRAM_MODE_ERASE:
-        {
+    switch (Value & 0xFF000000) {
+    case 0xD2000000: // Execute command
+        switch (m_FlashFlag) {
+        case FLASHRAM_MODE_NOPES: break;
+
+        case FLASHRAM_MODE_READ: break;
+
+        case FLASHRAM_MODE_STATUS: break;
+
+        case FLASHRAM_MODE_ERASE: {
             // FlashRAM erase command erases a 16KB sector (128 pages of 128 bytes).
             std::vector<uint8_t> EraseSector(SECTOR_SIZE, 0xFF);
 
-            if (!m_File.is_open() && !LoadFlashram())
-            {
+            if (!m_File.is_open() && !LoadFlashram()) {
                 Log::error("WriteToFlashCommand: failed to load Flash RAM for erase");
                 return;
             }
 
-            if (!m_ReadOnly)
-            {
+            if (!m_ReadOnly) {
                 // Align to sector boundary (16KB)
                 uint32_t sectorOffset = m_FlashRAM_Offset & ~(SECTOR_SIZE - 1);
                 (void)m_File.seek(sectorOffset, FileSystem::SeekOrigin::Begin);
@@ -261,8 +219,7 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value)
 
         case FLASHRAM_MODE_WRITE:
             // Write is handled by DmaToFlashram
-            if (!m_File.is_open() && !LoadFlashram())
-            {
+            if (!m_File.is_open() && !LoadFlashram()) {
                 Log::error("WriteToFlashCommand: failed to load Flash RAM for write");
                 return;
             }
@@ -272,15 +229,13 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value)
             m_FlashStatus = 0x1111800400C2001E;
             Log::debugf("Flash RAM write complete: offset 0x%X", m_FlashRAM_Offset);
             break;
-            
-        default:
-            Log::errorf("WriteToFlashCommand: unknown flash flag %d (command: 0x%08X)", 
-                       m_FlashFlag, Value);
+
+        default: Log::errorf("WriteToFlashCommand: unknown flash flag %d (command: 0x%08X)", m_FlashFlag, Value);
         }
         m_FlashFlag = FLASHRAM_MODE_NOPES;
         break;
 
-    case 0xE1000000:  // Set status mode
+    case 0xE1000000: // Set status mode
         // BUG-FIX: do NOT clobber m_FlashStatus here. Real hardware
         // preserves the status word across mode switches so the game
         // can poll the result of a previous 0xD2 (write/erase complete)
@@ -288,72 +243,64 @@ void CFlashRam::WriteToFlashCommand(uint32_t Value)
         // previous unconditional reset was eating our operation-complete
         // bits and causing libultra's save thread to stall.
         m_FlashFlag = FLASHRAM_MODE_STATUS;
-        if (m_FlashStatus == 0)
-            m_FlashStatus = 0x1111800100C2001E;  // initial idle status
+        if (m_FlashStatus == 0) m_FlashStatus = 0x1111800100C2001E; // initial idle status
         Log::debug("Flash RAM: status mode");
         break;
 
-    case 0xF0000000:  // Set read mode
+    case 0xF0000000: // Set read mode
         m_FlashFlag = FLASHRAM_MODE_READ;
         m_FlashStatus = 0x11118004F0000000;
         Log::debug("Flash RAM: read mode");
         break;
 
-    case 0x4B000000:  // Set offset
+    case 0x4B000000: // Set offset
         m_FlashRAM_Offset = (Value & 0xFFFF) * BLOCK_SIZE;
         Log::debugf("Flash RAM: set offset 0x%X", m_FlashRAM_Offset);
         break;
 
-    case 0x78000000:  // Set erase mode
+    case 0x78000000: // Set erase mode
         m_FlashFlag = FLASHRAM_MODE_ERASE;
         m_FlashStatus = 0x1111800800C2001E;
         Log::debug("Flash RAM: erase mode");
         break;
 
-    case 0xB4000000:  // Set write mode
+    case 0xB4000000: // Set write mode
         m_FlashFlag = FLASHRAM_MODE_WRITE;
         Log::debug("Flash RAM: write mode");
         break;
 
-    case 0xA5000000:  // Execute Page Program
+    case 0xA5000000: // Execute Page Program
         m_FlashRAM_Offset = (Value & 0xFFFF) * BLOCK_SIZE;
-        
-        if (m_FlashFlag == FLASHRAM_MODE_WRITE)
-        {
-            if (!m_File.is_open() && !LoadFlashram())
-            {
+
+        if (m_FlashFlag == FLASHRAM_MODE_WRITE) {
+            if (!m_File.is_open() && !LoadFlashram()) {
                 Log::error("WriteToFlashCommand: failed to load Flash RAM for write");
                 return;
             }
-            if (!m_ReadOnly)
-            {
+            if (!m_ReadOnly) {
                 (void)m_File.seek(m_FlashRAM_Offset, FileSystem::SeekOrigin::Begin);
                 size_t bytesWritten = m_File.write(m_PageBuffer, BLOCK_SIZE);
                 m_File.flush();
                 Log::infof("[FlashRAM] wrote %zu bytes to offset 0x%X", bytesWritten, m_FlashRAM_Offset);
             }
         }
-        
+
         m_FlashStatus = 0x1111800400C2001E;
         Log::debugf("Flash RAM: execute page program at 0x%X", m_FlashRAM_Offset);
         break;
 
-    case 0x00000000:  // No-op / idle — games write 0 to reset the command register
+    case 0x00000000: // No-op / idle — games write 0 to reset the command register
         break;
 
-    default:
-        Log::warningf("WriteToFlashCommand: unknown command 0x%08X", Value);
-        break;
+    default: Log::warningf("WriteToFlashCommand: unknown command 0x%08X", Value); break;
     }
 }
 
 // Load Flash RAM from file
-bool CFlashRam::LoadFlashram()
-{
+bool CFlashRam::LoadFlashram() {
     extern CN64System* g_System;
-    
-    if (!g_System)
-    {
+
+    if (!g_System) {
         Log::error("Cannot load Flash RAM: no active system");
         return false;
     }
@@ -365,8 +312,8 @@ bool CFlashRam::LoadFlashram()
     if (g_Rom && g_Rom->IsLoaded()) {
         gameName = g_Rom->GetImage().GetRomName();
         for (char& c : gameName) {
-            if (c == '/' || c == '\\' || c == ':' || c == '*' ||
-                c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' ||
+                c == '|')
                 c = '_';
         }
         while (!gameName.empty() && gameName.back() == ' ') gameName.pop_back();
@@ -378,47 +325,38 @@ bool CFlashRam::LoadFlashram()
     std::filesystem::create_directories(savePath);
 
     // Try to open the file
-    FileSystem::OpenMode openMode = m_ReadOnly ? 
-        FileSystem::OpenMode::Read : 
-        (FileSystem::OpenMode::Read | FileSystem::OpenMode::Write);
+    FileSystem::OpenMode openMode =
+        m_ReadOnly ? FileSystem::OpenMode::Read : (FileSystem::OpenMode::Read | FileSystem::OpenMode::Write);
 
-    if (!m_File.is_open())
-    {
+    if (!m_File.is_open()) {
         try {
             m_File.open(fullPath, openMode);
             Log::infof("Loaded Flash RAM from: %s", fullPath.c_str());
         } catch (...) {
             // File doesn't exist yet - create it
-            if (!m_ReadOnly)
-            {
+            if (!m_ReadOnly) {
                 try {
-                    m_File.open(fullPath, 
-                               FileSystem::OpenMode::Read | 
-                               FileSystem::OpenMode::Write | 
-                               FileSystem::OpenMode::Create);
-                    
+                    m_File.open(fullPath, FileSystem::OpenMode::Read | FileSystem::OpenMode::Write |
+                                              FileSystem::OpenMode::Create);
+
                     // Initialize Flash RAM to 0xFF (erased state)
                     uint8_t emptyPage[4096];
                     std::memset(emptyPage, 0xFF, sizeof(emptyPage));
-                    
+
                     // Write empty pages to fill entire Flash RAM
-                    for (size_t i = 0; i < FLASHRAM_SIZE / sizeof(emptyPage); i++)
-                    {
+                    for (size_t i = 0; i < FLASHRAM_SIZE / sizeof(emptyPage); i++) {
                         (void)m_File.write(emptyPage, sizeof(emptyPage));
                     }
-                    
+
                     (void)m_File.seek(0, FileSystem::SeekOrigin::Begin);
                     m_File.flush();
-                    
-                    Log::infof("Created new Flash RAM save file: %s (%zu KB)", 
-                             fullPath.c_str(), FLASHRAM_SIZE / 1024);
+
+                    Log::infof("Created new Flash RAM save file: %s (%zu KB)", fullPath.c_str(), FLASHRAM_SIZE / 1024);
                 } catch (...) {
                     Log::errorf("Failed to create Flash RAM file: %s", fullPath.c_str());
                     return false;
                 }
-            }
-            else
-            {
+            } else {
                 Log::warningf("Flash RAM file not found (read-only mode): %s", fullPath.c_str());
                 return false;
             }
@@ -428,8 +366,7 @@ bool CFlashRam::LoadFlashram()
     return m_File.is_open();
 }
 
-void CFlashRam::SerializeState(Nova64::StateArchive& ar)
-{
+void CFlashRam::SerializeState(Nova64::StateArchive& ar) {
     // Only the command state machine: the flash contents are the player's save.
     ar.Section("FLSH");
     ar.Value(m_FlashFlag);

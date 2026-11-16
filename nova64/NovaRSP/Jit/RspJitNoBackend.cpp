@@ -9,6 +9,6 @@
 
 namespace Nova64::RSP::Jit {
 std::unique_ptr<Backend> CreateBackend() { return nullptr; }
-}
+} // namespace Nova64::RSP::Jit
 
 #endif

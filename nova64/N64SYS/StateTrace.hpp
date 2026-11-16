@@ -32,9 +32,9 @@ namespace Nova64::Trace {
 /// between a `--interpreter` and a `--recompiler` run localises which mechanism
 /// is responsible for a COUNT divergence.
 struct EventCounters {
-    uint64_t timerDone   = 0;   ///< SystemTimer::TimerDone() dispatches
-    uint64_t idleSkip    = 0;   ///< idle/permanent-loop fast-forwards
-    uint64_t timerChecks = 0;   ///< points where the timer was eligible to fire
+    uint64_t timerDone = 0;   ///< SystemTimer::TimerDone() dispatches
+    uint64_t idleSkip = 0;    ///< idle/permanent-loop fast-forwards
+    uint64_t timerChecks = 0; ///< points where the timer was eligible to fire
 };
 
 EventCounters& Counters();

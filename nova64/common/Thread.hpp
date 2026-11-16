@@ -6,8 +6,7 @@
 
 #include <cstdint>
 
-class CThread
-{
+class CThread {
 public:
 #ifdef _WIN32
     using CTHREAD_START_ROUTINE = uint32_t (*)(void* lpThreadParameter);
@@ -22,7 +21,7 @@ public:
     bool Start(void* lpThreadParameter);
     bool IsRunning() const;
     void Terminate();
-    
+
     // Thread information
     uint32_t GetThreadID() const { return m_threadID; }
     static uint32_t GetCurrentThreadId();

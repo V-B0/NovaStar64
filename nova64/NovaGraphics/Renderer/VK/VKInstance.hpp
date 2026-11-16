@@ -9,7 +9,9 @@
 
 #include <vector>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 class VKInstance {
 public:
@@ -22,28 +24,28 @@ public:
     /// Pick a discrete GPU (preferred) or first available physical device that
     /// supports graphics+present on the given surface and the swapchain extension.
     /// With no surface (offscreen rendering) only graphics is required.
-    bool PickPhysicalDevice(VkSurfaceKHR surface,
-                            uint32_t& outGraphicsFamily,
-                            uint32_t& outPresentFamily);
+    bool PickPhysicalDevice(VkSurfaceKHR surface, uint32_t& outGraphicsFamily, uint32_t& outPresentFamily);
 
     /// Whether the loader offers an instance extension. volk must already be
     /// initialized, which IsVulkanAvailable() does.
     static bool HasInstanceExtension(const char* name);
 
-    VkInstance       Get()         const { return m_instance; }
+    VkInstance Get() const { return m_instance; }
     VkPhysicalDevice GetPhysical() const { return m_physical; }
     const VkPhysicalDeviceProperties& GetProps() const { return m_physicalProps; }
-    bool             IsValidationEnabled() const { return m_validationEnabled; }
+    bool IsValidationEnabled() const { return m_validationEnabled; }
 
 private:
     bool LoadAndCheckLayer(const char* name);
 
-    VkInstance               m_instance       = VK_NULL_HANDLE;
+    VkInstance m_instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
-    VkPhysicalDevice         m_physical       = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physical = VK_NULL_HANDLE;
     VkPhysicalDeviceProperties m_physicalProps{};
-    bool                     m_validationEnabled = false;
-    bool                     m_volkInitialized   = false;
+    bool m_validationEnabled = false;
+    bool m_volkInitialized = false;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

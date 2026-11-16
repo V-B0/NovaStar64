@@ -17,23 +17,18 @@
 #include <windows.h>
 #endif
 
-namespace Nova64 { namespace Video {
+namespace Nova64 {
+namespace Video {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  BACKEND NAME TABLE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-static const char* const kBackendNames[] = {
-    "None",
-    "OpenGL 4.6",
-    "Software",
-    "Vulkan 1.1"
-};
+static const char* const kBackendNames[] = {"None", "OpenGL 4.6", "Software", "Vulkan 1.1"};
 
 const char* GetBackendName(BackendType type) {
     int idx = static_cast<int>(type);
-    if (idx < 0 || idx >= static_cast<int>(BackendType::Count))
-        return "Unknown";
+    if (idx < 0 || idx >= static_cast<int>(BackendType::Count)) return "Unknown";
     return kBackendNames[idx];
 }
 
@@ -41,13 +36,16 @@ const char* GetBackendName(BackendType type) {
 //  BACKEND DETECTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-namespace GL { bool IsOpenGL46Available(); }
-namespace VK { bool IsVulkanAvailable(); }
+namespace GL {
+bool IsOpenGL46Available();
+}
+namespace VK {
+bool IsVulkanAvailable();
+}
 
 BackendType DetectBestBackend() {
     // Prefer Vulkan when available (modern, lower driver overhead).
-    if (VK::IsVulkanAvailable())
-        return BackendType::Vulkan;
+    if (VK::IsVulkanAvailable()) return BackendType::Vulkan;
     return BackendType::OpenGL46;
 }
 
@@ -55,22 +53,22 @@ BackendType DetectBestBackend() {
 //  RENDERER FACTORY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-namespace GL { std::unique_ptr<IRenderer> CreateOpenGLRenderer(); }
-namespace VK { std::unique_ptr<IRenderer> CreateVulkanRenderer(); }
+namespace GL {
+std::unique_ptr<IRenderer> CreateOpenGLRenderer();
+}
+namespace VK {
+std::unique_ptr<IRenderer> CreateVulkanRenderer();
+}
 
 std::unique_ptr<IRenderer> CreateRenderer(BackendType type) {
     switch (type) {
-    case BackendType::OpenGL46:
-        return GL::CreateOpenGLRenderer();
+    case BackendType::OpenGL46: return GL::CreateOpenGLRenderer();
 
-    case BackendType::Vulkan:
-        return VK::CreateVulkanRenderer();
+    case BackendType::Vulkan: return VK::CreateVulkanRenderer();
 
-    case BackendType::Software:
-        return nullptr;  // Software renderer removed
+    case BackendType::Software: return nullptr; // Software renderer removed
 
-    default:
-        return nullptr;
+    default: return nullptr;
     }
 }
 
@@ -80,37 +78,37 @@ std::unique_ptr<IRenderer> CreateRenderer(BackendType type) {
 
 uint32_t GetVertexAttribSize(VertexAttribType type) {
     switch (type) {
-        case VertexAttribType::Float1:  return 4;
-        case VertexAttribType::Float2:  return 8;
-        case VertexAttribType::Float3:  return 12;
-        case VertexAttribType::Float4:  return 16;
-        case VertexAttribType::UByte4:  return 4;
-        case VertexAttribType::UByte4N: return 4;
-        case VertexAttribType::Short2:  return 4;
-        case VertexAttribType::Short4:  return 8;
-        case VertexAttribType::Short2N: return 4;
-        case VertexAttribType::Short4N: return 8;
-        case VertexAttribType::UInt1:   return 4;
-        case VertexAttribType::Int1:    return 4;
-        default: return 0;
+    case VertexAttribType::Float1:  return 4;
+    case VertexAttribType::Float2:  return 8;
+    case VertexAttribType::Float3:  return 12;
+    case VertexAttribType::Float4:  return 16;
+    case VertexAttribType::UByte4:  return 4;
+    case VertexAttribType::UByte4N: return 4;
+    case VertexAttribType::Short2:  return 4;
+    case VertexAttribType::Short4:  return 8;
+    case VertexAttribType::Short2N: return 4;
+    case VertexAttribType::Short4N: return 8;
+    case VertexAttribType::UInt1:   return 4;
+    case VertexAttribType::Int1:    return 4;
+    default:                        return 0;
     }
 }
 
 uint32_t GetVertexAttribComponentCount(VertexAttribType type) {
     switch (type) {
-        case VertexAttribType::Float1:  return 1;
-        case VertexAttribType::Float2:  return 2;
-        case VertexAttribType::Float3:  return 3;
-        case VertexAttribType::Float4:  return 4;
-        case VertexAttribType::UByte4:  return 4;
-        case VertexAttribType::UByte4N: return 4;
-        case VertexAttribType::Short2:  return 2;
-        case VertexAttribType::Short4:  return 4;
-        case VertexAttribType::Short2N: return 2;
-        case VertexAttribType::Short4N: return 4;
-        case VertexAttribType::UInt1:   return 1;
-        case VertexAttribType::Int1:    return 1;
-        default: return 0;
+    case VertexAttribType::Float1:  return 1;
+    case VertexAttribType::Float2:  return 2;
+    case VertexAttribType::Float3:  return 3;
+    case VertexAttribType::Float4:  return 4;
+    case VertexAttribType::UByte4:  return 4;
+    case VertexAttribType::UByte4N: return 4;
+    case VertexAttribType::Short2:  return 2;
+    case VertexAttribType::Short4:  return 4;
+    case VertexAttribType::Short2N: return 2;
+    case VertexAttribType::Short4N: return 4;
+    case VertexAttribType::UInt1:   return 1;
+    case VertexAttribType::Int1:    return 1;
+    default:                        return 0;
     }
 }
 
@@ -120,41 +118,35 @@ uint32_t GetVertexAttribComponentCount(VertexAttribType type) {
 
 uint32_t GetTexelSizeBytes(TextureFormat format) {
     switch (format) {
-        case TextureFormat::RGBA8:   return 4;
-        case TextureFormat::RGB8:    return 3;
-        case TextureFormat::RGBA4:   return 2;
-        case TextureFormat::RGB5A1:  return 2;
-        case TextureFormat::R8:      return 1;
-        case TextureFormat::RG8:     return 2;
-        case TextureFormat::RGBA16F: return 8;
-        case TextureFormat::RGBA32F: return 16;
-        case TextureFormat::Depth16: return 2;
-        case TextureFormat::Depth24: return 3;
-        case TextureFormat::Depth32F:         return 4;
-        case TextureFormat::Depth24Stencil8:  return 4;
-        case TextureFormat::IA16:    return 2;
-        case TextureFormat::I8:      return 1;
-        case TextureFormat::CI4:     return 1; // 2 pixels per byte
-        case TextureFormat::CI8:     return 1;
-        default: return 0;
+    case TextureFormat::RGBA8:           return 4;
+    case TextureFormat::RGB8:            return 3;
+    case TextureFormat::RGBA4:           return 2;
+    case TextureFormat::RGB5A1:          return 2;
+    case TextureFormat::R8:              return 1;
+    case TextureFormat::RG8:             return 2;
+    case TextureFormat::RGBA16F:         return 8;
+    case TextureFormat::RGBA32F:         return 16;
+    case TextureFormat::Depth16:         return 2;
+    case TextureFormat::Depth24:         return 3;
+    case TextureFormat::Depth32F:        return 4;
+    case TextureFormat::Depth24Stencil8: return 4;
+    case TextureFormat::IA16:            return 2;
+    case TextureFormat::I8:              return 1;
+    case TextureFormat::CI4:             return 1; // 2 pixels per byte
+    case TextureFormat::CI8:             return 1;
+    default:                             return 0;
     }
 }
 
 bool IsDepthFormat(TextureFormat format) {
-    return format == TextureFormat::Depth16 ||
-           format == TextureFormat::Depth24 ||
-           format == TextureFormat::Depth32F ||
+    return format == TextureFormat::Depth16 || format == TextureFormat::Depth24 || format == TextureFormat::Depth32F ||
            format == TextureFormat::Depth24Stencil8;
 }
 
-bool HasStencil(TextureFormat format) {
-    return format == TextureFormat::Depth24Stencil8;
-}
+bool HasStencil(TextureFormat format) { return format == TextureFormat::Depth24Stencil8; }
 
 bool IsN64Format(TextureFormat format) {
-    return format == TextureFormat::IA16 ||
-           format == TextureFormat::I8 ||
-           format == TextureFormat::CI4 ||
+    return format == TextureFormat::IA16 || format == TextureFormat::I8 || format == TextureFormat::CI4 ||
            format == TextureFormat::CI8;
 }
 
@@ -168,7 +160,7 @@ BlendState TranslateN64BlendMode(uint32_t blenderBits, uint32_t otherModeBits) {
     // Check if blending is enabled
     // N64 otherMode low bits: cycle type and blender settings
     bool forceBlend = (otherModeBits & 0x4000) != 0; // FORCE_BL bit
-    
+
     if (!forceBlend) {
         state.enabled = false;
         return state;
@@ -231,7 +223,7 @@ DepthStencilState TranslateN64DepthMode(uint32_t otherModeBits) {
     DepthStencilState state;
 
     bool zCompare = (otherModeBits & 0x10) != 0; // Z_CMP bit
-    bool zUpdate  = (otherModeBits & 0x20) != 0;  // Z_UPD bit
+    bool zUpdate = (otherModeBits & 0x20) != 0;  // Z_UPD bit
 
     state.depthTestEnabled = zCompare;
     state.depthWriteEnabled = zUpdate;
@@ -242,4 +234,5 @@ DepthStencilState TranslateN64DepthMode(uint32_t otherModeBits) {
     return state;
 }
 
-}} // namespace Nova64::Video
+} // namespace Video
+} // namespace Nova64

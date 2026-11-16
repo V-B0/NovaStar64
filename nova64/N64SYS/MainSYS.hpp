@@ -31,37 +31,49 @@
 #include "Plugins/PluginManager.hpp"
 
 // Video plugin forward declaration
-namespace Nova64 { namespace Video { class WindowManager; } }
+namespace Nova64 {
+namespace Video {
+class WindowManager;
+}
+} // namespace Nova64
 
 // Forward declarations
 namespace N64 {
-    namespace Rom { class N64Rom; }
-    namespace Disk { class N64Disk; }
+namespace Rom {
+class N64Rom;
 }
-using N64::Rom::N64Rom;
+namespace Disk {
+class N64Disk;
+}
+} // namespace N64
 using N64::Disk::N64Disk;
+using N64::Rom::N64Rom;
 
 class CThread;
 class CRegisters;
 class CSystemEvents;
-namespace N64System { class SystemTimer; class CTLB; }
-namespace Nova64 { class MipsMemoryVM; class StateArchive; }
+namespace N64System {
+class SystemTimer;
+class CTLB;
+} // namespace N64System
+namespace Nova64 {
+class MipsMemoryVM;
+class StateArchive;
+} // namespace Nova64
 
 // System event enumeration
-enum SystemEvent
-{
+enum SystemEvent {
     SysEvent_CloseCPU,
     SysEvent_ResetCPU_Soft,
     SysEvent_ResetCPU_Hard,
     SysEvent_PauseCPU,
     SysEvent_ResumeCPU,
     SysEvent_ExecuteInterrupt,
-    SysEvent_ServiceStates      ///< save states, rewind and the launcher's pause
+    SysEvent_ServiceStates ///< save states, rewind and the launcher's pause
 };
 
 // Main N64 System class
-class CN64System
-{
+class CN64System {
 public:
     // Constructor and destructor
     CN64System(uint32_t randomizer_seed, bool SavesReadOnly, bool SyncSystem);
@@ -74,7 +86,7 @@ public:
     static bool LoadFileImage(const char* FileLoc);
     static bool LoadFileImageIPL(const char* FileLoc);
     static bool LoadDiskImage(const char* FileLoc, const bool Expansion);
-    
+
     // Static methods for running emulation
     static bool RunFileImage(const char* FileLoc, uint64_t frameLimit = 0);
     static bool RunDiskImage(const char* FileLoc);
@@ -114,7 +126,7 @@ public:
     /// 120 = double, 0 = unlimited) and converts it to the loaded ROM's field
     /// rate, so 60 paces a PAL game at 50 fields per second.
     void SetSpeed(int ntscEquivalentFps);
-    
+
     // Static target FPS to pass through to system before creation
     static int s_TargetFPS;
 
@@ -143,7 +155,7 @@ public:
     void GameReset();
     void Reset(bool bInitReg, bool ClearMemory);
     bool SetActiveSystem(bool bActive = true);
-    
+
     void ExecuteCPU();
     void RefreshScreen();
 
@@ -152,7 +164,7 @@ public:
     void DelayedRelativeJump(int32_t offset);
 
     [[nodiscard]] bool IsEmulationRunning() const { return !m_EndEmulation; }
-    
+
     // Machine state for save states and rewind (see MachineState.hpp). These
     // run on the emulator thread at an instruction boundary.
     void SerializeMachineState(Nova64::StateArchive& ar);
@@ -184,7 +196,7 @@ private:
 public:
     // Interpreter can be called from recompiler as fallback
     void ExecuteInterpret();
-    
+
     // Interpret a single instruction at current PC (used by recompiler fallback)
     void ExecuteSingleOp();
 
@@ -208,19 +220,19 @@ public:
     uint32_t m_Random;
     bool m_SavesReadOnly;
     uint32_t m_CountPerOp = 2; // Default: 2 cycles per op (N64 standard)
-    uint64_t m_MaxFrames = 0; // 0 = unlimited, >0 = frame limit for CLI testing
-    
+    uint64_t m_MaxFrames = 0;  // 0 = unlimited, >0 = frame limit for CLI testing
+
     // Frame rate limiter
-    std::atomic<int> m_TargetFPS{60};  // fields/sec; written by the launcher thread
+    std::atomic<int> m_TargetFPS{60}; // fields/sec; written by the launcher thread
     std::chrono::steady_clock::time_point m_FramePaceStart;
     bool m_FramePaceInitialized = false;
-    int m_FrameSkipCount = 0;    // Consecutive frames skipped
-    int m_MaxFrameSkip = 2;      // Max consecutive skipped renders
-    
+    int m_FrameSkipCount = 0; // Consecutive frames skipped
+    int m_MaxFrameSkip = 2;   // Max consecutive skipped renders
+
     // Pipeline stage
     N64Types::PipelineStage m_PipelineStage;
     uint32_t m_InterruptDelay = 0; // Delay interrupt firing after MTC0 Status (MTC0→ERET hazard)
-    
+
     std::unique_ptr<N64System::SystemTimer> m_SystemTimer;
     std::unique_ptr<CSystemEvents> m_SystemEvents;
     std::unique_ptr<N64System::CTLB> m_TLB;
@@ -251,22 +263,20 @@ public:
     // DMA block invalidation callback for recompiler
     // When set, called after PI/SP DMA copies data to RDRAM so the
     // recompiler can discard stale compiled blocks in the target range.
-    using DMAInvalidateFunc = void(*)(void* ctx, uint32_t physAddr, uint32_t length);
+    using DMAInvalidateFunc = void (*)(void* ctx, uint32_t physAddr, uint32_t length);
     DMAInvalidateFunc m_DMAInvalidateFn = nullptr;
-    void*             m_DMAInvalidateCtx = nullptr;
+    void* m_DMAInvalidateCtx = nullptr;
 
     void NotifyDMAToRDRAM(uint32_t physAddr, uint32_t length) {
-        if (m_DMAInvalidateFn)
-            m_DMAInvalidateFn(m_DMAInvalidateCtx, physAddr, length);
+        if (m_DMAInvalidateFn) m_DMAInvalidateFn(m_DMAInvalidateCtx, physAddr, length);
     }
 
     // Discards all compiled code. Set by the recompiler while it runs, with
     // m_DMAInvalidateCtx as its context.
-    using CodeFlushFunc = void(*)(void* ctx);
+    using CodeFlushFunc = void (*)(void* ctx);
     CodeFlushFunc m_FlushCodeFn = nullptr;
 
     void FlushCompiledCode() {
-        if (m_FlushCodeFn)
-            m_FlushCodeFn(m_DMAInvalidateCtx);
+        if (m_FlushCodeFn) m_FlushCodeFn(m_DMAInvalidateCtx);
     }
 };

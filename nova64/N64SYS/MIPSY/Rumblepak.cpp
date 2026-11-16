@@ -8,7 +8,7 @@
 // Static state to track motor status
 static bool s_RumbleActive = false;
 
-void Rumblepak::ReadFrom(uint32_t addr, uint8_t & data) {
+void Rumblepak::ReadFrom(uint32_t addr, uint8_t& data) {
     // Rumble pak read usually returns checks
     // Address 0x8000 often used for identifying the pak
     // For now we assume a simple response logic or 0

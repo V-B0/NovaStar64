@@ -40,9 +40,7 @@ inline uint32_t CurrentThreadId32() noexcept {
 // RecursiveMutex
 // ============================================================
 
-RecursiveMutex::RecursiveMutex()
-    : m_mutex(nullptr), m_condition(nullptr)
-{
+RecursiveMutex::RecursiveMutex() : m_mutex(nullptr), m_condition(nullptr) {
 #ifdef _WIN32
     auto* cs = new CRITICAL_SECTION;
     InitializeCriticalSection(cs);
@@ -58,8 +56,7 @@ RecursiveMutex::RecursiveMutex()
 #endif
 }
 
-RecursiveMutex::~RecursiveMutex()
-{
+RecursiveMutex::~RecursiveMutex() {
 #ifdef _WIN32
     auto* cs = static_cast<CRITICAL_SECTION*>(m_mutex);
     DeleteCriticalSection(cs);
@@ -71,8 +68,7 @@ RecursiveMutex::~RecursiveMutex()
 #endif
 }
 
-void RecursiveMutex::Lock()
-{
+void RecursiveMutex::Lock() {
 #ifdef _WIN32
     EnterCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
 #else
@@ -82,8 +78,7 @@ void RecursiveMutex::Lock()
     m_recursionCount.fetch_add(1, std::memory_order_relaxed);
 }
 
-bool RecursiveMutex::TryLock()
-{
+bool RecursiveMutex::TryLock() {
     bool acquired;
 #ifdef _WIN32
     acquired = TryEnterCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex)) != 0;
@@ -97,8 +92,7 @@ bool RecursiveMutex::TryLock()
     return acquired;
 }
 
-bool RecursiveMutex::TryLock(uint32_t timeoutMs)
-{
+bool RecursiveMutex::TryLock(uint32_t timeoutMs) {
     if (timeoutMs == 0) {
         return TryLock();
     }
@@ -121,7 +115,7 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
 #elif defined(__APPLE__)
     // macOS does not provide pthread_mutex_timedlock(); spin-poll with short
     // sleeps until the deadline, matching the Windows fallback above.
-    struct timespec sleepReq { 0, 1000000L }; // 1 ms
+    struct timespec sleepReq{0, 1000000L}; // 1 ms
     const uint64_t deadlineNs = static_cast<uint64_t>(timeoutMs) * 1000000ULL;
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -131,9 +125,8 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
         }
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
-        uint64_t elapsedNs =
-            (static_cast<uint64_t>(now.tv_sec - start.tv_sec) * 1000000000ULL) +
-            static_cast<uint64_t>(now.tv_nsec - start.tv_nsec);
+        uint64_t elapsedNs = (static_cast<uint64_t>(now.tv_sec - start.tv_sec) * 1000000000ULL) +
+                             static_cast<uint64_t>(now.tv_nsec - start.tv_nsec);
         if (elapsedNs >= deadlineNs) {
             return false;
         }
@@ -142,10 +135,10 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
 #else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec  += timeoutMs / 1000;
+    ts.tv_sec += timeoutMs / 1000;
     ts.tv_nsec += (timeoutMs % 1000) * 1000000L;
     if (ts.tv_nsec >= 1000000000L) {
-        ts.tv_sec  += 1;
+        ts.tv_sec += 1;
         ts.tv_nsec -= 1000000000L;
     }
     int rc = pthread_mutex_timedlock(static_cast<pthread_mutex_t*>(m_mutex), &ts);
@@ -158,8 +151,7 @@ bool RecursiveMutex::TryLock(uint32_t timeoutMs)
 #endif
 }
 
-void RecursiveMutex::Unlock()
-{
+void RecursiveMutex::Unlock() {
     uint32_t count = m_recursionCount.fetch_sub(1, std::memory_order_relaxed);
     if (count == 1) {
         m_ownerThreadId.store(0, std::memory_order_relaxed);
@@ -171,7 +163,4 @@ void RecursiveMutex::Unlock()
 #endif
 }
 
-uint32_t RecursiveMutex::GetRecursionCount() const
-{
-    return m_recursionCount.load(std::memory_order_relaxed);
-}
+uint32_t RecursiveMutex::GetRecursionCount() const { return m_recursionCount.load(std::memory_order_relaxed); }

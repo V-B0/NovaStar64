@@ -21,11 +21,11 @@ public:
      * @brief Log severity levels
      */
     enum class Level : uint8_t {
-        Debug,      ///< Debug information
-        Info,       ///< General information
-        Warning,    ///< Warning messages
-        Error,      ///< Error conditions
-        Critical    ///< Critical errors
+        Debug,   ///< Debug information
+        Info,    ///< General information
+        Warning, ///< Warning messages
+        Error,   ///< Error conditions
+        Critical ///< Critical errors
     };
 
     /**
@@ -47,16 +47,11 @@ public:
 
     class Logger {
     public:
-        template<typename... Args>
-        void debug(const char*, Args&&...) {}
-        template<typename... Args>
-        void info(const char*, Args&&...) {}
-        template<typename... Args>
-        void warn(const char*, Args&&...) {}
-        template<typename... Args>
-        void error(const char*, Args&&...) {}
-        template<typename... Args>
-        void critical(const char*, Args&&...) {}
+        template <typename... Args> void debug(const char*, Args&&...) {}
+        template <typename... Args> void info(const char*, Args&&...) {}
+        template <typename... Args> void warn(const char*, Args&&...) {}
+        template <typename... Args> void error(const char*, Args&&...) {}
+        template <typename... Args> void critical(const char*, Args&&...) {}
     };
 };
 

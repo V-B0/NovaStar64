@@ -60,15 +60,11 @@ namespace Common {
  */
 struct MD5Digest {
     uint8_t digest[16];
-    
-    MD5Digest() {
-        Reset();
-    }
-    
-    void Reset() {
-        std::memset(digest, 0, sizeof(digest));
-    }
-    
+
+    MD5Digest() { Reset(); }
+
+    void Reset() { std::memset(digest, 0, sizeof(digest)); }
+
     bool IsClear() const {
         int isClear = 0;
         for (int i = 0; i < 16; i++) {
@@ -76,7 +72,7 @@ struct MD5Digest {
         }
         return (isClear == 0);
     }
-    
+
     std::string ToString() const {
         char s[33];
         std::memset(s, 0, sizeof(s));
@@ -86,7 +82,7 @@ struct MD5Digest {
         s[32] = '\0';
         return std::string(s);
     }
-    
+
     std::string ToUpperString() const {
         char s[33];
         std::memset(s, 0, sizeof(s));
@@ -96,18 +92,12 @@ struct MD5Digest {
         s[32] = '\0';
         return std::string(s);
     }
-    
-    bool operator==(const MD5Digest& other) const {
-        return std::memcmp(digest, other.digest, 16) == 0;
-    }
-    
-    bool operator!=(const MD5Digest& other) const {
-        return !(*this == other);
-    }
-    
-    bool operator<(const MD5Digest& other) const {
-        return std::memcmp(digest, other.digest, 16) < 0;
-    }
+
+    bool operator==(const MD5Digest& other) const { return std::memcmp(digest, other.digest, 16) == 0; }
+
+    bool operator!=(const MD5Digest& other) const { return !(*this == other); }
+
+    bool operator<(const MD5Digest& other) const { return std::memcmp(digest, other.digest, 16) < 0; }
 };
 
 /**
@@ -119,7 +109,7 @@ public:
     // Simple initializer
     MD5();
     ~MD5() = default;
-    
+
     // Methods for controlled operation
     /**
      * @brief Update the digest with additional data
@@ -127,85 +117,85 @@ public:
      * @param inputLength Length of input data
      */
     void Update(const uint8_t* input, size_t inputLength);
-    
+
     /**
      * @brief Finalize the MD5 calculation
      */
     void Finalize();
-    
+
     // Constructors for special circumstances - all finalize the MD5 context
     /**
      * @brief Construct and compute MD5 of a file
      * @param filePath Path to the file
      */
     explicit MD5(const fs::path& filePath);
-    
+
     /**
      * @brief Construct and compute MD5 of a byte array
      * @param input Pointer to input data
      * @param inputLength Length of input data
      */
     MD5(const uint8_t* input, size_t inputLength);
-    
+
     /**
      * @brief Construct and compute MD5 of a string
      * @param str Input string
      */
     explicit MD5(const std::string& str);
-    
+
     // Methods to acquire finalized result
     /**
      * @brief Get digest as a structure
      * @param outDigest Output digest structure
      */
     void GetDigest(MD5Digest& outDigest) const;
-    
+
     /**
      * @brief Get raw digest as a 16-byte array
      * @return Pointer to 16-byte digest
      */
     const uint8_t* RawDigest() const;
-    
+
     /**
      * @brief Get digest as a 32-character hex string (lowercase)
      * @return Hex string representation
      */
     std::string HexDigest() const;
-    
+
     /**
      * @brief Get digest as a 32-character hex string (uppercase)
      * @return Hex string representation
      */
     std::string HexDigestUpper() const;
-    
+
 private:
     // Type definitions
     using uint4 = uint32_t;
     using uint2 = uint16_t;
     using uint1 = uint8_t;
-    
+
     // Private data
     uint4 m_state[4];
-    uint4 m_count[2];    // Number of *bits*, mod 2^64
-    uint1 m_buffer[64];  // Input buffer
+    uint4 m_count[2];   // Number of *bits*, mod 2^64
+    uint1 m_buffer[64]; // Input buffer
     uint1 m_digest[16];
     bool m_finalized;
     mutable std::string m_hexDigest;
-    
+
     // Private methods
     void Init();
     void Transform(const uint1* buffer);
-    
+
     static void Encode(uint1* dest, const uint4* src, size_t length);
     static void Decode(uint4* dest, const uint1* src, size_t length);
-    
+
     // MD5 basic functions
     static inline uint4 RotateLeft(uint4 x, uint4 n);
     static inline uint4 F(uint4 x, uint4 y, uint4 z);
     static inline uint4 G(uint4 x, uint4 y, uint4 z);
     static inline uint4 H(uint4 x, uint4 y, uint4 z);
     static inline uint4 I(uint4 x, uint4 y, uint4 z);
-    
+
     // MD5 transformation functions
     static inline void FF(uint4& a, uint4 b, uint4 c, uint4 d, uint4 x, uint4 s, uint4 ac);
     static inline void GG(uint4& a, uint4 b, uint4 c, uint4 d, uint4 x, uint4 s, uint4 ac);

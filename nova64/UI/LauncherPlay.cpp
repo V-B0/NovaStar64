@@ -27,11 +27,11 @@ namespace NovaUI {
 
 namespace {
 
-constexpr float kNavbarHeight     = 40.0f;
-constexpr float kRewindThumbW     = 144.0f;
-constexpr float kRewindThumbH     = 108.0f;
-constexpr float kRewindBarHeight  = 208.0f;
-constexpr ImU32 kAccent           = IM_COL32(217, 110, 66, 255);   // the top bar's orange
+constexpr float kNavbarHeight = 40.0f;
+constexpr float kRewindThumbW = 144.0f;
+constexpr float kRewindThumbH = 108.0f;
+constexpr float kRewindBarHeight = 208.0f;
+constexpr ImU32 kAccent = IM_COL32(217, 110, 66, 255); // the top bar's orange
 
 bool AnyKeyHeld() {
     int count = 0;
@@ -90,11 +90,11 @@ uint32_t ThumbnailTextures::Get(const std::shared_ptr<const Nova64::StateThumbna
     }
     if (auto it = m_entries.find(thumbnail.get()); it != m_entries.end()) {
         if (it->second.source.lock() == thumbnail) return it->second.texture;
-        DeleteTexture(it->second.texture);   // a newer thumbnail reused the address
+        DeleteTexture(it->second.texture); // a newer thumbnail reused the address
         m_entries.erase(it);
     }
     Entry entry;
-    entry.source  = thumbnail;
+    entry.source = thumbnail;
     entry.texture = CreateTexture(thumbnail->width, thumbnail->height, thumbnail->rgba.data());
     m_entries.emplace(thumbnail.get(), entry);
     return entry.texture;
@@ -124,7 +124,7 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     if (path.empty()) return;
 
     m_emuRomPath = detail::CopyIntoRomsFolder(path);
-    m_emuTitle   = name.empty() ? fs::path(m_emuRomPath).stem().string() : name;
+    m_emuTitle = name.empty() ? fs::path(m_emuRomPath).stem().string() : name;
     Nova64::StateService::Instance().BeginSession(m_emuRomPath);
     m_stateRevision = 0;
 
@@ -234,7 +234,7 @@ void NovaLauncher::UpdatePlayState() {
             if (m_fpsLastTick != 0 && fields >= m_fpsLastField)
                 m_fps = static_cast<float>(fields - m_fpsLastField) * 1000.0f / static_cast<float>(now - m_fpsLastTick);
             m_fpsLastField = fields;
-            m_fpsLastTick  = now;
+            m_fpsLastTick = now;
         }
     } else {
         m_fps = 0.0f;
@@ -243,7 +243,7 @@ void NovaLauncher::UpdatePlayState() {
 }
 
 void NovaLauncher::ShowStatus(const std::string& text) {
-    m_statusText  = text;
+    m_statusText = text;
     m_statusUntil = SDL_GetTicks() + 4000;
 }
 
@@ -253,39 +253,37 @@ void NovaLauncher::ShowStatus(const std::string& text) {
 bool NovaLauncher::HandleGameKey(int scancode, bool repeat) {
     if (m_rewindOpen) {
         switch (scancode) {
-            case SDL_SCANCODE_LEFT:  MoveRewindSelection(-1); return true;
-            case SDL_SCANCODE_RIGHT: MoveRewindSelection(+1); return true;
-            case SDL_SCANCODE_HOME:  MoveRewindSelection(-static_cast<int>(m_rewindPoints.size()) - 1); return true;
-            case SDL_SCANCODE_END:   MoveRewindSelection(static_cast<int>(m_rewindPoints.size()) + 1); return true;
-            case SDL_SCANCODE_RETURN:
-            case SDL_SCANCODE_KP_ENTER:
-                if (!repeat) CloseRewind(true);
-                return true;
-            case SDL_SCANCODE_ESCAPE:
-            case SDL_SCANCODE_BACKSPACE:
-                if (!repeat) CloseRewind(false);
-                return true;
-            default:
-                return false;
+        case SDL_SCANCODE_LEFT:  MoveRewindSelection(-1); return true;
+        case SDL_SCANCODE_RIGHT: MoveRewindSelection(+1); return true;
+        case SDL_SCANCODE_HOME:  MoveRewindSelection(-static_cast<int>(m_rewindPoints.size()) - 1); return true;
+        case SDL_SCANCODE_END:   MoveRewindSelection(static_cast<int>(m_rewindPoints.size()) + 1); return true;
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER:
+            if (!repeat) CloseRewind(true);
+            return true;
+        case SDL_SCANCODE_ESCAPE:
+        case SDL_SCANCODE_BACKSPACE:
+            if (!repeat) CloseRewind(false);
+            return true;
+        default: return false;
         }
     }
     if (repeat) return false;
 
     switch (scancode) {
-        case SDL_SCANCODE_ESCAPE:
-            if (m_showPauseMenu) ClosePauseMenu();
-            else                 OpenPauseMenu();
-            return true;
-        case SDL_SCANCODE_BACKSPACE:
-            if (m_launch.rewind) OpenRewind();
-            else ShowStatus("Rewind is turned off in Settings > Emulation.");
-            return true;
-        case SDL_SCANCODE_TAB:
-            if (m_showPauseMenu) return false;
-            SetTurbo(!m_turboMode);
-            return true;
-        default:
-            return false;
+    case SDL_SCANCODE_ESCAPE:
+        if (m_showPauseMenu) ClosePauseMenu();
+        else OpenPauseMenu();
+        return true;
+    case SDL_SCANCODE_BACKSPACE:
+        if (m_launch.rewind) OpenRewind();
+        else ShowStatus("Rewind is turned off in Settings > Emulation.");
+        return true;
+    case SDL_SCANCODE_TAB:
+        if (m_showPauseMenu) return false;
+        SetTurbo(!m_turboMode);
+        return true;
+    default: return false;
     }
 }
 
@@ -295,14 +293,14 @@ bool NovaLauncher::HandleGamePadButton(int button) {
     // paused game.
     if (m_rewindOpen) {
         switch (button) {
-            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     return HandleGameKey(SDL_SCANCODE_LEFT, false);
-            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    return HandleGameKey(SDL_SCANCODE_RIGHT, false);
-            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return HandleGameKey(SDL_SCANCODE_HOME, false);
-            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return HandleGameKey(SDL_SCANCODE_END, false);
-            case SDL_CONTROLLER_BUTTON_A:             return HandleGameKey(SDL_SCANCODE_RETURN, false);
-            case SDL_CONTROLLER_BUTTON_B:
-            case SDL_CONTROLLER_BUTTON_BACK:          return HandleGameKey(SDL_SCANCODE_ESCAPE, false);
-            default:                                  return true;
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     return HandleGameKey(SDL_SCANCODE_LEFT, false);
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    return HandleGameKey(SDL_SCANCODE_RIGHT, false);
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return HandleGameKey(SDL_SCANCODE_HOME, false);
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return HandleGameKey(SDL_SCANCODE_END, false);
+        case SDL_CONTROLLER_BUTTON_A:             return HandleGameKey(SDL_SCANCODE_RETURN, false);
+        case SDL_CONTROLLER_BUTTON_B:
+        case SDL_CONTROLLER_BUTTON_BACK:          return HandleGameKey(SDL_SCANCODE_ESCAPE, false);
+        default:                                  return true;
         }
     }
     // Back (View, Select, Share) or Guide opens and closes the pause menu, like Esc.
@@ -317,9 +315,9 @@ bool NovaLauncher::HandleGamePadButton(int button) {
 }
 
 void NovaLauncher::OpenPauseMenu() {
-    m_showPauseMenu  = true;
+    m_showPauseMenu = true;
     m_focusPauseMenu = true;
-    m_resumePending  = false;
+    m_resumePending = false;
     Nova64::Video::g_emuPaused.store(true);
     NovaInput::Gamepads::Instance().StopRumble();
 }
@@ -330,34 +328,32 @@ void NovaLauncher::ClosePauseMenu() {
     ResumeGame();
 }
 
-void NovaLauncher::ResumeGame() {
-    m_resumePending = true;
-}
+void NovaLauncher::ResumeGame() { m_resumePending = true; }
 
 void NovaLauncher::OpenRewind() {
     if (!m_emuRunning.load()) return;
     m_rewindFromPauseMenu = m_showPauseMenu;
     m_showPauseMenu = false;
-    m_rewindOpen    = true;
+    m_rewindOpen = true;
     m_resumePending = false;
     Nova64::Video::g_emuPaused.store(true);
     NovaInput::Gamepads::Instance().StopRumble();
 
     SyncStateLists();
-    m_rewindSelection         = static_cast<int>(m_rewindPoints.size());   // "Now"
+    m_rewindSelection = static_cast<int>(m_rewindPoints.size()); // "Now"
     m_rewindScrollToSelection = true;
-    m_rewindWheel             = 0.0f;
+    m_rewindWheel = 0.0f;
 }
 
 void NovaLauncher::CloseRewind(bool jumpToSelection) {
-    const bool jump = jumpToSelection && m_rewindSelection >= 0 &&
-                      m_rewindSelection < static_cast<int>(m_rewindPoints.size());
+    const bool jump =
+        jumpToSelection && m_rewindSelection >= 0 && m_rewindSelection < static_cast<int>(m_rewindPoints.size());
     if (jump) Nova64::StateService::Instance().RequestRewind(m_rewindPoints[m_rewindSelection].id);
     m_rewindOpen = false;
 
     // Backing out of a rewind opened from the pause menu returns to the menu.
     if (!jump && m_rewindFromPauseMenu && !jumpToSelection) {
-        m_showPauseMenu  = true;
+        m_showPauseMenu = true;
         m_focusPauseMenu = true;
         return;
     }
@@ -400,11 +396,12 @@ void NovaLauncher::UploadFromPixelBuf() {
     std::lock_guard<std::mutex> lk(Nova64::Video::g_frameMutex);
     const int w = Nova64::Video::g_frameW.load(std::memory_order_relaxed);
     const int h = Nova64::Video::g_frameH.load(std::memory_order_relaxed);
-    if (w <= 0 || h <= 0 || Nova64::Video::g_framePixels.size() < static_cast<size_t>(w) * static_cast<size_t>(h) * 4) return;
+    if (w <= 0 || h <= 0 || Nova64::Video::g_framePixels.size() < static_cast<size_t>(w) * static_cast<size_t>(h) * 4)
+        return;
 
     if (m_gameTex == 0 || w != m_gameTexW || h != m_gameTexH) {
         if (m_gameTex) DeleteTexture(m_gameTex);
-        m_gameTex  = CreateTexture(w, h, Nova64::Video::g_framePixels.data());
+        m_gameTex = CreateTexture(w, h, Nova64::Video::g_framePixels.data());
         m_gameTexW = w;
         m_gameTexH = h;
     } else {
@@ -427,13 +424,13 @@ void NovaLauncher::RenderGameView() {
         const auto& thumbnail = m_rewindPoints[m_rewindSelection].thumbnail;
         if (uint32_t tex = m_thumbnails.Get(thumbnail)) {
             texture = tex;
-            aspect  = static_cast<float>(thumbnail->width) / static_cast<float>(thumbnail->height);
+            aspect = static_cast<float>(thumbnail->width) / static_cast<float>(thumbnail->height);
         }
     }
     if (!texture) return;
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    const float top    = kNavbarHeight;
+    const float top = kNavbarHeight;
     const float height = std::max(1.0f, display.y - top - (m_rewindOpen ? kRewindBarHeight : 0.0f));
     float imgW = display.x;
     float imgH = imgW / aspect;
@@ -443,7 +440,8 @@ void NovaLauncher::RenderGameView() {
     }
     const float ox = (display.x - imgW) * 0.5f;
     const float oy = top + (height - imgH) * 0.5f;
-    ImGui::GetBackgroundDrawList()->AddImage(static_cast<ImTextureID>(texture), ImVec2(ox, oy), ImVec2(ox + imgW, oy + imgH));
+    ImGui::GetBackgroundDrawList()->AddImage(static_cast<ImTextureID>(texture), ImVec2(ox, oy),
+                                             ImVec2(ox + imgW, oy + imgH));
 }
 
 void NovaLauncher::RenderPauseMenu() {
@@ -453,7 +451,7 @@ void NovaLauncher::RenderPauseMenu() {
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display, IM_COL32(0, 0, 0, 170));
 
     // Fixed width, height fitted to the contents, centred below the top bar.
-    const float pw   = std::min(640.0f, display.x - 40.0f);
+    const float pw = std::min(640.0f, display.x - 40.0f);
     const float maxH = display.y - kNavbarHeight - 40.0f;
     ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, kNavbarHeight + (display.y - kNavbarHeight) * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -463,8 +461,9 @@ void NovaLauncher::RenderPauseMenu() {
         ImGui::SetNextWindowFocus();
         m_focusPauseMenu = false;
     }
-    ImGui::Begin("##PauseMenu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("##PauseMenu", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_AlwaysAutoResize);
 
     ImGui::SetWindowFontScale(1.4f);
     ImGui::TextColored(ImVec4(0.85f, 0.43f, 0.26f, 1.0f), "Paused");
@@ -590,14 +589,21 @@ void NovaLauncher::RenderRewindBar() {
 
     // The mouse wheel steps through the pictures; rolling up goes further back.
     m_rewindWheel += io.MouseWheel;
-    while (m_rewindWheel >= 1.0f)  { MoveRewindSelection(-1); m_rewindWheel -= 1.0f; }
-    while (m_rewindWheel <= -1.0f) { MoveRewindSelection(+1); m_rewindWheel += 1.0f; }
+    while (m_rewindWheel >= 1.0f) {
+        MoveRewindSelection(-1);
+        m_rewindWheel -= 1.0f;
+    }
+    while (m_rewindWheel <= -1.0f) {
+        MoveRewindSelection(+1);
+        m_rewindWheel += 1.0f;
+    }
 
     ImGui::SetNextWindowPos(ImVec2(0, display.y - kRewindBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(display.x, kRewindBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.94f);
-    ImGui::Begin("##RewindBar", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::Begin("##RewindBar", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoScrollWithMouse);
 
     ImGui::TextColored(ImVec4(0.85f, 0.43f, 0.26f, 1.0f), "Rewind");
     ImGui::SameLine();
@@ -648,7 +654,7 @@ void NovaLauncher::RenderRewindBar() {
         const float labelW = ImGui::CalcTextSize(label).x;
         ImGui::SetCursorScreenPos(ImVec2(pos.x + (thumbSize.x - labelW) * 0.5f, pos.y + thumbSize.y + 4.0f));
         if (selected) ImGui::TextUnformatted(label);
-        else          ImGui::TextDisabled("%s", label);
+        else ImGui::TextDisabled("%s", label);
         ImGui::EndGroup();
 
         if (selected && m_rewindScrollToSelection) {
@@ -662,7 +668,7 @@ void NovaLauncher::RenderRewindBar() {
     ImGui::End();
 
     if (play && m_rewindSelection < count) CloseRewind(true);
-    else if (cancel)                       CloseRewind(false);
+    else if (cancel) CloseRewind(false);
 }
 
 } // namespace NovaUI

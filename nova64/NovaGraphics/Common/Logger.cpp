@@ -19,13 +19,13 @@
 #include <algorithm>
 
 #ifdef _WIN32
-    #define WIN32_LEAN_AND_MEAN
-    #define NOMINMAX
-    #include <windows.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #else
-    #include <pthread.h>
-    #include <unistd.h>
-    #include <sys/syscall.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #endif
 
 namespace Nova64::Video {
@@ -56,9 +56,9 @@ const char* Logger::LevelColor(LogLevel level) noexcept {
     case LogLevel::Fatal:   return "\033[1;31m"; // Bold Red
     case LogLevel::Error:   return "\033[31m";   // Red
     case LogLevel::Warning: return "\033[33m";   // Yellow
-    case LogLevel::Info:    return "\033[32m";    // Green
-    case LogLevel::Debug:   return "\033[36m";    // Cyan
-    case LogLevel::Trace:   return "\033[37m";    // Gray
+    case LogLevel::Info:    return "\033[32m";   // Green
+    case LogLevel::Debug:   return "\033[36m";   // Cyan
+    case LogLevel::Trace:   return "\033[37m";   // Gray
     default:                return "\033[0m";
     }
 }
@@ -88,9 +88,7 @@ const char* Logger::SubsystemName(LogSubsystem sub) noexcept {
 //  Lifecycle
 // ═══════════════════════════════════════════════════════════════════════════
 
-Logger::~Logger() {
-    Shutdown();
-}
+Logger::~Logger() { Shutdown(); }
 
 bool Logger::Init(const LoggerConfig& config) {
     std::lock_guard<std::mutex> lk(m_mutex);
@@ -124,8 +122,7 @@ bool Logger::Init(const LoggerConfig& config) {
     if (m_config.fileOutput && !m_config.logFilePath.empty()) {
         m_file.open(m_config.logFilePath, std::ios::out | std::ios::trunc);
         if (!m_file.is_open()) {
-            std::fprintf(stderr, "[NovaGraphics Logger] Failed to open log file: %s\n",
-                         m_config.logFilePath.c_str());
+            std::fprintf(stderr, "[NovaGraphics Logger] Failed to open log file: %s\n", m_config.logFilePath.c_str());
             m_config.fileOutput = false;
         }
         m_fileBytes = 0;
@@ -191,8 +188,7 @@ bool Logger::IsEnabled(LogLevel level, LogSubsystem sub) const noexcept {
 //  Core Logging
 // ═══════════════════════════════════════════════════════════════════════════
 
-void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line,
-                 const char* func, const char* fmt, ...) {
+void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line, const char* func, const char* fmt, ...) {
     if (!IsEnabled(level, sub)) return;
 
     // Format message via va_list
@@ -203,25 +199,24 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line,
     va_end(args);
 
     if (written < 0) return;
-    if (written >= static_cast<int>(sizeof(buf)))
-        buf[sizeof(buf) - 1] = '\0';
+    if (written >= static_cast<int>(sizeof(buf))) buf[sizeof(buf) - 1] = '\0';
 
     // Build entry
     LogEntry entry;
-    entry.level       = level;
-    entry.subsystem   = sub;
-    entry.message     = buf;
-    entry.file        = file ? file : "";
-    entry.line        = line;
-    entry.function    = func ? func : "";
-    entry.timestamp   = std::chrono::steady_clock::now();
+    entry.level = level;
+    entry.subsystem = sub;
+    entry.message = buf;
+    entry.file = file ? file : "";
+    entry.line = line;
+    entry.function = func ? func : "";
+    entry.timestamp = std::chrono::steady_clock::now();
     entry.frameNumber = m_frameNumber.load(std::memory_order_relaxed);
 
 #if defined(_WIN32)
     entry.threadId = GetCurrentThreadId();
 #elif defined(__APPLE__)
     {
-        uint64_t tid = 0;   // syscall(SYS_gettid) is deprecated on macOS; this is the supported call
+        uint64_t tid = 0; // syscall(SYS_gettid) is deprecated on macOS; this is the supported call
         pthread_threadid_np(nullptr, &tid);
         entry.threadId = static_cast<uint32_t>(tid);
     }
@@ -238,7 +233,7 @@ void Logger::Log(LogLevel level, LogSubsystem sub, const char* file, int line,
     case LogLevel::Info:    m_stats.infoCount.fetch_add(1, std::memory_order_relaxed); break;
     case LogLevel::Debug:   m_stats.debugCount.fetch_add(1, std::memory_order_relaxed); break;
     case LogLevel::Trace:   m_stats.traceCount.fetch_add(1, std::memory_order_relaxed); break;
-    default: break;
+    default:                break;
     }
 
     WriteEntry(entry);
@@ -282,9 +277,8 @@ void Logger::FormatEntry(std::string& out, const LogEntry& entry, bool color) co
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(entry.timestamp - m_startTime);
         auto totalMs = elapsed.count();
         auto sec = totalMs / 1000;
-        auto ms  = totalMs % 1000;
-        ss << '[' << std::setw(6) << sec << '.' << std::setfill('0')
-           << std::setw(3) << ms << "] ";
+        auto ms = totalMs % 1000;
+        ss << '[' << std::setw(6) << sec << '.' << std::setfill('0') << std::setw(3) << ms << "] ";
         ss << std::setfill(' ');
     }
 
@@ -306,9 +300,7 @@ void Logger::FormatEntry(std::string& out, const LogEntry& entry, bool color) co
 
     if (m_config.includeFile && !entry.file.empty()) {
         auto pos = entry.file.find_last_of("/\\");
-        std::string_view fname = (pos != std::string::npos)
-                                 ? std::string_view(entry.file).substr(pos + 1)
-                                 : entry.file;
+        std::string_view fname = (pos != std::string::npos) ? std::string_view(entry.file).substr(pos + 1) : entry.file;
         ss << " (" << fname << ':' << entry.line << ')';
     }
 
@@ -333,10 +325,8 @@ void Logger::RotateLog() {
 
         std::error_code ec;
         if (fs::exists(oldPath, ec)) {
-            if (i + 1 >= static_cast<int>(m_config.maxRotations))
-                fs::remove(oldPath, ec);
-            else
-                fs::rename(oldPath, newPath, ec);
+            if (i + 1 >= static_cast<int>(m_config.maxRotations)) fs::remove(oldPath, ec);
+            else fs::rename(oldPath, newPath, ec);
         }
     }
 

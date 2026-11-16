@@ -31,7 +31,9 @@ namespace Nova64::Video {
 // Forward declarations
 class MicrocodeHandler;
 
-namespace Shader { class ShaderManager; }
+namespace Shader {
+class ShaderManager;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Render Batch — accumulated draw calls to send to GPU
@@ -50,25 +52,33 @@ struct DrawCall {
     // overwrite a preceding memcpy in user-defined copy/move constructors.
     DrawCall() {
         std::memset(this, 0, sizeof(DrawCall));
-        texCoordBounds0[2] = 1.0f; texCoordBounds0[3] = 1.0f;
-        texCoordBounds1[2] = 1.0f; texCoordBounds1[3] = 1.0f;
+        texCoordBounds0[2] = 1.0f;
+        texCoordBounds0[3] = 1.0f;
+        texCoordBounds1[2] = 1.0f;
+        texCoordBounds1[3] = 1.0f;
     }
-    DrawCall(const DrawCall& o)            { std::memcpy(this, &o, sizeof(DrawCall)); }
-    DrawCall& operator=(const DrawCall& o) { if (this != &o) std::memcpy(this, &o, sizeof(DrawCall)); return *this; }
-    DrawCall(DrawCall&& o)                 noexcept { std::memcpy(this, &o, sizeof(DrawCall)); }
-    DrawCall& operator=(DrawCall&& o)      noexcept { if (this != &o) std::memcpy(this, &o, sizeof(DrawCall)); return *this; }
-    
+    DrawCall(const DrawCall& o) { std::memcpy(this, &o, sizeof(DrawCall)); }
+    DrawCall& operator=(const DrawCall& o) {
+        if (this != &o) std::memcpy(this, &o, sizeof(DrawCall));
+        return *this;
+    }
+    DrawCall(DrawCall&& o) noexcept { std::memcpy(this, &o, sizeof(DrawCall)); }
+    DrawCall& operator=(DrawCall&& o) noexcept {
+        if (this != &o) std::memcpy(this, &o, sizeof(DrawCall));
+        return *this;
+    }
+
     Type type;
-    int  vertexStart;       // Index into batch vertex buffer
-    int  vertexCount;
-    int  tileIndex;
-    
+    int vertexStart; // Index into batch vertex buffer
+    int vertexCount;
+    int tileIndex;
+
     // State snapshot at time of draw call
     uint64_t combineMode;
     uint32_t otherModeH;
     uint32_t otherModeL;
     uint32_t geometryMode;
-    
+
     // Texture hash for this draw call (non-zero → texture is active on that unit)
     uint64_t textureHash0;
     uint64_t textureHash1;
@@ -80,15 +90,18 @@ struct DrawCall {
     uint64_t snapshotCrc1;
     // Texture-pack identity captured when the draw was queued, for the same reason as the CRCs
     // above: TMEM and the load records have moved on by the time the batch is flushed.
-    struct HiResSnapshot { uint32_t texCrc = 0, palCrc = 0; uint16_t width = 0, height = 0; };
+    struct HiResSnapshot {
+        uint32_t texCrc = 0, palCrc = 0;
+        uint16_t width = 0, height = 0;
+    };
     HiResSnapshot snapHiRes0;
     HiResSnapshot snapHiRes1;
 
     // Tile descriptor snapshots for texture binding at flush time
     TileDescriptor tileDesc0;
     TileDescriptor tileDesc1;
-    uint32_t textureImageAddr;   // RDRAM address for tile0 at draw time
-    uint32_t textureImageAddr1;  // RDRAM address for tile1 (2-cycle mode)
+    uint32_t textureImageAddr;  // RDRAM address for tile0 at draw time
+    uint32_t textureImageAddr1; // RDRAM address for tile1 (2-cycle mode)
 
     // Vulkan FB-snapshot ring slot resolved AT ENQUEUE TIME (not flush time).
     // Multiple ring slots can share the same RDRAM address (e.g. MM's pause
@@ -109,14 +122,14 @@ struct DrawCall {
     RDPColor envColor;
     RDPColor fogColor;
     RDPColor blendColor;
-    float    primLODFrac;
-    float    primLODMin;
-    int      fogUsage;         // 0=none, 1=standard, 2=F3DAM RGB
-    
+    float primLODFrac;
+    float primLODMin;
+    int fogUsage; // 0=none, 1=standard, 2=F3DAM RGB
+
     // Primitive depth (snapshot — SetPrimDepth can change between draws)
     uint16_t primDepth;
     uint16_t primDeltaZ;
-    
+
     // Texture scrolling
     float scrollS0;
     float scrollT0;
@@ -124,37 +137,37 @@ struct DrawCall {
     float scrollT1;
 
     // Mipmap tile chain (for LOD textures — tiles baseTile+1 through baseTile+level)
-    TileDescriptor mipTiles[7];   // Up to 7 additional mip levels
-    int mipLevelCount;            // Number of mip levels beyond base (0 = no mipmapping)
+    TileDescriptor mipTiles[7]; // Up to 7 additional mip levels
+    int mipLevelCount;          // Number of mip levels beyond base (0 = no mipmapping)
 
     // Texture coordinate bounds (for TextureRect bilinear bleed prevention)
     float texCoordBounds0[4]; // minS, minT, maxS, maxT — defaults: 0,0,1,1
     float texCoordBounds1[4];
-    bool  useTexCoordBounds;
+    bool useTexCoordBounds;
 
     // Shadow map flag: texture read from the depth buffer for shadow overlay
-    bool  isShadowMap;
+    bool isShadowMap;
     // Shadow TLUT snapshot (256 alpha values extracted from TMEM palette region)
     uint8_t shadowTLUT[256];
 };
 
 struct RenderBatch {
     static constexpr int MAX_DRAW_CALLS = 4096;
-    static constexpr int MAX_VERTICES   = 65536;
-    
+    static constexpr int MAX_VERTICES = 65536;
+
     struct Vertex {
         float x, y, z, w;
-        float s, t;             // tile 0 texture coordinates (stored as texCoord * 1/clipW)
+        float s, t; // tile 0 texture coordinates (stored as texCoord * 1/clipW)
         float r, g, b, a;
         float fogFactor;
-        float s1, t1;           // tile 1 texture coordinates (stored as texCoord * 1/clipW)
-        uint32_t clipFlags;     // Frustum clip flags (PosX, NegX, PosY, NegY, Near, Far)
-        float perspW = 1.0f;    // 1/clip_W; fragment shader divides s,t by this to recover screen-space texcoords
+        float s1, t1;        // tile 1 texture coordinates (stored as texCoord * 1/clipW)
+        uint32_t clipFlags;  // Frustum clip flags (PosX, NegX, PosY, NegY, Near, Far)
+        float perspW = 1.0f; // 1/clip_W; fragment shader divides s,t by this to recover screen-space texcoords
     };
-    
-    std::vector<Vertex>   vertices;
+
+    std::vector<Vertex> vertices;
     std::vector<DrawCall> drawCalls;
-    
+
     // Append a draw call using resize+memcpy instead of push_back.
     // Works around MSVC codegen issue where push_back zeroes the
     // newly constructed element despite the copy constructor body
@@ -169,10 +182,8 @@ struct RenderBatch {
         vertices.clear();
         drawCalls.clear();
     }
-    
-    bool IsFull() const {
-        return drawCalls.size() >= MAX_DRAW_CALLS || vertices.size() >= MAX_VERTICES;
-    }
+
+    bool IsFull() const { return drawCalls.size() >= MAX_DRAW_CALLS || vertices.size() >= MAX_VERTICES; }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -192,17 +203,15 @@ struct RDPProcessorStats {
     uint64_t displayListsProcessed;
     uint64_t batchesFlushed;
     uint64_t stateChanges;
-    
+
     // Per-frame counters (reset each frame)
     uint32_t frameTriangles;
     uint32_t frameRects;
     uint32_t frameLoads;
     uint32_t frameDrawCalls;
-    
-    void Reset() {
-        std::memset(this, 0, sizeof(*this));
-    }
-    
+
+    void Reset() { std::memset(this, 0, sizeof(*this)); }
+
     void ResetFrame() {
         frameTriangles = 0;
         frameRects = 0;
@@ -219,7 +228,7 @@ struct DisplayListInfo {
     uint32_t startAddress;
     uint32_t endAddress;
     uint32_t commandCount;
-    bool     fromDMEM;          // True if from SP DMEM, false if RDRAM
+    bool fromDMEM; // True if from SP DMEM, false if RDRAM
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -230,32 +239,30 @@ class RDPProcessor {
 public:
     RDPProcessor();
     ~RDPProcessor();
-    
+
     // ─── Initialization ───
-    
+
     /// Initialize with RDRAM pointer and renderer backend
-    bool Initialize(uint8_t* rdram, size_t rdramSize,
-                    IRenderer* renderer,
-                    Tex::TextureCache* textureCache,
+    bool Initialize(uint8_t* rdram, size_t rdramSize, IRenderer* renderer, Tex::TextureCache* textureCache,
                     Shader::ShaderManager* shaderManager = nullptr);
-    
+
     /// Shutdown and release resources
     void Shutdown();
-    
+
     /// Reset state (e.g., on game reset)
     void Reset(bool coldReset);
-    
+
     // ─── Display List Processing ───
-    
+
     /// Process a display list from RDRAM
     void ProcessDList(uint32_t startAddress, uint32_t endAddress);
-    
+
     /// Process native RDP commands (from DPC registers)
     void ProcessRDPCommand(uint64_t command);
-    
+
     /// Process a full RDP command buffer
     void ProcessCommandBuffer(const uint32_t* commands, int wordCount);
-    
+
     /// Notify that a frame is being presented (flush + render)
     void OnFrameEnd();
 
@@ -265,67 +272,66 @@ public:
     /// than only at the very end of ProcessDList.
     using SyncFullCallback = std::function<void()>;
     void SetSyncFullCallback(SyncFullCallback cb) { m_syncFullCallback = std::move(cb); }
-    
+
     // ─── Texture Loading ───
-    
+
     /// Execute a LoadBlock into TMEM
     void ExecuteLoadBlock(int tile, int uls, int ult, int texels, int dxt);
-    
+
     /// Execute a LoadTile into TMEM
     void ExecuteLoadTile(int tile, float sl, float tl, float sh, float th);
-    
+
     /// Execute a LoadTLUT into TMEM (palette load)
     void ExecuteLoadTLUT(int tile, int count);
-    
+
     // ─── Drawing Primitives ───
-    
+
     /// Draw a decoded triangle
     void DrawTriangle(const DecodedTriangle& tri);
-    
+
     /// Draw a triangle from vertex buffer indices (HLE path)
     void DrawTriangle(int v0, int v1, int v2, const GeometryState& geo);
-    
+
     /// Draw a triangle from raw vertex data (used for clipped triangles)
-    void DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1,
-                         const RenderBatch::Vertex& rv2, uint32_t geometryMode,
-                         uint8_t tileIndex = 0);
-    
+    void DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1, const RenderBatch::Vertex& rv2,
+                         uint32_t geometryMode, uint8_t tileIndex = 0);
+
     /// Draw a texture rectangle
     void DrawTextureRect(const DecodedRectangle& rect);
-    
+
     /// Draw a fill rectangle
     void DrawFillRect(float x0, float y0, float x1, float y1);
-    
+
     // ─── Batch Management ───
-    
+
     /// Flush the current render batch to the GPU
     void FlushBatch();
-    
+
     /// Check if state change requires a batch flush
     bool NeedsBatchFlush(const DrawCall& newCall) const;
-    
+
     // ─── State Access ───
-    
+
     const RDPState& GetRDPState() const { return m_state.rdp; }
     const GeometryState& GetGeometryState() const { return m_state.rdp.geometry; }
     const VideoState& GetVideoState() const { return m_state; }
     VideoState& GetVideoStateMutable() { return m_state; }
     const RDPProcessorStats& GetStats() const { return m_stats; }
-    
+
     /// Get current framebuffer info
     void GetFrameBufferInfo(FrameBufferInfo* info, int maxBuffers) const;
-    
+
     /// Read framebuffer pixels
     bool ReadFrameBuffer(uint32_t address, uint32_t size, void* data);
-    
+
     /// Write to framebuffer
     bool WriteFrameBuffer(uint32_t address, uint32_t size, const void* data);
-    
+
     // ─── Debug ───
-    
+
     /// Enable/disable command logging
     void SetCommandLogging(bool enable) { m_logCommands = enable; }
-    
+
     /// Get description of last processed command
     const std::string& GetLastCommandDesc() const { return m_lastCommandDesc; }
 
@@ -335,7 +341,7 @@ public:
 
 private:
     // ─── Command Handlers ───
-    
+
     void HandleSetOtherModes(const uint32_t* words);
     void HandleSetCombine(const uint32_t* words);
     void HandleSetTile(const uint32_t* words);
@@ -366,15 +372,15 @@ private:
     void HandleTextureRect(const uint32_t* words);
     void HandleTextureRectFlip(const uint32_t* words);
     void HandleFillRect(const uint32_t* words);
-    
+
     // ─── Internal State ───
-    
-    VideoState         m_state;
-    RDPCommandDecoder  m_decoder;
-    RDPCommandBuffer   m_commandBuffer;
-    RenderBatch        m_batch;
-    RDPProcessorStats  m_stats;
-    
+
+    VideoState m_state;
+    RDPCommandDecoder m_decoder;
+    RDPCommandBuffer m_commandBuffer;
+    RenderBatch m_batch;
+    RDPProcessorStats m_stats;
+
     // Persistent ring VBO for batched rendering (Task 2)
     std::unique_ptr<IVertexBuffer> m_ringVBO;
     size_t m_ringOffset = 0;
@@ -385,11 +391,11 @@ private:
 
     // Default N64 pipeline (owns the VAO for vertex format binding)
     std::unique_ptr<IPipeline> m_n64Pipeline;
-    
+
     // Backend references (not owned)
-    uint8_t*           m_rdram = nullptr;
-    size_t             m_rdramSize = 0;
-    IRenderer*         m_renderer = nullptr;
+    uint8_t* m_rdram = nullptr;
+    size_t m_rdramSize = 0;
+    IRenderer* m_renderer = nullptr;
     Tex::TextureCache* m_textureCache = nullptr;
     Shader::ShaderManager* m_shaderManager = nullptr;
 
@@ -398,7 +404,7 @@ private:
     std::unique_ptr<ITexture> m_ditherTexture;      // N64 Magic Square (default)
     std::unique_ptr<ITexture> m_ditherBayerTexture; // N64 Bayer (mode 1)
     std::unique_ptr<ITexture> m_debugWhiteTexture;  // 1x1 white texture for diagnostics
-    uint32_t m_shadowTLUTTexture = 0;  // 256×1 R8 — shadow map palette from TMEM
+    uint32_t m_shadowTLUTTexture = 0;               // 256×1 R8 — shadow map palette from TMEM
 
     // Vulkan framebuffer-as-texture snapshot.
     // When the inventory (or any draw) reads the previously-rendered N64 framebuffer
@@ -422,22 +428,22 @@ private:
     std::array<std::unique_ptr<ITexture>, kVkFBSnapshotSlots> m_vkFBSnapshots;
     std::array<uint32_t, kVkFBSnapshotSlots> m_vkFBSnapshotAddrs{};
     uint32_t m_vkFBSnapshotIdx = 0;
-    
+
     // MLE heuristic router (optional — set via SetMLEDirector)
     MLEDirector* m_mleDirector = nullptr;
 
     // Debug
-    bool        m_logCommands = false;
+    bool m_logCommands = false;
     std::string m_lastCommandDesc;
-    int         m_debugOutputMode = 0; // 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
+    int m_debugOutputMode = 0; // 0=normal, 1=tex0, 2=shade, 3=prim, 4=env, 5=UV, 6=depth, 7=alpha
     static constexpr int kDebugModeCount = 8;
-    
+
     // Diagnostic debug toggles (runtime, toggled via hotkeys)
-    bool m_debugForceOpaque    = false; // Force alpha=1 on all draws
-    bool m_debugDisableDepth   = false; // Disable depth test/write
+    bool m_debugForceOpaque = false;    // Force alpha=1 on all draws
+    bool m_debugDisableDepth = false;   // Disable depth test/write
     bool m_debugDisableCulling = false; // Disable backface culling in RSP
-    bool m_debugMagenta        = false; // Render all geometry as magenta
-    
+    bool m_debugMagenta = false;        // Render all geometry as magenta
+
     bool m_initialized = false;
 
     // Callback fired on each SyncFull, before FlushBatch.
@@ -446,19 +452,19 @@ private:
 
 public:
     // ─── Debug output mode ───
-    int  GetDebugOutputMode() const { return m_debugOutputMode; }
+    int GetDebugOutputMode() const { return m_debugOutputMode; }
     void SetDebugOutputMode(int mode) { m_debugOutputMode = (mode >= 0 && mode < kDebugModeCount) ? mode : 0; }
     void CycleDebugOutputMode() { m_debugOutputMode = (m_debugOutputMode + 1) % kDebugModeCount; }
 
     // ─── Diagnostic debug toggles ───
-    void ToggleDebugForceOpaque()    { m_debugForceOpaque    = !m_debugForceOpaque; }
-    void ToggleDebugDisableDepth()   { m_debugDisableDepth   = !m_debugDisableDepth; }
+    void ToggleDebugForceOpaque() { m_debugForceOpaque = !m_debugForceOpaque; }
+    void ToggleDebugDisableDepth() { m_debugDisableDepth = !m_debugDisableDepth; }
     void ToggleDebugDisableCulling() { m_debugDisableCulling = !m_debugDisableCulling; }
-    void ToggleDebugMagenta()        { m_debugMagenta        = !m_debugMagenta; }
-    bool IsDebugForceOpaque()    const { return m_debugForceOpaque; }
-    bool IsDebugDisableDepth()   const { return m_debugDisableDepth; }
+    void ToggleDebugMagenta() { m_debugMagenta = !m_debugMagenta; }
+    bool IsDebugForceOpaque() const { return m_debugForceOpaque; }
+    bool IsDebugDisableDepth() const { return m_debugDisableDepth; }
     bool IsDebugDisableCulling() const { return m_debugDisableCulling; }
-    bool IsDebugMagenta()        const { return m_debugMagenta; }
+    bool IsDebugMagenta() const { return m_debugMagenta; }
 
     // ─── Game Hack Flags ───
     // Set by VideoPlugin based on GameProfile. Checked in hot paths.
@@ -480,30 +486,31 @@ public:
         bool pdDepthCopyOnce = false;       // Only copy depth buffer once per frame
         // Texture rectangles that sample the depth buffer's address, chosen per
         // game from the ROM name as GLideN64's _setSpecialTexrect does.
-        bool texRectShadowMap = false;        // Beetle/HSV Adventure Racing, Duck Dodgers
-        bool texRectDepthBufferCopy = false;  // Perfect Dark, Turok: 1-row depth copies
+        bool texRectShadowMap = false;       // Beetle/HSV Adventure Racing, Duck Dodgers
+        bool texRectDepthBufferCopy = false; // Perfect Dark, Turok: 1-row depth copies
     } m_hacks;
 
 private:
     // ─── Helpers ───
-    
+
     /// Snapshot current tile descriptors and compute texture hashes for a draw call.
     /// Uses the RDP state at the time of call to capture tile0/tile1 info.
     void PopulateTextureInfo(DrawCall& call, int tileIndex);
-    
+
     /// Build a Tex::TextureKey from a snapshotted TileDescriptor.
     /// Pass overrideCrc != 0 to skip the TMEM read and use the supplied CRC directly
     /// (used when a CRC was captured at draw-queue time rather than flush time).
-    Tex::TextureKey BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr,
-                                    uint8_t tlutType = 0,
-                                    const TileDescriptor* mipTiles = nullptr,
-                                    int mipCount = 0,
+    Tex::TextureKey BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr, uint8_t tlutType = 0,
+                                    const TileDescriptor* mipTiles = nullptr, int mipCount = 0,
                                     uint64_t overrideCrc = 0) const;
 
 public:
     /// Texture packs and texture dumping identify a texture by a Rice checksum of its data in
     /// RDRAM. Computing it costs a little, so it is only done while one of them is in use.
-    void SetHiResHashing(bool on) { m_hiResHashing = on; m_hiResIdMemo.clear(); }
+    void SetHiResHashing(bool on) {
+        m_hiResHashing = on;
+        m_hiResIdMemo.clear();
+    }
 
 private:
     /// The texture-pack identity of the texture a tile shows, following how GLideN64 finds the
@@ -511,9 +518,13 @@ private:
     Tex::HiResId ComputeHiResIdFor(const TileDescriptor& tile, const Tex::TextureKey& key, uint8_t tlutType,
                                    uint16_t* outWidth, uint16_t* outHeight) const;
 
-    struct HiResMemo { Tex::HiResId id; uint16_t width = 0; uint16_t height = 0; };
+    struct HiResMemo {
+        Tex::HiResId id;
+        uint16_t width = 0;
+        uint16_t height = 0;
+    };
     bool m_hiResHashing = false;
-    mutable std::unordered_map<uint64_t, HiResMemo> m_hiResIdMemo;   // by texture content, so each is hashed once
+    mutable std::unordered_map<uint64_t, HiResMemo> m_hiResIdMemo; // by texture content, so each is hashed once
 };
 
 } // namespace Nova64::Video

@@ -11,7 +11,7 @@
 #include <new>
 
 #ifdef _WIN32
-    #include <malloc.h>   // _aligned_malloc / _aligned_free
+#include <malloc.h> // _aligned_malloc / _aligned_free
 #endif
 
 namespace Nova64::Video {
@@ -51,8 +51,7 @@ void* TrackedAlloc(size_t size, size_t alignment) {
     // Update peak
     auto peak = g_allocStats.peakBytesInUse.load(std::memory_order_relaxed);
     while (current > peak) {
-        if (g_allocStats.peakBytesInUse.compare_exchange_weak(peak, current, std::memory_order_relaxed))
-            break;
+        if (g_allocStats.peakBytesInUse.compare_exchange_weak(peak, current, std::memory_order_relaxed)) break;
     }
     NOVA_TRACK_ALLOC(ptr, size);
     return ptr;
@@ -70,18 +69,16 @@ void TrackedFree(void* ptr, size_t size) {
 //  Pool Allocator
 // ═══════════════════════════════════════════════════════════════════════════
 
-PoolAllocator::~PoolAllocator() {
-    Destroy();
-}
+PoolAllocator::~PoolAllocator() { Destroy(); }
 
 bool PoolAllocator::Init(size_t blockSize, size_t blockCount, size_t alignment) {
     if (m_memory) Destroy();
 
     // Ensure block size can hold a FreeNode pointer and is aligned
-    m_blockSize  = std::max(blockSize, sizeof(FreeNode));
-    m_blockSize  = (m_blockSize + alignment - 1) & ~(alignment - 1);
+    m_blockSize = std::max(blockSize, sizeof(FreeNode));
+    m_blockSize = (m_blockSize + alignment - 1) & ~(alignment - 1);
     m_blockCount = blockCount;
-    m_alignment  = alignment;
+    m_alignment = alignment;
     m_totalBytes = m_blockSize * m_blockCount;
 
     m_memory = static_cast<uint8_t*>(AlignedAlloc(m_totalBytes, m_alignment));
@@ -96,12 +93,11 @@ bool PoolAllocator::Init(size_t blockSize, size_t blockCount, size_t alignment) 
 
 void PoolAllocator::Destroy() {
     if (m_memory) {
-        g_allocStats.currentBytesInUse.fetch_sub(
-            (m_blockCount - m_freeCount) * m_blockSize, std::memory_order_relaxed);
+        g_allocStats.currentBytesInUse.fetch_sub((m_blockCount - m_freeCount) * m_blockSize, std::memory_order_relaxed);
         AlignedFree(m_memory);
         m_memory = nullptr;
     }
-    m_freeList  = nullptr;
+    m_freeList = nullptr;
     m_freeCount = 0;
 }
 
@@ -151,17 +147,15 @@ void PoolAllocator::Reset() noexcept {
 //  Linear Allocator
 // ═══════════════════════════════════════════════════════════════════════════
 
-LinearAllocator::~LinearAllocator() {
-    Destroy();
-}
+LinearAllocator::~LinearAllocator() { Destroy(); }
 
 bool LinearAllocator::Init(size_t capacity, size_t alignment) {
     if (m_memory) Destroy();
 
-    m_capacity  = capacity;
+    m_capacity = capacity;
     m_alignment = alignment;
-    m_offset    = 0;
-    m_memory    = static_cast<uint8_t*>(AlignedAlloc(capacity, alignment));
+    m_offset = 0;
+    m_memory = static_cast<uint8_t*>(AlignedAlloc(capacity, alignment));
     if (!m_memory) return false;
 
     g_allocStats.totalBytesAllocated.fetch_add(capacity, std::memory_order_relaxed);
@@ -198,15 +192,16 @@ void LinearAllocator::Reset() noexcept {
 //  Ring Buffer
 // ═══════════════════════════════════════════════════════════════════════════
 
-CPURingBuffer::~CPURingBuffer() {
-    Destroy();
-}
+CPURingBuffer::~CPURingBuffer() { Destroy(); }
 
 bool CPURingBuffer::Init(size_t capacity) {
     if (m_memory) Destroy();
     m_capacity = capacity;
     m_memory = static_cast<uint8_t*>(AlignedAlloc(capacity, 64));
-    if (!m_memory) { m_capacity = 0; return false; }
+    if (!m_memory) {
+        m_capacity = 0;
+        return false;
+    }
     m_writeOffset = 0;
     m_readOffset = 0;
     return true;
@@ -254,14 +249,11 @@ void CPURingBuffer::Reset() noexcept {
 }
 
 size_t CPURingBuffer::GetUsed() const noexcept {
-    if (m_writeOffset >= m_readOffset)
-        return m_writeOffset - m_readOffset;
+    if (m_writeOffset >= m_readOffset) return m_writeOffset - m_readOffset;
     return m_capacity - m_readOffset + m_writeOffset;
 }
 
-size_t CPURingBuffer::GetFree() const noexcept {
-    return m_capacity - GetUsed();
-}
+size_t CPURingBuffer::GetFree() const noexcept { return m_capacity - GetUsed(); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Leak Detector
@@ -277,7 +269,7 @@ LeakDetector& LeakDetector::Instance() {
 void LeakDetector::RecordAlloc(void* ptr, size_t size, const char* file, int line) {
     if (!ptr) return;
     std::lock_guard<std::mutex> lk(m_mutex);
-    m_records[reinterpret_cast<uintptr_t>(ptr)] = { size, file, line };
+    m_records[reinterpret_cast<uintptr_t>(ptr)] = {size, file, line};
 }
 
 void LeakDetector::RecordFree(void* ptr) {
@@ -292,12 +284,11 @@ void LeakDetector::ReportLeaks() {
         std::fprintf(stderr, "[NovaGraphics] Memory leak check: CLEAN (no leaks)\n");
         return;
     }
-    std::fprintf(stderr, "[NovaGraphics] *** MEMORY LEAKS DETECTED: %zu allocations ***\n",
-                 m_records.size());
+    std::fprintf(stderr, "[NovaGraphics] *** MEMORY LEAKS DETECTED: %zu allocations ***\n", m_records.size());
     size_t totalLeak = 0;
     for (const auto& [addr, rec] : m_records) {
-        std::fprintf(stderr, "  Leak: %zu bytes at 0x%016llX (%s:%d)\n",
-                     rec.size, static_cast<unsigned long long>(addr), rec.file, rec.line);
+        std::fprintf(stderr, "  Leak: %zu bytes at 0x%016llX (%s:%d)\n", rec.size,
+                     static_cast<unsigned long long>(addr), rec.file, rec.line);
         totalLeak += rec.size;
     }
     std::fprintf(stderr, "[NovaGraphics] Total leaked: %zu bytes\n", totalLeak);

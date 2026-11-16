@@ -31,11 +31,8 @@ void GLShaderCompiler::Shutdown() {
 
 // ─── Compile vertex + fragment ───────────────────────────────────────────────
 
-Shader::CompiledShader GLShaderCompiler::Compile(
-    const Shader::CombinerKey& key,
-    const std::string& vertexSource,
-    const std::string& fragmentSource)
-{
+Shader::CompiledShader GLShaderCompiler::Compile(const Shader::CombinerKey& key, const std::string& vertexSource,
+                                                 const std::string& fragmentSource) {
     Shader::CompiledShader result;
     result.key = key;
     result.features = key.features;
@@ -45,8 +42,8 @@ Shader::CompiledShader GLShaderCompiler::Compile(
         m_lastError = prog->GetInfoLog();
         result.valid = false;
         // Always log compile failures
-        std::fprintf(stderr, "[SHADER-FAIL] feat=0x%llX link-log: %s\n",
-            (unsigned long long)key.features, prog->GetInfoLog().c_str());
+        std::fprintf(stderr, "[SHADER-FAIL] feat=0x%llX link-log: %s\n", (unsigned long long)key.features,
+                     prog->GetInfoLog().c_str());
         return result;
     }
 
@@ -60,12 +57,10 @@ Shader::CompiledShader GLShaderCompiler::Compile(
     return result;
 }
 
-Shader::CompiledShader GLShaderCompiler::CompileWithGeometry(
-    const Shader::CombinerKey& key,
-    const std::string& vertexSource,
-    const std::string& fragmentSource,
-    const std::string& geometrySource)
-{
+Shader::CompiledShader GLShaderCompiler::CompileWithGeometry(const Shader::CombinerKey& key,
+                                                             const std::string& vertexSource,
+                                                             const std::string& fragmentSource,
+                                                             const std::string& geometrySource) {
     Shader::CompiledShader result;
     result.key = key;
     result.features = key.features;
@@ -111,9 +106,9 @@ void GLShaderCompiler::DeleteShader(Shader::CompiledShader& shader) {
     uint32_t glHandle = static_cast<uint32_t>(shader.handle);
     auto it = m_programs.find(glHandle);
     if (it != m_programs.end()) {
-        m_programs.erase(it);          // GLProgram destructor calls glDeleteProgram
+        m_programs.erase(it);      // GLProgram destructor calls glDeleteProgram
     } else {
-        glDeleteProgram(glHandle);     // binary-cache-loaded programs aren't in m_programs
+        glDeleteProgram(glHandle); // binary-cache-loaded programs aren't in m_programs
     }
     shader.handle = Shader::INVALID_SHADER;
     shader.valid = false;

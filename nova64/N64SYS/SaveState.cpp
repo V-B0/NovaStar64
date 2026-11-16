@@ -22,13 +22,12 @@ namespace {
 // The oldest rewind points are dropped past either limit. Neighbouring points
 // share the RDRAM pages that didn't change, so the history holds far more than
 // the budget divided by the 8 MB of RDRAM.
-constexpr size_t kMaxRewindPoints    = 150;                 // five minutes
+constexpr size_t kMaxRewindPoints = 150; // five minutes
 constexpr size_t kRewindMemoryBudget = 256u * 1024 * 1024;
-constexpr int    kThumbnailWidth     = 256;
+constexpr int kThumbnailWidth = 256;
 
 // A thumbnail of the last frame the video plugin handed to the launcher.
-std::shared_ptr<const StateThumbnail> ThumbnailOfLastFrame()
-{
+std::shared_ptr<const StateThumbnail> ThumbnailOfLastFrame() {
     std::lock_guard<std::mutex> lock(Video::g_frameMutex);
     const int srcW = Video::g_frameW.load(std::memory_order_relaxed);
     const int srcH = Video::g_frameH.load(std::memory_order_relaxed);
@@ -38,7 +37,7 @@ std::shared_ptr<const StateThumbnail> ThumbnailOfLastFrame()
     }
 
     auto thumb = std::make_shared<StateThumbnail>();
-    thumb->width  = std::min(kThumbnailWidth, srcW);
+    thumb->width = std::min(kThumbnailWidth, srcW);
     thumb->height = std::max(1, thumb->width * srcH / srcW);
     thumb->rgba.resize(static_cast<size_t>(thumb->width) * static_cast<size_t>(thumb->height) * 4);
 
@@ -72,8 +71,7 @@ std::shared_ptr<const StateThumbnail> ThumbnailOfLastFrame()
 
 } // namespace
 
-std::string SaveSlotInfo::SavedAtText() const
-{
+std::string SaveSlotInfo::SavedAtText() const {
     if (!exists) return "Empty";
     if (!loadable) return "Made by an older version";
     std::tm local{};
@@ -87,8 +85,7 @@ std::string SaveSlotInfo::SavedAtText() const
     return text;
 }
 
-StateService& StateService::Instance()
-{
+StateService& StateService::Instance() {
     static StateService instance;
     return instance;
 }
@@ -97,8 +94,7 @@ StateService& StateService::Instance()
 // Launcher thread
 // ============================================================================
 
-void StateService::BeginSession(const std::string& romPath)
-{
+void StateService::BeginSession(const std::string& romPath) {
     std::string stem = fs::path(romPath).stem().string();
     std::replace(stem.begin(), stem.end(), ' ', '_');
     std::error_code ec;
@@ -125,8 +121,7 @@ void StateService::BeginSession(const std::string& romPath)
     m_revision.fetch_add(1);
 }
 
-void StateService::EndSession()
-{
+void StateService::EndSession() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_sessionActive.store(false);
     m_requests.clear();
@@ -135,45 +130,36 @@ void StateService::EndSession()
     m_revision.fetch_add(1);
 }
 
-void StateService::SetRewindEnabled(bool enabled)
-{
+void StateService::SetRewindEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_rewindEnabled.store(enabled);
     if (!enabled) m_history.clear();
     m_revision.fetch_add(1);
 }
 
-void StateService::Enqueue(const Request& request)
-{
+void StateService::Enqueue(const Request& request) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_sessionActive.load()) return;
     m_requests.push_back(request);
     m_requestPending.store(true);
 }
 
-void StateService::RequestSave(int slot)
-{
+void StateService::RequestSave(int slot) {
     if (slot >= 0 && slot < kSaveSlots) Enqueue({Request::Kind::Save, slot, 0});
 }
 
-void StateService::RequestLoad(int slot)
-{
+void StateService::RequestLoad(int slot) {
     if (slot >= 0 && slot < kSaveSlots) Enqueue({Request::Kind::Load, slot, 0});
 }
 
-void StateService::RequestRewind(uint64_t pointId)
-{
-    Enqueue({Request::Kind::Rewind, 0, pointId});
-}
+void StateService::RequestRewind(uint64_t pointId) { Enqueue({Request::Kind::Rewind, 0, pointId}); }
 
-SaveSlotInfo StateService::Slot(int slot) const
-{
+SaveSlotInfo StateService::Slot(int slot) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return (slot >= 0 && slot < kSaveSlots) ? m_slots[slot] : SaveSlotInfo{};
 }
 
-std::vector<RewindPoint> StateService::RewindPoints() const
-{
+std::vector<RewindPoint> StateService::RewindPoints() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<RewindPoint> points;
     points.reserve(m_history.size());
@@ -181,8 +167,7 @@ std::vector<RewindPoint> StateService::RewindPoints() const
     return points;
 }
 
-std::string StateService::LastMessage(uint64_t& sequence) const
-{
+std::string StateService::LastMessage(uint64_t& sequence) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     sequence = m_messageSequence;
     return m_message;
@@ -192,17 +177,14 @@ std::string StateService::LastMessage(uint64_t& sequence) const
 // Emulator thread
 // ============================================================================
 
-bool StateService::NeedsService(uint64_t frame) const
-{
+bool StateService::NeedsService(uint64_t frame) const {
     if (!m_sessionActive.load(std::memory_order_relaxed)) return false;
-    return Video::g_emuPaused.load(std::memory_order_relaxed) ||
-           m_requestPending.load(std::memory_order_relaxed) ||
+    return Video::g_emuPaused.load(std::memory_order_relaxed) || m_requestPending.load(std::memory_order_relaxed) ||
            (m_rewindEnabled.load(std::memory_order_relaxed) &&
             frame >= m_nextCaptureFrame.load(std::memory_order_relaxed));
 }
 
-void StateService::Service(CN64System& system)
-{
+void StateService::Service(CN64System& system) {
     ServiceOnce(system);
     // The launcher's pause holds the CPU here, where requests can still be served.
     while (Video::g_emuPaused.load(std::memory_order_relaxed) &&
@@ -212,8 +194,7 @@ void StateService::Service(CN64System& system)
     }
 }
 
-void StateService::ServiceOnce(CN64System& system)
-{
+void StateService::ServiceOnce(CN64System& system) {
     if (!m_sessionActive.load()) return;
     if (auto* rom = system.GetRom(); rom && rom->IsLoaded()) {
         m_fieldsPerSecond.store(rom->GetImage().IsPal() ? 50 : 60);
@@ -226,9 +207,9 @@ void StateService::ServiceOnce(CN64System& system)
     }
     for (const Request& request : requests) {
         switch (request.kind) {
-            case Request::Kind::Save:   SaveSlot(system, request.slot);    break;
-            case Request::Kind::Load:   LoadSlot(system, request.slot);    break;
-            case Request::Kind::Rewind: RewindTo(system, request.pointId); break;
+        case Request::Kind::Save:   SaveSlot(system, request.slot); break;
+        case Request::Kind::Load:   LoadSlot(system, request.slot); break;
+        case Request::Kind::Rewind: RewindTo(system, request.pointId); break;
         }
     }
     {
@@ -241,14 +222,12 @@ void StateService::ServiceOnce(CN64System& system)
     if (m_rewindEnabled.load() && frame >= m_nextCaptureFrame.load()) CaptureRewindPoint(system, frame);
 }
 
-std::string StateService::SlotPath(int slot) const
-{
+std::string StateService::SlotPath(int slot) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_slotBase + "_slot" + std::to_string(slot) + ".nss";
 }
 
-void StateService::SaveSlot(CN64System& system, int slot)
-{
+void StateService::SaveSlot(CN64System& system, int slot) {
     MachineSnapshot snapshot;
     RomHeader rom{};
     std::string error;
@@ -259,9 +238,9 @@ void StateService::SaveSlot(CN64System& system, int slot)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (saved) {
         SaveSlotInfo& info = m_slots[slot];
-        info.exists    = true;
-        info.loadable  = true;
-        info.savedAt   = std::time(nullptr);
+        info.exists = true;
+        info.loadable = true;
+        info.savedAt = std::time(nullptr);
         info.thumbnail = snapshot.thumbnail;
         SetMessageLocked("Saved to slot " + std::to_string(slot + 1));
     } else {
@@ -270,8 +249,7 @@ void StateService::SaveSlot(CN64System& system, int slot)
     m_revision.fetch_add(1);
 }
 
-void StateService::LoadSlot(CN64System& system, int slot)
-{
+void StateService::LoadSlot(CN64System& system, int slot) {
     RomHeader rom{};
     MachineSnapshot snapshot;
     std::string error;
@@ -294,8 +272,7 @@ void StateService::LoadSlot(CN64System& system, int slot)
     m_revision.fetch_add(1);
 }
 
-void StateService::RewindTo(CN64System& system, uint64_t pointId)
-{
+void StateService::RewindTo(CN64System& system, uint64_t pointId) {
     std::shared_ptr<const MachineSnapshot> snapshot;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -317,8 +294,7 @@ void StateService::RewindTo(CN64System& system, uint64_t pointId)
     m_revision.fetch_add(1);
 }
 
-void StateService::CaptureRewindPoint(CN64System& system, uint64_t frame)
-{
+void StateService::CaptureRewindPoint(CN64System& system, uint64_t frame) {
     std::shared_ptr<const MachineSnapshot> previous;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -332,10 +308,10 @@ void StateService::CaptureRewindPoint(CN64System& system, uint64_t frame)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_sessionActive.load()) return;
     HistoryEntry entry;
-    entry.point.id        = m_nextPointId++;
-    entry.point.frame     = frame;
+    entry.point.id = m_nextPointId++;
+    entry.point.frame = frame;
     entry.point.thumbnail = snapshot->thumbnail;
-    entry.snapshot        = std::move(snapshot);
+    entry.snapshot = std::move(snapshot);
     m_history.push_back(std::move(entry));
     TrimHistoryLocked();
 
@@ -344,8 +320,7 @@ void StateService::CaptureRewindPoint(CN64System& system, uint64_t frame)
     m_revision.fetch_add(1);
 }
 
-void StateService::TrimHistoryLocked()
-{
+void StateService::TrimHistoryLocked() {
     const auto memoryUse = [this]() {
         size_t bytes = 0;
         const MachineSnapshot* previous = nullptr;
@@ -359,15 +334,11 @@ void StateService::TrimHistoryLocked()
     while (m_history.size() > 1 && memoryUse() > kRewindMemoryBudget) m_history.pop_front();
 }
 
-void StateService::SetMessageLocked(std::string text)
-{
+void StateService::SetMessageLocked(std::string text) {
     m_message = std::move(text);
     ++m_messageSequence;
 }
 
 } // namespace Nova64
 
-void CN64System::ServiceStates()
-{
-    Nova64::StateService::Instance().Service(*this);
-}
+void CN64System::ServiceStates() { Nova64::StateService::Instance().Service(*this); }

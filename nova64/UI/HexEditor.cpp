@@ -61,15 +61,16 @@ void HexEditor::Render(const uint8_t* mem, size_t size, uint32_t baseAddr, bool 
 
 void HexEditor::DrawToolbar(const uint8_t* mem, size_t size, uint32_t baseAddr, bool wordSwapped) {
     ImGui::SetNextItemWidth(110);
-    const bool gotoEntered = ImGui::InputTextWithHint("##goto", "80000000", m_gotoInput, sizeof(m_gotoInput),
-        ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+    const bool gotoEntered =
+        ImGui::InputTextWithHint("##goto", "80000000", m_gotoInput, sizeof(m_gotoInput),
+                                 ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
     if (ImGui::Button("Go to") || gotoEntered) {
         const unsigned long addr = std::strtoul(m_gotoInput, nullptr, 16);
         // Accept either an absolute address or an offset into the region.
         size_t offset = SIZE_MAX;
         if (addr >= baseAddr && addr - baseAddr < size) offset = addr - baseAddr;
-        else if (addr < size)                           offset = addr;
+        else if (addr < size) offset = addr;
         if (offset != SIZE_MAX) {
             m_cursor = offset;
             m_scrollToCursor = true;
@@ -82,7 +83,7 @@ void HexEditor::DrawToolbar(const uint8_t* mem, size_t size, uint32_t baseAddr, 
     ImGui::SameLine(0, 20);
     ImGui::SetNextItemWidth(170);
     const bool findEntered = ImGui::InputTextWithHint("##find", "bytes, e.g. 3C 1A 80", m_searchInput,
-        sizeof(m_searchInput), ImGuiInputTextFlags_EnterReturnsTrue);
+                                                      sizeof(m_searchInput), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
     if (ImGui::Button("Find next") || findEntered) {
         std::vector<uint8_t> pattern;
@@ -129,9 +130,9 @@ void HexEditor::DrawToolbar(const uint8_t* mem, size_t size, uint32_t baseAddr, 
 }
 
 void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, bool wordSwapped) {
-    const int    bpr       = std::max(1, BytesPerRow);
-    const size_t rows      = (size + bpr - 1) / bpr;
-    const float  rowHeight = ImGui::GetTextLineHeightWithSpacing();
+    const int bpr = std::max(1, BytesPerRow);
+    const size_t rows = (size + bpr - 1) / bpr;
+    const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
 
     if (m_scrollToCursor) {
         ImGui::SetScrollY(static_cast<float>(m_cursor / bpr) * rowHeight);
@@ -143,8 +144,7 @@ void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, boo
     while (clipper.Step()) {
         for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
             const size_t rowBase = static_cast<size_t>(row) * bpr;
-            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.60f, 1.0f), "%08X",
-                               static_cast<unsigned>(baseAddr + rowBase));
+            ImGui::TextColored(ImVec4(0.35f, 0.35f, 0.60f, 1.0f), "%08X", static_cast<unsigned>(baseAddr + rowBase));
 
             for (int col = 0; col < bpr && rowBase + col < size; ++col) {
                 const size_t i = rowBase + col;
@@ -154,7 +154,7 @@ void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, boo
                 std::snprintf(label, sizeof(label), "%02X##%zu", ByteAt(mem, size, i, wordSwapped), i);
                 const bool selected = (i == m_cursor);
                 if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-                else          ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                else ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
                 if (ImGui::SmallButton(label)) m_cursor = i;
                 ImGui::PopStyleColor();
             }
@@ -174,10 +174,10 @@ void HexEditor::DrawRows(const uint8_t* mem, size_t size, uint32_t baseAddr, boo
 
     if (ImGui::IsWindowFocused()) {
         size_t next = m_cursor;
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && m_cursor + 1 < size)            next = m_cursor + 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  && m_cursor > 0)                   next = m_cursor - 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)  && m_cursor + bpr < size)          next = m_cursor + bpr;
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)    && m_cursor >= static_cast<size_t>(bpr)) next = m_cursor - bpr;
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && m_cursor + 1 < size) next = m_cursor + 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && m_cursor > 0) next = m_cursor - 1;
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && m_cursor + bpr < size) next = m_cursor + bpr;
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && m_cursor >= static_cast<size_t>(bpr)) next = m_cursor - bpr;
         if (next != m_cursor) {
             m_cursor = next;
             const float y = static_cast<float>(m_cursor / bpr) * rowHeight;

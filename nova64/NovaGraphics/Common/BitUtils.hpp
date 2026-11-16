@@ -54,9 +54,9 @@ inline uint64_t ByteSwap64(uint64_t x) noexcept {
 inline uint16_t FromBE16(uint16_t x) noexcept { return ByteSwap16(x); }
 inline uint32_t FromBE32(uint32_t x) noexcept { return ByteSwap32(x); }
 inline uint64_t FromBE64(uint64_t x) noexcept { return ByteSwap64(x); }
-inline uint16_t ToBE16(uint16_t x)   noexcept { return ByteSwap16(x); }
-inline uint32_t ToBE32(uint32_t x)   noexcept { return ByteSwap32(x); }
-inline uint64_t ToBE64(uint64_t x)   noexcept { return ByteSwap64(x); }
+inline uint16_t ToBE16(uint16_t x) noexcept { return ByteSwap16(x); }
+inline uint32_t ToBE32(uint32_t x) noexcept { return ByteSwap32(x); }
+inline uint64_t ToBE64(uint64_t x) noexcept { return ByteSwap64(x); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Bit Counting
@@ -104,14 +104,15 @@ inline int CountTrailingZeros32(uint32_t x) noexcept {
 //  Alignment & Power-of-Two
 // ═══════════════════════════════════════════════════════════════════════════
 
-constexpr bool IsPowerOfTwo(uint32_t x) noexcept {
-    return x != 0 && (x & (x - 1)) == 0;
-}
+constexpr bool IsPowerOfTwo(uint32_t x) noexcept { return x != 0 && (x & (x - 1)) == 0; }
 
 constexpr uint32_t NextPowerOfTwo(uint32_t x) noexcept {
     x--;
-    x |= x >> 1; x |= x >> 2; x |= x >> 4;
-    x |= x >> 8; x |= x >> 16;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
     return x + 1;
 }
 
@@ -119,9 +120,7 @@ constexpr uint32_t AlignUp(uint32_t value, uint32_t alignment) noexcept {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-constexpr uint32_t AlignDown(uint32_t value, uint32_t alignment) noexcept {
-    return value & ~(alignment - 1);
-}
+constexpr uint32_t AlignDown(uint32_t value, uint32_t alignment) noexcept { return value & ~(alignment - 1); }
 
 constexpr uint64_t AlignUp64(uint64_t value, uint64_t alignment) noexcept {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -152,34 +151,22 @@ constexpr int32_t SignExtend(uint32_t value, int bits) noexcept {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Convert 16.16 fixed-point to float
-constexpr float Fixed16_16ToFloat(int32_t x) noexcept {
-    return static_cast<float>(x) / 65536.0f;
-}
+constexpr float Fixed16_16ToFloat(int32_t x) noexcept { return static_cast<float>(x) / 65536.0f; }
 
 /// Convert s15.16 fixed-point to float
-constexpr float FixedS15_16ToFloat(int32_t x) noexcept {
-    return static_cast<float>(x) / 65536.0f;
-}
+constexpr float FixedS15_16ToFloat(int32_t x) noexcept { return static_cast<float>(x) / 65536.0f; }
 
 /// Convert s10.5 fixed-point to float
-constexpr float FixedS10_5ToFloat(int16_t x) noexcept {
-    return static_cast<float>(x) / 32.0f;
-}
+constexpr float FixedS10_5ToFloat(int16_t x) noexcept { return static_cast<float>(x) / 32.0f; }
 
 /// Convert s10.2 fixed-point to float
-constexpr float FixedS10_2ToFloat(int16_t x) noexcept {
-    return static_cast<float>(x) / 4.0f;
-}
+constexpr float FixedS10_2ToFloat(int16_t x) noexcept { return static_cast<float>(x) / 4.0f; }
 
 /// Convert float to 16.16 fixed-point
-constexpr int32_t FloatToFixed16_16(float f) noexcept {
-    return static_cast<int32_t>(f * 65536.0f);
-}
+constexpr int32_t FloatToFixed16_16(float f) noexcept { return static_cast<int32_t>(f * 65536.0f); }
 
 /// Convert float to s10.5
-constexpr int16_t FloatToFixedS10_5(float f) noexcept {
-    return static_cast<int16_t>(f * 32.0f);
-}
+constexpr int16_t FloatToFixedS10_5(float f) noexcept { return static_cast<int16_t>(f * 32.0f); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CRC32 Computation
@@ -200,12 +187,12 @@ uint64_t CRC64(const void* data, size_t length, uint64_t seed = 0) noexcept;
 
 /// Convert N64 tile line size to bytes (N64 stores texture data in 64-bit words)
 constexpr uint32_t TileLineBytes(uint32_t lineWords) noexcept {
-    return lineWords * 8;   // Each "word" = 64 bits = 8 bytes in TMEM
+    return lineWords * 8; // Each "word" = 64 bits = 8 bytes in TMEM
 }
 
 /// Calculate TMEM address from tile number and offset
 constexpr uint32_t TMEMAddress(uint32_t tmemBase, uint32_t offset) noexcept {
-    return (tmemBase + offset) & 0xFFF;  // TMEM is 4K (0x1000 bytes)
+    return (tmemBase + offset) & 0xFFF; // TMEM is 4K (0x1000 bytes)
 }
 
 /// Interleave low/high halves of TMEM for CI4/CI8 textures

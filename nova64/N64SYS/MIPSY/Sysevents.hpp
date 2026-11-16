@@ -5,7 +5,7 @@
 #pragma once
 #include <cstdint>
 #include <algorithm>
-#include "../MainSYS.hpp" 
+#include "../MainSYS.hpp"
 
 /**
  * @class CSystemEvents
@@ -19,11 +19,7 @@ class CSystemEvents {
 public:
     static constexpr int MAX_EVENTS = 40;
 
-    CSystemEvents(CN64System& system) 
-        : m_System(system)
-        , m_bDoSomething(false)
-        , m_Count(0) 
-    {
+    CSystemEvents(CN64System& system) : m_System(system), m_bDoSomething(false), m_Count(0) {
         m_Events.fill(SysEvent_CloseCPU);
     }
 
@@ -62,18 +58,10 @@ public:
         bool serviceStates = false;
         for (int i = 0; i < count; i++) {
             switch (events[i]) {
-            case SysEvent_CloseCPU:
-                m_System.m_EndEmulation = true;
-                break;
-            case SysEvent_ResetCPU_Soft:
-                m_System.GameReset();
-                break;
-            case SysEvent_ResetCPU_Hard:
-                m_System.Reset(true, true);
-                break;
-            case SysEvent_PauseCPU:
-                m_System.Pause();
-                break;
+            case SysEvent_CloseCPU:      m_System.m_EndEmulation = true; break;
+            case SysEvent_ResetCPU_Soft: m_System.GameReset(); break;
+            case SysEvent_ResetCPU_Hard: m_System.Reset(true, true); break;
+            case SysEvent_PauseCPU:      m_System.Pause(); break;
             case SysEvent_ResumeCPU:
                 // Resume is handled by clearing the pause state
                 break;
@@ -82,9 +70,7 @@ public:
                     m_System.m_Registers->DoIntrException();
                 }
                 break;
-            case SysEvent_ServiceStates:
-                serviceStates = true;
-                break;
+            case SysEvent_ServiceStates: serviceStates = true; break;
             }
         }
         // Last, so a snapshot sees the machine after every other event.
@@ -92,7 +78,7 @@ public:
             m_System.ServiceStates();
         }
     }
-    
+
     /**
      * @brief Check if there are pending events to process
      */

@@ -13,15 +13,14 @@
 /**
  * @brief Memory protection flags
  */
-enum MEM_PROTECTION
-{
-    MEM_NOACCESS,           ///< No access allowed
-    MEM_READONLY,           ///< Read-only access
-    MEM_READWRITE,          ///< Read and write access
-    MEM_EXECUTE,            ///< Execute only
-    MEM_EXECUTE_READ,       ///< Execute and read access
-    MEM_EXECUTE_READWRITE,  ///< Execute, read, and write access
-    MEM_GUARD               ///< Guard page (Windows-specific, triggers exception on access)
+enum MEM_PROTECTION {
+    MEM_NOACCESS,          ///< No access allowed
+    MEM_READONLY,          ///< Read-only access
+    MEM_READWRITE,         ///< Read and write access
+    MEM_EXECUTE,           ///< Execute only
+    MEM_EXECUTE_READ,      ///< Execute and read access
+    MEM_EXECUTE_READWRITE, ///< Execute, read, and write access
+    MEM_GUARD              ///< Guard page (Windows-specific, triggers exception on access)
 };
 
 /**
@@ -86,13 +85,13 @@ namespace MemoryManagement {
  * @brief Memory region information
  */
 struct MemoryInfo {
-    void* base_address;         ///< Base address of the region
-    void* allocation_base;      ///< Base address of the allocation
-    size_t region_size;         ///< Size of the region
-    MEM_PROTECTION protection;  ///< Current protection
-    bool is_committed;          ///< Whether memory is committed
-    bool is_reserved;           ///< Whether memory is reserved
-    bool is_free;               ///< Whether memory is free
+    void* base_address;        ///< Base address of the region
+    void* allocation_base;     ///< Base address of the allocation
+    size_t region_size;        ///< Size of the region
+    MEM_PROTECTION protection; ///< Current protection
+    bool is_committed;         ///< Whether memory is committed
+    bool is_reserved;          ///< Whether memory is reserved
+    bool is_free;              ///< Whether memory is free
 };
 
 /**

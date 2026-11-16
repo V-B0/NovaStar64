@@ -40,7 +40,7 @@ public:
     void Stop();
 
     [[nodiscard]] bool IsInitialized() const { return m_initialized.load(); }
-    [[nodiscard]] bool IsPlaying()     const { return m_playing.load(); }
+    [[nodiscard]] bool IsPlaying() const { return m_playing.load(); }
     [[nodiscard]] uint32_t SampleRate() const { return m_sampleRate; }
 
     void FeedDevice() {}
@@ -53,11 +53,11 @@ private:
     std::atomic<bool> m_playing{false};
 
     uint32_t m_sdlDeviceId{0};
-    bool     m_sdlAudioInit{false};
-    std::vector<int16_t> m_scaled;   ///< samples after volume, when it isn't 100%
+    bool m_sdlAudioInit{false};
+    std::vector<int16_t> m_scaled; ///< samples after volume, when it isn't 100%
 
     inline static std::atomic<uint32_t> s_volume{100};
-    inline static std::atomic<bool>     s_muted{false};
+    inline static std::atomic<bool> s_muted{false};
 };
 
 } // namespace Nova64::RSP::HLE

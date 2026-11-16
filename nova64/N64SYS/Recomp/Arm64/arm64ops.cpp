@@ -21,19 +21,12 @@ namespace Recompiler {
 // Construction / Destruction
 // =============================================================================
 
-CArm64Ops::CArm64Ops(CodeBlock& codeBlock, Arm64EmitOptions options)
-    : asmjit::a64::Assembler()
-    , asmjit::Logger()
-    , m_CodeBlock(codeBlock)
-    , m_Options(std::move(options))
-{
+CArm64Ops::CArm64Ops(CodeBlock& codeBlock, Arm64EmitOptions options) :
+    asmjit::a64::Assembler(), asmjit::Logger(), m_CodeBlock(codeBlock), m_Options(std::move(options)) {
     Log::debug("CArm64Ops: Created");
 }
 
-CArm64Ops::~CArm64Ops()
-{
-    Log::debug("CArm64Ops: Destroyed");
-}
+CArm64Ops::~CArm64Ops() { Log::debug("CArm64Ops: Destroyed"); }
 
 // =============================================================================
 // Initialization
@@ -123,8 +116,8 @@ void CArm64Ops::EmitCall(void* target, bool isTailCall) {
 void CArm64Ops::HandleError(asmjit::Error error, std::string_view context) {
     m_LastError = error;
     m_LastErrorContext = std::string(context);
-    Log::errorf("CArm64Ops error %u: %.*s", static_cast<unsigned>(error),
-                static_cast<int>(context.size()), context.data());
+    Log::errorf("CArm64Ops error %u: %.*s", static_cast<unsigned>(error), static_cast<int>(context.size()),
+                context.data());
 }
 
 } // namespace Recompiler

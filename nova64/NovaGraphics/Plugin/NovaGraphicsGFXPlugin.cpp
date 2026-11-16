@@ -29,38 +29,31 @@ namespace Nova64::Video {
 //  Construction
 // ═══════════════════════════════════════════════════════════════════════
 
-NovaGraphicsGFXPlugin::NovaGraphicsGFXPlugin()
-    : m_lastStatTime(std::chrono::steady_clock::now())
-{
-}
+NovaGraphicsGFXPlugin::NovaGraphicsGFXPlugin() : m_lastStatTime(std::chrono::steady_clock::now()) {}
 
-NovaGraphicsGFXPlugin::~NovaGraphicsGFXPlugin()
-{
-    if (m_initialized)
-        Shutdown();
+NovaGraphicsGFXPlugin::~NovaGraphicsGFXPlugin() {
+    if (m_initialized) Shutdown();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  PluginBase interface
 // ═══════════════════════════════════════════════════════════════════════
 
-::Plugins::PluginInfo NovaGraphicsGFXPlugin::GetPluginInfo() const
-{
+::Plugins::PluginInfo NovaGraphicsGFXPlugin::GetPluginInfo() const {
     ::Plugins::PluginInfo info{};
-    info.Type                = ::Plugins::PluginType::Graphics;
-    info.Version             = 0x0104; // 1.4
-    info.Name                = "NovaGraphics";
-    info.Author              = "NovaStar64 Team";
-    info.Description         = "OpenGL 4.6 N64 video plugin";
-    info.SupportsThreading   = false;
-    info.SupportsStateSync   = false;
-    info.RequiresAudioSync   = false;
+    info.Type = ::Plugins::PluginType::Graphics;
+    info.Version = 0x0104; // 1.4
+    info.Name = "NovaGraphics";
+    info.Author = "NovaStar64 Team";
+    info.Description = "OpenGL 4.6 N64 video plugin";
+    info.SupportsThreading = false;
+    info.SupportsStateSync = false;
+    info.RequiresAudioSync = false;
     info.SupportsConfigDialog = false;
     return info;
 }
 
-bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
-{
+bool NovaGraphicsGFXPlugin::Initialize(CN64System* system) {
     m_System = system; // PluginBase member
 
     SystemInfo si{};
@@ -68,30 +61,30 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
     if (system) {
         // ── Memory pointers ──────────────────────────────────────
         if (auto* mem = system->GetMemory()) {
-            si.rdram    = mem->Rdram();
-            si.rdramSize= mem->RdramSize();
-            si.dmem     = mem->Dmem();
-            si.imem     = mem->Imem();
+            si.rdram = mem->Rdram();
+            si.rdramSize = mem->RdramSize();
+            si.dmem = mem->Dmem();
+            si.imem = mem->Imem();
 
             // ── VI register pointers ─────────────────────────────
             if (auto* vi = mem->VideoInterface()) {
-                si.viStatusReg  = vi->GetRegisterPtr(VI::Register::STATUS);
-                si.viOriginReg  = vi->GetRegisterPtr(VI::Register::ORIGIN);
-                si.viWidthReg   = vi->GetRegisterPtr(VI::Register::WIDTH);
-                si.viIntrReg    = vi->GetRegisterPtr(VI::Register::INTR);
-                si.viVCurrentReg= vi->GetRegisterPtr(VI::Register::CURRENT);
-                si.viTimingReg  = vi->GetRegisterPtr(VI::Register::BURST);
-                si.viVSyncReg   = vi->GetRegisterPtr(VI::Register::V_SYNC);
-                si.viHSyncReg   = vi->GetRegisterPtr(VI::Register::H_SYNC);
-                si.viXScaleReg  = vi->GetRegisterPtr(VI::Register::X_SCALE);
-                si.viYScaleReg  = vi->GetRegisterPtr(VI::Register::Y_SCALE);
+                si.viStatusReg = vi->GetRegisterPtr(VI::Register::STATUS);
+                si.viOriginReg = vi->GetRegisterPtr(VI::Register::ORIGIN);
+                si.viWidthReg = vi->GetRegisterPtr(VI::Register::WIDTH);
+                si.viIntrReg = vi->GetRegisterPtr(VI::Register::INTR);
+                si.viVCurrentReg = vi->GetRegisterPtr(VI::Register::CURRENT);
+                si.viTimingReg = vi->GetRegisterPtr(VI::Register::BURST);
+                si.viVSyncReg = vi->GetRegisterPtr(VI::Register::V_SYNC);
+                si.viHSyncReg = vi->GetRegisterPtr(VI::Register::H_SYNC);
+                si.viXScaleReg = vi->GetRegisterPtr(VI::Register::X_SCALE);
+                si.viYScaleReg = vi->GetRegisterPtr(VI::Register::Y_SCALE);
             }
 
             // ── DPC register pointers ────────────────────────────
             if (auto* dpc = mem->DPCommandRegisters()) {
-                si.dpcStartReg  = dpc->GetRegisterPtr(DPCRegisters::DPC_START);
-                si.dpcEndReg    = dpc->GetRegisterPtr(DPCRegisters::DPC_END);
-                si.dpcCurrentReg= dpc->GetRegisterPtr(DPCRegisters::DPC_CURRENT);
+                si.dpcStartReg = dpc->GetRegisterPtr(DPCRegisters::DPC_START);
+                si.dpcEndReg = dpc->GetRegisterPtr(DPCRegisters::DPC_END);
+                si.dpcCurrentReg = dpc->GetRegisterPtr(DPCRegisters::DPC_CURRENT);
                 si.dpcStatusReg = dpc->GetRegisterPtr(DPCRegisters::DPC_STATUS);
             }
 
@@ -104,9 +97,9 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
         // ── ROM information ──────────────────────────────────────
         if (auto* rom = system->GetRom(); rom && rom->IsLoaded()) {
             const auto& img = rom->GetImage();
-            si.romName    = img.GetRomName();
+            si.romName = img.GetRomName();
             si.romCountry = static_cast<uint8_t>(img.GetCountry());
-            si.isPAL      = img.IsPal();
+            si.isPAL = img.IsPal();
 
             // Read CRC1/CRC2 from ROM header.
             // ROM data is in host word order (each 32-bit word byte-reversed
@@ -147,7 +140,7 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
             // DPC_STATUS is index 3: PIPE_BUSY=0x020, START_GCLK=0x008
             regs->m_Display_ControlReg[3] &= ~(0x020u | 0x008u);
             if (regs->m_defer_hle_interrupts) {
-                regs->m_deferred_mi_intr |= 0x20;  // MI_INTR_DP
+                regs->m_deferred_mi_intr |= 0x20; // MI_INTR_DP
             } else {
                 regs->m_GfxIntrReg |= 0x20;
                 regs->m_Mips_Interface[2] |= 0x20;
@@ -162,11 +155,8 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
     }
 
     // Apply resolution settings from CLI/system (applied after config load in Initialize)
-    m_videoPlugin.SetPendingResolution(
-        CN64System::s_InternalResScale,
-        CN64System::s_WindowWidth,
-        CN64System::s_WindowHeight
-    );
+    m_videoPlugin.SetPendingResolution(CN64System::s_InternalResScale, CN64System::s_WindowWidth,
+                                       CN64System::s_WindowHeight);
 
     if (!m_videoPlugin.Initialize(si, cb)) {
         LOG_ERROR("NovaGraphicsGFXPlugin: VideoPlugin init failed");
@@ -184,27 +174,22 @@ bool NovaGraphicsGFXPlugin::Initialize(CN64System* system)
     return true;
 }
 
-void NovaGraphicsGFXPlugin::Shutdown()
-{
+void NovaGraphicsGFXPlugin::Shutdown() {
     m_videoPlugin.Shutdown();
     m_initialized = false;
 }
 
-void NovaGraphicsGFXPlugin::Reset(bool coldReset)
-{
+void NovaGraphicsGFXPlugin::Reset(bool coldReset) {
     m_videoPlugin.Reset();
     (void)coldReset;
 }
 
-void NovaGraphicsGFXPlugin::Pause()  { LOG_INFO("NovaGraphics paused"); }
+void NovaGraphicsGFXPlugin::Pause() { LOG_INFO("NovaGraphics paused"); }
 void NovaGraphicsGFXPlugin::Resume() { LOG_INFO("NovaGraphics resumed"); }
 
 bool NovaGraphicsGFXPlugin::IsInitialized() const { return m_initialized; }
 
-void NovaGraphicsGFXPlugin::ShowConfigDialog(void* /*hwndParent*/)
-{
-    m_videoPlugin.OpenConfigDialog();
-}
+void NovaGraphicsGFXPlugin::ShowConfigDialog(void* /*hwndParent*/) { m_videoPlugin.OpenConfigDialog(); }
 
 namespace {
 
@@ -217,13 +202,13 @@ struct PluginState {
     uint32_t version;
     uint32_t ditherFrame;
 };
-constexpr uint32_t kPluginStateMagic   = 0x4E564753; // "NVGS"
+constexpr uint32_t kPluginStateMagic = 0x4E564753; // "NVGS"
 constexpr uint32_t kPluginStateVersion = 2;
 
 } // namespace
 
 size_t NovaGraphicsGFXPlugin::SaveState(uint8_t* data, size_t size) {
-    if (!data) return sizeof(PluginState);   // size query
+    if (!data) return sizeof(PluginState); // size query
     if (size < sizeof(PluginState)) return 0;
 
     PluginState state{kPluginStateMagic, kPluginStateVersion, 0};
@@ -248,9 +233,7 @@ bool NovaGraphicsGFXPlugin::LoadState(const uint8_t* data, size_t size) {
 //  GFXPlugin interface
 // ═══════════════════════════════════════════════════════════════════════
 
-bool NovaGraphicsGFXPlugin::InitializeDisplay(void* hwnd,
-                                           const ::Plugins::RenderSettings& settings)
-{
+bool NovaGraphicsGFXPlugin::InitializeDisplay(void* hwnd, const ::Plugins::RenderSettings& settings) {
     (void)settings;
     (void)hwnd;
     // The window handle is already managed via SetExternalWindow().
@@ -259,29 +242,25 @@ bool NovaGraphicsGFXPlugin::InitializeDisplay(void* hwnd,
     return true;
 }
 
-void NovaGraphicsGFXPlugin::ResizeDisplay(uint32_t width, uint32_t height)
-{
+void NovaGraphicsGFXPlugin::ResizeDisplay(uint32_t width, uint32_t height) {
     // VideoPlugin handles resize through its own WindowManager
     (void)width;
     (void)height;
 }
 
-void NovaGraphicsGFXPlugin::ProcessDList(uint32_t /*start*/, uint32_t /*end*/)
-{
+void NovaGraphicsGFXPlugin::ProcessDList(uint32_t /*start*/, uint32_t /*end*/) {
     if (!m_initialized) return;
 
     m_videoPlugin.ProcessDList();
 }
 
-void NovaGraphicsGFXPlugin::ProcessDListShadow(uint32_t /*start*/, uint32_t /*end*/)
-{
+void NovaGraphicsGFXPlugin::ProcessDListShadow(uint32_t /*start*/, uint32_t /*end*/) {
     if (!m_initialized) return;
 
     m_videoPlugin.ProcessDListShadow();
 }
 
-void NovaGraphicsGFXPlugin::ProcessRDPCommand(uint64_t cmd)
-{
+void NovaGraphicsGFXPlugin::ProcessRDPCommand(uint64_t cmd) {
     if (!m_initialized) return;
 
     // Forward single RDP command to VideoPlugin's RDP processor
@@ -290,23 +269,22 @@ void NovaGraphicsGFXPlugin::ProcessRDPCommand(uint64_t cmd)
     m_videoPlugin.ProcessRDPCommand(w0, w1);
 }
 
-void NovaGraphicsGFXPlugin::UpdateRDPStatus()
-{
+void NovaGraphicsGFXPlugin::UpdateRDPStatus() {
     // The RSP HLE has written RDP commands to DRAM and updated DPC registers.
     // Forward them to the VideoPlugin RDP processor.
     m_videoPlugin.ProcessRDPList();
 }
 
-void NovaGraphicsGFXPlugin::UpdateScreen()
-{
+void NovaGraphicsGFXPlugin::UpdateScreen() {
     m_videoPlugin.UpdateScreen();
     m_viCount++;
-    
+
     // Log DL count for SM64 troubleshooting
     const auto& stats = m_videoPlugin.GetFrameStats();
     if ((stats.viInterrupts % 60) == 0) {
-        Log::infof("NovaGraphics: Last frame DLs: %u | RDPcmds: %u | Total VIs: %u | HLE Rendered: %s", 
-                   stats.dlistCount, stats.rdpCommandCount, stats.viInterrupts, m_videoPlugin.GetRDPProcessor() ? "YES" : "NO");
+        Log::infof("NovaGraphics: Last frame DLs: %u | RDPcmds: %u | Total VIs: %u | HLE Rendered: %s",
+                   stats.dlistCount, stats.rdpCommandCount, stats.viInterrupts,
+                   m_videoPlugin.GetRDPProcessor() ? "YES" : "NO");
     }
 
     // Compute stats every second
@@ -320,23 +298,19 @@ void NovaGraphicsGFXPlugin::UpdateScreen()
     }
 }
 
-void NovaGraphicsGFXPlugin::SwapBuffers()
-{
+void NovaGraphicsGFXPlugin::SwapBuffers() {
     // Swap is done inside UpdateScreen via WindowManager
 }
 
-::Plugins::FrameBufferInfo NovaGraphicsGFXPlugin::GetFrameBufferInfo() const
-{
+::Plugins::FrameBufferInfo NovaGraphicsGFXPlugin::GetFrameBufferInfo() const {
     ::Plugins::FrameBufferInfo fb{};
-    fb.Width  = 320;
+    fb.Width = 320;
     fb.Height = 240;
     return fb;
 }
 
-void NovaGraphicsGFXPlugin::ReadFrameBuffer(uint8_t* dest, uint32_t addr,
-                                          uint32_t width, uint32_t height,
-                                          uint32_t size)
-{
+void NovaGraphicsGFXPlugin::ReadFrameBuffer(uint8_t* dest, uint32_t addr, uint32_t width, uint32_t height,
+                                            uint32_t size) {
     if (!dest) return;
 
     // Read back from the GPU-rendered framebuffer into RDRAM.
@@ -350,10 +324,8 @@ void NovaGraphicsGFXPlugin::ReadFrameBuffer(uint8_t* dest, uint32_t addr,
     rdp->ReadFrameBuffer(addr, byteCount, dest);
 }
 
-void NovaGraphicsGFXPlugin::WriteFrameBuffer(const uint8_t* src, uint32_t addr,
-                                           uint32_t width, uint32_t height,
-                                           uint32_t size)
-{
+void NovaGraphicsGFXPlugin::WriteFrameBuffer(const uint8_t* src, uint32_t addr, uint32_t width, uint32_t height,
+                                             uint32_t size) {
     if (!src) return;
 
     // Upload CPU-side pixel data to the GPU framebuffer (RDRAM write-back).
@@ -367,30 +339,22 @@ void NovaGraphicsGFXPlugin::WriteFrameBuffer(const uint8_t* src, uint32_t addr,
 
 bool NovaGraphicsGFXPlugin::IsFrameReady() const { return true; }
 
-void NovaGraphicsGFXPlugin::GetStatistics(float& fps, float& vis) const
-{
+void NovaGraphicsGFXPlugin::GetStatistics(float& fps, float& vis) const {
     fps = m_fps;
     vis = m_vis;
 }
 
-bool NovaGraphicsGFXPlugin::CaptureScreenshot(const std::string& filename)
-{
+bool NovaGraphicsGFXPlugin::CaptureScreenshot(const std::string& filename) {
     m_videoPlugin.TakeScreenshot(filename);
     return true;
 }
 
-double NovaGraphicsGFXPlugin::GetLastSwapTimeMs() const
-{
-    return m_videoPlugin.GetLastSwapTimeMs();
-}
+double NovaGraphicsGFXPlugin::GetLastSwapTimeMs() const { return m_videoPlugin.GetLastSwapTimeMs(); }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Factory
 // ═══════════════════════════════════════════════════════════════════════
 
-std::unique_ptr<::Plugins::GFXPlugin> CreateNovaGraphicsPlugin()
-{
-    return std::make_unique<NovaGraphicsGFXPlugin>();
-}
+std::unique_ptr<::Plugins::GFXPlugin> CreateNovaGraphicsPlugin() { return std::make_unique<NovaGraphicsGFXPlugin>(); }
 
 } // namespace Nova64::Video

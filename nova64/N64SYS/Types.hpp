@@ -12,7 +12,8 @@
 #include <emmintrin.h>
 #endif
 
-namespace N64Types {enum class PauseType {
+namespace N64Types {
+enum class PauseType {
     None,
     FromMenu,
     AppLostActive,
@@ -27,53 +28,19 @@ namespace N64Types {enum class PauseType {
     Enhancement
 };
 
-enum class CpuType : int8_t {  
-    Default = -1,
-    Interpreter = 1,
-    Recompiler = 2,
-    SyncCores = 3
-};
+enum class CpuType : int8_t { Default = -1, Interpreter = 1, Recompiler = 2, SyncCores = 3 };
 
-enum class FramerateType : uint8_t {
-    VIs,
-    DLs,
-    Percent,
-    VIsAndDLs
-};
+enum class FramerateType : uint8_t { VIs, DLs, Percent, VIsAndDLs };
 
-enum class SaveChipType : int8_t {
-    Auto = -1,
-    Eeprom4K,
-    Eeprom16K,
-    Sram,
-    FlashRam,
-    ControllerPak,  
-    None
-};
+enum class SaveChipType : int8_t { Auto = -1, Eeprom4K, Eeprom16K, Sram, FlashRam, ControllerPak, None };
 
-enum class SaveDiskType : uint8_t {
-    ShadowFile,
-    RamFile
-};
+enum class SaveDiskType : uint8_t { ShadowFile, RamFile };
 
-enum class DiskSeekType : uint8_t {
-    Turbo,
-    Slow
-};
+enum class DiskSeekType : uint8_t { Turbo, Slow };
 
-enum class FuncLookupMethod : int8_t {
-    Default = -1,
-    PhysicalLookup = 1,
-    VirtualLookup = 2,
-    ChangeMemory = 3
-};
+enum class FuncLookupMethod : int8_t { Default = -1, PhysicalLookup = 1, VirtualLookup = 2, ChangeMemory = 3 };
 
-enum class SystemType : uint8_t {
-    NTSC = 0,
-    PAL = 1,
-    MPAL = 2
-};
-
+enum class SystemType : uint8_t { NTSC = 0, PAL = 1, MPAL = 2 };
 
 enum class CicChip : int8_t {
     Unknown = -1,
@@ -95,23 +62,23 @@ enum class CicChip : int8_t {
 enum class CountryCode : uint8_t {
     Unknown = 0,
     NTSC_Beta = 0x37,
-    Asian_NTSC = 0x41,  // A
-    Brazil = 0x42,      // B
-    China = 0x43,       // C
-    Germany = 0x44,     // D
-    USA = 0x45,         // E
-    France = 0x46,      // F
-    Gateway64_NTSC = 0x47,  // G
-    Netherlands = 0x48, // H
-    Italy = 0x49,       // I
-    Japan = 0x4A,       // J
-    Korea = 0x4B,       // K
+    Asian_NTSC = 0x41,     // A
+    Brazil = 0x42,         // B
+    China = 0x43,          // C
+    Germany = 0x44,        // D
+    USA = 0x45,            // E
+    France = 0x46,         // F
+    Gateway64_NTSC = 0x47, // G
+    Netherlands = 0x48,    // H
+    Italy = 0x49,          // I
+    Japan = 0x4A,          // J
+    Korea = 0x4B,          // K
     Gateway64_PAL = 0x4C,  // L
-    Canada = 0x4E,      // N
-    Europe = 0x50,      // P
-    Spain = 0x53,       // S
-    Australia = 0x55,   // U
-    Scandinavia = 0x57, // W
+    Canada = 0x4E,         // N
+    Europe = 0x50,         // P
+    Spain = 0x53,          // S
+    Australia = 0x55,      // U
+    Scandinavia = 0x57,    // W
     EuropeanX_PAL = 0x58,  // X
     EuropeanY_PAL = 0x59   // Y
 };
@@ -126,7 +93,7 @@ enum class ProfileTimer : uint8_t {
     UpdateScreen,
     UpdateFPS,
     Idle,
-    Count  
+    Count
 };
 
 enum class PipelineStage : uint8_t {
@@ -148,15 +115,14 @@ enum class PipelineStage : uint8_t {
 // Helper functions for enums
 constexpr const char* to_string(SystemType type) {
     switch (type) {
-        case SystemType::NTSC: return "NTSC";
-        case SystemType::PAL: return "PAL";
-        case SystemType::MPAL: return "MPAL";
-        default: return "Unknown";
+    case SystemType::NTSC: return "NTSC";
+    case SystemType::PAL:  return "PAL";
+    case SystemType::MPAL: return "MPAL";
+    default:               return "Unknown";
     }
 }
 
-union MIPS_WORD
-{
+union MIPS_WORD {
     int32_t W;
     uint32_t UW;
     int16_t HW[2];
@@ -167,8 +133,7 @@ union MIPS_WORD
     float F;
 };
 
-union MIPS_DWORD
-{
+union MIPS_DWORD {
     int64_t DW;
     uint64_t UDW;
     int32_t W[2];
@@ -182,8 +147,4 @@ union MIPS_DWORD
     float F[2];
 };
 
-};
-
-
-   
-
+}; // namespace N64Types

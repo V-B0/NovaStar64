@@ -22,14 +22,12 @@ namespace {
 
 constexpr uint32_t kPageSize = 0x1000;
 
-const std::shared_ptr<const Nova64::RdramPage>& ZeroPage()
-{
+const std::shared_ptr<const Nova64::RdramPage>& ZeroPage() {
     static const std::shared_ptr<const Nova64::RdramPage> page = std::make_shared<const Nova64::RdramPage>();
     return page;
 }
 
-bool AtInstructionBoundary(const CN64System& system)
-{
+bool AtInstructionBoundary(const CN64System& system) {
     return system.m_PipelineStage == N64Types::PipelineStage::Normal ||
            system.m_PipelineStage == N64Types::PipelineStage::Jump;
 }
@@ -40,21 +38,19 @@ bool AtInstructionBoundary(const CN64System& system)
 // CN64System
 // ============================================================================
 
-void CN64System::SerializeMachineState(Nova64::StateArchive& ar)
-{
+void CN64System::SerializeMachineState(Nova64::StateArchive& ar) {
     CRegisters& reg = *m_Registers;
 
     ar.Section("CPU ");
     // The next instruction to run is PC, or a jump that is already pending (an
     // interrupt raised by the timer that just ran). Both engines apply a
     // pending jump before executing anything, so a load always sets one up.
-    uint64_t nextPC = (m_PipelineStage == N64Types::PipelineStage::Jump) ? m_JumpToLocation
-                                                                         : reg.m_PROGRAM_COUNTER;
+    uint64_t nextPC = (m_PipelineStage == N64Types::PipelineStage::Jump) ? m_JumpToLocation : reg.m_PROGRAM_COUNTER;
     ar.Value(nextPC);
     if (ar.IsLoading()) {
         reg.m_PROGRAM_COUNTER = nextPC;
-        m_JumpToLocation      = nextPC;
-        m_PipelineStage       = N64Types::PipelineStage::Jump;
+        m_JumpToLocation = nextPC;
+        m_PipelineStage = N64Types::PipelineStage::Jump;
     }
     ar.Value(reg.m_GPR);
     ar.Value(reg.m_CP0);
@@ -111,8 +107,7 @@ void CN64System::SerializeMachineState(Nova64::StateArchive& ar)
     memory.GetFlashRam().SerializeState(ar);
 }
 
-void CN64System::FinishStateLoad()
-{
+void CN64System::FinishStateLoad() {
     // Compiled code and the self-modifying-code map describe the old RDRAM.
     FlushCompiledCode();
     std::memset(m_Memory->GetSmcPageBitmap(), 0, Nova64::MipsMemoryVM::kSmcChunks);
@@ -126,8 +121,7 @@ namespace Nova64 {
 // Snapshots
 // ============================================================================
 
-bool CaptureMachineState(CN64System& system, MachineSnapshot& out, const MachineSnapshot* previous)
-{
+bool CaptureMachineState(CN64System& system, MachineSnapshot& out, const MachineSnapshot* previous) {
     MipsMemoryVM* memory = system.GetMemory();
     const uint8_t* rdram = memory ? memory->Rdram() : nullptr;
     if (!rdram || !AtInstructionBoundary(system)) return false;
@@ -161,8 +155,7 @@ bool CaptureMachineState(CN64System& system, MachineSnapshot& out, const Machine
     return true;
 }
 
-bool RestoreMachineState(CN64System& system, const MachineSnapshot& snapshot)
-{
+bool RestoreMachineState(CN64System& system, const MachineSnapshot& snapshot) {
     MipsMemoryVM* memory = system.GetMemory();
     uint8_t* rdram = memory ? memory->Rdram() : nullptr;
     if (!rdram || snapshot.rdramSize != memory->RdramSize() ||
@@ -182,7 +175,7 @@ bool RestoreMachineState(CN64System& system, const MachineSnapshot& snapshot)
     for (size_t i = 0; i < snapshot.pages.size(); ++i) {
         const auto& page = snapshot.pages[i];
         if (page) std::memcpy(rdram + i * kPageSize, page->data(), kPageSize);
-        else      std::memset(rdram + i * kPageSize, 0, kPageSize);
+        else std::memset(rdram + i * kPageSize, 0, kPageSize);
     }
     if (auto* plugins = system.GetPluginManager(); plugins && !snapshot.plugins.empty()) {
         plugins->LoadState(snapshot.plugins);
@@ -191,8 +184,7 @@ bool RestoreMachineState(CN64System& system, const MachineSnapshot& snapshot)
     return ar.Ok();
 }
 
-size_t SnapshotMemoryUse(const MachineSnapshot& snapshot, const MachineSnapshot* previous)
-{
+size_t SnapshotMemoryUse(const MachineSnapshot& snapshot, const MachineSnapshot* previous) {
     size_t bytes = snapshot.core.size() + snapshot.plugins.size();
     if (snapshot.thumbnail) bytes += snapshot.thumbnail->rgba.size();
     const bool share = previous && previous->pages.size() == snapshot.pages.size();
@@ -204,8 +196,7 @@ size_t SnapshotMemoryUse(const MachineSnapshot& snapshot, const MachineSnapshot*
     return bytes;
 }
 
-bool GetRomHeader(const CN64System& system, RomHeader& out)
-{
+bool GetRomHeader(const CN64System& system, RomHeader& out) {
     auto* rom = system.GetRom();
     if (!rom || !rom->IsLoaded() || rom->GetImage().Size() < out.size()) return false;
     std::memcpy(out.data(), rom->GetImage().Data(), out.size());
@@ -228,41 +219,34 @@ bool GetRomHeader(const CN64System& system, RomHeader& out)
 
 namespace {
 
-constexpr char     kFileMagic[4]     = {'N', '6', '4', 'S'};
-constexpr uint32_t kFileVersion      = 2;
-constexpr uint32_t kMaxBlobSize      = 16u * 1024 * 1024;
+constexpr char kFileMagic[4] = {'N', '6', '4', 'S'};
+constexpr uint32_t kFileVersion = 2;
+constexpr uint32_t kMaxBlobSize = 16u * 1024 * 1024;
 constexpr uint32_t kMaxThumbnailSide = 1024;
-constexpr uint32_t kMaxRdramSize     = 0x800000;
+constexpr uint32_t kMaxRdramSize = 0x800000;
 
 // CRC1/CRC2 and the game code identify the game; the rest of the header can
 // differ between otherwise identical dumps.
-bool SameGame(const RomHeader& a, const RomHeader& b)
-{
+bool SameGame(const RomHeader& a, const RomHeader& b) {
     return std::memcmp(a.data() + 0x10, b.data() + 0x10, 8) == 0 &&
            std::memcmp(a.data() + 0x38, b.data() + 0x38, 8) == 0;
 }
 
-template <class T>
-void Put(std::ostream& out, const T& value)
-{
+template <class T> void Put(std::ostream& out, const T& value) {
     out.write(reinterpret_cast<const char*>(&value), sizeof(T));
 }
 
-template <class T>
-bool Get(std::istream& in, T& value)
-{
+template <class T> bool Get(std::istream& in, T& value) {
     in.read(reinterpret_cast<char*>(&value), sizeof(T));
     return static_cast<bool>(in);
 }
 
-void PutBlob(std::ostream& out, const std::vector<uint8_t>& blob)
-{
+void PutBlob(std::ostream& out, const std::vector<uint8_t>& blob) {
     Put(out, static_cast<uint32_t>(blob.size()));
     out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
 }
 
-bool GetBlob(std::istream& in, std::vector<uint8_t>& blob)
-{
+bool GetBlob(std::istream& in, std::vector<uint8_t>& blob) {
     uint32_t size = 0;
     if (!Get(in, size) || size > kMaxBlobSize) return false;
     blob.resize(size);
@@ -274,8 +258,7 @@ enum class HeaderResult { Ok, NotAState, OldVersion, Damaged };
 
 // Everything before the machine state: magic, version, game, time and thumbnail.
 HeaderResult ReadHeader(std::istream& in, RomHeader& rom, std::time_t& savedAt,
-                        std::shared_ptr<const StateThumbnail>& thumbnail)
-{
+                        std::shared_ptr<const StateThumbnail>& thumbnail) {
     char magic[4] = {};
     if (!in.read(magic, sizeof(magic)) || std::memcmp(magic, kFileMagic, sizeof(magic)) != 0)
         return HeaderResult::NotAState;
@@ -285,13 +268,12 @@ HeaderResult ReadHeader(std::istream& in, RomHeader& rom, std::time_t& savedAt,
 
     int64_t time = 0;
     uint32_t width = 0, height = 0;
-    if (!in.read(reinterpret_cast<char*>(rom.data()), static_cast<std::streamsize>(rom.size())) ||
-        !Get(in, time) || !Get(in, width) || !Get(in, height) ||
-        width > kMaxThumbnailSide || height > kMaxThumbnailSide) {
+    if (!in.read(reinterpret_cast<char*>(rom.data()), static_cast<std::streamsize>(rom.size())) || !Get(in, time) ||
+        !Get(in, width) || !Get(in, height) || width > kMaxThumbnailSide || height > kMaxThumbnailSide) {
         return HeaderResult::Damaged;
     }
     auto thumb = std::make_shared<StateThumbnail>();
-    thumb->width  = static_cast<int>(width);
+    thumb->width = static_cast<int>(width);
     thumb->height = static_cast<int>(height);
     thumb->rgba.resize(static_cast<size_t>(width) * height * 4);
     if (!thumb->rgba.empty() &&
@@ -300,15 +282,14 @@ HeaderResult ReadHeader(std::istream& in, RomHeader& rom, std::time_t& savedAt,
     }
     savedAt = static_cast<std::time_t>(time);
     if (thumb->rgba.empty()) thumbnail.reset();
-    else                     thumbnail = std::move(thumb);
+    else thumbnail = std::move(thumb);
     return HeaderResult::Ok;
 }
 
 } // namespace
 
-bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot,
-                    const RomHeader& rom, std::string* error)
-{
+bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot, const RomHeader& rom,
+                    std::string* error) {
     std::error_code ec;
     const std::filesystem::path file(path);
     if (file.has_parent_path()) std::filesystem::create_directories(file.parent_path(), ec);
@@ -332,7 +313,9 @@ bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot,
                               thumb->rgba.size() == static_cast<size_t>(thumb->width) * thumb->height * 4;
         Put(out, hasThumb ? static_cast<uint32_t>(thumb->width) : uint32_t{0});
         Put(out, hasThumb ? static_cast<uint32_t>(thumb->height) : uint32_t{0});
-        if (hasThumb) out.write(reinterpret_cast<const char*>(thumb->rgba.data()), static_cast<std::streamsize>(thumb->rgba.size()));
+        if (hasThumb)
+            out.write(reinterpret_cast<const char*>(thumb->rgba.data()),
+                      static_cast<std::streamsize>(thumb->rgba.size()));
 
         Put(out, snapshot.frame);
         PutBlob(out, snapshot.core);
@@ -363,9 +346,7 @@ bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot,
     return true;
 }
 
-bool ReadStateFile(const std::string& path, const RomHeader& rom,
-                   MachineSnapshot& out, std::string* error)
-{
+bool ReadStateFile(const std::string& path, const RomHeader& rom, MachineSnapshot& out, std::string* error) {
     const auto fail = [error](const char* message) {
         if (error) *error = message;
         return false;
@@ -378,9 +359,9 @@ bool ReadStateFile(const std::string& path, const RomHeader& rom,
     std::time_t savedAt = 0;
     MachineSnapshot snapshot;
     switch (ReadHeader(in, fileRom, savedAt, snapshot.thumbnail)) {
-        case HeaderResult::Ok:         break;
-        case HeaderResult::OldVersion: return fail("That save state was made by an older version and can't be loaded.");
-        default:                       return fail("That save state file is damaged.");
+    case HeaderResult::Ok:         break;
+    case HeaderResult::OldVersion: return fail("That save state was made by an older version and can't be loaded.");
+    default:                       return fail("That save state file is damaged.");
     }
     if (!SameGame(fileRom, rom)) return fail("That save state is from a different game.");
 
@@ -409,8 +390,7 @@ bool ReadStateFile(const std::string& path, const RomHeader& rom,
 }
 
 bool ReadStateFileSummary(const std::string& path, std::time_t& savedAt,
-                          std::shared_ptr<const StateThumbnail>& thumbnail)
-{
+                          std::shared_ptr<const StateThumbnail>& thumbnail) {
     std::ifstream in(path, std::ios::binary);
     RomHeader rom{};
     return in && ReadHeader(in, rom, savedAt, thumbnail) == HeaderResult::Ok;

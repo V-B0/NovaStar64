@@ -17,9 +17,9 @@ namespace Nova64::RSP {
 // RSP CPU execution method
 // ──────────────────────────────────────────────
 enum class RSPCpuMethod : uint32_t {
-    Interpreter         = 0,
-    HleWithFallback     = 2,  // known microcode as HLE first, anything else on the RSP engine (LLE rendering uses this)
-    HighLevelEmulation  = 3,
+    Interpreter = 0,
+    HleWithFallback = 2, // known microcode as HLE first, anything else on the RSP engine (LLE rendering uses this)
+    HighLevelEmulation = 3,
 };
 
 // ──────────────────────────────────────────────
@@ -40,14 +40,17 @@ public:
     /// also decides whether known microcode runs as HLE).
     [[nodiscard]] static RSPEngine Engine() { return s_Engine; }
     /// Sticky: an explicit choice (command line, launcher) outranks the environment variable.
-    static void SetEngine(RSPEngine engine) { s_Engine = engine; s_UserEngineSet = true; }
-    [[nodiscard]] static bool RomOpen()           { return s_RomOpen; }
-    [[nodiscard]] static bool IsDebugging()       { return s_DebuggingEnabled; }
-    [[nodiscard]] static bool IsGraphicsHle()     { return s_GraphicsHle; }
-    [[nodiscard]] static bool IsAudioHle()        { return s_AudioHle; }
-    [[nodiscard]] static bool IsProfiling()       { return s_Profiling; }
-    [[nodiscard]] static bool IsLogAsmCode()      { return s_LogAsmCode; }
-    [[nodiscard]] static bool IsSyncCPU()         { return s_SyncCPU; }
+    static void SetEngine(RSPEngine engine) {
+        s_Engine = engine;
+        s_UserEngineSet = true;
+    }
+    [[nodiscard]] static bool RomOpen() { return s_RomOpen; }
+    [[nodiscard]] static bool IsDebugging() { return s_DebuggingEnabled; }
+    [[nodiscard]] static bool IsGraphicsHle() { return s_GraphicsHle; }
+    [[nodiscard]] static bool IsAudioHle() { return s_AudioHle; }
+    [[nodiscard]] static bool IsProfiling() { return s_Profiling; }
+    [[nodiscard]] static bool IsLogAsmCode() { return s_LogAsmCode; }
+    [[nodiscard]] static bool IsSyncCPU() { return s_SyncCPU; }
 
     // ── Mutators ──
     static void EnableDebugging(bool enabled);
@@ -76,30 +79,30 @@ public:
 
     // Predicates consumed by ApplyPerGameOverrides.
     [[nodiscard]] static bool UserGraphicsHleSet() { return s_UserGraphicsHleSet; }
-    [[nodiscard]] static bool UserAudioHleSet()    { return s_UserAudioHleSet; }
-    [[nodiscard]] static bool UserCPUMethodSet()   { return s_UserCPUMethodSet; }
+    [[nodiscard]] static bool UserAudioHleSet() { return s_UserAudioHleSet; }
+    [[nodiscard]] static bool UserCPUMethodSet() { return s_UserCPUMethodSet; }
 
 private:
-    static bool         s_DebuggingEnabled;
-    static bool         s_RomOpen;
+    static bool s_DebuggingEnabled;
+    static bool s_RomOpen;
     static RSPCpuMethod s_CPUMethod;
-    static RSPEngine    s_Engine;
-    static bool         s_UserEngineSet;
-    static bool         s_GraphicsHle;
-    static bool         s_AudioHle;
-    static bool         s_Profiling;
-    static bool         s_LogAsmCode;
-    static bool         s_SyncCPU;
-    static bool         s_RspMultiThreaded;
-    static bool         s_ConditionalMove;
-    static bool         s_ShowErrors;
-    static bool         s_BreakOnStart;
-    static bool         s_LogRDP;
-    static bool         s_IndividualBlock;
+    static RSPEngine s_Engine;
+    static bool s_UserEngineSet;
+    static bool s_GraphicsHle;
+    static bool s_AudioHle;
+    static bool s_Profiling;
+    static bool s_LogAsmCode;
+    static bool s_SyncCPU;
+    static bool s_RspMultiThreaded;
+    static bool s_ConditionalMove;
+    static bool s_ShowErrors;
+    static bool s_BreakOnStart;
+    static bool s_LogRDP;
+    static bool s_IndividualBlock;
     // MLE pivot sticky-user-override flags
-    static bool         s_UserGraphicsHleSet;
-    static bool         s_UserAudioHleSet;
-    static bool         s_UserCPUMethodSet;
+    static bool s_UserGraphicsHleSet;
+    static bool s_UserAudioHleSet;
+    static bool s_UserCPUMethodSet;
 };
 
 } // namespace Nova64::RSP

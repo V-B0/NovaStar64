@@ -1,0 +1,50 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++20
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+IndentCaseLabels: false
+
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: AfterColon
+PointerAlignment: Left
+DerivePointerAlignment: false
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCaseColons: false
+AlignConsecutiveMacros: Consecutive
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 1
+
+MaxEmptyLinesToKeep: 1
+EmptyLineBeforeAccessModifier: LogicalBlock
+InsertNewlineAtEOF: true
+
+# The order of includes matters in places (platform headers, the generated .inc files),
+# and comments often carry hardware notes laid out by hand, so neither is touched.
+SortIncludes: Never
+ReflowComments: false
+IndentPPDirectives: None

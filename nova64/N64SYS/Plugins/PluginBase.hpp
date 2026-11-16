@@ -29,12 +29,7 @@ namespace Plugins {
  * @enum PluginType
  * @brief Types of N64 plugins
  */
-enum class PluginType : uint8_t {
-    Graphics = 1,
-    Audio = 2,
-    Input = 3,
-    RSP = 4
-};
+enum class PluginType : uint8_t { Graphics = 1, Audio = 2, Input = 3, RSP = 4 };
 
 /**
  * @struct PluginInfo
@@ -42,16 +37,16 @@ enum class PluginType : uint8_t {
  */
 struct PluginInfo {
     PluginType Type;
-    uint16_t Version;               // Plugin API version (0x0104 = 1.4)
-    std::string Name;               // Plugin name
-    std::string Author;             // Plugin author
-    std::string Description;        // Plugin description
-    
+    uint16_t Version;        // Plugin API version (0x0104 = 1.4)
+    std::string Name;        // Plugin name
+    std::string Author;      // Plugin author
+    std::string Description; // Plugin description
+
     // Capabilities
-    bool SupportsThreading;         // Can run in separate thread
-    bool SupportsStateSync;         // Supports save state synchronization
-    bool RequiresAudioSync;         // Needs audio synchronization
-    bool SupportsConfigDialog;      // Has configuration UI
+    bool SupportsThreading;    // Can run in separate thread
+    bool SupportsStateSync;    // Supports save state synchronization
+    bool RequiresAudioSync;    // Needs audio synchronization
+    bool SupportsConfigDialog; // Has configuration UI
 };
 
 /**
@@ -61,69 +56,69 @@ struct PluginInfo {
 class PluginBase {
 public:
     virtual ~PluginBase() = default;
-    
+
     // ========================================================================
     // Plugin Information
     // ========================================================================
-    
+
     /**
      * @brief Get plugin information
      * @return Plugin metadata
      */
     virtual PluginInfo GetPluginInfo() const = 0;
-    
+
     // ========================================================================
     // Lifecycle Management
     // ========================================================================
-    
+
     /**
      * @brief Initialize plugin with system reference
      * @param system N64 system instance
      * @return true on success
      */
     virtual bool Initialize(CN64System* system) = 0;
-    
+
     /**
      * @brief Shutdown plugin and release resources
      */
     virtual void Shutdown() = 0;
-    
+
     /**
      * @brief Reset plugin to initial state
      * @param coldReset true for cold reset, false for soft reset
      */
     virtual void Reset(bool coldReset) = 0;
-    
+
     /**
      * @brief Pause plugin processing
      */
     virtual void Pause() = 0;
-    
+
     /**
      * @brief Resume plugin processing
      */
     virtual void Resume() = 0;
-    
+
     // ========================================================================
     // Configuration
     // ========================================================================
-    
+
     /**
      * @brief Check if plugin is properly initialized
      * @return true if initialized
      */
     virtual bool IsInitialized() const = 0;
-    
+
     /**
      * @brief Open configuration dialog
      * @param hwndParent Parent window handle
      */
     virtual void ShowConfigDialog(void* hwndParent) = 0;
-    
+
     // ========================================================================
     // Save States
     // ========================================================================
-    
+
     /**
      * @brief Save plugin state
      * @param data Output buffer for state data
@@ -131,7 +126,7 @@ public:
      * @return Number of bytes written
      */
     virtual size_t SaveState(uint8_t* data, size_t size) = 0;
-    
+
     /**
      * @brief Load plugin state
      * @param data State data to load
@@ -139,7 +134,7 @@ public:
      * @return true on success
      */
     virtual bool LoadState(const uint8_t* data, size_t size) = 0;
-    
+
 protected:
     CN64System* m_System = nullptr;
 };

@@ -26,13 +26,9 @@ inline int16_t RDRAMReadHalfSigned(const uint8_t* rdram, uint32_t addr) {
     return *reinterpret_cast<const int16_t*>(rdram + (addr ^ 2));
 }
 
-inline uint8_t RDRAMReadByte(const uint8_t* rdram, uint32_t addr) {
-    return rdram[addr ^ 3];
-}
+inline uint8_t RDRAMReadByte(const uint8_t* rdram, uint32_t addr) { return rdram[addr ^ 3]; }
 
-inline void RDRAMWriteByte(uint8_t* rdram, uint32_t addr, uint8_t val) {
-    rdram[addr ^ 3] = val;
-}
+inline void RDRAMWriteByte(uint8_t* rdram, uint32_t addr, uint8_t val) { rdram[addr ^ 3] = val; }
 
 inline void RDRAMWriteHalf(uint8_t* rdram, uint32_t addr, uint16_t val) {
     *reinterpret_cast<uint16_t*>(rdram + (addr ^ 2)) = val;

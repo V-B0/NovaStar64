@@ -39,16 +39,13 @@ X64RegisterInfo X64RegisterInfo::GetInfo(X64RegisterType reg) {
         info.size = 8;
         info.index = static_cast<uint8_t>(idx);
         // Volatile (caller-saved) on Windows x64: RAX, RCX, RDX, R8-R11
-        bool isVolatile = (idx == 0 || idx == 1 || idx == 2 || idx == 3 ||
-                          (idx >= 8 && idx <= 11));
+        bool isVolatile = (idx == 0 || idx == 1 || idx == 2 || idx == 3 || (idx >= 8 && idx <= 11));
         info.isCallerSaved = isVolatile;
         info.isCalleeSaved = !isVolatile;
         info.isVolatile = isVolatile;
         info.isReserved = (idx == 4); // RSP
-        static const char* names[] = {
-            "rax","rbx","rcx","rdx","rsi","rdi","rbp","rsp",
-            "r8","r9","r10","r11","r12","r13","r14","r15"
-        };
+        static const char* names[] = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp",
+                                      "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15"};
         info.name = names[idx];
         return info;
     }
@@ -78,12 +75,8 @@ std::string RegisterMappingInfo::ToString() const {
 // =============================================================================
 
 CX64RegInfo::CX64RegInfo(CodeBlock& codeBlock, CX64Ops& assembler,
-                         std::unique_ptr<IRegisterAllocationStrategy> strategy)
-    : CRegBase()
-    , m_CodeBlock(&codeBlock)
-    , m_Assembler(&assembler)
-    , m_AllocationStrategy(std::move(strategy))
-{
+                         std::unique_ptr<IRegisterAllocationStrategy> strategy) :
+    CRegBase(), m_CodeBlock(&codeBlock), m_Assembler(&assembler), m_AllocationStrategy(std::move(strategy)) {
     m_HostRegistersUsed.reset();
     m_LockedRegisters.reset();
     m_HostToMips.fill(std::nullopt);
@@ -94,22 +87,14 @@ CX64RegInfo::CX64RegInfo(CodeBlock& codeBlock, CX64Ops& assembler,
     Log::debug("CX64RegInfo: Created");
 }
 
-CX64RegInfo::~CX64RegInfo() {
-    Log::debug("CX64RegInfo: Destroyed");
-}
+CX64RegInfo::~CX64RegInfo() { Log::debug("CX64RegInfo: Destroyed"); }
 
-CX64RegInfo::CX64RegInfo(CX64RegInfo&& other) noexcept
-    : CRegBase(std::move(other))
-    , m_CodeBlock(other.m_CodeBlock)
-    , m_Assembler(other.m_Assembler)
-    , m_MipsToHost(std::move(other.m_MipsToHost))
-    , m_HostToMips(std::move(other.m_HostToMips))
-    , m_HostRegistersUsed(other.m_HostRegistersUsed)
-    , m_LockedRegisters(other.m_LockedRegisters)
-    , m_AllocationStrategy(std::move(other.m_AllocationStrategy))
-    , m_StateStack(std::move(other.m_StateStack))
-    , m_Stats(other.m_Stats)
-{
+CX64RegInfo::CX64RegInfo(CX64RegInfo&& other) noexcept :
+    CRegBase(std::move(other)), m_CodeBlock(other.m_CodeBlock), m_Assembler(other.m_Assembler),
+    m_MipsToHost(std::move(other.m_MipsToHost)), m_HostToMips(std::move(other.m_HostToMips)),
+    m_HostRegistersUsed(other.m_HostRegistersUsed), m_LockedRegisters(other.m_LockedRegisters),
+    m_AllocationStrategy(std::move(other.m_AllocationStrategy)), m_StateStack(std::move(other.m_StateStack)),
+    m_Stats(other.m_Stats) {
     other.m_CodeBlock = nullptr;
     other.m_Assembler = nullptr;
 }
@@ -135,11 +120,9 @@ CX64RegInfo& CX64RegInfo::operator=(CX64RegInfo&& other) noexcept {
 bool CX64RegInfo::operator==(const CX64RegInfo& other) const noexcept {
     // Compare mappings
     for (size_t i = 0; i < 32; ++i) {
-        if (m_MipsToHost[i].has_value() != other.m_MipsToHost[i].has_value())
-            return false;
+        if (m_MipsToHost[i].has_value() != other.m_MipsToHost[i].has_value()) return false;
         if (m_MipsToHost[i].has_value() && other.m_MipsToHost[i].has_value()) {
-            if (m_MipsToHost[i].value() != other.m_MipsToHost[i].value())
-                return false;
+            if (m_MipsToHost[i].value() != other.m_MipsToHost[i].value()) return false;
         }
     }
     return true;
@@ -149,8 +132,8 @@ bool CX64RegInfo::operator==(const CX64RegInfo& other) const noexcept {
 // Register Mapping
 // =============================================================================
 
-X64RegisterType CX64RegInfo::MapRegister(uint32_t mipsReg, RegisterWidth width,
-                                          bool isSigned, X64RegisterType preferredReg) {
+X64RegisterType CX64RegInfo::MapRegister(uint32_t mipsReg, RegisterWidth width, bool isSigned,
+                                         X64RegisterType preferredReg) {
     if (mipsReg >= 32) return X64RegisterType::Invalid;
 
     // If already mapped, return existing mapping
@@ -211,15 +194,13 @@ void CX64RegInfo::UnmapHostRegister(X64RegisterType hostReg, bool writeBack) {
 }
 
 X64RegisterType CX64RegInfo::GetMappedHostRegister(uint32_t mipsReg) const noexcept {
-    if (mipsReg >= 32 || !m_MipsToHost[mipsReg].has_value())
-        return X64RegisterType::Invalid;
+    if (mipsReg >= 32 || !m_MipsToHost[mipsReg].has_value()) return X64RegisterType::Invalid;
     return m_MipsToHost[mipsReg]->GetHostReg();
 }
 
 uint32_t CX64RegInfo::GetMappedMipsRegister(X64RegisterType hostReg) const noexcept {
     auto idx = static_cast<size_t>(hostReg);
-    if (idx >= m_HostToMips.size() || !m_HostToMips[idx].has_value())
-        return UINT32_MAX;
+    if (idx >= m_HostToMips.size() || !m_HostToMips[idx].has_value()) return UINT32_MAX;
     return m_HostToMips[idx].value();
 }
 
@@ -282,8 +263,7 @@ void CX64RegInfo::FlushRegisters(bool writeBack) {
 // Allocation
 // =============================================================================
 
-X64RegisterType CX64RegInfo::AllocateHostRegister(X64RegisterClass regClass,
-                                                   X64RegisterType preferredReg) {
+X64RegisterType CX64RegInfo::AllocateHostRegister(X64RegisterClass regClass, X64RegisterType preferredReg) {
     X64RegisterType reg = FindFreeRegister(regClass, preferredReg);
     if (reg == X64RegisterType::Invalid && m_AutoSpill) {
         reg = EvictRegister(regClass);
@@ -346,8 +326,7 @@ void CX64RegInfo::RestoreState() {
 
     auto& state = m_StateStack.back();
     for (auto& mapping : state.mappings) {
-        UpdateMapping(mapping.GetMipsReg(), mapping.GetHostReg(),
-                     mapping.GetWidth(), mapping.IsSigned());
+        UpdateMapping(mapping.GetMipsReg(), mapping.GetHostReg(), mapping.GetWidth(), mapping.IsSigned());
     }
     m_Stats = state.stats;
     m_StateStack.pop_back();
@@ -367,17 +346,13 @@ void CX64RegInfo::SynchronizeWith(const CX64RegInfo& other) {
                 SpillRegister(i);
                 UnmapRegister(i, false);
                 auto targetHost = other.m_MipsToHost[i]->GetHostReg();
-                UpdateMapping(i, targetHost,
-                             other.m_MipsToHost[i]->GetWidth(),
-                             other.m_MipsToHost[i]->IsSigned());
+                UpdateMapping(i, targetHost, other.m_MipsToHost[i]->GetWidth(), other.m_MipsToHost[i]->IsSigned());
                 LoadRegisterToHost(i, targetHost);
             }
         } else if (!thisMapped && otherMapped) {
             // Need to map to match target
             auto targetHost = other.m_MipsToHost[i]->GetHostReg();
-            UpdateMapping(i, targetHost,
-                         other.m_MipsToHost[i]->GetWidth(),
-                         other.m_MipsToHost[i]->IsSigned());
+            UpdateMapping(i, targetHost, other.m_MipsToHost[i]->GetWidth(), other.m_MipsToHost[i]->IsSigned());
             LoadRegisterToHost(i, targetHost);
         }
     }
@@ -424,8 +399,7 @@ uint64_t CX64RegInfo::GetUsedFloatingPointMask() const noexcept {
 
 std::string CX64RegInfo::ToString() const {
     std::ostringstream oss;
-    oss << "CX64RegInfo: " << GetMappedRegisterCount() << " mapped, "
-        << GetDirtyRegisterCount() << " dirty\n";
+    oss << "CX64RegInfo: " << GetMappedRegisterCount() << " mapped, " << GetDirtyRegisterCount() << " dirty\n";
     for (size_t i = 0; i < 32; ++i) {
         if (m_MipsToHost[i].has_value()) {
             oss << "  " << m_MipsToHost[i]->ToString() << "\n";
@@ -447,9 +421,7 @@ bool CX64RegInfo::Validate() const noexcept {
     return true;
 }
 
-void CX64RegInfo::DumpState() const {
-    Log::debug(ToString().c_str());
-}
+void CX64RegInfo::DumpState() const { Log::debug(ToString().c_str()); }
 
 void CX64RegInfo::SetAllocationStrategy(std::unique_ptr<IRegisterAllocationStrategy> strategy) {
     m_AllocationStrategy = std::move(strategy);
@@ -492,8 +464,7 @@ void CX64RegInfo::LoadRegisterToHost(uint32_t mipsReg, X64RegisterType hostReg) 
     Log::debugf("CX64RegInfo: LoadToHost r%u (reload)", mipsReg);
 }
 
-X64RegisterType CX64RegInfo::FindFreeRegister(X64RegisterClass regClass,
-                                               X64RegisterType preferred) const {
+X64RegisterType CX64RegInfo::FindFreeRegister(X64RegisterClass regClass, X64RegisterType preferred) const {
     if (regClass == X64RegisterClass::GeneralPurpose) {
         // Check preferred first
         if (preferred != X64RegisterType::Invalid) {
@@ -504,11 +475,9 @@ X64RegisterType CX64RegInfo::FindFreeRegister(X64RegisterClass regClass,
         }
 
         // Try volatile registers first
-        static const X64RegisterType volatileGPRs[] = {
-            X64RegisterType::RAX, X64RegisterType::RCX, X64RegisterType::RDX,
-            X64RegisterType::R8,  X64RegisterType::R9,  X64RegisterType::R10,
-            X64RegisterType::R11
-        };
+        static const X64RegisterType volatileGPRs[] = {X64RegisterType::RAX, X64RegisterType::RCX, X64RegisterType::RDX,
+                                                       X64RegisterType::R8,  X64RegisterType::R9,  X64RegisterType::R10,
+                                                       X64RegisterType::R11};
         for (auto reg : volatileGPRs) {
             auto idx = static_cast<size_t>(reg);
             if (!m_HostRegistersUsed.test(idx)) return reg;
@@ -516,14 +485,11 @@ X64RegisterType CX64RegInfo::FindFreeRegister(X64RegisterClass regClass,
 
         // Try non-volatile
         static const X64RegisterType nonVolatileGPRs[] = {
-            X64RegisterType::RBX, X64RegisterType::RBP, X64RegisterType::RSI,
-            X64RegisterType::RDI, X64RegisterType::R12, X64RegisterType::R13,
-            X64RegisterType::R14, X64RegisterType::R15
-        };
+            X64RegisterType::RBX, X64RegisterType::RBP, X64RegisterType::RSI, X64RegisterType::RDI,
+            X64RegisterType::R12, X64RegisterType::R13, X64RegisterType::R14, X64RegisterType::R15};
         for (auto reg : nonVolatileGPRs) {
             auto idx = static_cast<size_t>(reg);
-            if (idx != static_cast<size_t>(X64RegisterType::RSP) &&
-                !m_HostRegistersUsed.test(idx)) {
+            if (idx != static_cast<size_t>(X64RegisterType::RSP) && !m_HostRegistersUsed.test(idx)) {
                 return reg;
             }
         }
@@ -547,8 +513,7 @@ X64RegisterType CX64RegInfo::EvictRegister(X64RegisterClass regClass) {
     return X64RegisterType::Invalid;
 }
 
-void CX64RegInfo::UpdateMapping(uint32_t mipsReg, X64RegisterType hostReg,
-                                RegisterWidth width, bool isSigned) {
+void CX64RegInfo::UpdateMapping(uint32_t mipsReg, X64RegisterType hostReg, RegisterWidth width, bool isSigned) {
     RegisterMappingInfo mapping(mipsReg, hostReg, width, isSigned);
     m_MipsToHost[mipsReg] = mapping;
 
@@ -574,53 +539,32 @@ void CX64RegInfo::RemoveMapping(uint32_t mipsReg) {
 // Allocation Strategies
 // =============================================================================
 
-LinearScanAllocator::LinearScanAllocator(CX64RegInfo& regInfo)
-    : m_RegInfo(regInfo)
-{
-    m_RegisterUsageCount.fill(0);
-}
+LinearScanAllocator::LinearScanAllocator(CX64RegInfo& regInfo) : m_RegInfo(regInfo) { m_RegisterUsageCount.fill(0); }
 
-X64RegisterType LinearScanAllocator::AllocateRegister(const RegisterSet& /*regSet*/,
-                                                       X64RegisterClass regClass,
-                                                       uint32_t preferredReg) {
+X64RegisterType LinearScanAllocator::AllocateRegister(const RegisterSet& /*regSet*/, X64RegisterClass regClass,
+                                                      uint32_t preferredReg) {
     X64RegisterType preferred = (preferredReg < static_cast<uint32_t>(X64RegisterType::Invalid))
-        ? static_cast<X64RegisterType>(preferredReg)
-        : X64RegisterType::Invalid;
+                                    ? static_cast<X64RegisterType>(preferredReg)
+                                    : X64RegisterType::Invalid;
     return m_RegInfo.AllocateHostRegister(regClass, preferred);
 }
 
-void LinearScanAllocator::FreeRegister(X64RegisterType reg) {
-    m_RegInfo.FreeHostRegister(reg);
-}
+void LinearScanAllocator::FreeRegister(X64RegisterType reg) { m_RegInfo.FreeHostRegister(reg); }
 
-bool LinearScanAllocator::IsRegisterAvailable(X64RegisterType reg) const {
-    return !m_RegInfo.IsHostRegisterUsed(reg);
-}
+bool LinearScanAllocator::IsRegisterAvailable(X64RegisterType reg) const { return !m_RegInfo.IsHostRegisterUsed(reg); }
 
-void LinearScanAllocator::Reset() {
-    m_RegisterUsageCount.fill(0);
-}
+void LinearScanAllocator::Reset() { m_RegisterUsageCount.fill(0); }
 
-RoundRobinAllocator::RoundRobinAllocator(CX64RegInfo& regInfo)
-    : m_RegInfo(regInfo)
-    , m_NextGPR(0)
-    , m_NextXMM(0)
-{
-}
+RoundRobinAllocator::RoundRobinAllocator(CX64RegInfo& regInfo) : m_RegInfo(regInfo), m_NextGPR(0), m_NextXMM(0) {}
 
-X64RegisterType RoundRobinAllocator::AllocateRegister(const RegisterSet& /*regSet*/,
-                                                       X64RegisterClass regClass,
-                                                       uint32_t /*preferredReg*/) {
+X64RegisterType RoundRobinAllocator::AllocateRegister(const RegisterSet& /*regSet*/, X64RegisterClass regClass,
+                                                      uint32_t /*preferredReg*/) {
     return m_RegInfo.AllocateHostRegister(regClass);
 }
 
-void RoundRobinAllocator::FreeRegister(X64RegisterType reg) {
-    m_RegInfo.FreeHostRegister(reg);
-}
+void RoundRobinAllocator::FreeRegister(X64RegisterType reg) { m_RegInfo.FreeHostRegister(reg); }
 
-bool RoundRobinAllocator::IsRegisterAvailable(X64RegisterType reg) const {
-    return !m_RegInfo.IsHostRegisterUsed(reg);
-}
+bool RoundRobinAllocator::IsRegisterAvailable(X64RegisterType reg) const { return !m_RegInfo.IsHostRegisterUsed(reg); }
 
 void RoundRobinAllocator::Reset() {
     m_NextGPR = 0;

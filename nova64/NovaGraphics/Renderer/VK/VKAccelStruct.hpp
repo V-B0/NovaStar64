@@ -19,7 +19,9 @@
 #include <vector>
 #include <cstdint>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  VKBlas  —  Bottom-Level Acceleration Structure
@@ -30,7 +32,7 @@ public:
     VKBlas() = default;
     ~VKBlas() { Destroy(); }
 
-    VKBlas(const VKBlas&)            = delete;
+    VKBlas(const VKBlas&) = delete;
     VKBlas& operator=(const VKBlas&) = delete;
 
     /**
@@ -43,27 +45,23 @@ public:
      * @param indices  Optional index buffer (uint32_t).  Pass nullptr for non-indexed.
      * @param indexCount   Number of indices (0 when indices==nullptr).
      */
-    bool Build(const VKContext& ctx,
-               VkCommandBuffer cmd,
-               const float*     vertices,
-               uint32_t         vertexCount,
-               const uint32_t*  indices,
-               uint32_t         indexCount);
+    bool Build(const VKContext& ctx, VkCommandBuffer cmd, const float* vertices, uint32_t vertexCount,
+               const uint32_t* indices, uint32_t indexCount);
 
     void Destroy();
 
-    VkAccelerationStructureKHR Get()     const { return m_as; }
-    VkDeviceAddress            GetDeviceAddress() const { return m_deviceAddress; }
-    bool                       IsBuilt() const { return m_as != VK_NULL_HANDLE; }
+    VkAccelerationStructureKHR Get() const { return m_as; }
+    VkDeviceAddress GetDeviceAddress() const { return m_deviceAddress; }
+    bool IsBuilt() const { return m_as != VK_NULL_HANDLE; }
 
 private:
-    VkAccelerationStructureKHR m_as      = VK_NULL_HANDLE;
-    VkDevice                   m_device  = VK_NULL_HANDLE;
-    VKBufferStorage            m_backing{};  // AS buffer
-    VKBufferStorage            m_scratch{};  // scratch buffer (freed after build)
-    VKBufferStorage            m_vertBuf{}; // uploaded vertices
-    VKBufferStorage            m_idxBuf{};  // uploaded indices (may be empty)
-    VkDeviceAddress            m_deviceAddress = 0;
+    VkAccelerationStructureKHR m_as = VK_NULL_HANDLE;
+    VkDevice m_device = VK_NULL_HANDLE;
+    VKBufferStorage m_backing{}; // AS buffer
+    VKBufferStorage m_scratch{}; // scratch buffer (freed after build)
+    VKBufferStorage m_vertBuf{}; // uploaded vertices
+    VKBufferStorage m_idxBuf{};  // uploaded indices (may be empty)
+    VkDeviceAddress m_deviceAddress = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,10 +70,10 @@ private:
 
 struct TlasInstance {
     VkDeviceAddress blasDeviceAddress;
-    uint32_t        instanceCustomIndex;  // gl_InstanceCustomIndexEXT in shaders
-    uint32_t        mask;                 // 0xFF = visible to all rays
-    uint32_t        hitGroupIndex;        // SBT offset into hit groups
-    float           transform[12];        // row-major 3×4 transform (identity = {1,0,0,0, 0,1,0,0, 0,0,1,0})
+    uint32_t instanceCustomIndex; // gl_InstanceCustomIndexEXT in shaders
+    uint32_t mask;                // 0xFF = visible to all rays
+    uint32_t hitGroupIndex;       // SBT offset into hit groups
+    float transform[12];          // row-major 3×4 transform (identity = {1,0,0,0, 0,1,0,0, 0,0,1,0})
 };
 
 class VKTlas {
@@ -83,30 +81,30 @@ public:
     VKTlas() = default;
     ~VKTlas() { Destroy(); }
 
-    VKTlas(const VKTlas&)            = delete;
+    VKTlas(const VKTlas&) = delete;
     VKTlas& operator=(const VKTlas&) = delete;
 
     /**
      * Build or rebuild the TLAS from a list of BLAS instances.
      * Safe to call each frame (destroys and recreates internal resources).
      */
-    bool Build(const VKContext& ctx,
-               VkCommandBuffer cmd,
-               const std::vector<TlasInstance>& instances);
+    bool Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<TlasInstance>& instances);
 
     void Destroy();
 
-    VkAccelerationStructureKHR Get()     const { return m_as; }
-    VkDeviceAddress            GetDeviceAddress() const { return m_deviceAddress; }
-    bool                       IsBuilt() const { return m_as != VK_NULL_HANDLE; }
+    VkAccelerationStructureKHR Get() const { return m_as; }
+    VkDeviceAddress GetDeviceAddress() const { return m_deviceAddress; }
+    bool IsBuilt() const { return m_as != VK_NULL_HANDLE; }
 
 private:
-    VkAccelerationStructureKHR m_as      = VK_NULL_HANDLE;
-    VkDevice                   m_device  = VK_NULL_HANDLE;
-    VKBufferStorage            m_backing{};
-    VKBufferStorage            m_scratch{};
-    VKBufferStorage            m_instanceBuf{};
-    VkDeviceAddress            m_deviceAddress = 0;
+    VkAccelerationStructureKHR m_as = VK_NULL_HANDLE;
+    VkDevice m_device = VK_NULL_HANDLE;
+    VKBufferStorage m_backing{};
+    VKBufferStorage m_scratch{};
+    VKBufferStorage m_instanceBuf{};
+    VkDeviceAddress m_deviceAddress = 0;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

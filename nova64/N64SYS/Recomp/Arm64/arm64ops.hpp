@@ -132,9 +132,7 @@ public:
      * @brief Load the address of an absolute host pointer into a register.
      *        Equivalent to x64's `mov rax, imm64`.
      */
-    void LoadHostPtr(const asmjit::a64::Gp& dst, const void* ptr) {
-        MovImm64(dst, reinterpret_cast<uint64_t>(ptr));
-    }
+    void LoadHostPtr(const asmjit::a64::Gp& dst, const void* ptr) { MovImm64(dst, reinterpret_cast<uint64_t>(ptr)); }
 
     // Error handling ---------------------------------------------------------
     bool HasError() const noexcept { return m_LastError != asmjit::kErrorOk; }

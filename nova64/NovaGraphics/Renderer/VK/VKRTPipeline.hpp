@@ -18,14 +18,16 @@
 
 #include <cstdint>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 class VKRTPipeline {
 public:
     VKRTPipeline() = default;
     ~VKRTPipeline() { Destroy(); }
 
-    VKRTPipeline(const VKRTPipeline&)            = delete;
+    VKRTPipeline(const VKRTPipeline&) = delete;
     VKRTPipeline& operator=(const VKRTPipeline&) = delete;
 
     /**
@@ -37,10 +39,7 @@ public:
      * @param rchitSrc   Closest-hit shader GLSL source.
      * @return true on success.
      */
-    bool Build(const VKContext& ctx,
-               const char* rgenSrc,
-               const char* rmissSrc,
-               const char* rchitSrc);
+    bool Build(const VKContext& ctx, const char* rgenSrc, const char* rmissSrc, const char* rchitSrc);
 
     /**
      * Record vkCmdTraceRaysKHR into `cmd`.
@@ -50,11 +49,7 @@ public:
      * @param outputView  VkImageView for the storage image output (as void*).
      * @param w, h        Dispatch dimensions in pixels.
      */
-    void Dispatch(VkCommandBuffer cmd,
-                  void*           tlas,
-                  void*           outputView,
-                  uint32_t        w,
-                  uint32_t        h);
+    void Dispatch(VkCommandBuffer cmd, void* tlas, void* outputView, uint32_t w, uint32_t h);
 
     void Destroy();
 
@@ -63,14 +58,14 @@ public:
 private:
     bool BuildSBT(const VKContext& ctx, uint32_t groupCount);
 
-    VkDevice               m_device          = VK_NULL_HANDLE;
-    VkPipeline             m_pipeline        = VK_NULL_HANDLE;
-    VkPipelineLayout       m_layout          = VK_NULL_HANDLE;
-    VkDescriptorSetLayout  m_dsLayout        = VK_NULL_HANDLE;
-    VkDescriptorPool       m_descPool        = VK_NULL_HANDLE;
-    VkDescriptorSet        m_descSet         = VK_NULL_HANDLE;
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_dsLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_descPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_descSet = VK_NULL_HANDLE;
 
-    VKBufferStorage        m_sbt{};
+    VKBufferStorage m_sbt{};
 
     // SBT stride/size values (filled from RT pipeline properties).
     VkStridedDeviceAddressRegionKHR m_rgenRegion{};
@@ -79,9 +74,11 @@ private:
     VkStridedDeviceAddressRegionKHR m_callRegion{};
 
     // Cached writes for UpdateDescriptors (called each Dispatch).
-    VkAccelerationStructureKHR m_boundTlas    = VK_NULL_HANDLE;
-    VkImageView                m_boundView    = VK_NULL_HANDLE;
-    [[maybe_unused]] VkSampler                  m_dummySampler = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR m_boundTlas = VK_NULL_HANDLE;
+    VkImageView m_boundView = VK_NULL_HANDLE;
+    [[maybe_unused]] VkSampler m_dummySampler = VK_NULL_HANDLE;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

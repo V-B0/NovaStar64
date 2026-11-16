@@ -45,9 +45,9 @@ namespace Recompiler {
 class CFunctionMap {
 public:
     // Constants for table sizes
-    static constexpr uint32_t JUMP_TABLE_SIZE = 0x40000;  // 256K entries
-    static constexpr uint32_t PAGE_DIR_SIZE = 1024;       // 10 bits
-    static constexpr uint32_t PAGE_TABLE_SIZE = 1024;     // 10 bits
+    static constexpr uint32_t JUMP_TABLE_SIZE = 0x40000; // 256K entries
+    static constexpr uint32_t PAGE_DIR_SIZE = 1024;      // 10 bits
+    static constexpr uint32_t PAGE_TABLE_SIZE = 1024;    // 10 bits
     static constexpr uint32_t PAGE_SHIFT = 10;
     static constexpr uint32_t PAGE_MASK = 0x3FF;
 
@@ -137,12 +137,10 @@ private:
         return (vaddr >> (PAGE_SHIFT * 2)) & PAGE_MASK;
     }
 
-    static constexpr uint32_t GetPageTableIndex(uint32_t vaddr) noexcept {
-        return (vaddr >> PAGE_SHIFT) & PAGE_MASK;
-    }
+    static constexpr uint32_t GetPageTableIndex(uint32_t vaddr) noexcept { return (vaddr >> PAGE_SHIFT) & PAGE_MASK; }
 
     static constexpr uint32_t GetJumpTableIndex(uint32_t vaddr) noexcept {
-        return vaddr & 0x3FFFF;  // Lower 18 bits
+        return vaddr & 0x3FFFF; // Lower 18 bits
     }
 
     // Ensure a page table exists at the specified directory index
@@ -183,8 +181,7 @@ inline CFunctionMap::CompiledFuncPtr CFunctionMap::Lookup(uint32_t vaddr) const 
     return nullptr;
 }
 
-inline CFunctionMap::CompiledFuncPtr CFunctionMap::Store(
-    uint32_t vaddr, CompiledFuncPtr func) noexcept {
+inline CFunctionMap::CompiledFuncPtr CFunctionMap::Store(uint32_t vaddr, CompiledFuncPtr func) noexcept {
     // Store in exact-match map (authoritative)
     CompiledFuncPtr oldExact = nullptr;
     if (func) {

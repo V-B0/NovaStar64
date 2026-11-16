@@ -5,11 +5,11 @@
 #include "VKMemory.hpp"
 #include <chrono>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
-uint32_t FindMemoryType(VkPhysicalDevice physical,
-                        uint32_t typeBits,
-                        VkMemoryPropertyFlags props) {
+uint32_t FindMemoryType(VkPhysicalDevice physical, uint32_t typeBits, VkMemoryPropertyFlags props) {
     VkPhysicalDeviceMemoryProperties mp{};
     vkGetPhysicalDeviceMemoryProperties(physical, &mp);
     for (uint32_t i = 0; i < mp.memoryTypeCount; ++i) {
@@ -17,15 +17,14 @@ uint32_t FindMemoryType(VkPhysicalDevice physical,
         const bool propOk = (mp.memoryTypes[i].propertyFlags & props) == props;
         if (typeOk && propOk) return i;
     }
-    Logger::Error("VK: no memory type matches typeBits=0x{:x} props=0x{:x}",
-                  typeBits, static_cast<uint32_t>(props));
+    Logger::Error("VK: no memory type matches typeBits=0x{:x} props=0x{:x}", typeBits, static_cast<uint32_t>(props));
     return UINT32_MAX;
 }
 
 VkCommandBuffer BeginOneShot(VkDevice device, VkCommandPool pool) {
     VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    ai.commandPool        = pool;
-    ai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    ai.commandPool = pool;
+    ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     ai.commandBufferCount = 1;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     if (vkAllocateCommandBuffers(device, &ai, &cmd) != VK_SUCCESS) {
@@ -56,17 +55,16 @@ void EndOneShotAndWait(const VKContext& ctx, VkCommandBuffer cmd) {
     }
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
-    si.pCommandBuffers    = &cmd;
+    si.pCommandBuffers = &cmd;
     VkResult r = vkQueueSubmit(ctx.transferQueue, 1, &si, VK_NULL_HANDLE);
     if (r != VK_SUCCESS) {
         Logger::Error("VK: EndOneShot vkQueueSubmit failed: {}", VkResultToString(r));
-        if (r == VK_ERROR_DEVICE_LOST)
-            ctx.deviceLost.store(true, std::memory_order_relaxed);
+        if (r == VK_ERROR_DEVICE_LOST) ctx.deviceLost.store(true, std::memory_order_relaxed);
     } else {
         auto t0 = std::chrono::steady_clock::now();
         vkQueueWaitIdle(ctx.transferQueue);
-        auto dtMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - t0).count());
+        auto dtMs = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
         if (dtMs > 50) {
             Logger::Warn("VK: EndOneShot vkQueueWaitIdle took {}ms", dtMs);
         }
@@ -74,4 +72,6 @@ void EndOneShotAndWait(const VKContext& ctx, VkCommandBuffer cmd) {
     vkFreeCommandBuffers(ctx.device, ctx.transientPool, 1, &cmd);
 }
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

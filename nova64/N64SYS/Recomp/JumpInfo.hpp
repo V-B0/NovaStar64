@@ -34,14 +34,14 @@ class CExitInfo;
  * @brief Classification of jump/branch types for optimization
  */
 enum class JumpType : uint8_t {
-    Direct,     ///< Direct jump/branch with known target
-    Indirect,   ///< Indirect jump via register
+    Direct,      ///< Direct jump/branch with known target
+    Indirect,    ///< Indirect jump via register
     Conditional, ///< Conditional branch
-    Call,       ///< Function call (JAL/JALR)
-    Return,     ///< Return from function
-    Link,       ///< Linked jump (JAL with return address)
-    System,     ///< System call/exception
-    Unknown     ///< Unknown/unclassified jump
+    Call,        ///< Function call (JAL/JALR)
+    Return,      ///< Return from function
+    Link,        ///< Linked jump (JAL with return address)
+    System,      ///< System call/exception
+    Unknown      ///< Unknown/unclassified jump
 };
 
 /**
@@ -60,7 +60,7 @@ public:
      * @param codeBlock Reference to the containing code block
      */
     explicit CJumpInfo(CodeBlock& codeBlock);
-    
+
     /**
      * @brief Construct a jump info with specific parameters
      * @param jumpPC Address of the jump instruction
@@ -68,9 +68,8 @@ public:
      * @param linkAddr Link register value for JAL/JALR
      * @param type Classification of the jump
      */
-    CJumpInfo(uint32_t jumpPC, uint32_t targetPC, 
-              std::optional<uint32_t> linkAddr, JumpType type);
-    
+    CJumpInfo(uint32_t jumpPC, uint32_t targetPC, std::optional<uint32_t> linkAddr, JumpType type);
+
     // Allow default copy/move since we're just storing data
     CJumpInfo(const CJumpInfo&) = default;
     CJumpInfo(CJumpInfo&&) = default;
@@ -89,14 +88,14 @@ public:
     bool IsPermanentLoop() const noexcept { return m_IsPermanentLoop; }
     bool IsDelaySlotDone() const noexcept { return m_DelaySlotDone; }
     std::string_view GetBranchLabel() const noexcept { return m_BranchLabel; }
-    
+
     // Get AsmJit labels (const and non-const versions)
     const asmjit::Label& GetLinkLocation() const noexcept { return m_LinkLocation; }
     asmjit::Label& GetLinkLocation() noexcept { return m_LinkLocation; }
-    
+
     const asmjit::Label& GetSecondaryLinkLocation() const noexcept { return m_SecondaryLinkLocation; }
     asmjit::Label& GetSecondaryLinkLocation() noexcept { return m_SecondaryLinkLocation; }
-    
+
     void SetTargetPC(uint32_t targetPC) noexcept { m_TargetPC = targetPC; }
     void SetLinkAddress(std::optional<uint32_t> linkAddr) noexcept { m_LinkAddress = linkAddr; }
     void SetJumpType(JumpType type) noexcept { m_Type = type; }
@@ -105,35 +104,27 @@ public:
     void SetPermanentLoop(bool permLoop) noexcept { m_IsPermanentLoop = permLoop; }
     void SetDelaySlotDone(bool done) noexcept { m_DelaySlotDone = done; }
     void SetBranchLabel(std::string_view label) { m_BranchLabel = label; }
-    
+
     /**
      * @brief Check if this jump has a known target address
      */
-    bool HasKnownTarget() const noexcept {
-        return m_TargetPC != 0 && m_TargetPC != UINT32_MAX;
-    }
-    
+    bool HasKnownTarget() const noexcept { return m_TargetPC != 0 && m_TargetPC != UINT32_MAX; }
+
     /**
      * @brief Check if this jump requires linking at runtime
      */
-    bool RequiresLinking() const noexcept {
-        return !m_LinkLocation.is_valid() || !m_SecondaryLinkLocation.is_valid();
-    }
-    
+    bool RequiresLinking() const noexcept { return !m_LinkLocation.is_valid() || !m_SecondaryLinkLocation.is_valid(); }
+
     /**
      * @brief Check if this is a function call with return address
      */
-    bool IsFunctionCall() const noexcept {
-        return m_Type == JumpType::Call && m_LinkAddress.has_value();
-    }
-    
+    bool IsFunctionCall() const noexcept { return m_Type == JumpType::Call && m_LinkAddress.has_value(); }
+
     /**
      * @brief Check if this is a conditional branch
      */
-    bool IsConditional() const noexcept {
-        return m_Type == JumpType::Conditional;
-    }
-    
+    bool IsConditional() const noexcept { return m_Type == JumpType::Conditional; }
+
     /**
      * @brief Mark as resolved (both link locations are valid)
      */
@@ -141,9 +132,9 @@ public:
         // Both labels should be bound by now
         m_IsResolved = true;
     }
-    
+
     bool IsResolved() const noexcept { return m_IsResolved; }
-    
+
     /**
      * @brief Reset the jump info for reuse
      */
@@ -160,7 +151,7 @@ public:
         m_Type = JumpType::Unknown;
         m_IsResolved = false;
     }
-    
+
     /**
      * @brief Check if registers need synchronization for this jump
      * @param sourceReg Register state at jump site
@@ -170,7 +161,7 @@ public:
      * Creates dependency on CRegInfo for register state comparison
      */
     bool NeedsRegisterSynchronization(const CRegInfo& sourceReg, const CRegInfo& targetReg) const;
-    
+
     /**
      * @brief Update exit information based on this jump
      * @param exitInfo Exit information to update
@@ -182,54 +173,54 @@ public:
 
 private:
     // Instruction information
-    uint32_t m_JumpPC = 0;                   ///< Address of the jump instruction
-    uint32_t m_TargetPC = 0;                 ///< Jump target address (0 = unknown)
-    std::optional<uint32_t> m_LinkAddress;   ///< Link register value (JAL/JALR)
-    JumpType m_Type = JumpType::Unknown;     ///< Type of jump
-    
+    uint32_t m_JumpPC = 0;                 ///< Address of the jump instruction
+    uint32_t m_TargetPC = 0;               ///< Jump target address (0 = unknown)
+    std::optional<uint32_t> m_LinkAddress; ///< Link register value (JAL/JALR)
+    JumpType m_Type = JumpType::Unknown;   ///< Type of jump
+
     // Debug information
-    std::string m_BranchLabel;               ///< Debug label name for disassembly
-    
+    std::string m_BranchLabel; ///< Debug label name for disassembly
+
     // AsmJit linking information
-    asmjit::Label m_LinkLocation;            ///< Primary link point in generated code
-    asmjit::Label m_SecondaryLinkLocation;   ///< Secondary link point (for patch-up)
-    
+    asmjit::Label m_LinkLocation;          ///< Primary link point in generated code
+    asmjit::Label m_SecondaryLinkLocation; ///< Secondary link point (for patch-up)
+
     // State flags
-    bool m_CanFallThrough = false;           ///< Whether execution can fall through
-    bool m_IsPermanentLoop = false;          ///< Permanent loop detected (optimization hint)
-    bool m_DelaySlotDone = false;            ///< Delay slot has been compiled
-    bool m_IsResolved = false;               ///< Whether jump has been linked
-    
+    bool m_CanFallThrough = false;  ///< Whether execution can fall through
+    bool m_IsPermanentLoop = false; ///< Permanent loop detected (optimization hint)
+    bool m_DelaySlotDone = false;   ///< Delay slot has been compiled
+    bool m_IsResolved = false;      ///< Whether jump has been linked
+
     // Exit information
     ExitReason m_ExitReason = ExitReason::NormalBlockEnd;
-    
+
     // Note: RegSet will be added as CRegInfo* when RegInfo.hpp is included
     // CRegInfo* m_RegSet = nullptr;
 };
 
 // Helper functions
 namespace JumpInfo {
-    /**
+/**
      * @brief Create a jump info for a direct jump
      */
-    inline CJumpInfo CreateDirectJump(uint32_t jumpPC, uint32_t targetPC) {
-        return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Direct);
-    }
-    
-    /**
+inline CJumpInfo CreateDirectJump(uint32_t jumpPC, uint32_t targetPC) {
+    return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Direct);
+}
+
+/**
      * @brief Create a jump info for a function call
      */
-    inline CJumpInfo CreateCall(uint32_t jumpPC, uint32_t targetPC, uint32_t linkAddr) {
-        return CJumpInfo(jumpPC, targetPC, linkAddr, JumpType::Call);
-    }
-    
-    /**
+inline CJumpInfo CreateCall(uint32_t jumpPC, uint32_t targetPC, uint32_t linkAddr) {
+    return CJumpInfo(jumpPC, targetPC, linkAddr, JumpType::Call);
+}
+
+/**
      * @brief Create a jump info for a conditional branch
      */
-    inline CJumpInfo CreateConditionalBranch(uint32_t jumpPC, uint32_t targetPC) {
-        return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Conditional);
-    }
+inline CJumpInfo CreateConditionalBranch(uint32_t jumpPC, uint32_t targetPC) {
+    return CJumpInfo(jumpPC, targetPC, std::nullopt, JumpType::Conditional);
 }
+} // namespace JumpInfo
 
 } // namespace Recompiler
 } // namespace Nova64

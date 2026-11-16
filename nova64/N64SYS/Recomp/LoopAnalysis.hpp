@@ -55,9 +55,9 @@ public:
      * @param entrySection Entry point section of the loop
      */
     explicit LoopAnalysis(CodeBlock& codeBlock, CodeSection* entrySection);
-    
+
     ~LoopAnalysis();
-    
+
     // Non-copyable, non-movable
     LoopAnalysis(const LoopAnalysis&) = delete;
     LoopAnalysis& operator=(const LoopAnalysis&) = delete;
@@ -86,14 +86,14 @@ private:
     // Helper to extract MIPS instruction fields correctly
     // Note: Rtype bitfields are incorrectly named in R4300iOps.hpp
     // Use Itype.rs/rt/op (correct) and bit extraction for rd/sa/funct
-    static uint32_t Cmd_op(const R4300iOps& c)    { return c.Itype.op; }
-    static uint32_t Cmd_rs(const R4300iOps& c)    { return c.Itype.rs; }
-    static uint32_t Cmd_rt(const R4300iOps& c)    { return c.Itype.rt; }
-    static uint32_t Cmd_rd(const R4300iOps& c)    { return (c.Value >> 11) & 0x1F; }
-    static uint32_t Cmd_sa(const R4300iOps& c)    { return (c.Value >> 6) & 0x1F; }
+    static uint32_t Cmd_op(const R4300iOps& c) { return c.Itype.op; }
+    static uint32_t Cmd_rs(const R4300iOps& c) { return c.Itype.rs; }
+    static uint32_t Cmd_rt(const R4300iOps& c) { return c.Itype.rt; }
+    static uint32_t Cmd_rd(const R4300iOps& c) { return (c.Value >> 11) & 0x1F; }
+    static uint32_t Cmd_sa(const R4300iOps& c) { return (c.Value >> 6) & 0x1F; }
     static uint32_t Cmd_funct(const R4300iOps& c) { return c.Value & 0x3F; }
-    static uint32_t Cmd_imm(const R4300iOps& c)   { return c.Itype.imm; }
-    static int16_t  Cmd_imm_s(const R4300iOps& c) { return static_cast<int16_t>(c.Value & 0xFFFF); }
+    static uint32_t Cmd_imm(const R4300iOps& c) { return c.Itype.imm; }
+    static int16_t Cmd_imm_s(const R4300iOps& c) { return static_cast<int16_t>(c.Value & 0xFFFF); }
 
     // Core analysis: walk through a section checking register usage
     bool CheckSectionRegisterUsage(CodeSection* section);

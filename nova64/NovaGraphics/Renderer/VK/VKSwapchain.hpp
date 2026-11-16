@@ -9,60 +9,47 @@
 
 #include <vector>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 class VKSwapchain {
 public:
-    bool Create(VkPhysicalDevice physical,
-                VkDevice         device,
-                VkSurfaceKHR     surface,
-                uint32_t         graphicsFamily,
-                uint32_t         presentFamily,
-                uint32_t         desiredWidth,
-                uint32_t         desiredHeight,
-                bool             vsync);
+    bool Create(VkPhysicalDevice physical, VkDevice device, VkSurfaceKHR surface, uint32_t graphicsFamily,
+                uint32_t presentFamily, uint32_t desiredWidth, uint32_t desiredHeight, bool vsync);
 
     /// Render targets without a window: `imageCount` color images with the
     /// same usage, render passes and framebuffers a swapchain has. Get() stays
     /// null, as there is nothing to acquire or present.
-    bool CreateOffscreen(VkPhysicalDevice physical,
-                         VkDevice         device,
-                         uint32_t         width,
-                         uint32_t         height,
-                         uint32_t         imageCount);
+    bool CreateOffscreen(VkPhysicalDevice physical, VkDevice device, uint32_t width, uint32_t height,
+                         uint32_t imageCount);
     bool IsOffscreen() const { return m_offscreen; }
 
     void Destroy(VkDevice device);
 
     /// Tear down and recreate (for window resize / vsync toggle). Offscreen
     /// targets are recreated offscreen at the new size.
-    bool Recreate(VkPhysicalDevice physical,
-                  VkDevice         device,
-                  VkSurfaceKHR     surface,
-                  uint32_t         graphicsFamily,
-                  uint32_t         presentFamily,
-                  uint32_t         desiredWidth,
-                  uint32_t         desiredHeight,
-                  bool             vsync);
+    bool Recreate(VkPhysicalDevice physical, VkDevice device, VkSurfaceKHR surface, uint32_t graphicsFamily,
+                  uint32_t presentFamily, uint32_t desiredWidth, uint32_t desiredHeight, bool vsync);
 
-    VkSwapchainKHR Get()      const { return m_swapchain; }
-    VkFormat       GetFormat() const { return m_format; }
-    VkExtent2D     GetExtent() const { return m_extent; }
-    uint32_t       GetImageCount() const { return static_cast<uint32_t>(m_images.size()); }
-    VkImage        GetImage(uint32_t i)     const { return m_images[i]; }
-    VkImageView    GetImageView(uint32_t i) const { return m_imageViews[i]; }
+    VkSwapchainKHR Get() const { return m_swapchain; }
+    VkFormat GetFormat() const { return m_format; }
+    VkExtent2D GetExtent() const { return m_extent; }
+    uint32_t GetImageCount() const { return static_cast<uint32_t>(m_images.size()); }
+    VkImage GetImage(uint32_t i) const { return m_images[i]; }
+    VkImageView GetImageView(uint32_t i) const { return m_imageViews[i]; }
 
     /// A simple single-color-attachment render pass matching the swapchain format.
     /// Pipelines must be created against this (or a compatible) render pass.
-    VkRenderPass   GetRenderPass()             const { return m_renderPass; }
+    VkRenderPass GetRenderPass() const { return m_renderPass; }
     /// Like GetRenderPass() but uses LOAD_OP_LOAD — preserves existing content.
     /// Compatible with the same framebuffers (same format/sample count).
-    VkRenderPass   GetRenderPassLoad()         const { return m_renderPassLoad; }
-    VkFramebuffer  GetFramebuffer(uint32_t i)  const { return m_framebuffers[i]; }
+    VkRenderPass GetRenderPassLoad() const { return m_renderPassLoad; }
+    VkFramebuffer GetFramebuffer(uint32_t i) const { return m_framebuffers[i]; }
 
     /// Depth buffer access for the RT composite's raster-depth comparison.
-    VkImage        GetDepthImage()  const { return m_depthImage; }
-    VkFormat       GetDepthFormat() const { return m_depthFormat; }
+    VkImage GetDepthImage() const { return m_depthImage; }
+    VkFormat GetDepthFormat() const { return m_depthFormat; }
 
 private:
     bool CreateRenderPass(VkDevice device);
@@ -70,22 +57,24 @@ private:
     bool CreateDepthBuffer(VkPhysicalDevice physical, VkDevice device);
     bool CreateFramebuffers(VkDevice device);
 
-    VkSwapchainKHR           m_swapchain = VK_NULL_HANDLE;
-    VkFormat                 m_format    = VK_FORMAT_UNDEFINED;
-    VkExtent2D               m_extent    = {0, 0};
-    std::vector<VkImage>     m_images;
+    VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
+    VkFormat m_format = VK_FORMAT_UNDEFINED;
+    VkExtent2D m_extent = {0, 0};
+    std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;
-    bool                     m_offscreen = false;
-    std::vector<VkDeviceMemory> m_imageMemory;   // offscreen images only
-    VkRenderPass               m_renderPass     = VK_NULL_HANDLE;
-    VkRenderPass               m_renderPassLoad = VK_NULL_HANDLE;
+    bool m_offscreen = false;
+    std::vector<VkDeviceMemory> m_imageMemory; // offscreen images only
+    VkRenderPass m_renderPass = VK_NULL_HANDLE;
+    VkRenderPass m_renderPassLoad = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_framebuffers;
 
     // Per-swapchain depth buffer (one image shared by all framebuffers).
-    VkFormat       m_depthFormat = VK_FORMAT_UNDEFINED;
-    VkImage        m_depthImage  = VK_NULL_HANDLE;
+    VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
+    VkImage m_depthImage = VK_NULL_HANDLE;
     VkDeviceMemory m_depthMemory = VK_NULL_HANDLE;
-    VkImageView    m_depthView   = VK_NULL_HANDLE;
+    VkImageView m_depthView = VK_NULL_HANDLE;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

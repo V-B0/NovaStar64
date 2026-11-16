@@ -32,11 +32,11 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
     ctx.pc = address & 0x00FFFFFF;
     ctx.halted = false;
     ctx.dlStackDepth = 0;
-    
+
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-            "GBIHandler::ExecuteDisplayList pc=0x{:08X} rdram={} rdramSize=0x{:08X}",
-            ctx.pc, ctx.rdram ? "valid" : "NULL", ctx.rdramSize);
-    
+             "GBIHandler::ExecuteDisplayList pc=0x{:08X} rdram={} rdramSize=0x{:08X}", ctx.pc,
+             ctx.rdram ? "valid" : "NULL", ctx.rdramSize);
+
     // Limit commands per RSP task.  Real N64 DLs have at most a few thousand
     // Per-task command cap. 50,000 is generous for any real display list while
     // keeping runaway-loop damage bounded. TDR measurements on Intel Iris Xe:
@@ -57,29 +57,27 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
     while (!ctx.halted && commandCount < MAX_COMMANDS_PER_FRAME) {
         // Validate PC
         if (ctx.pc + 8 > ctx.rdramSize) {
-            NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-                    "Display list PC out of range: 0x{:08X} (prev cmd: handler={} w0=0x{:08X} w1=0x{:08X} op=0x{:02X})",
-                    ctx.pc, prevHandler, prevW0, prevW1, (prevW0 >> 24) & 0xFF);
+            NOVA_LOG(
+                LogLevel::Warning, LogSubsystem::Core,
+                "Display list PC out of range: 0x{:08X} (prev cmd: handler={} w0=0x{:08X} w1=0x{:08X} op=0x{:02X})",
+                ctx.pc, prevHandler, prevW0, prevW1, (prevW0 >> 24) & 0xFF);
             break;
         }
-        
+
         uint32_t w0 = ctx.ReadWord(ctx.pc);
         uint32_t w1 = ctx.ReadWord(ctx.pc + 4);
-        
+
         ctx.AdvancePC(2);
-        
+
         // Dispatch through the active handler so mid-frame microcode
         // switches (G_LOAD_UCODE) take effect immediately.
-        GBIHandler* handler = ctx.dispatcher
-            ? ctx.dispatcher->GetCurrentHandler()
-            : this;
+        GBIHandler* handler = ctx.dispatcher ? ctx.dispatcher->GetCurrentHandler() : this;
 
         if (!handler) {
             NOVA_LOG(LogLevel::Error, LogSubsystem::Core,
-                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}: "
-                    "null handler (dispatcher={}), aborting display list",
-                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF,
-                    ctx.dispatcher ? "valid" : "null");
+                     "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}: "
+                     "null handler (dispatcher={}), aborting display list",
+                     commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF, ctx.dispatcher ? "valid" : "null");
             break;
         }
 
@@ -88,13 +86,11 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
         // Debug to avoid generating hundreds of thousands of log lines per
         // SM64 session (which caused severe startup slowness).
         if (isFirstDL && commandCount < 200) {
-            NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
-                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
-                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
+            NOVA_LOG(LogLevel::Info, LogSubsystem::Core, "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
+                     commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
         } else {
-            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                    "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
-                    commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "DL cmd[{}] pc=0x{:08X} w0=0x{:08X} w1=0x{:08X} op=0x{:02X}",
+                     commandCount, ctx.pc - 8, w0, w1, (w0 >> 24) & 0xFF);
         }
 
         prevW0 = w0;
@@ -104,15 +100,15 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
         if (!handler->ProcessCommand(ctx, w0, w1)) {
             break;
         }
-        
+
         ++commandCount;
         // Credit the command to whichever handler actually ran it
         ++handler->m_commandsProcessed;
     }
-    
+
     if (commandCount >= MAX_COMMANDS_PER_FRAME) {
-        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-                "Display list exceeded max command count ({})", MAX_COMMANDS_PER_FRAME);
+        NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "Display list exceeded max command count ({})",
+                 MAX_COMMANDS_PER_FRAME);
     }
 }
 
@@ -123,8 +119,8 @@ void GBIHandler::ExecuteDisplayList(DListContext& ctx, uint32_t address) {
 void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     if (!ctx.rdpProcessor) return;
 
-    uint8_t fullOpcode = (w0 >> 24) & 0xFF;  // Full 8-bit opcode from DL word
-    uint8_t opcode = fullOpcode & 0x3F; // RDP command ID is bits 29:24
+    uint8_t fullOpcode = (w0 >> 24) & 0xFF; // Full 8-bit opcode from DL word
+    uint8_t opcode = fullOpcode & 0x3F;     // RDP command ID is bits 29:24
     // TextureRectangle (0x24) and TextureRectFlip (0x25) need S, T, dSdX,
     // and dTdY from continuation words that follow in the display list.
     //
@@ -140,9 +136,9 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // wrapper (0xE4 = G_TEXRECT, 0xE5 = G_TEXRECTFLIP in F3DEX2/F3DEX).
     // Without this guard, S2DEX2's G_RDPHALF_0 (also 0xE4 in S2DEX2) would
     // be treated as G_TEXRECT and consume 2 extra DL words, corrupting PC.
-    bool isTexrectOpcode = (opcode == 0x24 || opcode == 0x25)
-                        && (fullOpcode == 0xE4 || fullOpcode == 0xE5  // F3DEX2/GBI2 texrect
-                         || fullOpcode == 0x24 || fullOpcode == 0x25); // raw RDP (no GBI wrap)
+    bool isTexrectOpcode =
+        (opcode == 0x24 || opcode == 0x25) && (fullOpcode == 0xE4 || fullOpcode == 0xE5      // F3DEX2/GBI2 texrect
+                                               || fullOpcode == 0x24 || fullOpcode == 0x25); // raw RDP (no GBI wrap)
     if (isTexrectOpcode) {
         uint32_t cont1_w0 = ctx.ReadWord(ctx.pc);
         uint32_t cont1_w1 = ctx.ReadWord(ctx.pc + 4);
@@ -150,8 +146,7 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
 
         uint32_t st_word, dsdx_word;
         uint8_t topByte = (cont1_w0 >> 24) & 0xFF;
-        if (topByte == 0xE1 || topByte == 0xF1 ||
-            topByte == 0xB3 || topByte == 0xB4) {
+        if (topByte == 0xE1 || topByte == 0xF1 || topByte == 0xB3 || topByte == 0xB4) {
             // F3DEX2 format: S|T is in cont1_w1, read second entry for dSdX|dTdY
             st_word = cont1_w1;
 
@@ -161,11 +156,11 @@ void GBIHandler::HandleRDPCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
             dsdx_word = cont2_w1;
         } else {
             // Fast3D format: single continuation, S|T in w0, dSdX|dTdY in w1
-            st_word   = cont1_w0;
+            st_word = cont1_w0;
             dsdx_word = cont1_w1;
         }
 
-        uint32_t words[4] = { w0, w1, st_word, dsdx_word };
+        uint32_t words[4] = {w0, w1, st_word, dsdx_word};
         ctx.rdpProcessor->ProcessCommandBuffer(words, 4);
     } else {
         // SetTextureImage (0x3D), SetDepthImage (0x3E), SetColorImage (0x3F), LoadBlock (0x33)
@@ -199,19 +194,17 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
         // positions unaffected by the perspective projection matrix.
         {
             float ox = tv.position[0], oy = tv.position[1], oz = tv.position[2];
-            tv.worldPos[0] = ox*mvMtx.m[0][0] + oy*mvMtx.m[1][0] + oz*mvMtx.m[2][0] + mvMtx.m[3][0];
-            tv.worldPos[1] = ox*mvMtx.m[0][1] + oy*mvMtx.m[1][1] + oz*mvMtx.m[2][1] + mvMtx.m[3][1];
-            tv.worldPos[2] = ox*mvMtx.m[0][2] + oy*mvMtx.m[1][2] + oz*mvMtx.m[2][2] + mvMtx.m[3][2];
+            tv.worldPos[0] = ox * mvMtx.m[0][0] + oy * mvMtx.m[1][0] + oz * mvMtx.m[2][0] + mvMtx.m[3][0];
+            tv.worldPos[1] = ox * mvMtx.m[0][1] + oy * mvMtx.m[1][1] + oz * mvMtx.m[2][1] + mvMtx.m[3][1];
+            tv.worldPos[2] = ox * mvMtx.m[0][2] + oy * mvMtx.m[1][2] + oz * mvMtx.m[2][2] + mvMtx.m[3][2];
         }
 
         // --- MVP transform (row-vector: v_clip = v * Combined) ---
-        float in[4] = { tv.position[0], tv.position[1], tv.position[2], 1.0f };
+        float in[4] = {tv.position[0], tv.position[1], tv.position[2], 1.0f};
         float out[4];
         for (int c = 0; c < 4; ++c) {
-            out[c] = in[0] * geo.combinedMatrix.m[0][c] +
-                     in[1] * geo.combinedMatrix.m[1][c] +
-                     in[2] * geo.combinedMatrix.m[2][c] +
-                     in[3] * geo.combinedMatrix.m[3][c];
+            out[c] = in[0] * geo.combinedMatrix.m[0][c] + in[1] * geo.combinedMatrix.m[1][c] +
+                     in[2] * geo.combinedMatrix.m[2][c] + in[3] * geo.combinedMatrix.m[3][c];
         }
         tv.position[0] = out[0];
         tv.position[1] = out[1];
@@ -262,18 +255,22 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
         float tnx = 0, tny = 0, tnz = 0;
         if (needEyeNormal) {
             float nx = tv.normal[0], ny = tv.normal[1], nz = tv.normal[2];
-            tnx = nx*mvMtx.m[0][0] + ny*mvMtx.m[1][0] + nz*mvMtx.m[2][0];
-            tny = nx*mvMtx.m[0][1] + ny*mvMtx.m[1][1] + nz*mvMtx.m[2][1];
-            tnz = nx*mvMtx.m[0][2] + ny*mvMtx.m[1][2] + nz*mvMtx.m[2][2];
+            tnx = nx * mvMtx.m[0][0] + ny * mvMtx.m[1][0] + nz * mvMtx.m[2][0];
+            tny = nx * mvMtx.m[0][1] + ny * mvMtx.m[1][1] + nz * mvMtx.m[2][1];
+            tnz = nx * mvMtx.m[0][2] + ny * mvMtx.m[1][2] + nz * mvMtx.m[2][2];
 
-            float len = std::sqrt(tnx*tnx + tny*tny + tnz*tnz);
+            float len = std::sqrt(tnx * tnx + tny * tny + tnz * tnz);
             if (len > 0.0001f) {
                 float invLen = 1.0f / len;
-                tnx *= invLen; tny *= invLen; tnz *= invLen;
+                tnx *= invLen;
+                tny *= invLen;
+                tnz *= invLen;
             }
             // Persist for RT (same mvMtx snapshot as worldPos above — see
             // TransformedVertex::eyeNormal).
-            tv.eyeNormal[0] = tnx; tv.eyeNormal[1] = tny; tv.eyeNormal[2] = tnz;
+            tv.eyeNormal[0] = tnx;
+            tv.eyeNormal[1] = tny;
+            tv.eyeNormal[2] = tnz;
         } else {
             tv.eyeNormal[0] = tv.eyeNormal[1] = tv.eyeNormal[2] = 0.0f;
         }
@@ -284,9 +281,7 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
             // for even/odd vertices (dithered flat shading). GLideN64 ref:
             // gSPLightVertexStandard — useFirstColor = ((v + j) & 1) == 0
             bool useFirstColor = ((startIndex + i) & 1) == 0;
-            const float* ambColor = useFirstColor
-                ? geo.lights[geo.numLights].color
-                : geo.lights[geo.numLights].color2;
+            const float* ambColor = useFirstColor ? geo.lights[geo.numLights].color : geo.lights[geo.numLights].color2;
             float lr = ambColor[0];
             float lg = ambColor[1];
             float lb = ambColor[2];
@@ -295,9 +290,9 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
 
             if (pointLighting) {
                 // Compute eye-space vertex position (MV * objPos)
-                float eyeX = in[0]*mvMtx.m[0][0] + in[1]*mvMtx.m[1][0] + in[2]*mvMtx.m[2][0] + mvMtx.m[3][0];
-                float eyeY = in[0]*mvMtx.m[0][1] + in[1]*mvMtx.m[1][1] + in[2]*mvMtx.m[2][1] + mvMtx.m[3][1];
-                float eyeZ = in[0]*mvMtx.m[0][2] + in[1]*mvMtx.m[1][2] + in[2]*mvMtx.m[2][2] + mvMtx.m[3][2];
+                float eyeX = in[0] * mvMtx.m[0][0] + in[1] * mvMtx.m[1][0] + in[2] * mvMtx.m[2][0] + mvMtx.m[3][0];
+                float eyeY = in[0] * mvMtx.m[0][1] + in[1] * mvMtx.m[1][1] + in[2] * mvMtx.m[2][1] + mvMtx.m[3][1];
+                float eyeZ = in[0] * mvMtx.m[0][2] + in[1] * mvMtx.m[1][2] + in[2] * mvMtx.m[2][2] + mvMtx.m[3][2];
 
                 for (int l = 0; l < geo.numLights; ++l) {
                     float intensity;
@@ -309,13 +304,13 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
                         float lvz = geo.lights[l].position[2] - eyeZ;
 
                         // N64 RSP microcode weights Z² by 2x in point light distance
-                        float K = lvx*lvx + lvy*lvy + lvz*lvz * 2.0f;
+                        float K = lvx * lvx + lvy * lvy + lvz * lvz * 2.0f;
                         float KS = std::sqrt(K);
 
                         // Inverse transform lvec to model space (transpose of upper 3x3 MV)
-                        float ix = lvx*mvMtx.m[0][0] + lvy*mvMtx.m[0][1] + lvz*mvMtx.m[0][2];
-                        float iy = lvx*mvMtx.m[1][0] + lvy*mvMtx.m[1][1] + lvz*mvMtx.m[1][2];
-                        float iz = lvx*mvMtx.m[2][0] + lvy*mvMtx.m[2][1] + lvz*mvMtx.m[2][2];
+                        float ix = lvx * mvMtx.m[0][0] + lvy * mvMtx.m[0][1] + lvz * mvMtx.m[0][2];
+                        float iy = lvx * mvMtx.m[1][0] + lvy * mvMtx.m[1][1] + lvz * mvMtx.m[1][2];
+                        float iz = lvx * mvMtx.m[2][0] + lvy * mvMtx.m[2][1] + lvz * mvMtx.m[2][2];
 
                         // Normalize with 4/KS factor, clamp to [-1,1]
                         if (KS > 0.0f) {
@@ -326,16 +321,17 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
                         }
 
                         // Dot with object-space normal
-                        float V = std::clamp(ix*tv.normal[0] + iy*tv.normal[1] + iz*tv.normal[2], -1.0f, 1.0f);
+                        float V = std::clamp(ix * tv.normal[0] + iy * tv.normal[1] + iz * tv.normal[2], -1.0f, 1.0f);
 
                         // Attenuation
                         float KSF = std::floor(KS);
-                        float D = (KSF * geo.lights[l].la * 2.0f + KSF * KSF * geo.lights[l].qa / 8.0f) * FIXED2FLOATRECIP16 + 1.0f;
+                        float D =
+                            (KSF * geo.lights[l].la * 2.0f + KSF * KSF * geo.lights[l].qa / 8.0f) * FIXED2FLOATRECIP16 +
+                            1.0f;
                         intensity = V / D;
                     } else {
                         // Directional light
-                        intensity = tnx * geo.lights[l].direction[0] +
-                                    tny * geo.lights[l].direction[1] +
+                        intensity = tnx * geo.lights[l].direction[0] + tny * geo.lights[l].direction[1] +
                                     tnz * geo.lights[l].direction[2];
                     }
                     if (intensity > 0.0f) {
@@ -348,9 +344,8 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
             } else {
                 // Standard directional-only lighting
                 for (int l = 0; l < geo.numLights; ++l) {
-                    float dot = tnx * geo.lights[l].direction[0] +
-                               tny * geo.lights[l].direction[1] +
-                               tnz * geo.lights[l].direction[2];
+                    float dot = tnx * geo.lights[l].direction[0] + tny * geo.lights[l].direction[1] +
+                                tnz * geo.lights[l].direction[2];
                     if (dot > 0.0f) {
                         const float* lc = useFirstColor ? geo.lights[l].color : geo.lights[l].color2;
                         lr += lc[0] * dot;
@@ -380,10 +375,9 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
             // N64 RSP clamps z/w to -1.0 for vertices behind the near plane.
             // Without this, near-clipped geometry gets wildly wrong fog values
             // that propagate through the clipper. (GLideN64 ref: vertex shader)
-            if (tv.position[2] < -tv.position[3])
-                zOverW = -1.0f;
-            float fogVal = zOverW * (static_cast<float>(geo.fogMultiplier) / 256.0f)
-                         + (static_cast<float>(geo.fogOffset) / 256.0f);
+            if (tv.position[2] < -tv.position[3]) zOverW = -1.0f;
+            float fogVal = zOverW * (static_cast<float>(geo.fogMultiplier) / 256.0f) +
+                           (static_cast<float>(geo.fogOffset) / 256.0f);
             tv.fogFactor = std::clamp(fogVal, 0.0f, 1.0f);
             // Overwrite shade alpha with fog factor — the real RSP does this
             tv.color[3] = tv.fogFactor;
@@ -426,10 +420,10 @@ void GBIHandler::TransformVertexBatch(GeometryState& geo, int startIndex, int co
 
 void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, int startIndex) {
     if (!ctx.state) return;
-    
+
     address = ctx.ResolveAddress(address);
     auto& geo = ctx.state->geometry;
-    
+
     // Wrap rather than truncate: the destination slot is masked per-vertex
     // below, matching the reference's masked vertex file. Truncating here
     // silently discarded the tail of a load whose start index sat high in the
@@ -446,7 +440,7 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         if (vtxAddr + 16 > ctx.rdramSize) break;
         const int dstIdx = (startIndex + i) & VERTEX_BUFFER_MASK;
         geo.vertexGeneration[dstIdx] = geo.vertexLoadCounter;
-        
+
         // Read N64 vertex using word-swapped RDRAM addressing
         int16_t x = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 0));
         int16_t y = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 2));
@@ -454,20 +448,20 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
         // uint16_t flag = ctx.ReadHalf(vtxAddr + 6); // unused typically
         int16_t s = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 8));
         int16_t t = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 10));
-        
+
         // Color/Normal bytes
         uint8_t cn0 = ctx.ReadByte(vtxAddr + 12); // R or NX
         uint8_t cn1 = ctx.ReadByte(vtxAddr + 13); // G or NY
         uint8_t cn2 = ctx.ReadByte(vtxAddr + 14); // B or NZ
         uint8_t cn3 = ctx.ReadByte(vtxAddr + 15); // A
-        
+
         // Fill transformed vertex (masked slot -- see LoadVertices' wrap note)
         TransformedVertex& tv = geo.vertexBuffer[dstIdx];
         tv.position[0] = static_cast<float>(x);
         tv.position[1] = static_cast<float>(y);
         tv.position[2] = static_cast<float>(z);
         tv.position[3] = 1.0f;
-        
+
         tv.texCoord[0] = static_cast<float>(s) * (1.0f / 32.0f); // s10.5 to float
         tv.texCoord[1] = static_cast<float>(t) * (1.0f / 32.0f);
         // NOTE: gSPTexture scale is applied at draw time (in makeVert) so that the
@@ -475,12 +469,12 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
 
         tv.texCoord1[0] = tv.texCoord[0]; // tile 1 starts with same base coords
         tv.texCoord1[1] = tv.texCoord[1];
-        
+
         bool lighting = (geo.geometryMode & G_LIGHTING) != 0;
         bool texGen = (geo.geometryMode & G_TEXTURE_GEN) != 0;
         bool texGenLinear = (geo.geometryMode & G_TEXTURE_GEN_LINEAR) != 0;
         bool needEyeNormal = lighting || texGen || texGenLinear;
-        
+
         if (needEyeNormal) {
             // Store normal for lighting calculation or texture generation
             tv.normal[0] = static_cast<float>(static_cast<int8_t>(cn0)) / 127.0f;
@@ -493,18 +487,18 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
             tv.color[2] = static_cast<float>(cn2) / 255.0f;
             tv.color[3] = static_cast<float>(cn3) / 255.0f;
         }
-        
+
         tv.clipFlags = 0;
         tv.fogFactor = 0.0f;
         tv.modifiedXY = false;
         tv.modifiedZ = false;
     }
-    
+
     // Transform vertices through model-view-projection
     // Uses GeometryState's combined matrix (projection * modelView)
     geo.UpdateCombinedMatrix();
     TransformVertexBatch(geo, startIndex, count);
-    
+
     m_verticesLoaded += count;
 }
 
@@ -514,16 +508,16 @@ void GBIHandler::LoadVertices(DListContext& ctx, uint32_t address, int count, in
 
 void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool load, bool projection) {
     if (!ctx.state) return;
-    
+
     address = ctx.ResolveAddress(address);
     auto& geo = ctx.state->geometry;
-    
+
     // N64 matrices are stored as two 32-byte segments (integer + fractional parts)
     // Total 64 bytes per 4x4 matrix in fixed-point s15.16 format
     if (address + 64 > ctx.rdramSize) return;
-    
+
     Matrix4x4 mtx;
-    
+
     // First 32 bytes: integer parts (16-bit)
     // Next 32 bytes: fractional parts (16-bit)
     // RDRAM uses 32-bit word-swapped storage — use ReadHalf for 16-bit reads
@@ -532,13 +526,13 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
             int idx = i * 4 + j;
             int16_t intPart = static_cast<int16_t>(ctx.ReadHalf(address + idx * 2));
             uint16_t fracPart = ctx.ReadHalf(address + 32 + idx * 2);
-            
+
             // Combine into s15.16 then convert to float
             int32_t fixed = (static_cast<int32_t>(intPart) << 16) | fracPart;
             mtx.m[i][j] = static_cast<float>(fixed) / 65536.0f;
         }
     }
-    
+
     if (projection) {
         if (load) {
             geo.projectionStack[geo.projectionStackDepth] = mtx;
@@ -569,7 +563,7 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
                             int idx = wi * 4 + wj;
                             // Convert float back to s15.16 fixed-point
                             int32_t fixed = static_cast<int32_t>(P.m[wi][wj] * 65536.0f);
-                            ctx.WriteHalf(address +      idx * 2, static_cast<uint16_t>(static_cast<int16_t>(fixed >> 16)));
+                            ctx.WriteHalf(address + idx * 2, static_cast<uint16_t>(static_cast<int16_t>(fixed >> 16)));
                             ctx.WriteHalf(address + 32 + idx * 2, static_cast<uint16_t>(fixed & 0xFFFF));
                         }
                     }
@@ -601,7 +595,7 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
                 ++geo.modelViewStackDepth;
             }
         }
-        
+
         if (load) {
             geo.modelViewStack[geo.modelViewStackDepth] = mtx;
         } else {
@@ -622,7 +616,7 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
             geo.modelViewStack[geo.modelViewStackDepth] = temp;
         }
     }
-    
+
     geo.combinedDirty = true;
     ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
 }
@@ -633,10 +627,10 @@ void GBIHandler::LoadMatrix(DListContext& ctx, uint32_t address, bool push, bool
 
 void GBIHandler::SetGeometryMode(DListContext& ctx, uint32_t clearBits, uint32_t setBits) {
     if (!ctx.state) return;
-    
+
     auto& geo = ctx.state->geometry;
     geo.geometryMode = (geo.geometryMode & ~clearBits) | setBits;
-    
+
     ctx.state->MarkDirty(RDPDirtyFlag::GeometryMode);
 }
 
@@ -646,18 +640,18 @@ void GBIHandler::SetGeometryMode(DListContext& ctx, uint32_t clearBits, uint32_t
 
 void GBIHandler::SetTextureState(DListContext& ctx, uint32_t w0, uint32_t w1) {
     if (!ctx.state) return;
-    
+
     auto& geo = ctx.state->geometry;
     int level = (w0 >> 11) & 0x7;
     int tileIndex = (w0 >> 8) & 0x7;
     bool on = (w0 & 0xFF) != 0;
-    
+
     geo.texture.scaleS = static_cast<uint16_t>((w1 >> 16) & 0xFFFF);
     geo.texture.scaleT = static_cast<uint16_t>(w1 & 0xFFFF);
     geo.texture.level = static_cast<uint8_t>(level);
     geo.texture.tileIndex = static_cast<uint8_t>(tileIndex);
     geo.texture.enabled = on;
-    
+
     ctx.state->MarkDirty(RDPDirtyFlag::TextureState);
 }
 
@@ -668,17 +662,15 @@ void GBIHandler::SetTextureState(DListContext& ctx, uint32_t w0, uint32_t w1) {
 void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uint32_t value) {
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
-    
+
     switch (index) {
-    case MoveWord::MW_SEGMENT:
-    {
+    case MoveWord::MW_SEGMENT: {
         int seg = (offset >> 2) & 0xF;
         geo.segments[seg] = value & 0x00FFFFFF;
         break;
     }
-    
-    case MoveWord::MW_NUMLIGHT:
-    {
+
+    case MoveWord::MW_NUMLIGHT: {
         // value = (numLights-1) * 24 for GBI1, or (numLights) * 24 for GBI2
         // We store the actual light count
         int numLights = static_cast<int>(value / 24);
@@ -687,18 +679,16 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         break;
     }
-    
-    case MoveWord::MW_FOG:
-    {
+
+    case MoveWord::MW_FOG: {
         int16_t multiplier = static_cast<int16_t>((value >> 16) & 0xFFFF);
         int16_t fogOffset = static_cast<int16_t>(value & 0xFFFF);
         geo.fogMultiplier = multiplier;
         geo.fogOffset = fogOffset;
         break;
     }
-    
-    case MoveWord::MW_LIGHTCOL:
-    {
+
+    case MoveWord::MW_LIGHTCOL: {
         // Light color: offset indicates which light and which field
         int lightIdx = offset / 0x18;
         int field = (offset % 0x18) / 4;
@@ -713,9 +703,8 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         break;
     }
-    
-    case MoveWord::MW_CLIP:
-    {
+
+    case MoveWord::MW_CLIP: {
         // Guard-band clip ratio — N64 RSP clips at w*ratio instead of w.
         // gSPClipRatio sends 4 moveword commands (RNX/RNY/RPX/RPY) with
         // the same ratio value.  Store the ratio from any of them.
@@ -723,24 +712,20 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         if (ratio >= 1 && ratio <= 6) {
             geo.clipRatio = static_cast<float>(ratio);
         }
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "MW_CLIP: offset=0x{:02X} value=0x{:08X} ratio={}",
-                offset, value, geo.clipRatio);
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "MW_CLIP: offset=0x{:02X} value=0x{:08X} ratio={}", offset, value,
+                 geo.clipRatio);
         break;
     }
-    
-    case MoveWord::MW_PERSPNORM:
-    {
+
+    case MoveWord::MW_PERSPNORM: {
         // Perspective normalization factor — on real RSP this scales W to
         // maximise fixed-point precision.  In HLE (float pipeline) it is a
         // no-op, but log for tracing.
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "MW_PERSPNORM: value=0x{:08X}", value);
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "MW_PERSPNORM: value=0x{:08X}", value);
         break;
     }
-    
-    case MoveWord::MW_MATRIX:
-    {
+
+    case MoveWord::MW_MATRIX: {
         // gSPInsertMatrix — modifies individual elements of the combined matrix.
         // The 'offset' selects which matrix and element; 'value' contains two
         // 16-bit halves (integer or fractional parts of two consecutive elements).
@@ -786,9 +771,8 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         ctx.state->MarkDirty(RDPDirtyFlag::Matrix);
         break;
     }
-    
-    case MoveWord::MW_FORCEMTX:
-    {
+
+    case MoveWord::MW_FORCEMTX: {
         // GLideN64: w1==0 → mark matrix changed (recompute from MV*P)
         //           w1!=0 → mark matrix NOT changed (keep forced matrix)
         if (value == 0) {
@@ -799,11 +783,8 @@ void GBIHandler::MoveWord(DListContext& ctx, uint8_t index, uint16_t offset, uin
         }
         break;
     }
-    
-    default:
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "Unknown MoveWord index: 0x{:02X}", index);
-        break;
+
+    default: NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "Unknown MoveWord index: 0x{:02X}", index); break;
     }
 }
 
@@ -815,12 +796,11 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
     if (!ctx.state) return;
     address = ctx.ResolveAddress(address);
     auto& geo = ctx.state->geometry;
-    
+
     switch (index) {
-    case MoveMem::G_MV_VIEWPORT:
-    {
+    case MoveMem::G_MV_VIEWPORT: {
         if (address + 16 > ctx.rdramSize) break;
-        
+
         // Viewport struct: scale (4 * int16), translate (4 * int16) — 16 bytes
         // RDRAM uses 32-bit word-swapped storage — use ReadHalf for 16-bit reads
         int16_t scaleX = static_cast<int16_t>(ctx.ReadHalf(address + 0));
@@ -830,7 +810,7 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         int16_t transX = static_cast<int16_t>(ctx.ReadHalf(address + 8));
         int16_t transY = static_cast<int16_t>(ctx.ReadHalf(address + 10));
         int16_t transZ = static_cast<int16_t>(ctx.ReadHalf(address + 12));
-        
+
         geo.viewport.scaleX = static_cast<float>(scaleX) / 4.0f;
         // Negate viewport scaleY: the N64 screen has Y=0 at the top (Y-down),
         // but clip-space Y is positive-up.  Negating scaleY maps positive
@@ -841,14 +821,13 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         geo.viewport.transX = static_cast<float>(transX) / 4.0f;
         geo.viewport.transY = static_cast<float>(transY) / 4.0f;
         geo.viewport.transZ = static_cast<float>(transZ) / 1024.0f;
-        
+
         ctx.state->MarkDirty(RDPDirtyFlag::Viewport);
         break;
     }
-    
+
     case MoveMem::G_MV_LOOKATY:
-    case MoveMem::G_MV_LOOKATX:
-    {
+    case MoveMem::G_MV_LOOKATX: {
         // LookAt vectors for texture generation
         if (address + 16 > ctx.rdramSize) break;
         int n = (index == MoveMem::G_MV_LOOKATX) ? 0 : 1;
@@ -856,9 +835,8 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         geo.lookat[n][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
         geo.lookat[n][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
         // Normalize lookat vector
-        float llen = std::sqrt(geo.lookat[n][0]*geo.lookat[n][0] +
-                               geo.lookat[n][1]*geo.lookat[n][1] +
-                               geo.lookat[n][2]*geo.lookat[n][2]);
+        float llen = std::sqrt(geo.lookat[n][0] * geo.lookat[n][0] + geo.lookat[n][1] * geo.lookat[n][1] +
+                               geo.lookat[n][2] * geo.lookat[n][2]);
         if (llen > 0.0001f) {
             float linv = 1.0f / llen;
             geo.lookat[n][0] *= linv;
@@ -873,9 +851,8 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
         }
         break;
     }
-    
-    default:
-    {
+
+    default: {
         // Light data: G_MV_L0..G_MV_L7
         if (index >= MoveMem::G_MV_L0 && index <= MoveMem::G_MV_L7) {
             int lightIdx = (index - MoveMem::G_MV_L0) / 2;
@@ -890,22 +867,22 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
                 light.color2[0] = static_cast<float>(ctx.ReadByte(address + 4)) / 255.0f;
                 light.color2[1] = static_cast<float>(ctx.ReadByte(address + 5)) / 255.0f;
                 light.color2[2] = static_cast<float>(ctx.ReadByte(address + 6)) / 255.0f;
-                
+
                 // Direction (N64 bytes 8-10, signed int8, normalized)
                 light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
                 light.direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 light.direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
                 // Normalize direction
-                float len = std::sqrt(light.direction[0]*light.direction[0] +
-                                      light.direction[1]*light.direction[1] +
-                                      light.direction[2]*light.direction[2]);
+                float len =
+                    std::sqrt(light.direction[0] * light.direction[0] + light.direction[1] * light.direction[1] +
+                              light.direction[2] * light.direction[2]);
                 if (len > 0.0001f) {
                     float inv = 1.0f / len;
                     light.direction[0] *= inv;
                     light.direction[1] *= inv;
                     light.direction[2] *= inv;
                 }
-                
+
                 // Point light data (F3DEX2 extended format)
                 // Position: N64 halfwords at bytes 8-9, 10-11, 12-13
                 light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 8)));
@@ -915,15 +892,14 @@ void GBIHandler::MoveMemGBI1(DListContext& ctx, uint8_t index, [[maybe_unused]] 
                 light.ca = static_cast<float>(ctx.ReadByte(address + 3));
                 light.la = static_cast<float>(ctx.ReadByte(address + 7));
                 light.qa = static_cast<float>(ctx.ReadByte(address + 14));
-                
+
                 ctx.state->MarkDirty(RDPDirtyFlag::Lights);
             }
         }
         break;
     }
-    
-    case MoveMem::G_MV_MATRIX_1:
-    {
+
+    case MoveMem::G_MV_MATRIX_1: {
         // gSPForceMatrix (GBI1) — directly sets the combined matrix (MVP)
         if (address + 64 <= ctx.rdramSize) {
             auto& geo = ctx.state->geometry;
@@ -953,16 +929,14 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
     if (!ctx.state) return;
     address = ctx.ResolveAddress(address);
     auto& geo = ctx.state->geometry;
-    
+
     switch (index) {
-    case MoveMem::G_MV2_VIEWPORT:
-    {
+    case MoveMem::G_MV2_VIEWPORT: {
         MoveMemGBI1(ctx, MoveMem::G_MV_VIEWPORT, size, address);
         break;
     }
-    
-    case MoveMem::G_MV2_LIGHT:
-    {
+
+    case MoveMem::G_MV2_LIGHT: {
         // GBI2 light addressing: gSPLight offset = (n + 1) * 24, 0-based index = offset/24 - 2
         // LookAt X is at offset 0 (index = -2)
         // LookAt Y is at offset 24 (index = -1)
@@ -978,22 +952,22 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
                 light.color2[0] = static_cast<float>(ctx.ReadByte(address + 4)) / 255.0f;
                 light.color2[1] = static_cast<float>(ctx.ReadByte(address + 5)) / 255.0f;
                 light.color2[2] = static_cast<float>(ctx.ReadByte(address + 6)) / 255.0f;
-                
+
                 // Direction (N64 bytes 8-10, signed int8)
                 light.direction[0] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 8))) / 127.0f;
                 light.direction[1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 light.direction[2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
                 // Normalize direction
-                float len = std::sqrt(light.direction[0]*light.direction[0] +
-                                      light.direction[1]*light.direction[1] +
-                                      light.direction[2]*light.direction[2]);
+                float len =
+                    std::sqrt(light.direction[0] * light.direction[0] + light.direction[1] * light.direction[1] +
+                              light.direction[2] * light.direction[2]);
                 if (len > 0.0001f) {
                     float inv = 1.0f / len;
                     light.direction[0] *= inv;
                     light.direction[1] *= inv;
                     light.direction[2] *= inv;
                 }
-                
+
                 // Point light data (F3DEX2 extended format)
                 light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 8)));
                 light.position[1] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(address + 10)));
@@ -1007,8 +981,14 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
                 geo.lookat[1][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 geo.lookat[1][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
                 // Normalize
-                float llen = std::sqrt(geo.lookat[1][0]*geo.lookat[1][0] + geo.lookat[1][1]*geo.lookat[1][1] + geo.lookat[1][2]*geo.lookat[1][2]);
-                if (llen > 0.0001f) { float li = 1.0f/llen; geo.lookat[1][0]*=li; geo.lookat[1][1]*=li; geo.lookat[1][2]*=li; }
+                float llen = std::sqrt(geo.lookat[1][0] * geo.lookat[1][0] + geo.lookat[1][1] * geo.lookat[1][1] +
+                                       geo.lookat[1][2] * geo.lookat[1][2]);
+                if (llen > 0.0001f) {
+                    float li = 1.0f / llen;
+                    geo.lookat[1][0] *= li;
+                    geo.lookat[1][1] *= li;
+                    geo.lookat[1][2] *= li;
+                }
                 // Match GLideN64: loading lookat[1] enables if x or y non-zero
                 geo.lookatEnabled = (geo.lookat[1][0] != 0.0f || geo.lookat[1][1] != 0.0f);
             } else if (lightIdx == -2) {
@@ -1017,19 +997,24 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
                 geo.lookat[0][1] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 9))) / 127.0f;
                 geo.lookat[0][2] = static_cast<float>(static_cast<int8_t>(ctx.ReadByte(address + 10))) / 127.0f;
                 // Normalize
-                float llen = std::sqrt(geo.lookat[0][0]*geo.lookat[0][0] + geo.lookat[0][1]*geo.lookat[0][1] + geo.lookat[0][2]*geo.lookat[0][2]);
-                if (llen > 0.0001f) { float li = 1.0f/llen; geo.lookat[0][0]*=li; geo.lookat[0][1]*=li; geo.lookat[0][2]*=li; }
+                float llen = std::sqrt(geo.lookat[0][0] * geo.lookat[0][0] + geo.lookat[0][1] * geo.lookat[0][1] +
+                                       geo.lookat[0][2] * geo.lookat[0][2]);
+                if (llen > 0.0001f) {
+                    float li = 1.0f / llen;
+                    geo.lookat[0][0] *= li;
+                    geo.lookat[0][1] *= li;
+                    geo.lookat[0][2] *= li;
+                }
                 // Match GLideN64: loading lookat[0] always enables
                 geo.lookatEnabled = true;
             }
-            
+
             ctx.state->MarkDirty(RDPDirtyFlag::Lights);
         }
         break;
     }
-    
-    case MoveMem::G_MV2_MATRIX:
-    {
+
+    case MoveMem::G_MV2_MATRIX: {
         // gSPForceMatrix — directly sets the combined matrix (MVP), bypassing
         // the separate ModelView/Projection stacks.
         if (address + 64 <= ctx.rdramSize) {
@@ -1063,10 +1048,9 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
         ctx.AdvancePC(2);
         break;
     }
-    
+
     default:
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "Unknown GBI2 MoveMem index: {} offset: {}", index, offset);
+        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "Unknown GBI2 MoveMem index: {} offset: {}", index, offset);
         break;
     }
 }
@@ -1077,7 +1061,7 @@ void GBIHandler::MoveMemGBI2(DListContext& ctx, uint8_t index, uint8_t size, uin
 
 void GBIHandler::SetOtherModeH(DListContext& ctx, uint32_t shift, uint32_t length, uint32_t value) {
     if (!ctx.state) return;
-    
+
     uint32_t mask = (length >= 32) ? 0xFFFFFFFFu : (((uint32_t)1 << length) - 1) << shift;
     ctx.state->otherModeH = (ctx.state->otherModeH & ~mask) | (value & mask);
     ctx.state->UpdateDerivedOtherModes();
@@ -1086,7 +1070,7 @@ void GBIHandler::SetOtherModeH(DListContext& ctx, uint32_t shift, uint32_t lengt
 
 void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t length, uint32_t value) {
     if (!ctx.state) return;
-    
+
     uint32_t mask = (length >= 32) ? 0xFFFFFFFFu : (((uint32_t)1 << length) - 1) << shift;
     ctx.state->otherModeL = (ctx.state->otherModeL & ~mask) | (value & mask);
     ctx.state->UpdateDerivedOtherModes();
@@ -1097,8 +1081,9 @@ void GBIHandler::SetOtherModeL(DListContext& ctx, uint32_t shift, uint32_t lengt
 //  Debug flags — disable specific culling/branching mechanisms for diagnosis.
 //  Set to true one at a time to narrow down geometry disappearing issues.
 // ═══════════════════════════════════════════════════════════════════════════
-static constexpr bool DEBUG_DISABLE_CULLDL     = false; // disable CullDisplayList
-static constexpr bool DEBUG_DISABLE_BRANCH     = false;  // force-disable BranchZ/BranchW: always render high-detail DL (fixes MM building / distant texture pop-out)
+static constexpr bool DEBUG_DISABLE_CULLDL = false; // disable CullDisplayList
+static constexpr bool DEBUG_DISABLE_BRANCH =
+    false; // force-disable BranchZ/BranchW: always render high-detail DL (fixes MM building / distant texture pop-out)
 static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling + AND-rejection in DrawTriangle
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1125,8 +1110,8 @@ static constexpr bool DEBUG_DISABLE_TRI_REJECT = false; // disable face culling 
 static bool ComputeUsesShadeInFinalColor(uint64_t mux, uint32_t otherModeH) {
     const uint32_t hi = static_cast<uint32_t>(mux >> 32);
     const uint32_t lo = static_cast<uint32_t>(mux & 0xFFFFFFFFu);
-    const uint32_t cycleType = (otherModeH >> 20) & 0x3u;   // 0=1cyc 1=2cyc 2=copy 3=fill
-    if (cycleType >= 2) return false;   // COPY/FILL: no combiner, no shade at all
+    const uint32_t cycleType = (otherModeH >> 20) & 0x3u; // 0=1cyc 1=2cyc 2=copy 3=fill
+    if (cycleType >= 2) return false;                     // COPY/FILL: no combiner, no shade at all
 
     // Cycle 1 fields (also what 1-cycle mode actually uses — the RSP clears
     // cycle 0's fields to no-ops in 1-cycle mode; hardware always evaluates
@@ -1161,455 +1146,452 @@ static bool ComputeUsesShadeInFinalColor(uint64_t mux, uint32_t otherModeH) {
 void GBIHandler::DrawTriangle(DListContext& ctx, int v0, int v1, int v2) {
     // rdpProcessor may be null in shadow HLE mode (RT geometry extraction only).
     // In that case we skip all RDP draw calls but still feed geometryConsumer.
-    if (!ctx.state) { return; }
-    
-    {
-    auto& geo = ctx.state->geometry;
-    // ── Vertex index handling: MASK, never drop (GLideN64 parity) ──
-    // GLideN64 resolves every index through
-    //     SPVertex & getVertex(u32 _v) { return triangles.vertices[_v & VERTBUFF_MASK]; }
-    // (GraphicsDrawer.h, VERTBUFF_SIZE 256) -- it has no per-ucode "cache size"
-    // rejection at all. We previously discarded any triangle with an index >=
-    // GetVertexCacheSize() (32 for F3DEX2/F3DZEX) while LoadVertices was happy
-    // to fill slots well past that, so vertices loaded above the cache size were
-    // unreachable and every triangle referencing them vanished silently --
-    // missing geometry with no diagnostic. Masking matches the reference and the
-    // hardware's wrap-around register file.
-    if (v0 < 0 || v1 < 0 || v2 < 0) return;
-    v0 &= VERTEX_BUFFER_MASK;
-    v1 &= VERTEX_BUFFER_MASK;
-    v2 &= VERTEX_BUFFER_MASK;
-
-    // Degenerate-vertex guard (matches GLideN64 gSPTriangle and RT64
-    // RSP::drawIndexedTri): two equal indices = zero-area triangle that
-    // would emit a sliver after perspective divide.  N64 RDP would also
-    // reject these via subpixel coverage but our float pipeline rounds
-    // them into visible 1-pixel lines.  Suspected cause of Bug A
-    // (SM64 tree extra triangle near Bob-omb trees).
-    if (v0 == v1 || v1 == v2 || v0 == v2)
+    if (!ctx.state) {
         return;
-
-    // Bug A diagnostic (NOVA64_TRI_DUMP=min,max): unconditionally dump every
-    // triangle's NDC position, vertex color, geometry mode, and vertex-cache
-    // generation stamps within an absolute frame range, for offline grepping
-    // by color/position. Mechanism-specific hypotheses tested so far
-    // (degenerate index, clip-epsilon mismatch, stale-slot generation gap)
-    // all came back clean, so this dumps raw data instead of guessing again.
-    {
-        static const long dumpMin = []() -> long {
-            const char* v = std::getenv("NOVA64_TRI_DUMP");
-            if (!v) return -1L;
-            return std::strtol(v, nullptr, 10);
-        }();
-        static const long dumpMax = []() -> long {
-            const char* v = std::getenv("NOVA64_TRI_DUMP");
-            if (!v) return -1L;
-            const char* comma = std::strchr(v, ',');
-            return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
-        }();
-        static std::atomic<long> dumpLinesLeft{500000};
-        const long present = g_presentIndex.load(std::memory_order_relaxed);
-        // Heartbeat: when dumping is armed, periodically report what present
-        // (VI) index DrawTriangle actually observes, to verify correlation.
-        if (dumpMin >= 0) {
-            static std::atomic<long> hb{0};
-            long h = hb.fetch_add(1, std::memory_order_relaxed);
-            if ((h % 100000) == 0)
-                std::fprintf(stderr, "[TRI-HB] call=%ld present(VI)=%ld\n", h, present);
-        }
-        if (dumpMin >= 0 && dumpMax >= dumpMin &&
-            present >= dumpMin && present <= dumpMax &&
-            dumpLinesLeft.fetch_sub(1, std::memory_order_relaxed) > 0) {
-            const auto& a = geo.vertexBuffer[v0];
-            const auto& b = geo.vertexBuffer[v1];
-            const auto& c = geo.vertexBuffer[v2];
-            auto ndcOf = [](const TransformedVertex& tv, int axis) -> float {
-                float w = tv.position[3];
-                if (std::fabs(w) < 1e-8f) return 0.0f;
-                return tv.position[axis] / w;
-            };
-            const auto& dumpTile = ctx.state->tiles[geo.texture.tileIndex & 7];
-            std::fprintf(stderr,
-                "[TRI-DUMP] present=%ld dl=%llu idx=(%d,%d,%d) gen=(%u,%u,%u) curGen=%u geomMode=0x%X "
-                "oml=0x%X omh=0x%X cmb=0x%llX prim=(%u,%u,%u,%u) env=(%u,%u,%u,%u) tex0en=%d tile0=%u "
-                "ndc0=(%.3f,%.3f,%.3f) ndc1=(%.3f,%.3f,%.3f) ndc2=(%.3f,%.3f,%.3f) "
-                "col0=(%.2f,%.2f,%.2f,%.2f) col1=(%.2f,%.2f,%.2f,%.2f) col2=(%.2f,%.2f,%.2f,%.2f) "
-                "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
-                "tileFmt=%u tileSz=%u tileWH=(%.0f,%.0f) tmem=%u line=%u pal=%u\n",
-                present, static_cast<unsigned long long>(geo.frameSeq), v0, v1, v2,
-                geo.vertexGeneration[v0], geo.vertexGeneration[v1], geo.vertexGeneration[v2],
-                geo.vertexLoadCounter, geo.geometryMode,
-                ctx.state->otherModeL, ctx.state->otherModeH,
-                static_cast<unsigned long long>(ctx.state->combineModeRaw),
-                ctx.state->primColor.r, ctx.state->primColor.g, ctx.state->primColor.b, ctx.state->primColor.a,
-                ctx.state->envColor.r, ctx.state->envColor.g, ctx.state->envColor.b, ctx.state->envColor.a,
-                geo.texture.enabled ? 1 : 0, geo.texture.tileIndex,
-                ndcOf(a, 0), ndcOf(a, 1), ndcOf(a, 2),
-                ndcOf(b, 0), ndcOf(b, 1), ndcOf(b, 2),
-                ndcOf(c, 0), ndcOf(c, 1), ndcOf(c, 2),
-                a.color[0], a.color[1], a.color[2], a.color[3],
-                b.color[0], b.color[1], b.color[2], b.color[3],
-                c.color[0], c.color[1], c.color[2], c.color[3],
-                a.texCoord[0], a.texCoord[1], b.texCoord[0], b.texCoord[1], c.texCoord[0], c.texCoord[1],
-                static_cast<unsigned>(dumpTile.format), static_cast<unsigned>(dumpTile.size),
-                static_cast<float>(dumpTile.GetWidth()), static_cast<float>(dumpTile.GetHeight()),
-                dumpTile.tmemAddr, dumpTile.line, static_cast<unsigned>(dumpTile.palette));
-        }
-
     }
 
-    // Backface culling in screen space (like GLideN64) for numerical stability.
-    // NDC-space cross products lose precision for nearly edge-on polygons.
-    if (!DEBUG_DISABLE_TRI_REJECT &&
-        (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) &&
-        (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling())) {
-        const auto& tv0 = geo.vertexBuffer[v0];
-        const auto& tv1 = geo.vertexBuffer[v1];
-        const auto& tv2 = geo.vertexBuffer[v2];
-        
-        // Skip culling if any vertex is behind the camera (W < 0) or has
-        // W too close to zero.  When W < 0 the perspective divide flips the
-        // screen-space position, inverting the triangle's apparent winding
-        // and causing false backface rejections.  These triangles will be
-        // properly clipped by the Sutherland-Hodgman clipper below.
-        float w0 = tv0.position[3];
-        float w1 = tv1.position[3];
-        float w2 = tv2.position[3];
-        constexpr float wEps = 1e-5f;
-        if (w0 > wEps && w1 > wEps && w2 > wEps) {
-            float w0inv = 1.0f / w0;
-            float w1inv = 1.0f / w1;
-            float w2inv = 1.0f / w2;
-            
-            // Transform to screen space (viewport transform) for stable cross product
-            float sx = geo.viewport.scaleX;
-            float sy = geo.viewport.scaleY;
-            float tx = geo.viewport.transX;
-            float ty = geo.viewport.transY;
-            
-            float x0 = tv0.position[0] * w0inv * sx + tx;
-            float y0 = tv0.position[1] * w0inv * sy + ty;
-            float x1 = tv1.position[0] * w1inv * sx + tx;
-            float y1 = tv1.position[1] * w1inv * sy + ty;
-            float x2 = tv2.position[0] * w2inv * sx + tx;
-            float y2 = tv2.position[1] * w2inv * sy + ty;
-            
-            float cross = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-            
-            // scaleY is negative (Y-flip), so the cross product sign is
-            // flipped compared to NDC.  CULL_BACK rejects CCW screen-space
-            // triangles (cross > 0), CULL_FRONT rejects CW (cross < 0).
-            if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
-                return;
+    {
+        auto& geo = ctx.state->geometry;
+        // ── Vertex index handling: MASK, never drop (GLideN64 parity) ──
+        // GLideN64 resolves every index through
+        //     SPVertex & getVertex(u32 _v) { return triangles.vertices[_v & VERTBUFF_MASK]; }
+        // (GraphicsDrawer.h, VERTBUFF_SIZE 256) -- it has no per-ucode "cache size"
+        // rejection at all. We previously discarded any triangle with an index >=
+        // GetVertexCacheSize() (32 for F3DEX2/F3DZEX) while LoadVertices was happy
+        // to fill slots well past that, so vertices loaded above the cache size were
+        // unreachable and every triangle referencing them vanished silently --
+        // missing geometry with no diagnostic. Masking matches the reference and the
+        // hardware's wrap-around register file.
+        if (v0 < 0 || v1 < 0 || v2 < 0) return;
+        v0 &= VERTEX_BUFFER_MASK;
+        v1 &= VERTEX_BUFFER_MASK;
+        v2 &= VERTEX_BUFFER_MASK;
+
+        // Degenerate-vertex guard (matches GLideN64 gSPTriangle and RT64
+        // RSP::drawIndexedTri): two equal indices = zero-area triangle that
+        // would emit a sliver after perspective divide.  N64 RDP would also
+        // reject these via subpixel coverage but our float pipeline rounds
+        // them into visible 1-pixel lines.  Suspected cause of Bug A
+        // (SM64 tree extra triangle near Bob-omb trees).
+        if (v0 == v1 || v1 == v2 || v0 == v2) return;
+
+        // Bug A diagnostic (NOVA64_TRI_DUMP=min,max): unconditionally dump every
+        // triangle's NDC position, vertex color, geometry mode, and vertex-cache
+        // generation stamps within an absolute frame range, for offline grepping
+        // by color/position. Mechanism-specific hypotheses tested so far
+        // (degenerate index, clip-epsilon mismatch, stale-slot generation gap)
+        // all came back clean, so this dumps raw data instead of guessing again.
+        {
+            static const long dumpMin = []() -> long {
+                const char* v = std::getenv("NOVA64_TRI_DUMP");
+                if (!v) return -1L;
+                return std::strtol(v, nullptr, 10);
+            }();
+            static const long dumpMax = []() -> long {
+                const char* v = std::getenv("NOVA64_TRI_DUMP");
+                if (!v) return -1L;
+                const char* comma = std::strchr(v, ',');
+                return comma ? std::strtol(comma + 1, nullptr, 10) : -1L;
+            }();
+            static std::atomic<long> dumpLinesLeft{500000};
+            const long present = g_presentIndex.load(std::memory_order_relaxed);
+            // Heartbeat: when dumping is armed, periodically report what present
+            // (VI) index DrawTriangle actually observes, to verify correlation.
+            if (dumpMin >= 0) {
+                static std::atomic<long> hb{0};
+                long h = hb.fetch_add(1, std::memory_order_relaxed);
+                if ((h % 100000) == 0) std::fprintf(stderr, "[TRI-HB] call=%ld present(VI)=%ld\n", h, present);
             }
-            if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
-                return;
+            if (dumpMin >= 0 && dumpMax >= dumpMin && present >= dumpMin && present <= dumpMax &&
+                dumpLinesLeft.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                const auto& a = geo.vertexBuffer[v0];
+                const auto& b = geo.vertexBuffer[v1];
+                const auto& c = geo.vertexBuffer[v2];
+                auto ndcOf = [](const TransformedVertex& tv, int axis) -> float {
+                    float w = tv.position[3];
+                    if (std::fabs(w) < 1e-8f) return 0.0f;
+                    return tv.position[axis] / w;
+                };
+                const auto& dumpTile = ctx.state->tiles[geo.texture.tileIndex & 7];
+                std::fprintf(stderr,
+                             "[TRI-DUMP] present=%ld dl=%llu idx=(%d,%d,%d) gen=(%u,%u,%u) curGen=%u geomMode=0x%X "
+                             "oml=0x%X omh=0x%X cmb=0x%llX prim=(%u,%u,%u,%u) env=(%u,%u,%u,%u) tex0en=%d tile0=%u "
+                             "ndc0=(%.3f,%.3f,%.3f) ndc1=(%.3f,%.3f,%.3f) ndc2=(%.3f,%.3f,%.3f) "
+                             "col0=(%.2f,%.2f,%.2f,%.2f) col1=(%.2f,%.2f,%.2f,%.2f) col2=(%.2f,%.2f,%.2f,%.2f) "
+                             "st0=(%.1f,%.1f) st1=(%.1f,%.1f) st2=(%.1f,%.1f) "
+                             "tileFmt=%u tileSz=%u tileWH=(%.0f,%.0f) tmem=%u line=%u pal=%u\n",
+                             present, static_cast<unsigned long long>(geo.frameSeq), v0, v1, v2,
+                             geo.vertexGeneration[v0], geo.vertexGeneration[v1], geo.vertexGeneration[v2],
+                             geo.vertexLoadCounter, geo.geometryMode, ctx.state->otherModeL, ctx.state->otherModeH,
+                             static_cast<unsigned long long>(ctx.state->combineModeRaw), ctx.state->primColor.r,
+                             ctx.state->primColor.g, ctx.state->primColor.b, ctx.state->primColor.a,
+                             ctx.state->envColor.r, ctx.state->envColor.g, ctx.state->envColor.b, ctx.state->envColor.a,
+                             geo.texture.enabled ? 1 : 0, geo.texture.tileIndex, ndcOf(a, 0), ndcOf(a, 1), ndcOf(a, 2),
+                             ndcOf(b, 0), ndcOf(b, 1), ndcOf(b, 2), ndcOf(c, 0), ndcOf(c, 1), ndcOf(c, 2), a.color[0],
+                             a.color[1], a.color[2], a.color[3], b.color[0], b.color[1], b.color[2], b.color[3],
+                             c.color[0], c.color[1], c.color[2], c.color[3], a.texCoord[0], a.texCoord[1],
+                             b.texCoord[0], b.texCoord[1], c.texCoord[0], c.texCoord[1],
+                             static_cast<unsigned>(dumpTile.format), static_cast<unsigned>(dumpTile.size),
+                             static_cast<float>(dumpTile.GetWidth()), static_cast<float>(dumpTile.GetHeight()),
+                             dumpTile.tmemAddr, dumpTile.line, static_cast<unsigned>(dumpTile.palette));
             }
         }
-    }
 
-    // Clip rejection / clipping
-    {
-    const auto& tv0c = geo.vertexBuffer[v0];
-    const auto& tv1c = geo.vertexBuffer[v1];
-    const auto& tv2c = geo.vertexBuffer[v2];
+        // Backface culling in screen space (like GLideN64) for numerical stability.
+        // NDC-space cross products lose precision for nearly edge-on polygons.
+        if (!DEBUG_DISABLE_TRI_REJECT && (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) &&
+            (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling())) {
+            const auto& tv0 = geo.vertexBuffer[v0];
+            const auto& tv1 = geo.vertexBuffer[v1];
+            const auto& tv2 = geo.vertexBuffer[v2];
 
-    uint32_t orFlags = tv0c.clipFlags | tv1c.clipFlags | tv2c.clipFlags;
+            // Skip culling if any vertex is behind the camera (W < 0) or has
+            // W too close to zero.  When W < 0 the perspective divide flips the
+            // screen-space position, inverting the triangle's apparent winding
+            // and causing false backface rejections.  These triangles will be
+            // properly clipped by the Sutherland-Hodgman clipper below.
+            float w0 = tv0.position[3];
+            float w1 = tv1.position[3];
+            float w2 = tv2.position[3];
+            constexpr float wEps = 1e-5f;
+            if (w0 > wEps && w1 > wEps && w2 > wEps) {
+                float w0inv = 1.0f / w0;
+                float w1inv = 1.0f / w1;
+                float w2inv = 1.0f / w2;
 
-    // Trivial rejection: all verts on the same side of a plane.
-    //
-    // VALIDITY GUARD: the per-vertex X/Y flags are computed as clip-space
-    // comparisons against ±w·clipRatio. For a vertex BEHIND the camera
-    // (w < 0.01, CLIP_W set) those bounds are negative/degenerate and the
-    // comparisons fire spuriously (e.g. a vertex projecting to mid-screen
-    // carries CLIP_POSY). A triangle that straddles the camera plane can
-    // then share a spurious X/Y bit with a legitimately-flagged front
-    // vertex and get AND-rejected even though its near-clipped portion is
-    // fully visible — this exactly produced the missing Zelda skybox
-    // cells (black "shattered glass" wedges): the sky dome's overhead
-    // triangles straddle w=0 and were dropped instead of clipped.
-    // Real RSP behavior: trivial same-side rejection only applies when
-    // all three w are positive; straddling triangles are CLIPPED.
-    // So: allow AND-rejection on CLIP_W itself (all three behind camera
-    // = genuinely invisible), but when any vertex is behind the camera,
-    // ignore the X/Y bits and send the triangle to the clipper below.
-    if (!DEBUG_DISABLE_TRI_REJECT) {
-        uint32_t andFlags = tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags;
-        bool anyBehind = (orFlags & CLIP_W) != 0;
-        bool reject = (andFlags & CLIP_W) != 0 ||     // all behind camera
-                      (!anyBehind && andFlags != 0);   // valid same-side out
-        if (reject) {
-            return;
-        }
-    }
-    
-    // Skipping X/Y software clipping (only running W-near via the
-    // CLIP_W mask) caused texture flicker / "vibration" from certain
-    // camera angles: when a triangle straddled the screen edge AND
-    // had a vertex very close to the W-near plane, the W-clip produced
-    // a new vertex that inherited huge X/Y from the original; the
-    // GPU then rasterised across millions of texels worth of
-    // screen space, producing aliased garbage in the visible area.
-    // Re-enabling the full 5-plane Sutherland-Hodgman clipper fixes
-    // this without measurable perf cost (most triangles still trivial-
-    // accept via orFlags == 0).
-    // Software clipping is only REQUIRED when a vertex sits behind the
-    // camera plane (CLIP_W): the perspective divide is invalid there and
-    // the GPU cannot rasterize the triangle meaningfully. Triangles that
-    // merely overhang the X/Y frustum edges (flags without CLIP_W) are
-    // safe to hand to the GPU whole — the rasterizer clips/scissors them
-    // exactly, which is what real hardware effectively does within the
-    // RSP guard band, and what GLideN64 does. Routing them through the
-    // software clipper both diverges from hardware (extra seams) and, in
-    // this codebase, produced visibly wrong output for the Zelda skybox
-    // (clip-path draws rasterized black — the "shattered glass" cells
-    // whose quads cross the screen edge).
-    bool needsClip = (orFlags & CLIP_W) != 0;
-    if (!needsClip) {
-        // Direct draw — GPU handles any partial off-screen coverage.
-        if (ctx.rdpProcessor) {
-            ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
-        }
-        ++m_trianglesProcessed;
-    } else {
-        // Needs clipping - convert to ClipVertex, run Sutherland-Hodgman
-        auto toClipVert = [](const TransformedVertex& tv) -> ClipVertex {
-            ClipVertex cv;
-            cv.position  = { tv.position[0], tv.position[1], tv.position[2], tv.position[3] };
-            cv.color     = { tv.color[0], tv.color[1], tv.color[2], tv.color[3] };
-            cv.texCoord  = { tv.texCoord[0],  tv.texCoord[1] };
-            cv.texCoord1 = { tv.texCoord1[0], tv.texCoord1[1] };
-            cv.fog       = tv.fogFactor;
-            cv.clipFlags = tv.clipFlags;
-            return cv;
-        };
-        
-        ClippedPolygon poly;
-        int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly, geo.clipRatio);
+                // Transform to screen space (viewport transform) for stable cross product
+                float sx = geo.viewport.scaleX;
+                float sy = geo.viewport.scaleY;
+                float tx = geo.viewport.transX;
+                float ty = geo.viewport.transY;
 
-        if (triCount > 0 && poly.vertexCount >= 3) {
-            // Fan-triangulate clipped polygon (vertex 0 is the hub)
-            bool clipTextPersp = (ctx.state->otherModeH & 0x00080000u) != 0; // OTHERMODE_TEXTPERSP
-            auto toRenderVert = [&geo, clipTextPersp](const ClipVertex& cv) -> RenderBatch::Vertex {
-                RenderBatch::Vertex rv{};
-                // Perspective divide before viewport transform (same as makeVert in RDPProcessor)
-                float invW = (cv.position[3] != 0.0f) ? 1.0f / cv.position[3] : 1.0f;
-                rv.x = cv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
-                rv.y = cv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
-                // Snap intentionally disabled here too — see makeVert in
-                // RDPProcessor::DrawTriangle for the rationale.
-                {
-                    float z_screen = cv.position[2] * invW * geo.viewport.scaleZ + geo.viewport.transZ;
-                    float absScaleZ = std::abs(geo.viewport.scaleZ);
-                    rv.z = (absScaleZ > 0.0001f)
-                        ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ)
-                        : 0.0f;
-                    rv.z = std::max(0.0f, std::min(1.0f, rv.z));
-                    // Match makeVert: bias away from 1.0 so far-plane geometry
-                    // passes GL_LESS (which is used for opaque Z mode).
-                    if (rv.z >= 1.0f) rv.z = 0.99999f;
+                float x0 = tv0.position[0] * w0inv * sx + tx;
+                float y0 = tv0.position[1] * w0inv * sy + ty;
+                float x1 = tv1.position[0] * w1inv * sx + tx;
+                float y1 = tv1.position[1] * w1inv * sy + ty;
+                float x2 = tv2.position[0] * w2inv * sx + tx;
+                float y2 = tv2.position[1] * w2inv * sy + ty;
+
+                float cross = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+
+                // scaleY is negative (Y-flip), so the cross product sign is
+                // flipped compared to NDC.  CULL_BACK rejects CCW screen-space
+                // triangles (cross > 0), CULL_FRONT rejects CW (cross < 0).
+                if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
+                    return;
                 }
-                rv.w = 1.0f;
-                rv.r = cv.color[0]; rv.g = cv.color[1];
-                rv.b = cv.color[2]; rv.a = cv.color[3];
-                // Pre-divide texcoords by clip_W for perspective-correct interpolation.
-                // Apply gSPTexture scale at draw time (same convention as HLE makeVert).
-                float scaleS = geo.texture.enabled ? geo.texture.GetScaleSFloat() : 1.0f;
-                float scaleT = geo.texture.enabled ? geo.texture.GetScaleTFloat() : 1.0f;
-                bool textPersp = clipTextPersp;
-                float tcW = textPersp ? invW : 1.0f;
-                float affineHalf = textPersp ? 1.0f : 0.5f;
-                rv.s  = cv.texCoord.x  * scaleS * tcW * affineHalf; rv.t  = cv.texCoord.y  * scaleT * tcW * affineHalf;
-                rv.s1 = cv.texCoord1.x * scaleS * tcW * affineHalf; rv.t1 = cv.texCoord1.y * scaleT * tcW * affineHalf;
-                rv.perspW = tcW;
-                rv.fogFactor = cv.fog;
-                rv.clipFlags = 0; // Already clipped
-                return rv;
-            };
-            
-            // Post-clip face culling: the pre-clip culling was skipped
-            // when any vertex had W ≤ epsilon (behind camera).  Now that
-            // all clipped vertices have valid W > 0, we can reliably
-            // determine screen-space winding on each sub-triangle.
-            // Without this, backface geometry (e.g. the inside of walls)
-            // passes through unchecked when the camera clips through
-            // objects during cutscenes, covering the camera view.
-            bool doCull = (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) != 0
-                       && (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling());
-
-            for (int i = 1; i + 1 < poly.vertexCount; ++i) {
-                RenderBatch::Vertex rv0 = toRenderVert(poly.vertices[0]);
-                RenderBatch::Vertex rv1 = toRenderVert(poly.vertices[i]);
-                RenderBatch::Vertex rv2 = toRenderVert(poly.vertices[i + 1]);
-
-                if (doCull) {
-                    float cross = (rv1.x - rv0.x) * (rv2.y - rv0.y)
-                                - (rv2.x - rv0.x) * (rv1.y - rv0.y);
-                    // scaleY is negative → screen-space winding is flipped.
-                    // CULL_BACK rejects CCW (cross > 0), CULL_FRONT rejects CW (cross < 0).
-                    if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
-                        continue;
-                    }
-                    if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
-                        continue;
-                    }
+                if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
+                    return;
                 }
+            }
+        }
 
+        // Clip rejection / clipping
+        {
+            const auto& tv0c = geo.vertexBuffer[v0];
+            const auto& tv1c = geo.vertexBuffer[v1];
+            const auto& tv2c = geo.vertexBuffer[v2];
+
+            uint32_t orFlags = tv0c.clipFlags | tv1c.clipFlags | tv2c.clipFlags;
+
+            // Trivial rejection: all verts on the same side of a plane.
+            //
+            // VALIDITY GUARD: the per-vertex X/Y flags are computed as clip-space
+            // comparisons against ±w·clipRatio. For a vertex BEHIND the camera
+            // (w < 0.01, CLIP_W set) those bounds are negative/degenerate and the
+            // comparisons fire spuriously (e.g. a vertex projecting to mid-screen
+            // carries CLIP_POSY). A triangle that straddles the camera plane can
+            // then share a spurious X/Y bit with a legitimately-flagged front
+            // vertex and get AND-rejected even though its near-clipped portion is
+            // fully visible — this exactly produced the missing Zelda skybox
+            // cells (black "shattered glass" wedges): the sky dome's overhead
+            // triangles straddle w=0 and were dropped instead of clipped.
+            // Real RSP behavior: trivial same-side rejection only applies when
+            // all three w are positive; straddling triangles are CLIPPED.
+            // So: allow AND-rejection on CLIP_W itself (all three behind camera
+            // = genuinely invisible), but when any vertex is behind the camera,
+            // ignore the X/Y bits and send the triangle to the clipper below.
+            if (!DEBUG_DISABLE_TRI_REJECT) {
+                uint32_t andFlags = tv0c.clipFlags & tv1c.clipFlags & tv2c.clipFlags;
+                bool anyBehind = (orFlags & CLIP_W) != 0;
+                bool reject = (andFlags & CLIP_W) != 0 ||    // all behind camera
+                              (!anyBehind && andFlags != 0); // valid same-side out
+                if (reject) {
+                    return;
+                }
+            }
+
+            // Skipping X/Y software clipping (only running W-near via the
+            // CLIP_W mask) caused texture flicker / "vibration" from certain
+            // camera angles: when a triangle straddled the screen edge AND
+            // had a vertex very close to the W-near plane, the W-clip produced
+            // a new vertex that inherited huge X/Y from the original; the
+            // GPU then rasterised across millions of texels worth of
+            // screen space, producing aliased garbage in the visible area.
+            // Re-enabling the full 5-plane Sutherland-Hodgman clipper fixes
+            // this without measurable perf cost (most triangles still trivial-
+            // accept via orFlags == 0).
+            // Software clipping is only REQUIRED when a vertex sits behind the
+            // camera plane (CLIP_W): the perspective divide is invalid there and
+            // the GPU cannot rasterize the triangle meaningfully. Triangles that
+            // merely overhang the X/Y frustum edges (flags without CLIP_W) are
+            // safe to hand to the GPU whole — the rasterizer clips/scissors them
+            // exactly, which is what real hardware effectively does within the
+            // RSP guard band, and what GLideN64 does. Routing them through the
+            // software clipper both diverges from hardware (extra seams) and, in
+            // this codebase, produced visibly wrong output for the Zelda skybox
+            // (clip-path draws rasterized black — the "shattered glass" cells
+            // whose quads cross the screen edge).
+            bool needsClip = (orFlags & CLIP_W) != 0;
+            if (!needsClip) {
+                // Direct draw — GPU handles any partial off-screen coverage.
                 if (ctx.rdpProcessor) {
-                    ctx.rdpProcessor->DrawTriangleRaw(
-                        rv0, rv1, rv2,
-                        geo.geometryMode,
-                        geo.texture.tileIndex);
+                    ctx.rdpProcessor->DrawTriangle(v0, v1, v2, geo);
+                }
+                ++m_trianglesProcessed;
+            } else {
+                // Needs clipping - convert to ClipVertex, run Sutherland-Hodgman
+                auto toClipVert = [](const TransformedVertex& tv) -> ClipVertex {
+                    ClipVertex cv;
+                    cv.position = {tv.position[0], tv.position[1], tv.position[2], tv.position[3]};
+                    cv.color = {tv.color[0], tv.color[1], tv.color[2], tv.color[3]};
+                    cv.texCoord = {tv.texCoord[0], tv.texCoord[1]};
+                    cv.texCoord1 = {tv.texCoord1[0], tv.texCoord1[1]};
+                    cv.fog = tv.fogFactor;
+                    cv.clipFlags = tv.clipFlags;
+                    return cv;
+                };
+
+                ClippedPolygon poly;
+                int triCount = ClipTriangle(toClipVert(tv0c), toClipVert(tv1c), toClipVert(tv2c), poly, geo.clipRatio);
+
+                if (triCount > 0 && poly.vertexCount >= 3) {
+                    // Fan-triangulate clipped polygon (vertex 0 is the hub)
+                    bool clipTextPersp = (ctx.state->otherModeH & 0x00080000u) != 0; // OTHERMODE_TEXTPERSP
+                    auto toRenderVert = [&geo, clipTextPersp](const ClipVertex& cv) -> RenderBatch::Vertex {
+                        RenderBatch::Vertex rv{};
+                        // Perspective divide before viewport transform (same as makeVert in RDPProcessor)
+                        float invW = (cv.position[3] != 0.0f) ? 1.0f / cv.position[3] : 1.0f;
+                        rv.x = cv.position[0] * invW * geo.viewport.scaleX + geo.viewport.transX;
+                        rv.y = cv.position[1] * invW * geo.viewport.scaleY + geo.viewport.transY;
+                        // Snap intentionally disabled here too — see makeVert in
+                        // RDPProcessor::DrawTriangle for the rationale.
+                        {
+                            float z_screen = cv.position[2] * invW * geo.viewport.scaleZ + geo.viewport.transZ;
+                            float absScaleZ = std::abs(geo.viewport.scaleZ);
+                            rv.z = (absScaleZ > 0.0001f)
+                                       ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ)
+                                       : 0.0f;
+                            rv.z = std::max(0.0f, std::min(1.0f, rv.z));
+                            // Match makeVert: bias away from 1.0 so far-plane geometry
+                            // passes GL_LESS (which is used for opaque Z mode).
+                            if (rv.z >= 1.0f) rv.z = 0.99999f;
+                        }
+                        rv.w = 1.0f;
+                        rv.r = cv.color[0];
+                        rv.g = cv.color[1];
+                        rv.b = cv.color[2];
+                        rv.a = cv.color[3];
+                        // Pre-divide texcoords by clip_W for perspective-correct interpolation.
+                        // Apply gSPTexture scale at draw time (same convention as HLE makeVert).
+                        float scaleS = geo.texture.enabled ? geo.texture.GetScaleSFloat() : 1.0f;
+                        float scaleT = geo.texture.enabled ? geo.texture.GetScaleTFloat() : 1.0f;
+                        bool textPersp = clipTextPersp;
+                        float tcW = textPersp ? invW : 1.0f;
+                        float affineHalf = textPersp ? 1.0f : 0.5f;
+                        rv.s = cv.texCoord.x * scaleS * tcW * affineHalf;
+                        rv.t = cv.texCoord.y * scaleT * tcW * affineHalf;
+                        rv.s1 = cv.texCoord1.x * scaleS * tcW * affineHalf;
+                        rv.t1 = cv.texCoord1.y * scaleT * tcW * affineHalf;
+                        rv.perspW = tcW;
+                        rv.fogFactor = cv.fog;
+                        rv.clipFlags = 0; // Already clipped
+                        return rv;
+                    };
+
+                    // Post-clip face culling: the pre-clip culling was skipped
+                    // when any vertex had W ≤ epsilon (behind camera).  Now that
+                    // all clipped vertices have valid W > 0, we can reliably
+                    // determine screen-space winding on each sub-triangle.
+                    // Without this, backface geometry (e.g. the inside of walls)
+                    // passes through unchecked when the camera clips through
+                    // objects during cutscenes, covering the camera view.
+                    bool doCull = (geo.geometryMode & (G_CULL_FRONT | G_CULL_BACK)) != 0 &&
+                                  (!ctx.rdpProcessor || !ctx.rdpProcessor->IsDebugDisableCulling());
+
+                    for (int i = 1; i + 1 < poly.vertexCount; ++i) {
+                        RenderBatch::Vertex rv0 = toRenderVert(poly.vertices[0]);
+                        RenderBatch::Vertex rv1 = toRenderVert(poly.vertices[i]);
+                        RenderBatch::Vertex rv2 = toRenderVert(poly.vertices[i + 1]);
+
+                        if (doCull) {
+                            float cross = (rv1.x - rv0.x) * (rv2.y - rv0.y) - (rv2.x - rv0.x) * (rv1.y - rv0.y);
+                            // scaleY is negative → screen-space winding is flipped.
+                            // CULL_BACK rejects CCW (cross > 0), CULL_FRONT rejects CW (cross < 0).
+                            if ((geo.geometryMode & G_CULL_BACK) && cross > 0.0f) {
+                                continue;
+                            }
+                            if ((geo.geometryMode & G_CULL_FRONT) && cross < 0.0f) {
+                                continue;
+                            }
+                        }
+
+                        if (ctx.rdpProcessor) {
+                            ctx.rdpProcessor->DrawTriangleRaw(rv0, rv1, rv2, geo.geometryMode, geo.texture.tileIndex);
+                        }
+                    }
+                    m_trianglesProcessed += (poly.vertexCount - 2);
                 }
             }
-            m_trianglesProcessed += (poly.vertexCount - 2);
-        }
-    }
-    } // end clip rejection block
+        } // end clip rejection block
 
-    // RT: submit the original world-space triangle to the geometry consumer.
-    // Done AFTER culling (so backfacing triangles are skipped) but uses the
-    // original v0/v1/v2 positions rather than clipped sub-triangles, which is
-    // correct for BVH construction (ray tracing handles off-screen geometry fine).
-    //
-    // ONLY WORLD GEOMETRY: triangles drawn under an ORTHO projection (HUD,
-    // menu text, title-screen logo, letterbox bars, fades) live in a different
-    // coordinate space. Submitting them planted invisible ghost planes in the
-    // eye-space BVH that primary rays hit before the real scene — the source
-    // of quarter-screen ghost terms and cutscene characters "covered in
-    // shadow". It also kept their per-object lights out of the sun average.
-    const bool rtPerspective =
-        std::fabs(ctx.state->geometry.projectionStack[
-                      ctx.state->geometry.projectionStackDepth].m[2][3]) > 1e-4f;
-    if (ctx.geometryConsumer && rtPerspective) {
-        const auto& vb = ctx.state->geometry.vertexBuffer;
-        RT::SceneTriangle st{};
-        // EYE-space normals for RT: read the value TransformVertexBatch
-        // already computed at G_VTX time from the SAME modelview matrix
-        // snapshot as worldPos (see TransformedVertex::eyeNormal). Zero for
-        // unlit/non-texgen vertices — the shader falls back to the flat
-        // geometric normal in that case.
+        // RT: submit the original world-space triangle to the geometry consumer.
+        // Done AFTER culling (so backfacing triangles are skipped) but uses the
+        // original v0/v1/v2 positions rather than clipped sub-triangles, which is
+        // correct for BVH construction (ray tracing handles off-screen geometry fine).
         //
-        // Previously this re-transformed tv.normal here using whatever
-        // modelview matrix was on top of the stack at DRAW time, which is
-        // only guaranteed to match the vertex's LOAD-time matrix for simple
-        // display lists (true for SM64's Fast3D). F3DZEX (Zelda OoT/MM)
-        // segmented-actor display lists routinely load a new per-limb matrix
-        // between a G_VTX batch and the G_TRI1/G_TRI2 that references it,
-        // so the re-derived normal pointed the wrong way relative to
-        // worldPos — RT lighting/shadow terms on skinned actors ended up
-        // misaligned with their geometry.
-        auto fillV = [&](RT::SceneVertex& sv, const TransformedVertex& tv) {
-            sv.worldPos[0] = tv.worldPos[0];
-            sv.worldPos[1] = tv.worldPos[1];
-            sv.worldPos[2] = tv.worldPos[2];
-            sv.normal[0] = tv.eyeNormal[0];
-            sv.normal[1] = tv.eyeNormal[1];
-            sv.normal[2] = tv.eyeNormal[2];
-            sv.uv[0]       = tv.texCoord[0];
-            sv.uv[1]       = tv.texCoord[1];
-            sv.color[0]    = tv.color[0];
-            sv.color[1]    = tv.color[1];
-            sv.color[2]    = tv.color[2];
-            sv.color[3]    = tv.color[3];
-        };
-        fillV(st.v[0], vb[v0]);
-        fillV(st.v[1], vb[v1]);
-        fillV(st.v[2], vb[v2]);
-        st.materialHash  = ctx.state->combineModeRaw;
-        st.geometryMode  = ctx.state->geometry.geometryMode;
-        st.otherModeH    = ctx.state->otherModeH;
-        st.otherModeL    = ctx.state->otherModeL;
-        // Alpha material classification for RT (the BVH has no texture alpha):
-        //   CUTOUT (CVG_X_ALPHA 0x1000, TEX_EDGE billboards/sprites) — must be
-        //     INVISIBLE to primary rays: any special treatment of the quad
-        //     draws a visible seam around the sprite, because the transparent
-        //     regions show the background, which the composite relights.
-        //   TRANSLUCENT — blended surfaces: FORCE_BL (0x4000) with ZMODE_XLU
-        //     (0x0800) *or* ZMODE_DECAL (0x0C00). Decal mode covers the round
-        //     drop-shadow blobs and ground decals — XLU-only missed them, so
-        //     they rendered as opaque RT geometry (outlined quads). Large ones
-        //     become water in RTBVH; small ones become ray-invisible decals.
-        const uint32_t oml   = ctx.state->otherModeL;
-        const uint32_t zmode = oml & 0x0C00;
-        st.isCutout      = (oml & 0x1000) != 0;
-        st.isTranslucent = !st.isCutout && (oml & 0x4000) != 0
-                        && (zmode == 0x0800 || zmode == 0x0C00);
-        st.usesShadeInFinalColor = ComputeUsesShadeInFinalColor(st.materialHash, st.otherModeH);
+        // ONLY WORLD GEOMETRY: triangles drawn under an ORTHO projection (HUD,
+        // menu text, title-screen logo, letterbox bars, fades) live in a different
+        // coordinate space. Submitting them planted invisible ghost planes in the
+        // eye-space BVH that primary rays hit before the real scene — the source
+        // of quarter-screen ghost terms and cutscene characters "covered in
+        // shadow". It also kept their per-object lights out of the sun average.
+        const bool rtPerspective =
+            std::fabs(ctx.state->geometry.projectionStack[ctx.state->geometry.projectionStackDepth].m[2][3]) > 1e-4f;
+        if (ctx.geometryConsumer && rtPerspective) {
+            const auto& vb = ctx.state->geometry.vertexBuffer;
+            RT::SceneTriangle st{};
+            // EYE-space normals for RT: read the value TransformVertexBatch
+            // already computed at G_VTX time from the SAME modelview matrix
+            // snapshot as worldPos (see TransformedVertex::eyeNormal). Zero for
+            // unlit/non-texgen vertices — the shader falls back to the flat
+            // geometric normal in that case.
+            //
+            // Previously this re-transformed tv.normal here using whatever
+            // modelview matrix was on top of the stack at DRAW time, which is
+            // only guaranteed to match the vertex's LOAD-time matrix for simple
+            // display lists (true for SM64's Fast3D). F3DZEX (Zelda OoT/MM)
+            // segmented-actor display lists routinely load a new per-limb matrix
+            // between a G_VTX batch and the G_TRI1/G_TRI2 that references it,
+            // so the re-derived normal pointed the wrong way relative to
+            // worldPos — RT lighting/shadow terms on skinned actors ended up
+            // misaligned with their geometry.
+            auto fillV = [&](RT::SceneVertex& sv, const TransformedVertex& tv) {
+                sv.worldPos[0] = tv.worldPos[0];
+                sv.worldPos[1] = tv.worldPos[1];
+                sv.worldPos[2] = tv.worldPos[2];
+                sv.normal[0] = tv.eyeNormal[0];
+                sv.normal[1] = tv.eyeNormal[1];
+                sv.normal[2] = tv.eyeNormal[2];
+                sv.uv[0] = tv.texCoord[0];
+                sv.uv[1] = tv.texCoord[1];
+                sv.color[0] = tv.color[0];
+                sv.color[1] = tv.color[1];
+                sv.color[2] = tv.color[2];
+                sv.color[3] = tv.color[3];
+            };
+            fillV(st.v[0], vb[v0]);
+            fillV(st.v[1], vb[v1]);
+            fillV(st.v[2], vb[v2]);
+            st.materialHash = ctx.state->combineModeRaw;
+            st.geometryMode = ctx.state->geometry.geometryMode;
+            st.otherModeH = ctx.state->otherModeH;
+            st.otherModeL = ctx.state->otherModeL;
+            // Alpha material classification for RT (the BVH has no texture alpha):
+            //   CUTOUT (CVG_X_ALPHA 0x1000, TEX_EDGE billboards/sprites) — must be
+            //     INVISIBLE to primary rays: any special treatment of the quad
+            //     draws a visible seam around the sprite, because the transparent
+            //     regions show the background, which the composite relights.
+            //   TRANSLUCENT — blended surfaces: FORCE_BL (0x4000) with ZMODE_XLU
+            //     (0x0800) *or* ZMODE_DECAL (0x0C00). Decal mode covers the round
+            //     drop-shadow blobs and ground decals — XLU-only missed them, so
+            //     they rendered as opaque RT geometry (outlined quads). Large ones
+            //     become water in RTBVH; small ones become ray-invisible decals.
+            const uint32_t oml = ctx.state->otherModeL;
+            const uint32_t zmode = oml & 0x0C00;
+            st.isCutout = (oml & 0x1000) != 0;
+            st.isTranslucent = !st.isCutout && (oml & 0x4000) != 0 && (zmode == 0x0800 || zmode == 0x0C00);
+            st.usesShadeInFinalColor = ComputeUsesShadeInFinalColor(st.materialHash, st.otherModeH);
 
-        // The lights that lit this triangle (see the note below the submit).
-        // Triangles the game draws without RSP lighting carry none.
-        RT::SceneLighting lighting;
-        if ((ctx.state->geometry.geometryMode & G_LIGHTING) != 0) {
-            const auto& geo = ctx.state->geometry;
-            const bool positional = (geo.geometryMode & G_POINT_LIGHTING) != 0;
-            for (int l = 0; l < geo.numLights; ++l) {
-                const auto& L = geo.lights[l];
-                if (L.ca == 0.0f) {
-                    if (lighting.sun.valid) continue;
-                    lighting.sun.valid = true;
-                    for (int k = 0; k < 3; ++k) { lighting.sun.vec[k] = L.direction[k]; lighting.sun.color[k] = L.color[k]; }
-                } else if (positional) {
-                    // The brightest point light stands for them all.
-                    const float lum = L.color[0] + L.color[1] + L.color[2];
-                    if (lum < 0.05f) continue;
-                    if (lighting.local.valid &&
-                        lum <= lighting.local.color[0] + lighting.local.color[1] + lighting.local.color[2]) continue;
-                    lighting.local.valid = true;
-                    lighting.local.point = true;
-                    lighting.local.la = L.la;
-                    lighting.local.qa = L.qa;
-                    for (int k = 0; k < 3; ++k) { lighting.local.vec[k] = L.position[k]; lighting.local.color[k] = L.color[k]; }
+            // The lights that lit this triangle (see the note below the submit).
+            // Triangles the game draws without RSP lighting carry none.
+            RT::SceneLighting lighting;
+            if ((ctx.state->geometry.geometryMode & G_LIGHTING) != 0) {
+                const auto& geo = ctx.state->geometry;
+                const bool positional = (geo.geometryMode & G_POINT_LIGHTING) != 0;
+                for (int l = 0; l < geo.numLights; ++l) {
+                    const auto& L = geo.lights[l];
+                    if (L.ca == 0.0f) {
+                        if (lighting.sun.valid) continue;
+                        lighting.sun.valid = true;
+                        for (int k = 0; k < 3; ++k) {
+                            lighting.sun.vec[k] = L.direction[k];
+                            lighting.sun.color[k] = L.color[k];
+                        }
+                    } else if (positional) {
+                        // The brightest point light stands for them all.
+                        const float lum = L.color[0] + L.color[1] + L.color[2];
+                        if (lum < 0.05f) continue;
+                        if (lighting.local.valid &&
+                            lum <= lighting.local.color[0] + lighting.local.color[1] + lighting.local.color[2])
+                            continue;
+                        lighting.local.valid = true;
+                        lighting.local.point = true;
+                        lighting.local.la = L.la;
+                        lighting.local.qa = L.qa;
+                        for (int k = 0; k < 3; ++k) {
+                            lighting.local.vec[k] = L.position[k];
+                            lighting.local.color[k] = L.color[k];
+                        }
+                    }
                 }
             }
-        }
-        ctx.geometryConsumer->SetLighting(lighting);
-        ctx.geometryConsumer->SubmitTriangle(st);
+            ctx.geometryConsumer->SetLighting(lighting);
+            ctx.geometryConsumer->SubmitTriangle(st);
 
-        // Capture the active EYE->CLIP projection for compute-RT primary rays.
-        // Only perspective projections (z contributes to clip-w, m[2][3]!=0) —
-        // skips the HUD/2D ortho matrices. Last perspective one wins (the world).
-        const auto& P = ctx.state->geometry.projectionStack[
-                            ctx.state->geometry.projectionStackDepth];
-        if (std::fabs(P.m[2][3]) > 1e-4f) {
-            float pj[16];
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) pj[r * 4 + c] = P.m[r][c];
-            ctx.geometryConsumer->SetCamera(pj);
-            // The matching viewport: RT primary rays must invert the SAME
-            // screen mapping the raster uses, or on non-fullscreen viewports
-            // (title screen, letterboxed cutscenes) the RT terms appear
-            // scaled/offset against the raster (ghost images, misplaced
-            // shadows). Units are N64 framebuffer pixels (320×240-class).
-            const auto& vp = ctx.state->geometry.viewport;
-            float vpn[4] = { vp.scaleX, vp.transX, vp.scaleY, vp.transY };
-            ctx.geometryConsumer->SetViewport(vpn);
-        }
+            // Capture the active EYE->CLIP projection for compute-RT primary rays.
+            // Only perspective projections (z contributes to clip-w, m[2][3]!=0) —
+            // skips the HUD/2D ortho matrices. Last perspective one wins (the world).
+            const auto& P = ctx.state->geometry.projectionStack[ctx.state->geometry.projectionStackDepth];
+            if (std::fabs(P.m[2][3]) > 1e-4f) {
+                float pj[16];
+                for (int r = 0; r < 4; ++r)
+                    for (int c = 0; c < 4; ++c) pj[r * 4 + c] = P.m[r][c];
+                ctx.geometryConsumer->SetCamera(pj);
+                // The matching viewport: RT primary rays must invert the SAME
+                // screen mapping the raster uses, or on non-fullscreen viewports
+                // (title screen, letterboxed cutscenes) the RT terms appear
+                // scaled/offset against the raster (ghost images, misplaced
+                // shadows). Units are N64 framebuffer pixels (320×240-class).
+                const auto& vp = ctx.state->geometry.viewport;
+                float vpn[4] = {vp.scaleX, vp.transX, vp.scaleY, vp.transY};
+                ctx.geometryConsumer->SetViewport(vpn);
+            }
 
-        // (The lights were captured above, before the triangle was submitted.)
-        //
-        // WHY THE SUN IS lights[0], NOT AN AVERAGE OF THE DIRECTIONAL LIGHTS:
-        // N64 light directions are stored in EYE (camera) space -- the RSP dots
-        // them directly against the eye-space vertex normal (see the lighting
-        // loop above) -- and the RT scene is eye-space too (worldPos = objPos x
-        // MV), so the direction goes through verbatim. OOT/MM configure exactly
-        // two directional lights per frame with light2Dir = -light1Dir
-        // (Environment_Update, z_kankyo.c): a key + fill pair. Averaging those
-        // nearly cancels to a meaningless vector, so the first directional light
-        // is the one shadow rays go toward.
-        //
-        // The (1,0,0)-looking degenerate case in a cutscene is authentic: the same
-        // decomp function falls back to dir.x = 1 when its time-of-day trig
-        // yields an exact zero vector, and real hardware shows it too.
-        //
-        // POINT LIGHTS (ca != 0; torches, lava, fire, fairies) keep their POSITION
-        // in the same bytes MoveMem reads as a direction for directional lights
-        // (bytes 8-13 are both three int8 direction components and three int16
-        // position halfwords; byte 3 is the point/directional flag, byte 7 the
-        // linear and byte 14 the quadratic attenuation), so for them .direction is
-        // garbage and only .position is meaningful. They are only lights when
-        // G_LIGHTING_POSITIONAL is on.
-    }
+            // (The lights were captured above, before the triangle was submitted.)
+            //
+            // WHY THE SUN IS lights[0], NOT AN AVERAGE OF THE DIRECTIONAL LIGHTS:
+            // N64 light directions are stored in EYE (camera) space -- the RSP dots
+            // them directly against the eye-space vertex normal (see the lighting
+            // loop above) -- and the RT scene is eye-space too (worldPos = objPos x
+            // MV), so the direction goes through verbatim. OOT/MM configure exactly
+            // two directional lights per frame with light2Dir = -light1Dir
+            // (Environment_Update, z_kankyo.c): a key + fill pair. Averaging those
+            // nearly cancels to a meaningless vector, so the first directional light
+            // is the one shadow rays go toward.
+            //
+            // The (1,0,0)-looking degenerate case in a cutscene is authentic: the same
+            // decomp function falls back to dir.x = 1 when its time-of-day trig
+            // yields an exact zero vector, and real hardware shows it too.
+            //
+            // POINT LIGHTS (ca != 0; torches, lava, fire, fairies) keep their POSITION
+            // in the same bytes MoveMem reads as a direction for directional lights
+            // (bytes 8-13 are both three int8 direction components and three int16
+            // position halfwords; byte 3 is the point/directional flag, byte 7 the
+            // linear and byte 14 the quadratic attenuation), so for them .direction is
+            // garbage and only .position is meaningful. They are only lights when
+            // G_LIGHTING_POSITIONAL is on.
+        }
 
     } // end geo scope
 }
@@ -1628,11 +1610,10 @@ void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
     address = ctx.ResolveAddress(address);
     if (address + 8 > ctx.rdramSize) {
         NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-            "DisplayList: resolved address 0x{:08X} (raw=0x{:08X}) out of range — skipping",
-            address, rawAddress);
+                 "DisplayList: resolved address 0x{:08X} (raw=0x{:08X}) out of range — skipping", address, rawAddress);
         return;
     }
-    
+
     if (branch) {
         // Branch: replace current DL (no push).
         // Detect self-branch (infinite loop) — halt instead.
@@ -1648,8 +1629,7 @@ void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
         const uint32_t srcAddr = ctx.pc - 8; // address of the G_DL opcode
         if (!ctx.dlBranchVisited.insert(srcAddr).second) {
             NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "DisplayList: branch loop detected at G_DL src=0x{:08X} target=0x{:08X}",
-                srcAddr, address);
+                     "DisplayList: branch loop detected at G_DL src=0x{:08X} target=0x{:08X}", srcAddr, address);
             // Genuine within-run branch cycle.  Don't discard the rest of the
             // frame: if we're inside a called sub-DL, return to the caller and
             // keep rendering (HUD, overlays, later objects).  Only halt the task
@@ -1663,8 +1643,7 @@ void GBIHandler::DisplayList(DListContext& ctx, uint32_t address, bool branch) {
     } else {
         // Call: push return address first
         if (!ctx.PushDL(ctx.pc, false)) {
-            NOVA_LOG(LogLevel::Warning, LogSubsystem::Core,
-                    "DL call stack overflow at depth {}", ctx.dlStackDepth);
+            NOVA_LOG(LogLevel::Warning, LogSubsystem::Core, "DL call stack overflow at depth {}", ctx.dlStackDepth);
             return;
         }
         ctx.pc = address;
@@ -1714,10 +1693,10 @@ void GBIHandler::PopMatrixN(DListContext& ctx, uint32_t count) {
 void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxIndex, uint32_t value) {
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
-    
+
     if (vtxIndex >= VERTEX_BUFFER_SIZE) return;
     auto& v = geo.vertexBuffer[vtxIndex];
-    
+
     switch (where) {
     case 0x10: // G_MWO_POINT_RGBA
         // GLideN64 uses _FIXED2FLOATCOLOR which divides by 256 (not 255)
@@ -1726,7 +1705,7 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
         v.color[2] = static_cast<float>((value >> 8) & 0xFF) / 256.0f;
         v.color[3] = static_cast<float>(value & 0xFF) / 256.0f;
         break;
-        
+
     case 0x14: // G_MWO_POINT_ST
     {
         int16_t s = static_cast<int16_t>((value >> 16) & 0xFFFF);
@@ -1742,7 +1721,7 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
         v.texCoord[1] = (static_cast<float>(t) / 32.0f) / scaleT;
         break;
     }
-    
+
     case 0x18: // G_MWO_POINT_XYSCREEN — sets screen-space X/Y directly
     {
         // These are already in screen-space (10.2 fixed-point).
@@ -1758,7 +1737,7 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
         v.clipFlags = 0;
         break;
     }
-    
+
     case 0x1C: // G_MWO_POINT_ZSCREEN — sets screen-space Z directly
     {
         // GLideN64: scrZ = float(_val) / 65535.0f / 2048.0f
@@ -1769,9 +1748,8 @@ void GBIHandler::ModifyVertex(DListContext& ctx, uint8_t where, uint16_t vtxInde
         v.clipFlags = 0;
         break;
     }
-    
-    default:
-        break;
+
+    default: break;
     }
 }
 
@@ -1783,19 +1761,18 @@ void GBIHandler::CullDisplayList(DListContext& ctx, uint32_t startVtx, uint32_t 
     if constexpr (DEBUG_DISABLE_CULLDL) return;
     if (!ctx.state) return;
     auto& geo = ctx.state->geometry;
-    
+
     // Some games (Aidyn Chronicles) pass parameters in reverse order.
-    if (endVtx < startVtx)
-        std::swap(startVtx, endVtx);
-    
+    if (endVtx < startVtx) std::swap(startVtx, endVtx);
+
     // If all vertices in range are clipped by the same plane, end this DL
     uint32_t andFlags = 0xFFFFFFFF;
     uint32_t maxVtx = VERTEX_BUFFER_SIZE;
-    
+
     for (uint32_t i = startVtx; i <= endVtx && i < maxVtx; ++i) {
         andFlags &= geo.vertexBuffer[i].clipFlags;
     }
-    
+
     if (andFlags != 0) {
         // All vertices clipped by at least one common plane — skip this DL
         EndDisplayList(ctx);
@@ -1838,9 +1815,9 @@ void GBIHandler::LoadUcode(DListContext& ctx, uint32_t address, uint32_t dataAdd
     // Dynamic microcode loading � switch microcode mid-frame
     // Demoted to Debug: MM/OoT issue G_LOAD_UCODE every frame (HUD<->world
     // ucode swap), which floods INFO-level logs with thousands of lines.
-    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-            "G_LOAD_UCODE: text=0x{:08X}, data=0x{:08X}, size={}", address, dataAddress, textSize);
-    
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "G_LOAD_UCODE: text=0x{:08X}, data=0x{:08X}, size={}", address,
+             dataAddress, textSize);
+
     // Signal the dispatcher to re-detect and switch handler
     if (ctx.dispatcher) {
         constexpr uint32_t DMEM_SIZE = 4096;
@@ -1866,41 +1843,43 @@ void GBIHandler::ResetStats() {
 
 std::string DescribeGBI1Command(uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     switch (opcode) {
-    case GBI1::G_SPNOOP:        return "G_SPNOOP";
-    case GBI1::G_MTX:           return "G_MTX addr=0x" + std::to_string(w1);
-    case GBI1::G_MOVEMEM:       return "G_MOVEMEM";
-    case GBI1::G_VTX:           return "G_VTX count=" + std::to_string((w0 >> 10) & 0x3F);
-    case GBI1::G_DL:            return "G_DL addr=0x" + std::to_string(w1);
-    case GBI1::G_TRI1:          return "G_TRI1";
-    case GBI1::G_CULLDL:        return "G_CULLDL";
-    case GBI1::G_POPMTX:        return "G_POPMTX";
-    case GBI1::G_TEXTURE:       return "G_TEXTURE";
-    case GBI1::G_MOVEWORD:      return "G_MOVEWORD index=" + std::to_string(w0 & 0xFF) + " offset=" + std::to_string((w0 >> 8) & 0xFFFF) + " val=0x" + std::to_string(w1);
-    case GBI1::G_SETOTHERMODE_H: return "G_SETOTHERMODE_H";
-    case GBI1::G_SETOTHERMODE_L: return "G_SETOTHERMODE_L";
-    case GBI1::G_SETGEOMETRYMODE: return "G_SETGEOMETRYMODE";
+    case GBI1::G_SPNOOP:  return "G_SPNOOP";
+    case GBI1::G_MTX:     return "G_MTX addr=0x" + std::to_string(w1);
+    case GBI1::G_MOVEMEM: return "G_MOVEMEM";
+    case GBI1::G_VTX:     return "G_VTX count=" + std::to_string((w0 >> 10) & 0x3F);
+    case GBI1::G_DL:      return "G_DL addr=0x" + std::to_string(w1);
+    case GBI1::G_TRI1:    return "G_TRI1";
+    case GBI1::G_CULLDL:  return "G_CULLDL";
+    case GBI1::G_POPMTX:  return "G_POPMTX";
+    case GBI1::G_TEXTURE: return "G_TEXTURE";
+    case GBI1::G_MOVEWORD:
+        return "G_MOVEWORD index=" + std::to_string(w0 & 0xFF) + " offset=" + std::to_string((w0 >> 8) & 0xFFFF) +
+               " val=0x" + std::to_string(w1);
+    case GBI1::G_SETOTHERMODE_H:    return "G_SETOTHERMODE_H";
+    case GBI1::G_SETOTHERMODE_L:    return "G_SETOTHERMODE_L";
+    case GBI1::G_SETGEOMETRYMODE:   return "G_SETGEOMETRYMODE";
     case GBI1::G_CLEARGEOMETRYMODE: return "G_CLEARGEOMETRYMODE";
-    case GBI1::G_RDPHALF_1:     return "G_RDPHALF_1 val=0x" + std::to_string(w1);
-    case GBI1::G_RDPHALF_2:     return "G_RDPHALF_2 val=0x" + std::to_string(w1);
-    case GBI1::G_ENDDL:         return "G_ENDDL";
-    case 0xAF:                  return "G_LOAD_UCODE";
-    case 0xDB:                  return "G_MOVEWORD (GBI2_STYLE)";
-    default: {
+    case GBI1::G_RDPHALF_1:         return "G_RDPHALF_1 val=0x" + std::to_string(w1);
+    case GBI1::G_RDPHALF_2:         return "G_RDPHALF_2 val=0x" + std::to_string(w1);
+    case GBI1::G_ENDDL:             return "G_ENDDL";
+    case 0xAF:                      return "G_LOAD_UCODE";
+    case 0xDB:                      return "G_MOVEWORD (GBI2_STYLE)";
+    default:                        {
         if (opcode >= 0xC0) {
             uint8_t rdpOp = (w0 >> 24) & 0x3F;
-            switch(rdpOp) {
-                case 0x3F: return "G_SETCIMG";
-                case 0x3E: return "G_SETZIMG";
-                case 0x3D: return "G_SETTIMG";
-                case 0x3B: return "G_SETCOMBINE";
-                case 0x33: return "G_LOADBLOCK";
-                case 0x34: return "G_LOADTILE";
-                case 0x2F: return "G_SETCOLOR";
-                case 0x24: return "G_TEXRECT";
-                case 0x22: return "G_FILLRECT";
-                default: return "RDP_CMD_0x" + std::to_string(rdpOp);
+            switch (rdpOp) {
+            case 0x3F: return "G_SETCIMG";
+            case 0x3E: return "G_SETZIMG";
+            case 0x3D: return "G_SETTIMG";
+            case 0x3B: return "G_SETCOMBINE";
+            case 0x33: return "G_LOADBLOCK";
+            case 0x34: return "G_LOADTILE";
+            case 0x2F: return "G_SETCOLOR";
+            case 0x24: return "G_TEXRECT";
+            case 0x22: return "G_FILLRECT";
+            default:   return "RDP_CMD_0x" + std::to_string(rdpOp);
             }
         }
         return "GBI1_UNKNOWN_0x" + std::to_string(opcode);
@@ -1910,25 +1889,25 @@ std::string DescribeGBI1Command(uint32_t w0, uint32_t w1) {
 
 std::string DescribeGBI2Command(uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     switch (opcode) {
-    case GBI2::G_NOOP:          return "G_NOOP";
-    case GBI2::G_VTX:           return "G_VTX count=" + std::to_string((w0 >> 12) & 0xFF);
-    case GBI2::G_MODIFYVTX:     return "G_MODIFYVTX";
-    case GBI2::G_CULLDL:        return "G_CULLDL";
-    case GBI2::G_BRANCH_Z:      return "G_BRANCH_Z";
-    case GBI2::G_TRI1:          return "G_TRI1";
-    case GBI2::G_TRI2:          return "G_TRI2";
-    case GBI2::G_QUAD:          return "G_QUAD";
-    case GBI2::G_TEXTURE:       return "G_TEXTURE";
-    case GBI2::G_POPMTX:        return "G_POPMTX";
-    case GBI2::G_DL:            return "G_DL addr=0x" + std::to_string(w1);
-    case GBI2::G_ENDDL:         return "G_ENDDL";
-    case GBI2::G_MTX:           return "G_MTX addr=0x" + std::to_string(w1);
-    case GBI2::G_MOVEWORD:      return "G_MOVEWORD";
-    case GBI2::G_MOVEMEM:       return "G_MOVEMEM";
-    default: {
-        if (opcode >= 0xC0)     return "RDP_CMD_0x" + std::to_string(opcode);
+    case GBI2::G_NOOP:      return "G_NOOP";
+    case GBI2::G_VTX:       return "G_VTX count=" + std::to_string((w0 >> 12) & 0xFF);
+    case GBI2::G_MODIFYVTX: return "G_MODIFYVTX";
+    case GBI2::G_CULLDL:    return "G_CULLDL";
+    case GBI2::G_BRANCH_Z:  return "G_BRANCH_Z";
+    case GBI2::G_TRI1:      return "G_TRI1";
+    case GBI2::G_TRI2:      return "G_TRI2";
+    case GBI2::G_QUAD:      return "G_QUAD";
+    case GBI2::G_TEXTURE:   return "G_TEXTURE";
+    case GBI2::G_POPMTX:    return "G_POPMTX";
+    case GBI2::G_DL:        return "G_DL addr=0x" + std::to_string(w1);
+    case GBI2::G_ENDDL:     return "G_ENDDL";
+    case GBI2::G_MTX:       return "G_MTX addr=0x" + std::to_string(w1);
+    case GBI2::G_MOVEWORD:  return "G_MOVEWORD";
+    case GBI2::G_MOVEMEM:   return "G_MOVEMEM";
+    default:                {
+        if (opcode >= 0xC0) return "RDP_CMD_0x" + std::to_string(opcode);
         return "GBI2_UNKNOWN_0x" + std::to_string(opcode);
     }
     }

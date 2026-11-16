@@ -35,7 +35,7 @@
 
 #if defined(__aarch64__) || defined(_M_ARM64)
 
-#include "../RecompilerOps.hpp"   // RecompilerContext, InstructionContext
+#include "../RecompilerOps.hpp" // RecompilerContext, InstructionContext
 #include "arm64ops.hpp"
 #include "arm64RegInfo.hpp"
 #include <memory>

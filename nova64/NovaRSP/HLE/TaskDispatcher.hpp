@@ -50,16 +50,24 @@ public:
     [[nodiscard]] const MicrocodeEntry* IdentifyMicrocode(CHle* hle, const TaskInfo& task);
 
     // ── Cache management ──
-    void InvalidateCache() { m_Cache.valid = false; m_UcodeCache.clear(); m_GfxHleConsecutiveFailures = 0; m_GfxHleAutoDisabled = false; }
+    void InvalidateCache() {
+        m_Cache.valid = false;
+        m_UcodeCache.clear();
+        m_GfxHleConsecutiveFailures = 0;
+        m_GfxHleAutoDisabled = false;
+    }
 
     // ── Graphics HLE state ──
     [[nodiscard]] bool GfxHleAutoDisabled() const { return m_GfxHleAutoDisabled; }
-    void ResetGfxHle() { m_GfxHleConsecutiveFailures = 0; m_GfxHleAutoDisabled = false; }
+    void ResetGfxHle() {
+        m_GfxHleConsecutiveFailures = 0;
+        m_GfxHleAutoDisabled = false;
+    }
 
     // ── Statistics ──
-    [[nodiscard]] uint32_t TasksDispatched()  const { return m_TasksDispatched; }
-    [[nodiscard]] uint32_t TasksFallback()    const { return m_TasksFallback; }
-    [[nodiscard]] uint32_t CacheHits()        const { return m_CacheHits; }
+    [[nodiscard]] uint32_t TasksDispatched() const { return m_TasksDispatched; }
+    [[nodiscard]] uint32_t TasksFallback() const { return m_TasksFallback; }
+    [[nodiscard]] uint32_t CacheHits() const { return m_CacheHits; }
 
 private:
     // Compute CRC32 of microcode data from DRAM
@@ -87,7 +95,7 @@ private:
 
     // Graphics HLE failure tracking: auto-disable after repeated failures
     uint32_t m_GfxHleConsecutiveFailures{0};
-    static constexpr uint32_t kMaxGfxHleFailures = 3;  // Disable after N consecutive failures
+    static constexpr uint32_t kMaxGfxHleFailures = 3; // Disable after N consecutive failures
     bool m_GfxHleAutoDisabled{false};
 };
 

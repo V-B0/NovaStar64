@@ -10,7 +10,7 @@
 
 namespace NovaUI::detail {
 
-constexpr const char* kLibraryPath  = "settings/library.txt";
+constexpr const char* kLibraryPath = "settings/library.txt";
 constexpr const char* kLauncherPath = "settings/launcher.ini";
 constexpr const char* kGraphicsPath = "settings/NovaGraphics.ini";
 

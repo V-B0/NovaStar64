@@ -20,10 +20,9 @@ namespace {
 // FNV-1a. Chosen for being trivially reproducible by the compare script and by
 // any future reimplementation that needs to emit a matching trace.
 constexpr uint64_t kFnvOffset = 1469598103934665603ull;
-constexpr uint64_t kFnvPrime  = 1099511628211ull;
+constexpr uint64_t kFnvPrime = 1099511628211ull;
 
-inline void HashBytes(uint64_t& h, const void* data, size_t len)
-{
+inline void HashBytes(uint64_t& h, const void* data, size_t len) {
     const auto* p = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i < len; ++i) {
         h ^= p[i];
@@ -31,23 +30,19 @@ inline void HashBytes(uint64_t& h, const void* data, size_t len)
     }
 }
 
-inline void HashU64(uint64_t& h, uint64_t v)
-{
-    HashBytes(h, &v, sizeof(v));
-}
+inline void HashU64(uint64_t& h, uint64_t v) { HashBytes(h, &v, sizeof(v)); }
 
 struct TraceState {
-    bool          enabled   = false;
-    bool          hashRdram = false;
-    bool          breakdownCp0 = false;
-    bool          events = false;
-    uint64_t      eventSeq = 0;
-    uint64_t      maxFrames = 0;
+    bool enabled = false;
+    bool hashRdram = false;
+    bool breakdownCp0 = false;
+    bool events = false;
+    uint64_t eventSeq = 0;
+    uint64_t maxFrames = 0;
     std::ofstream out;
 };
 
-TraceState& State()
-{
+TraceState& State() {
     static TraceState state;
     static bool initialised = false;
 
@@ -82,8 +77,7 @@ TraceState& State()
                           << "# cp0 excludes Count/Random for the same reason.\n"
                           << "# rdram is '-' unless NOVA64_TRACE_RDRAM=1\n";
             } else {
-                std::fprintf(stderr,
-                    "[trace] could not open NOVA64_TRACE_STATE path '%s'\n", path);
+                std::fprintf(stderr, "[trace] could not open NOVA64_TRACE_STATE path '%s'\n", path);
             }
         }
     }
@@ -92,32 +86,24 @@ TraceState& State()
 
 } // namespace
 
-EventCounters& Counters()
-{
+EventCounters& Counters() {
     static EventCounters counters;
     return counters;
 }
 
-void RecordEvent(const char* kind, uint64_t count)
-{
+void RecordEvent(const char* kind, uint64_t count) {
     TraceState& state = State();
     if (!state.enabled || !state.events) return;
 
     char line[96];
-    std::snprintf(line, sizeof(line), "#seq %llu %s %llu\n",
-                  static_cast<unsigned long long>(state.eventSeq++),
-                  kind,
+    std::snprintf(line, sizeof(line), "#seq %llu %s %llu\n", static_cast<unsigned long long>(state.eventSeq++), kind,
                   static_cast<unsigned long long>(count));
     state.out << line;
 }
 
-bool IsEnabled()
-{
-    return State().enabled;
-}
+bool IsEnabled() { return State().enabled; }
 
-void RecordFrame(const CN64System& system, uint64_t frameNumber)
-{
+void RecordFrame(const CN64System& system, uint64_t frameNumber) {
     TraceState& state = State();
     if (!state.enabled) return;
     if (state.maxFrames && frameNumber >= state.maxFrames) return;
@@ -156,24 +142,18 @@ void RecordFrame(const CN64System& system, uint64_t frameNumber)
                 uint64_t h = kFnvOffset;
                 HashBytes(h, ram, mem->RdramSize());
                 char buf[24];
-                std::snprintf(buf, sizeof(buf), "%016llx",
-                              static_cast<unsigned long long>(h));
+                std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(h));
                 rdramField = buf;
             }
         }
     }
 
     char line[224];
-    std::snprintf(line, sizeof(line),
-        "%llu %016llx %016llx %016llx %016llx %016llx %016llx %s\n",
-        static_cast<unsigned long long>(frameNumber),
-        static_cast<unsigned long long>(regs->COUNT_REGISTER),
-        static_cast<unsigned long long>(regs->m_PROGRAM_COUNTER),
-        static_cast<unsigned long long>(gpr),
-        static_cast<unsigned long long>(hilo),
-        static_cast<unsigned long long>(fpr),
-        static_cast<unsigned long long>(cp0),
-        rdramField.c_str());
+    std::snprintf(line, sizeof(line), "%llu %016llx %016llx %016llx %016llx %016llx %016llx %s\n",
+                  static_cast<unsigned long long>(frameNumber), static_cast<unsigned long long>(regs->COUNT_REGISTER),
+                  static_cast<unsigned long long>(regs->m_PROGRAM_COUNTER), static_cast<unsigned long long>(gpr),
+                  static_cast<unsigned long long>(hilo), static_cast<unsigned long long>(fpr),
+                  static_cast<unsigned long long>(cp0), rdramField.c_str());
 
     state.out << line;
 
@@ -182,16 +162,15 @@ void RecordFrame(const CN64System& system, uint64_t frameNumber)
     // once a run has been confirmed aligned.
     if (state.breakdownCp0) {
         char detail[256];
-        std::snprintf(detail, sizeof(detail),
+        std::snprintf(
+            detail, sizeof(detail),
             "#cp0 %llu index=%llx wired=%llx badv=%llx compare=%llx epc=%llx "
             "config=%llx errorepc=%llx taglo=%llx taghi=%llx\n",
-            static_cast<unsigned long long>(frameNumber),
-            static_cast<unsigned long long>(regs->INDEX_REGISTER),
+            static_cast<unsigned long long>(frameNumber), static_cast<unsigned long long>(regs->INDEX_REGISTER),
             static_cast<unsigned long long>(regs->WIRED_REGISTER),
             static_cast<unsigned long long>(regs->BAD_VADDR_REGISTER),
             static_cast<unsigned long long>(regs->COMPARE_REGISTER),
-            static_cast<unsigned long long>(regs->EPC_REGISTER),
-            static_cast<unsigned long long>(regs->CONFIG_REGISTER),
+            static_cast<unsigned long long>(regs->EPC_REGISTER), static_cast<unsigned long long>(regs->CONFIG_REGISTER),
             static_cast<unsigned long long>(regs->ERROREPC_REGISTER),
             static_cast<unsigned long long>(regs->TAGLO_REGISTER),
             static_cast<unsigned long long>(regs->TAGHI_REGISTER));
@@ -199,20 +178,16 @@ void RecordFrame(const CN64System& system, uint64_t frameNumber)
 
         const EventCounters& c = Counters();
         char ev[160];
-        std::snprintf(ev, sizeof(ev),
-            "#ev %llu timerDone=%llu idleSkip=%llu timerChecks=%llu\n",
-            static_cast<unsigned long long>(frameNumber),
-            static_cast<unsigned long long>(c.timerDone),
-            static_cast<unsigned long long>(c.idleSkip),
-            static_cast<unsigned long long>(c.timerChecks));
+        std::snprintf(ev, sizeof(ev), "#ev %llu timerDone=%llu idleSkip=%llu timerChecks=%llu\n",
+                      static_cast<unsigned long long>(frameNumber), static_cast<unsigned long long>(c.timerDone),
+                      static_cast<unsigned long long>(c.idleSkip), static_cast<unsigned long long>(c.timerChecks));
         state.out << ev;
     }
 
-    state.out.flush();   // a crash mid-run should still leave a usable trace
+    state.out.flush(); // a crash mid-run should still leave a usable trace
 }
 
-void Shutdown()
-{
+void Shutdown() {
     TraceState& state = State();
     if (state.out.is_open()) state.out.close();
     state.enabled = false;

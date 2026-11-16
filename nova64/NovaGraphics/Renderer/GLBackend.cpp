@@ -15,12 +15,16 @@
 #include <cassert>
 #include <algorithm>
 
-namespace Nova64 { namespace Video {
+namespace Nova64 {
+namespace Video {
 // Forward declaration — defined in RendererFactory.cpp
 uint32_t GetVertexAttribComponentCount(VertexAttribType type);
-} }
+} // namespace Video
+} // namespace Nova64
 
-namespace Nova64 { namespace Video { namespace GL {
+namespace Nova64 {
+namespace Video {
+namespace GL {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL TEXTURE POOL IMPLEMENTATION
@@ -54,8 +58,7 @@ void GLTexturePool::Recycle(GLuint handle, uint32_t w, uint32_t h, TextureFormat
 
 void GLTexturePool::Shutdown() {
     for (auto& [key, handles] : m_pool) {
-        for (GLuint h : handles)
-            glDeleteTextures(1, &h);
+        for (GLuint h : handles) glDeleteTextures(1, &h);
     }
     m_pool.clear();
     m_totalPooled = 0;
@@ -67,10 +70,10 @@ void GLTexturePool::Shutdown() {
 
 [[maybe_unused]] static GLenum TranslateBufferUsage(BufferUsage usage) {
     switch (usage) {
-        case BufferUsage::Static:  return GL_STATIC_DRAW;
-        case BufferUsage::Dynamic: return GL_DYNAMIC_DRAW;
-        case BufferUsage::Stream:  return GL_STREAM_DRAW;
-        default: return GL_STATIC_DRAW;
+    case BufferUsage::Static:  return GL_STATIC_DRAW;
+    case BufferUsage::Dynamic: return GL_DYNAMIC_DRAW;
+    case BufferUsage::Stream:  return GL_STREAM_DRAW;
+    default:                   return GL_STATIC_DRAW;
     }
 }
 
@@ -78,17 +81,13 @@ void GLTexturePool::Shutdown() {
 //  GL VERTEX BUFFER IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLVertexBuffer::GLVertexBuffer(size_t sizeBytes, BufferUsage usage)
-    : m_size(sizeBytes)
-    , m_usage(usage)
-{
+GLVertexBuffer::GLVertexBuffer(size_t sizeBytes, BufferUsage usage) : m_size(sizeBytes), m_usage(usage) {
     glCreateBuffers(1, &m_handle);
     if (sizeBytes > 0) {
         // Every buffer can be updated: Upload()/Update() use glNamedBufferSubData,
         // which immutable storage refuses without GL_DYNAMIC_STORAGE_BIT.
         GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
-        if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream)
-            flags |= GL_MAP_WRITE_BIT;
+        if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream) flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), nullptr, flags);
     }
 }
@@ -105,8 +104,7 @@ void GLVertexBuffer::Upload(const void* data, size_t sizeBytes) {
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
         GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
-        if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream)
-            flags |= GL_MAP_WRITE_BIT;
+        if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream) flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), data, flags);
     } else {
         glNamedBufferSubData(m_handle, 0, static_cast<GLsizeiptr>(sizeBytes), data);
@@ -116,25 +114,20 @@ void GLVertexBuffer::Upload(const void* data, size_t sizeBytes) {
 void GLVertexBuffer::Update(const void* data, size_t offset, size_t sizeBytes) {
     if (!data || sizeBytes == 0) return;
     assert(offset + sizeBytes <= m_size);
-    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset),
-                          static_cast<GLsizeiptr>(sizeBytes), data);
+    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(sizeBytes), data);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL INDEX BUFFER IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLIndexBuffer::GLIndexBuffer(size_t sizeBytes, BufferUsage usage)
-    : m_size(sizeBytes)
-    , m_usage(usage)
-{
+GLIndexBuffer::GLIndexBuffer(size_t sizeBytes, BufferUsage usage) : m_size(sizeBytes), m_usage(usage) {
     glCreateBuffers(1, &m_handle);
     if (sizeBytes > 0) {
         // Every buffer can be updated: Upload()/Update() use glNamedBufferSubData,
         // which immutable storage refuses without GL_DYNAMIC_STORAGE_BIT.
         GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
-        if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream)
-            flags |= GL_MAP_WRITE_BIT;
+        if (usage == BufferUsage::Dynamic || usage == BufferUsage::Stream) flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), nullptr, flags);
     }
 }
@@ -155,8 +148,7 @@ void GLIndexBuffer::Upload(const void* data, size_t sizeBytes, IndexType type) {
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
         GLbitfield flags = GL_DYNAMIC_STORAGE_BIT;
-        if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream)
-            flags |= GL_MAP_WRITE_BIT;
+        if (m_usage == BufferUsage::Dynamic || m_usage == BufferUsage::Stream) flags |= GL_MAP_WRITE_BIT;
         glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), data, flags);
     } else {
         glNamedBufferSubData(m_handle, 0, static_cast<GLsizeiptr>(sizeBytes), data);
@@ -165,17 +157,14 @@ void GLIndexBuffer::Upload(const void* data, size_t sizeBytes, IndexType type) {
 
 void GLIndexBuffer::Update(const void* data, size_t offset, size_t sizeBytes) {
     if (!data || sizeBytes == 0) return;
-    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset),
-                          static_cast<GLsizeiptr>(sizeBytes), data);
+    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(sizeBytes), data);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL UNIFORM BUFFER IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLUniformBuffer::GLUniformBuffer(size_t sizeBytes)
-    : m_size(sizeBytes)
-{
+GLUniformBuffer::GLUniformBuffer(size_t sizeBytes) : m_size(sizeBytes) {
     glCreateBuffers(1, &m_handle);
     GLbitfield flags = GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT;
     glNamedBufferStorage(m_handle, static_cast<GLsizeiptr>(sizeBytes), nullptr, flags);
@@ -192,21 +181,16 @@ void GLUniformBuffer::Upload(const void* data, size_t sizeBytes) {
 
 void GLUniformBuffer::Update(const void* data, size_t offset, size_t sizeBytes) {
     if (!data || sizeBytes == 0) return;
-    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset),
-                          static_cast<GLsizeiptr>(sizeBytes), data);
+    glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(sizeBytes), data);
 }
 
-void GLUniformBuffer::BindSlot(uint32_t slot) {
-    glBindBufferBase(GL_UNIFORM_BUFFER, slot, m_handle);
-}
+void GLUniformBuffer::BindSlot(uint32_t slot) { glBindBufferBase(GL_UNIFORM_BUFFER, slot, m_handle); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL TEXTURE IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLTexture::GLTexture(const TextureDesc& desc)
-    : m_desc(desc)
-{
+GLTexture::GLTexture(const TextureDesc& desc) : m_desc(desc) {
     // Direct state access throughout: creating, uploading to or configuring a
     // texture never changes what is bound to the active texture unit. The old
     // glBindTexture calls did, so a texture created or uploaded while a draw
@@ -250,12 +234,12 @@ void GLTexture::Upload(const void* data, size_t sizeBytes, uint32_t mipLevel) {
     const GLFormatInfo fmt = TranslateFormat(m_desc.format);
     const uint32_t w = std::max(1u, m_desc.width >> mipLevel);
     const uint32_t h = std::max(1u, m_desc.height >> mipLevel);
-    glTextureSubImage2D(m_handle, static_cast<GLint>(mipLevel), 0, 0,
-                        static_cast<GLsizei>(w), static_cast<GLsizei>(h), fmt.baseFormat, fmt.type, data);
+    glTextureSubImage2D(m_handle, static_cast<GLint>(mipLevel), 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+                        fmt.baseFormat, fmt.type, data);
 }
 
-void GLTexture::UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                                 const void* data, size_t sizeBytes, uint32_t mipLevel) {
+void GLTexture::UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const void* data, size_t sizeBytes,
+                                uint32_t mipLevel) {
     (void)sizeBytes;
     if (!data || mipLevel >= m_desc.mipLevels) return;
     const GLFormatInfo fmt = TranslateFormat(m_desc.format);
@@ -286,9 +270,7 @@ void GLTexture::SetSampler(const SamplerDesc& desc) {
 //  GL SHADER PROGRAM IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLShaderProgram::GLShaderProgram() {
-    m_program = glCreateProgram();
-}
+GLShaderProgram::GLShaderProgram() { m_program = glCreateProgram(); }
 
 GLShaderProgram::~GLShaderProgram() {
     if (m_program) glDeleteProgram(m_program);
@@ -317,7 +299,7 @@ GLuint GLShaderProgram::CompileShader(GLenum type, const std::string& source) {
 }
 
 bool GLShaderProgram::Compile(const std::string& vertexSrc, const std::string& fragmentSrc,
-                               const std::string& geometrySrc) {
+                              const std::string& geometrySrc) {
     m_infoLog.clear();
     m_uniformCache.clear();
 
@@ -397,13 +379,9 @@ bool GLShaderProgram::CompileCompute(const std::string& computeSrc) {
     return status != 0;
 }
 
-void GLShaderProgram::Bind() {
-    glUseProgram(m_program);
-}
+void GLShaderProgram::Bind() { glUseProgram(m_program); }
 
-void GLShaderProgram::Unbind() {
-    glUseProgram(0);
-}
+void GLShaderProgram::Unbind() { glUseProgram(0); }
 
 int GLShaderProgram::GetUniformLocation(const char* name) const {
     auto it = m_uniformCache.find(name);
@@ -441,9 +419,7 @@ void GLShaderProgram::SetMat4(const char* name, const float* data) {
 //  GL RENDER TARGET IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLRenderTarget::GLRenderTarget(const RenderTargetDesc& desc)
-    : m_desc(desc)
-{
+GLRenderTarget::GLRenderTarget(const RenderTargetDesc& desc) : m_desc(desc) {
     glCreateFramebuffers(1, &m_fbo);
     CreateAttachments();
 
@@ -477,8 +453,8 @@ void GLRenderTarget::CreateAttachments() {
         depthDesc.isDepthStencil = true;
         m_depthTex = std::make_unique<GLTexture>(depthDesc);
 
-        GLenum attachment = (m_desc.depthFormat == TextureFormat::Depth24Stencil8)
-                            ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
+        GLenum attachment =
+            (m_desc.depthFormat == TextureFormat::Depth24Stencil8) ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
         glNamedFramebufferTexture(m_fbo, attachment, m_depthTex->GetHandle(), 0);
     }
 
@@ -499,9 +475,7 @@ void GLRenderTarget::Bind() {
     glViewport(0, 0, m_desc.width, m_desc.height);
 }
 
-void GLRenderTarget::Unbind() {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
+void GLRenderTarget::Unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
 
 void GLRenderTarget::Clear(float r, float g, float b, float a, float depth, uint8_t stencil) {
     float color[4] = {r, g, b, a};
@@ -540,9 +514,7 @@ void GLRenderTarget::Resize(uint32_t width, uint32_t height) {
 //  GL PIPELINE IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-GLPipeline::GLPipeline(const PipelineDesc& desc)
-    : m_desc(desc)
-{
+GLPipeline::GLPipeline(const PipelineDesc& desc) : m_desc(desc) {
     glCreateVertexArrays(1, &m_vao);
 
     // Configure vertex attributes from layout
@@ -550,15 +522,12 @@ GLPipeline::GLPipeline(const PipelineDesc& desc)
         glEnableVertexArrayAttrib(m_vao, attrib.location);
         GLenum baseType = TranslateVertexAttribBaseType(attrib.type);
         uint32_t components = Nova64::Video::GetVertexAttribComponentCount(attrib.type);
-        bool isNormalized = attrib.normalized ||
-                            attrib.type == VertexAttribType::UByte4N ||
-                            attrib.type == VertexAttribType::Short2N ||
-                            attrib.type == VertexAttribType::Short4N;
+        bool isNormalized = attrib.normalized || attrib.type == VertexAttribType::UByte4N ||
+                            attrib.type == VertexAttribType::Short2N || attrib.type == VertexAttribType::Short4N;
 
         if (baseType == GL_FLOAT || isNormalized) {
-            glVertexArrayAttribFormat(m_vao, attrib.location, components,
-                                       baseType, isNormalized ? GL_TRUE : GL_FALSE,
-                                       attrib.offset);
+            glVertexArrayAttribFormat(m_vao, attrib.location, components, baseType, isNormalized ? GL_TRUE : GL_FALSE,
+                                      attrib.offset);
         } else {
             glVertexArrayAttribIFormat(m_vao, attrib.location, components, baseType, attrib.offset);
         }
@@ -570,8 +539,8 @@ GLPipeline::~GLPipeline() {
     if (m_vao) glDeleteVertexArrays(1, &m_vao);
 }
 
-void GLPipeline::Bind() {
-    glBindVertexArray(m_vao);
-}
+void GLPipeline::Bind() { glBindVertexArray(m_vao); }
 
-}}} // namespace Nova64::Video::GL
+} // namespace GL
+} // namespace Video
+} // namespace Nova64

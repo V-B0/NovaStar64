@@ -19,7 +19,8 @@
 #include <functional>
 #include <array>
 
-namespace Nova64 { namespace Video {
+namespace Nova64 {
+namespace Video {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  FORWARD DECLARATIONS
@@ -33,7 +34,9 @@ class IUniformBuffer;
 class ITexture;
 class IShaderProgram;
 class IPipeline;
-namespace RT { class RTSceneManager; }
+namespace RT {
+class RTSceneManager;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ENUMERATIONS
@@ -41,27 +44,20 @@ namespace RT { class RTSceneManager; }
 
 enum class BackendType : uint8_t {
     None = 0,
-    OpenGL46,       // OpenGL 4.6 Core Profile + DSA
-    Software,       // Software fallback (debug only)
-    Vulkan,         // Vulkan 1.2+
+    OpenGL46, // OpenGL 4.6 Core Profile + DSA
+    Software, // Software fallback (debug only)
+    Vulkan,   // Vulkan 1.2+
     Count
 };
 
 /// Internal format for image load/store binding (BindImageForRW).
 enum class ImageBindFormat : uint8_t {
-    R32F = 0,       // Z-image, deltaZ-image
-    RGBA8,          // Color image
-    R8UI            // Coverage image
+    R32F = 0, // Z-image, deltaZ-image
+    RGBA8,    // Color image
+    R8UI      // Coverage image
 };
 
-enum class PrimitiveType : uint8_t {
-    Triangles = 0,
-    TriangleStrip,
-    TriangleFan,
-    Lines,
-    LineStrip,
-    Points
-};
+enum class PrimitiveType : uint8_t { Triangles = 0, TriangleStrip, TriangleFan, Lines, LineStrip, Points };
 
 enum class BlendFactor : uint8_t {
     Zero = 0,
@@ -85,53 +81,17 @@ enum class BlendFactor : uint8_t {
     OneMinusSrc1Alpha
 };
 
-enum class BlendOp : uint8_t {
-    Add = 0,
-    Subtract,
-    ReverseSubtract,
-    Min,
-    Max
-};
+enum class BlendOp : uint8_t { Add = 0, Subtract, ReverseSubtract, Min, Max };
 
-enum class CompareFunc : uint8_t {
-    Never = 0,
-    Less,
-    Equal,
-    LessEqual,
-    Greater,
-    NotEqual,
-    GreaterEqual,
-    Always
-};
+enum class CompareFunc : uint8_t { Never = 0, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 
-enum class StencilOp : uint8_t {
-    Keep = 0,
-    Zero,
-    Replace,
-    IncrClamp,
-    DecrClamp,
-    Invert,
-    IncrWrap,
-    DecrWrap
-};
+enum class StencilOp : uint8_t { Keep = 0, Zero, Replace, IncrClamp, DecrClamp, Invert, IncrWrap, DecrWrap };
 
-enum class CullMode : uint8_t {
-    None = 0,
-    Front,
-    Back,
-    FrontAndBack
-};
+enum class CullMode : uint8_t { None = 0, Front, Back, FrontAndBack };
 
-enum class FrontFace : uint8_t {
-    CounterClockwise = 0,
-    Clockwise
-};
+enum class FrontFace : uint8_t { CounterClockwise = 0, Clockwise };
 
-enum class PolygonMode : uint8_t {
-    Fill = 0,
-    Wireframe,
-    Points
-};
+enum class PolygonMode : uint8_t { Fill = 0, Wireframe, Points };
 
 enum class TextureFormat : uint8_t {
     RGBA8 = 0,
@@ -146,10 +106,10 @@ enum class TextureFormat : uint8_t {
     Depth24,
     Depth32F,
     Depth24Stencil8,
-    IA16,     // N64 intensity+alpha
-    I8,       // N64 intensity
-    CI4,      // N64 color-indexed 4-bit
-    CI8,      // N64 color-indexed 8-bit
+    IA16, // N64 intensity+alpha
+    I8,   // N64 intensity
+    CI4,  // N64 color-indexed 4-bit
+    CI8,  // N64 color-indexed 8-bit
     Count
 };
 
@@ -160,27 +120,18 @@ enum class SamplerFilter : uint8_t {
     LinearMipNearest,
     NearestMipLinear,
     LinearMipLinear,
-    N64_3Point          // N64 hardware 3-point bilinear
+    N64_3Point // N64 hardware 3-point bilinear
 };
 
-enum class TextureWrap : uint8_t {
-    Repeat = 0,
-    MirroredRepeat,
-    ClampToEdge,
-    ClampToBorder,
-    MirrorClampToEdge
-};
+enum class TextureWrap : uint8_t { Repeat = 0, MirroredRepeat, ClampToEdge, ClampToBorder, MirrorClampToEdge };
 
 enum class BufferUsage : uint8_t {
-    Static = 0,     // Uploaded once
-    Dynamic,        // Updated frequently
-    Stream          // Updated every frame
+    Static = 0, // Uploaded once
+    Dynamic,    // Updated frequently
+    Stream      // Updated every frame
 };
 
-enum class IndexType : uint8_t {
-    UInt16 = 0,
-    UInt32
-};
+enum class IndexType : uint8_t { UInt16 = 0, UInt32 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  VERTEX FORMAT
@@ -192,7 +143,7 @@ enum class VertexAttribType : uint8_t {
     Float3,
     Float4,
     UByte4,
-    UByte4N,        // Normalized [0,1]
+    UByte4N, // Normalized [0,1]
     Short2,
     Short4,
     Short2N,
@@ -202,15 +153,15 @@ enum class VertexAttribType : uint8_t {
 };
 
 struct VertexAttrib {
-    uint32_t location;      // Shader attribute location
-    VertexAttribType type;  // Data type
-    uint32_t offset;        // Byte offset in vertex struct
-    bool normalized;        // Integer → float normalize
+    uint32_t location;     // Shader attribute location
+    VertexAttribType type; // Data type
+    uint32_t offset;       // Byte offset in vertex struct
+    bool normalized;       // Integer → float normalize
 };
 
 struct VertexLayout {
     std::vector<VertexAttrib> attribs;
-    uint32_t stride;        // Bytes per vertex
+    uint32_t stride; // Bytes per vertex
 
     static VertexLayout CreateN64() {
         VertexLayout layout;
@@ -364,7 +315,7 @@ struct SamplerDesc {
     TextureWrap wrapS = TextureWrap::Repeat;
     TextureWrap wrapT = TextureWrap::Repeat;
     float maxAnisotropy = 1.0f;
-    float lodBias       = 0.0f;
+    float lodBias = 0.0f;
     float borderColor[4] = {0, 0, 0, 0};
     bool useN64_3Point = false;
 };
@@ -449,8 +400,8 @@ class ITexture {
 public:
     virtual ~ITexture() = default;
     virtual void Upload(const void* data, size_t sizeBytes, uint32_t mipLevel = 0) = 0;
-    virtual void UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                                  const void* data, size_t sizeBytes, uint32_t mipLevel = 0) = 0;
+    virtual void UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const void* data, size_t sizeBytes,
+                                 uint32_t mipLevel = 0) = 0;
     virtual void GenerateMipmaps() = 0;
     virtual void SetSampler(const SamplerDesc& desc) = 0;
     virtual uint32_t GetWidth() const = 0;
@@ -463,7 +414,7 @@ class IShaderProgram {
 public:
     virtual ~IShaderProgram() = default;
     virtual bool Compile(const std::string& vertexSrc, const std::string& fragmentSrc,
-                          const std::string& geometrySrc = "") = 0;
+                         const std::string& geometrySrc = "") = 0;
     virtual bool CompileCompute(const std::string& computeSrc) = 0;
     virtual void Bind() = 0;
     virtual void Unbind() = 0;
@@ -533,7 +484,7 @@ struct RendererStats {
     double gpuTimeMs = 0.0;
     double cpuTimeMs = 0.0;
     uint64_t videoMemoryUsed = 0;      // bytes
-    uint64_t videoMemoryAvailable = 0;  // bytes
+    uint64_t videoMemoryAvailable = 0; // bytes
 
     void Reset() {
         drawCalls = triangles = stateChanges = 0;
@@ -674,20 +625,22 @@ public:
     /// tlas:        backend-native TLAS handle (VkAccelerationStructureKHR)
     /// outputImage: backend-native image handle for ray output (VkImageView)
     /// w, h:        dispatch dimensions in pixels
-    virtual void DispatchRayTracing(void* tlas, void* outputImage,
-                                    uint32_t w, uint32_t h) {
-        (void)tlas; (void)outputImage; (void)w; (void)h;
+    virtual void DispatchRayTracing(void* tlas, void* outputImage, uint32_t w, uint32_t h) {
+        (void)tlas;
+        (void)outputImage;
+        (void)w;
+        (void)h;
     }
     /// High-level RT entry point: build acceleration structure from scene
     /// geometry then dispatch rays.  Default no-op for non-RT backends.
-    virtual void ExecuteRayTracing(RT::RTSceneManager* scene,
-                                   uint32_t w, uint32_t h) {
-        (void)scene; (void)w; (void)h;
+    virtual void ExecuteRayTracing(RT::RTSceneManager* scene, uint32_t w, uint32_t h) {
+        (void)scene;
+        (void)w;
+        (void)h;
     }
 
     // ─── Readback ──────────────────────────────────────────────
-    virtual void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                             TextureFormat format, void* outData) = 0;
+    virtual void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h, TextureFormat format, void* outData) = 0;
 
     // GPU-side copy of the current swapchain frame into dst texture.
     // Records vkCmdCopyImage into the in-flight command buffer; no CPU sync,
@@ -736,7 +689,9 @@ public:
     /// persistent per-FB images we were missing; this exposes them as a texture
     /// source. Returns false when no valid canvas exists for that address.
     virtual bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) {
-        (void)n64Addr; (void)dst; return false;
+        (void)n64Addr;
+        (void)dst;
+        return false;
     }
     /// Upload CPU-side RGBA8 pixels into the persistent canvas for an N64 buffer
     /// address, scaling from N64 resolution up to canvas resolution.
@@ -750,13 +705,14 @@ public:
     /// rendered) had no GPU content and displayed as nothing.
     /// `pixels` is tightly packed RGBA8, `w*h` entries. Returns false if the
     /// backend has no canvas machinery.
-    virtual bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h,
-                                      const uint32_t* pixels) {
-        (void)n64Addr; (void)w; (void)h; (void)pixels; return false;
+    virtual bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h, const uint32_t* pixels) {
+        (void)n64Addr;
+        (void)w;
+        (void)h;
+        (void)pixels;
+        return false;
     }
-    virtual void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW,
-                                        uint32_t fbH, bool isRGBA16,
-                                        uint8_t* rdram) {
+    virtual void CopyFramebufferToRDRAM(uint32_t fbAddress, uint32_t fbW, uint32_t fbH, bool isRGBA16, uint8_t* rdram) {
         (void)fbAddress;
         (void)fbW;
         (void)fbH;
@@ -800,4 +756,5 @@ BackendType DetectBestBackend();
 /// Get human-readable name for a backend
 const char* GetBackendName(BackendType type);
 
-}} // namespace Nova64::Video
+} // namespace Video
+} // namespace Nova64

@@ -44,16 +44,16 @@ namespace Recompiler {
 // ============================================================================
 namespace {
 
-inline uint32_t mips_op(uint32_t instr)     { return (instr >> 26) & 0x3F; }
-inline uint32_t mips_rs(uint32_t instr)     { return (instr >> 21) & 0x1F; }
-inline uint32_t mips_rt(uint32_t instr)     { return (instr >> 16) & 0x1F; }
-[[maybe_unused]] inline uint32_t mips_rd(uint32_t instr)     { return (instr >> 11) & 0x1F; }
-[[maybe_unused]] inline uint32_t mips_sa(uint32_t instr)     { return (instr >>  6) & 0x1F; }
-inline uint32_t mips_funct(uint32_t instr)  { return  instr        & 0x3F; }
-inline int16_t  mips_offset(uint32_t instr) { return static_cast<int16_t>(instr & 0xFFFF); }
-inline uint32_t mips_target(uint32_t instr) { return  instr & 0x03FFFFFF; }
-inline uint32_t mips_fmt(uint32_t instr)    { return mips_rs(instr); }  // COP1 fmt = rs field
-inline uint32_t mips_ft(uint32_t instr)     { return mips_rt(instr); }  // COP1 ft = rt field
+inline uint32_t mips_op(uint32_t instr) { return (instr >> 26) & 0x3F; }
+inline uint32_t mips_rs(uint32_t instr) { return (instr >> 21) & 0x1F; }
+inline uint32_t mips_rt(uint32_t instr) { return (instr >> 16) & 0x1F; }
+[[maybe_unused]] inline uint32_t mips_rd(uint32_t instr) { return (instr >> 11) & 0x1F; }
+[[maybe_unused]] inline uint32_t mips_sa(uint32_t instr) { return (instr >> 6) & 0x1F; }
+inline uint32_t mips_funct(uint32_t instr) { return instr & 0x3F; }
+inline int16_t mips_offset(uint32_t instr) { return static_cast<int16_t>(instr & 0xFFFF); }
+inline uint32_t mips_target(uint32_t instr) { return instr & 0x03FFFFFF; }
+inline uint32_t mips_fmt(uint32_t instr) { return mips_rs(instr); } // COP1 fmt = rs field
+inline uint32_t mips_ft(uint32_t instr) { return mips_rt(instr); }  // COP1 ft = rt field
 
 } // anonymous namespace
 
@@ -62,17 +62,9 @@ inline uint32_t mips_ft(uint32_t instr)     { return mips_rt(instr); }  // COP1 
 // ============================================================================
 
 CodeBlock::CodeBlock(N64System& system, uint32_t entry_address, const Config& config,
-                     asmjit::JitRuntime* shared_runtime)
-    : system_(&system)
-    , memory_(system.GetMemory())
-    , registers_(system.GetRegisters())
-    , entry_address_(entry_address)
-    , start_address_(entry_address)
-    , end_address_(entry_address)
-    , hash_{0, 0}
-    , flags_(BlockFlags::None)
-    , config_(config)
-{
+                     asmjit::JitRuntime* shared_runtime) :
+    system_(&system), memory_(system.GetMemory()), registers_(system.GetRegisters()), entry_address_(entry_address),
+    start_address_(entry_address), end_address_(entry_address), hash_{0, 0}, flags_(BlockFlags::None), config_(config) {
     // Use shared runtime if provided, otherwise create our own
     if (shared_runtime) {
         runtime_ = shared_runtime;
@@ -100,29 +92,15 @@ CodeBlock::~CodeBlock() noexcept {
     }
 }
 
-CodeBlock::CodeBlock(CodeBlock&& other) noexcept
-    : asmjit::ErrorHandler()
-    , system_(other.system_)
-    , memory_(other.memory_)
-    , registers_(other.registers_)
-    , entry_address_(other.entry_address_)
-    , start_address_(other.start_address_)
-    , end_address_(other.end_address_)
-    , hash_(other.hash_)
-    , flags_(other.flags_)
-    , instructions_(std::move(other.instructions_))
-    , sections_(std::move(other.sections_))
-    , address_to_section_(std::move(other.address_to_section_))
-    , owned_runtime_(std::move(other.owned_runtime_))
-    , runtime_(other.runtime_)
-    , code_holder_(std::move(other.code_holder_))
-    , compiled_function_(other.compiled_function_)
-    , memory_snapshot_(std::move(other.memory_snapshot_))
-    , statistics_(other.statistics_)
-    , config_(other.config_)
-    , code_log_(std::move(other.code_log_))
-    , generated_code_cache_(std::move(other.generated_code_cache_))
-{
+CodeBlock::CodeBlock(CodeBlock&& other) noexcept :
+    asmjit::ErrorHandler(), system_(other.system_), memory_(other.memory_), registers_(other.registers_),
+    entry_address_(other.entry_address_), start_address_(other.start_address_), end_address_(other.end_address_),
+    hash_(other.hash_), flags_(other.flags_), instructions_(std::move(other.instructions_)),
+    sections_(std::move(other.sections_)), address_to_section_(std::move(other.address_to_section_)),
+    owned_runtime_(std::move(other.owned_runtime_)), runtime_(other.runtime_),
+    code_holder_(std::move(other.code_holder_)), compiled_function_(other.compiled_function_),
+    memory_snapshot_(std::move(other.memory_snapshot_)), statistics_(other.statistics_), config_(other.config_),
+    code_log_(std::move(other.code_log_)), generated_code_cache_(std::move(other.generated_code_cache_)) {
     // Prevent source from double-releasing the compiled code
     other.runtime_ = nullptr;
     other.compiled_function_ = nullptr;
@@ -166,8 +144,7 @@ CodeBlock& CodeBlock::operator=(CodeBlock&& other) noexcept {
 // Compilation
 // ============================================================================
 
-CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options)
-{
+CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // Step 1: Analyze the block
@@ -198,8 +175,7 @@ CodeBlock::CompileResult CodeBlock::compile(const CompileOptions& options)
     return CompileResult::Success;
 }
 
-std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/)
-{
+std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/) {
     if (!code_holder_) {
         return std::nullopt;
     }
@@ -243,9 +219,8 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
     generated_code_cache_.shrink_to_fit();
 
     if (config_.enable_logging) {
-        log_compilation("Block finalized: entry=0x" +
-                       std::to_string(entry_address_) +
-                       " size=" + std::to_string(code_size) + " bytes");
+        log_compilation("Block finalized: entry=0x" + std::to_string(entry_address_) +
+                        " size=" + std::to_string(code_size) + " bytes");
     }
 
     return reinterpret_cast<uintptr_t>(compiled_function_);
@@ -255,8 +230,7 @@ std::optional<uintptr_t> CodeBlock::finalize(RecompilationMemory& /*recomp_mem*/
 // Analysis - Block Level
 // ============================================================================
 
-std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block()
-{
+std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block() {
     if (!memory_) {
         return std::nullopt;
     }
@@ -281,8 +255,7 @@ std::optional<CodeBlock::AnalysisResult> CodeBlock::analyze_block()
     return result;
 }
 
-std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr, AnalysisResult& temp_result)
-{
+std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr, AnalysisResult& temp_result) {
     BasicBlockInfo bb;
     bb.start_address = start_addr;
     bb.end_address = start_addr;
@@ -337,8 +310,7 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
         }
 
         // Check for end block markers in temp_result
-        if (temp_result.contains_syscall || temp_result.contains_breakpoint ||
-            temp_result.contains_wait) {
+        if (temp_result.contains_syscall || temp_result.contains_breakpoint || temp_result.contains_wait) {
             break;
         }
 
@@ -357,21 +329,17 @@ std::optional<BasicBlockInfo> CodeBlock::analyze_basic_block(uint32_t start_addr
 // Ported from Project64's CCodeBlock::AnalyzeInstruction
 // ============================================================================
 
-bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
-                                    AnalysisResult& result,
-                                    BasicBlockInfo& /*current_block*/)
-{
-    const uint32_t op    = mips_op(opcode);
-    const uint32_t rs    = mips_rs(opcode);
-    const uint32_t rt    = mips_rt(opcode);
+bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode, AnalysisResult& result,
+                                    BasicBlockInfo& /*current_block*/) {
+    const uint32_t op = mips_op(opcode);
+    const uint32_t rs = mips_rs(opcode);
+    const uint32_t rt = mips_rt(opcode);
     const uint32_t funct = mips_funct(opcode);
-    const int16_t  offset = mips_offset(opcode);
+    const int16_t offset = mips_offset(opcode);
     const uint32_t target_field = mips_target(opcode);
 
     // Helper lambda: compute branch target from PC-relative offset
-    auto branch_target = [&]() -> uint32_t {
-        return pc + (static_cast<int32_t>(offset) << 2) + 4;
-    };
+    auto branch_target = [&]() -> uint32_t { return pc + (static_cast<int32_t>(offset) << 2) + 4; };
 
     // Helper lambda: check if branch target forms a permanent loop
     // A branch back to its own address is a spin loop: nothing but an interrupt
@@ -392,9 +360,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     // DMA completion, and both of those *are* timer events. If this is ever
     // refined to spot self-terminating loops (e.g. a countdown in the delay
     // slot), the interpreter has to be changed in the same commit.
-    auto check_perm_loop = [&](uint32_t target_pc) -> bool {
-        return target_pc == pc;
-    };
+    auto check_perm_loop = [&](uint32_t target_pc) -> bool { return target_pc == pc; };
 
     switch (op) {
     // =================================================================
@@ -451,26 +417,18 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         case R4300_S_TGE:
         case R4300_S_TGEU:
         case R4300_S_TLT:
-        case R4300_S_TLTU:
-            break;
+        case R4300_S_TLTU: break;
 
         // JR / JALR - indirect jump, ends block, includes delay slot
         case R4300_S_JR:
-        case R4300_S_JALR:
-            result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true);
-            break;
+        case R4300_S_JALR: result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true); break;
 
         // SYSCALL / BREAK - end block, no delay slot
-        case R4300_S_SYSCALL:
-            result.contains_syscall = true;
-            break;
-        case R4300_S_BREAK:
-            result.contains_breakpoint = true;
-            break;
+        case R4300_S_SYSCALL: result.contains_syscall = true; break;
+        case R4300_S_BREAK:   result.contains_breakpoint = true; break;
 
         default:
-            log_error("Unknown SPECIAL funct=0x" + std::to_string(funct) +
-                      " at PC=0x" + std::to_string(pc));
+            log_error("Unknown SPECIAL funct=0x" + std::to_string(funct) + " at PC=0x" + std::to_string(pc));
             // Treat as non-control-flow; codegen handles via interpreter callback
             break;
         }
@@ -527,8 +485,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         case R4300_R_TGEI:
         case R4300_R_TGEIU:
         case R4300_R_TLTI:
-        case R4300_R_TLTIU:
-            break;
+        case R4300_R_TLTIU: break;
 
         default:
             // Known invalid instruction pattern that ends block
@@ -536,8 +493,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 result.add_branch(pc, static_cast<uint32_t>(-1), false, false, true);
                 break;
             }
-            log_error("Unknown REGIMM rt=0x" + std::to_string(rt) +
-                      " at PC=0x" + std::to_string(pc));
+            log_error("Unknown REGIMM rt=0x" + std::to_string(rt) + " at PC=0x" + std::to_string(pc));
             // Treat as non-control-flow; codegen handles via interpreter callback
             break;
         }
@@ -560,9 +516,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     // =================================================================
     // JAL (opcode 0x03) - Jump And Link (function call ends block)
     // =================================================================
-    case R4300_JAL:
-        result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true);
-        break;
+    case R4300_JAL: result.add_branch(pc, static_cast<uint32_t>(-1), false, true, true); break;
 
     // =================================================================
     // BEQ (opcode 0x04)
@@ -609,8 +563,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     case R4300_DADDI:
     case R4300_DADDIU:
     case R4300_LDL:
-    case R4300_LDR:
-        break;
+    case R4300_LDR:    break;
 
     // =================================================================
     // Load / Store - no control flow
@@ -638,9 +591,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
     case R4300_SC:
     case R4300_SWC1:
     case R4300_SDC1:
-    case R4300_SD:
-        result.flags = result.flags | BlockFlags::HasMemoryOps;
-        break;
+    case R4300_SD:    result.flags = result.flags | BlockFlags::HasMemoryOps; break;
 
     // =================================================================
     // COP0 (opcode 0x10)
@@ -650,8 +601,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
         case R4300_COP0_MT:
         case R4300_COP0_DMT:
         case R4300_COP0_MF:
-        case R4300_COP0_DMF:
-            break;
+        case R4300_COP0_DMF: break;
         default:
             if ((rs & 0x10) != 0) {
                 // CO (Coprocessor Operation) sub-instructions
@@ -659,24 +609,18 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 case R4300_COP0_C0_TLBR:
                 case R4300_COP0_C0_TLBWI:
                 case R4300_COP0_C0_TLBWR:
-                case R4300_COP0_C0_TLBP:
-                    result.contains_tlb_op = true;
-                    break;
+                case R4300_COP0_C0_TLBP:  result.contains_tlb_op = true; break;
                 case R4300_COP0_C0_ERET:
                     // ERET - return from exception, ends block
                     result.add_branch(pc, static_cast<uint32_t>(-1), false, false, true);
                     break;
-                case R4300_COP0_C0_WAIT:
-                    result.contains_wait = true;
-                    break;
+                case R4300_COP0_C0_WAIT: result.contains_wait = true; break;
                 default:
-                    log_error("Unknown COP0 CO funct=0x" + std::to_string(funct) +
-                              " at PC=0x" + std::to_string(pc));
+                    log_error("Unknown COP0 CO funct=0x" + std::to_string(funct) + " at PC=0x" + std::to_string(pc));
                     break;
                 }
             } else {
-                log_error("Unknown COP0 rs=0x" + std::to_string(rs) +
-                          " at PC=0x" + std::to_string(pc));
+                log_error("Unknown COP0 rs=0x" + std::to_string(rs) + " at PC=0x" + std::to_string(pc));
             }
             break;
         }
@@ -705,8 +649,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
             // COP1 branch instructions
             uint32_t ft_field = mips_ft(opcode);
             switch (ft_field) {
-            case R4300_COP1_BC_BC:   // BC1F
-            case R4300_COP1_BC_BCT:  // BC1T
+            case R4300_COP1_BC_BC:  // BC1F
+            case R4300_COP1_BC_BCT: // BC1T
             {
                 uint32_t tgt = branch_target();
                 result.add_branch(pc, tgt, false, true, false);
@@ -714,8 +658,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 result.flags = result.flags | BlockFlags::HasFloatOps;
                 break;
             }
-            case R4300_COP1_BC_BCFL:  // BC1FL
-            case R4300_COP1_BC_BCFT:  // BC1TL
+            case R4300_COP1_BC_BCFL: // BC1FL
+            case R4300_COP1_BC_BCFT: // BC1TL
             {
                 uint32_t tgt = branch_target();
                 result.add_branch(pc, tgt, true, true, false);
@@ -724,16 +668,12 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
                 break;
             }
             default:
-                log_error("Unknown COP1 BC ft=0x" + std::to_string(ft_field) +
-                          " at PC=0x" + std::to_string(pc));
+                log_error("Unknown COP1 BC ft=0x" + std::to_string(ft_field) + " at PC=0x" + std::to_string(pc));
                 break;
             }
             break;
         }
-        default:
-            log_error("Unknown COP1 fmt=0x" + std::to_string(fmt_field) +
-                      " at PC=0x" + std::to_string(pc));
-            break;
+        default: log_error("Unknown COP1 fmt=0x" + std::to_string(fmt_field) + " at PC=0x" + std::to_string(pc)); break;
         }
         break;
     }
@@ -774,9 +714,8 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
             result.add_branch(pc, static_cast<uint32_t>(-1), false, false, true);
             break;
         }
-        log_error("Unknown opcode op=0x" + std::to_string(op) +
-                  " (raw=0x" + std::to_string(opcode) +
-                  ") at PC=0x" + std::to_string(pc));
+        log_error("Unknown opcode op=0x" + std::to_string(op) + " (raw=0x" + std::to_string(opcode) + ") at PC=0x" +
+                  std::to_string(pc));
         // Treat as non-control-flow; codegen handles via interpreter callback
         break;
     }
@@ -788,9 +727,7 @@ bool CodeBlock::analyze_instruction(uint32_t pc, uint32_t opcode,
 // Code Generation
 // ============================================================================
 
-bool CodeBlock::generate_code(const AnalysisResult& analysis,
-                              const CompileOptions& /*options*/)
-{
+bool CodeBlock::generate_code(const AnalysisResult& analysis, const CompileOptions& /*options*/) {
     if (!code_holder_ || !system_ || !registers_) {
         log_error("generate_code: missing code_holder, system, or registers");
         return false;
@@ -835,8 +772,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
     // If we check PipelineStage after the branch, we'd exit before the
     // delay slot runs, causing it to be skipped entirely.
     size_t branchInstrIdx = static_cast<size_t>(-1);
-    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
-        instructions_.size() >= 2) {
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() && instructions_.size() >= 2) {
         // The branch is at second-to-last position, delay slot at last
         branchInstrIdx = instructions_.size() - 2;
     }
@@ -844,8 +780,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
     for (size_t i = 0; i < instructions_.size(); ++i) {
         uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
         R4300iInstruction mipsInstr(addr, instructions_[i]);
-        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
-                                   PipelineStage::Execute, nullptr);
+        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF, PipelineStage::Execute, nullptr);
 
         // Before the delay slot instruction, set up correct CPU state so that
         // TriggerException computes the right BranchDelay bit and EPC if the
@@ -853,8 +788,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
         // to the branch target; EmitDelaySlotSetup saves that target in
         // m_JumpToLocation, restores m_PROGRAM_COUNTER to the delay slot
         // address, and sets PipelineStage = Jump.
-        if (branchInstrIdx != static_cast<size_t>(-1) &&
-            i == branchInstrIdx + 1) {
+        if (branchInstrIdx != static_cast<size_t>(-1) && i == branchInstrIdx + 1) {
             ops.EmitDelaySlotSetup(addr);
             ops.SetInDelaySlot(true);
         }
@@ -864,8 +798,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
             // emit a NOP fallback so the block is still valid
         }
 
-        if (branchInstrIdx != static_cast<size_t>(-1) &&
-            i == branchInstrIdx + 1) {
+        if (branchInstrIdx != static_cast<size_t>(-1) && i == branchInstrIdx + 1) {
             ops.SetInDelaySlot(false);
         }
 
@@ -946,16 +879,14 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
 
     // Determine branch instruction index (same logic as x64 path)
     size_t branchInstrIdx = static_cast<size_t>(-1);
-    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
-        instructions_.size() >= 2) {
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() && instructions_.size() >= 2) {
         branchInstrIdx = instructions_.size() - 2;
     }
 
     for (size_t i = 0; i < instructions_.size(); ++i) {
         uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
         R4300iInstruction mipsInstr(addr, instructions_[i]);
-        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
-                                   PipelineStage::Execute, nullptr);
+        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF, PipelineStage::Execute, nullptr);
 
         if (!ops.CompileInstruction(instrCtx)) {
             log_error("x86 CompileInstruction failed at 0x" + std::to_string(addr));
@@ -1005,16 +936,14 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
     ops.EnterCodeBlock();
 
     size_t branchInstrIdx = static_cast<size_t>(-1);
-    if (!analysis.branches.empty() && !analysis.delay_slots.empty() &&
-        instructions_.size() >= 2) {
+    if (!analysis.branches.empty() && !analysis.delay_slots.empty() && instructions_.size() >= 2) {
         branchInstrIdx = instructions_.size() - 2;
     }
 
     for (size_t i = 0; i < instructions_.size(); ++i) {
         uint32_t addr = start_address_ + static_cast<uint32_t>(i * 4);
         R4300iInstruction mipsInstr(addr, instructions_[i]);
-        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF,
-                                   PipelineStage::Execute, nullptr);
+        InstructionContext instrCtx(mipsInstr, addr, addr & 0x1FFFFFFF, PipelineStage::Execute, nullptr);
 
         if (!ops.CompileInstruction(instrCtx)) {
             log_error("ARM64 CompileInstruction failed at 0x" + std::to_string(addr));
@@ -1023,9 +952,8 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
         // A timer-expiry exit is only safe on a straight-line instruction: the
         // branch must still run its delay slot, and after the delay slot the
         // branch callback owns the PC. For those two, just decrement.
-        const bool isBranch    = (i == branchInstrIdx);
-        const bool isDelaySlot = (branchInstrIdx != static_cast<size_t>(-1) &&
-                                  i == branchInstrIdx + 1);
+        const bool isBranch = (i == branchInstrIdx);
+        const bool isDelaySlot = (branchInstrIdx != static_cast<size_t>(-1) && i == branchInstrIdx + 1);
 
         if (!ops.HasPendingBranchLikelySkip() || i != branchInstrIdx) {
             if (isBranch || isDelaySlot) {
@@ -1060,8 +988,7 @@ bool CodeBlock::generate_code(const AnalysisResult& analysis,
 #endif
 }
 
-bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/)
-{
+bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/) {
     // Optimization passes - stub for now
     // Future: dead code elimination, constant folding, etc.
     return true;
@@ -1071,18 +998,13 @@ bool CodeBlock::optimize_code(const AnalysisResult& /*analysis*/)
 // CodeGenerator Implementation
 // ============================================================================
 
-CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code,
-                                        const AnalysisResult& analysis,
-                                        const Config& config)
-    : assembler_(&code)
-    , analysis_(analysis)
-    , config_(config)
-{
+CodeBlock::CodeGenerator::CodeGenerator(asmjit::CodeHolder& code, const AnalysisResult& analysis,
+                                        const Config& config) :
+    assembler_(&code), analysis_(analysis), config_(config) {
     register_states_.fill({});
 }
 
-bool CodeBlock::CodeGenerator::generate_prologue()
-{
+bool CodeBlock::CodeGenerator::generate_prologue() {
     // Legacy/stub code generator.  The live recompiler path uses the
     // architecture-specific *RecompilerOps backends; this nested helper only
     // emits a host prologue on x86 and is a no-op elsewhere.
@@ -1093,8 +1015,7 @@ bool CodeBlock::CodeGenerator::generate_prologue()
     return true;
 }
 
-bool CodeBlock::CodeGenerator::generate_epilogue()
-{
+bool CodeBlock::CodeGenerator::generate_epilogue() {
 #if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
     assembler_.mov(asmjit::x86::rsp, asmjit::x86::rbp);
     assembler_.pop(asmjit::x86::rbp);
@@ -1103,8 +1024,7 @@ bool CodeBlock::CodeGenerator::generate_epilogue()
     return true;
 }
 
-bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32_t /*opcode*/)
-{
+bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32_t /*opcode*/) {
     // Individual instruction code generation is delegated to
     // CX64RecompilerOps via the recompiler pipeline.
     // Stub until the full recompiler ops are connected.
@@ -1112,46 +1032,30 @@ bool CodeBlock::CodeGenerator::generate_instruction(uint32_t /*address*/, uint32
     return true;
 }
 
-bool CodeBlock::CodeGenerator::generate_branch(const AnalysisResult::BranchInfo& /*branch*/)
-{
+bool CodeBlock::CodeGenerator::generate_branch(const AnalysisResult::BranchInfo& /*branch*/) {
     // Branch linkage code generation - stub
     return true;
 }
 
-bool CodeBlock::CodeGenerator::generate_delay_slot(uint32_t /*address*/, uint32_t /*opcode*/)
-{
-    return true;
-}
+bool CodeBlock::CodeGenerator::generate_delay_slot(uint32_t /*address*/, uint32_t /*opcode*/) { return true; }
 
-bool CodeBlock::CodeGenerator::generate_linkage()
-{
-    return true;
-}
+bool CodeBlock::CodeGenerator::generate_linkage() { return true; }
 
-bool CodeBlock::CodeGenerator::generate_exception_handler()
-{
-    return true;
-}
+bool CodeBlock::CodeGenerator::generate_exception_handler() { return true; }
 
-Recomp::Gp CodeBlock::CodeGenerator::allocate_register(uint8_t /*mips_reg*/)
-{
+Recomp::Gp CodeBlock::CodeGenerator::allocate_register(uint8_t /*mips_reg*/) {
     return Recomp::Gp{}; // Placeholder (legacy stub path; arch-neutral)
 }
 
-void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/)
-{
-}
+void CodeBlock::CodeGenerator::free_register(Recomp::Gp /*reg*/) {}
 
-void CodeBlock::CodeGenerator::spill_dirty_registers()
-{
-}
+void CodeBlock::CodeGenerator::spill_dirty_registers() {}
 
 // ============================================================================
 // Instruction Access
 // ============================================================================
 
-std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const
-{
+std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const {
     if (address < start_address_ || address > end_address_) {
         return std::nullopt;
     }
@@ -1169,8 +1073,7 @@ std::optional<uint32_t> CodeBlock::get_instruction(uint32_t address) const
 // Memory Snapshot (Self-Modifying Code Detection)
 // ============================================================================
 
-bool CodeBlock::verify_memory_snapshot() const
-{
+bool CodeBlock::verify_memory_snapshot() const {
     if (!memory_ || instructions_.empty()) {
         return true; // Nothing to verify
     }
@@ -1183,8 +1086,7 @@ bool CodeBlock::verify_memory_snapshot() const
     return std::memcmp(ptr, instructions_.data(), totalBytes) == 0;
 }
 
-void CodeBlock::update_memory_snapshot()
-{
+void CodeBlock::update_memory_snapshot() {
     memory_snapshot_ = MemorySnapshot{};
     if (!memory_) return;
 
@@ -1192,8 +1094,7 @@ void CodeBlock::update_memory_snapshot()
     if (ptr) {
         auto* loc = reinterpret_cast<uint64_t*>(ptr);
         memory_snapshot_.add(entry_address_, *loc, reinterpret_cast<uintptr_t>(loc));
-        memory_snapshot_.add(entry_address_ + 8, *(loc + 1),
-                           reinterpret_cast<uintptr_t>(loc + 1));
+        memory_snapshot_.add(entry_address_ + 8, *(loc + 1), reinterpret_cast<uintptr_t>(loc + 1));
     }
 }
 
@@ -1201,8 +1102,7 @@ void CodeBlock::update_memory_snapshot()
 // Debug Information
 // ============================================================================
 
-std::string CodeBlock::disassembly() const
-{
+std::string CodeBlock::disassembly() const {
     std::string result;
     result.reserve(instructions_.size() * 40);
 
@@ -1216,12 +1116,10 @@ std::string CodeBlock::disassembly() const
     return result;
 }
 
-std::string CodeBlock::control_flow_graph() const
-{
+std::string CodeBlock::control_flow_graph() const {
     std::string result;
     result += "CodeBlock CFG: entry=0x" + std::to_string(entry_address_) + "\n";
-    result += "  Range: 0x" + std::to_string(start_address_) +
-              " - 0x" + std::to_string(end_address_) + "\n";
+    result += "  Range: 0x" + std::to_string(start_address_) + " - 0x" + std::to_string(end_address_) + "\n";
     result += "  Instructions: " + std::to_string(instructions_.size()) + "\n";
     return result;
 }
@@ -1230,14 +1128,12 @@ std::string CodeBlock::control_flow_graph() const
 // Linking and Patching
 // ============================================================================
 
-bool CodeBlock::link_to(CodeBlock& /*target*/, uint32_t /*branch_address*/)
-{
+bool CodeBlock::link_to(CodeBlock& /*target*/, uint32_t /*branch_address*/) {
     // Block linking - stub until section linking is operational
     return true;
 }
 
-void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/)
-{
+void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/) {
     // Patch a previously compiled branch to point to a new address
 }
 
@@ -1245,8 +1141,7 @@ void CodeBlock::patch_branch(uint32_t /*from_address*/, uint32_t /*to_address*/)
 // Serialization
 // ============================================================================
 
-CodeBlock::SerializedBlock CodeBlock::serialize() const
-{
+CodeBlock::SerializedBlock CodeBlock::serialize() const {
     SerializedBlock data;
     data.hash = hash_;
     data.entry_address = entry_address_;
@@ -1259,8 +1154,7 @@ CodeBlock::SerializedBlock CodeBlock::serialize() const
     return data;
 }
 
-bool CodeBlock::deserialize(const SerializedBlock& data)
-{
+bool CodeBlock::deserialize(const SerializedBlock& data) {
     hash_ = data.hash;
     entry_address_ = data.entry_address;
     start_address_ = data.start_address;
@@ -1277,8 +1171,7 @@ bool CodeBlock::deserialize(const SerializedBlock& data)
 // Hashing
 // ============================================================================
 
-BlockHash CodeBlock::calculate_hash() const noexcept
-{
+BlockHash CodeBlock::calculate_hash() const noexcept {
     if (instructions_.empty()) {
         return {0, 0};
     }
@@ -1292,57 +1185,40 @@ BlockHash CodeBlock::calculate_hash() const noexcept
     return {low, high};
 }
 
-uint64_t CodeBlock::calculate_fast_hash() const noexcept
-{
-    return calculate_hash().low;
-}
+uint64_t CodeBlock::calculate_fast_hash() const noexcept { return calculate_hash().low; }
 
-void CodeBlock::update_hash()
-{
-    hash_ = calculate_hash();
-}
+void CodeBlock::update_hash() { hash_ = calculate_hash(); }
 
 // ============================================================================
 // Error Handling (asmjit::ErrorHandler override)
 // ============================================================================
 
-void CodeBlock::handleError(asmjit::Error err, const char* message,
-                           asmjit::BaseEmitter* /*origin*/)
-{
-    log_error(std::string("AsmJit error: ") +
-              (message ? message : "unknown") +
-              " (" + std::to_string(static_cast<uint32_t>(err)) + ")");
+void CodeBlock::handleError(asmjit::Error err, const char* message, asmjit::BaseEmitter* /*origin*/) {
+    log_error(std::string("AsmJit error: ") + (message ? message : "unknown") + " (" +
+              std::to_string(static_cast<uint32_t>(err)) + ")");
 }
 
 // ============================================================================
 // Logging Helpers
 // ============================================================================
 
-void CodeBlock::log_compilation(const std::string& message)
-{
+void CodeBlock::log_compilation(const std::string& message) {
     if (config_.enable_logging) {
         code_log_ += "[COMPILE] " + message + "\n";
     }
 }
 
-void CodeBlock::log_error(const std::string& message)
-{
-    code_log_ += "[ERROR] " + message + "\n";
-}
+void CodeBlock::log_error(const std::string& message) { code_log_ += "[ERROR] " + message + "\n"; }
 
 // ============================================================================
 // CodeBlockCache Implementation
 // ============================================================================
 
-CodeBlockCache::CodeBlockCache(const Config& config)
-    : config_(config)
-{
-}
+CodeBlockCache::CodeBlockCache(const Config& config) : config_(config) {}
 
 CodeBlockCache::~CodeBlockCache() = default;
 
-std::shared_ptr<CodeBlock> CodeBlockCache::get_or_compile(uint32_t address)
-{
+std::shared_ptr<CodeBlock> CodeBlockCache::get_or_compile(uint32_t address) {
     auto existing = get(address);
     if (existing) {
         return existing;
@@ -1350,8 +1226,7 @@ std::shared_ptr<CodeBlock> CodeBlockCache::get_or_compile(uint32_t address)
     return nullptr;
 }
 
-std::shared_ptr<CodeBlock> CodeBlockCache::get(uint32_t address) const
-{
+std::shared_ptr<CodeBlock> CodeBlockCache::get(uint32_t address) const {
     std::shared_lock lock(mutex_);
     auto it = blocks_.find(address);
     if (it != blocks_.end()) {
@@ -1361,8 +1236,7 @@ std::shared_ptr<CodeBlock> CodeBlockCache::get(uint32_t address) const
     return nullptr;
 }
 
-void CodeBlockCache::insert(std::shared_ptr<CodeBlock> block)
-{
+void CodeBlockCache::insert(std::shared_ptr<CodeBlock> block) {
     if (!block) return;
 
     std::unique_lock lock(mutex_);
@@ -1383,8 +1257,7 @@ void CodeBlockCache::insert(std::shared_ptr<CodeBlock> block)
     stats_.current_blocks = blocks_.size();
 }
 
-void CodeBlockCache::remove(uint32_t address)
-{
+void CodeBlockCache::remove(uint32_t address) {
     std::unique_lock lock(mutex_);
     auto it = blocks_.find(address);
     if (it != blocks_.end()) {
@@ -1397,15 +1270,11 @@ void CodeBlockCache::remove(uint32_t address)
     }
 }
 
-void CodeBlockCache::invalidate(uint32_t address)
-{
-    remove(address);
-}
+void CodeBlockCache::invalidate(uint32_t address) { remove(address); }
 
-void CodeBlockCache::invalidate_range(uint32_t start, uint32_t end)
-{
+void CodeBlockCache::invalidate_range(uint32_t start, uint32_t end) {
     std::unique_lock lock(mutex_);
-    for (auto it = blocks_.begin(); it != blocks_.end(); ) {
+    for (auto it = blocks_.begin(); it != blocks_.end();) {
         if (it->first >= start && it->first <= end) {
             auto lru_it = lru_map_.find(it->first);
             if (lru_it != lru_map_.end()) {
@@ -1419,13 +1288,9 @@ void CodeBlockCache::invalidate_range(uint32_t start, uint32_t end)
     }
 }
 
-void CodeBlockCache::invalidate_all()
-{
-    clear();
-}
+void CodeBlockCache::invalidate_all() { clear(); }
 
-void CodeBlockCache::clear()
-{
+void CodeBlockCache::clear() {
     std::unique_lock lock(mutex_);
     blocks_.clear();
     lru_list_.clear();
@@ -1435,30 +1300,25 @@ void CodeBlockCache::clear()
     hot_block_count_ = 0;
 }
 
-void CodeBlockCache::prefetch(const std::vector<uint32_t>& /*addresses*/)
-{
+void CodeBlockCache::prefetch(const std::vector<uint32_t>& /*addresses*/) {
     // Prefetch hint - could pre-compile blocks we expect to need
 }
 
-void CodeBlockCache::compress_cold_blocks()
-{
+void CodeBlockCache::compress_cold_blocks() {
     // Could release generated code cache from cold blocks
 }
 
-CodeBlockCache::CacheStats CodeBlockCache::statistics() const
-{
+CodeBlockCache::CacheStats CodeBlockCache::statistics() const {
     std::lock_guard lock(stats_mutex_);
     return stats_;
 }
 
-void CodeBlockCache::reset_statistics()
-{
+void CodeBlockCache::reset_statistics() {
     std::lock_guard lock(stats_mutex_);
     stats_.reset();
 }
 
-size_t CodeBlockCache::memory_usage() const
-{
+size_t CodeBlockCache::memory_usage() const {
     std::shared_lock lock(mutex_);
     size_t total = 0;
     for (const auto& [addr, entry] : blocks_) {
@@ -1468,13 +1328,9 @@ size_t CodeBlockCache::memory_usage() const
     return total;
 }
 
-void CodeBlockCache::set_memory_limit(size_t bytes)
-{
-    config_.max_total_size = bytes;
-}
+void CodeBlockCache::set_memory_limit(size_t bytes) { config_.max_total_size = bytes; }
 
-void CodeBlockCache::touch(uint32_t address, bool is_hit)
-{
+void CodeBlockCache::touch(uint32_t address, bool is_hit) {
     auto lru_it = lru_map_.find(address);
     if (lru_it != lru_map_.end()) {
         lru_list_.erase(lru_it->second);
@@ -1496,8 +1352,7 @@ void CodeBlockCache::touch(uint32_t address, bool is_hit)
     }
 }
 
-void CodeBlockCache::evict_oldest()
-{
+void CodeBlockCache::evict_oldest() {
     if (lru_list_.empty()) return;
 
     uint32_t oldest = lru_list_.back();
@@ -1510,8 +1365,7 @@ void CodeBlockCache::evict_oldest()
     stats_.current_blocks = blocks_.size();
 }
 
-void CodeBlockCache::promote_to_hot(uint32_t address)
-{
+void CodeBlockCache::promote_to_hot(uint32_t address) {
     auto it = blocks_.find(address);
     if (it != blocks_.end() && !it->second.is_hot) {
         it->second.is_hot = true;
@@ -1519,8 +1373,7 @@ void CodeBlockCache::promote_to_hot(uint32_t address)
     }
 }
 
-void CodeBlockCache::demote_from_hot(uint32_t address)
-{
+void CodeBlockCache::demote_from_hot(uint32_t address) {
     auto it = blocks_.find(address);
     if (it != blocks_.end() && it->second.is_hot) {
         it->second.is_hot = false;
@@ -1528,8 +1381,7 @@ void CodeBlockCache::demote_from_hot(uint32_t address)
     }
 }
 
-bool CodeBlockCache::should_promote(uint32_t address) const
-{
+bool CodeBlockCache::should_promote(uint32_t address) const {
     auto it = blocks_.find(address);
     if (it == blocks_.end()) return false;
     return it->second.access_count > 100 && !it->second.is_hot;
@@ -1539,21 +1391,13 @@ bool CodeBlockCache::should_promote(uint32_t address) const
 // CodeBlockFactory Implementation
 // ============================================================================
 
-std::unique_ptr<CodeBlock> CodeBlockFactory::create_block(
-    N64System& system,
-    uint32_t address,
-    OptimizationLevel level,
-    const ProfileData* /*profile*/)
-{
+std::unique_ptr<CodeBlock> CodeBlockFactory::create_block(N64System& system, uint32_t address, OptimizationLevel level,
+                                                          const ProfileData* /*profile*/) {
     CodeBlock::Config config;
     switch (level) {
-    case OptimizationLevel::None:
-        config.enable_optimizations = false;
-        break;
+    case OptimizationLevel::None:       config.enable_optimizations = false; break;
     case OptimizationLevel::Basic:
-    case OptimizationLevel::Aggressive:
-        config.enable_optimizations = true;
-        break;
+    case OptimizationLevel::Aggressive: config.enable_optimizations = true; break;
     case OptimizationLevel::ProfileGuided:
         config.enable_optimizations = true;
         config.enable_profiling = true;
@@ -1563,55 +1407,43 @@ std::unique_ptr<CodeBlock> CodeBlockFactory::create_block(
     return std::make_unique<CodeBlock>(system, address, config);
 }
 
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_nop_block(N64System& system)
-{
+std::shared_ptr<CodeBlock> CodeBlockFactory::create_nop_block(N64System& system) {
     return std::make_shared<CodeBlock>(system, 0);
 }
 
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_delay_slot_block(N64System& system)
-{
+std::shared_ptr<CodeBlock> CodeBlockFactory::create_delay_slot_block(N64System& system) {
     return std::make_shared<CodeBlock>(system, 0);
 }
 
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_branch_likely_block(N64System& system)
-{
+std::shared_ptr<CodeBlock> CodeBlockFactory::create_branch_likely_block(N64System& system) {
     return std::make_shared<CodeBlock>(system, 0);
 }
 
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_exception_handler(N64System& system)
-{
+std::shared_ptr<CodeBlock> CodeBlockFactory::create_exception_handler(N64System& system) {
     return std::make_shared<CodeBlock>(system, 0);
 }
 
-std::shared_ptr<CodeBlock> CodeBlockFactory::create_tlb_miss_handler(N64System& system)
-{
+std::shared_ptr<CodeBlock> CodeBlockFactory::create_tlb_miss_handler(N64System& system) {
     return std::make_shared<CodeBlock>(system, 0);
 }
 
-bool CodeBlockFactory::apply_dead_code_elimination(CodeBlock& /*block*/)     { return true; }
-bool CodeBlockFactory::apply_constant_folding(CodeBlock& /*block*/)          { return true; }
+bool CodeBlockFactory::apply_dead_code_elimination(CodeBlock& /*block*/) { return true; }
+bool CodeBlockFactory::apply_constant_folding(CodeBlock& /*block*/) { return true; }
 bool CodeBlockFactory::apply_common_subexpression_elimination(CodeBlock& /*block*/) { return true; }
 bool CodeBlockFactory::apply_loop_invariant_code_motion(CodeBlock& /*block*/) { return true; }
-bool CodeBlockFactory::apply_strength_reduction(CodeBlock& /*block*/)        { return true; }
+bool CodeBlockFactory::apply_strength_reduction(CodeBlock& /*block*/) { return true; }
 
-bool CodeBlockFactory::is_nop_sequence(const std::vector<uint32_t>& instructions)
-{
-    return std::all_of(instructions.begin(), instructions.end(),
-                       [](uint32_t i) { return i == 0; });
+bool CodeBlockFactory::is_nop_sequence(const std::vector<uint32_t>& instructions) {
+    return std::all_of(instructions.begin(), instructions.end(), [](uint32_t i) { return i == 0; });
 }
 
-bool CodeBlockFactory::is_branch_likely_pattern(const std::vector<uint32_t>& instructions)
-{
+bool CodeBlockFactory::is_branch_likely_pattern(const std::vector<uint32_t>& instructions) {
     if (instructions.empty()) return false;
     uint32_t op = mips_op(instructions[0]);
-    return op == R4300_BEQL || op == R4300_BNEL ||
-           op == R4300_BLEZL || op == R4300_BGTZL;
+    return op == R4300_BEQL || op == R4300_BNEL || op == R4300_BLEZL || op == R4300_BGTZL;
 }
 
-bool CodeBlockFactory::is_exception_handler_pattern(const std::vector<uint32_t>& /*instructions*/)
-{
-    return false;
-}
+bool CodeBlockFactory::is_exception_handler_pattern(const std::vector<uint32_t>& /*instructions*/) { return false; }
 
 // Functions moved to CodeSection.cpp
 } // namespace Recompiler

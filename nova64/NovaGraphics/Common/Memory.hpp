@@ -50,7 +50,7 @@ void AlignedFree(void* ptr);
 
 /// Tracked allocation (updates g_allocStats)
 void* TrackedAlloc(size_t size, size_t alignment = 16);
-void  TrackedFree(void* ptr, size_t size);
+void TrackedFree(void* ptr, size_t size);
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Pool Allocator — Fixed-size blocks, O(1) alloc/free, no fragmentation
@@ -77,23 +77,25 @@ public:
     void Reset() noexcept;
 
     // Stats
-    size_t GetBlockSize()       const noexcept { return m_blockSize; }
-    size_t GetBlockCount()      const noexcept { return m_blockCount; }
-    size_t GetFreeCount()       const noexcept { return m_freeCount; }
-    size_t GetUsedCount()       const noexcept { return m_blockCount - m_freeCount; }
-    size_t GetTotalBytes()      const noexcept { return m_totalBytes; }
-    bool   IsInitialized()      const noexcept { return m_memory != nullptr; }
+    size_t GetBlockSize() const noexcept { return m_blockSize; }
+    size_t GetBlockCount() const noexcept { return m_blockCount; }
+    size_t GetFreeCount() const noexcept { return m_freeCount; }
+    size_t GetUsedCount() const noexcept { return m_blockCount - m_freeCount; }
+    size_t GetTotalBytes() const noexcept { return m_totalBytes; }
+    bool IsInitialized() const noexcept { return m_memory != nullptr; }
 
 private:
-    struct FreeNode { FreeNode* next; };
+    struct FreeNode {
+        FreeNode* next;
+    };
 
-    uint8_t*  m_memory    = nullptr;
-    FreeNode* m_freeList  = nullptr;
-    size_t    m_blockSize  = 0;
-    size_t    m_blockCount = 0;
-    size_t    m_freeCount  = 0;
-    size_t    m_totalBytes = 0;
-    size_t    m_alignment  = 16;
+    uint8_t* m_memory = nullptr;
+    FreeNode* m_freeList = nullptr;
+    size_t m_blockSize = 0;
+    size_t m_blockCount = 0;
+    size_t m_freeCount = 0;
+    size_t m_totalBytes = 0;
+    size_t m_alignment = 16;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -118,22 +120,19 @@ public:
     void Reset() noexcept;
 
     // Stats
-    size_t GetCapacity()      const noexcept { return m_capacity; }
-    size_t GetUsed()          const noexcept { return m_offset; }
-    size_t GetRemaining()     const noexcept { return m_capacity - m_offset; }
-    bool   IsInitialized()    const noexcept { return m_memory != nullptr; }
+    size_t GetCapacity() const noexcept { return m_capacity; }
+    size_t GetUsed() const noexcept { return m_offset; }
+    size_t GetRemaining() const noexcept { return m_capacity - m_offset; }
+    bool IsInitialized() const noexcept { return m_memory != nullptr; }
 
     /// Typed allocation helper
-    template<typename T>
-    T* AllocArray(size_t count) {
-        return static_cast<T*>(Alloc(sizeof(T) * count, alignof(T)));
-    }
+    template <typename T> T* AllocArray(size_t count) { return static_cast<T*>(Alloc(sizeof(T) * count, alignof(T))); }
 
 private:
-    uint8_t*  m_memory   = nullptr;
-    size_t    m_capacity = 0;
-    size_t    m_offset   = 0;
-    size_t    m_alignment = 16;
+    uint8_t* m_memory = nullptr;
+    size_t m_capacity = 0;
+    size_t m_offset = 0;
+    size_t m_alignment = 16;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -157,16 +156,16 @@ public:
     /// Reset read/write pointers
     void Reset() noexcept;
 
-    size_t GetCapacity()  const noexcept { return m_capacity; }
-    size_t GetUsed()      const noexcept;
-    size_t GetFree()      const noexcept;
+    size_t GetCapacity() const noexcept { return m_capacity; }
+    size_t GetUsed() const noexcept;
+    size_t GetFree() const noexcept;
     size_t GetWriteOffset() const noexcept { return m_writeOffset; }
 
 private:
-    uint8_t* m_memory       = nullptr;
-    size_t   m_capacity     = 0;
-    size_t   m_writeOffset  = 0;
-    size_t   m_readOffset   = 0;
+    uint8_t* m_memory = nullptr;
+    size_t m_capacity = 0;
+    size_t m_writeOffset = 0;
+    size_t m_readOffset = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -185,19 +184,17 @@ public:
 
 private:
     struct AllocRecord {
-        size_t      size;
+        size_t size;
         const char* file;
-        int         line;
+        int line;
     };
 
     std::mutex m_mutex;
     std::unordered_map<uintptr_t, AllocRecord> m_records;
 };
 
-#define NOVA_TRACK_ALLOC(ptr, size) \
-    ::Nova64::Video::LeakDetector::Instance().RecordAlloc(ptr, size, __FILE__, __LINE__)
-#define NOVA_TRACK_FREE(ptr) \
-    ::Nova64::Video::LeakDetector::Instance().RecordFree(ptr)
+#define NOVA_TRACK_ALLOC(ptr, size) ::Nova64::Video::LeakDetector::Instance().RecordAlloc(ptr, size, __FILE__, __LINE__)
+#define NOVA_TRACK_FREE(ptr)        ::Nova64::Video::LeakDetector::Instance().RecordFree(ptr)
 
 #else
 

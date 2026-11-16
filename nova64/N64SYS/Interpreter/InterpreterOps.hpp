@@ -24,8 +24,13 @@
 
 // Forward declarations
 class CN64System;
-namespace N64System { class CTLB; class SystemTimer; }
-namespace Nova64 { class MipsMemoryVM; }
+namespace N64System {
+class CTLB;
+class SystemTimer;
+} // namespace N64System
+namespace Nova64 {
+class MipsMemoryVM;
+}
 class CSystemEvents;
 
 namespace Nova64 {
@@ -78,9 +83,7 @@ public:
      * @brief Get the current opcode
      * @return Current instruction opcode
      */
-    [[nodiscard]] R4300iOps Opcode() const noexcept {
-        return m_Opcode;
-    }
+    [[nodiscard]] R4300iOps Opcode() const noexcept { return m_Opcode; }
 
 private:
     /**
@@ -421,21 +424,21 @@ private:
     // incorrect field naming (bit positions don't match MIPS standard).
     // These helpers extract the correct bits using verified-correct structs
     // or direct bit extraction from Value.
-    inline uint32_t op() const    { return m_Opcode.Itype.op; }                           // bits 31:26
-    inline uint32_t rs() const    { return m_Opcode.Itype.rs; }                           // bits 25:21
-    inline uint32_t rt() const    { return m_Opcode.Itype.rt; }                           // bits 20:16
-    inline uint32_t rd() const    { return (m_Opcode.Value >> 11) & 0x1F; }               // bits 15:11
-    inline uint32_t sa() const    { return (m_Opcode.Value >>  6) & 0x1F; }               // bits 10:6
-    inline uint32_t funct() const { return m_Opcode.Value & 0x3F; }                       // bits 5:0
-    inline uint32_t imm() const   { return m_Opcode.Itype.imm; }                          // bits 15:0
-    inline int16_t  offset() const { return static_cast<int16_t>(m_Opcode.Value & 0xFFFF); } // bits 15:0 signed
-    inline uint32_t target() const { return m_Opcode.Jtype.target; }                      // bits 25:0
+    inline uint32_t op() const { return m_Opcode.Itype.op; }                                     // bits 31:26
+    inline uint32_t rs() const { return m_Opcode.Itype.rs; }                                     // bits 25:21
+    inline uint32_t rt() const { return m_Opcode.Itype.rt; }                                     // bits 20:16
+    inline uint32_t rd() const { return (m_Opcode.Value >> 11) & 0x1F; }                         // bits 15:11
+    inline uint32_t sa() const { return (m_Opcode.Value >> 6) & 0x1F; }                          // bits 10:6
+    inline uint32_t funct() const { return m_Opcode.Value & 0x3F; }                              // bits 5:0
+    inline uint32_t imm() const { return m_Opcode.Itype.imm; }                                   // bits 15:0
+    inline int16_t offset() const { return static_cast<int16_t>(m_Opcode.Value & 0xFFFF); }      // bits 15:0 signed
+    inline uint32_t target() const { return m_Opcode.Jtype.target; }                             // bits 25:0
     inline uint16_t immediate() const { return static_cast<uint16_t>(m_Opcode.Value & 0xFFFF); } // bits 15:0
-    inline uint32_t base() const  { return m_Opcode.Itype.rs; }                           // bits 25:21 = rs
-    inline uint32_t ft() const    { return m_Opcode.Itype.rt; }                           // bits 20:16 = rt
-    inline uint32_t fs() const    { return (m_Opcode.Value >> 11) & 0x1F; }               // bits 15:11 = rd
-    inline uint32_t fd() const    { return (m_Opcode.Value >>  6) & 0x1F; }               // bits 10:6  = sa
-    inline uint32_t fmt() const   { return m_Opcode.Itype.rs; }                           // bits 25:21 = rs
+    inline uint32_t base() const { return m_Opcode.Itype.rs; }                                   // bits 25:21 = rs
+    inline uint32_t ft() const { return m_Opcode.Itype.rt; }                                     // bits 20:16 = rt
+    inline uint32_t fs() const { return (m_Opcode.Value >> 11) & 0x1F; }                         // bits 15:11 = rd
+    inline uint32_t fd() const { return (m_Opcode.Value >> 6) & 0x1F; }                          // bits 10:6  = sa
+    inline uint32_t fmt() const { return m_Opcode.Itype.rs; }                                    // bits 25:21 = rs
 
     // System references
     CN64System& m_System;
@@ -457,16 +460,16 @@ private:
     // FPU register access pointers
     uint32_t** m_FPR_UW;
     uint64_t** m_FPR_UDW;
-    float**    m_FPR_S;
-    float**    m_FPR_S_L;
-    double**   m_FPR_D;
-    uint32_t*  m_FPCR;
-    uint32_t&  m_LLBit;
+    float** m_FPR_S;
+    float** m_FPR_S_L;
+    double** m_FPR_D;
+    uint32_t* m_FPCR;
+    uint32_t& m_LLBit;
 
     // Instruction memory cache
-    uint64_t   m_InstructionRegion;
-    uint8_t*   m_InstructionMemory;
-    uint32_t*  m_InstructionPtr;
+    uint64_t m_InstructionRegion;
+    uint8_t* m_InstructionMemory;
+    uint32_t* m_InstructionPtr;
 
     // ========================================================================
     // Dispatch Tables

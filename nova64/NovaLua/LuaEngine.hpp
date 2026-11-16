@@ -57,20 +57,20 @@ public:
 
     // Public for Lua C API callbacks
     std::vector<std::string> m_log;
-    uint8_t*  m_rdram     = nullptr;
-    size_t    m_rdramSize = 0;
+    uint8_t* m_rdram = nullptr;
+    size_t m_rdramSize = 0;
 
     // Per-frame input override (set by Lua input.override_buttons)
-    bool     m_hasInputOverride = false;
-    uint16_t m_inputOverride    = 0;
+    bool m_hasInputOverride = false;
+    uint16_t m_inputOverride = 0;
 
 private:
     lua_State* m_L = nullptr;
     void RegisterAPI();
-    static int lua_mem_read8  (lua_State* L);
-    static int lua_mem_read16 (lua_State* L);
-    static int lua_mem_read32 (lua_State* L);
-    static int lua_mem_write8 (lua_State* L);
+    static int lua_mem_read8(lua_State* L);
+    static int lua_mem_read16(lua_State* L);
+    static int lua_mem_read32(lua_State* L);
+    static int lua_mem_write8(lua_State* L);
     static int lua_mem_write16(lua_State* L);
     static int lua_mem_write32(lua_State* L);
     static int lua_emu_frame_count(lua_State* L);

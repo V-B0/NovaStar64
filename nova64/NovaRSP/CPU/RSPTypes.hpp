@@ -24,12 +24,12 @@ namespace Nova64::RSP {
 // Multi-view scalar word (like PJ64 UWORD32)
 // ──────────────────────────────────────────────
 union Word32 {
-    int32_t   W;
-    uint32_t  UW;
-    int16_t   HW[2];
-    uint16_t  UHW[2];
-    int8_t    B[4];
-    uint8_t   UB[4];
+    int32_t W;
+    uint32_t UW;
+    int16_t HW[2];
+    uint16_t UHW[2];
+    int8_t B[4];
+    uint8_t UB[4];
 
     constexpr Word32() : UW(0) {}
     constexpr explicit Word32(uint32_t v) : UW(v) {}
@@ -40,14 +40,14 @@ union Word32 {
 // Multi-view 64-bit doubleword
 // ──────────────────────────────────────────────
 union DWord64 {
-    int64_t   DW;
-    uint64_t  UDW;
-    int32_t   W[2];
-    uint32_t  UW[2];
-    int16_t   HW[4];
-    uint16_t  UHW[4];
-    int8_t    B[8];
-    uint8_t   UB[8];
+    int64_t DW;
+    uint64_t UDW;
+    int32_t W[2];
+    uint32_t UW[2];
+    int16_t HW[4];
+    uint16_t UHW[4];
+    int8_t B[8];
+    uint8_t UB[8];
 
     constexpr DWord64() : UDW(0) {}
     constexpr explicit DWord64(uint64_t v) : UDW(v) {}
@@ -64,23 +64,23 @@ public:
     RSPAccumulator() { Reset(); }
 
     // Element accessors (0..7), each element is 48-bit (High:Mid:Low)
-    [[nodiscard]] int16_t&  Low(uint8_t idx)        { return reinterpret_cast<int16_t*>(&m_Low)[idx]; }
-    [[nodiscard]] int16_t&  Mid(uint8_t idx)        { return reinterpret_cast<int16_t*>(&m_Mid)[idx]; }
-    [[nodiscard]] int16_t&  High(uint8_t idx)       { return reinterpret_cast<int16_t*>(&m_High)[idx]; }
+    [[nodiscard]] int16_t& Low(uint8_t idx) { return reinterpret_cast<int16_t*>(&m_Low)[idx]; }
+    [[nodiscard]] int16_t& Mid(uint8_t idx) { return reinterpret_cast<int16_t*>(&m_Mid)[idx]; }
+    [[nodiscard]] int16_t& High(uint8_t idx) { return reinterpret_cast<int16_t*>(&m_High)[idx]; }
 
-    [[nodiscard]] uint16_t& ULow(uint8_t idx)       { return reinterpret_cast<uint16_t*>(&m_Low)[idx]; }
-    [[nodiscard]] uint16_t& UMid(uint8_t idx)       { return reinterpret_cast<uint16_t*>(&m_Mid)[idx]; }
-    [[nodiscard]] uint16_t& UHigh(uint8_t idx)      { return reinterpret_cast<uint16_t*>(&m_High)[idx]; }
+    [[nodiscard]] uint16_t& ULow(uint8_t idx) { return reinterpret_cast<uint16_t*>(&m_Low)[idx]; }
+    [[nodiscard]] uint16_t& UMid(uint8_t idx) { return reinterpret_cast<uint16_t*>(&m_Mid)[idx]; }
+    [[nodiscard]] uint16_t& UHigh(uint8_t idx) { return reinterpret_cast<uint16_t*>(&m_High)[idx]; }
 
-    [[nodiscard]] const int16_t&  Low(uint8_t idx) const  { return reinterpret_cast<const int16_t*>(&m_Low)[idx]; }
-    [[nodiscard]] const int16_t&  Mid(uint8_t idx) const  { return reinterpret_cast<const int16_t*>(&m_Mid)[idx]; }
-    [[nodiscard]] const int16_t&  High(uint8_t idx) const { return reinterpret_cast<const int16_t*>(&m_High)[idx]; }
+    [[nodiscard]] const int16_t& Low(uint8_t idx) const { return reinterpret_cast<const int16_t*>(&m_Low)[idx]; }
+    [[nodiscard]] const int16_t& Mid(uint8_t idx) const { return reinterpret_cast<const int16_t*>(&m_Mid)[idx]; }
+    [[nodiscard]] const int16_t& High(uint8_t idx) const { return reinterpret_cast<const int16_t*>(&m_High)[idx]; }
 
     // Get full 48-bit value sign-extended to 64 bits
     [[nodiscard]] int64_t Get(uint8_t idx) const {
-        int64_t val = static_cast<int64_t>(High(idx)) << 32
-                    | static_cast<int64_t>(static_cast<uint16_t>(Mid(idx))) << 16
-                    | static_cast<int64_t>(static_cast<uint16_t>(Low(idx)));
+        int64_t val = static_cast<int64_t>(High(idx)) << 32 |
+                      static_cast<int64_t>(static_cast<uint16_t>(Mid(idx))) << 16 |
+                      static_cast<int64_t>(static_cast<uint16_t>(Low(idx)));
         // Sign-extend from 48 bits
         val = (val << 16) >> 16;
         return val;
@@ -88,8 +88,8 @@ public:
 
     // Set full 48-bit value
     void Set(uint8_t idx, int64_t value) {
-        Low(idx)  = static_cast<int16_t>(value & 0xFFFF);
-        Mid(idx)  = static_cast<int16_t>((value >> 16) & 0xFFFF);
+        Low(idx) = static_cast<int16_t>(value & 0xFFFF);
+        Mid(idx) = static_cast<int16_t>((value >> 16) & 0xFFFF);
         High(idx) = static_cast<int16_t>((value >> 32) & 0xFFFF);
     }
 
@@ -112,23 +112,21 @@ public:
         }
     }
 
-    void Reset() {
-        std::memset(this, 0, sizeof(*this));
-    }
+    void Reset() { std::memset(this, 0, sizeof(*this)); }
 
     // Direct SIMD access for recompiler
-    [[nodiscard]] void* LowData()  { return &m_Low; }
-    [[nodiscard]] void* MidData()  { return &m_Mid; }
+    [[nodiscard]] void* LowData() { return &m_Low; }
+    [[nodiscard]] void* MidData() { return &m_Mid; }
     [[nodiscard]] void* HighData() { return &m_High; }
-    [[nodiscard]] const void* LowData()  const { return &m_Low; }
-    [[nodiscard]] const void* MidData()  const { return &m_Mid; }
+    [[nodiscard]] const void* LowData() const { return &m_Low; }
+    [[nodiscard]] const void* MidData() const { return &m_Mid; }
     [[nodiscard]] const void* HighData() const { return &m_High; }
 
 private:
     // 3 × 128-bit lanes storing 8 × int16 each
-    alignas(16) uint64_t m_High[2]{};  // Accumulator high (8 × 16-bit)
-    alignas(16) uint64_t m_Mid[2]{};   // Accumulator mid  (8 × 16-bit)
-    alignas(16) uint64_t m_Low[2]{};   // Accumulator low  (8 × 16-bit)
+    alignas(16) uint64_t m_High[2]{}; // Accumulator high (8 × 16-bit)
+    alignas(16) uint64_t m_Mid[2]{};  // Accumulator mid  (8 × 16-bit)
+    alignas(16) uint64_t m_Low[2]{};  // Accumulator low  (8 × 16-bit)
 };
 
 // ──────────────────────────────────────────────
@@ -158,19 +156,19 @@ public:
     }
 
     // Direct element access
-    [[nodiscard]] int8_t&   s8(uint8_t idx)  { return reinterpret_cast<int8_t*>(m_Data)[idx]; }
-    [[nodiscard]] uint8_t&  u8(uint8_t idx)  { return reinterpret_cast<uint8_t*>(m_Data)[idx]; }
-    [[nodiscard]] int16_t&  s16(uint8_t idx) { return reinterpret_cast<int16_t*>(m_Data)[idx]; }
+    [[nodiscard]] int8_t& s8(uint8_t idx) { return reinterpret_cast<int8_t*>(m_Data)[idx]; }
+    [[nodiscard]] uint8_t& u8(uint8_t idx) { return reinterpret_cast<uint8_t*>(m_Data)[idx]; }
+    [[nodiscard]] int16_t& s16(uint8_t idx) { return reinterpret_cast<int16_t*>(m_Data)[idx]; }
     [[nodiscard]] uint16_t& u16(uint8_t idx) { return reinterpret_cast<uint16_t*>(m_Data)[idx]; }
-    [[nodiscard]] int32_t&  s32(uint8_t idx) { return reinterpret_cast<int32_t*>(m_Data)[idx]; }
+    [[nodiscard]] int32_t& s32(uint8_t idx) { return reinterpret_cast<int32_t*>(m_Data)[idx]; }
     [[nodiscard]] uint64_t& u64(uint8_t idx) { return m_Data[idx]; }
     [[nodiscard]] const uint64_t& u64(uint8_t idx) const { return m_Data[idx]; }
 
-    [[nodiscard]] const int16_t&  s16(uint8_t idx) const { return reinterpret_cast<const int16_t*>(m_Data)[idx]; }
+    [[nodiscard]] const int16_t& s16(uint8_t idx) const { return reinterpret_cast<const int16_t*>(m_Data)[idx]; }
     [[nodiscard]] const uint16_t& u16(uint8_t idx) const { return reinterpret_cast<const uint16_t*>(m_Data)[idx]; }
 
     // Raw SIMD-friendly data pointer
-    [[nodiscard]] void*       Data()       { return m_Data; }
+    [[nodiscard]] void* Data() { return m_Data; }
     [[nodiscard]] const void* Data() const { return m_Data; }
 
 private:
@@ -179,7 +177,7 @@ private:
 
 // ──────────────────────────────────────────────
 // RSP Flag Register - 8 element boolean flags
-// x64: stored as 8 × uint16_t (SIMD-friendly) 
+// x64: stored as 8 × uint16_t (SIMD-friendly)
 // Packed format: 8-bit for serialization
 // ──────────────────────────────────────────────
 class alignas(16) RSPFlag {
@@ -196,9 +194,7 @@ public:
         return value;
     }
 
-    [[nodiscard]] bool Get(uint8_t idx) const {
-        return m_Flags[idx & 7] != 0;
-    }
+    [[nodiscard]] bool Get(uint8_t idx) const { return m_Flags[idx & 7] != 0; }
 
     // Pack 8 element flags into single byte (for CTC2/CFC2)
     [[nodiscard]] uint8_t GetPacked() const {

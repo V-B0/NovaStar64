@@ -18,93 +18,92 @@
 #include "Types.hpp"
 
 using N64Types::CountryCode;
-using N64Types::SystemType; 
+using N64Types::SystemType;
 // Add others if needed by IsPalCountry implementation
-
 
 // ============================================================================
 // Namespace Forward Declarations
 // ============================================================================
 
 namespace N64 {
-    // ROM handling (N64Rom.hpp)
-    namespace Rom {
-        enum class RomFormat : uint8_t;
-        enum class CountryCode : uint8_t;
-        enum class CICChip : uint8_t;
-        struct DataView;
-        struct RomHeader;
-        class RomImage;
-        class RomError;
-        class N64Rom;
-    }
-    
-    // Disk Drive handling (N64DD.hpp)
-    namespace Disk {
-        enum class DiskFormat : uint8_t;
-        enum class DiskType : uint8_t;
-        enum class CountryCode : uint8_t;
-        struct DataView;
-        struct DiskGeometry;
-        struct DiskAddress;
-        class DiskImage;
-        class DiskError;
-        class N64Disk;
-    }
-}
+// ROM handling (N64Rom.hpp)
+namespace Rom {
+enum class RomFormat : uint8_t;
+enum class CountryCode : uint8_t;
+enum class CICChip : uint8_t;
+struct DataView;
+struct RomHeader;
+class RomImage;
+class RomError;
+class N64Rom;
+} // namespace Rom
+
+// Disk Drive handling (N64DD.hpp)
+namespace Disk {
+enum class DiskFormat : uint8_t;
+enum class DiskType : uint8_t;
+enum class CountryCode : uint8_t;
+struct DataView;
+struct DiskGeometry;
+struct DiskAddress;
+class DiskImage;
+class DiskError;
+class N64Disk;
+} // namespace Disk
+} // namespace N64
 
 class CN64System;
 
 namespace Nova64 {
-    // Core system classes
-    using N64System = ::CN64System;
-    class MipsMemoryVM;
-    
-    // CPU components
-    class Registers;
-    class TLB;
-    
-    // Recompiler subsystem
-    namespace Recompiler {
-        class CRecompiler;
-        class CodeBlock;
-        class CodeSection;
-        class FunctionInfo;
-        class FunctionMap;
-        class RecompilerOps;
-        class RegInfo;
-        
-        namespace x64 {
-            class X64RecompilerOps;
-            class X64RegInfo;
-        }
-        
-        namespace x86 {
-            class X86RecompilerOps;
-            class X86RegInfo;
-        }
-        
-        namespace Arm {
-            class ArmRecompilerOps;
-            class ArmRegInfo;
-        }
-    }
-    
-    // Interpreter subsystem
-    namespace Interpreter {
-        class R4300iInterpreter;
-        class InterpreterOps;
-    }
-}
+// Core system classes
+using N64System = ::CN64System;
+class MipsMemoryVM;
+
+// CPU components
+class Registers;
+class TLB;
+
+// Recompiler subsystem
+namespace Recompiler {
+class CRecompiler;
+class CodeBlock;
+class CodeSection;
+class FunctionInfo;
+class FunctionMap;
+class RecompilerOps;
+class RegInfo;
+
+namespace x64 {
+class X64RecompilerOps;
+class X64RegInfo;
+} // namespace x64
+
+namespace x86 {
+class X86RecompilerOps;
+class X86RegInfo;
+} // namespace x86
+
+namespace Arm {
+class ArmRecompilerOps;
+class ArmRegInfo;
+} // namespace Arm
+} // namespace Recompiler
+
+// Interpreter subsystem
+namespace Interpreter {
+class R4300iInterpreter;
+class InterpreterOps;
+} // namespace Interpreter
+} // namespace Nova64
 
 namespace N64System {
-    // TLB and memory access
-    enum class MemoryAccessPermission : uint8_t;
-    enum class MemorySegment : uint8_t;
-    enum class PrivilegeMode : uint8_t;
-    struct TlbEntry;
-    class CTLB;
-}
+// TLB and memory access
+enum class MemoryAccessPermission : uint8_t;
+enum class MemorySegment : uint8_t;
+enum class PrivilegeMode : uint8_t;
+struct TlbEntry;
+class CTLB;
+} // namespace N64System
 
 // ============================================================================
 // Memory Handler Forward Declarations
@@ -164,7 +163,6 @@ class R4300iInstruction;
 
 namespace N64Types {
 
-
 /**
  * @enum ExceptionCode
  * @brief MIPS exception codes
@@ -194,7 +192,6 @@ enum class ExceptionCode : uint8_t {
 // ============================================================================
 
 // Helper functions removed to avoid redefinition (present in Types.hpp)
-
 
 // ============================================================================
 // String Conversion Functions (implemented in SysGlobals.cpp)
@@ -294,7 +291,7 @@ union MIPS_WORD {
     int8_t B[4];
     uint8_t UB[4];
     float F;
-    
+
     MIPS_WORD() : UW(0) {}
     explicit MIPS_WORD(uint32_t val) : UW(val) {}
     explicit MIPS_WORD(int32_t val) : W(val) {}
@@ -315,7 +312,7 @@ union MIPS_DWORD {
     uint8_t UB[8];
     double D;
     float F[2];
-    
+
     MIPS_DWORD() : UDW(0) {}
     explicit MIPS_DWORD(uint64_t val) : UDW(val) {}
     explicit MIPS_DWORD(int64_t val) : DW(val) {}
@@ -325,12 +322,12 @@ union MIPS_DWORD {
 // Common Type Aliases
 // ============================================================================
 
-using u8  = uint8_t;
+using u8 = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;
 using u64 = uint64_t;
 
-using s8  = int8_t;
+using s8 = int8_t;
 using s16 = int16_t;
 using s32 = int32_t;
 using s64 = int64_t;
@@ -377,12 +374,12 @@ constexpr uint32_t PIF_ROM_BASE = 0x1FC00000;
 constexpr uint32_t PIF_RAM_BASE = 0x1FC007C0;
 
 // Cached/uncached address mappings
-constexpr uint32_t KSEG0_BASE = 0x80000000;  // Cached
-constexpr uint32_t KSEG1_BASE = 0xA0000000;  // Uncached
-constexpr uint32_t KSEG2_BASE = 0xC0000000;  // TLB mapped
+constexpr uint32_t KSEG0_BASE = 0x80000000; // Cached
+constexpr uint32_t KSEG1_BASE = 0xA0000000; // Uncached
+constexpr uint32_t KSEG2_BASE = 0xC0000000; // TLB mapped
 
 // ROM limits
-constexpr uint32_t MAX_ROM_SIZE = 0x4000000;  // 64MB
+constexpr uint32_t MAX_ROM_SIZE = 0x4000000; // 64MB
 
 // TLB
 constexpr uint32_t TLB_ENTRY_COUNT = 32;
@@ -400,8 +397,7 @@ constexpr uint32_t VI_REFRESH_RATE_PAL = 50;
 // ============================================================================
 
 // Compile-time array size
-template<typename T, size_t N>
-constexpr size_t ArraySize(T (&)[N]) noexcept { return N; }
+template <typename T, size_t N> constexpr size_t ArraySize(T (&)[N]) noexcept { return N; }
 
 // Bit manipulation helpers
 #ifdef BIT
@@ -411,14 +407,8 @@ constexpr uint32_t BIT(uint32_t n) { return 1u << n; }
 constexpr uint64_t BIT64(uint32_t n) { return 1ull << n; }
 
 // Address conversion macros
-constexpr uint32_t VAddrToPAddr(uint32_t vaddr) {
-    return vaddr & 0x1FFFFFFF;
-}
+constexpr uint32_t VAddrToPAddr(uint32_t vaddr) { return vaddr & 0x1FFFFFFF; }
 
-constexpr uint32_t PAddrToKSEG0(uint32_t paddr) {
-    return paddr | N64Constants::KSEG0_BASE;
-}
+constexpr uint32_t PAddrToKSEG0(uint32_t paddr) { return paddr | N64Constants::KSEG0_BASE; }
 
-constexpr uint32_t PAddrToKSEG1(uint32_t paddr) {
-    return paddr | N64Constants::KSEG1_BASE;
-}
+constexpr uint32_t PAddrToKSEG1(uint32_t paddr) { return paddr | N64Constants::KSEG1_BASE; }

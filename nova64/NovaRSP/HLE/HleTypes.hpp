@@ -49,7 +49,7 @@ struct TaskInfo {
 enum class HLETaskType : uint32_t {
     Video = 1,
     Audio = 2,
-    JPEG  = 4,
+    JPEG = 4,
     CICx105 = 7,
 };
 

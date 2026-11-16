@@ -23,14 +23,12 @@ public:
     bool Initialize(Shader::BackendAPI api) override;
     void Shutdown() override;
 
-    Shader::CompiledShader Compile(const Shader::CombinerKey& key,
-                                    const std::string& vertexSource,
-                                    const std::string& fragmentSource) override;
+    Shader::CompiledShader Compile(const Shader::CombinerKey& key, const std::string& vertexSource,
+                                   const std::string& fragmentSource) override;
 
-    Shader::CompiledShader CompileWithGeometry(const Shader::CombinerKey& key,
-                                                const std::string& vertexSource,
-                                                const std::string& fragmentSource,
-                                                const std::string& geometrySource) override;
+    Shader::CompiledShader CompileWithGeometry(const Shader::CombinerKey& key, const std::string& vertexSource,
+                                               const std::string& fragmentSource,
+                                               const std::string& geometrySource) override;
 
     void DeleteShader(Shader::CompiledShader& shader) override;
     void BindShader(const Shader::CompiledShader& shader) override;

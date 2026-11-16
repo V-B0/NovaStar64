@@ -42,8 +42,7 @@ public:
         }
     }
 
-    template <class T>
-    void Value(T& value) {
+    template <class T> void Value(T& value) {
         static_assert(std::is_trivially_copyable_v<T>, "machine state must be plain data");
         Bytes(&value, sizeof(T));
     }
@@ -69,15 +68,14 @@ public:
     }
 
 private:
-    StateArchive(std::vector<uint8_t>* out, const uint8_t* in, size_t size)
-        : m_out(out), m_in(in), m_size(size) {}
+    StateArchive(std::vector<uint8_t>* out, const uint8_t* in, size_t size) : m_out(out), m_in(in), m_size(size) {}
 
     std::vector<uint8_t>* m_out;
-    const uint8_t*        m_in;
-    size_t                m_size;
-    size_t                m_pos = 0;
-    bool                  m_ok  = true;
-    std::vector<size_t>   m_sections;
+    const uint8_t* m_in;
+    size_t m_size;
+    size_t m_pos = 0;
+    bool m_ok = true;
+    std::vector<size_t> m_sections;
 };
 
 } // namespace Nova64

@@ -29,17 +29,17 @@ namespace Nova64 {
 constexpr int kSaveSlots = 4;
 
 struct SaveSlotInfo {
-    bool        exists   = false;   ///< a file is there
-    bool        loadable = false;   ///< ...and this version can read it
-    std::time_t savedAt  = 0;
+    bool exists = false;   ///< a file is there
+    bool loadable = false; ///< ...and this version can read it
+    std::time_t savedAt = 0;
     std::shared_ptr<const StateThumbnail> thumbnail;
 
     [[nodiscard]] std::string SavedAtText() const;
 };
 
 struct RewindPoint {
-    uint64_t id    = 0;
-    uint64_t frame = 0;   ///< video field count when it was taken
+    uint64_t id = 0;
+    uint64_t frame = 0; ///< video field count when it was taken
     std::shared_ptr<const StateThumbnail> thumbnail;
 };
 
@@ -91,7 +91,7 @@ public:
 private:
     struct Request {
         enum class Kind { Save, Load, Rewind } kind;
-        int      slot    = 0;
+        int slot = 0;
         uint64_t pointId = 0;
     };
     struct HistoryEntry {
@@ -112,7 +112,7 @@ private:
     std::string SlotPath(int slot) const;
 
     mutable std::mutex m_mutex;
-    std::string m_slotBase;   ///< "saves/<rom>"; slot N is "<base>_slotN.nss"
+    std::string m_slotBase; ///< "saves/<rom>"; slot N is "<base>_slotN.nss"
     std::array<SaveSlotInfo, kSaveSlots> m_slots;
     std::vector<Request> m_requests;
     std::deque<HistoryEntry> m_history;
@@ -120,13 +120,13 @@ private:
     std::string m_message;
     uint64_t m_messageSequence = 0;
 
-    std::atomic<bool>     m_sessionActive{false};
-    std::atomic<bool>     m_rewindEnabled{true};
-    std::atomic<bool>     m_requestPending{false};
+    std::atomic<bool> m_sessionActive{false};
+    std::atomic<bool> m_rewindEnabled{true};
+    std::atomic<bool> m_requestPending{false};
     std::atomic<uint64_t> m_nextCaptureFrame{0};
     std::atomic<uint64_t> m_currentFrame{0};
     std::atomic<uint64_t> m_revision{1};
-    std::atomic<int>      m_fieldsPerSecond{60};
+    std::atomic<int> m_fieldsPerSecond{60};
 };
 
 } // namespace Nova64

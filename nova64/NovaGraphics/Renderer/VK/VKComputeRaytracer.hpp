@@ -27,36 +27,38 @@
 
 #include <cstdint>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 // Mirrors the std140 UBO in the RT compute shaders.
 struct RTUBOData {
-    float    invProj[16];     // clip -> eye, pre-transposed for column-vector GLSL
-    float    lightDir[4];     // xyz eye-space dir TO light, w = sun angular size (0=off)
-    float    lightColor[4];   // rgb, w = frame counter (temporal sampling rotation)
-    float    ambient[4];      // denoise params: x=blur radius(px), y=normal edge
-                              // power, z=depth edge threshold, w=ambient level
-    float    viewport[4];     // N64 viewport {scaleX, transX, scaleY, transY}
-                              // (fb-pixel units; rays must invert this mapping)
-    float    extra[4];        // x = temporal history cap /64, y = exposure,
-                              // z = shadow rays per pixel, w = AO/GI rays per pixel
-                              // (the most a pixel with no history gets)
-    float    proj[16];        // eye -> clip (FORWARD; row-major flatten like
-                              // invProj — used to predict raster depth values)
-    float    misc[4];         // x = scene AABB diagonal, y = previous RT frame's diagonal
-                              // (the temporal history's depths are relative to it), z/w = reserved
-    uint32_t dims[4];         // x=width y=height z=nodeCount w=featureFlags
-    float    lights[30][4];   // light table, two vec4 per light: {dir|pos, la}, {rgb, qa}
+    float invProj[16];   // clip -> eye, pre-transposed for column-vector GLSL
+    float lightDir[4];   // xyz eye-space dir TO light, w = sun angular size (0=off)
+    float lightColor[4]; // rgb, w = frame counter (temporal sampling rotation)
+    float ambient[4];    // denoise params: x=blur radius(px), y=normal edge
+                         // power, z=depth edge threshold, w=ambient level
+    float viewport[4];   // N64 viewport {scaleX, transX, scaleY, transY}
+                         // (fb-pixel units; rays must invert this mapping)
+    float extra[4];      // x = temporal history cap /64, y = exposure,
+                         // z = shadow rays per pixel, w = AO/GI rays per pixel
+                         // (the most a pixel with no history gets)
+    float proj[16];      // eye -> clip (FORWARD; row-major flatten like
+                         // invProj — used to predict raster depth values)
+    float misc[4];       // x = scene AABB diagonal, y = previous RT frame's diagonal
+                         // (the temporal history's depths are relative to it), z/w = reserved
+    uint32_t dims[4];    // x=width y=height z=nodeCount w=featureFlags
+    float lights[30][4]; // light table, two vec4 per light: {dir|pos, la}, {rgb, qa}
 };
 static constexpr uint32_t kRTMaxLights = 15;
 
 // Feature flags for RTUBOData::dims.w (must match RTComputeShaders.hpp).
 enum RTFeatureFlags : uint32_t {
-    RT_F_SHADOWS     = 1u << 0,
-    RT_F_LIGHTING    = 1u << 1,
+    RT_F_SHADOWS = 1u << 0,
+    RT_F_LIGHTING = 1u << 1,
     RT_F_REFLECTIONS = 1u << 2,
-    RT_F_DEBUG       = 1u << 3,   // normal-as-color + grid (pass/wiring check)
-    RT_F_DEBUG_TERM  = 1u << 4,   // lighting-term-only view (alignment check)
+    RT_F_DEBUG = 1u << 3,         // normal-as-color + grid (pass/wiring check)
+    RT_F_DEBUG_TERM = 1u << 4,    // lighting-term-only view (alignment check)
     RT_F_DEBUG_COVERED = 1u << 5, // raster-depth-guard view: red=suppressed, green=RT applied, black=no hit
 };
 
@@ -84,52 +86,49 @@ public:
     /// SHADER_READ_ONLY_OPTIMAL — the caller transitions it) — sampled by the
     /// composite to suppress RT terms where the raster drew a closer surface
     /// (ray-invisible billboards).
-    bool RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd, uint32_t frameIdx,
-                      const RT::RTBVH& bvh, const RTUBOData& ubo,
-                      VkImage swapchainImg, uint32_t w, uint32_t h,
-                      VkImage depthImg, VkFormat depthFormat);
+    bool RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd, uint32_t frameIdx, const RT::RTBVH& bvh,
+                      const RTUBOData& ubo, VkImage swapchainImg, uint32_t w, uint32_t h, VkImage depthImg,
+                      VkFormat depthFormat);
 
     bool Ready() const {
-        return m_tracePipeline != VK_NULL_HANDLE
-            && m_denoisePipeline != VK_NULL_HANDLE
-            && m_compositePipeline != VK_NULL_HANDLE;
+        return m_tracePipeline != VK_NULL_HANDLE && m_denoisePipeline != VK_NULL_HANDLE &&
+               m_compositePipeline != VK_NULL_HANDLE;
     }
 
 private:
     // One storage image + memory + view.
     struct Img {
-        VkImage        image = VK_NULL_HANDLE;
-        VkDeviceMemory mem   = VK_NULL_HANDLE;
-        VkImageView    view  = VK_NULL_HANDLE;
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory mem = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
     };
 
     struct FrameRes {
         VKBufferStorage ubo{};
         VKBufferStorage nodeBuf{};
         VKBufferStorage triBuf{};
-        VkDeviceSize    nodeCap = 0;
-        VkDeviceSize    triCap  = 0;
-        Img             out{};       // FULL res: final composite (blit to swapchain)
-        Img             ras{};       // FULL res: copy of the raster render
-        Img             lit{};       // HALF res: additive reflection extras
-        Img             shd{};       // HALF res: baked vertex shade + lit flag
-        Img             occ{};       // HALF res: r=shadow g=ao b=reflMix a=hit
-        Img             gbuf{};      // HALF res: rgb=smooth normal, a=depth (rgba16f)
-        Img             hist{};      // HALF res: temporal accum (r=shadow,g=ao,a=len/64)
-        Img             gi{};        // HALF res: raw one-bounce irradiance
-        Img             giHist{};    // HALF res: accumulated irradiance
-        uint32_t        w = 0, h = 0;
-        float           diag = 0.0f;         // scene diagonal of the frame these images hold
-        bool            outInGeneral = false;
-        bool            imagesFresh  = false;  // just (re)created → need init/clear
-        bool            descDirty    = true;
-        VkDescriptorSet traceSet     = VK_NULL_HANDLE;
-        VkDescriptorSet denoiseSet   = VK_NULL_HANDLE;
+        VkDeviceSize nodeCap = 0;
+        VkDeviceSize triCap = 0;
+        Img out{};                // FULL res: final composite (blit to swapchain)
+        Img ras{};                // FULL res: copy of the raster render
+        Img lit{};                // HALF res: additive reflection extras
+        Img shd{};                // HALF res: baked vertex shade + lit flag
+        Img occ{};                // HALF res: r=shadow g=ao b=reflMix a=hit
+        Img gbuf{};               // HALF res: rgb=smooth normal, a=depth (rgba16f)
+        Img hist{};               // HALF res: temporal accum (r=shadow,g=ao,a=len/64)
+        Img gi{};                 // HALF res: raw one-bounce irradiance
+        Img giHist{};             // HALF res: accumulated irradiance
+        uint32_t w = 0, h = 0;
+        float diag = 0.0f;        // scene diagonal of the frame these images hold
+        bool outInGeneral = false;
+        bool imagesFresh = false; // just (re)created → need init/clear
+        bool descDirty = true;
+        VkDescriptorSet traceSet = VK_NULL_HANDLE;
+        VkDescriptorSet denoiseSet = VK_NULL_HANDLE;
         VkDescriptorSet compositeSet = VK_NULL_HANDLE;
     };
 
-    bool EnsureBuffers(const VKContext& ctx, FrameRes& fr,
-                       VkDeviceSize nodeBytes, VkDeviceSize triBytes);
+    bool EnsureBuffers(const VKContext& ctx, FrameRes& fr, VkDeviceSize nodeBytes, VkDeviceSize triBytes);
     bool EnsureImages(const VKContext& ctx, FrameRes& fr, uint32_t w, uint32_t h);
     // `prev` = the other frame-in-flight; its hist/gbuf feed the temporal
     // accumulator (bindings 5/6 of the denoise set).
@@ -139,20 +138,20 @@ private:
     // when the swapchain depth image changes).
     bool EnsureDepthView(const VKContext& ctx, VkImage depthImg, VkFormat fmt);
 
-    VkSampler   m_depthSampler  = VK_NULL_HANDLE;
-    VkImage     m_cachedDepth   = VK_NULL_HANDLE;
-    VkImageView m_depthView     = VK_NULL_HANDLE;
+    VkSampler m_depthSampler = VK_NULL_HANDLE;
+    VkImage m_cachedDepth = VK_NULL_HANDLE;
+    VkImageView m_depthView = VK_NULL_HANDLE;
 
-    VkDescriptorSetLayout m_traceDsLayout     = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_denoiseDsLayout   = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_traceDsLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_denoiseDsLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_compositeDsLayout = VK_NULL_HANDLE;
-    VkPipelineLayout      m_tracePipeLayout     = VK_NULL_HANDLE;
-    VkPipelineLayout      m_denoisePipeLayout   = VK_NULL_HANDLE;
-    VkPipelineLayout      m_compositePipeLayout = VK_NULL_HANDLE;
-    VkPipeline            m_tracePipeline     = VK_NULL_HANDLE;
-    VkPipeline            m_denoisePipeline   = VK_NULL_HANDLE;
-    VkPipeline            m_compositePipeline = VK_NULL_HANDLE;
-    VkDescriptorPool      m_pool              = VK_NULL_HANDLE;
+    VkPipelineLayout m_tracePipeLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_denoisePipeLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_compositePipeLayout = VK_NULL_HANDLE;
+    VkPipeline m_tracePipeline = VK_NULL_HANDLE;
+    VkPipeline m_denoisePipeline = VK_NULL_HANDLE;
+    VkPipeline m_compositePipeline = VK_NULL_HANDLE;
+    VkDescriptorPool m_pool = VK_NULL_HANDLE;
 
     FrameRes m_frame[kFrames];
 
@@ -161,11 +160,13 @@ private:
     // Timestamps per frame: start and end. (Metal only samples at encoder
     // boundaries, so per-dispatch timestamps inside the frame would be misleading.)
     static constexpr uint32_t kTimestamps = 2;
-    VkQueryPool m_queryPool    = VK_NULL_HANDLE;
-    double      m_tickMs       = 0.0;        // milliseconds per timestamp tick
-    bool        m_slotTimed[kFrames] = {};
-    double      m_gpuMsSum     = 0.0;
-    uint32_t    m_gpuMsCount   = 0;
+    VkQueryPool m_queryPool = VK_NULL_HANDLE;
+    double m_tickMs = 0.0; // milliseconds per timestamp tick
+    bool m_slotTimed[kFrames] = {};
+    double m_gpuMsSum = 0.0;
+    uint32_t m_gpuMsCount = 0;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

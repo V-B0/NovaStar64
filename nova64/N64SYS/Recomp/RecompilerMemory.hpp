@@ -40,71 +40,67 @@ public:
      */
     explicit CRecompMemory(uint32_t initialSize = 0);
     ~CRecompMemory();
-    
+
     // Non-copyable, movable
     CRecompMemory(const CRecompMemory&) = delete;
     CRecompMemory& operator=(const CRecompMemory&) = delete;
     CRecompMemory(CRecompMemory&& other) noexcept;
     CRecompMemory& operator=(CRecompMemory&& other) noexcept;
-    
+
     /**
      * @brief Get the current write position in the recompile buffer
      * @return Pointer to current write position
      */
     uint8_t* GetWritePosition() const noexcept { return m_WritePosition; }
-    
+
     /**
      * @brief Get the remaining available space in bytes
      */
     uint32_t GetRemainingSpace() const noexcept {
         return m_CurrentSize - static_cast<uint32_t>(m_WritePosition - m_Buffer.get());
     }
-    
+
     /**
      * @brief Get the total allocated buffer size
      */
     uint32_t GetBufferSize() const noexcept { return m_CurrentSize; }
-    
+
     /**
      * @brief Get the amount of memory used in bytes
      */
-    uint32_t GetUsedMemory() const noexcept {
-        return static_cast<uint32_t>(m_WritePosition - m_Buffer.get());
-    }
-    
+    uint32_t GetUsedMemory() const noexcept { return static_cast<uint32_t>(m_WritePosition - m_Buffer.get()); }
+
     /**
      * @brief Reserve space for a code block
      * @param requiredSize Size needed in bytes
      * @return Pointer to reserved memory, or nullptr if allocation failed
      */
     uint8_t* Reserve(uint32_t requiredSize);
-    
+
     /**
      * @brief Commit written bytes and advance write pointer
      * @param writtenBytes Number of bytes written
      * @return true if successful, false if would overflow buffer
      */
     bool Commit(uint32_t writtenBytes) noexcept;
-    
+
     /**
      * @brief Reset write position to start of buffer
      */
     void Reset() noexcept { m_WritePosition = m_Buffer.get(); }
-    
+
     /**
      * @brief Get a pointer to the buffer start
      */
-    const uint8_t* GetBufferData() const noexcept {
-        return m_Buffer.get();
-    }
-    
+    const uint8_t* GetBufferData() const noexcept { return m_Buffer.get(); }
+
     /**
      * @brief Check if buffer has enough space (grows if needed)
      * @param requiredSize Required space in bytes
      * @return true if space is available (after potential growth)
      */
     bool EnsureSpace(uint32_t requiredSize);
-    
+
     /**
      * @brief Get memory usage statistics
      */
@@ -113,7 +109,7 @@ public:
         uint32_t usedBytes = 0;
         uint32_t peakUsedBytes = 0;
         uint32_t growthCount = 0;
-        
+
         void Reset() {
             allocatedBytes = 0;
             usedBytes = 0;
@@ -121,14 +117,14 @@ public:
             growthCount = 0;
         }
     };
-    
+
     const MemoryStats& GetStats() const noexcept { return m_Stats; }
-    
+
     /**
      * @brief Show memory usage information (for debugging)
      */
     void ShowMemoryUsage() const;
-    
+
 protected:
     /// Memory size constants
     static constexpr uint32_t DEFAULT_INITIAL_SIZE = 32 * 1024 * 1024; // 32 MB
@@ -137,29 +133,28 @@ protected:
     static constexpr uint32_t GROWTH_FACTOR = 2;                       // Double when growing
 
 private:
-    
     /**
      * @brief Grow the buffer to accommodate more code
      * @param minRequiredSize Minimum size needed
      * @return true if successful, false on failure
      */
     bool GrowBuffer(uint32_t minRequiredSize);
-    
+
     /**
      * @brief Allocate a new buffer
      * @param size Desired buffer size
      * @return Unique pointer to allocated memory, or nullptr on failure
      */
     static std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> AllocateBuffer(uint32_t size);
-    
+
     // Buffer management
-    std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> m_Buffer;   ///< The actual code buffer
-    uint8_t* m_WritePosition = nullptr;    ///< Current write position
-    uint32_t m_CurrentSize = 0;            ///< Current buffer size
-    
+    std::unique_ptr<uint8_t[], ExecutableMemoryDeleter> m_Buffer; ///< The actual code buffer
+    uint8_t* m_WritePosition = nullptr;                           ///< Current write position
+    uint32_t m_CurrentSize = 0;                                   ///< Current buffer size
+
     // Statistics
     MemoryStats m_Stats;
-    
+
     // Track previous write position for buffer growth
     uint8_t* m_OldWritePosition = nullptr;
 };
@@ -178,13 +173,13 @@ inline bool CRecompMemory::Commit(uint32_t writtenBytes) noexcept {
         return false;
     }
     m_WritePosition += writtenBytes;
-    
+
     // Update statistics
     uint32_t used = GetUsedMemory();
     if (used > m_Stats.peakUsedBytes) {
         m_Stats.peakUsedBytes = used;
     }
-    
+
     return true;
 }
 

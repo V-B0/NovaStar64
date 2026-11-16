@@ -20,10 +20,7 @@ namespace Nova64::Video {
 
 static const float kQuadVerts[] = {
     // pos (x,y)   texcoord (u,v)
-    -1, -1,  0, 0,
-     1, -1,  1, 0,
-    -1,  1,  0, 1,
-     1,  1,  1, 1,
+    -1, -1, 0, 0, 1, -1, 1, 0, -1, 1, 0, 1, 1, 1, 1, 1,
 };
 
 static void CreateFullscreenQuad(uint32_t& vao, uint32_t& vbo) {
@@ -42,8 +39,14 @@ static void CreateFullscreenQuad(uint32_t& vao, uint32_t& vbo) {
 }
 
 static void DestroyFullscreenQuad(uint32_t& vao, uint32_t& vbo) {
-    if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
-    if (vbo) { glDeleteBuffers(1, &vbo); vbo = 0; }
+    if (vao) {
+        glDeleteVertexArrays(1, &vao);
+        vao = 0;
+    }
+    if (vbo) {
+        glDeleteBuffers(1, &vbo);
+        vbo = 0;
+    }
 }
 
 static void DrawFullscreenQuad(uint32_t vao) {
@@ -147,7 +150,10 @@ bool GammaEffect::Init(int, int) {
 }
 
 void GammaEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -166,7 +172,7 @@ void GammaEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  FXAA 
+//  FXAA
 // ═══════════════════════════════════════════════════════════════
 
 static const char* kFXAAFS = R"(
@@ -277,7 +283,10 @@ bool FXAAEffect::Init(int, int) {
 }
 
 void FXAAEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -287,8 +296,7 @@ void FXAAEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int hei
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_shader);
-    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"),
-                1.0f / width, 1.0f / height);
+    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"), 1.0f / width, 1.0f / height);
     glUniform1f(glGetUniformLocation(m_shader, "uSubpixQuality"), params.qualitySubpix);
     glUniform1f(glGetUniformLocation(m_shader, "uEdgeThreshold"), params.edgeThreshold);
     glUniform1f(glGetUniformLocation(m_shader, "uEdgeThresholdMin"), params.edgeThresholdMin);
@@ -387,14 +395,13 @@ void main() {
 )";
 
 bool BloomEffect::Init(int width, int height) {
-    m_thresholdShader  = CompileShaderProgram(kPostVS, kBloomThresholdFS);
+    m_thresholdShader = CompileShaderProgram(kPostVS, kBloomThresholdFS);
     m_downsampleShader = CompileShaderProgram(kPostVS, kBloomDownFS);
-    m_upsampleShader   = CompileShaderProgram(kPostVS, kBloomUpFS);
-    m_compositeShader  = CompileShaderProgram(kPostVS, kBloomCompositeFS);
+    m_upsampleShader = CompileShaderProgram(kPostVS, kBloomUpFS);
+    m_compositeShader = CompileShaderProgram(kPostVS, kBloomCompositeFS);
     CreateFullscreenQuad(m_vao, m_vbo);
 
-    if (!m_thresholdShader || !m_downsampleShader || !m_upsampleShader || !m_compositeShader)
-        return false;
+    if (!m_thresholdShader || !m_downsampleShader || !m_upsampleShader || !m_compositeShader) return false;
 
     Resize(width, height);
     return true;
@@ -406,10 +413,22 @@ void BloomEffect::Shutdown() {
         if (mip.tex) glDeleteTextures(1, &mip.tex);
     }
     m_mips.clear();
-    if (m_thresholdShader)  { glDeleteProgram(m_thresholdShader); m_thresholdShader = 0; }
-    if (m_downsampleShader) { glDeleteProgram(m_downsampleShader); m_downsampleShader = 0; }
-    if (m_upsampleShader)   { glDeleteProgram(m_upsampleShader); m_upsampleShader = 0; }
-    if (m_compositeShader)  { glDeleteProgram(m_compositeShader); m_compositeShader = 0; }
+    if (m_thresholdShader) {
+        glDeleteProgram(m_thresholdShader);
+        m_thresholdShader = 0;
+    }
+    if (m_downsampleShader) {
+        glDeleteProgram(m_downsampleShader);
+        m_downsampleShader = 0;
+    }
+    if (m_upsampleShader) {
+        glDeleteProgram(m_upsampleShader);
+        m_upsampleShader = 0;
+    }
+    if (m_compositeShader) {
+        glDeleteProgram(m_compositeShader);
+        m_compositeShader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -469,9 +488,9 @@ void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     for (size_t i = 1; i < m_mips.size(); ++i) {
         glBindFramebuffer(GL_FRAMEBUFFER, m_mips[i].fbo);
         glViewport(0, 0, m_mips[i].width, m_mips[i].height);
-        glUniform2f(glGetUniformLocation(m_downsampleShader, "uTexelSize"),
-                    1.0f / m_mips[i-1].width, 1.0f / m_mips[i-1].height);
-        glBindTextureUnit(0, m_mips[i-1].tex);
+        glUniform2f(glGetUniformLocation(m_downsampleShader, "uTexelSize"), 1.0f / m_mips[i - 1].width,
+                    1.0f / m_mips[i - 1].height);
+        glBindTextureUnit(0, m_mips[i - 1].tex);
         DrawFullscreenQuad(m_vao);
     }
 
@@ -483,9 +502,9 @@ void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     for (int i = static_cast<int>(m_mips.size()) - 2; i >= 0; --i) {
         glBindFramebuffer(GL_FRAMEBUFFER, m_mips[i].fbo);
         glViewport(0, 0, m_mips[i].width, m_mips[i].height);
-        glUniform2f(glGetUniformLocation(m_upsampleShader, "uTexelSize"),
-                    1.0f / m_mips[i+1].width, 1.0f / m_mips[i+1].height);
-        glBindTextureUnit(0, m_mips[i+1].tex);
+        glUniform2f(glGetUniformLocation(m_upsampleShader, "uTexelSize"), 1.0f / m_mips[i + 1].width,
+                    1.0f / m_mips[i + 1].height);
+        glBindTextureUnit(0, m_mips[i + 1].tex);
         DrawFullscreenQuad(m_vao);
     }
     glDisable(GL_BLEND);
@@ -500,8 +519,10 @@ void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     DrawFullscreenQuad(m_vao);
 
     // Restore previous GL state
-    if (prevDepthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    if (prevBlend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST);
+    else glDisable(GL_DEPTH_TEST);
+    if (prevBlend) glEnable(GL_BLEND);
+    else glDisable(GL_BLEND);
     glBlendFunc(prevBlendSrc, prevBlendDst);
 }
 
@@ -567,7 +588,10 @@ bool CRTEffect::Init(int, int) {
 }
 
 void CRTEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -577,8 +601,7 @@ void CRTEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int heig
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_shader);
-    glUniform2f(glGetUniformLocation(m_shader, "uResolution"),
-                static_cast<float>(width), static_cast<float>(height));
+    glUniform2f(glGetUniformLocation(m_shader, "uResolution"), static_cast<float>(width), static_cast<float>(height));
     glUniform1f(glGetUniformLocation(m_shader, "uCurvature"), params.curvature);
     glUniform1f(glGetUniformLocation(m_shader, "uScanlineWeight"), params.scanlineWeight);
     glUniform1f(glGetUniformLocation(m_shader, "uMaskDotPitch"), params.maskDotPitch);
@@ -624,7 +647,10 @@ bool SharpenEffect::Init(int, int) {
 }
 
 void SharpenEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -634,8 +660,7 @@ void SharpenEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int 
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_shader);
-    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"),
-                1.0f / width, 1.0f / height);
+    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"), 1.0f / width, 1.0f / height);
     glUniform1f(glGetUniformLocation(m_shader, "uStrength"), params.strength);
     glUniform1f(glGetUniformLocation(m_shader, "uClamp"), params.clamp);
     glBindTextureUnit(0, inputTex);
@@ -675,7 +700,10 @@ bool ChromaticAberrationEffect::Init(int, int) {
 }
 
 void ChromaticAberrationEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -732,7 +760,10 @@ bool FilmGrainEffect::Init(int, int) {
 }
 
 void FilmGrainEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -793,7 +824,10 @@ bool DitheringEffect::Init(int, int) {
 }
 
 void DitheringEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -803,8 +837,7 @@ void DitheringEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, in
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_shader);
-    glUniform2f(glGetUniformLocation(m_shader, "uResolution"),
-                static_cast<float>(width), static_cast<float>(height));
+    glUniform2f(glGetUniformLocation(m_shader, "uResolution"), static_cast<float>(width), static_cast<float>(height));
     glBindTextureUnit(0, inputTex);
     DrawFullscreenQuad(m_vao);
 }
@@ -878,7 +911,10 @@ bool ColorGradingEffect::Init(int, int) {
 }
 
 void ColorGradingEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -893,10 +929,8 @@ void ColorGradingEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width,
     glUniform1f(glGetUniformLocation(m_shader, "uHueShift"), params.hueShift);
     glUniform1f(glGetUniformLocation(m_shader, "uShadows"), params.shadows);
     glUniform1f(glGetUniformLocation(m_shader, "uHighlights"), params.highlights);
-    glUniform3f(glGetUniformLocation(m_shader, "uLift"),
-                params.liftR, params.liftG, params.liftB);
-    glUniform3f(glGetUniformLocation(m_shader, "uGain"),
-                params.gainR, params.gainG, params.gainB);
+    glUniform3f(glGetUniformLocation(m_shader, "uLift"), params.liftR, params.liftG, params.liftB);
+    glUniform3f(glGetUniformLocation(m_shader, "uGain"), params.gainR, params.gainG, params.gainB);
     glBindTextureUnit(0, inputTex);
     DrawFullscreenQuad(m_vao);
 }
@@ -950,7 +984,10 @@ bool DepthOfFieldEffect::Init(int, int) {
 }
 
 void DepthOfFieldEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -960,8 +997,7 @@ void DepthOfFieldEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width,
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_shader);
-    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"),
-                1.0f / width, 1.0f / height);
+    glUniform2f(glGetUniformLocation(m_shader, "uInvResolution"), 1.0f / width, 1.0f / height);
     glUniform1f(glGetUniformLocation(m_shader, "uFocalDist"), params.focalDistance);
     glUniform1f(glGetUniformLocation(m_shader, "uFocalRange"), params.focalRange);
     glUniform1f(glGetUniformLocation(m_shader, "uBlurStrength"), params.blurStrength);
@@ -1010,13 +1046,22 @@ bool MotionBlurEffect::Init(int width, int height) {
 }
 
 void MotionBlurEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
-    if (m_prevTex) { glDeleteTextures(1, &m_prevTex); m_prevTex = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
+    if (m_prevTex) {
+        glDeleteTextures(1, &m_prevTex);
+        m_prevTex = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
 void MotionBlurEffect::Resize(int width, int height) {
-    if (m_prevTex) { glDeleteTextures(1, &m_prevTex); m_prevTex = 0; }
+    if (m_prevTex) {
+        glDeleteTextures(1, &m_prevTex);
+        m_prevTex = 0;
+    }
     m_width = width;
     m_height = height;
     glCreateTextures(GL_TEXTURE_2D, 1, &m_prevTex);
@@ -1036,9 +1081,7 @@ void MotionBlurEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, i
     DrawFullscreenQuad(m_vao);
 
     // Copy current to previous for next frame
-    glCopyImageSubData(inputTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       m_prevTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       width, height, 1);
+    glCopyImageSubData(inputTex, GL_TEXTURE_2D, 0, 0, 0, 0, m_prevTex, GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1071,7 +1114,10 @@ bool VignetteEffect::Init(int, int) {
 }
 
 void VignetteEffect::Shutdown() {
-    if (m_shader) { glDeleteProgram(m_shader); m_shader = 0; }
+    if (m_shader) {
+        glDeleteProgram(m_shader);
+        m_shader = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
@@ -1157,7 +1203,7 @@ void main() {
 )";
 
 bool SMAAEffect::Init(int width, int height) {
-    m_edgeShader  = CompileShaderProgram(kPostVS, kSMAAEdgeFS);
+    m_edgeShader = CompileShaderProgram(kPostVS, kSMAAEdgeFS);
     m_blendShader = CompileShaderProgram(kPostVS, kSMAABlendFS);
     CreateFullscreenQuad(m_vao, m_vbo);
     m_width = width;
@@ -1170,16 +1216,34 @@ bool SMAAEffect::Init(int width, int height) {
 }
 
 void SMAAEffect::Shutdown() {
-    if (m_edgeShader)  { glDeleteProgram(m_edgeShader); m_edgeShader = 0; }
-    if (m_blendShader) { glDeleteProgram(m_blendShader); m_blendShader = 0; }
-    if (m_edgeTex) { glDeleteTextures(1, &m_edgeTex); m_edgeTex = 0; }
-    if (m_edgeFBO) { glDeleteFramebuffers(1, &m_edgeFBO); m_edgeFBO = 0; }
+    if (m_edgeShader) {
+        glDeleteProgram(m_edgeShader);
+        m_edgeShader = 0;
+    }
+    if (m_blendShader) {
+        glDeleteProgram(m_blendShader);
+        m_blendShader = 0;
+    }
+    if (m_edgeTex) {
+        glDeleteTextures(1, &m_edgeTex);
+        m_edgeTex = 0;
+    }
+    if (m_edgeFBO) {
+        glDeleteFramebuffers(1, &m_edgeFBO);
+        m_edgeFBO = 0;
+    }
     DestroyFullscreenQuad(m_vao, m_vbo);
 }
 
 void SMAAEffect::Resize(int width, int height) {
-    if (m_edgeTex) { glDeleteTextures(1, &m_edgeTex); m_edgeTex = 0; }
-    if (m_edgeFBO) { glDeleteFramebuffers(1, &m_edgeFBO); m_edgeFBO = 0; }
+    if (m_edgeTex) {
+        glDeleteTextures(1, &m_edgeTex);
+        m_edgeTex = 0;
+    }
+    if (m_edgeFBO) {
+        glDeleteFramebuffers(1, &m_edgeFBO);
+        m_edgeFBO = 0;
+    }
     m_width = width;
     m_height = height;
 
@@ -1198,11 +1262,10 @@ void SMAAEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int hei
     // Pass 1: Edge detection → m_edgeFBO
     glBindFramebuffer(GL_FRAMEBUFFER, m_edgeFBO);
     glViewport(0, 0, width, height);
-    float clearColor[4] = { 0, 0, 0, 0 };
+    float clearColor[4] = {0, 0, 0, 0};
     glClearNamedFramebufferfv(m_edgeFBO, GL_COLOR, 0, clearColor);
     glUseProgram(m_edgeShader);
-    glUniform2f(glGetUniformLocation(m_edgeShader, "uInvResolution"),
-                1.0f / width, 1.0f / height);
+    glUniform2f(glGetUniformLocation(m_edgeShader, "uInvResolution"), 1.0f / width, 1.0f / height);
     glBindTextureUnit(0, inputTex);
     DrawFullscreenQuad(m_vao);
 
@@ -1210,8 +1273,7 @@ void SMAAEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int hei
     glBindFramebuffer(GL_FRAMEBUFFER, outputFBO);
     glViewport(0, 0, width, height);
     glUseProgram(m_blendShader);
-    glUniform2f(glGetUniformLocation(m_blendShader, "uInvResolution"),
-                1.0f / width, 1.0f / height);
+    glUniform2f(glGetUniformLocation(m_blendShader, "uInvResolution"), 1.0f / width, 1.0f / height);
     glBindTextureUnit(0, inputTex);
     glBindTextureUnit(1, m_edgeTex);
     DrawFullscreenQuad(m_vao);
@@ -1268,14 +1330,25 @@ bool PostProcessingPipeline::CreateIntermediateBuffers(int width, int height) {
 }
 
 void PostProcessingPipeline::DestroyIntermediateBuffers() {
-    if (m_pingFBO) { glDeleteFramebuffers(1, &m_pingFBO); m_pingFBO = 0; }
-    if (m_pingTex) { glDeleteTextures(1, &m_pingTex); m_pingTex = 0; }
-    if (m_pongFBO) { glDeleteFramebuffers(1, &m_pongFBO); m_pongFBO = 0; }
-    if (m_pongTex) { glDeleteTextures(1, &m_pongTex); m_pongTex = 0; }
+    if (m_pingFBO) {
+        glDeleteFramebuffers(1, &m_pingFBO);
+        m_pingFBO = 0;
+    }
+    if (m_pingTex) {
+        glDeleteTextures(1, &m_pingTex);
+        m_pingTex = 0;
+    }
+    if (m_pongFBO) {
+        glDeleteFramebuffers(1, &m_pongFBO);
+        m_pongFBO = 0;
+    }
+    if (m_pongTex) {
+        glDeleteTextures(1, &m_pongTex);
+        m_pongTex = 0;
+    }
 }
 
-void PostProcessingPipeline::Apply(uint32_t inputTex, uint32_t outputFBO,
-                                     int width, int height) {
+void PostProcessingPipeline::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) {
     if (m_effects.empty()) return;
 
     // Count enabled effects
@@ -1305,14 +1378,11 @@ void PostProcessingPipeline::Apply(uint32_t inputTex, uint32_t outputFBO,
     }
 }
 
-void PostProcessingPipeline::AddEffect(std::unique_ptr<PostEffect> effect) {
-    m_effects.push_back(std::move(effect));
-}
+void PostProcessingPipeline::AddEffect(std::unique_ptr<PostEffect> effect) { m_effects.push_back(std::move(effect)); }
 
 void PostProcessingPipeline::RemoveEffect(PostEffectType type) {
     m_effects.erase(
-        std::remove_if(m_effects.begin(), m_effects.end(),
-                        [type](const auto& e) { return e->GetType() == type; }),
+        std::remove_if(m_effects.begin(), m_effects.end(), [type](const auto& e) { return e->GetType() == type; }),
         m_effects.end());
 }
 

@@ -7,15 +7,15 @@
 #include <cstring>
 #include <vector>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 namespace {
 
-VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-    VkDebugUtilsMessageTypeFlagsEXT /*type*/,
-    const VkDebugUtilsMessengerCallbackDataEXT* data,
-    void* /*user*/) {
+VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                             VkDebugUtilsMessageTypeFlagsEXT /*type*/,
+                                             const VkDebugUtilsMessengerCallbackDataEXT* data, void* /*user*/) {
     if (!data || !data->pMessage) return VK_FALSE;
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         Logger::Error("[Vulkan] {}", data->pMessage);
@@ -41,10 +41,9 @@ bool HasExtension(const char* name, const std::vector<VkExtensionProperties>& ex
     return false;
 }
 
-} // anonymous
+} // namespace
 
-bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts,
-                        bool enableValidation) {
+bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bool enableValidation) {
     // ── volk loader ─────────────────────────────────────────
     if (!m_volkInitialized) {
         VkResult r = volkInitialize();
@@ -62,9 +61,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts,
     if (vkEnumerateInstanceVersion) {
         VK_CHECK(vkEnumerateInstanceVersion(&apiVersion));
     }
-    Logger::Info("VKInstance: loader API version {}.{}.{}",
-                 VK_VERSION_MAJOR(apiVersion),
-                 VK_VERSION_MINOR(apiVersion),
+    Logger::Info("VKInstance: loader API version {}.{}.{}", VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion),
                  VK_VERSION_PATCH(apiVersion));
 
     // ── available layers / extensions ──────────────────────
@@ -88,8 +85,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts,
 
     // ── enabled extensions ─────────────────────────────────
     std::vector<const char*> enabledExts = requiredInstanceExts;
-    if (m_validationEnabled &&
-        HasExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, availExts)) {
+    if (m_validationEnabled && HasExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, availExts)) {
         enabledExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     } else {
         m_validationEnabled = false; // can't actually attach messenger
@@ -97,19 +93,18 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts,
 
     // ── instance create ────────────────────────────────────
     VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    appInfo.pApplicationName   = "NovaGraphics";
+    appInfo.pApplicationName = "NovaGraphics";
     appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.pEngineName        = "NovaGraphics";
-    appInfo.engineVersion      = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.apiVersion         = (apiVersion >= VK_API_VERSION_1_2)
-                                     ? VK_API_VERSION_1_2 : apiVersion;
+    appInfo.pEngineName = "NovaGraphics";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.apiVersion = (apiVersion >= VK_API_VERSION_1_2) ? VK_API_VERSION_1_2 : apiVersion;
 
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-    ici.pApplicationInfo        = &appInfo;
-    ici.enabledLayerCount       = static_cast<uint32_t>(enabledLayers.size());
-    ici.ppEnabledLayerNames     = enabledLayers.empty() ? nullptr : enabledLayers.data();
-    ici.enabledExtensionCount   = static_cast<uint32_t>(enabledExts.size());
-    ici.ppEnabledExtensionNames = enabledExts.empty()   ? nullptr : enabledExts.data();
+    ici.pApplicationInfo = &appInfo;
+    ici.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
+    ici.ppEnabledLayerNames = enabledLayers.empty() ? nullptr : enabledLayers.data();
+    ici.enabledExtensionCount = static_cast<uint32_t>(enabledExts.size());
+    ici.ppEnabledExtensionNames = enabledExts.empty() ? nullptr : enabledExts.data();
 
     VK_CHECK(vkCreateInstance(&ici, nullptr, &m_instance));
     volkLoadInstance(m_instance);
@@ -117,17 +112,16 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts,
     // ── debug messenger ────────────────────────────────────
     if (m_validationEnabled && vkCreateDebugUtilsMessengerEXT) {
         VkDebugUtilsMessengerCreateInfoEXT dmci{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
-        dmci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
-                             | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
-        dmci.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-                             | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-                             | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        dmci.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+        dmci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         dmci.pfnUserCallback = DebugCallback;
         VK_CHECK_VOID(vkCreateDebugUtilsMessengerEXT(m_instance, &dmci, nullptr, &m_debugMessenger));
     }
 
-    Logger::Info("VKInstance: created (extensions={}, layers={})",
-                 enabledExts.size(), enabledLayers.size());
+    Logger::Info("VKInstance: created (extensions={}, layers={})", enabledExts.size(), enabledLayers.size());
     return true;
 }
 
@@ -143,9 +137,7 @@ void VKInstance::Destroy() {
     m_physical = VK_NULL_HANDLE;
 }
 
-bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
-                                    uint32_t& outGraphicsFamily,
-                                    uint32_t& outPresentFamily) {
+bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface, uint32_t& outGraphicsFamily, uint32_t& outPresentFamily) {
     if (!m_instance) return false;
 
     uint32_t count = 0;
@@ -157,8 +149,7 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
     std::vector<VkPhysicalDevice> devices(count);
     VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &count, devices.data()));
 
-    auto scoreDevice = [&](VkPhysicalDevice dev,
-                           uint32_t& gfx, uint32_t& present) -> int {
+    auto scoreDevice = [&](VkPhysicalDevice dev, uint32_t& gfx, uint32_t& present) -> int {
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(dev, &props);
 
@@ -170,7 +161,8 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
         bool hasSwapchain = false;
         for (const auto& e : exts) {
             if (std::strcmp(e.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
-                hasSwapchain = true; break;
+                hasSwapchain = true;
+                break;
             }
         }
         if (!hasSwapchain) return -1;
@@ -181,7 +173,8 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
         std::vector<VkQueueFamilyProperties> qprops(qCount);
         vkGetPhysicalDeviceQueueFamilyProperties(dev, &qCount, qprops.data());
 
-        gfx = UINT32_MAX; present = UINT32_MAX;
+        gfx = UINT32_MAX;
+        present = UINT32_MAX;
         for (uint32_t i = 0; i < qCount; ++i) {
             if (qprops[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) gfx = i;
             if (surface) {
@@ -195,8 +188,8 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
         if (gfx == UINT32_MAX || present == UINT32_MAX) return -1;
 
         int score = 1;
-        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)   score += 1000;
-        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score +=  100;
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score += 100;
         return score;
     };
 
@@ -207,7 +200,10 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
         uint32_t g = 0, p = 0;
         int s = scoreDevice(dev, g, p);
         if (s > bestScore) {
-            bestScore = s; bestDev = dev; bestGfx = g; bestPresent = p;
+            bestScore = s;
+            bestDev = dev;
+            bestGfx = g;
+            bestPresent = p;
         }
     }
     if (bestScore < 0 || !bestDev) {
@@ -218,13 +214,10 @@ bool VKInstance::PickPhysicalDevice(VkSurfaceKHR surface,
     m_physical = bestDev;
     vkGetPhysicalDeviceProperties(m_physical, &m_physicalProps);
     outGraphicsFamily = bestGfx;
-    outPresentFamily  = bestPresent;
-    Logger::Info("VKInstance: picked {} (driver {}, API {}.{}.{})",
-                 m_physicalProps.deviceName,
-                 m_physicalProps.driverVersion,
-                 VK_VERSION_MAJOR(m_physicalProps.apiVersion),
-                 VK_VERSION_MINOR(m_physicalProps.apiVersion),
-                 VK_VERSION_PATCH(m_physicalProps.apiVersion));
+    outPresentFamily = bestPresent;
+    Logger::Info("VKInstance: picked {} (driver {}, API {}.{}.{})", m_physicalProps.deviceName,
+                 m_physicalProps.driverVersion, VK_VERSION_MAJOR(m_physicalProps.apiVersion),
+                 VK_VERSION_MINOR(m_physicalProps.apiVersion), VK_VERSION_PATCH(m_physicalProps.apiVersion));
     return true;
 }
 
@@ -240,4 +233,6 @@ bool VKInstance::HasInstanceExtension(const char* name) {
     return false;
 }
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

@@ -40,8 +40,7 @@ static constexpr bool DISABLE_N64_DEPTH_COMPARE = false;
 namespace Nova64::Video {
 
 inline bool IsRGBAFramebufferFormat(ImageFormat format, ImageSize size) {
-    return format == ImageFormat::RGBA &&
-           (size == ImageSize::Bpp16 || size == ImageSize::Bpp32);
+    return format == ImageFormat::RGBA && (size == ImageSize::Bpp16 || size == ImageSize::Bpp32);
 }
 
 inline bool IsRGBAFramebufferFormat(const Tex::TextureKey& key) {
@@ -62,10 +61,8 @@ inline bool CanAliasFramebuffer(const GPUFramebuffer* fb, uint32_t address, bool
     // Non-stride-aligned in-range hits are almost always game textures whose
     // RDRAM happens to lie inside an old FB's footprint — sampling the FB
     // there replaces the texture with stale framebuffer pixels.
-    if (!framebufferFormat || rdramAddress < fb->desc.address)
-        return false;
-    if (fb->desc.stride == 0 || rdramAddress >= fb->desc.EndAddress())
-        return false;
+    if (!framebufferFormat || rdramAddress < fb->desc.address) return false;
+    if (fb->desc.stride == 0 || rdramAddress >= fb->desc.EndAddress()) return false;
     return ((rdramAddress - fb->desc.address) % fb->desc.stride) == 0;
 }
 
@@ -89,12 +86,11 @@ inline bool TraceMMRdpEnabled() {
     return frame >= from && frame <= to;
 }
 
-#define MM_RDP_TRACE(fmt, ...)                                                   \
-    do {                                                                         \
-        if (TraceMMRdpEnabled()) {                                               \
-            NOVA_LOG(LogLevel::Info, LogSubsystem::RDP, "[MMRDP] " fmt,          \
-                     ##__VA_ARGS__);                                             \
-        }                                                                        \
+#define MM_RDP_TRACE(fmt, ...)                                                                                         \
+    do {                                                                                                               \
+        if (TraceMMRdpEnabled()) {                                                                                     \
+            NOVA_LOG(LogLevel::Info, LogSubsystem::RDP, "[MMRDP] " fmt, ##__VA_ARGS__);                                \
+        }                                                                                                              \
     } while (0)
 
 inline bool ForensicEnabled() {
@@ -105,12 +101,11 @@ inline bool ForensicEnabled() {
     return enabled;
 }
 
-#define FORENSIC_TRACE(fmt, ...)                                                  \
-    do {                                                                          \
-        if (ForensicEnabled()) {                                                  \
-            NOVA_LOG(LogLevel::Info, LogSubsystem::RDP, "[FORENSIC] " fmt,        \
-                     ##__VA_ARGS__);                                              \
-        }                                                                         \
+#define FORENSIC_TRACE(fmt, ...)                                                                                       \
+    do {                                                                                                               \
+        if (ForensicEnabled()) {                                                                                       \
+            NOVA_LOG(LogLevel::Info, LogSubsystem::RDP, "[FORENSIC] " fmt, ##__VA_ARGS__);                             \
+        }                                                                                                              \
     } while (0)
 
 // Compute the effective texture dimensions for a tile, accounting for
@@ -118,11 +113,11 @@ inline bool ForensicEnabled() {
 // LoadInfo for one TMEM slot, mirroring GLideN64's gDP.loadInfo[] entry.
 // Passing nullptr keeps the historical mask/clamp-only behaviour.
 struct TileLoadInfo {
-    bool     isTileLoad = false;
-    uint16_t width      = 0;   // texels actually loaded per row
-    uint16_t height     = 0;   // rows actually loaded
-    uint16_t texWidth   = 0;   // SetTextureImage width
-    uint8_t  size       = 0;   // SetTextureImage pixel size
+    bool isTileLoad = false;
+    uint16_t width = 0;    // texels actually loaded per row
+    uint16_t height = 0;   // rows actually loaded
+    uint16_t texWidth = 0; // SetTextureImage width
+    uint8_t size = 0;      // SetTextureImage pixel size
 };
 
 // Build a TileLoadInfo for `tile` from its TMEM slot's load record. Every
@@ -133,15 +128,14 @@ struct TileLoadInfo {
 // for FlushBatch's shader texture-size uniforms vs BuildTextureKey's decode
 // size — the same LoadTile-sourced texture got sized two different ways,
 // which is exactly a UV-scale/actual-decode-size mismatch: stretching).
-template <typename RDPStateT>
-static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor& tile) {
+template <typename RDPStateT> static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor& tile) {
     TileLoadInfo li;
     const uint32_t slot = tile.tmemAddr & 0x1FF;
     li.isTileLoad = (rdp.tmemLoadType[slot] == RDPStateT::LOADTYPE_TILE);
-    li.width      = rdp.tmemLoadWidth[slot];
-    li.height     = rdp.tmemLoadHeight[slot];
-    li.texWidth   = rdp.tmemLoadTexWidth[slot];
-    li.size       = rdp.tmemLoadSize[slot];
+    li.width = rdp.tmemLoadWidth[slot];
+    li.height = rdp.tmemLoadHeight[slot];
+    li.texWidth = rdp.tmemLoadTexWidth[slot];
+    li.size = rdp.tmemLoadSize[slot];
     return li;
 }
 
@@ -152,9 +146,8 @@ static TileLoadInfo MakeTileLoadInfo(const RDPStateT& rdp, const TileDescriptor&
 // TMEM holds next (adjacent texture data or the palette). Optional out-params;
 // pass nullptr to skip.
 inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW, int& outH,
-                         const TileLoadInfo* loadInfo = nullptr,
-                         int cycleType = 0,
-                         int* outClampW = nullptr, int* outClampH = nullptr) {
+                         const TileLoadInfo* loadInfo = nullptr, int cycleType = 0, int* outClampW = nullptr,
+                         int* outClampH = nullptr) {
     int tileW = std::max(1, tile.GetWidth());
     int tileH = std::max(1, tile.GetHeight());
 
@@ -171,8 +164,7 @@ inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW
     if (loadInfo != nullptr && loadInfo->isTileLoad) {
         int w = static_cast<int>(std::min<uint32_t>(loadInfo->width, loadInfo->texWidth));
         if (w == 0) w = tileW;
-        if (loadInfo->size > tile.size)
-            w <<= (loadInfo->size - tile.size);
+        if (loadInfo->size > tile.size) w <<= (loadInfo->size - tile.size);
         int h = static_cast<int>(loadInfo->height);
         if (h == 0) h = tileH;
         // Clamp override: a clamped, unmasked axis reports the tile extent.
@@ -185,23 +177,17 @@ inline void CalcTileSize(const TileDescriptor& tile, uint8_t tlutType, int& outW
     }
 
     bool hasTLUT = (tlutType != 0);
-    static const uint32_t noTLUT[]   = { 8192, 4096, 2048, 1024 };
-    static const uint32_t withTLUT[] = { 4096, 2048, 2048, 1024 };
+    static const uint32_t noTLUT[] = {8192, 4096, 2048, 1024};
+    static const uint32_t withTLUT[] = {4096, 2048, 2048, 1024};
     uint32_t maxTexels = hasTLUT ? withTLUT[tile.size & 3] : noTLUT[tile.size & 3];
     int maskW = (tile.maskS == 0) ? tileW : (1 << tile.maskS);
     int maskH = (tile.maskT == 0) ? tileH : (1 << tile.maskT);
-    if (tile.IsClamped_S())
-        outW = std::min(maskW, tileW);
-    else if (static_cast<uint32_t>(maskW * maskH) <= maxTexels)
-        outW = maskW;
-    else
-        outW = tileW;
-    if (tile.IsClamped_T())
-        outH = std::min(maskH, tileH);
-    else if (static_cast<uint32_t>(maskW * maskH) <= maxTexels)
-        outH = maskH;
-    else
-        outH = tileH;
+    if (tile.IsClamped_S()) outW = std::min(maskW, tileW);
+    else if (static_cast<uint32_t>(maskW * maskH) <= maxTexels) outW = maskW;
+    else outW = tileW;
+    if (tile.IsClamped_T()) outH = std::min(maskH, tileH);
+    else if (static_cast<uint32_t>(maskW * maskH) <= maxTexels) outH = maskH;
+    else outH = tileH;
     constexpr int kCycCopy = 2;
     if (outClampW) *outClampW = (tile.IsClamped_S() && cycleType != kCycCopy) ? tileW : outW;
     if (outClampH) *outClampH = (tile.IsClamped_T() && cycleType != kCycCopy) ? tileH : outH;

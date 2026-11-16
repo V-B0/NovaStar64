@@ -29,21 +29,23 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Nova64 { namespace Video { namespace Tex {
+namespace Nova64 {
+namespace Video {
+namespace Tex {
 
 /// A replacement picture, straight (non-premultiplied) RGBA8.
 struct HiResImage {
-    uint32_t width  = 0;
+    uint32_t width = 0;
     uint32_t height = 0;
     std::vector<uint8_t> rgba;
 };
 
 /// The identity a pack file name carries: what it replaces.
 struct HiResId {
-    uint32_t texCrc = 0;   ///< checksum of the texel data
-    uint32_t palCrc = 0;   ///< checksum of the palette entries used (CI textures), else 0
-    uint8_t  format = 0;   ///< N64 texture format
-    uint8_t  size   = 0;   ///< N64 texel size
+    uint32_t texCrc = 0; ///< checksum of the texel data
+    uint32_t palCrc = 0; ///< checksum of the palette entries used (CI textures), else 0
+    uint8_t format = 0;  ///< N64 texture format
+    uint8_t size = 0;    ///< N64 texel size
 
     bool Valid() const { return texCrc != 0 || palCrc != 0; }
 };
@@ -57,9 +59,8 @@ uint32_t RiceCrc32(const uint8_t* src, int width, int height, int size, int rowS
 /// the raw copy of the palette memory the texture reads (null for non-CI textures);
 /// at least 8 bytes before it must be readable. Returns an id with Valid() == false
 /// if the data doesn't lie inside the buffer.
-HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address,
-                       int width, int height, int format, int size, int rowStride,
-                       const uint8_t* palette);
+HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address, int width, int height, int format,
+                       int size, int rowStride, const uint8_t* palette);
 
 class HiResPack {
 public:
@@ -75,9 +76,11 @@ public:
     std::unique_ptr<HiResImage> Find(const HiResId& id) const;
 
 private:
-    struct Files { std::filesystem::path all, rgb, alpha; };
+    struct Files {
+        std::filesystem::path all, rgb, alpha;
+    };
     struct Key {
-        uint32_t value;   ///< texture crc, palette crc, or both packed (see the maps)
+        uint32_t value; ///< texture crc, palette crc, or both packed (see the maps)
         uint16_t formatSize;
         bool operator==(const Key& o) const { return value == o.value && formatSize == o.formatSize; }
     };
@@ -91,7 +94,8 @@ private:
     };
     struct FullKeyHash {
         size_t operator()(const FullKey& k) const {
-            return ((static_cast<size_t>(k.tex) * 0x9E3779B1u) ^ (static_cast<size_t>(k.pal) * 0x85EBCA6Bu)) ^ k.formatSize;
+            return ((static_cast<size_t>(k.tex) * 0x9E3779B1u) ^ (static_cast<size_t>(k.pal) * 0x85EBCA6Bu)) ^
+                   k.formatSize;
         }
     };
 
@@ -99,9 +103,11 @@ private:
 
     std::filesystem::path m_folder;
     size_t m_count = 0;
-    std::unordered_map<FullKey, Files, FullKeyHash> m_byTexAndPal;   // ...#<crc>#F#S#<palette crc>
-    std::unordered_map<Key, Files, KeyHash>         m_byTex;         // ...#<crc>#F#S  and  ...#<crc>#F#S#$
-    std::unordered_map<Key, Files, KeyHash>         m_byPal;         // ...#$#F#S#<palette crc>
+    std::unordered_map<FullKey, Files, FullKeyHash> m_byTexAndPal; // ...#<crc>#F#S#<palette crc>
+    std::unordered_map<Key, Files, KeyHash> m_byTex;               // ...#<crc>#F#S  and  ...#<crc>#F#S#$
+    std::unordered_map<Key, Files, KeyHash> m_byPal;               // ...#$#F#S#<palette crc>
 };
 
-}}} // namespace Nova64::Video::Tex
+} // namespace Tex
+} // namespace Video
+} // namespace Nova64

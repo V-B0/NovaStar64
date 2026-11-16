@@ -55,8 +55,8 @@ private:
     uint32_t*& m_DPC_CURRENT_REG;
     uint32_t*& m_DPC_STATUS_REG;
     uint32_t*& m_DPC_CLOCK_REG;
-    uint8_t*&  m_RDRAM;
-    uint8_t*&  m_DMEM;
+    uint8_t*& m_RDRAM;
+    uint8_t*& m_DMEM;
 };
 
 } // namespace Nova64::RSP

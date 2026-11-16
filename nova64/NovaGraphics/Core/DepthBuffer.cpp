@@ -51,10 +51,10 @@ void DepthConvert::Init() {
     if (s_initialized) return;
 
     // Segment shift values (step = 1 << (shift + 2))
-    s_zShifts = { 6, 5, 4, 3, 2, 1, 0, 0 };
+    s_zShifts = {6, 5, 4, 3, 2, 1, 0, 0};
 
     // Base values for each segment
-    s_zBases = { 0, 32, 64, 96, 128, 160, 192, 224 };
+    s_zBases = {0, 32, 64, 96, 128, 160, 192, 224};
 
     // Build forward LUT: 14-bit Z → float [0, 1]
     // The N64 Z range is 0x0000 to 0x3FFF in encoded form
@@ -62,7 +62,7 @@ void DepthConvert::Init() {
     for (uint32_t z14 = 0; z14 < 0x4000; ++z14) {
         // Determine segment from upper 3 bits (bits 13:11)
         uint32_t seg = (z14 >> 11) & 0x7;
-        uint32_t offset = z14 & 0x7FF;     // Lower 11 bits
+        uint32_t offset = z14 & 0x7FF;      // Lower 11 bits
         uint32_t step = 1u << (s_zShifts[seg] + 2);
         uint32_t base = s_zBases[seg] << 8; // Segment base in decoded space
 
@@ -77,9 +77,7 @@ void DepthConvert::Init() {
     s_initialized = true;
 }
 
-float DepthConvert::N64ZToFloat(uint16_t z14) {
-    return s_zToFloat[z14 & 0x3FFF];
-}
+float DepthConvert::N64ZToFloat(uint16_t z14) { return s_zToFloat[z14 & 0x3FFF]; }
 
 uint16_t DepthConvert::FloatToN64Z(float depth) {
     depth = std::clamp(depth, 0.0f, 1.0f);
@@ -99,9 +97,7 @@ uint16_t DepthConvert::FloatToN64Z(float depth) {
     return lo;
 }
 
-uint8_t DepthConvert::GetDeltaZ(uint16_t z14) {
-    return s_zToDz[z14 & 0x3FFF];
-}
+uint8_t DepthConvert::GetDeltaZ(uint16_t z14) { return s_zToDz[z14 & 0x3FFF]; }
 
 uint32_t DepthConvert::Pack18Bit(uint16_t z14, uint8_t dz4) {
     return (static_cast<uint32_t>(z14 & 0x3FFF) << 4) | (dz4 & 0xF);
@@ -142,8 +138,8 @@ void DepthConvert::DecodeRDRAM16(uint16_t rdram, uint16_t& z14, uint8_t& dz4Lowe
 void DepthBufferConfig::DecodeOtherMode(uint32_t otherModeH, uint32_t otherModeL) {
     // Z compare: bit 4 of otherModeL
     // Z update:  bit 5 of otherModeL
-    enabled      = (otherModeL & (1 << 4)) != 0;  // z_cmp
-    writeEnabled = (otherModeL & (1 << 5)) != 0;  // z_upd
+    enabled = (otherModeL & (1 << 4)) != 0;      // z_cmp
+    writeEnabled = (otherModeL & (1 << 5)) != 0; // z_upd
 
     // Z source: bit 2 of otherModeL
     source = ((otherModeL & (1 << 2)) != 0) ? DepthSource::Primitive : DepthSource::Pixel;
@@ -155,15 +151,9 @@ void DepthBufferConfig::DecodeOtherMode(uint32_t otherModeH, uint32_t otherModeL
     // Default compare mode based on z-mode
     switch (zMode) {
     case ZMode::Opaque:
-    case ZMode::Transparent:
-        compareMode = DepthCompareMode::Less;
-        break;
-    case ZMode::Decal:
-        compareMode = DepthCompareMode::LessEqual;
-        break;
-    case ZMode::Interpenetrate:
-        compareMode = DepthCompareMode::Less;
-        break;
+    case ZMode::Transparent:    compareMode = DepthCompareMode::Less; break;
+    case ZMode::Decal:          compareMode = DepthCompareMode::LessEqual; break;
+    case ZMode::Interpenetrate: compareMode = DepthCompareMode::Less; break;
     }
 }
 
@@ -178,7 +168,7 @@ void DepthBufferConfig::SetPrimitiveDepth(uint16_t z, uint16_t dz) {
 
 bool GPUDepthBuffer::OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) const {
     if (address == 0) return false;
-    uint32_t mySize = width * height * 2;   // 16-bit Z per pixel
+    uint32_t mySize = width * height * 2; // 16-bit Z per pixel
     uint32_t otherSize = w * h * 2;
     uint32_t myEnd = address + mySize;
     uint32_t otherEnd = addr + otherSize;
@@ -189,16 +179,11 @@ bool GPUDepthBuffer::OverlapsAddress(uint32_t addr, uint32_t w, uint32_t h) cons
 //  Depth Compare Logic
 // ═══════════════════════════════════════════════════════════════
 
-const std::array<uint16_t, 16> DepthCompare::s_dzDecode = {
-    0x0000, 0x0001, 0x0002, 0x0004,
-    0x0008, 0x0010, 0x0020, 0x0040,
-    0x0080, 0x0100, 0x0200, 0x0400,
-    0x0800, 0x1000, 0x2000, 0x4000
-};
+const std::array<uint16_t, 16> DepthCompare::s_dzDecode = {0x0000, 0x0001, 0x0002, 0x0004, 0x0008, 0x0010,
+                                                           0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400,
+                                                           0x0800, 0x1000, 0x2000, 0x4000};
 
-bool DepthCompare::Compare(float incomingZ, float storedZ,
-                            DepthCompareMode mode, ZMode zMode,
-                            float decalTolerance) {
+bool DepthCompare::Compare(float incomingZ, float storedZ, DepthCompareMode mode, ZMode zMode, float decalTolerance) {
     // Decal mode: pass if approximately equal
     if (zMode == ZMode::Decal) {
         float diff = std::abs(incomingZ - storedZ);
@@ -206,23 +191,21 @@ bool DepthCompare::Compare(float incomingZ, float storedZ,
     }
 
     switch (mode) {
-    case DepthCompareMode::Never:      return false;
-    case DepthCompareMode::Less:       return incomingZ < storedZ;
-    case DepthCompareMode::Equal:      return std::abs(incomingZ - storedZ) < 1e-6f;
-    case DepthCompareMode::LessEqual:  return incomingZ <= storedZ;
-    case DepthCompareMode::Greater:    return incomingZ > storedZ;
-    case DepthCompareMode::NotEqual:   return std::abs(incomingZ - storedZ) >= 1e-6f;
-    case DepthCompareMode::GreaterEq:  return incomingZ >= storedZ;
-    case DepthCompareMode::Always:     return true;
-    default:                           return true;
+    case DepthCompareMode::Never:     return false;
+    case DepthCompareMode::Less:      return incomingZ < storedZ;
+    case DepthCompareMode::Equal:     return std::abs(incomingZ - storedZ) < 1e-6f;
+    case DepthCompareMode::LessEqual: return incomingZ <= storedZ;
+    case DepthCompareMode::Greater:   return incomingZ > storedZ;
+    case DepthCompareMode::NotEqual:  return std::abs(incomingZ - storedZ) >= 1e-6f;
+    case DepthCompareMode::GreaterEq: return incomingZ >= storedZ;
+    case DepthCompareMode::Always:    return true;
+    default:                          return true;
     }
 }
 
-bool DepthCompare::CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ,
-                                      uint16_t storedZ14, uint8_t storedDZ,
-                                      ZMode zMode) {
+bool DepthCompare::CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ, uint16_t storedZ14, uint8_t storedDZ, ZMode zMode) {
     // Get the actual delta values
-    uint16_t dzIn     = s_dzDecode[inDZ & 0xF];
+    uint16_t dzIn = s_dzDecode[inDZ & 0xF];
     uint16_t dzStored = s_dzDecode[storedDZ & 0xF];
 
     // For interpenetrating mode, use max delta as tolerance
@@ -248,14 +231,11 @@ bool DepthCompare::CompareWithDeltaZ(uint16_t inZ14, uint8_t inDZ,
         int32_t diff = static_cast<int32_t>(inZ14) - static_cast<int32_t>(storedZ14);
         return (diff < static_cast<int32_t>(maxDz)) || (inZ14 < storedZ14);
     }
-    default:
-        return inZ14 < storedZ14;
+    default: return inZ14 < storedZ14;
     }
 }
 
-uint8_t DepthCompare::MaxDeltaZ(uint8_t dz1, uint8_t dz2) {
-    return std::max(dz1, dz2);
-}
+uint8_t DepthCompare::MaxDeltaZ(uint8_t dz1, uint8_t dz2) { return std::max(dz1, dz2); }
 
 uint8_t DepthCompare::ComputePixelDeltaZ(float dZdx, float dZdy) {
     // Convert the maximum gradient to a dZ code
@@ -269,9 +249,7 @@ uint8_t DepthCompare::ComputePixelDeltaZ(float dZdx, float dZdy) {
     return 15;
 }
 
-bool DepthCompare::ShouldSkipTest(const DepthBufferConfig& config) {
-    return !config.enabled && !config.writeEnabled;
-}
+bool DepthCompare::ShouldSkipTest(const DepthBufferConfig& config) { return !config.enabled && !config.writeEnabled; }
 
 // ═══════════════════════════════════════════════════════════════
 //  Depth Buffer Manager — Lifecycle
@@ -318,16 +296,14 @@ void GPUDepthBufferManager::Reset() {
     m_softwareDZ.assign(m_swWidth * m_swHeight, 0);
 }
 
-void GPUDepthBufferManager::SetConfig(const DepthBufferConfig& config) {
-    m_config = config;
-}
+void GPUDepthBufferManager::SetConfig(const DepthBufferConfig& config) { m_config = config; }
 
 // ═══════════════════════════════════════════════════════════════
 //  Buffer Management
 // ═══════════════════════════════════════════════════════════════
 
 void GPUDepthBufferManager::OnSetDepthImage(uint32_t address, uint32_t width) {
-    address &= 0x00FFFFFF;  // Mask to RDRAM range
+    address &= 0x00FFFFFF; // Mask to RDRAM range
 
     // Find existing or create new
     GPUDepthBuffer* buf = nullptr;
@@ -354,7 +330,7 @@ void GPUDepthBufferManager::OnSetDepthImage(uint32_t address, uint32_t width) {
 
         // Resize software depth buffer to match current depth image
         if (m_swWidth != buf->width || m_swHeight != buf->height) {
-            m_swWidth  = buf->width;
+            m_swWidth = buf->width;
             m_swHeight = buf->height;
             m_softwareZ.assign(m_swWidth * m_swHeight, 0x3FFF);
             m_softwareDZ.assign(m_swWidth * m_swHeight, 0);
@@ -414,7 +390,7 @@ GPUDepthBuffer* GPUDepthBufferManager::FindByAddress(uint32_t address) const {
 }
 
 void GPUDepthBufferManager::CreateGPUResources(GPUDepthBuffer& buf) {
-    if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
+    if (!g_fbManager.IsGL()) return; // No OpenGL context in Vulkan mode
     if (buf.width == 0 || buf.height == 0) return;
 
     // Create depth texture using DSA
@@ -467,10 +443,10 @@ void GPUDepthBufferManager::DestroyGPUResources(GPUDepthBuffer& buf) {
 }
 
 void GPUDepthBufferManager::EvictOldBuffers() {
-    constexpr uint32_t MAX_AGE = 30;  // Evict after 30 unused frames
+    constexpr uint32_t MAX_AGE = 30; // Evict after 30 unused frames
 
     for (int i = m_bufferCount - 1; i >= 0; --i) {
-        if (&m_buffers[i] == m_current) continue;  // Never evict current
+        if (&m_buffers[i] == m_current) continue; // Never evict current
 
         uint32_t age = m_frameCounter - m_buffers[i].lastUsedFrame;
         if (age >= MAX_AGE) {
@@ -528,8 +504,8 @@ void GPUDepthBufferManager::CopyToGPU(GPUDepthBuffer& buf, const uint8_t* rdram,
         }
     }
 
-    glTextureSubImage2D(buf.glDepthTexture, 0, 0, 0, buf.width, buf.height,
-                        GL_DEPTH_COMPONENT, GL_FLOAT, depthData.data());
+    glTextureSubImage2D(buf.glDepthTexture, 0, 0, 0, buf.width, buf.height, GL_DEPTH_COMPONENT, GL_FLOAT,
+                        depthData.data());
     buf.dirty = false;
 }
 
@@ -602,14 +578,14 @@ bool GPUDepthBufferManager::TestAndWrite(int32_t x, int32_t y, float depth, floa
 
 void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t resScale) {
     if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
-    if (buf.glZImageTex != 0) return;  // Already initialized
+    if (buf.glZImageTex != 0) return; // Already initialized
     if (buf.width == 0 || buf.height == 0) return;
 
     // Create Z-image textures at scaled resolution so each screen pixel
     // gets its own depth texel, avoiding cross-pixel contamination.
-    uint32_t imgW = buf.width  * std::max(resScale, 1u);
+    uint32_t imgW = buf.width * std::max(resScale, 1u);
     uint32_t imgH = buf.height * std::max(resScale, 1u);
-    buf.zImageWidth  = imgW;
+    buf.zImageWidth = imgW;
     buf.zImageHeight = imgH;
 
     // Z-image texture: stores N64 14-bit Z as float in R32F
@@ -629,23 +605,23 @@ void GPUDepthBufferManager::InitDepthImageTextures(GPUDepthBuffer& buf, uint32_t
     glNamedFramebufferTexture(buf.glZImageFBO, GL_COLOR_ATTACHMENT0, buf.glZImageTex, 0);
     glNamedFramebufferTexture(buf.glZImageFBO, GL_COLOR_ATTACHMENT1, buf.glDeltaZImageTex, 0);
 
-    GLenum drawBuffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    GLenum drawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     glNamedFramebufferDrawBuffers(buf.glZImageFBO, 2, drawBuffers);
 
     // Set backend-native image handles (GL: texture name → uint64_t)
-    buf.zImageHandle      = static_cast<uint64_t>(buf.glZImageTex);
+    buf.zImageHandle = static_cast<uint64_t>(buf.glZImageTex);
     buf.deltaZImageHandle = static_cast<uint64_t>(buf.glDeltaZImageTex);
 }
 
 void GPUDepthBufferManager::ClearDepthImageTextures(GPUDepthBuffer& buf) {
-    if (!g_fbManager.IsGL()) return;  // No OpenGL context in Vulkan mode
+    if (!g_fbManager.IsGL()) return; // No OpenGL context in Vulkan mode
     if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
 
     // Clear Z-image to 1.0 (normalized max depth) and delta-Z to 0.
     // Uses glClearTexImage instead of FBO clear so the data is reliably
     // visible to subsequent imageLoad() calls.  Some Intel drivers do not
     // propagate glClearNamedFramebufferfv writes to the image-load path.
-    float clearZ  = 1.0f;
+    float clearZ = 1.0f;
     float clearDZ = 0.0f;
     glClearTexImage(buf.glZImageTex, 0, GL_RED, GL_FLOAT, &clearZ);
     glClearTexImage(buf.glDeltaZImageTex, 0, GL_RED, GL_FLOAT, &clearDZ);
@@ -653,9 +629,7 @@ void GPUDepthBufferManager::ClearDepthImageTextures(GPUDepthBuffer& buf) {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void GPUDepthBufferManager::UploadRDRAMToZImage(GPUDepthBuffer& buf,
-                                                 const uint8_t* rdram,
-                                                 uint32_t rdramSize) {
+void GPUDepthBufferManager::UploadRDRAMToZImage(GPUDepthBuffer& buf, const uint8_t* rdram, uint32_t rdramSize) {
     if (!buf.glZImageTex || !buf.glDeltaZImageTex) return;
     if (buf.width == 0 || buf.height == 0) return;
     uint32_t pixelCount = buf.width * buf.height;
@@ -671,18 +645,15 @@ void GPUDepthBufferManager::UploadRDRAMToZImage(GPUDepthBuffer& buf,
         uint16_t z14;
         uint8_t dz;
         DepthConvert::DecodeRDRAM16(raw, z14, dz);
-        zData[i]  = DepthConvert::N64ZToFloat(z14);
+        zData[i] = DepthConvert::N64ZToFloat(z14);
         dzData[i] = static_cast<float>(dz) / 15.0f;
     }
 
-    glTextureSubImage2D(buf.glZImageTex, 0, 0, 0, buf.width, buf.height,
-                        GL_RED, GL_FLOAT, zData.data());
-    glTextureSubImage2D(buf.glDeltaZImageTex, 0, 0, 0, buf.width, buf.height,
-                        GL_RED, GL_FLOAT, dzData.data());
+    glTextureSubImage2D(buf.glZImageTex, 0, 0, 0, buf.width, buf.height, GL_RED, GL_FLOAT, zData.data());
+    glTextureSubImage2D(buf.glDeltaZImageTex, 0, 0, 0, buf.width, buf.height, GL_RED, GL_FLOAT, dzData.data());
 }
 
-void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf,
-                                                    uint32_t zUnit, uint32_t dzUnit) {
+void GPUDepthBufferManager::BindDepthImageTextures(const GPUDepthBuffer& buf, uint32_t zUnit, uint32_t dzUnit) {
     if (buf.glZImageTex) {
         glBindTextureUnit(zUnit, buf.glZImageTex);
         glBindImageTexture(0, buf.glZImageTex, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
@@ -712,8 +683,7 @@ void GPUDepthBufferManager::ResolveDepthBuffer(GPUDepthBuffer& buf, uint32_t msa
     // Lazily create single-sample resolve texture
     if (!buf.glResolvedDepthTex) {
         glCreateTextures(GL_TEXTURE_2D, 1, &buf.glResolvedDepthTex);
-        glTextureStorage2D(buf.glResolvedDepthTex, 1, GL_DEPTH_COMPONENT32F,
-                           buf.width, buf.height);
+        glTextureStorage2D(buf.glResolvedDepthTex, 1, GL_DEPTH_COMPONENT32F, buf.width, buf.height);
         glTextureParameteri(buf.glResolvedDepthTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTextureParameteri(buf.glResolvedDepthTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
@@ -726,9 +696,7 @@ void GPUDepthBufferManager::ResolveDepthBuffer(GPUDepthBuffer& buf, uint32_t msa
     glNamedFramebufferReadBuffer(resolveFBO, GL_NONE);
 
     // Blit MSAA depth → single-sample
-    glBlitNamedFramebuffer(msaaFBO, resolveFBO,
-                           0, 0, buf.width, buf.height,
-                           0, 0, buf.width, buf.height,
+    glBlitNamedFramebuffer(msaaFBO, resolveFBO, 0, 0, buf.width, buf.height, 0, 0, buf.width, buf.height,
                            GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
     glDeleteFramebuffers(1, &resolveFBO);
@@ -774,8 +742,7 @@ void GPUDepthBufferManager::InitZLUT() {
 }
 
 void GPUDepthBufferManager::BindZLUT(uint32_t textureUnit) {
-    if (m_zLutTex)
-        glBindTextureUnit(textureUnit, m_zLutTex);
+    if (m_zLutTex) glBindTextureUnit(textureUnit, m_zLutTex);
 }
 
 // ═══════════════════════════════════════════════════════════════

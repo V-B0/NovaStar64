@@ -9,13 +9,13 @@
 #include <cstdint>
 #include "../../common/file.hpp"
 
-namespace Nova64 { class StateArchive; }
+namespace Nova64 {
+class StateArchive;
+}
 
-class CFlashRam
-{
+class CFlashRam {
 public:
-    enum Modes
-    {
+    enum Modes {
         FLASHRAM_MODE_NOPES = 0,
         FLASHRAM_MODE_ERASE = 1,
         FLASHRAM_MODE_WRITE = 2,
@@ -27,8 +27,8 @@ public:
     CFlashRam(bool ReadOnly);
     ~CFlashRam();
 
-    void DmaFromFlashram(uint8_t * dest, int32_t StartOffset, int32_t len);
-    void DmaToFlashram(uint8_t * Source, int32_t StartOffset, int32_t len);
+    void DmaFromFlashram(uint8_t* dest, int32_t StartOffset, int32_t len);
+    void DmaToFlashram(uint8_t* Source, int32_t StartOffset, int32_t len);
     uint32_t ReadFromFlashStatus(uint32_t PAddr);
     void WriteToFlashCommand(uint32_t Value);
 
@@ -37,12 +37,12 @@ public:
 
 private:
     CFlashRam(void);
-    CFlashRam(const CFlashRam &);
-    CFlashRam & operator=(const CFlashRam &);
+    CFlashRam(const CFlashRam&);
+    CFlashRam& operator=(const CFlashRam&);
 
     bool LoadFlashram();
 
-    uint8_t * m_FlashRamPointer;
+    uint8_t* m_FlashRamPointer;
     Modes m_FlashFlag;
     uint64_t m_FlashStatus;
     uint32_t m_FlashRAM_Offset;

@@ -6,7 +6,7 @@
 #include <cstdint>
 
 class Rumblepak {
-  public:
-    static void ReadFrom(uint32_t addr, uint8_t & data);
+public:
+    static void ReadFrom(uint32_t addr, uint8_t& data);
     static void WriteTo(uint32_t addr, uint8_t data);
 };

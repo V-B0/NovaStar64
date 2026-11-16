@@ -14,7 +14,9 @@
 #include <cstring>
 #include <cassert>
 
-namespace Nova64 { namespace Video { namespace GL {
+namespace Nova64 {
+namespace Video {
+namespace GL {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL RENDERER IMPLEMENTATION
@@ -23,8 +25,7 @@ namespace Nova64 { namespace Video { namespace GL {
 GLRenderer::GLRenderer() = default;
 
 GLRenderer::~GLRenderer() {
-    if (m_initialized)
-        Shutdown();
+    if (m_initialized) Shutdown();
 }
 
 bool GLRenderer::Initialize(void* windowHandle, uint32_t width, uint32_t height) {
@@ -49,8 +50,7 @@ bool GLRenderer::Initialize(void* windowHandle, uint32_t width, uint32_t height)
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     glDebugMessageCallback(DebugCallback, this);
     // Disable notification-level messages
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION,
-                           0, nullptr, GL_FALSE);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
 #endif
 
     // Set up initial GL state
@@ -133,9 +133,7 @@ std::unique_ptr<ITexture> GLRenderer::CreateTexture(const TextureDesc& desc) {
     return std::make_unique<GLTexture>(desc);
 }
 
-std::unique_ptr<IShaderProgram> GLRenderer::CreateShaderProgram() {
-    return std::make_unique<GLShaderProgram>();
-}
+std::unique_ptr<IShaderProgram> GLRenderer::CreateShaderProgram() { return std::make_unique<GLShaderProgram>(); }
 
 std::unique_ptr<IRenderTarget> GLRenderer::CreateRenderTarget(const RenderTargetDesc& desc) {
     return std::make_unique<GLRenderTarget>(desc);
@@ -152,36 +150,22 @@ void GLRenderer::SetViewport(const RenderViewport& vp) {
     glDepthRangeIndexed(0, vp.minDepth, vp.maxDepth);
 }
 
-void GLRenderer::SetScissor(const RenderScissorRect& rect) {
-    glScissor(rect.x, rect.y, rect.width, rect.height);
-}
+void GLRenderer::SetScissor(const RenderScissorRect& rect) { glScissor(rect.x, rect.y, rect.width, rect.height); }
 
 void GLRenderer::SetBlendState(const BlendState& state) {
     if (state.enabled) {
         glEnable(GL_BLEND);
-        glBlendFuncSeparate(
-            TranslateBlendFactor(state.srcColor),
-            TranslateBlendFactor(state.dstColor),
-            TranslateBlendFactor(state.srcAlpha),
-            TranslateBlendFactor(state.dstAlpha)
-        );
-        glBlendEquationSeparate(
-            TranslateBlendOp(state.colorOp),
-            TranslateBlendOp(state.alphaOp)
-        );
-        glBlendColor(state.blendColor[0], state.blendColor[1],
-                      state.blendColor[2], state.blendColor[3]);
+        glBlendFuncSeparate(TranslateBlendFactor(state.srcColor), TranslateBlendFactor(state.dstColor),
+                            TranslateBlendFactor(state.srcAlpha), TranslateBlendFactor(state.dstAlpha));
+        glBlendEquationSeparate(TranslateBlendOp(state.colorOp), TranslateBlendOp(state.alphaOp));
+        glBlendColor(state.blendColor[0], state.blendColor[1], state.blendColor[2], state.blendColor[3]);
     } else {
         glDisable(GL_BLEND);
     }
     // The write mask applies whether or not blending is on (Vulkan's pipeline
     // uses it either way); it used to be forced to all channels without blending.
-    glColorMask(
-        (state.colorWriteMask & 0x01) ? GL_TRUE : GL_FALSE,
-        (state.colorWriteMask & 0x02) ? GL_TRUE : GL_FALSE,
-        (state.colorWriteMask & 0x04) ? GL_TRUE : GL_FALSE,
-        (state.colorWriteMask & 0x08) ? GL_TRUE : GL_FALSE
-    );
+    glColorMask((state.colorWriteMask & 0x01) ? GL_TRUE : GL_FALSE, (state.colorWriteMask & 0x02) ? GL_TRUE : GL_FALSE,
+                (state.colorWriteMask & 0x04) ? GL_TRUE : GL_FALSE, (state.colorWriteMask & 0x08) ? GL_TRUE : GL_FALSE);
     m_stats.stateChanges++;
 }
 
@@ -197,9 +181,8 @@ void GLRenderer::SetDepthStencilState(const DepthStencilState& state) {
     if (state.stencilEnabled) {
         glEnable(GL_STENCIL_TEST);
         glStencilFunc(TranslateCompareFunc(state.stencilFunc), state.stencilRef, state.stencilReadMask);
-        glStencilOp(TranslateStencilOp(state.stencilFail),
-                     TranslateStencilOp(state.depthFail),
-                     TranslateStencilOp(state.stencilPass));
+        glStencilOp(TranslateStencilOp(state.stencilFail), TranslateStencilOp(state.depthFail),
+                    TranslateStencilOp(state.stencilPass));
         glStencilMask(state.stencilWriteMask);
     } else {
         glDisable(GL_STENCIL_TEST);
@@ -214,10 +197,10 @@ void GLRenderer::SetRasterizerState(const RasterizerState& state) {
     } else {
         glEnable(GL_CULL_FACE);
         switch (state.cullMode) {
-            case CullMode::Front: glCullFace(GL_FRONT); break;
-            case CullMode::Back: glCullFace(GL_BACK); break;
-            case CullMode::FrontAndBack: glCullFace(GL_FRONT_AND_BACK); break;
-            default: break;
+        case CullMode::Front:        glCullFace(GL_FRONT); break;
+        case CullMode::Back:         glCullFace(GL_BACK); break;
+        case CullMode::FrontAndBack: glCullFace(GL_FRONT_AND_BACK); break;
+        default:                     break;
         }
     }
 
@@ -226,16 +209,14 @@ void GLRenderer::SetRasterizerState(const RasterizerState& state) {
 
     // Polygon mode
     switch (state.polygonMode) {
-        case PolygonMode::Fill:      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); break;
-        case PolygonMode::Wireframe: glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); break;
-        case PolygonMode::Points:    glPolygonMode(GL_FRONT_AND_BACK, GL_POINT); break;
+    case PolygonMode::Fill:      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); break;
+    case PolygonMode::Wireframe: glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); break;
+    case PolygonMode::Points:    glPolygonMode(GL_FRONT_AND_BACK, GL_POINT); break;
     }
 
     // Scissor
-    if (state.scissorEnabled)
-        glEnable(GL_SCISSOR_TEST);
-    else
-        glDisable(GL_SCISSOR_TEST);
+    if (state.scissorEnabled) glEnable(GL_SCISSOR_TEST);
+    else glDisable(GL_SCISSOR_TEST);
 
     // Depth bias
     if (state.depthBias != 0.0f || state.depthBiasSlope != 0.0f) {
@@ -246,17 +227,13 @@ void GLRenderer::SetRasterizerState(const RasterizerState& state) {
     }
 
     // Multisample
-    if (state.multisampleEnabled)
-        glEnable(GL_MULTISAMPLE);
-    else
-        glDisable(GL_MULTISAMPLE);
+    if (state.multisampleEnabled) glEnable(GL_MULTISAMPLE);
+    else glDisable(GL_MULTISAMPLE);
 
     m_stats.stateChanges++;
 }
 
-void GLRenderer::SetBlendColor(float r, float g, float b, float a) {
-    glBlendColor(r, g, b, a);
-}
+void GLRenderer::SetBlendColor(float r, float g, float b, float a) { glBlendColor(r, g, b, a); }
 
 // ─── Binding ───────────────────────────────────────────────────────────────
 
@@ -358,35 +335,28 @@ void GLRenderer::BindRenderTarget(IRenderTarget* rt) {
 
 static GLenum TranslateImageFormat(ImageBindFormat fmt) {
     switch (fmt) {
-        case ImageBindFormat::R32F:  return GL_R32F;
-        case ImageBindFormat::RGBA8: return GL_RGBA8;
-        case ImageBindFormat::R8UI:  return GL_R8UI;
-        default:                 return GL_RGBA8;
+    case ImageBindFormat::R32F:  return GL_R32F;
+    case ImageBindFormat::RGBA8: return GL_RGBA8;
+    case ImageBindFormat::R8UI:  return GL_R8UI;
+    default:                     return GL_RGBA8;
     }
 }
 
 void GLRenderer::BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat format) {
-    glBindImageTexture(unit, static_cast<GLuint>(handle), 0, GL_FALSE, 0,
-                       GL_READ_WRITE, TranslateImageFormat(format));
+    glBindImageTexture(unit, static_cast<GLuint>(handle), 0, GL_FALSE, 0, GL_READ_WRITE, TranslateImageFormat(format));
 }
 
 void GLRenderer::UnbindAllImages() {
-    for (uint32_t i = 0; i < 4; ++i)
-        glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
+    for (uint32_t i = 0; i < 4; ++i) glBindImageTexture(i, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_R32F);
 }
 
 void GLRenderer::SetColorWriteMask(bool r, bool g, bool b, bool a) {
-    glColorMask(r ? GL_TRUE : GL_FALSE, g ? GL_TRUE : GL_FALSE,
-                b ? GL_TRUE : GL_FALSE, a ? GL_TRUE : GL_FALSE);
+    glColorMask(r ? GL_TRUE : GL_FALSE, g ? GL_TRUE : GL_FALSE, b ? GL_TRUE : GL_FALSE, a ? GL_TRUE : GL_FALSE);
 }
 
-void GLRenderer::DisableRasterizerColorOutput() {
-    glDrawBuffer(GL_NONE);
-}
+void GLRenderer::DisableRasterizerColorOutput() { glDrawBuffer(GL_NONE); }
 
-void GLRenderer::RestoreRasterizerColorOutput() {
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
-}
+void GLRenderer::RestoreRasterizerColorOutput() { glDrawBuffer(GL_COLOR_ATTACHMENT0); }
 
 void GLRenderer::ImageMemoryBarrier() {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT);
@@ -400,8 +370,8 @@ void GLRenderer::Draw(const DrawCommand& cmd) {
     if (cmd.indexed) {
         GLenum indexType = TranslateIndexType(m_boundIBType);
         glDrawElementsInstanced(mode, cmd.indexCount, indexType,
-                                 reinterpret_cast<const void*>(static_cast<uintptr_t>(cmd.indexOffset)),
-                                 cmd.instanceCount);
+                                reinterpret_cast<const void*>(static_cast<uintptr_t>(cmd.indexOffset)),
+                                cmd.instanceCount);
         m_stats.triangles += cmd.indexCount / 3;
     } else {
         glDrawArraysInstanced(mode, cmd.vertexOffset, cmd.vertexCount, cmd.instanceCount);
@@ -419,7 +389,7 @@ void GLRenderer::DrawArrays(PrimitiveType prim, uint32_t first, uint32_t count) 
 
 void GLRenderer::DrawIndexed(PrimitiveType prim, uint32_t indexCount, IndexType type, uint32_t offset) {
     glDrawElements(TranslatePrimitive(prim), indexCount, TranslateIndexType(type),
-                    reinterpret_cast<const void*>(static_cast<uintptr_t>(offset)));
+                   reinterpret_cast<const void*>(static_cast<uintptr_t>(offset)));
     m_stats.drawCalls++;
     m_stats.triangles += indexCount / 3;
 }
@@ -433,25 +403,20 @@ void GLRenderer::DispatchCompute(uint32_t groupsX, uint32_t groupsY, uint32_t gr
 
 // ─── Readback ──────────────────────────────────────────────────────────────
 
-void GLRenderer::ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                             TextureFormat format, void* outData) {
+void GLRenderer::ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h, TextureFormat format, void* outData) {
     GLFormatInfo fmt = TranslateFormat(format);
     glReadPixels(x, y, w, h, fmt.baseFormat, fmt.type, outData);
 }
 
 // ─── Debug ─────────────────────────────────────────────────────────────────
 
-void GLRenderer::PushDebugGroup(const char* name) {
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name);
-}
+void GLRenderer::PushDebugGroup(const char* name) { glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name); }
 
-void GLRenderer::PopDebugGroup() {
-    glPopDebugGroup();
-}
+void GLRenderer::PopDebugGroup() { glPopDebugGroup(); }
 
 void GLRenderer::InsertDebugMarker(const char* name) {
-    glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, GL_DEBUG_TYPE_MARKER, 0,
-                          GL_DEBUG_SEVERITY_NOTIFICATION, -1, name);
+    glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, GL_DEBUG_TYPE_MARKER, 0, GL_DEBUG_SEVERITY_NOTIFICATION, -1,
+                         name);
 }
 
 // ─── Window ────────────────────────────────────────────────────────────────
@@ -522,19 +487,18 @@ void GLRenderer::QueryCapabilities() {
     // a simple probe (without flow control) is sufficient.
     m_caps.supportsFragmentShaderInterlock = false;
     if (GLAD_GL_ARB_fragment_shader_interlock || GLAD_GL_NV_fragment_shader_interlock) {
-        const char* testSrc =
-            "#version 460\n"
-            "#extension GL_ARB_fragment_shader_interlock : enable\n"
-            "layout(pixel_interlock_ordered) in;\n"
-            "layout(binding = 0, r32f) uniform restrict image2D uImg;\n"
-            "out vec4 fragColor;\n"
-            "void main() {\n"
-            "    beginInvocationInterlockARB();\n"
-            "    float v = imageLoad(uImg, ivec2(0)).r;\n"
-            "    imageStore(uImg, ivec2(0), vec4(v + 0.5, 0.0, 0.0, 0.0));\n"
-            "    endInvocationInterlockARB();\n"
-            "    fragColor = vec4(v);\n"
-            "}\n";
+        const char* testSrc = "#version 460\n"
+                              "#extension GL_ARB_fragment_shader_interlock : enable\n"
+                              "layout(pixel_interlock_ordered) in;\n"
+                              "layout(binding = 0, r32f) uniform restrict image2D uImg;\n"
+                              "out vec4 fragColor;\n"
+                              "void main() {\n"
+                              "    beginInvocationInterlockARB();\n"
+                              "    float v = imageLoad(uImg, ivec2(0)).r;\n"
+                              "    imageStore(uImg, ivec2(0), vec4(v + 0.5, 0.0, 0.0, 0.0));\n"
+                              "    endInvocationInterlockARB();\n"
+                              "    fragColor = vec4(v);\n"
+                              "}\n";
         GLuint sh = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(sh, 1, &testSrc, nullptr);
         // Suppress debug output during probe — expected to fail on some drivers.
@@ -553,24 +517,25 @@ void GLRenderer::QueryCapabilities() {
 
 // ─── Debug Callback ────────────────────────────────────────────────────────
 
-void GLAD_API_PTR GLRenderer::DebugCallback(GLenum source, GLenum type, GLuint id,
-                                          GLenum severity, GLsizei length,
-                                          const GLchar* message, const void* userParam) {
-    (void)source; (void)id; (void)length; (void)userParam;
+void GLAD_API_PTR GLRenderer::DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+                                            const GLchar* message, const void* userParam) {
+    (void)source;
+    (void)id;
+    (void)length;
+    (void)userParam;
 
     // Filter out known non-issues
-    if (id == 131169 || id == 131185 || id == 131218 || id == 131204)
-        return;
+    if (id == 131169 || id == 131185 || id == 131218 || id == 131204) return;
 
     [[maybe_unused]] const char* typeStr = "Unknown";
     switch (type) {
-        case GL_DEBUG_TYPE_ERROR:               typeStr = "ERROR"; break;
-        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:  typeStr = "DEPRECATED"; break;
-        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:   typeStr = "UNDEFINED"; break;
-        case GL_DEBUG_TYPE_PORTABILITY:          typeStr = "PORTABILITY"; break;
-        case GL_DEBUG_TYPE_PERFORMANCE:          typeStr = "PERFORMANCE"; break;
-        case GL_DEBUG_TYPE_MARKER:              typeStr = "MARKER"; break;
-        case GL_DEBUG_TYPE_OTHER:               typeStr = "OTHER"; break;
+    case GL_DEBUG_TYPE_ERROR:               typeStr = "ERROR"; break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeStr = "DEPRECATED"; break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  typeStr = "UNDEFINED"; break;
+    case GL_DEBUG_TYPE_PORTABILITY:         typeStr = "PORTABILITY"; break;
+    case GL_DEBUG_TYPE_PERFORMANCE:         typeStr = "PERFORMANCE"; break;
+    case GL_DEBUG_TYPE_MARKER:              typeStr = "MARKER"; break;
+    case GL_DEBUG_TYPE_OTHER:               typeStr = "OTHER"; break;
     }
 
     // Log based on severity
@@ -583,9 +548,7 @@ void GLAD_API_PTR GLRenderer::DebugCallback(GLenum source, GLenum type, GLuint i
 //  FACTORY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-std::unique_ptr<IRenderer> CreateOpenGLRenderer() {
-    return std::make_unique<GLRenderer>();
-}
+std::unique_ptr<IRenderer> CreateOpenGLRenderer() { return std::make_unique<GLRenderer>(); }
 
 bool IsOpenGL46Available() {
     // This would be called before full GL initialization
@@ -594,4 +557,6 @@ bool IsOpenGL46Available() {
     return true;
 }
 
-}}} // namespace Nova64::Video::GL
+} // namespace GL
+} // namespace Video
+} // namespace Nova64

@@ -30,21 +30,21 @@ public:
     CHle& operator=(const CHle&) = delete;
 
     // ── Memory access ──
-    [[nodiscard]] uint8_t* dram()  { return m_dram; }
+    [[nodiscard]] uint8_t* dram() { return m_dram; }
     [[nodiscard]] uint32_t dram_size() const { return m_dram_size; }
-    [[nodiscard]] uint8_t* dmem()  { return m_dmem; }
-    [[nodiscard]] uint8_t* imem()  { return m_imem; }
+    [[nodiscard]] uint8_t* dmem() { return m_dmem; }
+    [[nodiscard]] uint8_t* imem() { return m_imem; }
 
     // ── Settings queries ──
-    [[nodiscard]] bool AudioHle()    const { return m_AudioHle; }
+    [[nodiscard]] bool AudioHle() const { return m_AudioHle; }
     [[nodiscard]] bool GraphicsHle() const { return m_GraphicsHle; }
 
     // ── Audio state ──
-    [[nodiscard]] AlistAudio&  alist_audio()  { return m_alist_audio; }
+    [[nodiscard]] AlistAudio& alist_audio() { return m_alist_audio; }
     [[nodiscard]] AlistNaudio& alist_naudio() { return m_alist_naudio; }
-    [[nodiscard]] AlistNead&   alist_nead()   { return m_alist_nead; }
-    [[nodiscard]] uint8_t*     mp3_buffer()   { return m_mp3_buffer; }
-    [[nodiscard]] uint8_t*     alist_buffer() { return m_alist_buffer; }
+    [[nodiscard]] AlistNead& alist_nead() { return m_alist_nead; }
+    [[nodiscard]] uint8_t* mp3_buffer() { return m_mp3_buffer; }
+    [[nodiscard]] uint8_t* alist_buffer() { return m_alist_buffer; }
 
     // ── Logging ──
     void VerboseMessage(const char* message, ...);
@@ -66,28 +66,34 @@ public:
     void FeedAudioDevice();
 
     // ── Plugin callbacks ──
-    void CallProcessDList()        { if (m_ProcessDList != nullptr)       m_ProcessDList(); }
-    void CallProcessRdpList()       { if (m_ProcessRdpList != nullptr)     m_ProcessRdpList(); }
+    void CallProcessDList() {
+        if (m_ProcessDList != nullptr) m_ProcessDList();
+    }
+    void CallProcessRdpList() {
+        if (m_ProcessRdpList != nullptr) m_ProcessRdpList();
+    }
     // Shadow HLE: run GBI display list in geometry-only mode (no RDP output)
     // for RT world-space vertex extraction while LLE is active.
-    void CallProcessDListShadow()   { if (m_ProcessDListShadow != nullptr) m_ProcessDListShadow(); }
+    void CallProcessDListShadow() {
+        if (m_ProcessDListShadow != nullptr) m_ProcessDListShadow();
+    }
 
     // ── SP Hardware Register Access (for HLE mem.hpp) ──
-    [[nodiscard]] uint32_t*& sp_mem_addr()  { return m_sp_mem_addr; }
+    [[nodiscard]] uint32_t*& sp_mem_addr() { return m_sp_mem_addr; }
     [[nodiscard]] uint32_t*& sp_dram_addr() { return m_sp_dram_addr; }
-    [[nodiscard]] uint32_t*& sp_status()    { return m_sp_status; }
-    [[nodiscard]] uint32_t*& sp_pc()        { return m_sp_pc; }
-    [[nodiscard]] uint32_t*& mi_intr()      { return m_mi_intr; }
+    [[nodiscard]] uint32_t*& sp_status() { return m_sp_status; }
+    [[nodiscard]] uint32_t*& sp_pc() { return m_sp_pc; }
+    [[nodiscard]] uint32_t*& mi_intr() { return m_mi_intr; }
 
     // ── DPC Register Access (for GfxProcessor RDP command buffer) ──
-    [[nodiscard]] uint32_t*& dpc_start()    { return m_dpc_start; }
-    [[nodiscard]] uint32_t*& dpc_end()      { return m_dpc_end; }
-    [[nodiscard]] uint32_t*& dpc_current()  { return m_dpc_current; }
-    [[nodiscard]] uint32_t*& dpc_status()   { return m_dpc_status; }
-    [[nodiscard]] uint32_t*& dpc_clock()    { return m_dpc_clock; }
-    [[nodiscard]] uint32_t*& dpc_bufbusy()  { return m_dpc_bufbusy; }
+    [[nodiscard]] uint32_t*& dpc_start() { return m_dpc_start; }
+    [[nodiscard]] uint32_t*& dpc_end() { return m_dpc_end; }
+    [[nodiscard]] uint32_t*& dpc_current() { return m_dpc_current; }
+    [[nodiscard]] uint32_t*& dpc_status() { return m_dpc_status; }
+    [[nodiscard]] uint32_t*& dpc_clock() { return m_dpc_clock; }
+    [[nodiscard]] uint32_t*& dpc_bufbusy() { return m_dpc_bufbusy; }
     [[nodiscard]] uint32_t*& dpc_pipebusy() { return m_dpc_pipebusy; }
-    [[nodiscard]] uint32_t*& dpc_tmem()     { return m_dpc_tmem; }
+    [[nodiscard]] uint32_t*& dpc_tmem() { return m_dpc_tmem; }
 
 private:
     CHle() = delete;
@@ -133,11 +139,11 @@ private:
     void (*&m_ProcessDListShadow)(); // Shadow HLE for RT geometry under LLE
 
     // Audio HLE state
-    uint8_t     m_alist_buffer[0x1000]{};
-    AlistAudio  m_alist_audio{};
+    uint8_t m_alist_buffer[0x1000]{};
+    AlistAudio m_alist_audio{};
     AlistNaudio m_alist_naudio{};
-    AlistNead   m_alist_nead{};
-    uint8_t     m_mp3_buffer[0x1000]{};
+    AlistNead m_alist_nead{};
+    uint8_t m_mp3_buffer[0x1000]{};
 
     // Settings
     bool m_AudioHle{false};
@@ -146,10 +152,10 @@ private:
     [[maybe_unused]] bool m_ForwardGFX{false};
 
     // Task validation limits
-    static constexpr uint32_t kMaxUcodeSize     = 0x2000;   // 8 KB max microcode text
+    static constexpr uint32_t kMaxUcodeSize = 0x2000;       // 8 KB max microcode text
     static constexpr uint32_t kMaxUcodeDataSize = 0x100000; // 1 MB max microcode data
-    static constexpr uint32_t kMaxDataSize      = 0x400000; // 4 MB max display list / audio data
-    static constexpr uint32_t kRDRAMMask        = 0x007FFFFF;
+    static constexpr uint32_t kMaxDataSize = 0x400000;      // 4 MB max display list / audio data
+    static constexpr uint32_t kRDRAMMask = 0x007FFFFF;
 
     // Execution timeout
     static constexpr auto kTaskTimeoutMs = std::chrono::milliseconds(200);

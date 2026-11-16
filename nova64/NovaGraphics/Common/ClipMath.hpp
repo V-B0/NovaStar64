@@ -13,39 +13,41 @@
 #include <cstdint>
 #include <array>
 
-namespace Nova64 { namespace Video { namespace Clip {
+namespace Nova64 {
+namespace Video {
+namespace Clip {
 
+using Math::Color4f;
 using Math::Vec2f;
 using Math::Vec3f;
-using Math::Color4f;
-using SIMD::Vec4f;
 using SIMD::Mat4x4;
+using SIMD::Vec4f;
 
 // ─── Clip Flags ──────────────────────────────────────────────────────────────
 enum ClipFlag : uint32_t {
-    CLIP_NONE   = 0x00,
-    CLIP_POSX   = 0x01,  // x > +w
-    CLIP_NEGX   = 0x02,  // x < -w
-    CLIP_POSY   = 0x04,  // y > +w
-    CLIP_NEGY   = 0x08,  // y < -w
-    CLIP_POSZ   = 0x10,  // z > +w (far)
-    CLIP_NEGZ   = 0x20,  // z < -w (near, or z < 0 for N64)
-    CLIP_W      = 0x40,  // w <= 0 (behind camera)
-    CLIP_FAR    = 0x80,  // additional far clip
-    CLIP_ALL    = 0x3F   // standard 6-plane clip
+    CLIP_NONE = 0x00,
+    CLIP_POSX = 0x01, // x > +w
+    CLIP_NEGX = 0x02, // x < -w
+    CLIP_POSY = 0x04, // y > +w
+    CLIP_NEGY = 0x08, // y < -w
+    CLIP_POSZ = 0x10, // z > +w (far)
+    CLIP_NEGZ = 0x20, // z < -w (near, or z < 0 for N64)
+    CLIP_W = 0x40,    // w <= 0 (behind camera)
+    CLIP_FAR = 0x80,  // additional far clip
+    CLIP_ALL = 0x3F   // standard 6-plane clip
 };
 
 // ─── Clip Planes ─────────────────────────────────────────────────────────────
 enum ClipPlane : int {
-    PLANE_NEAR     = 0,  // z >= -w  (GL near plane convention)
-    PLANE_FAR      = 1,  // z <= w
-    PLANE_LEFT     = 2,  // x >= -w
-    PLANE_RIGHT    = 3,  // x <= w
-    PLANE_BOTTOM   = 4,  // y >= -w
-    PLANE_TOP      = 5,  // y <= w
-    PLANE_W_NEAR   = 6,  // w >= epsilon (behind-camera guard plane)
-    PLANE_NEAR_N64 = 7,  // z >= 0 (N64 NoN near plane — F3DEX2_NoN/F3DZEX)
-    PLANE_COUNT    = 8
+    PLANE_NEAR = 0,     // z >= -w  (GL near plane convention)
+    PLANE_FAR = 1,      // z <= w
+    PLANE_LEFT = 2,     // x >= -w
+    PLANE_RIGHT = 3,    // x <= w
+    PLANE_BOTTOM = 4,   // y >= -w
+    PLANE_TOP = 5,      // y <= w
+    PLANE_W_NEAR = 6,   // w >= epsilon (behind-camera guard plane)
+    PLANE_NEAR_N64 = 7, // z >= 0 (N64 NoN near plane — F3DEX2_NoN/F3DZEX)
+    PLANE_COUNT = 8
 };
 
 // ─── Clipped Vertex (full interpolation data) ────────────────────────────────
@@ -77,19 +79,15 @@ struct ScissorRect {
     ScissorRect() : x0(0), y0(0), x1(320), y1(240) {}
     ScissorRect(int _x0, int _y0, int _x1, int _y1) : x0(_x0), y0(_y0), x1(_x1), y1(_y1) {}
 
-    int Width() const  { return x1 - x0; }
+    int Width() const { return x1 - x0; }
     int Height() const { return y1 - y0; }
     bool IsEmpty() const { return x0 >= x1 || y0 >= y1; }
 
-    bool Contains(int x, int y) const {
-        return x >= x0 && x < x1 && y >= y0 && y < y1;
-    }
+    bool Contains(int x, int y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
 
     ScissorRect Intersect(const ScissorRect& other) const {
-        return ScissorRect(
-            std::max(x0, other.x0), std::max(y0, other.y0),
-            std::min(x1, other.x1), std::min(y1, other.y1)
-        );
+        return ScissorRect(std::max(x0, other.x0), std::max(y0, other.y0), std::min(x1, other.x1),
+                           std::min(y1, other.y1));
     }
 };
 
@@ -111,14 +109,10 @@ void ComputeClipFlagsBatch(const Vec4f* clipPositions, uint32_t* flags, int coun
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Triangle trivial rejection: all vertices on same side of at least one plane
-inline bool TrivialReject(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) {
-    return (flagV0 & flagV1 & flagV2) != 0;
-}
+inline bool TrivialReject(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) { return (flagV0 & flagV1 & flagV2) != 0; }
 
 // Triangle trivial acceptance: all vertices inside all planes
-inline bool TrivialAccept(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) {
-    return (flagV0 | flagV1 | flagV2) == 0;
-}
+inline bool TrivialAccept(uint32_t flagV0, uint32_t flagV1, uint32_t flagV2) { return (flagV0 | flagV1 | flagV2) == 0; }
 
 // Cull display list range: if all vertices share a clip flag, entire DL can be skipped
 bool CullVertexRange(const uint32_t* clipFlags, int startIdx, int endIdx);
@@ -130,23 +124,20 @@ bool CullVertexRange(const uint32_t* clipFlags, int startIdx, int endIdx);
 // Clip a triangle against all 6 frustum planes
 // clipRatio widens X/Y planes to match the N64 guard band (default 1.0 = exact frustum)
 // Returns number of output triangles (0 if fully clipped, 1+ if clipped polygon needs triangulation)
-int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                 ClippedPolygon& result, float clipRatio = 1.0f);
+int ClipTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result,
+                 float clipRatio = 1.0f);
 
 // Clip a polygon against a single plane
 // clipRatio scales the W comparand for X/Y planes (guard band)
 // Returns vertex count of clipped polygon
-int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount,
-                            ClipVertex* vertsOut, ClipPlane plane,
+int ClipPolygonAgainstPlane(const ClipVertex* vertsIn, int vertCount, ClipVertex* vertsOut, ClipPlane plane,
                             float clipRatio = 1.0f);
 
 // Clip against near plane only (most common clip operation)
-int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                          ClippedPolygon& result);
+int ClipTriangleNearPlane(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result);
 
 // Clip against N64 near plane (z = 0 instead of z = -w)
-int ClipTriangleN64Near(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                        ClippedPolygon& result);
+int ClipTriangleN64Near(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GUARD BAND CLIPPING
@@ -177,17 +168,17 @@ uint32_t ComputeGuardBandFlags(const Vec4f& clipPos, const GuardBand& gb);
 
 // Clip triangle against guard band (only clips X/Y planes if outside guard band)
 // Returns number of triangles in output
-int ClipTriangleGuardBand(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-                          ClippedPolygon& result, const GuardBand& gb);
+int ClipTriangleGuardBand(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2, ClippedPolygon& result,
+                          const GuardBand& gb);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCREEN-SPACE CLIPPING (2D)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 struct ScreenVertex {
-    Vec2f position;      // screen-space X, Y
-    float depth;         // for z-buffer
-    float invW;          // 1/W for perspective correction
+    Vec2f position; // screen-space X, Y
+    float depth;    // for z-buffer
+    float invW;     // 1/W for perspective correction
     Color4f color;
     Vec2f texCoord;
     float fog;
@@ -203,8 +194,7 @@ struct ScreenClippedPolygon {
 };
 
 // Clip screen-space polygon against scissor rectangle
-int ClipToScissor(const ScreenVertex* vertsIn, int vertCount,
-                  ScreenVertex* vertsOut, const ScissorRect& scissor);
+int ClipToScissor(const ScreenVertex* vertsIn, int vertCount, ScreenVertex* vertsOut, const ScissorRect& scissor);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKFACE CULLING
@@ -215,13 +205,11 @@ int ClipToScissor(const ScreenVertex* vertsIn, int vertCount,
 bool IsBackFacing(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, bool frontFaceCCW = true);
 
 // Clip-space backface culling (pre-perspective-division)
-bool IsBackFacingClipSpace(const Vec4f& v0, const Vec4f& v1, const Vec4f& v2,
-                           bool frontFaceCCW = true);
+bool IsBackFacingClipSpace(const Vec4f& v0, const Vec4f& v1, const Vec4f& v2, bool frontFaceCCW = true);
 
 // N64 geometry mode backface culling
 // geometryMode contains G_CULL_FRONT / G_CULL_BACK flags
-bool ShouldCullTriangle(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2,
-                        uint32_t geometryMode);
+bool ShouldCullTriangle(const Vec2f& v0, const Vec2f& v1, const Vec2f& v2, uint32_t geometryMode);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PERSPECTIVE DIVISION AND VIEWPORT TRANSFORM
@@ -235,12 +223,10 @@ struct ViewportTransform {
     float scaleX, scaleY, scaleZ;
     float transX, transY, transZ;
 
-    ViewportTransform() : scaleX(160), scaleY(-120), scaleZ(0.5f),
-                          transX(160), transY(120), transZ(0.5f) {}
+    ViewportTransform() : scaleX(160), scaleY(-120), scaleZ(0.5f), transX(160), transY(120), transZ(0.5f) {}
 
     // Configure from N64 viewport parameters
-    void SetFromN64(float vpScaleX, float vpScaleY, float vpScaleZ,
-                    float vpTransX, float vpTransY, float vpTransZ) {
+    void SetFromN64(float vpScaleX, float vpScaleY, float vpScaleZ, float vpTransX, float vpTransY, float vpTransZ) {
         scaleX = vpScaleX;
         scaleY = vpScaleY; // Usually negative (Y flip)
         scaleZ = vpScaleZ;
@@ -262,8 +248,7 @@ struct ViewportTransform {
 
 // Branch_Z: compare vertex Z in screen coordinates against a threshold
 // Used by some games for LOD switching in display lists
-bool BranchZTest(const Vec4f& clipPos, const ViewportTransform& vt,
-                 float zThreshold, float wThreshold);
+bool BranchZTest(const Vec4f& clipPos, const ViewportTransform& vt, float zThreshold, float wThreshold);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPLETE TRIANGLE PIPELINE
@@ -277,10 +262,9 @@ struct TrianglePipelineConfig {
     GuardBand guardBand;
     uint32_t geometryMode;
     bool useGuardBand;
-    bool useNearClipN64;  // z=0 near clip instead of z=-w
+    bool useNearClipN64; // z=0 near clip instead of z=-w
 
-    TrianglePipelineConfig()
-        : geometryMode(0), useGuardBand(true), useNearClipN64(true) {}
+    TrianglePipelineConfig() : geometryMode(0), useGuardBand(true), useNearClipN64(true) {}
 };
 
 // Output triangle (screen space, ready for rasterization)
@@ -298,15 +282,14 @@ struct TrianglePipelineResult {
 };
 
 // Process a single triangle through the full pipeline
-TrianglePipelineResult ProcessTriangle(
-    const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
-    const TrianglePipelineConfig& config);
+TrianglePipelineResult ProcessTriangle(const ClipVertex& v0, const ClipVertex& v1, const ClipVertex& v2,
+                                       const TrianglePipelineConfig& config);
 
 // Process a batch of triangles (index buffer)
 // Returns total number of output triangles written to outTriangles
-int ProcessTriangleBatch(const ClipVertex* vertices,
-                         const uint16_t* indices, int triCount,
-                         ScreenTriangle* outTriangles, int maxOutput,
-                         const TrianglePipelineConfig& config);
+int ProcessTriangleBatch(const ClipVertex* vertices, const uint16_t* indices, int triCount,
+                         ScreenTriangle* outTriangles, int maxOutput, const TrianglePipelineConfig& config);
 
-}}} // namespace Nova64::Video::Clip
+} // namespace Clip
+} // namespace Video
+} // namespace Nova64

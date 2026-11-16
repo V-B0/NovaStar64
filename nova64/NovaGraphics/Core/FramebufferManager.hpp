@@ -18,16 +18,16 @@ namespace Nova64::Video {
 // ═══════════════════════════════════════════════════════════════
 
 enum class FBFormat : uint8_t {
-    RGBA16  = 0,    // 5-5-5-1 (most N64 games)
-    RGBA32  = 1,    // 8-8-8-8
-    CI8     = 2,    // Color-indexed 8-bit
-    I8      = 3,    // Intensity 8-bit
+    RGBA16 = 0, // 5-5-5-1 (most N64 games)
+    RGBA32 = 1, // 8-8-8-8
+    CI8 = 2,    // Color-indexed 8-bit
+    I8 = 3,     // Intensity 8-bit
 };
 
 enum class FBType : uint8_t {
-    Color   = 0,
-    Depth   = 1,
-    Aux     = 2,
+    Color = 0,
+    Depth = 1,
+    Aux = 2,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -35,13 +35,13 @@ enum class FBType : uint8_t {
 // ═══════════════════════════════════════════════════════════════
 
 struct FramebufferDesc {
-    uint32_t address    = 0;        // RDRAM address
-    uint32_t width      = 320;      // Width in pixels
-    uint32_t height     = 240;      // Height in pixels (inferred)
-    uint32_t stride     = 640;      // Bytes per line
-    FBFormat format     = FBFormat::RGBA16;
-    FBType   type       = FBType::Color;
-    uint32_t size       = 2;        // Pixel size in bytes (2=16bit, 4=32bit)
+    uint32_t address = 0;  // RDRAM address
+    uint32_t width = 320;  // Width in pixels
+    uint32_t height = 240; // Height in pixels (inferred)
+    uint32_t stride = 640; // Bytes per line
+    FBFormat format = FBFormat::RGBA16;
+    FBType type = FBType::Color;
+    uint32_t size = 2; // Pixel size in bytes (2=16bit, 4=32bit)
 
     uint32_t ByteSize() const { return stride * height; }
     uint32_t EndAddress() const { return address + ByteSize(); }
@@ -65,8 +65,7 @@ struct FramebufferDesc {
         // rejects (wrong FBType), so the mosaic tiles fell through to raw
         // (never-written) RDRAM -- solid black. This is the asymmetric
         // black pause-menu panel bug.
-        return address == other.address && width == other.width &&
-               height == other.height && format == other.format &&
+        return address == other.address && width == other.width && height == other.height && format == other.format &&
                type == other.type;
     }
 };
@@ -76,26 +75,26 @@ struct FramebufferDesc {
 // ═══════════════════════════════════════════════════════════════
 
 struct GPUFramebuffer {
-    uint32_t fbo         = 0;   // GL framebuffer
-    uint32_t colorTex    = 0;   // GL color texture attachment
-    uint32_t depthTex    = 0;   // GL depth texture attachment
-    uint32_t width       = 0;
-    uint32_t height      = 0;
-    uint32_t scaledWidth = 0;   // Width after resolution scale
-    uint32_t scaledHeight= 0;
-    uint32_t msaaSamples = 0;   // MSAA sample count used at creation (0/1 = no MSAA)
-    uint32_t resolvedTex = 0;   // Non-MSAA resolved color tex (MSAA FBs only, lazy-init)
-    uint32_t resolvedFbo = 0;   // FBO wrapping resolvedTex (MSAA only, lazy-init)
-    uint32_t coverageTex     = 0;   // R8UI coverage image for MLE blender (4-bit CVG per pixel)
-    uint64_t colorImageHandle    = 0; // Backend-native handle for imageLoad/imageStore
+    uint32_t fbo = 0;      // GL framebuffer
+    uint32_t colorTex = 0; // GL color texture attachment
+    uint32_t depthTex = 0; // GL depth texture attachment
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t scaledWidth = 0;         // Width after resolution scale
+    uint32_t scaledHeight = 0;
+    uint32_t msaaSamples = 0;         // MSAA sample count used at creation (0/1 = no MSAA)
+    uint32_t resolvedTex = 0;         // Non-MSAA resolved color tex (MSAA FBs only, lazy-init)
+    uint32_t resolvedFbo = 0;         // FBO wrapping resolvedTex (MSAA only, lazy-init)
+    uint32_t coverageTex = 0;         // R8UI coverage image for MLE blender (4-bit CVG per pixel)
+    uint64_t colorImageHandle = 0;    // Backend-native handle for imageLoad/imageStore
     uint64_t coverageImageHandle = 0; // Backend-native handle for imageLoad/imageStore
-    uint32_t snapshotTex     = 0;   // One-frame snapshot for self-texture reads (lazy-init)
-    uint32_t snapshotCvgTex  = 0;   // Coverage snapshot for self-texture reads (lazy-init)
-    uint32_t presentationTex = 0;   // Snapshot of last completed scene for display
-    bool     needsRead   = false;   // Needs GPU→CPU readback
-    bool     needsCopy   = false;   // Needs CPU→GPU copy-back
-    bool     isAux       = false;
-    bool     gpuModified = false;   // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
+    uint32_t snapshotTex = 0;         // One-frame snapshot for self-texture reads (lazy-init)
+    uint32_t snapshotCvgTex = 0;      // Coverage snapshot for self-texture reads (lazy-init)
+    uint32_t presentationTex = 0;     // Snapshot of last completed scene for display
+    bool needsRead = false;           // Needs GPU→CPU readback
+    bool needsCopy = false;           // Needs CPU→GPU copy-back
+    bool isAux = false;
+    bool gpuModified = false;         // GPU has rendered to this FB (set on draw, cleared on CopyFromGPU)
     // Separate from gpuModified: LoadBlock/LoadTile's FB-as-texture sync path
     // (RDPProcessor_Texture.cpp) also gates on and clears gpuModified for its
     // own purpose (e.g. every-frame CfB/AA-resolve copy-back reads). If that
@@ -104,7 +103,7 @@ struct GPUFramebuffer {
     // shares the same flag. This flag is set alongside gpuModified but is
     // only ever cleared by the inventory-snapshot consumer, so the two never
     // steal from each other.
-    bool     needsInventorySnapshot = false;
+    bool needsInventorySnapshot = false;
     // Same problem, third victim: ExecuteLoadTile/ExecuteLoadBlock's own
     // RDRAM-sync trigger (CopyFromGPU / CopyFramebufferToRDRAM) ALSO gates on
     // and clears the plain gpuModified flag -- so it too can be starved by an
@@ -114,7 +113,7 @@ struct GPUFramebuffer {
     // every single frame). Dedicated flag, set alongside the other two, only
     // ever cleared by ExecuteLoadTile/ExecuteLoadBlock's own RDRAM sync, so
     // it can't be pre-consumed by anything else touching this address.
-    bool     needsRdramResync = false;
+    bool needsRdramResync = false;
     // Sticky: has the RDP EVER rendered into this buffer? `gpuModified` is
     // cleared by the RDRAM read-back, so it cannot answer "is the GPU the
     // author of this buffer's contents". Gating the CPU->GPU upload on this
@@ -122,7 +121,7 @@ struct GPUFramebuffer {
     // GPU-rendered frame (which would throw away the internal-resolution
     // detail); the upload then only fires for buffers the RDP never drew,
     // i.e. genuinely CPU-authored ones.
-    bool     everGpuRendered = false;
+    bool everGpuRendered = false;
     // Hash of this buffer's RDRAM footprint from the last moment the GPU image
     // and that memory were known to agree: the first draw after a sync, and
     // again after every GPU->RDRAM readback. A later mismatch means the game
@@ -130,9 +129,9 @@ struct GPUFramebuffer {
     // over a region it once used as a scratch render target) and the GPU image
     // no longer describes it. See FramebufferManager::RdramUnchanged.
     uint64_t rdramFingerprint = 0;
-    bool     hasFingerprint   = false;
+    bool hasFingerprint = false;
     uint64_t lastUsedFrame = 0;
-    uint64_t lastColorClearedFrame = 0;  // Last frame the color buffer was cleared (for overscan)
+    uint64_t lastColorClearedFrame = 0; // Last frame the color buffer was cleared (for overscan)
     FramebufferDesc desc;
 };
 
@@ -141,21 +140,21 @@ struct GPUFramebuffer {
 // ═══════════════════════════════════════════════════════════════
 
 struct VIConfig {
-    uint32_t origin     = 0;        // VI_ORIGIN_REG
-    uint32_t width      = 320;      // VI_WIDTH_REG
-    uint32_t height     = 240;      // Computed from V regs
-    uint32_t xScale     = 0x200;    // VI_X_SCALE_REG (2.10 fixed)
-    uint32_t yScale     = 0x400;    // VI_Y_SCALE_REG (2.10 fixed)
-    uint32_t hStart     = 0;        // VI_H_START_REG
-    uint32_t vStart     = 0;        // VI_V_START_REG
-    uint32_t control    = 0;        // VI_CONTROL_REG
-    bool     antiAlias  = false;    // AA enabled in control reg
-    bool     divot      = false;    // Divot filter enabled
-    bool     dedither    = false;    // VI dither removal (AA mode 0)
-    bool     gammaCorrect = false;  // Gamma correction enabled
-    bool     gammaDither  = false;  // Gamma dither enabled
-    bool     interlaced   = false;  // Interlaced mode
-    uint32_t field        = 0;      // Current interlace field (0 or 1)
+    uint32_t origin = 0;       // VI_ORIGIN_REG
+    uint32_t width = 320;      // VI_WIDTH_REG
+    uint32_t height = 240;     // Computed from V regs
+    uint32_t xScale = 0x200;   // VI_X_SCALE_REG (2.10 fixed)
+    uint32_t yScale = 0x400;   // VI_Y_SCALE_REG (2.10 fixed)
+    uint32_t hStart = 0;       // VI_H_START_REG
+    uint32_t vStart = 0;       // VI_V_START_REG
+    uint32_t control = 0;      // VI_CONTROL_REG
+    bool antiAlias = false;    // AA enabled in control reg
+    bool divot = false;        // Divot filter enabled
+    bool dedither = false;     // VI dither removal (AA mode 0)
+    bool gammaCorrect = false; // Gamma correction enabled
+    bool gammaDither = false;  // Gamma dither enabled
+    bool interlaced = false;   // Interlaced mode
+    uint32_t field = 0;        // Current interlace field (0 or 1)
 
     FBFormat GetFormat() const {
         switch (control & 0x3) {
@@ -165,17 +164,11 @@ struct VIConfig {
         }
     }
 
-    uint32_t GetPixelSize() const {
-        return (control & 0x3) == 3 ? 4 : 2;
-    }
+    uint32_t GetPixelSize() const { return (control & 0x3) == 3 ? 4 : 2; }
 
-    float GetScaleX() const {
-        return static_cast<float>(xScale & 0xFFF) / 1024.0f;
-    }
+    float GetScaleX() const { return static_cast<float>(xScale & 0xFFF) / 1024.0f; }
 
-    float GetScaleY() const {
-        return static_cast<float>(yScale & 0xFFF) / 1024.0f;
-    }
+    float GetScaleY() const { return static_cast<float>(yScale & 0xFFF) / 1024.0f; }
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -253,8 +246,7 @@ public:
     bool IsReadbackPending() const { return m_pboFence != nullptr; }
 
     /// Copy a rectangular region between two framebuffer addresses (RDP tile copy)
-    void TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst,
-                  int32_t srcX, int32_t srcY, int32_t dstX, int32_t dstY,
+    void TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int32_t srcX, int32_t srcY, int32_t dstX, int32_t dstY,
                   int32_t w, int32_t h);
 
     /// Check if RDRAM region was modified since last GPU upload
@@ -291,16 +283,14 @@ public:
 
     /// Convert depth buffer format (N64 uses 18-bit: 14.2 fixed + 2 dz)
     void ConvertDepthN64ToFloat(const uint16_t* src, float* dst, uint32_t pixelCount);
-    void ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount,
-                                    uint32_t width = 0);
+    void ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount, uint32_t width = 0);
 
     // ── Framebuffer Effects ──
     /// Copy between framebuffers (used by some games for effects)
     void CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst);
 
     /// Fill framebuffer region with color
-    void FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y, int32_t w, int32_t h,
-                    uint32_t color);
+    void FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
 
     /// Get a GL_TEXTURE_2D handle safe to bind as a shader sampler2D.
     /// Handles MSAA resolve (returns resolvedTex) and self-texture
@@ -344,18 +334,18 @@ public:
 
     // ── Game-Specific Hack Flags ──
     struct FBHacks {
-        bool paperMarioBlueBoost = false;   // Add 4 to blue channel on FB→RDRAM copy
-        bool conkerBlurDetect = false;       // Detect colorImage==depthImage pause blur
-        bool pdDepthOncePerFrame = false;    // Only copy depth to RDRAM once per frame
-        bool starCraftBlockFB = false;       // Block FB ops when LUT is RGBA16
-        bool snapSkipAuxCopy = false;        // Skip automatic auxiliary buffer copies
+        bool paperMarioBlueBoost = false; // Add 4 to blue channel on FB→RDRAM copy
+        bool conkerBlurDetect = false;    // Detect colorImage==depthImage pause blur
+        bool pdDepthOncePerFrame = false; // Only copy depth to RDRAM once per frame
+        bool starCraftBlockFB = false;    // Block FB ops when LUT is RGBA16
+        bool snapSkipAuxCopy = false;     // Skip automatic auxiliary buffer copies
     } m_fbHacks;
 
     /// Hint the expected framebuffer height (derived from the current scissor box).
     /// Called whenever SetScissor fires so OnSetColorImage uses the right height.
     void SetScissorHint(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
         if (height > 0) m_scissorHeight = height;
-        if (width  > 0) m_scissorWidth  = width;
+        if (width > 0) m_scissorWidth = width;
         m_scissorX = x;
         m_scissorY = y;
     }
@@ -395,25 +385,25 @@ private:
     VIConfig m_viConfig;
     uint32_t m_resScale = 1;
     uint32_t m_msaaSamples = 1;
-    uint32_t m_scissorWidth  = 320;
+    uint32_t m_scissorWidth = 320;
     uint32_t m_scissorHeight = 240;
     uint32_t m_scissorX = 0;
     uint32_t m_scissorY = 0;
 
     // RDRAM dirty tracking (1 bit per 4KB page)
     static constexpr uint32_t kRDRAMSize = 8 * 1024 * 1024; // 8MB
-    static constexpr uint32_t kPageSize  = 4096;
+    static constexpr uint32_t kPageSize = 4096;
     static constexpr uint32_t kPageCount = kRDRAMSize / kPageSize;
     std::array<bool, kPageCount> m_dirtyPages{};
 
     uint64_t m_frameCounter = 0;
-    bool     m_depthClearPending = false;     // Set by OnSetDepthImage, consumed by OnSetColorImage
-    bool     m_depthCopiedThisFrame = false;  // PD hack: track depth copy per frame
-    float    m_outputAspect = 4.0f / 3.0f;     // picture shape on screen; 0 = fill the window
-    const uint8_t* m_rdram = nullptr;        // Stored RDRAM pointer for CopyToGPU in UpdateVI
+    bool m_depthClearPending = false;    // Set by OnSetDepthImage, consumed by OnSetColorImage
+    bool m_depthCopiedThisFrame = false; // PD hack: track depth copy per frame
+    float m_outputAspect = 4.0f / 3.0f;  // picture shape on screen; 0 = fill the window
+    const uint8_t* m_rdram = nullptr;    // Stored RDRAM pointer for CopyToGPU in UpdateVI
     Stats m_stats{};
     bool m_initialized = false;
-    bool m_isGL = true;     // false when Vulkan/D3D backend — skips all GL FBO/texture ops
+    bool m_isGL = true; // false when Vulkan/D3D backend — skips all GL FBO/texture ops
 
     // Blit shader resources
     uint32_t m_blitVAO = 0;
@@ -431,11 +421,11 @@ private:
     uint32_t m_tmpHeight = 0;
 
     // Async PBO readback state
-    uint32_t m_pbo = 0;                     // GL pixel buffer object for async readback
-    void*    m_pboFence = nullptr;          // GL sync fence (GLsync, stored as void* to avoid GL header in .hpp)
-    uint32_t m_pboAddress = 0;              // RDRAM target address for pending readback
-    uint32_t m_pboWidth = 0;                // Width of pending readback
-    uint32_t m_pboHeight = 0;              // Height of pending readback
+    uint32_t m_pbo = 0;                      // GL pixel buffer object for async readback
+    void* m_pboFence = nullptr;              // GL sync fence (GLsync, stored as void* to avoid GL header in .hpp)
+    uint32_t m_pboAddress = 0;               // RDRAM target address for pending readback
+    uint32_t m_pboWidth = 0;                 // Width of pending readback
+    uint32_t m_pboHeight = 0;                // Height of pending readback
     FBFormat m_pboFormat = FBFormat::RGBA16; // Format for conversion on completion
     GPUFramebuffer* m_pboFB = nullptr;       // FB whose readback is in flight (for clearing gpuModified)
 
@@ -459,7 +449,6 @@ private:
 
     // Cached PBO size to avoid orphaning every frame
     uint32_t m_pboSize = 0;
-
 };
 
 extern FramebufferManager g_fbManager;

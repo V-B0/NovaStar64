@@ -14,13 +14,13 @@
 #define STBI_NO_GIF
 #define STBI_NO_PIC
 #define STBI_NO_PNM
-#define STBI_NO_STDIO        // We'll use our own file I/O
+#define STBI_NO_STDIO // We'll use our own file I/O
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4244 4100 4456)  // Suppress stb_image warnings
+#pragma warning(disable : 4244 4100 4456) // Suppress stb_image warnings
 #endif
 
 #include "stb_image.h"
@@ -34,7 +34,7 @@
 // available.  Exposed via Nova::WritePNG so GPU backends don't pull in stb.
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4244 4100 4456)
+#pragma warning(disable : 4244 4100 4456)
 #endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -45,8 +45,7 @@
 #include "ImageWrite.hpp"
 
 namespace Nova {
-bool WritePNG(const char* path, int w, int h, int comp,
-              const void* data, int strideBytes) {
+bool WritePNG(const char* path, int w, int h, int comp, const void* data, int strideBytes) {
     if (!path || !data || w <= 0 || h <= 0) return false;
     if (strideBytes <= 0) strideBytes = w * comp;
     return stbi_write_png(path, w, h, comp, data, strideBytes) != 0;

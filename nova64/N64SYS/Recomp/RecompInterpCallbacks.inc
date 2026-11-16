@@ -35,13 +35,9 @@ static inline bool CheckCop1Unusable(CRegisters* regs) {
 namespace {
 
 // Helper: reinterpret a uint64_t GPR entry as MIPS_DWORD for union field access
-inline MIPS_DWORD& AsDWord(MipsRegisterType& reg) {
-    return *reinterpret_cast<MIPS_DWORD*>(&reg);
-}
+inline MIPS_DWORD& AsDWord(MipsRegisterType& reg) { return *reinterpret_cast<MIPS_DWORD*>(&reg); }
 
-inline const MIPS_DWORD& AsDWord(const MipsRegisterType& reg) {
-    return *reinterpret_cast<const MIPS_DWORD*>(&reg);
-}
+inline const MIPS_DWORD& AsDWord(const MipsRegisterType& reg) { return *reinterpret_cast<const MIPS_DWORD*>(&reg); }
 
 // ---- Safe MIPS instruction field extractors ----
 // The R4300iOps.Rtype bitfield struct has incorrectly ordered middle
@@ -49,20 +45,20 @@ inline const MIPS_DWORD& AsDWord(const MipsRegisterType& reg) {
 // but for R-type instructions we MUST use manual bit extraction to
 // match the real MIPS encoding.  These helpers mirror the correct
 // accessors used by the interpreter.
-inline uint32_t mips_rs(uint32_t v)    { return (v >> 21) & 0x1F; }
-inline uint32_t mips_rt(uint32_t v)    { return (v >> 16) & 0x1F; }
-inline uint32_t mips_rd(uint32_t v)    { return (v >> 11) & 0x1F; }
-inline uint32_t mips_sa(uint32_t v)    { return (v >>  6) & 0x1F; }
-inline uint32_t mips_funct(uint32_t v) { return  v        & 0x3F; }
-inline int16_t  mips_imm(uint32_t v)   { return static_cast<int16_t>(v & 0xFFFF); }
-inline uint32_t mips_target(uint32_t v){ return  v & 0x03FFFFFF; }
+inline uint32_t mips_rs(uint32_t v) { return (v >> 21) & 0x1F; }
+inline uint32_t mips_rt(uint32_t v) { return (v >> 16) & 0x1F; }
+inline uint32_t mips_rd(uint32_t v) { return (v >> 11) & 0x1F; }
+inline uint32_t mips_sa(uint32_t v) { return (v >> 6) & 0x1F; }
+inline uint32_t mips_funct(uint32_t v) { return v & 0x3F; }
+inline int16_t mips_imm(uint32_t v) { return static_cast<int16_t>(v & 0xFFFF); }
+inline uint32_t mips_target(uint32_t v) { return v & 0x03FFFFFF; }
 
 // FP / Memory field aliases (same bit positions, semantic names)
-inline uint32_t mips_base(uint32_t v)  { return (v >> 21) & 0x1F; }  // bits 25:21 = rs = base
-inline uint32_t mips_ft(uint32_t v)    { return (v >> 16) & 0x1F; }  // bits 20:16 = rt = ft
-inline uint32_t mips_fs(uint32_t v)    { return (v >> 11) & 0x1F; }  // bits 15:11 = rd = fs
-inline uint32_t mips_fd(uint32_t v)    { return (v >>  6) & 0x1F; }  // bits 10:6  = sa = fd
-inline int16_t  mips_offset(uint32_t v){ return static_cast<int16_t>(v & 0xFFFF); } // bits 15:0 = imm = offset
+inline uint32_t mips_base(uint32_t v) { return (v >> 21) & 0x1F; }                  // bits 25:21 = rs = base
+inline uint32_t mips_ft(uint32_t v) { return (v >> 16) & 0x1F; }                    // bits 20:16 = rt = ft
+inline uint32_t mips_fs(uint32_t v) { return (v >> 11) & 0x1F; }                    // bits 15:11 = rd = fs
+inline uint32_t mips_fd(uint32_t v) { return (v >> 6) & 0x1F; }                     // bits 10:6  = sa = fd
+inline int16_t mips_offset(uint32_t v) { return static_cast<int16_t>(v & 0xFFFF); } // bits 15:0 = imm = offset
 
 // Sign-extend a 32-bit PC value to 64 bits (MIPS R4300i requires this for
 // addresses in KSEG0/KSEG1 which have bit 31 set).
@@ -73,7 +69,8 @@ inline void SetPC(CRegisters* regs, uint32_t pc32) {
 // ----- ALU Immediate Callbacks -----
 
 void Interp_ADDI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int32_t rsVal = AsDWord(regs->m_GPR[op.Itype.rs]).W[0];
     int32_t immVal = static_cast<int16_t>(op.Itype.imm);
     int32_t sum = rsVal + immVal;
@@ -86,7 +83,8 @@ void Interp_ADDI(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_ADDIU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
     int32_t rs_lo = AsDWord(regs->m_GPR[op.Itype.rs]).W[0];
     int16_t imm = static_cast<int16_t>(op.Itype.imm);
@@ -95,7 +93,8 @@ void Interp_ADDIU(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_SLTI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
     int64_t rs = AsDWord(regs->m_GPR[op.Itype.rs]).DW;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
@@ -103,7 +102,8 @@ void Interp_SLTI(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_SLTIU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
     uint64_t rs = AsDWord(regs->m_GPR[op.Itype.rs]).UDW;
     uint64_t imm = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm)));
@@ -111,35 +111,37 @@ void Interp_SLTIU(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_ANDI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
-    AsDWord(regs->m_GPR[op.Itype.rt]).DW =
-        AsDWord(regs->m_GPR[op.Itype.rs]).DW & static_cast<uint64_t>(op.Itype.imm);
+    AsDWord(regs->m_GPR[op.Itype.rt]).DW = AsDWord(regs->m_GPR[op.Itype.rs]).DW & static_cast<uint64_t>(op.Itype.imm);
 }
 
 void Interp_ORI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
-    AsDWord(regs->m_GPR[op.Itype.rt]).DW =
-        AsDWord(regs->m_GPR[op.Itype.rs]).DW | static_cast<uint64_t>(op.Itype.imm);
+    AsDWord(regs->m_GPR[op.Itype.rt]).DW = AsDWord(regs->m_GPR[op.Itype.rs]).DW | static_cast<uint64_t>(op.Itype.imm);
 }
 
 void Interp_XORI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
-    AsDWord(regs->m_GPR[op.Itype.rt]).DW =
-        AsDWord(regs->m_GPR[op.Itype.rs]).DW ^ static_cast<uint64_t>(op.Itype.imm);
+    AsDWord(regs->m_GPR[op.Itype.rt]).DW = AsDWord(regs->m_GPR[op.Itype.rs]).DW ^ static_cast<uint64_t>(op.Itype.imm);
 }
 
 void Interp_LUI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
     int32_t val = static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm) << 16);
     AsDWord(regs->m_GPR[op.Itype.rt]).DW = static_cast<int64_t>(val);
 }
 
 void Interp_DADDI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t rsVal = AsDWord(regs->m_GPR[op.Itype.rs]).DW;
     int64_t immVal = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
     int64_t sum = rsVal + immVal;
@@ -152,7 +154,8 @@ void Interp_DADDI(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DADDIU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (op.Itype.rt == 0) return;
     int64_t rs = AsDWord(regs->m_GPR[op.Itype.rs]).DW;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
@@ -162,7 +165,8 @@ void Interp_DADDIU(CRegisters* regs, uint32_t opcVal) {
 // ----- SPECIAL R-type ALU Callbacks -----
 
 void Interp_ADD(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int32_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0];
     int32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
     int32_t sum = rsVal + rtVal;
@@ -175,16 +179,17 @@ void Interp_ADD(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_ADDU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] +
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
+    int32_t result =
+        static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] + AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_SUB(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int32_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0];
     int32_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
     int32_t sub = rsVal - rtVal;
@@ -197,64 +202,65 @@ void Interp_SUB(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_SUBU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] -
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
+    int32_t result =
+        static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] - AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_AND(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW &
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW & AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
 void Interp_OR(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW |
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW | AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
 void Interp_XOR(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW ^
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW ^ AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
 void Interp_NOR(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        ~(AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW |
-          AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW);
+        ~(AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW | AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW);
 }
 
 void Interp_SLT(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW <
-         AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW) ? 1 : 0;
+        (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW < AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW) ? 1 : 0;
 }
 
 void Interp_SLTU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        (AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW <
-         AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW) ? 1 : 0;
+        (AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW < AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW) ? 1 : 0;
 }
 
 void Interp_DADD(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int64_t sum = rsVal + rtVal;
@@ -267,15 +273,16 @@ void Interp_DADD(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DADDU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW +
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW + AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
 void Interp_DSUB(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t rsVal = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rtVal = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int64_t sub = rsVal - rtVal;
@@ -288,33 +295,34 @@ void Interp_DSUB(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DSUBU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW -
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
+        AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW - AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
 }
 
 // ----- Shift Callbacks -----
 
 void Interp_SLL(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] << mips_sa(opcVal));
+    int32_t result = static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] << mips_sa(opcVal));
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_SRL(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] >> mips_sa(opcVal));
+    int32_t result = static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] >> mips_sa(opcVal));
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_SRA(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     // VR4300: shift the full 64-bit GPR value, then truncate low 32 and sign-extend
     int64_t full = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> mips_sa(opcVal);
@@ -323,25 +331,26 @@ void Interp_SRA(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_SLLV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x1F;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] << shift);
+    int32_t result = static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] << shift);
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_SRLV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x1F;
-    int32_t result = static_cast<int32_t>(
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] >> shift);
+    int32_t result = static_cast<int32_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0] >> shift);
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = static_cast<int64_t>(result);
 }
 
 void Interp_SRAV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x1F;
     // VR4300: shift the full 64-bit GPR value, then truncate low 32 and sign-extend
@@ -351,75 +360,76 @@ void Interp_SRAV(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DSLL(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << mips_sa(opcVal);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << mips_sa(opcVal);
 }
 
 void Interp_DSRL(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> mips_sa(opcVal);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> mips_sa(opcVal);
 }
 
 void Interp_DSRA(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> mips_sa(opcVal);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> mips_sa(opcVal);
 }
 
 void Interp_DSLL32(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << (mips_sa(opcVal) + 32);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << (mips_sa(opcVal) + 32);
 }
 
 void Interp_DSRL32(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> (mips_sa(opcVal) + 32);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> (mips_sa(opcVal) + 32);
 }
 
 void Interp_DSRA32(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> (mips_sa(opcVal) + 32);
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> (mips_sa(opcVal) + 32);
 }
 
 void Interp_DSLLV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x3F;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << shift;
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW << shift;
 }
 
 void Interp_DSRLV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x3F;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> shift;
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).UDW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW >> shift;
 }
 
 void Interp_DSRAV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     uint32_t shift = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0] & 0x3F;
-    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW =
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> shift;
+    AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW >> shift;
 }
 
 // ----- Multiply / Divide Callbacks -----
 
 void Interp_MULT(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t result = static_cast<int64_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0]) *
                      static_cast<int64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0]);
     AsDWord(regs->m_LO).DW = static_cast<int64_t>(static_cast<int32_t>(result & 0xFFFFFFFF));
@@ -427,7 +437,8 @@ void Interp_MULT(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_MULTU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint64_t result = static_cast<uint64_t>(AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0]) *
                       static_cast<uint64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     AsDWord(regs->m_LO).DW = static_cast<int64_t>(static_cast<int32_t>(result & 0xFFFFFFFF));
@@ -435,7 +446,8 @@ void Interp_MULTU(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DIV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int32_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).W[0];
     int32_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0];
     if (rt == 0) {
@@ -451,7 +463,8 @@ void Interp_DIV(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DIVU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint32_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UW[0];
     uint32_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
     if (rt == 0) {
@@ -464,7 +477,8 @@ void Interp_DIVU(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DMULT(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     // 64x64 -> 128 signed multiplication using partial products
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
@@ -482,7 +496,8 @@ void Interp_DMULT(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DMULTU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW;
     uint64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
 #ifdef _MSC_VER
@@ -498,7 +513,8 @@ void Interp_DMULTU(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DDIV(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     if (rt == 0) {
@@ -514,7 +530,8 @@ void Interp_DDIV(CRegisters* regs, uint32_t opcVal) {
 }
 
 void Interp_DDIVU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW;
     uint64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
     if (rt == 0) {
@@ -529,33 +546,37 @@ void Interp_DDIVU(CRegisters* regs, uint32_t opcVal) {
 // ----- HI/LO Move Callbacks -----
 
 void Interp_MFHI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_HI).DW;
 }
 
 void Interp_MTHI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     AsDWord(regs->m_HI).DW = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
 }
 
 void Interp_MFLO(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rd(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rd(opcVal)]).DW = AsDWord(regs->m_LO).DW;
 }
 
 void Interp_MTLO(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     AsDWord(regs->m_LO).DW = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
 }
 
 // ----- Load Callbacks (require MMU) -----
 
 void Interp_LB(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint8_t val = 0;
     if (mmu->LB_Memory(addr, val)) {
         if (mips_rt(opcVal) != 0)
@@ -564,20 +585,19 @@ void Interp_LB(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LBU(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint8_t val = 0;
     if (mmu->LB_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
+        if (mips_rt(opcVal) != 0) AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
     }
 }
 
 void Interp_LH(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint16_t val = 0;
     if (mmu->LH_Memory(addr, val)) {
         if (mips_rt(opcVal) != 0)
@@ -586,20 +606,19 @@ void Interp_LH(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LHU(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint16_t val = 0;
     if (mmu->LH_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
+        if (mips_rt(opcVal) != 0) AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
     }
 }
 
 void Interp_LW(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
         if (mips_rt(opcVal) != 0) {
@@ -609,31 +628,29 @@ void Interp_LW(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LWU(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
+        if (mips_rt(opcVal) != 0) AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(val);
     }
 }
 
 void Interp_LD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint64_t val = 0;
     if (mmu->LD_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
+        if (mips_rt(opcVal) != 0) AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
     }
 }
 
 void Interp_LL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
         if (mips_rt(opcVal) != 0)
@@ -645,11 +662,11 @@ void Interp_LL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LWL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint32_t LWL_MASK[4] = { 0x00000000, 0x000000FF, 0x0000FFFF, 0x00FFFFFF };
-    static const int LWL_SHIFT[4] = { 0, 8, 16, 24 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint32_t LWL_MASK[4] = {0x00000000, 0x000000FF, 0x0000FFFF, 0x00FFFFFF};
+    static const int LWL_SHIFT[4] = {0, 8, 16, 24};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t val = 0;
     if (mmu->LW_Memory(addr & ~3, val)) {
@@ -662,11 +679,11 @@ void Interp_LWL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LWR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint32_t LWR_MASK[4] = { 0xFFFFFF00, 0xFFFF0000, 0xFF000000, 0x00000000 };
-    static const int LWR_SHIFT[4] = { 24, 16, 8, 0 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint32_t LWR_MASK[4] = {0xFFFFFF00, 0xFFFF0000, 0xFF000000, 0x00000000};
+    static const int LWR_SHIFT[4] = {24, 16, 8, 0};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t val = 0;
     if (mmu->LW_Memory(addr & ~3, val)) {
@@ -679,42 +696,35 @@ void Interp_LWR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LDL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint64_t LDL_MASK[8] = {
-        0, 0xFF, 0xFFFF, 0xFFFFFF, 0xFFFFFFFF,
-        0xFFFFFFFFFF, 0xFFFFFFFFFFFF, 0xFFFFFFFFFFFFFF
-    };
-    static const int LDL_SHIFT[8] = { 0, 8, 16, 24, 32, 40, 48, 56 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint64_t LDL_MASK[8] = {0,          0xFF,         0xFFFF,         0xFFFFFF,
+                                         0xFFFFFFFF, 0xFFFFFFFFFF, 0xFFFFFFFFFFFF, 0xFFFFFFFFFFFFFF};
+    static const int LDL_SHIFT[8] = {0, 8, 16, 24, 32, 40, 48, 56};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t val = 0;
     if (mmu->LD_Memory(addr & ~7, val)) {
         if (mips_rt(opcVal) != 0) {
             uint64_t existing = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW =
-                (existing & LDL_MASK[offset]) | (val << LDL_SHIFT[offset]);
+            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = (existing & LDL_MASK[offset]) | (val << LDL_SHIFT[offset]);
         }
     }
 }
 
 void Interp_LDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint64_t LDR_MASK[8] = {
-        0xFFFFFFFFFFFFFF00, 0xFFFFFFFFFFFF0000, 0xFFFFFFFFFF000000,
-        0xFFFFFFFF00000000, 0xFFFFFF0000000000, 0xFFFF000000000000,
-        0xFF00000000000000, 0
-    };
-    static const int LDR_SHIFT[8] = { 56, 48, 40, 32, 24, 16, 8, 0 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint64_t LDR_MASK[8] = {0xFFFFFFFFFFFFFF00, 0xFFFFFFFFFFFF0000, 0xFFFFFFFFFF000000, 0xFFFFFFFF00000000,
+                                         0xFFFFFF0000000000, 0xFFFF000000000000, 0xFF00000000000000, 0};
+    static const int LDR_SHIFT[8] = {56, 48, 40, 32, 24, 16, 8, 0};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t val = 0;
     if (mmu->LD_Memory(addr & ~7, val)) {
         if (mips_rt(opcVal) != 0) {
             uint64_t existing = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW;
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW =
-                (existing & LDR_MASK[offset]) | (val >> LDR_SHIFT[offset]);
+            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = (existing & LDR_MASK[offset]) | (val >> LDR_SHIFT[offset]);
         }
     }
 }
@@ -741,7 +751,6 @@ static inline void fpr_write_w(CRegisters* regs, uint32_t reg, uint32_t val) {
     } else {
         // FR=1: write only low 32 bits, preserve upper 32
         regs->m_FPR[reg] = val;
-        
     }
 }
 
@@ -757,9 +766,7 @@ static inline float fpr_read_float_op(CRegisters* regs, uint32_t reg) {
 
 // Arithmetic result write (single-precision):
 // Matches interpreter: write one 32-bit lane and preserve the paired lane.
-static inline void fpr_write_w_result(CRegisters* regs, uint32_t reg, uint32_t val) {
-    fpr_write_w(regs, reg, val);
-}
+static inline void fpr_write_w_result(CRegisters* regs, uint32_t reg, uint32_t val) { fpr_write_w(regs, reg, val); }
 
 static inline void fpr_write_float_result(CRegisters* regs, uint32_t reg, float val) {
     uint32_t bits;
@@ -768,9 +775,7 @@ static inline void fpr_write_float_result(CRegisters* regs, uint32_t reg, float 
 }
 
 // MOV.S writes one 32-bit lane.
-static inline void fpr_write_w_move(CRegisters* regs, uint32_t reg, uint32_t val) {
-    fpr_write_w(regs, reg, val);
-}
+static inline void fpr_write_w_move(CRegisters* regs, uint32_t reg, uint32_t val) { fpr_write_w(regs, reg, val); }
 
 static inline void fpr_write_float_move(CRegisters* regs, uint32_t reg, float val) {
     uint32_t bits;
@@ -815,9 +820,7 @@ static inline void fpr_write_double(CRegisters* regs, uint32_t reg, double val) 
 
 // Arithmetic 64-bit result write (double/L format):
 // FR=0 uses even/odd pair mapping.
-static inline void fpr_write_u64_arith(CRegisters* regs, uint32_t reg, uint64_t val) {
-    fpr_write_u64(regs, reg, val);
-}
+static inline void fpr_write_u64_arith(CRegisters* regs, uint32_t reg, uint64_t val) { fpr_write_u64(regs, reg, val); }
 
 static inline uint64_t fpr_read_u64(CRegisters* regs, uint32_t reg) {
     if (regs->STATUS_REGISTER.FR == 0) {
@@ -836,9 +839,9 @@ static inline void fpr_write_u64(CRegisters* regs, uint32_t reg, uint64_t val) {
 
 void Interp_LWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(op.Itype.imm);
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(op.Itype.imm);
     uint32_t val = 0;
     if (mmu->LW_Memory(addr, val)) {
         fpr_write_w(regs, mips_ft(opcVal), val);
@@ -847,9 +850,9 @@ void Interp_LWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 
 void Interp_LDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(op.Itype.imm);
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(op.Itype.imm);
     uint64_t val = 0;
     if (mmu->LD_Memory(addr, val)) {
         fpr_write_u64(regs, mips_ft(opcVal), val);
@@ -859,40 +862,40 @@ void Interp_LDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 // ----- Store Callbacks -----
 
 void Interp_SB(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     mmu->SB_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
 }
 
 void Interp_SH(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     mmu->SH_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
 }
 
 void Interp_SW(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t val = AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0];
     mmu->SW_Memory(addr, val);
 }
 
 void Interp_SD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     mmu->SD_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
 }
 
 void Interp_SWL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint32_t SWL_MASK[4] = { 0x00000000, 0xFF000000, 0xFFFF0000, 0xFFFFFF00 };
-    static const int SWL_SHIFT[4] = { 0, 8, 16, 24 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint32_t SWL_MASK[4] = {0x00000000, 0xFF000000, 0xFFFF0000, 0xFFFFFF00};
+    static const int SWL_SHIFT[4] = {0, 8, 16, 24};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t memVal = 0;
     // Use MemoryValue32 (no exception on miss) instead of LW_Memory
@@ -909,11 +912,11 @@ void Interp_SWL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_SWR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint32_t SWR_MASK[4] = { 0x00FFFFFF, 0x0000FFFF, 0x000000FF, 0x00000000 };
-    static const int SWR_SHIFT[4] = { 24, 16, 8, 0 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint32_t SWR_MASK[4] = {0x00FFFFFF, 0x0000FFFF, 0x000000FF, 0x00000000};
+    static const int SWR_SHIFT[4] = {24, 16, 8, 0};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 3;
     uint32_t memVal = 0;
     // Use MemoryValue32 (no exception on miss) instead of LW_Memory
@@ -930,14 +933,18 @@ void Interp_SWR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_SDL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint64_t SDL_MASK[8] = {
-        0, 0xFF00000000000000, 0xFFFF000000000000, 0xFFFFFF0000000000,
-        0xFFFFFFFF00000000, 0xFFFFFFFFFF000000, 0xFFFFFFFFFFFF0000, 0xFFFFFFFFFFFFFF00
-    };
-    static const int SDL_SHIFT[8] = { 0, 8, 16, 24, 32, 40, 48, 56 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint64_t SDL_MASK[8] = {0,
+                                         0xFF00000000000000,
+                                         0xFFFF000000000000,
+                                         0xFFFFFF0000000000,
+                                         0xFFFFFFFF00000000,
+                                         0xFFFFFFFFFF000000,
+                                         0xFFFFFFFFFFFF0000,
+                                         0xFFFFFFFFFFFFFF00};
+    static const int SDL_SHIFT[8] = {0, 8, 16, 24, 32, 40, 48, 56};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t memVal = 0;
     // Use MemoryValue64 (no exception on miss) instead of LD_Memory
@@ -953,15 +960,12 @@ void Interp_SDL(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_SDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    static const uint64_t SDR_MASK[8] = {
-        0x00FFFFFFFFFFFFFF, 0x0000FFFFFFFFFFFF, 0x000000FFFFFFFFFF,
-        0x00000000FFFFFFFF, 0x0000000000FFFFFF, 0x000000000000FFFF,
-        0x00000000000000FF, 0
-    };
-    static const int SDR_SHIFT[8] = { 56, 48, 40, 32, 24, 16, 8, 0 };
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    static const uint64_t SDR_MASK[8] = {0x00FFFFFFFFFFFFFF, 0x0000FFFFFFFFFFFF, 0x000000FFFFFFFFFF, 0x00000000FFFFFFFF,
+                                         0x0000000000FFFFFF, 0x000000000000FFFF, 0x00000000000000FF, 0};
+    static const int SDR_SHIFT[8] = {56, 48, 40, 32, 24, 16, 8, 0};
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint32_t offset = static_cast<uint32_t>(addr) & 7;
     uint64_t memVal = 0;
     // Use MemoryValue64 (no exception on miss) instead of LD_Memory
@@ -976,11 +980,11 @@ void Interp_SDR(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_SC(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     bool success = false;
     if (regs->m_LLBit == 1) {
-        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                        static_cast<int16_t>(mips_offset(opcVal));
+        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
         success = mmu->SW_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
     }
     if (mips_rt(opcVal) != 0) {
@@ -990,13 +994,12 @@ void Interp_SC(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_LLD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(mips_offset(opcVal));
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
     uint64_t val = 0;
     if (mmu->LD_Memory(addr, val)) {
-        if (mips_rt(opcVal) != 0)
-            AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
+        if (mips_rt(opcVal) != 0) AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW = val;
         regs->m_LLBit = 1;
     } else {
         regs->m_LLBit = 0;
@@ -1004,11 +1007,11 @@ void Interp_LLD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 }
 
 void Interp_SCD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     bool success = false;
     if (regs->m_LLBit == 1) {
-        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                        static_cast<int16_t>(mips_offset(opcVal));
+        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
         success = mmu->SD_Memory(addr, AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
     }
     if (mips_rt(opcVal) != 0) {
@@ -1019,53 +1022,52 @@ void Interp_SCD(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 
 void Interp_SWC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(op.Itype.imm);
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(op.Itype.imm);
     uint32_t val = fpr_read_w(regs, mips_ft(opcVal));
     mmu->SW_Memory(addr, val);
 }
 
 void Interp_SDC1(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
-    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                    static_cast<int16_t>(op.Itype.imm);
+    R4300iOps op;
+    op.Value = opcVal;
+    uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(op.Itype.imm);
     mmu->SD_Memory(addr, fpr_read_u64(regs, mips_ft(opcVal)));
 }
 
 // ----- COP0 Callbacks -----
 
 void Interp_COP0_MFC0(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
-        static_cast<int64_t>(static_cast<int32_t>(
-            regs->Cop0_MF(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)))));
+        static_cast<int64_t>(static_cast<int32_t>(regs->Cop0_MF(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)))));
 }
 
 void Interp_COP0_DMFC0(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
-        regs->Cop0_MF(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)));
+    AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = regs->Cop0_MF(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)));
 }
 
 void Interp_COP0_MTC0(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->Cop0_MT(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)),
                   static_cast<int64_t>(AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0]));
 }
 
 void Interp_COP0_DMTC0(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
-    regs->Cop0_MT(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)),
-                  AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
+    R4300iOps op;
+    op.Value = opcVal;
+    regs->Cop0_MT(static_cast<CRegisters::COP0Reg>(mips_rd(opcVal)), AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
 }
 
-void Interp_COP0_CO_TLBR(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) {
-    tlb->ReadEntry();
-}
+void Interp_COP0_CO_TLBR(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) { tlb->ReadEntry(); }
 
 void Interp_COP0_CO_TLBWI(CRegisters* regs, CTLB* tlb, uint32_t /*opcVal*/) {
     tlb->WriteEntry(static_cast<uint32_t>(regs->INDEX_REGISTER) & 0x1F, false);
@@ -1080,9 +1082,7 @@ void Interp_COP0_CO_TLBWR(CRegisters* regs, CTLB* tlb, uint32_t /*opcVal*/) {
     tlb->WriteEntry(random_index, true);
 }
 
-void Interp_COP0_CO_TLBP(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) {
-    tlb->Probe();
-}
+void Interp_COP0_CO_TLBP(CRegisters* /*regs*/, CTLB* tlb, uint32_t /*opcVal*/) { tlb->Probe(); }
 
 void Interp_COP0_CO_ERET(CRegisters* regs, CN64System* sys, uint32_t /*opcVal*/) {
     // Match the interpreter: set PipelineStage = Jump and JumpToLocation,
@@ -1115,12 +1115,13 @@ static void Interp_COP1_DCFC1_DCTC1(CRegisters* regs, uint32_t /*opcVal*/) {
     // but the test expects UnimplementedOp (FPE with cause=unimpl)
     regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
     regs->m_FPCR[31] |= (1 << 17);   // Cause.UnimplementedOp
-    regs->TriggerException(15, 0);    // FPE
+    regs->TriggerException(15, 0);   // FPE
 }
 
 void Interp_COP1_MFC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
         static_cast<int64_t>(static_cast<int32_t>(fpr_read_w(regs, mips_rd(opcVal))));
@@ -1128,22 +1129,23 @@ void Interp_COP1_MFC1(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_COP1_DMFC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
-    AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
-        static_cast<int64_t>(fpr_read_u64(regs, mips_rd(opcVal)));
+    AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW = static_cast<int64_t>(fpr_read_u64(regs, mips_rd(opcVal)));
 }
 
 void Interp_COP1_MTC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
-    fpr_write_w(regs, mips_rd(opcVal),
-        AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
+    R4300iOps op;
+    op.Value = opcVal;
+    fpr_write_w(regs, mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).UW[0]);
 }
 
 void Interp_COP1_DMTC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     fpr_write_u64(regs, mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW);
 }
 
@@ -1152,7 +1154,8 @@ static inline void SyncRoundingMode(CRegisters* regs);
 
 void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (mips_rt(opcVal) == 0) return;
     AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW =
         static_cast<int64_t>(static_cast<int32_t>(regs->m_FPCR[mips_rd(opcVal)]));
@@ -1160,7 +1163,8 @@ void Interp_COP1_CFC1(CRegisters* regs, uint32_t opcVal) {
 
 void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->Cop1_CT(mips_rd(opcVal), AsDWord(regs->m_GPR[mips_rt(opcVal)]).W[0]);
     SyncRoundingMode(regs);
 }
@@ -1174,7 +1178,7 @@ void Interp_COP1_CTC1(CRegisters* regs, uint32_t opcVal) {
 // The project uses /fp:fast which sets FTZ/DAZ and allows the compiler to
 // reorder/optimize FP operations. We need precise semantics for correct
 // N64 FPU emulation (denorm handling, exception flags, rounding modes).
-#pragma float_control(precise, on, push)   // clang and MSVC both honour this
+#pragma float_control(precise, on, push) // clang and MSVC both honour this
 #ifdef _MSC_VER
 #pragma fenv_access(on)
 #endif
@@ -1184,7 +1188,7 @@ static void Interp_COP1_Unimplemented(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
     regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
     regs->m_FPCR[31] |= (1 << 17);   // Cause.UnimplementedOp
-    regs->TriggerException(15, 0);    // FPE
+    regs->TriggerException(15, 0);   // FPE
 }
 
 // Sync the host x86 rounding mode to match MIPS FCR31 bits 1:0.
@@ -1193,9 +1197,9 @@ static inline void SyncRoundingMode(CRegisters* regs) {
     // Map MIPS rounding mode to MXCSR rounding control (bits 14:13)
     // MIPS: 0=Nearest, 1=Zero, 2=PosInf(Ceil), 3=NegInf(Floor)
     // MXCSR RC: 0=Nearest, 1=NegInf, 2=PosInf, 3=Zero
-    static constexpr unsigned int mipsToMxcsr[4] = { 0, 3, 2, 1 };
+    static constexpr unsigned int mipsToMxcsr[4] = {0, 3, 2, 1};
     unsigned int mxcsr = nova_mm_getcsr();
-    mxcsr &= ~(0x8040u | (3u << 13)); // Clear FTZ, DAZ, and RC bits
+    mxcsr &= ~(0x8040u | (3u << 13));                   // Clear FTZ, DAZ, and RC bits
     mxcsr |= (mipsToMxcsr[regs->m_FPCR[31] & 3] << 13); // Set RC
     nova_mm_setcsr(mxcsr);
 }
@@ -1205,39 +1209,45 @@ static inline bool UpdateFCR31FromHostExceptions(CRegisters* regs) {
     int exc = std::fetestexcept(FE_ALL_EXCEPT);
     if (exc == 0) return false;
     FPStatusReg& sr = reinterpret_cast<FPStatusReg&>(regs->m_FPCR[31]);
-    if (exc & FE_INEXACT)   { sr.Cause.Inexact = 1;          }
-    if (exc & FE_UNDERFLOW) { sr.Cause.Underflow = 1;        }
-    if (exc & FE_OVERFLOW)  { sr.Cause.Overflow = 1;         }
-    if (exc & FE_DIVBYZERO) { sr.Cause.DivisionByZero = 1;   }
-    if (exc & FE_INVALID)   { sr.Cause.InvalidOperation = 1; }
+    if (exc & FE_INEXACT) {
+        sr.Cause.Inexact = 1;
+    }
+    if (exc & FE_UNDERFLOW) {
+        sr.Cause.Underflow = 1;
+    }
+    if (exc & FE_OVERFLOW) {
+        sr.Cause.Overflow = 1;
+    }
+    if (exc & FE_DIVBYZERO) {
+        sr.Cause.DivisionByZero = 1;
+    }
+    if (exc & FE_INVALID) {
+        sr.Cause.InvalidOperation = 1;
+    }
     // Check if any enabled exception was raised → FPE
-    uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F; // bits 12-16
-    uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F; // bits 7-11
+    uint32_t causes = (regs->m_FPCR[31] >> 12) & 0x1F; // bits 12-16
+    uint32_t enables = (regs->m_FPCR[31] >> 7) & 0x1F; // bits 7-11
     if (causes & enables) {
         regs->TriggerException(15, 0);
         return true; // FPE triggered, caller should skip result write
     }
     // No FPE — set flags for raised causes
-    if (exc & FE_INEXACT)   sr.Flags.Inexact = 1;
+    if (exc & FE_INEXACT) sr.Flags.Inexact = 1;
     if (exc & FE_UNDERFLOW) sr.Flags.Underflow = 1;
-    if (exc & FE_OVERFLOW)  sr.Flags.Overflow = 1;
+    if (exc & FE_OVERFLOW) sr.Flags.Overflow = 1;
     if (exc & FE_DIVBYZERO) sr.Flags.DivisionByZero = 1;
-    if (exc & FE_INVALID)   sr.Flags.InvalidOperation = 1;
+    if (exc & FE_INVALID) sr.Flags.InvalidOperation = 1;
     return false;
 }
 
 // Generic FPU operation callback - single-precision (S format)
 // Read single-precision FPR as raw bits using arithmetic fs operand rules
 // (FR=0: select 32-bit half by register index)
-static inline uint32_t fpr_read_w_op(CRegisters* regs, uint32_t reg) {
-    return fpr_read_w(regs, reg);
-}
+static inline uint32_t fpr_read_w_op(CRegisters* regs, uint32_t reg) { return fpr_read_w(regs, reg); }
 
 // Read single-precision FPR as raw bits for ft operand
 // (FR=0: select 32-bit half by register index)
-static inline uint32_t fpr_read_w_op_ft(CRegisters* regs, uint32_t reg) {
-    return fpr_read_w(regs, reg);
-}
+static inline uint32_t fpr_read_w_op_ft(CRegisters* regs, uint32_t reg) { return fpr_read_w(regs, reg); }
 
 // Read single-precision FPR as float for ft operand
 // (FR=0: select 32-bit half by register index)
@@ -1259,9 +1269,7 @@ static inline double fpr_read_double_ft(CRegisters* regs, uint32_t reg) {
 
 // Read 64-bit FPR for ft operand
 // (FR=0: bit 0 ignored, use even/odd pair mapping)
-static inline uint64_t fpr_read_u64_ft(CRegisters* regs, uint32_t reg) {
-    return fpr_read_u64(regs, reg);
-}
+static inline uint64_t fpr_read_u64_ft(CRegisters* regs, uint32_t reg) { return fpr_read_u64(regs, reg); }
 
 // VR4300 ABS/NEG single-precision: operates on bit patterns with special NaN handling
 static void Interp_COP1_S_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) {
@@ -1275,7 +1283,7 @@ static void Interp_COP1_S_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) 
     // Denorm: exp=0, mantissa!=0 → UnimplementedOperation → FPE
     if (exp == 0 && mant != 0) {
         regs->m_FPCR[31] |= (1 << 17); // Cause.UnimplementedOperation
-        regs->TriggerException(15, 0);  // FPE, coprocessor 1
+        regs->TriggerException(15, 0); // FPE, coprocessor 1
         return;
     }
     // sNaN: exp=0xFF, quiet bit=0, mantissa!=0 → UnimplementedOperation → FPE
@@ -1286,12 +1294,12 @@ static void Interp_COP1_S_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) 
     }
     // qNaN: exp=0xFF, quiet bit=1 → InvalidOperation, result = canonical sNaN
     if (exp == 0xFF && (bits & 0x00400000) != 0) {
-        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        regs->m_FPCR[31] |= (1 << 16);      // Cause.InvalidOperation
         if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
             regs->TriggerException(15, 0);
             return;
         }
-        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        regs->m_FPCR[31] |= (1 << 6);                          // Flag.InvalidOperation
         fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFF); // canonical sNaN
         return;
     }
@@ -1323,12 +1331,12 @@ static void Interp_COP1_D_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) 
     }
     // qNaN → canonical sNaN
     if (exp == 0x7FF && (bits & 0x0008000000000000ull) != 0) {
-        regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+        regs->m_FPCR[31] |= (1 << 16);      // Cause.InvalidOperation
         if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
             regs->TriggerException(15, 0);
             return;
         }
-        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        regs->m_FPCR[31] |= (1 << 6); // Flag.InvalidOperation
         fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
         return;
     }
@@ -1338,9 +1346,7 @@ static void Interp_COP1_D_AbsNeg(CRegisters* regs, uint32_t opcVal, bool isNeg) 
 }
 
 // VR4300 float classification helpers
-static inline bool is_float_denorm(uint32_t bits) {
-    return (bits & 0x7F800000u) == 0 && (bits & 0x007FFFFFu) != 0;
-}
+static inline bool is_float_denorm(uint32_t bits) { return (bits & 0x7F800000u) == 0 && (bits & 0x007FFFFFu) != 0; }
 static inline bool is_float_snan(uint32_t bits) {
     return (bits & 0x7F800000u) == 0x7F800000u && (bits & 0x00400000u) == 0 && (bits & 0x003FFFFFu) != 0;
 }
@@ -1351,8 +1357,7 @@ static inline bool is_double_denorm(uint64_t bits) {
     return (bits & 0x7FF0000000000000ull) == 0 && (bits & 0x000FFFFFFFFFFFFFull) != 0;
 }
 static inline bool is_double_snan(uint64_t bits) {
-    return (bits & 0x7FF0000000000000ull) == 0x7FF0000000000000ull &&
-           (bits & 0x0008000000000000ull) == 0 &&
+    return (bits & 0x7FF0000000000000ull) == 0x7FF0000000000000ull && (bits & 0x0008000000000000ull) == 0 &&
            (bits & 0x0007FFFFFFFFFFFFull) != 0;
 }
 static inline bool is_double_nan(uint64_t bits) {
@@ -1376,8 +1381,9 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
         Interp_COP1_S_AbsNeg(regs, opcVal, true);
         return;
     }
-    R4300iOps op; op.Value = opcVal;
-    regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
+    R4300iOps op;
+    op.Value = opcVal;
+    regs->m_FPCR[31] &= ~0x0003F000;                  // Clear Cause bits
     bool flush_denorm = (regs->m_FPCR[31] >> 24) & 1; // FS bit
 
     // VR4300: check inputs for denorm/sNaN → UnimplementedOperation
@@ -1403,16 +1409,17 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
     float result = 0.0f;
     SyncRoundingMode(regs);
     // Clear MXCSR exception flags directly (bits 0-5)
-    { unsigned int m = nova_mm_getcsr(); nova_mm_setcsr(m & ~0x3Fu); }
+    {
+        unsigned int m = nova_mm_getcsr();
+        nova_mm_setcsr(m & ~0x3Fu);
+    }
     switch (mips_funct(opcVal)) {
-        case R4300_FPU_ADD:  result = fs + ft; break;
-        case R4300_FPU_SUB:  result = fs - ft; break;
-        case R4300_FPU_MUL:  result = fs * ft; break;
-        case R4300_FPU_DIV:  result = fs / ft; break;
-        case R4300_FPU_SQRT: result = sqrtf(fs); break;
-        default:
-            Log::errorf("COP1_S: Unknown funct %d", mips_funct(opcVal));
-            return;
+    case R4300_FPU_ADD:  result = fs + ft; break;
+    case R4300_FPU_SUB:  result = fs - ft; break;
+    case R4300_FPU_MUL:  result = fs * ft; break;
+    case R4300_FPU_DIV:  result = fs / ft; break;
+    case R4300_FPU_SQRT: result = sqrtf(fs); break;
+    default:             Log::errorf("COP1_S: Unknown funct %d", mips_funct(opcVal)); return;
     }
     // Read MXCSR exception flags: bit0=Invalid, bit1=Denorm, bit2=DivZero, bit3=Overflow, bit4=Underflow, bit5=Inexact
     unsigned int mxcsr_exc = nova_mm_getcsr() & 0x3Fu;
@@ -1428,8 +1435,11 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
     std::memcpy(&result_bits, &result, 4);
     if (is_float_nan(result_bits)) {
         regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
-        if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
-        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
+        regs->m_FPCR[31] |= (1 << 6); // Flag.InvalidOperation
         fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFFu);
         return;
     }
@@ -1445,12 +1455,12 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
         double dft = static_cast<double>(ft);
         double exact;
         switch (mips_funct(opcVal)) {
-            case R4300_FPU_ADD:  exact = dfs + dft; break;
-            case R4300_FPU_SUB:  exact = dfs - dft; break;
-            case R4300_FPU_MUL:  exact = dfs * dft; break;
-            case R4300_FPU_DIV:  exact = dfs / dft; break;
-            case R4300_FPU_SQRT: exact = sqrt(dfs); break;
-            default: exact = static_cast<double>(result); break;
+        case R4300_FPU_ADD:  exact = dfs + dft; break;
+        case R4300_FPU_SUB:  exact = dfs - dft; break;
+        case R4300_FPU_MUL:  exact = dfs * dft; break;
+        case R4300_FPU_DIV:  exact = dfs / dft; break;
+        case R4300_FPU_SQRT: exact = sqrt(dfs); break;
+        default:             exact = static_cast<double>(result); break;
         }
         uint64_t exact_bits;
         std::memcpy(&exact_bits, &exact, 8);
@@ -1479,11 +1489,11 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
         bool is_negative = std::signbit(result);
         int rm = regs->m_FPCR[31] & 3;
         uint32_t flushed;
-        if (rm == 2) { // PositiveInfinity
+        if (rm == 2) {        // PositiveInfinity
             flushed = is_negative ? 0x80000000u : 0x00800000u;
         } else if (rm == 3) { // NegativeInfinity
             flushed = is_negative ? 0x80800000u : 0x00000000u;
-        } else { // Nearest or Zero → always flush to ±0
+        } else {              // Nearest or Zero → always flush to ±0
             flushed = is_negative ? 0x80000000u : 0x00000000u;
         }
         regs->m_FPCR[31] |= (1 << 13) | (1 << 12); // Cause.Underflow + Cause.Inexact
@@ -1494,21 +1504,30 @@ void Interp_COP1_S_Arith(CRegisters* regs, uint32_t opcVal) {
     // Check for overflow (MXCSR flag — result may be ±inf or ±MAX_NORMAL depending on rounding mode)
     if (host_exc & FE_OVERFLOW) {
         regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
-        uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
-        uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
-        if (causes & enables) { regs->TriggerException(15, 0); return; }
+        uint32_t causes = (regs->m_FPCR[31] >> 12) & 0x1F;
+        uint32_t enables = (regs->m_FPCR[31] >> 7) & 0x1F;
+        if (causes & enables) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
     }
     // Check for division by zero
     if (host_exc & FE_DIVBYZERO) {
         regs->m_FPCR[31] |= (1 << 15); // Cause.DivisionByZero
-        if (regs->m_FPCR[31] & (1 << 10)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 10)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 5); // Flag.DivisionByZero
     }
     // Check for inexact (not already handled by underflow/overflow)
     if ((host_exc & FE_INEXACT) && !(host_exc & (FE_UNDERFLOW | FE_OVERFLOW))) {
         regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
-        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 7)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
     }
     fpr_write_float_result(regs, mips_fd(opcVal), result);
@@ -1533,7 +1552,8 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
         Interp_COP1_D_AbsNeg(regs, opcVal, true);
         return;
     }
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->m_FPCR[31] &= ~0x0003F000;
     bool flush_denorm = (regs->m_FPCR[31] >> 24) & 1;
 
@@ -1560,16 +1580,17 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
     double result = 0.0;
     SyncRoundingMode(regs);
     // Clear MXCSR exception flags directly (bits 0-5)
-    { unsigned int m = nova_mm_getcsr(); nova_mm_setcsr(m & ~0x3Fu); }
+    {
+        unsigned int m = nova_mm_getcsr();
+        nova_mm_setcsr(m & ~0x3Fu);
+    }
     switch (mips_funct(opcVal)) {
-        case R4300_FPU_ADD:  result = fs + ft; break;
-        case R4300_FPU_SUB:  result = fs - ft; break;
-        case R4300_FPU_MUL:  result = fs * ft; break;
-        case R4300_FPU_DIV:  result = fs / ft; break;
-        case R4300_FPU_SQRT: result = sqrt(fs); break;
-        default:
-            Log::errorf("COP1_D: Unknown funct %d", mips_funct(opcVal));
-            return;
+    case R4300_FPU_ADD:  result = fs + ft; break;
+    case R4300_FPU_SUB:  result = fs - ft; break;
+    case R4300_FPU_MUL:  result = fs * ft; break;
+    case R4300_FPU_DIV:  result = fs / ft; break;
+    case R4300_FPU_SQRT: result = sqrt(fs); break;
+    default:             Log::errorf("COP1_D: Unknown funct %d", mips_funct(opcVal)); return;
     }
     // Read MXCSR exception flags
     unsigned int mxcsr_exc_d = nova_mm_getcsr() & 0x3Fu;
@@ -1585,8 +1606,11 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
     std::memcpy(&result_bits, &result, 8);
     if (is_double_nan(result_bits)) {
         regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
-        if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
-        regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+        if (regs->m_FPCR[31] & (1 << 11)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
+        regs->m_FPCR[31] |= (1 << 6); // Flag.InvalidOperation
         fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
         return;
     }
@@ -1601,12 +1625,12 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
         nova_mm_setcsr((saved_mxcsr & ~0xE07Fu) | 0x1F80u | (3u << 13));
         double trunc_result;
         switch (mips_funct(opcVal)) {
-            case R4300_FPU_ADD:  trunc_result = fs + ft; break;
-            case R4300_FPU_SUB:  trunc_result = fs - ft; break;
-            case R4300_FPU_MUL:  trunc_result = fs * ft; break;
-            case R4300_FPU_DIV:  trunc_result = fs / ft; break;
-            case R4300_FPU_SQRT: trunc_result = sqrt(fs); break;
-            default: trunc_result = result; break;
+        case R4300_FPU_ADD:  trunc_result = fs + ft; break;
+        case R4300_FPU_SUB:  trunc_result = fs - ft; break;
+        case R4300_FPU_MUL:  trunc_result = fs * ft; break;
+        case R4300_FPU_DIV:  trunc_result = fs / ft; break;
+        case R4300_FPU_SQRT: trunc_result = sqrt(fs); break;
+        default:             trunc_result = result; break;
         }
         uint64_t trunc_bits;
         double trunc_val = trunc_result;
@@ -1614,7 +1638,10 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
         // Restore MXCSR
         nova_mm_setcsr(saved_mxcsr);
         // Re-disable FTZ/DAZ
-        { unsigned int m = nova_mm_getcsr(); nova_mm_setcsr(m & ~0x8040u); }
+        {
+            unsigned int m = nova_mm_getcsr();
+            nova_mm_setcsr(m & ~0x8040u);
+        }
         if (is_double_denorm(trunc_bits) || (trunc_result == 0.0 && fs != 0.0)) {
             tininess_d = true;
         }
@@ -1639,11 +1666,11 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
         int rm = regs->m_FPCR[31] & 3;
         uint64_t flushed;
         if (is_denorm_d) {
-            if (rm == 2) { // PositiveInfinity
+            if (rm == 2) {        // PositiveInfinity
                 flushed = is_negative ? 0x8000000000000000ull : 0x0010000000000000ull;
             } else if (rm == 3) { // NegativeInfinity
                 flushed = is_negative ? 0x8010000000000000ull : 0x0000000000000000ull;
-            } else { // Nearest or Zero → always flush to ±0
+            } else {              // Nearest or Zero → always flush to ±0
                 flushed = is_negative ? 0x8000000000000000ull : 0x0000000000000000ull;
             }
         } else {
@@ -1658,21 +1685,30 @@ void Interp_COP1_D_Arith(CRegisters* regs, uint32_t opcVal) {
     // Check for overflow (MXCSR flag — result may be ±inf or ±MAX_NORMAL depending on rounding mode)
     if (host_exc & FE_OVERFLOW) {
         regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
-        uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
-        uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
-        if (causes & enables) { regs->TriggerException(15, 0); return; }
+        uint32_t causes = (regs->m_FPCR[31] >> 12) & 0x1F;
+        uint32_t enables = (regs->m_FPCR[31] >> 7) & 0x1F;
+        if (causes & enables) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
     }
     // Check for division by zero
     if (host_exc & FE_DIVBYZERO) {
         regs->m_FPCR[31] |= (1 << 15); // Cause.DivisionByZero
-        if (regs->m_FPCR[31] & (1 << 10)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 10)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 5); // Flag.DivisionByZero
     }
     // Check for inexact (not already handled by underflow/overflow)
     if ((host_exc & FE_INEXACT) && !(host_exc & (FE_UNDERFLOW | FE_OVERFLOW))) {
         regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
-        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 7)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
     }
     fpr_write_double(regs, mips_fd(opcVal), result);
@@ -1691,11 +1727,11 @@ static void VR4300_ConvertToW(CRegisters* regs, uint32_t opcVal, double input, i
     }
     int saved_rm = std::fegetround();
     switch (funct) {
-        case R4300_FPU_ROUND_W: std::fesetround(FE_TONEAREST); break;
-        case R4300_FPU_TRUNC_W: std::fesetround(FE_TOWARDZERO); break;
-        case R4300_FPU_CEIL_W:  std::fesetround(FE_UPWARD); break;
-        case R4300_FPU_FLOOR_W: std::fesetround(FE_DOWNWARD); break;
-        default: break; // CVT_W: keep current mode from SyncRoundingMode
+    case R4300_FPU_ROUND_W: std::fesetround(FE_TONEAREST); break;
+    case R4300_FPU_TRUNC_W: std::fesetround(FE_TOWARDZERO); break;
+    case R4300_FPU_CEIL_W:  std::fesetround(FE_UPWARD); break;
+    case R4300_FPU_FLOOR_W: std::fesetround(FE_DOWNWARD); break;
+    default:                break; // CVT_W: keep current mode from SyncRoundingMode
     }
     double rounded = std::nearbyint(input);
     std::fesetround(saved_rm);
@@ -1707,7 +1743,10 @@ static void VR4300_ConvertToW(CRegisters* regs, uint32_t opcVal, double input, i
     int32_t result = static_cast<int32_t>(rounded);
     if (rounded != input) {
         regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
-        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 7)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
     }
     fpr_write_w_result(regs, mips_fd(opcVal), static_cast<uint32_t>(result));
@@ -1723,11 +1762,11 @@ static void VR4300_ConvertToL(CRegisters* regs, uint32_t opcVal, double input, i
     }
     int saved_rm = std::fegetround();
     switch (funct) {
-        case R4300_FPU_ROUND_L: std::fesetround(FE_TONEAREST); break;
-        case R4300_FPU_TRUNC_L: std::fesetround(FE_TOWARDZERO); break;
-        case R4300_FPU_CEIL_L:  std::fesetround(FE_UPWARD); break;
-        case R4300_FPU_FLOOR_L: std::fesetround(FE_DOWNWARD); break;
-        default: break; // CVT_L: keep current mode
+    case R4300_FPU_ROUND_L: std::fesetround(FE_TONEAREST); break;
+    case R4300_FPU_TRUNC_L: std::fesetround(FE_TOWARDZERO); break;
+    case R4300_FPU_CEIL_L:  std::fesetround(FE_UPWARD); break;
+    case R4300_FPU_FLOOR_L: std::fesetround(FE_DOWNWARD); break;
+    default:                break; // CVT_L: keep current mode
     }
     double rounded = std::nearbyint(input);
     std::fesetround(saved_rm);
@@ -1740,7 +1779,10 @@ static void VR4300_ConvertToL(CRegisters* regs, uint32_t opcVal, double input, i
     int64_t result = static_cast<int64_t>(rounded);
     if (rounded != input) {
         regs->m_FPCR[31] |= (1 << 12);
-        if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+        if (regs->m_FPCR[31] & (1 << 7)) {
+            regs->TriggerException(15, 0);
+            return;
+        }
         regs->m_FPCR[31] |= (1 << 2);
     }
     fpr_write_u64_arith(regs, mips_fd(opcVal), static_cast<uint64_t>(result));
@@ -1749,7 +1791,8 @@ static void VR4300_ConvertToL(CRegisters* regs, uint32_t opcVal, double input, i
 // Single-precision conversions
 void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->m_FPCR[31] &= ~0x0003F000;
 
     // VR4300: check input for denorm/sNaN (IEEE sNaN)
@@ -1777,7 +1820,10 @@ void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
         // NaN input → InvalidOp + canonical sNaN
         if (is_float_nan(fs_bits)) {
             regs->m_FPCR[31] |= (1 << 16);
-            if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+            if (regs->m_FPCR[31] & (1 << 11)) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 6);
             fpr_write_u64_arith(regs, mips_fd(opcVal), 0x7FF7FFFFFFFFFFFFull);
             return;
@@ -1795,13 +1841,11 @@ void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
     }
 
     double input = static_cast<double>(fs); // exact
-    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W ||
-        funct == R4300_FPU_TRUNC_W || funct == R4300_FPU_CEIL_W ||
-        funct == R4300_FPU_FLOOR_W) {
+    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W || funct == R4300_FPU_TRUNC_W ||
+        funct == R4300_FPU_CEIL_W || funct == R4300_FPU_FLOOR_W) {
         VR4300_ConvertToW(regs, opcVal, input, funct);
-    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L ||
-               funct == R4300_FPU_TRUNC_L || funct == R4300_FPU_CEIL_L ||
-               funct == R4300_FPU_FLOOR_L) {
+    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L || funct == R4300_FPU_TRUNC_L ||
+               funct == R4300_FPU_CEIL_L || funct == R4300_FPU_FLOOR_L) {
         VR4300_ConvertToL(regs, opcVal, input, funct);
     } else {
         Log::errorf("COP1_S_CVT: Unknown funct %d", funct);
@@ -1811,7 +1855,8 @@ void Interp_COP1_S_CVT(CRegisters* regs, uint32_t opcVal) {
 // Double-precision conversions
 void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->m_FPCR[31] &= ~0x0003F000;
 
     // VR4300: check input for denorm/sNaN (IEEE sNaN)
@@ -1839,7 +1884,10 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
         // NaN input → InvalidOp + canonical sNaN
         if (is_double_nan(fs_bits)) {
             regs->m_FPCR[31] |= (1 << 16);
-            if (regs->m_FPCR[31] & (1 << 11)) { regs->TriggerException(15, 0); return; }
+            if (regs->m_FPCR[31] & (1 << 11)) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 6);
             fpr_write_w_result(regs, mips_fd(opcVal), 0x7FBFFFFFu);
             return;
@@ -1862,15 +1910,15 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
                 bool is_negative = std::signbit(fs);
                 int rm = regs->m_FPCR[31] & 3;
                 uint32_t flushed;
-                if (rm == 2) { // PositiveInfinity
+                if (rm == 2) {        // PositiveInfinity
                     flushed = is_negative ? 0x80000000u : 0x00800000u;
                 } else if (rm == 3) { // NegativeInfinity
                     flushed = is_negative ? 0x80800000u : 0x00000000u;
-                } else { // Nearest or Zero → always flush to ±0
+                } else {              // Nearest or Zero → always flush to ±0
                     flushed = is_negative ? 0x80000000u : 0x00000000u;
                 }
                 regs->m_FPCR[31] |= (1 << 13) | (1 << 12); // Cause.Underflow + Cause.Inexact
-                regs->m_FPCR[31] |= (1 << 3) | (1 << 2); // Flag.Underflow + Flag.Inexact
+                regs->m_FPCR[31] |= (1 << 3) | (1 << 2);   // Flag.Underflow + Flag.Inexact
                 fpr_write_w_result(regs, mips_fd(opcVal), flushed);
                 return;
             }
@@ -1885,9 +1933,12 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
         bool fs_is_inf = (fs_abs == 0x7FF0000000000000ull);
         if (result_is_inf && !fs_is_inf) {
             regs->m_FPCR[31] |= (1 << 14) | (1 << 12); // Cause.Overflow + Cause.Inexact
-            uint32_t causes  = (regs->m_FPCR[31] >> 12) & 0x1F;
-            uint32_t enables = (regs->m_FPCR[31] >> 7)  & 0x1F;
-            if (causes & enables) { regs->TriggerException(15, 0); return; }
+            uint32_t causes = (regs->m_FPCR[31] >> 12) & 0x1F;
+            uint32_t enables = (regs->m_FPCR[31] >> 7) & 0x1F;
+            if (causes & enables) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 4) | (1 << 2); // Flag.Overflow + Flag.Inexact
             fpr_write_float_result(regs, mips_fd(opcVal), fval);
             return;
@@ -1895,7 +1946,10 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
         // Check for inexact (normal result)
         if (static_cast<double>(fval) != fs) {
             regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
-            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            if (regs->m_FPCR[31] & (1 << 7)) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 2); // Flag.Inexact
         }
         fpr_write_float_result(regs, mips_fd(opcVal), fval);
@@ -1909,13 +1963,11 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
         return;
     }
 
-    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W ||
-        funct == R4300_FPU_TRUNC_W || funct == R4300_FPU_CEIL_W ||
-        funct == R4300_FPU_FLOOR_W) {
+    if (funct == R4300_FPU_CVT_W || funct == R4300_FPU_ROUND_W || funct == R4300_FPU_TRUNC_W ||
+        funct == R4300_FPU_CEIL_W || funct == R4300_FPU_FLOOR_W) {
         VR4300_ConvertToW(regs, opcVal, fs, funct);
-    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L ||
-               funct == R4300_FPU_TRUNC_L || funct == R4300_FPU_CEIL_L ||
-               funct == R4300_FPU_FLOOR_L) {
+    } else if (funct == R4300_FPU_CVT_L || funct == R4300_FPU_ROUND_L || funct == R4300_FPU_TRUNC_L ||
+               funct == R4300_FPU_CEIL_L || funct == R4300_FPU_FLOOR_L) {
         VR4300_ConvertToL(regs, opcVal, fs, funct);
     } else {
         Log::errorf("COP1_D_CVT: Unknown funct %d", funct);
@@ -1925,7 +1977,8 @@ void Interp_COP1_D_CVT(CRegisters* regs, uint32_t opcVal) {
 // Word-to-float/double conversion
 void Interp_COP1_W_CVT(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     // W-format CVT: fs bit 0 ignored in FR=0 (arithmetic read rules)
     int32_t w = static_cast<int32_t>(fpr_read_w_op(regs, mips_fs(opcVal)));
     regs->m_FPCR[31] &= ~0x0003F000;
@@ -1934,7 +1987,7 @@ void Interp_COP1_W_CVT(CRegisters* regs, uint32_t opcVal) {
         float result = static_cast<float>(w);
         // Manual inexact detection: double can represent both int32 and float exactly
         if (static_cast<double>(result) != static_cast<double>(w)) {
-            regs->m_FPCR[31] |= (1 << 12); // Cause.Inexact
+            regs->m_FPCR[31] |= (1 << 12);     // Cause.Inexact
             if (regs->m_FPCR[31] & (1 << 7)) { // Enable.Inexact → FPE
                 regs->TriggerException(15, 0);
                 return;
@@ -1955,7 +2008,8 @@ void Interp_COP1_W_CVT(CRegisters* regs, uint32_t opcVal) {
 // Long-to-float/double conversion
 void Interp_COP1_L_CVT(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t l = static_cast<int64_t>(fpr_read_u64(regs, mips_fs(opcVal)));
     regs->m_FPCR[31] &= ~0x0003F000;
     SyncRoundingMode(regs);
@@ -1979,30 +2033,40 @@ void Interp_COP1_L_CVT(CRegisters* regs, uint32_t opcVal) {
     if (mips_funct(opcVal) == R4300_FPU_CVT_S) {
         float result = static_cast<float>(l);
         // Manual inexact: check if |l| has more than 24 significant bits
-        uint64_t u = static_cast<uint64_t>(l); if (l < 0) u = -u;
+        uint64_t u = static_cast<uint64_t>(l);
+        if (l < 0) u = -u;
         bool inexact = false;
         if (u != 0) {
-            int msb = 63; while (msb > 0 && !(u & (1ull << msb))) msb--;
+            int msb = 63;
+            while (msb > 0 && !(u & (1ull << msb))) msb--;
             if (msb >= 24) inexact = (u & ((1ull << (msb - 23)) - 1)) != 0;
         }
         if (inexact) {
             regs->m_FPCR[31] |= (1 << 12);
-            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            if (regs->m_FPCR[31] & (1 << 7)) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 2);
         }
         fpr_write_float_result(regs, mips_fd(opcVal), result);
     } else {
         double result = static_cast<double>(l);
         // Manual inexact: check if |l| has more than 53 significant bits
-        uint64_t u = static_cast<uint64_t>(l); if (l < 0) u = -u;
+        uint64_t u = static_cast<uint64_t>(l);
+        if (l < 0) u = -u;
         bool inexact = false;
         if (u != 0) {
-            int msb = 63; while (msb > 0 && !(u & (1ull << msb))) msb--;
+            int msb = 63;
+            while (msb > 0 && !(u & (1ull << msb))) msb--;
             if (msb >= 53) inexact = (u & ((1ull << (msb - 52)) - 1)) != 0;
         }
         if (inexact) {
             regs->m_FPCR[31] |= (1 << 12);
-            if (regs->m_FPCR[31] & (1 << 7)) { regs->TriggerException(15, 0); return; }
+            if (regs->m_FPCR[31] & (1 << 7)) {
+                regs->TriggerException(15, 0);
+                return;
+            }
             regs->m_FPCR[31] |= (1 << 2);
         }
         fpr_write_double(regs, mips_fd(opcVal), result);
@@ -2014,7 +2078,8 @@ constexpr uint32_t FPCSR_C = 0x00800000;
 
 void Interp_COP1_S_CMP(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
 
     uint32_t fs_bits = fpr_read_w_op(regs, mips_fs(opcVal));
@@ -2028,30 +2093,30 @@ void Interp_COP1_S_CMP(CRegisters* regs, uint32_t opcVal) {
         unordered = true;
         // VR4300 NaN convention: signaling comparisons (bit 3) raise for any NaN;
         // non-signaling raise only if any input is qNaN (IEEE bit22=1 = VR4300 sNaN)
-        bool has_ieee_qnan = (is_float_nan(fs_bits) && !is_float_snan(fs_bits)) ||
-                             (is_float_nan(ft_bits) && !is_float_snan(ft_bits));
+        bool has_ieee_qnan =
+            (is_float_nan(fs_bits) && !is_float_snan(fs_bits)) || (is_float_nan(ft_bits) && !is_float_snan(ft_bits));
         if ((mips_funct(opcVal) & 8) || has_ieee_qnan) {
-            regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+            regs->m_FPCR[31] |= (1 << 16);      // Cause.InvalidOperation
             if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
                 regs->TriggerException(15, 0);
                 return;
             }
-            regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+            regs->m_FPCR[31] |= (1 << 6); // Flag.InvalidOperation
         }
     } else {
         less = (fs < ft);
         equal = (fs == ft);
     }
-    bool cond = ((mips_funct(opcVal) & 4) && less) ||
-                ((mips_funct(opcVal) & 2) && equal) ||
+    bool cond = ((mips_funct(opcVal) & 4) && less) || ((mips_funct(opcVal) & 2) && equal) ||
                 ((mips_funct(opcVal) & 1) && unordered);
     if (cond) regs->m_FPCR[31] |= FPCSR_C;
-    else      regs->m_FPCR[31] &= ~FPCSR_C;
+    else regs->m_FPCR[31] &= ~FPCSR_C;
 }
 
 void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
     if (CheckCop1Unusable(regs)) return;
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     regs->m_FPCR[31] &= ~0x0003F000; // Clear Cause bits
 
     uint64_t fs_bits = fpr_read_u64(regs, mips_fs(opcVal));
@@ -2068,22 +2133,21 @@ void Interp_COP1_D_CMP(CRegisters* regs, uint32_t opcVal) {
         bool has_ieee_qnan = (is_double_nan(fs_bits) && !is_double_snan(fs_bits)) ||
                              (is_double_nan(ft_bits) && !is_double_snan(ft_bits));
         if ((mips_funct(opcVal) & 8) || has_ieee_qnan) {
-            regs->m_FPCR[31] |= (1 << 16); // Cause.InvalidOperation
+            regs->m_FPCR[31] |= (1 << 16);      // Cause.InvalidOperation
             if (regs->m_FPCR[31] & (1 << 11)) { // Enable.InvalidOperation → FPE, no flag
                 regs->TriggerException(15, 0);
                 return;
             }
-            regs->m_FPCR[31] |= (1 << 6);  // Flag.InvalidOperation
+            regs->m_FPCR[31] |= (1 << 6); // Flag.InvalidOperation
         }
     } else {
         less = (fs < ft);
         equal = (fs == ft);
     }
-    bool cond = ((mips_funct(opcVal) & 4) && less) ||
-                ((mips_funct(opcVal) & 2) && equal) ||
+    bool cond = ((mips_funct(opcVal) & 4) && less) || ((mips_funct(opcVal) & 2) && equal) ||
                 ((mips_funct(opcVal) & 1) && unordered);
     if (cond) regs->m_FPCR[31] |= FPCSR_C;
-    else      regs->m_FPCR[31] &= ~FPCSR_C;
+    else regs->m_FPCR[31] &= ~FPCSR_C;
 }
 
 // Restore /fp:fast for the rest of the file
@@ -2099,8 +2163,7 @@ static std::atomic<int> s_syscallCount{0};
 void Interp_SYSCALL(CRegisters* regs, uint32_t /*opcVal*/) {
     int n = s_syscallCount.fetch_add(1);
     if (n < 10) {
-        Log::infof("[SYSCALL] #%d PC=0x%08X STATUS=0x%08X",
-                   n+1, (uint32_t)regs->m_PROGRAM_COUNTER,
+        Log::infof("[SYSCALL] #%d PC=0x%08X STATUS=0x%08X", n + 1, (uint32_t)regs->m_PROGRAM_COUNTER,
                    regs->STATUS_REGISTER.Value);
     }
     regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Syscall));
@@ -2130,8 +2193,7 @@ void Interp_CACHE(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
     // the affected cache-line, otherwise stale code executes after
     // the game DMA's new code to RDRAM and calls osInvalICache().
     if (cacheOp == 0x00 || cacheOp == 0x10) {
-        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW +
-                        static_cast<int16_t>(mips_offset(opcVal));
+        uint64_t addr = AsDWord(regs->m_GPR[mips_base(opcVal)]).DW + static_cast<int16_t>(mips_offset(opcVal));
         // R4300 I-cache line = 32 bytes; align down and invalidate whole line
         uint32_t physAddr = static_cast<uint32_t>(addr) & 0x1FFFFFFF;
         uint32_t lineStart = physAddr & ~31u;
@@ -2147,82 +2209,89 @@ void Interp_CACHE(CRegisters* regs, MipsMemoryVM* mmu, uint32_t opcVal) {
 
 // Trap instructions
 void Interp_TGE(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW >= AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TGEU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW >= AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TLT(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW < AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TLTU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).UDW < AsDWord(regs->m_GPR[mips_rt(opcVal)]).UDW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TEQ(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW == AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TNE(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     if (AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW != AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 // REGIMM trap-immediate instructions
 void Interp_TGEI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW >= imm)
-        regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
+    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW >= imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TGEIU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint64_t imm = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm)));
     if (AsDWord(regs->m_GPR[op.Itype.rs]).UDW >= imm)
         regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TLTI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW < imm)
-        regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
+    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW < imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TLTIU(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     uint64_t imm = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm)));
-    if (AsDWord(regs->m_GPR[op.Itype.rs]).UDW < imm)
-        regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
+    if (AsDWord(regs->m_GPR[op.Itype.rs]).UDW < imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TEQI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW == imm)
-        regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
+    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW == imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 void Interp_TNEI(CRegisters* regs, uint32_t opcVal) {
-    R4300iOps op; op.Value = opcVal;
+    R4300iOps op;
+    op.Value = opcVal;
     int64_t imm = static_cast<int64_t>(static_cast<int16_t>(op.Itype.imm));
-    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW != imm)
-        regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
+    if (AsDWord(regs->m_GPR[op.Itype.rs]).DW != imm) regs->TriggerException(static_cast<uint32_t>(ExceptionCode::Trap));
 }
 
 // ----- Branch / Jump Callbacks -----
@@ -2337,60 +2406,100 @@ int Interp_BEQL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs == rt) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs == rt) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BNEL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int64_t rt = AsDWord(regs->m_GPR[mips_rt(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs != rt) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs != rt) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BLEZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs <= 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs <= 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BGTZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs > 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs > 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BLTZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs < 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs < 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BGEZL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
-    if (rs >= 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs >= 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BLTZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
-    if (rs < 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs < 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BGEZALL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     int64_t rs = AsDWord(regs->m_GPR[mips_rs(opcVal)]).DW;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     AsDWord(regs->m_GPR[31]).DW = static_cast<int64_t>(regs->GetLinkAddress(static_cast<int32_t>(pc + 8)));
-    if (rs >= 0) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (rs >= 0) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BC1FL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
@@ -2398,8 +2507,13 @@ int Interp_BC1FL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     if (CheckCop1Unusable(regs)) return -1;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
-    if (!fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (!fpCond) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 int Interp_BC1TL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
@@ -2407,8 +2521,13 @@ int Interp_BC1TL_BranchLikely(CRegisters* regs, uint32_t opcVal, uint32_t pc) {
     if (CheckCop1Unusable(regs)) return -1;
     int32_t offset = static_cast<int32_t>(mips_imm(opcVal)) << 2;
     bool fpCond = (regs->m_FPCR[31] & FPCSR_C) != 0;
-    if (fpCond) { SetPC(regs, pc + 4 + offset); return 1; }
-    else { SetPC(regs, pc + 8); return 0; }
+    if (fpCond) {
+        SetPC(regs, pc + 4 + offset);
+        return 1;
+    } else {
+        SetPC(regs, pc + 8);
+        return 0;
+    }
 }
 
 // ---- Binary-search diagnostic: SPECIAL dispatcher callback ----
@@ -2457,7 +2576,7 @@ void Interp_SpecialDispatch(CRegisters* regs, uint32_t opcVal) {
     case 0x3C: Interp_DSLL32(regs, opcVal); break;
     case 0x3E: Interp_DSRL32(regs, opcVal); break;
     case 0x3F: Interp_DSRA32(regs, opcVal); break;
-    default: break; // SYSCALL, BREAK, SYNC, JR, JALR handled separately
+    default:   break; // SYSCALL, BREAK, SYNC, JR, JALR handled separately
     }
 }
 
@@ -2475,7 +2594,7 @@ void Interp_ImmDispatch(CRegisters* regs, uint32_t opcVal) {
     case 0x0F: Interp_LUI(regs, opcVal); break;
     case 0x18: Interp_DADDI(regs, opcVal); break;
     case 0x19: Interp_DADDIU(regs, opcVal); break;
-    default: break;
+    default:   break;
     }
 }
 

@@ -15,7 +15,6 @@ namespace Nova {
 //   data        : pixel data, top row first
 //   strideBytes : bytes between rows (0 = tightly packed w*comp)
 // Returns true on success.
-bool WritePNG(const char* path, int w, int h, int comp,
-              const void* data, int strideBytes = 0);
+bool WritePNG(const char* path, int w, int h, int comp, const void* data, int strideBytes = 0);
 
 } // namespace Nova

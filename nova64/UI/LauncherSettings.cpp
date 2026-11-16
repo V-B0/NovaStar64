@@ -22,7 +22,9 @@
 
 extern CN64System* g_System;
 
-namespace Nova64::Video::VK { bool IsVulkanAvailable(); }
+namespace Nova64::Video::VK {
+bool IsVulkanAvailable();
+}
 
 namespace NovaUI {
 
@@ -61,15 +63,15 @@ void LaunchOptions::Load(const std::string& path) {
         key.erase(key.find_last_not_of(" \t") + 1);
         int v = 0;
         if (!ParseInt(line.substr(eq + 1), v)) continue;
-        if      (key == "speed")             speed = v;
-        else if (key == "displayMode")       displayMode = v;
-        else if (key == "cpuCore")           cpuCore = v;
-        else if (key == "rspEngine")         rspEngine = v;
-        else if (key == "rewind")            rewind = v != 0;
+        if (key == "speed") speed = v;
+        else if (key == "displayMode") displayMode = v;
+        else if (key == "cpuCore") cpuCore = v;
+        else if (key == "rspEngine") rspEngine = v;
+        else if (key == "rewind") rewind = v != 0;
         else if (key == "pauseWhenInactive") pauseOnFocusLoss = v != 0;
-        else if (key == "showFps")           showFps = v != 0;
-        else if (key == "volume")            volume = v;
-        else if (key == "muted")             muted = v != 0;
+        else if (key == "showFps") showFps = v != 0;
+        else if (key == "volume") volume = v;
+        else if (key == "muted") muted = v != 0;
     }
     if (speed != 0 && speed != 30 && speed != 60 && speed != 120) speed = 60;
     // Older files also used 2, exclusive fullscreen; any fullscreen is 1 now.
@@ -122,15 +124,15 @@ void NovaLauncher::SaveGraphicsSettings() {
     Nova64::Video::PluginConfig onDisk;
     onDisk.LoadFromFile(detail::kGraphicsPath);
     onDisk.internalResScale = m_gfx.internalResScale;
-    onDisk.aspectRatio      = m_gfx.aspectRatio;
-    onDisk.rayTracing       = m_gfx.rayTracing;
-    onDisk.backendType      = m_gfx.backendType;
-    onDisk.enableMipmaps    = m_gfx.enableMipmaps;
-    onDisk.hiResTexEnabled  = m_gfx.hiResTexEnabled;
-    onDisk.textureDump      = m_gfx.textureDump;
-    onDisk.renderingMode    = m_gfx.renderingMode;
-    onDisk.fbReadAccess     = m_gfx.fbReadAccess;
-    onDisk.fbWriteAccess    = m_gfx.fbWriteAccess;
+    onDisk.aspectRatio = m_gfx.aspectRatio;
+    onDisk.rayTracing = m_gfx.rayTracing;
+    onDisk.backendType = m_gfx.backendType;
+    onDisk.enableMipmaps = m_gfx.enableMipmaps;
+    onDisk.hiResTexEnabled = m_gfx.hiResTexEnabled;
+    onDisk.textureDump = m_gfx.textureDump;
+    onDisk.renderingMode = m_gfx.renderingMode;
+    onDisk.fbReadAccess = m_gfx.fbReadAccess;
+    onDisk.fbWriteAccess = m_gfx.fbWriteAccess;
     onDisk.SaveToFile(detail::kGraphicsPath);
 }
 
@@ -152,7 +154,7 @@ bool NovaLauncher::HandleRebindEvent(const SDL_Event& event) {
         const SDL_Scancode sc = event.key.keysym.scancode;
         if (sc != SDL_SCANCODE_ESCAPE) {
             auto& binding = m_bindings.keys[static_cast<size_t>(m_rebindTarget)];
-            binding.primary   = sc;
+            binding.primary = sc;
             binding.alternate = 0;
             m_bindings.SaveToFile(NovaInput::kKeyBindingsPath);
         }
@@ -169,8 +171,8 @@ void NovaLauncher::RenderInputSettingsWidget() {
 
     if (ImGui::BeginTable("InputTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110);
-        ImGui::TableSetupColumn("Key",    ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("",       ImGuiTableColumnFlags_WidthFixed, 120);
+        ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < kCount; ++i) {
@@ -201,7 +203,7 @@ void NovaLauncher::RenderInputSettingsWidget() {
                 ImGui::Button("Press a key...", ImVec2(-1, 0));
                 ImGui::PopStyleColor();
             } else if (ImGui::Button("Change", ImVec2(-1, 0))) {
-                m_rebindTarget    = i;
+                m_rebindTarget = i;
                 m_padRebindTarget = -1;
             }
             ImGui::PopID();
@@ -230,9 +232,9 @@ void Hint(const char* text) {
 // A file:// URL for a folder, with everything outside the unreserved set escaped
 // (the user data folder has a space in it on macOS, and URLs may not).
 std::string FolderUrl(const std::filesystem::path& folder) {
-    const std::string path = folder.generic_string();   // forward slashes on every platform
+    const std::string path = folder.generic_string(); // forward slashes on every platform
     std::string url = "file://";
-    if (path.empty() || path[0] != '/') url += '/';      // C:/Users/... -> file:///C:/Users/...
+    if (path.empty() || path[0] != '/') url += '/';   // C:/Users/... -> file:///C:/Users/...
     static const char* kHex = "0123456789ABCDEF";
     for (unsigned char c : path) {
         if (std::isalnum(c) || c == '/' || c == '-' || c == '.' || c == '_' || c == '~' || c == ':') {
@@ -258,25 +260,21 @@ bool NovaLauncher::HandlePadRebindEvent(const SDL_Event& event) {
     using Kind = NovaInput::PadBinding::Kind;
     NovaInput::PadBinding picked;
     switch (event.type) {
-        case SDL_CONTROLLERBUTTONDOWN:
-            picked = {Kind::Button, event.cbutton.button};
-            break;
-        case SDL_CONTROLLERAXISMOTION:
-            // Only a deliberate push: sticks and triggers report small movements constantly.
-            if (std::abs(static_cast<int>(event.caxis.value)) < 20000) return true;
-            picked = {event.caxis.value > 0 ? Kind::AxisPositive : Kind::AxisNegative, event.caxis.axis};
-            break;
-        case SDL_KEYDOWN:
-            if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) m_padRebindTarget = -1;
-            return true;
-        case SDL_KEYUP:
-        case SDL_CONTROLLERBUTTONUP:
-            return true;
-        default:
-            return false;
+    case SDL_CONTROLLERBUTTONDOWN: picked = {Kind::Button, event.cbutton.button}; break;
+    case SDL_CONTROLLERAXISMOTION:
+        // Only a deliberate push: sticks and triggers report small movements constantly.
+        if (std::abs(static_cast<int>(event.caxis.value)) < 20000) return true;
+        picked = {event.caxis.value > 0 ? Kind::AxisPositive : Kind::AxisNegative, event.caxis.axis};
+        break;
+    case SDL_KEYDOWN:
+        if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) m_padRebindTarget = -1;
+        return true;
+    case SDL_KEYUP:
+    case SDL_CONTROLLERBUTTONUP: return true;
+    default:                     return false;
     }
     const auto i = static_cast<size_t>(m_padRebindTarget);
-    m_padSettings.primary[i]   = picked;
+    m_padSettings.primary[i] = picked;
     m_padSettings.alternate[i] = {};
     SaveControllerSettings();
     m_padRebindTarget = -1;
@@ -291,10 +289,10 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     static const char* kAccessories[] = {"Automatic", "Nothing", "Rumble Pak"};
     static const char* kPlayerNames[] = {"Player 1", "Player 2", "Player 3", "Player 4"};
     if (ImGui::BeginTable("PadPlayers", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Player",     ImGuiTableColumnFlags_WidthFixed, 60);
+        ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 60);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("",           ImGuiTableColumnFlags_WidthFixed, 110);
-        ImGui::TableSetupColumn("Accessory",  ImGuiTableColumnFlags_WidthFixed, 150);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("Accessory", ImGuiTableColumnFlags_WidthFixed, 150);
         ImGui::TableHeadersRow();
         for (int p = 0; p < kMaxPlayers; ++p) {
             ImGui::TableNextRow();
@@ -302,12 +300,15 @@ void NovaLauncher::RenderControllerSettingsWidget() {
             ImGui::Text("%d", p + 1);
 
             ImGui::TableSetColumnIndex(1);
-            const auto pad = std::find_if(pads.begin(), pads.end(),
-                                          [p](const ConnectedPad& c) { return c.player == p; });
+            const auto pad =
+                std::find_if(pads.begin(), pads.end(), [p](const ConnectedPad& c) { return c.player == p; });
             const bool hasPad = pad != pads.end();
             if (hasPad) {
                 ImGui::TextUnformatted(pad->name.c_str());
-                if (pad->canRumble) { ImGui::SameLine(); ImGui::TextDisabled("(rumble)"); }
+                if (pad->canRumble) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(rumble)");
+                }
             } else {
                 ImGui::TextDisabled("%s", p == 0 ? "Keyboard only" : "Not connected");
             }
@@ -327,10 +328,13 @@ void NovaLauncher::RenderControllerSettingsWidget() {
                     // that's what this slot should prefer from now on.
                     std::string bumpedGuid;
                     for (const auto& other : pads)
-                        if (other.player == current) { bumpedGuid = other.guid; break; }
+                        if (other.player == current) {
+                            bumpedGuid = other.guid;
+                            break;
+                        }
                     gamepads.SwapPlayers(p, current);
                     m_padSettings.preferredGuid[current] = pad->guid;
-                    m_padSettings.preferredGuid[p]       = bumpedGuid;
+                    m_padSettings.preferredGuid[p] = bumpedGuid;
                     SaveControllerSettings();
                 }
             }
@@ -369,10 +373,13 @@ void NovaLauncher::RenderControllerSettingsWidget() {
         const int player = pads.front().player;
         gamepads.Apply(player, state);
         static const std::pair<uint16_t, const char*> kNames[] = {
-            {N64Button::A, "A"}, {N64Button::B, "B"}, {N64Button::Z, "Z"}, {N64Button::Start, "Start"},
-            {N64Button::L, "L"}, {N64Button::R, "R"},
-            {N64Button::DPadUp, "D-Up"}, {N64Button::DPadDn, "D-Down"}, {N64Button::DPadLt, "D-Left"}, {N64Button::DPadRt, "D-Right"},
-            {N64Button::CUp, "C-Up"}, {N64Button::CDown, "C-Down"}, {N64Button::CLeft, "C-Left"}, {N64Button::CRight, "C-Right"},
+            {N64Button::A, "A"},           {N64Button::B, "B"},
+            {N64Button::Z, "Z"},           {N64Button::Start, "Start"},
+            {N64Button::L, "L"},           {N64Button::R, "R"},
+            {N64Button::DPadUp, "D-Up"},   {N64Button::DPadDn, "D-Down"},
+            {N64Button::DPadLt, "D-Left"}, {N64Button::DPadRt, "D-Right"},
+            {N64Button::CUp, "C-Up"},      {N64Button::CDown, "C-Down"},
+            {N64Button::CLeft, "C-Left"},  {N64Button::CRight, "C-Right"},
         };
         std::string held;
         for (const auto& [bit, name] : kNames) {
@@ -386,9 +393,9 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     ImGui::Spacing();
     constexpr int kCount = static_cast<int>(kN64InputCount);
     if (ImGui::BeginTable("PadTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button",     ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("",           ImGuiTableColumnFlags_WidthFixed, 120);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120);
         ImGui::TableHeadersRow();
         for (int i = 0; i < kCount; ++i) {
             const auto input = static_cast<N64Input>(i);
@@ -410,7 +417,7 @@ void NovaLauncher::RenderControllerSettingsWidget() {
                 ImGui::PopStyleColor();
             } else if (ImGui::Button("Change", ImVec2(-1, 0))) {
                 m_padRebindTarget = i;
-                m_rebindTarget    = -1;
+                m_rebindTarget = -1;
             }
             ImGui::PopID();
         }
@@ -419,7 +426,7 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     if (m_padRebindTarget >= 0)
         ImGui::TextDisabled("Press a button, or push a stick or trigger, on a controller. Esc cancels.");
     if (ImGui::Button("Reset controller settings")) {
-        m_padSettings     = ControllerSettings{};
+        m_padSettings = ControllerSettings{};
         m_padRebindTarget = -1;
         SaveControllerSettings();
     }
@@ -443,7 +450,8 @@ void NovaLauncher::RenderSettingsTab() {
         static constexpr int kSpeeds[] = {30, 60, 120, 0};
         static const char* kSpeedLabels[] = {"Half speed", "Full speed", "Double speed", "Unlimited"};
         int speedIndex = 1;
-        for (int i = 0; i < 4; ++i) if (kSpeeds[i] == m_launch.speed) speedIndex = i;
+        for (int i = 0; i < 4; ++i)
+            if (kSpeeds[i] == m_launch.speed) speedIndex = i;
         ImGui::SetNextItemWidth(220);
         if (ImGui::Combo("Speed", &speedIndex, kSpeedLabels, 4)) {
             m_launch.speed = kSpeeds[speedIndex];
@@ -467,7 +475,8 @@ void NovaLauncher::RenderSettingsTab() {
         ImGui::Spacing();
         if (ImGui::Checkbox("Rewind", &m_launch.rewind)) SaveLaunchOptions();
         Hint("keeps a picture every 2 seconds for Backspace; about 1 MB each");
-        if (ImGui::Checkbox("Pause when another application is active", &m_launch.pauseOnFocusLoss)) SaveLaunchOptions();
+        if (ImGui::Checkbox("Pause when another application is active", &m_launch.pauseOnFocusLoss))
+            SaveLaunchOptions();
 
         // Everything NovaStar64 keeps -- settings, games, saves, covers, texture packs
         // -- is in one folder, which for an installed copy is a hidden one.
@@ -509,7 +518,12 @@ void NovaLauncher::RenderSettingsTab() {
         constexpr bool kOpenGLAvailable = true;
         constexpr const char* kOpenGLUnavailable = "";
 #endif
-        struct Driver { const char* name; int backend; bool available; const char* why; };
+        struct Driver {
+            const char* name;
+            int backend;
+            bool available;
+            const char* why;
+        };
         const Driver kDrivers[] = {
             {"Vulkan", 1, kVulkanAvailable, "No Vulkan driver was found."},
             {"OpenGL", 0, kOpenGLAvailable, kOpenGLUnavailable},
@@ -530,7 +544,8 @@ void NovaLauncher::RenderSettingsTab() {
         }
         const bool selectedUnavailable = (m_gfx.backendType == 1) ? !kVulkanAvailable : !kOpenGLAvailable;
         if (selectedUnavailable) {
-            ImGui::TextColored(ImVec4(0.75f, 0.25f, 0.15f, 1.0f), "%s isn't available here; games won't start until you pick the other driver.", current);
+            ImGui::TextColored(ImVec4(0.75f, 0.25f, 0.15f, 1.0f),
+                               "%s isn't available here; games won't start until you pick the other driver.", current);
         }
         {
             std::string running;
@@ -549,8 +564,8 @@ void NovaLauncher::RenderSettingsTab() {
 
         bool widescreen = (m_gfx.aspectRatio == Nova64::Video::AspectRatio::Widescreen16_9);
         if (ImGui::Checkbox("Widescreen (16:9)", &widescreen)) {
-            m_gfx.aspectRatio = widescreen ? Nova64::Video::AspectRatio::Widescreen16_9
-                                           : Nova64::Video::AspectRatio::Native4_3;
+            m_gfx.aspectRatio =
+                widescreen ? Nova64::Video::AspectRatio::Widescreen16_9 : Nova64::Video::AspectRatio::Native4_3;
             SaveGraphicsSettings();
         }
         Hint("widens the camera; some games show gaps at the edges");
@@ -577,8 +592,8 @@ void NovaLauncher::RenderSettingsTab() {
             int emulation = (m_gfx.renderingMode == Nova64::Video::RenderingMode::HLE) ? 0 : 1;
             ImGui::SetNextItemWidth(220);
             if (ImGui::Combo("Graphics emulation", &emulation, kEmulation, 2)) {
-                m_gfx.renderingMode = (emulation == 0) ? Nova64::Video::RenderingMode::HLE
-                                                       : Nova64::Video::RenderingMode::LLE;
+                m_gfx.renderingMode =
+                    (emulation == 0) ? Nova64::Video::RenderingMode::HLE : Nova64::Video::RenderingMode::LLE;
                 SaveGraphicsSettings();
             }
             Hint("low-level runs the real RSP microcode; slower, and still shows seams");

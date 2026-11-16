@@ -41,24 +41,19 @@ namespace Arm {
 
 class ArmRegInfo final : public CRegBase {
 public:
-    ArmRegInfo(CodeBlock& codeBlock, CArm64Ops& assembler)
-        : m_CodeBlock(&codeBlock), m_Assembler(&assembler) {
+    ArmRegInfo(CodeBlock& codeBlock, CArm64Ops& assembler) : m_CodeBlock(&codeBlock), m_Assembler(&assembler) {
         m_MipsToHost.fill(std::nullopt);
     }
     ~ArmRegInfo() override = default;
 
     // --- Mapping bookkeeping (no host code emitted in the callback model) ---
-    void MapRegister(uint32_t mipsReg, RegisterWidth /*width*/,
-                     bool /*isSigned*/ = false) {
+    void MapRegister(uint32_t mipsReg, RegisterWidth /*width*/, bool /*isSigned*/ = false) {
         if (mipsReg < 32) m_MipsToHost[mipsReg] = mipsReg; // identity placeholder
     }
-    void UnmapRegister(uint32_t mipsReg, bool /*writeBack*/ = true,
-                       bool /*force*/ = false) {
+    void UnmapRegister(uint32_t mipsReg, bool /*writeBack*/ = true, bool /*force*/ = false) {
         if (mipsReg < 32) m_MipsToHost[mipsReg] = std::nullopt;
     }
-    bool IsMapped(uint32_t mipsReg) const noexcept {
-        return mipsReg < 32 && m_MipsToHost[mipsReg].has_value();
-    }
+    bool IsMapped(uint32_t mipsReg) const noexcept { return mipsReg < 32 && m_MipsToHost[mipsReg].has_value(); }
 
     // Flush all mappings.  Guest GPRs already live in memory, so there is no
     // write-back code to emit — we only clear the tracking state.

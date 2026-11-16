@@ -15,9 +15,9 @@ struct SDL_Window;
 namespace NovaUI {
 
 struct IconImage {
-    int width  = 0;
+    int width = 0;
     int height = 0;
-    std::vector<uint8_t> rgba;   ///< width * height * 4, straight (non-premultiplied) alpha
+    std::vector<uint8_t> rgba; ///< width * height * 4, straight (non-premultiplied) alpha
 };
 
 /// The icon, decoded once from the embedded PNG. Empty (width == 0) if decoding failed.

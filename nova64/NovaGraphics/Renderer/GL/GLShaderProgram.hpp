@@ -19,14 +19,7 @@ namespace Nova64::Video::GL {
 //  Shader Stage
 // ═══════════════════════════════════════════════════════════════
 
-enum class ShaderStage : uint8_t {
-    Vertex,
-    Fragment,
-    Geometry,
-    TessControl,
-    TessEval,
-    Compute
-};
+enum class ShaderStage : uint8_t { Vertex, Fragment, Geometry, TessControl, TessEval, Compute };
 
 // Get GL enum for stage
 uint32_t ShaderStageToGL(ShaderStage stage);
@@ -59,7 +52,7 @@ public:
     void SetLabel(const std::string& label);
 
 private:
-    uint32_t    m_handle = 0;
+    uint32_t m_handle = 0;
     ShaderStage m_stage = ShaderStage::Vertex;
     std::string m_infoLog;
     std::string m_source;
@@ -70,23 +63,44 @@ private:
 // ═══════════════════════════════════════════════════════════════
 
 enum class UniformType : uint8_t {
-    Float, Vec2, Vec3, Vec4,
-    Int, IVec2, IVec3, IVec4,
-    UInt, UVec2, UVec3, UVec4,
-    Mat2, Mat3, Mat4, Mat2x3, Mat3x4, Mat4x3,
-    Sampler1D, Sampler2D, Sampler3D, SamplerCube,
-    Sampler2DArray, SamplerCubeShadow, Sampler2DShadow,
-    Image2D, Image3D,
-    Bool, AtomicCounter
+    Float,
+    Vec2,
+    Vec3,
+    Vec4,
+    Int,
+    IVec2,
+    IVec3,
+    IVec4,
+    UInt,
+    UVec2,
+    UVec3,
+    UVec4,
+    Mat2,
+    Mat3,
+    Mat4,
+    Mat2x3,
+    Mat3x4,
+    Mat4x3,
+    Sampler1D,
+    Sampler2D,
+    Sampler3D,
+    SamplerCube,
+    Sampler2DArray,
+    SamplerCubeShadow,
+    Sampler2DShadow,
+    Image2D,
+    Image3D,
+    Bool,
+    AtomicCounter
 };
 
 struct UniformInfo {
     std::string name;
-    int32_t     location = -1;
+    int32_t location = -1;
     UniformType type = UniformType::Float;
-    int32_t     arraySize = 1;
-    int32_t     offset = -1;        // in UBO
-    int32_t     blockIndex = -1;    // owning UBO index (-1 = default)
+    int32_t arraySize = 1;
+    int32_t offset = -1;     // in UBO
+    int32_t blockIndex = -1; // owning UBO index (-1 = default)
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -95,9 +109,9 @@ struct UniformInfo {
 
 struct UniformBlockInfo {
     std::string name;
-    uint32_t    index = 0;
-    uint32_t    binding = 0;
-    uint32_t    size = 0;
+    uint32_t index = 0;
+    uint32_t binding = 0;
+    uint32_t size = 0;
     std::vector<UniformInfo> members;
 };
 
@@ -107,9 +121,9 @@ struct UniformBlockInfo {
 
 struct AttributeInfo {
     std::string name;
-    int32_t     location = -1;
-    uint32_t    type = 0;       // GL type
-    int32_t     size = 1;       // array size
+    int32_t location = -1;
+    uint32_t type = 0; // GL type
+    int32_t size = 1;  // array size
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -118,10 +132,10 @@ struct AttributeInfo {
 
 struct SSBOInfo {
     std::string name;
-    uint32_t    index = 0;
-    uint32_t    binding = 0;
-    uint32_t    size = 0;       // minimum buffer size
-    bool        isArray = false;
+    uint32_t index = 0;
+    uint32_t binding = 0;
+    uint32_t size = 0; // minimum buffer size
+    bool isArray = false;
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -129,11 +143,11 @@ struct SSBOInfo {
 // ═══════════════════════════════════════════════════════════════
 
 struct ProgramReflection {
-    std::vector<UniformInfo>       uniforms;
-    std::vector<UniformBlockInfo>  uniformBlocks;
-    std::vector<AttributeInfo>     attributes;
-    std::vector<SSBOInfo>          ssbos;
-    uint32_t                       computeWorkGroupSize[3] = {0, 0, 0};
+    std::vector<UniformInfo> uniforms;
+    std::vector<UniformBlockInfo> uniformBlocks;
+    std::vector<AttributeInfo> attributes;
+    std::vector<SSBOInfo> ssbos;
+    uint32_t computeWorkGroupSize[3] = {0, 0, 0};
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -162,7 +176,7 @@ public:
 
     // Build with #define injection
     bool BuildFromSourceWithDefines(const std::string& vertSrc, const std::string& fragSrc,
-                                     const std::vector<std::pair<std::string, std::string>>& defines);
+                                    const std::vector<std::pair<std::string, std::string>>& defines);
 
     void Destroy();
 
@@ -238,9 +252,9 @@ private:
     bool CheckLinkStatus();
     void BuildUniformCache();
 
-    uint32_t            m_handle = 0;
-    std::string         m_infoLog;
-    ProgramReflection   m_reflection;
+    uint32_t m_handle = 0;
+    std::string m_infoLog;
+    ProgramReflection m_reflection;
 
     mutable std::unordered_map<std::string, int32_t> m_uniformCache;
 };
@@ -335,7 +349,7 @@ private:
 
 struct ShaderFileEntry {
     std::string path;
-    uint64_t    lastWriteTime = 0;
+    uint64_t lastWriteTime = 0;
     ShaderStage stage = ShaderStage::Vertex;
 };
 

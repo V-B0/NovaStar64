@@ -14,36 +14,31 @@
 #endif
 #include <utility>
 
-DynamicLibrary::Handle DynamicLibraryOpen(const char* libraryPath, bool showErrors)
-{
-    if (libraryPath == nullptr)
-    {
+DynamicLibrary::Handle DynamicLibraryOpen(const char* libraryPath, bool showErrors) {
+    if (libraryPath == nullptr) {
         return nullptr;
     }
 
 #ifdef _WIN32
     UINT prevErrorMode = 0;
-    if (!showErrors)
-    {
+    if (!showErrors) {
         prevErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS);
     }
 
-    
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
-        if (!showErrors) { SetErrorMode(prevErrorMode); }
+    if (wideLen <= 0) {
+        if (!showErrors) {
+            SetErrorMode(prevErrorMode);
+        }
         return nullptr;
     }
 
     auto widePath = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
     MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, widePath.get(), wideLen);
 
-    DynamicLibrary::Handle lib = static_cast<DynamicLibrary::Handle>(
-        LoadLibraryW(widePath.get()));
+    DynamicLibrary::Handle lib = static_cast<DynamicLibrary::Handle>(LoadLibraryW(widePath.get()));
 
-    if (!showErrors)
-    {
+    if (!showErrors) {
         SetErrorMode(prevErrorMode);
     }
 #else
@@ -54,10 +49,8 @@ DynamicLibrary::Handle DynamicLibraryOpen(const char* libraryPath, bool showErro
     return lib;
 }
 
-void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept
-{
-    if (libraryHandle != nullptr)
-    {
+void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept {
+    if (libraryHandle != nullptr) {
 #ifdef _WIN32
         FreeLibrary(static_cast<HMODULE>(libraryHandle));
 #else
@@ -66,41 +59,29 @@ void DynamicLibraryClose(DynamicLibrary::Handle libraryHandle) noexcept
     }
 }
 
-DynamicLibrary::Symbol DynamicLibraryGetProc(DynamicLibrary::Handle libraryHandle,
-                                             const char* symbolName) noexcept
-{
-    if (libraryHandle == nullptr || symbolName == nullptr)
-    {
+DynamicLibrary::Symbol DynamicLibraryGetProc(DynamicLibrary::Handle libraryHandle, const char* symbolName) noexcept {
+    if (libraryHandle == nullptr || symbolName == nullptr) {
         return nullptr;
     }
 
 #ifdef _WIN32
-    return reinterpret_cast<DynamicLibrary::Symbol>(
-        GetProcAddress(static_cast<HMODULE>(libraryHandle), symbolName));
+    return reinterpret_cast<DynamicLibrary::Symbol>(GetProcAddress(static_cast<HMODULE>(libraryHandle), symbolName));
 #else
     return dlsym(libraryHandle, symbolName);
 #endif
 }
 
-
-
 DynamicLibrary::DynamicLibrary() noexcept = default;
 
-DynamicLibrary::DynamicLibrary(const std::filesystem::path& libraryPath, int loadFlags)
-{
+DynamicLibrary::DynamicLibrary(const std::filesystem::path& libraryPath, int loadFlags) {
     Load(libraryPath, loadFlags);
 }
 
-DynamicLibrary::DynamicLibrary(DynamicLibrary&& other) noexcept
-    : m_handle(std::exchange(other.m_handle, nullptr))
-    , m_path(std::move(other.m_path))
-{
-}
+DynamicLibrary::DynamicLibrary(DynamicLibrary&& other) noexcept :
+    m_handle(std::exchange(other.m_handle, nullptr)), m_path(std::move(other.m_path)) {}
 
-DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary&& other) noexcept
-{
-    if (this != &other)
-    {
+DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary&& other) noexcept {
+    if (this != &other) {
         Unload();
         m_handle = std::exchange(other.m_handle, nullptr);
         m_path = std::move(other.m_path);
@@ -108,23 +89,16 @@ DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary&& other) noexcept
     return *this;
 }
 
-DynamicLibrary::~DynamicLibrary()
-{
-    Unload();
-}
+DynamicLibrary::~DynamicLibrary() { Unload(); }
 
-void DynamicLibrary::Load(const std::filesystem::path& libraryPath, int loadFlags)
-{
+void DynamicLibrary::Load(const std::filesystem::path& libraryPath, int loadFlags) {
     Unload();
 
 #ifdef _WIN32
     HMODULE hModule = nullptr;
-    if (loadFlags != 0)
-    {
+    if (loadFlags != 0) {
         hModule = LoadLibraryExW(libraryPath.c_str(), nullptr, static_cast<DWORD>(loadFlags));
-    }
-    else
-    {
+    } else {
         hModule = LoadLibraryW(libraryPath.c_str());
     }
     m_handle = static_cast<Handle>(hModule);
@@ -133,20 +107,16 @@ void DynamicLibrary::Load(const std::filesystem::path& libraryPath, int loadFlag
     m_handle = dlopen(libraryPath.c_str(), flags);
 #endif
 
-    if (m_handle == nullptr)
-    {
-        throw std::system_error(
-            std::make_error_code(std::errc::no_such_file_or_directory),
-            "Failed to load library: " + libraryPath.string() + " - " + GetLastError());
+    if (m_handle == nullptr) {
+        throw std::system_error(std::make_error_code(std::errc::no_such_file_or_directory),
+                                "Failed to load library: " + libraryPath.string() + " - " + GetLastError());
     }
 
     m_path = libraryPath;
 }
 
-void DynamicLibrary::Unload() noexcept
-{
-    if (m_handle != nullptr)
-    {
+void DynamicLibrary::Unload() noexcept {
+    if (m_handle != nullptr) {
 #ifdef _WIN32
         FreeLibrary(static_cast<HMODULE>(m_handle));
 #else
@@ -157,69 +127,52 @@ void DynamicLibrary::Unload() noexcept
     }
 }
 
-DynamicLibrary::Symbol DynamicLibrary::GetSymbol(std::string_view symbolName) const noexcept
-{
-    if (m_handle == nullptr || symbolName.empty())
-    {
+DynamicLibrary::Symbol DynamicLibrary::GetSymbol(std::string_view symbolName) const noexcept {
+    if (m_handle == nullptr || symbolName.empty()) {
         return nullptr;
     }
 
-    
     const std::string name(symbolName);
 
 #ifdef _WIN32
-    return reinterpret_cast<Symbol>(
-        GetProcAddress(static_cast<HMODULE>(m_handle), name.c_str()));
+    return reinterpret_cast<Symbol>(GetProcAddress(static_cast<HMODULE>(m_handle), name.c_str()));
 #else
     return dlsym(m_handle, name.c_str());
 #endif
 }
 
-DynamicLibrary::Symbol DynamicLibrary::GetSymbolOrThrow(std::string_view symbolName) const
-{
+DynamicLibrary::Symbol DynamicLibrary::GetSymbolOrThrow(std::string_view symbolName) const {
     Symbol sym = GetSymbol(symbolName);
-    if (sym == nullptr)
-    {
-        throw std::system_error(
-            std::make_error_code(std::errc::function_not_supported),
-            "Symbol not found: " + std::string(symbolName) + " - " + GetLastError());
+    if (sym == nullptr) {
+        throw std::system_error(std::make_error_code(std::errc::function_not_supported),
+                                "Symbol not found: " + std::string(symbolName) + " - " + GetLastError());
     }
     return sym;
 }
 
-std::string DynamicLibrary::GetLastError() noexcept
-{
+std::string DynamicLibrary::GetLastError() noexcept {
 #ifdef _WIN32
     const DWORD error = ::GetLastError();
-    if (error == 0)
-    {
+    if (error == 0) {
         return {};
     }
 
     LPWSTR msgBuf = nullptr;
     const DWORD len = FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, error,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<LPWSTR>(&msgBuf), 0, nullptr);
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, error,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<LPWSTR>(&msgBuf), 0, nullptr);
 
-    if (len == 0 || msgBuf == nullptr)
-    {
+    if (len == 0 || msgBuf == nullptr) {
         return "Unknown error (code " + std::to_string(error) + ")";
     }
 
-    
-    const int utf8Len = WideCharToMultiByte(CP_UTF8, 0, msgBuf, static_cast<int>(len),
-                                            nullptr, 0, nullptr, nullptr);
+    const int utf8Len = WideCharToMultiByte(CP_UTF8, 0, msgBuf, static_cast<int>(len), nullptr, 0, nullptr, nullptr);
     std::string result(static_cast<size_t>(utf8Len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, msgBuf, static_cast<int>(len),
-                        result.data(), utf8Len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, msgBuf, static_cast<int>(len), result.data(), utf8Len, nullptr, nullptr);
 
     LocalFree(msgBuf);
 
-    
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r' || result.back() == ' '))
-    {
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r' || result.back() == ' ')) {
         result.pop_back();
     }
 

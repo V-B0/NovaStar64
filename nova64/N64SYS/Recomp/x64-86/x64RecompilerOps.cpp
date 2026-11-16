@@ -38,7 +38,7 @@
 #include "../../../common/trace.hpp"
 #include "../../../common/MemoryManagment.hpp"
 #include "../../../common/platform.hpp"
-#include "../FpControl.hpp"   // nova_mm_getcsr/setcsr shim
+#include "../FpControl.hpp" // nova_mm_getcsr/setcsr shim
 
 #include <cfenv>
 #include <cstdint>
@@ -62,19 +62,17 @@
 
 // ==== BINARY-SEARCH DIAGNOSTIC FLAGS ====
 // Set to 1 to revert group to interpreter callbacks, 0 for inline x64
-#define FORCE_CALLBACK_SPECIAL 0   // All SPECIAL-format ALU/shift/logic
-#define FORCE_CALLBACK_IMM     0   // All immediate-format ALU/logic
-#define FORCE_CALLBACK_BRANCH  0   // All conditional branches (BEQ,BNE,etc.)
-#define FORCE_CALLBACK_JUMP    0   // J, JAL
+#define FORCE_CALLBACK_SPECIAL 0 // All SPECIAL-format ALU/shift/logic
+#define FORCE_CALLBACK_IMM     0 // All immediate-format ALU/logic
+#define FORCE_CALLBACK_BRANCH  0 // All conditional branches (BEQ,BNE,etc.)
+#define FORCE_CALLBACK_JUMP    0 // J, JAL
 // ========================================
 
 namespace Nova64 {
 namespace Recompiler {
 
-
 // Shared VR4300 interpreter callbacks (see RecompInterpCallbacks.inc).
 #include "../RecompInterpCallbacks.inc"
-
 
 // =============================================================================
 // x64 Code Emission Helpers
@@ -220,8 +218,7 @@ void CX64RecompilerOps::EmitPipelineStageCheck() {
     auto& a = m_Assembler->GetAssembler();
 
     // cmp byte [r13], PipelineStage::Jump (6)   (r13 = &m_PipelineStage)
-    a.cmp(asmjit::x86::byte_ptr(asmjit::x86::r13),
-           static_cast<uint8_t>(N64Types::PipelineStage::Jump));
+    a.cmp(asmjit::x86::byte_ptr(asmjit::x86::r13), static_cast<uint8_t>(N64Types::PipelineStage::Jump));
     a.je(m_BlockExitLabel);
 }
 
@@ -249,9 +246,9 @@ void CX64RecompilerOps::EmitDelaySlotSetup(uint32_t delaySlotAddr) {
 
     // 1. m_JumpToLocation = m_PROGRAM_COUNTER (save branch target)
     a.mov(rax, pcAbsAddr);
-    a.mov(rcx, qword_ptr(rax));       // rcx = m_PROGRAM_COUNTER (branch target)
+    a.mov(rcx, qword_ptr(rax)); // rcx = m_PROGRAM_COUNTER (branch target)
     a.mov(rax, jumpAbsAddr);
-    a.mov(qword_ptr(rax), rcx);       // m_JumpToLocation = branch target
+    a.mov(qword_ptr(rax), rcx); // m_JumpToLocation = branch target
 
     // 2. m_PROGRAM_COUNTER = delaySlotAddr (sign-extended via imm32)
     a.mov(rax, pcAbsAddr);
@@ -380,8 +377,7 @@ void CX64RecompilerOps::EmitCop1BranchUsableCheck(uint32_t pc) {
     a.jnz(cu1Usable);
 
     m_RegisterSet->FlushRegisters(true);
-    a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
-          static_cast<int32_t>(pc));
+    a.mov(qword_ptr(rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))), static_cast<int32_t>(pc));
 #ifdef _WIN32
     a.mov(rcx, rbx);
 #else
@@ -399,8 +395,7 @@ void CX64RecompilerOps::EmitTimerDecrement() {
     uint32_t countPerOp = m_Context.system.CountPerOp();
 
     // sub dword ptr [r14], countPerOp   (r14 = &m_NextTimer)
-    a.sub(asmjit::x86::dword_ptr(asmjit::x86::r14),
-          static_cast<int32_t>(countPerOp));
+    a.sub(asmjit::x86::dword_ptr(asmjit::x86::r14), static_cast<int32_t>(countPerOp));
 }
 
 void CX64RecompilerOps::EmitPCUpdate() {
@@ -408,8 +403,7 @@ void CX64RecompilerOps::EmitPCUpdate() {
         auto& a = m_Assembler->GetAssembler();
         // mov qword [rbx + offsetof(m_PROGRAM_COUNTER)], sign_extend(instrPC)
         // RBX = &CRegisters, m_PROGRAM_COUNTER is at offset 0
-        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
-              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
               static_cast<int32_t>(m_CurrentContext->virtualAddress));
     }
 }
@@ -418,33 +412,23 @@ void CX64RecompilerOps::EmitPCUpdate() {
 // Construction / Destruction
 // =============================================================================
 
-CX64RecompilerOps::CX64RecompilerOps(RecompilerContext& context,
-                                     CodeBlock& codeBlock)
-    : IRecompilerOps()
-    , m_Context(context)
-    , m_CodeBlock(codeBlock)
-    , m_Assembler(std::make_unique<CX64Ops>(codeBlock))
-    , m_RegisterSet(std::make_unique<CX64RegInfo>(codeBlock, *m_Assembler))
-    , m_OptimizationLevel(OptimizationLevel::Basic)
-    , m_InDelaySlot(false)
-    , m_BlockEnded(false)
-{
+CX64RecompilerOps::CX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) :
+    IRecompilerOps(), m_Context(context), m_CodeBlock(codeBlock), m_Assembler(std::make_unique<CX64Ops>(codeBlock)),
+    m_RegisterSet(std::make_unique<CX64RegInfo>(codeBlock, *m_Assembler)),
+    m_OptimizationLevel(OptimizationLevel::Basic), m_InDelaySlot(false), m_BlockEnded(false) {
     Log::debug("CX64RecompilerOps: Created");
     InitializeInstructionHandlers();
 }
 
-CX64RecompilerOps::~CX64RecompilerOps()
-{
-    Log::debugf("CX64RecompilerOps: Destroyed - translated %zu instructions",
-                m_Stats.instructionsTranslated);
+CX64RecompilerOps::~CX64RecompilerOps() {
+    Log::debugf("CX64RecompilerOps: Destroyed - translated %zu instructions", m_Stats.instructionsTranslated);
 }
 
 // =============================================================================
 // IRecompilerOps Interface - Setup & Teardown
 // =============================================================================
 
-bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBlock)
-{
+bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBlock) {
     m_Assembler = std::make_unique<CX64Ops>(codeBlock);
     m_RegisterSet = std::make_unique<CX64RegInfo>(codeBlock, *m_Assembler);
     m_InDelaySlot = false;
@@ -456,8 +440,7 @@ bool CX64RecompilerOps::Initialize(RecompilerContext& context, CodeBlock& codeBl
     return true;
 }
 
-void CX64RecompilerOps::Cleanup()
-{
+void CX64RecompilerOps::Cleanup() {
     m_RegisterSet->FlushRegisters(true);
     m_JumpTargets.clear();
     m_PendingJumps.clear();
@@ -468,31 +451,26 @@ void CX64RecompilerOps::Cleanup()
 // IRecompilerOps Interface - Code Generation
 // =============================================================================
 
-bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
-{
+bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx) {
     R4300iOps op = ctx.opcode;
     uint32_t opcVal = op.Value;
     m_Stats.instructionsTranslated++;
 
     // Populate the TranslationContext so that macro-generated instruction
     // handlers (SPECIAL_SLL, LW, SW, etc.) can access the opcode and address.
-    m_CurrentContext.emplace(TranslationContext{
-        /* opcode          */ op,
-        /* virtualAddress  */ ctx.virtualAddress,
-        /* physicalAddress */ ctx.physicalAddress,
-        /* pipelineStage   */ ctx.pipelineStage,
-        /* inDelaySlot     */ false,
-        /* isBranchLikely  */ false,
-        /* branchTarget    */ std::nullopt,
-        /* linkAddress     */ std::nullopt,
-        /* disassembly     */ {},
-        /* emitDebugComments */ true
-    });
+    m_CurrentContext.emplace(TranslationContext{/* opcode          */ op,
+                                                /* virtualAddress  */ ctx.virtualAddress,
+                                                /* physicalAddress */ ctx.physicalAddress,
+                                                /* pipelineStage   */ ctx.pipelineStage,
+                                                /* inDelaySlot     */ false,
+                                                /* isBranchLikely  */ false,
+                                                /* branchTarget    */ std::nullopt,
+                                                /* linkAddress     */ std::nullopt,
+                                                /* disassembly     */ {},
+                                                /* emitDebugComments */ true});
 
     // Create a debug comment with the MIPS address
-    m_Assembler->AddComment(
-        std::string("PC=0x") +
-        std::to_string(ctx.virtualAddress));
+    m_Assembler->AddComment(std::string("PC=0x") + std::to_string(ctx.virtualAddress));
 
     // Dispatch by primary opcode
     switch (op.Rtype.op) {
@@ -502,20 +480,43 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         {
             uint32_t funct = mips_funct(opcVal);
             // JR, JALR, SYSCALL, BREAK, SYNC, traps still use their own paths
-            if (funct == R4300_S_JR)          { SPECIAL_JR(); }
-            else if (funct == R4300_S_JALR)   { SPECIAL_JALR(); }
-            else if (funct == R4300_S_SYSCALL){ SPECIAL_SYSCALL(); }
-            else if (funct == R4300_S_BREAK)  { SPECIAL_BREAK(); }
-            else if (funct == R4300_S_SYNC)   { SPECIAL_SYNC(); }
-            else if (funct >= 0x30 && funct <= 0x36) {
+            if (funct == R4300_S_JR) {
+                SPECIAL_JR();
+            } else if (funct == R4300_S_JALR) {
+                SPECIAL_JALR();
+            } else if (funct == R4300_S_SYSCALL) {
+                SPECIAL_SYSCALL();
+            } else if (funct == R4300_S_BREAK) {
+                SPECIAL_BREAK();
+            } else if (funct == R4300_S_SYNC) {
+                SPECIAL_SYNC();
+            } else if (funct >= 0x30 && funct <= 0x36) {
                 // Trap instructions
                 switch (funct) {
-                case R4300_S_TGE:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal); break;
-                case R4300_S_TGEU: EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal); break;
-                case R4300_S_TLT:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal); break;
-                case R4300_S_TLTU: EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal); break;
-                case R4300_S_TEQ:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal); break;
-                case R4300_S_TNE:  EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal); break;
+                case R4300_S_TGE:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal);
+                    break;
+                case R4300_S_TGEU:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal);
+                    break;
+                case R4300_S_TLT:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal);
+                    break;
+                case R4300_S_TLTU:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal);
+                    break;
+                case R4300_S_TEQ:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal);
+                    break;
+                case R4300_S_TNE:
+                    EmitPCUpdate();
+                    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal);
+                    break;
                 default: UnknownOpcode(); break;
                 }
             } else {
@@ -526,59 +527,77 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
 #else
         // Decode SPECIAL by funct field (inline x64)
         switch (mips_funct(opcVal)) {
-        case R4300_S_SLL:    SPECIAL_SLL(); break;
-        case R4300_S_SRL:    SPECIAL_SRL(); break;
-        case R4300_S_SRA:    SPECIAL_SRA(); break;
-        case R4300_S_SLLV:   SPECIAL_SLLV(); break;
-        case R4300_S_SRLV:   SPECIAL_SRLV(); break;
-        case R4300_S_SRAV:   SPECIAL_SRAV(); break;
-        case R4300_S_JR:     SPECIAL_JR(); break;
-        case R4300_S_JALR:   SPECIAL_JALR(); break;
+        case R4300_S_SLL:     SPECIAL_SLL(); break;
+        case R4300_S_SRL:     SPECIAL_SRL(); break;
+        case R4300_S_SRA:     SPECIAL_SRA(); break;
+        case R4300_S_SLLV:    SPECIAL_SLLV(); break;
+        case R4300_S_SRLV:    SPECIAL_SRLV(); break;
+        case R4300_S_SRAV:    SPECIAL_SRAV(); break;
+        case R4300_S_JR:      SPECIAL_JR(); break;
+        case R4300_S_JALR:    SPECIAL_JALR(); break;
         case R4300_S_SYSCALL: SPECIAL_SYSCALL(); break;
-        case R4300_S_BREAK:  SPECIAL_BREAK(); break;
-        case R4300_S_SYNC:   SPECIAL_SYNC(); break;
-        case R4300_S_MFHI:   SPECIAL_MFHI(); break;
-        case R4300_S_MTHI:   SPECIAL_MTHI(); break;
-        case R4300_S_MFLO:   SPECIAL_MFLO(); break;
-        case R4300_S_MTLO:   SPECIAL_MTLO(); break;
-        case R4300_S_DSLLV:  SPECIAL_DSLLV(); break;
-        case R4300_S_DSRLV:  SPECIAL_DSRLV(); break;
-        case R4300_S_DSRAV:  SPECIAL_DSRAV(); break;
-        case R4300_S_MULT:   SPECIAL_MULT(); break;
-        case R4300_S_MULTU:  SPECIAL_MULTU(); break;
-        case R4300_S_DIV:    SPECIAL_DIV(); break;
-        case R4300_S_DIVU:   SPECIAL_DIVU(); break;
-        case R4300_S_DMULT:  SPECIAL_DMULT(); break;
-        case R4300_S_DMULTU: SPECIAL_DMULTU(); break;
-        case R4300_S_DDIV:   SPECIAL_DDIV(); break;
-        case R4300_S_DDIVU:  SPECIAL_DDIVU(); break;
-        case R4300_S_ADD:    SPECIAL_ADD(); break;
-        case R4300_S_ADDU:   SPECIAL_ADDU(); break;
-        case R4300_S_SUB:    SPECIAL_SUB(); break;
-        case R4300_S_SUBU:   SPECIAL_SUBU(); break;
-        case R4300_S_AND:    SPECIAL_AND(); break;
-        case R4300_S_OR:     SPECIAL_OR(); break;
-        case R4300_S_XOR:    SPECIAL_XOR(); break;
-        case R4300_S_NOR:    SPECIAL_NOR(); break;
-        case R4300_S_SLT:    SPECIAL_SLT(); break;
-        case R4300_S_SLTU:   SPECIAL_SLTU(); break;
-        case R4300_S_DADD:   SPECIAL_DADD(); break;
-        case R4300_S_DADDU:  SPECIAL_DADDU(); break;
-        case R4300_S_DSUB:   SPECIAL_DSUB(); break;
-        case R4300_S_DSUBU:  SPECIAL_DSUBU(); break;
-        case R4300_S_TGE:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal); break;
-        case R4300_S_TGEU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal); break;
-        case R4300_S_TLT:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal); break;
-        case R4300_S_TLTU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal); break;
-        case R4300_S_TEQ:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal); break;
-        case R4300_S_TNE:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal); break;
+        case R4300_S_BREAK:   SPECIAL_BREAK(); break;
+        case R4300_S_SYNC:    SPECIAL_SYNC(); break;
+        case R4300_S_MFHI:    SPECIAL_MFHI(); break;
+        case R4300_S_MTHI:    SPECIAL_MTHI(); break;
+        case R4300_S_MFLO:    SPECIAL_MFLO(); break;
+        case R4300_S_MTLO:    SPECIAL_MTLO(); break;
+        case R4300_S_DSLLV:   SPECIAL_DSLLV(); break;
+        case R4300_S_DSRLV:   SPECIAL_DSRLV(); break;
+        case R4300_S_DSRAV:   SPECIAL_DSRAV(); break;
+        case R4300_S_MULT:    SPECIAL_MULT(); break;
+        case R4300_S_MULTU:   SPECIAL_MULTU(); break;
+        case R4300_S_DIV:     SPECIAL_DIV(); break;
+        case R4300_S_DIVU:    SPECIAL_DIVU(); break;
+        case R4300_S_DMULT:   SPECIAL_DMULT(); break;
+        case R4300_S_DMULTU:  SPECIAL_DMULTU(); break;
+        case R4300_S_DDIV:    SPECIAL_DDIV(); break;
+        case R4300_S_DDIVU:   SPECIAL_DDIVU(); break;
+        case R4300_S_ADD:     SPECIAL_ADD(); break;
+        case R4300_S_ADDU:    SPECIAL_ADDU(); break;
+        case R4300_S_SUB:     SPECIAL_SUB(); break;
+        case R4300_S_SUBU:    SPECIAL_SUBU(); break;
+        case R4300_S_AND:     SPECIAL_AND(); break;
+        case R4300_S_OR:      SPECIAL_OR(); break;
+        case R4300_S_XOR:     SPECIAL_XOR(); break;
+        case R4300_S_NOR:     SPECIAL_NOR(); break;
+        case R4300_S_SLT:     SPECIAL_SLT(); break;
+        case R4300_S_SLTU:    SPECIAL_SLTU(); break;
+        case R4300_S_DADD:    SPECIAL_DADD(); break;
+        case R4300_S_DADDU:   SPECIAL_DADDU(); break;
+        case R4300_S_DSUB:    SPECIAL_DSUB(); break;
+        case R4300_S_DSUBU:   SPECIAL_DSUBU(); break;
+        case R4300_S_TGE:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), opcVal);
+            break;
+        case R4300_S_TGEU:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEU), opcVal);
+            break;
+        case R4300_S_TLT:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLT), opcVal);
+            break;
+        case R4300_S_TLTU:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTU), opcVal);
+            break;
+        case R4300_S_TEQ:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQ), opcVal);
+            break;
+        case R4300_S_TNE:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNE), opcVal);
+            break;
         case R4300_S_DSLL:   SPECIAL_DSLL(); break;
         case R4300_S_DSRL:   SPECIAL_DSRL(); break;
         case R4300_S_DSRA:   SPECIAL_DSRA(); break;
         case R4300_S_DSLL32: SPECIAL_DSLL32(); break;
         case R4300_S_DSRL32: SPECIAL_DSRL32(); break;
         case R4300_S_DSRA32: SPECIAL_DSRA32(); break;
-        default: UnknownOpcode(); break;
+        default:             UnknownOpcode(); break;
         }
 #endif
         break;
@@ -589,80 +608,170 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             uint32_t rt_field = op.Itype.rt;
             // Trap instructions stay as-is; branches route to callbacks
             switch (rt_field) {
-            case R4300_R_BLTZ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-            case R4300_R_BGEZ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-            case R4300_R_BLTZL:   BLTZL_Compare_Likely(); break;
-            case R4300_R_BGEZL:   BGEZL_Compare_Likely(); break;
-            case R4300_R_TGEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal); break;
-            case R4300_R_TGEIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal); break;
-            case R4300_R_TLTI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal); break;
-            case R4300_R_TLTIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal); break;
-            case R4300_R_TEQI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal); break;
-            case R4300_R_TNEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal); break;
-            case R4300_R_BLTZAL:  EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZAL_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-            case R4300_R_BGEZAL:  EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZAL_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case R4300_R_BLTZ:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZ_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
+            case R4300_R_BGEZ:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZ_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
+            case R4300_R_BLTZL: BLTZL_Compare_Likely(); break;
+            case R4300_R_BGEZL: BGEZL_Compare_Likely(); break;
+            case R4300_R_TGEI:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal);
+                break;
+            case R4300_R_TGEIU:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal);
+                break;
+            case R4300_R_TLTI:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal);
+                break;
+            case R4300_R_TLTIU:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal);
+                break;
+            case R4300_R_TEQI:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal);
+                break;
+            case R4300_R_TNEI:
+                EmitPCUpdate();
+                EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal);
+                break;
+            case R4300_R_BLTZAL:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLTZAL_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
+            case R4300_R_BGEZAL:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGEZAL_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
             case R4300_R_BLTZALL: BLTZALL_Compare_Likely(); break;
             case R4300_R_BGEZALL: BGEZALL_Compare_Likely(); break;
-            default: UnknownOpcode(); break;
+            default:              UnknownOpcode(); break;
             }
         }
 #else
         switch (op.Itype.rt) {
-        case R4300_R_BLTZ:    BLTZ_Compare(); break;
-        case R4300_R_BGEZ:    BGEZ_Compare(); break;
-        case R4300_R_BLTZL:   BLTZL_Compare_Likely(); break;
-        case R4300_R_BGEZL:   BGEZL_Compare_Likely(); break;
-        case R4300_R_TGEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal); break;
-        case R4300_R_TGEIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal); break;
-        case R4300_R_TLTI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal); break;
-        case R4300_R_TLTIU:   EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal); break;
-        case R4300_R_TEQI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal); break;
-        case R4300_R_TNEI:    EmitPCUpdate(); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal); break;
+        case R4300_R_BLTZ:  BLTZ_Compare(); break;
+        case R4300_R_BGEZ:  BGEZ_Compare(); break;
+        case R4300_R_BLTZL: BLTZL_Compare_Likely(); break;
+        case R4300_R_BGEZL: BGEZL_Compare_Likely(); break;
+        case R4300_R_TGEI:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEI), opcVal);
+            break;
+        case R4300_R_TGEIU:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGEIU), opcVal);
+            break;
+        case R4300_R_TLTI:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTI), opcVal);
+            break;
+        case R4300_R_TLTIU:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TLTIU), opcVal);
+            break;
+        case R4300_R_TEQI:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TEQI), opcVal);
+            break;
+        case R4300_R_TNEI:
+            EmitPCUpdate();
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TNEI), opcVal);
+            break;
         case R4300_R_BLTZAL:  BLTZAL_Compare(); break;
         case R4300_R_BGEZAL:  BGEZAL_Compare(); break;
         case R4300_R_BLTZALL: BLTZALL_Compare_Likely(); break;
         case R4300_R_BGEZALL: BGEZALL_Compare_Likely(); break;
-        default: UnknownOpcode(); break;
+        default:              UnknownOpcode(); break;
         }
 #endif
         break;
     }
 #if FORCE_CALLBACK_JUMP
-    case R4300_J:      EmitBranchCallback(reinterpret_cast<void*>(&Interp_J_Jump), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-    case R4300_JAL:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JAL_Jump), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_J:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_J_Jump), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
+    case R4300_JAL:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_JAL_Jump), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
 #else
-    case R4300_J:      J(); break;
-    case R4300_JAL:    JAL(); break;
+    case R4300_J:   J(); break;
+    case R4300_JAL: JAL(); break;
 #endif
 #if FORCE_CALLBACK_BRANCH
-    case R4300_BEQ:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BEQ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-    case R4300_BNE:    EmitBranchCallback(reinterpret_cast<void*>(&Interp_BNE_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-    case R4300_BLEZ:   EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLEZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-    case R4300_BGTZ:   EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGTZ_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+    case R4300_BEQ:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_BEQ_Branch), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
+    case R4300_BNE:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_BNE_Branch), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
+    case R4300_BLEZ:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_BLEZ_Branch), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
+    case R4300_BGTZ:
+        EmitBranchCallback(reinterpret_cast<void*>(&Interp_BGTZ_Branch), opcVal, ctx.virtualAddress);
+        m_BlockEnded = true;
+        break;
 #else
-    case R4300_BEQ:    BEQ_Compare(); break;
-    case R4300_BNE:    BNE_Compare(); break;
-    case R4300_BLEZ:   BLEZ_Compare(); break;
-    case R4300_BGTZ:   BGTZ_Compare(); break;
+    case R4300_BEQ:  BEQ_Compare(); break;
+    case R4300_BNE:  BNE_Compare(); break;
+    case R4300_BLEZ: BLEZ_Compare(); break;
+    case R4300_BGTZ: BGTZ_Compare(); break;
 #endif
 #if FORCE_CALLBACK_IMM
-    case R4300_ADDI:   m_Assembler->AddComment("ADDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_ADDIU:  m_Assembler->AddComment("ADDIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_SLTI:   m_Assembler->AddComment("SLTI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_SLTIU:  m_Assembler->AddComment("SLTIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_ANDI:   m_Assembler->AddComment("ANDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_ORI:    m_Assembler->AddComment("ORI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_XORI:   m_Assembler->AddComment("XORI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_LUI:    m_Assembler->AddComment("LUI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_ADDI:
+        m_Assembler->AddComment("ADDI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_ADDIU:
+        m_Assembler->AddComment("ADDIU cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_SLTI:
+        m_Assembler->AddComment("SLTI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_SLTIU:
+        m_Assembler->AddComment("SLTIU cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_ANDI:
+        m_Assembler->AddComment("ANDI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_ORI:
+        m_Assembler->AddComment("ORI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_XORI:
+        m_Assembler->AddComment("XORI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_LUI:
+        m_Assembler->AddComment("LUI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
 #else
-    case R4300_ADDI:   ADDI(); break;
-    case R4300_ADDIU:  ADDIU(); break;
-    case R4300_SLTI:   SLTI(); break;
-    case R4300_SLTIU:  SLTIU(); break;
-    case R4300_ANDI:   ANDI(); break;
-    case R4300_ORI:    ORI(); break;
-    case R4300_XORI:   XORI(); break;
-    case R4300_LUI:    LUI(); break;
+    case R4300_ADDI:  ADDI(); break;
+    case R4300_ADDIU: ADDIU(); break;
+    case R4300_SLTI:  SLTI(); break;
+    case R4300_SLTIU: SLTIU(); break;
+    case R4300_ANDI:  ANDI(); break;
+    case R4300_ORI:   ORI(); break;
+    case R4300_XORI:  XORI(); break;
+    case R4300_LUI:   LUI(); break;
 #endif
     case R4300_COP0: {
         switch (mips_rs(opcVal)) {
@@ -680,7 +789,7 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
                 case R4300_COP0_C0_TLBP:  COP0_CO_TLBP(); break;
                 case R4300_COP0_C0_ERET:  COP0_CO_ERET(); break;
                 case R4300_COP0_C0_WAIT:  COP0_CO_WAIT(); break;
-                default: UnknownOpcode(); break;
+                default:                  UnknownOpcode(); break;
                 }
             } else {
                 UnknownOpcode();
@@ -704,22 +813,27 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             // 64-bit CFC1/CTC1: check CU1 first, then RI
             if (!m_CurrentContext) break;
             EmitPCUpdate();
-            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DCFC1_DCTC1),
-                                 m_CurrentContext->opcode.Value);
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DCFC1_DCTC1), m_CurrentContext->opcode.Value);
             m_BlockEnded = true;
             break;
         }
         case R4300_COP1_BC: {
             switch (op.Itype.rt & 3) {
 #if FORCE_CALLBACK_BRANCH
-            case 0: EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1F_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
-            case 1: EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1T_Branch), opcVal, ctx.virtualAddress); m_BlockEnded = true; break;
+            case 0:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1F_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
+            case 1:
+                EmitBranchCallback(reinterpret_cast<void*>(&Interp_BC1T_Branch), opcVal, ctx.virtualAddress);
+                m_BlockEnded = true;
+                break;
 #else
-            case 0: COP1_BCF_Compare(); break;      // BC1F
-            case 1: COP1_BCT_Compare(); break;      // BC1T
+            case 0: COP1_BCF_Compare(); break; // BC1F
+            case 1: COP1_BCT_Compare(); break; // BC1T
 #endif
-            case 2: BC1FL_Compare_Likely(); break;   // BC1FL
-            case 3: BC1TL_Compare_Likely(); break;   // BC1TL
+            case 2:  BC1FL_Compare_Likely(); break; // BC1FL
+            case 3:  BC1TL_Compare_Likely(); break; // BC1TL
             default: UnknownOpcode(); break;
             }
             break;
@@ -807,8 +921,7 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         default: {
             // Undefined COP1 arithmetic format → UnimplementedOp (FPE)
             EmitPCUpdate();
-            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented),
-                                 opcVal);
+            EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_Unimplemented), opcVal);
             m_BlockEnded = true;
             break;
         }
@@ -823,9 +936,9 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
             m_Assembler->AddComment("COP2 dispatch");
             m_RegisterSet->FlushRegisters(true);
             // Call Interp_COP2_Dispatch(regs, mmu, opcVal, compileAddr)
-            a.mov(asmjit::x86::rcx, asmjit::x86::rbx);   // rcx = regs
-            a.mov(asmjit::x86::rdx, asmjit::x86::r12);    // rdx = mmu
-            a.mov(asmjit::x86::r8d, static_cast<int32_t>(opcVal)); // r8d = opcVal
+            a.mov(asmjit::x86::rcx, asmjit::x86::rbx);                                       // rcx = regs
+            a.mov(asmjit::x86::rdx, asmjit::x86::r12);                                       // rdx = mmu
+            a.mov(asmjit::x86::r8d, static_cast<int32_t>(opcVal));                           // r8d = opcVal
             a.mov(asmjit::x86::r9d, static_cast<int32_t>(m_CurrentContext->virtualAddress)); // r9d = compileAddr
             a.mov(asmjit::x86::rax, reinterpret_cast<uint64_t>(&Interp_COP2_Dispatch));
             a.call(asmjit::x86::rax);
@@ -852,14 +965,14 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         m_BlockEnded = true;
         break;
     }
-    case R4300_BEQL:   BEQL_Compare_Likely(); break;
-    case R4300_BNEL:   BNEL_Compare_Likely(); break;
-    case R4300_BLEZL:  BLEZL_Compare_Likely(); break;
-    case R4300_BGTZL:  BGTZL_Compare_Likely(); break;
-    case R4300_RES:    // 0x1C
+    case R4300_BEQL:  BEQL_Compare_Likely(); break;
+    case R4300_BNEL:  BNEL_Compare_Likely(); break;
+    case R4300_BLEZL: BLEZL_Compare_Likely(); break;
+    case R4300_BGTZL: BGTZL_Compare_Likely(); break;
+    case R4300_RES:   // 0x1C
     case 0x1D:
     case 0x1E:
-    case 0x1F: {
+    case 0x1F:        {
         // Reserved opcodes — trigger Reserved Instruction exception
         EmitPCUpdate();
         {
@@ -877,41 +990,59 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
         break;
     }
 #if FORCE_CALLBACK_IMM
-    case R4300_DADDI:  m_Assembler->AddComment("DADDI cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
-    case R4300_DADDIU: m_Assembler->AddComment("DADDIU cb"); EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal); break;
+    case R4300_DADDI:
+        m_Assembler->AddComment("DADDI cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
+    case R4300_DADDIU:
+        m_Assembler->AddComment("DADDIU cb");
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
+        break;
 #else
     case R4300_DADDI:  DADDI(); break;
     case R4300_DADDIU: DADDIU(); break;
 #endif
-    case R4300_LDL:    LDL(); break;
-    case R4300_LDR:    LDR(); break;
-    case R4300_LB:     LB(); break;
-    case R4300_LH:     LH(); break;
-    case R4300_LWL:    LWL(); break;
-    case R4300_LW:     LW(); break;
-    case R4300_LBU:    LBU(); break;
-    case R4300_LHU:    LHU(); break;
-    case R4300_LWR:    LWR(); break;
-    case R4300_LWU:    LWU(); break;
-    case R4300_SB:     SB(); break;
-    case R4300_SH:     SH(); break;
-    case R4300_SWL:    SWL(); break;
-    case R4300_SW:     SW(); break;
-    case R4300_SDL:    SDL(); break;
-    case R4300_SDR:    SDR(); break;
-    case R4300_SWR:    SWR(); break;
-    case R4300_CACHE:  CACHE(); break;
-    case R4300_LL:     LL(); break;
-    case R4300_LLD:    LLD(); break;
-    case R4300_LWC1:   EmitCop1UsableCheck(); LWC1(); break;
-    case R4300_LDC1:   EmitCop1UsableCheck(); LDC1(); break;
-    case R4300_LD:     LD(); break;
-    case R4300_SC:     SC(); break;
-    case R4300_SCD:    SCD(); break;
-    case R4300_SWC1:   EmitCop1UsableCheck(); SWC1(); break;
-    case R4300_SDC1:   EmitCop1UsableCheck(); SDC1(); break;
-    case R4300_SD:     SD(); break;
-    default: UnknownOpcode(); break;
+    case R4300_LDL:   LDL(); break;
+    case R4300_LDR:   LDR(); break;
+    case R4300_LB:    LB(); break;
+    case R4300_LH:    LH(); break;
+    case R4300_LWL:   LWL(); break;
+    case R4300_LW:    LW(); break;
+    case R4300_LBU:   LBU(); break;
+    case R4300_LHU:   LHU(); break;
+    case R4300_LWR:   LWR(); break;
+    case R4300_LWU:   LWU(); break;
+    case R4300_SB:    SB(); break;
+    case R4300_SH:    SH(); break;
+    case R4300_SWL:   SWL(); break;
+    case R4300_SW:    SW(); break;
+    case R4300_SDL:   SDL(); break;
+    case R4300_SDR:   SDR(); break;
+    case R4300_SWR:   SWR(); break;
+    case R4300_CACHE: CACHE(); break;
+    case R4300_LL:    LL(); break;
+    case R4300_LLD:   LLD(); break;
+    case R4300_LWC1:
+        EmitCop1UsableCheck();
+        LWC1();
+        break;
+    case R4300_LDC1:
+        EmitCop1UsableCheck();
+        LDC1();
+        break;
+    case R4300_LD:  LD(); break;
+    case R4300_SC:  SC(); break;
+    case R4300_SCD: SCD(); break;
+    case R4300_SWC1:
+        EmitCop1UsableCheck();
+        SWC1();
+        break;
+    case R4300_SDC1:
+        EmitCop1UsableCheck();
+        SDC1();
+        break;
+    case R4300_SD: SD(); break;
+    default:       UnknownOpcode(); break;
     }
 
     // Ensure $zero is always 0 after every instruction
@@ -919,77 +1050,58 @@ bool CX64RecompilerOps::CompileInstruction(const InstructionContext& ctx)
     return true;
 }
 
-bool CX64RecompilerOps::CompileDelaySlot(const InstructionContext& ctx)
-{
+bool CX64RecompilerOps::CompileDelaySlot(const InstructionContext& ctx) {
     m_InDelaySlot = true;
     bool result = CompileInstruction(ctx);
     m_InDelaySlot = false;
     return result;
 }
 
-bool CX64RecompilerOps::CompileBranch(const InstructionContext& ctx,
-                                      BranchType type, ConditionType condition)
-{
+bool CX64RecompilerOps::CompileBranch(const InstructionContext& ctx, BranchType type, ConditionType condition) {
     // Branch compilation is handled through the branch compare methods
     // which are called from CompileInstruction's dispatch
     return CompileInstruction(ctx);
 }
 
-bool CX64RecompilerOps::CompileJump(const InstructionContext& ctx, bool /*withLink*/)
-{
+bool CX64RecompilerOps::CompileJump(const InstructionContext& ctx, bool /*withLink*/) {
     return CompileInstruction(ctx);
 }
 
-bool CX64RecompilerOps::CompileTrap(const InstructionContext& ctx, ConditionType /*condition*/)
-{
+bool CX64RecompilerOps::CompileTrap(const InstructionContext& ctx, ConditionType /*condition*/) {
     return CompileInstruction(ctx);
 }
 
-bool CX64RecompilerOps::CompileSystemCall(const InstructionContext& ctx)
-{
-    return CompileInstruction(ctx);
-}
+bool CX64RecompilerOps::CompileSystemCall(const InstructionContext& ctx) { return CompileInstruction(ctx); }
 
-bool CX64RecompilerOps::CompileBreak(const InstructionContext& ctx)
-{
-    return CompileInstruction(ctx);
-}
+bool CX64RecompilerOps::CompileBreak(const InstructionContext& ctx) { return CompileInstruction(ctx); }
 
 // =============================================================================
 // IRecompilerOps Interface - Register Management
 // =============================================================================
 
-void CX64RecompilerOps::LoadRegister(uint32_t regIndex, bool is64Bit)
-{
+void CX64RecompilerOps::LoadRegister(uint32_t regIndex, bool is64Bit) {
     if (regIndex >= 32 || regIndex == 0) return;
     auto width = is64Bit ? RegisterWidth::Bits64 : RegisterWidth::Bits32;
     m_RegisterSet->MapRegister(regIndex, width);
 }
 
-void CX64RecompilerOps::StoreRegister(uint32_t regIndex, bool /*is64Bit*/)
-{
+void CX64RecompilerOps::StoreRegister(uint32_t regIndex, bool /*is64Bit*/) {
     if (regIndex >= 32 || regIndex == 0) return;
     m_RegisterSet->SpillRegister(regIndex);
 }
 
-void CX64RecompilerOps::FlushRegisters()
-{
-    m_RegisterSet->FlushRegisters(true);
-}
+void CX64RecompilerOps::FlushRegisters() { m_RegisterSet->FlushRegisters(true); }
 
 // =============================================================================
 // IRecompilerOps Interface - Memory Operations
 // =============================================================================
 
-bool CX64RecompilerOps::CompileLoad(const InstructionContext& ctx,
-                                    uint32_t /*size*/, bool /*isSigned*/, bool /*is64Bit*/)
-{
+bool CX64RecompilerOps::CompileLoad(const InstructionContext& ctx, uint32_t /*size*/, bool /*isSigned*/,
+                                    bool /*is64Bit*/) {
     return CompileInstruction(ctx);
 }
 
-bool CX64RecompilerOps::CompileStore(const InstructionContext& ctx,
-                                     uint32_t /*size*/, bool /*is64Bit*/)
-{
+bool CX64RecompilerOps::CompileStore(const InstructionContext& ctx, uint32_t /*size*/, bool /*is64Bit*/) {
     return CompileInstruction(ctx);
 }
 
@@ -997,14 +1109,9 @@ bool CX64RecompilerOps::CompileStore(const InstructionContext& ctx,
 // IRecompilerOps Interface - Floating-Point Operations
 // =============================================================================
 
-bool CX64RecompilerOps::CompileFloatingPointOperation(const InstructionContext& ctx)
-{
-    return CompileInstruction(ctx);
-}
+bool CX64RecompilerOps::CompileFloatingPointOperation(const InstructionContext& ctx) { return CompileInstruction(ctx); }
 
-bool CX64RecompilerOps::CompileFloatingPointBranch(const InstructionContext& ctx,
-                                                   ConditionType /*condition*/)
-{
+bool CX64RecompilerOps::CompileFloatingPointBranch(const InstructionContext& ctx, ConditionType /*condition*/) {
     return CompileInstruction(ctx);
 }
 
@@ -1012,9 +1119,7 @@ bool CX64RecompilerOps::CompileFloatingPointBranch(const InstructionContext& ctx
 // IRecompilerOps Interface - Coprocessor Operations
 // =============================================================================
 
-bool CX64RecompilerOps::CompileCoprocessorOperation(const InstructionContext& ctx,
-                                                    uint32_t /*coprocessor*/)
-{
+bool CX64RecompilerOps::CompileCoprocessorOperation(const InstructionContext& ctx, uint32_t /*coprocessor*/) {
     return CompileInstruction(ctx);
 }
 
@@ -1022,18 +1127,13 @@ bool CX64RecompilerOps::CompileCoprocessorOperation(const InstructionContext& ct
 // IRecompilerOps Interface - Debug and Query
 // =============================================================================
 
-void CX64RecompilerOps::GenerateDebugComment(std::string_view comment)
-{
-    m_Assembler->AddComment(comment);
-}
+void CX64RecompilerOps::GenerateDebugComment(std::string_view comment) { m_Assembler->AddComment(comment); }
 
-void CX64RecompilerOps::GenerateAddressCheck(uint32_t /*address*/)
-{
+void CX64RecompilerOps::GenerateAddressCheck(uint32_t /*address*/) {
     // Address checking is handled within the memory callbacks
 }
 
-bool CX64RecompilerOps::SupportsFeature(std::string_view feature) const
-{
+bool CX64RecompilerOps::SupportsFeature(std::string_view feature) const {
     if (feature == "x64") return true;
     if (feature == "interpreter_fallback") return true;
     if (feature == "register_allocation") return true;
@@ -1041,8 +1141,7 @@ bool CX64RecompilerOps::SupportsFeature(std::string_view feature) const
     return false;
 }
 
-size_t CX64RecompilerOps::GetCodeSizeEstimate(const InstructionContext& /*ctx*/) const
-{
+size_t CX64RecompilerOps::GetCodeSizeEstimate(const InstructionContext& /*ctx*/) const {
     // Average estimate: ~32 bytes per MIPS instruction with callback approach
     return 32;
 }
@@ -1051,17 +1150,13 @@ size_t CX64RecompilerOps::GetCodeSizeEstimate(const InstructionContext& /*ctx*/)
 // Extended Interface - Optimization
 // =============================================================================
 
-void CX64RecompilerOps::SetOptimizationLevel(OptimizationLevel level) noexcept
-{
-    m_OptimizationLevel = level;
-}
+void CX64RecompilerOps::SetOptimizationLevel(OptimizationLevel level) noexcept { m_OptimizationLevel = level; }
 
 // =============================================================================
 // Extended Interface - Control Flow Management
 // =============================================================================
 
-void CX64RecompilerOps::EnterCodeBlock()
-{
+void CX64RecompilerOps::EnterCodeBlock() {
     auto& a = m_Assembler->GetAssembler();
     m_Assembler->AddComment("=== Block Entry (True JIT) ===");
 
@@ -1096,8 +1191,7 @@ void CX64RecompilerOps::EnterCodeBlock()
     m_Stats.codeSizeGenerated = 0;
 }
 
-void CX64RecompilerOps::ExitCodeBlock(ExitReason reason)
-{
+void CX64RecompilerOps::ExitCodeBlock(ExitReason reason) {
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
 
@@ -1122,8 +1216,7 @@ void CX64RecompilerOps::ExitCodeBlock(ExitReason reason)
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::LinkJump(CJumpInfo& jumpInfo)
-{
+void CX64RecompilerOps::LinkJump(CJumpInfo& jumpInfo) {
     auto& a = m_Assembler->GetAssembler();
     if (jumpInfo.GetLinkLocation().is_valid()) {
         a.bind(jumpInfo.GetLinkLocation());
@@ -1131,17 +1224,14 @@ void CX64RecompilerOps::LinkJump(CJumpInfo& jumpInfo)
     jumpInfo.MarkResolved();
 }
 
-void CX64RecompilerOps::LinkJumpToSection(CodeSection* section)
-{
+void CX64RecompilerOps::LinkJumpToSection(CodeSection* section) {
     if (!section) return;
     // Link a jump to the entry label of a code section
     // The section's entry label will be resolved during final code emission
-    Log::debugf("CX64RecompilerOps: Linking jump to section at 0x%08X",
-                section->entry_pc());
+    Log::debugf("CX64RecompilerOps: Linking jump to section at 0x%08X", section->entry_pc());
 }
 
-void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo)
-{
+void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo) {
     if (!jumpInfo) return;
     // For unknown targets, we emit code that exits the block and returns
     // to the recompiler dispatcher
@@ -1152,48 +1242,31 @@ void CX64RecompilerOps::LinkJumpToUnknown(CJumpInfo* jumpInfo)
 // Extended Interface - Register State Management
 // =============================================================================
 
-void CX64RecompilerOps::SynchronizeRegisterState(const CX64RegInfo& other)
-{
-    m_RegisterSet->SynchronizeWith(other);
-}
+void CX64RecompilerOps::SynchronizeRegisterState(const CX64RegInfo& other) { m_RegisterSet->SynchronizeWith(other); }
 
-void CX64RecompilerOps::PropagateRegisterState()
-{
+void CX64RecompilerOps::PropagateRegisterState() {
     // Propagate known register values to successor blocks
     // This is part of the optimization pipeline
     Log::debug("CX64RecompilerOps: Propagating register state");
 }
 
-void CX64RecompilerOps::SaveRegisterState()
-{
-    m_RegisterSet->SaveState();
-}
+void CX64RecompilerOps::SaveRegisterState() { m_RegisterSet->SaveState(); }
 
-void CX64RecompilerOps::RestoreRegisterState()
-{
-    m_RegisterSet->RestoreState();
-}
+void CX64RecompilerOps::RestoreRegisterState() { m_RegisterSet->RestoreState(); }
 
 // =============================================================================
 // Extended Interface - Disassembly & Validation
 // =============================================================================
 
-std::string CX64RecompilerOps::GenerateDisassembly() const
-{
-    return m_Assembler->GenerateDisassembly();
-}
+std::string CX64RecompilerOps::GenerateDisassembly() const { return m_Assembler->GenerateDisassembly(); }
 
-bool CX64RecompilerOps::ValidateGeneratedCode() const
-{
-    return !m_Assembler->HasError();
-}
+bool CX64RecompilerOps::ValidateGeneratedCode() const { return !m_Assembler->HasError(); }
 
 // =============================================================================
 // Private - Instruction Handler Initialization
 // =============================================================================
 
-void CX64RecompilerOps::InitializeInstructionHandlers()
-{
+void CX64RecompilerOps::InitializeInstructionHandlers() {
     // The dispatch is handled directly in CompileInstruction via switch/case
     // The handler maps are available for future optimization passes
     Log::debug("CX64RecompilerOps: Instruction handlers initialized");
@@ -1203,8 +1276,7 @@ void CX64RecompilerOps::InitializeInstructionHandlers()
 // Private - Instruction Translation Dispatch
 // =============================================================================
 
-TranslationResult CX64RecompilerOps::TranslateInstruction(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::TranslateInstruction(const TranslationContext& ctx) {
     switch (ctx.opcode.Rtype.op) {
     case R4300_SPECIAL: return TranslateSpecialInstruction(ctx);
     case R4300_REGIMM:  return TranslateRegImmInstruction(ctx);
@@ -1215,28 +1287,23 @@ TranslationResult CX64RecompilerOps::TranslateInstruction(const TranslationConte
     }
 }
 
-TranslationResult CX64RecompilerOps::TranslateSpecialInstruction(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::TranslateSpecialInstruction(const TranslationContext& ctx) {
     return HandleArithmetic(ctx);
 }
 
-TranslationResult CX64RecompilerOps::TranslateRegImmInstruction(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::TranslateRegImmInstruction(const TranslationContext& ctx) {
     return HandleBranch(ctx);
 }
 
-TranslationResult CX64RecompilerOps::TranslateCop0Instruction(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::TranslateCop0Instruction(const TranslationContext& ctx) {
     return HandleSystem(ctx);
 }
 
-TranslationResult CX64RecompilerOps::TranslateCop1Instruction(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::TranslateCop1Instruction(const TranslationContext& ctx) {
     return HandleFloatingPoint(ctx);
 }
 
-TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationContext& /*ctx*/)
-{
+TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationContext& /*ctx*/) {
     // COP2 doesn't exist on N64 CPU — always fire CopUnusable exception
     return TranslationResult::Success;
 }
@@ -1245,62 +1312,52 @@ TranslationResult CX64RecompilerOps::TranslateCop2Instruction(const TranslationC
 // Private - Category Handlers (using TranslationContext)
 // =============================================================================
 
-TranslationResult CX64RecompilerOps::HandleArithmetic(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleArithmetic(const TranslationContext& ctx) {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ADDIU), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleLogical(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleLogical(const TranslationContext& ctx) {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_AND), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleShift(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleShift(const TranslationContext& ctx) {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SLL), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleLoad(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleLoad(const TranslationContext& ctx) {
     EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LW), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleStore(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleStore(const TranslationContext& ctx) {
     EmitMemoryCallback(reinterpret_cast<void*>(&Interp_SW), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleBranch(const TranslationContext& /*ctx*/)
-{
+TranslationResult CX64RecompilerOps::HandleBranch(const TranslationContext& /*ctx*/) {
     return TranslationResult::BlockBoundary;
 }
 
-TranslationResult CX64RecompilerOps::HandleJump(const TranslationContext& /*ctx*/)
-{
+TranslationResult CX64RecompilerOps::HandleJump(const TranslationContext& /*ctx*/) {
     return TranslationResult::BlockBoundary;
 }
 
-TranslationResult CX64RecompilerOps::HandleTrap(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleTrap(const TranslationContext& ctx) {
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_TGE), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleSystem(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleSystem(const TranslationContext& ctx) {
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), ctx.opcode.Value);
     return TranslationResult::Success;
 }
 
-TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContext& ctx)
-{
+TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContext& ctx) {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_Arith), ctx.opcode.Value);
     return TranslationResult::Success;
 }
@@ -1310,11 +1367,11 @@ TranslationResult CX64RecompilerOps::HandleFloatingPoint(const TranslationContex
 // =============================================================================
 // These delegate to the bare-name methods since both emit the same code.
 
-#define DEFINE_HANDLE_SPECIAL(name, callback) \
-    TranslationResult CX64RecompilerOps::HandleSPECIAL_##name(const TranslationContext& ctx) { \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value); \
-        m_Stats.instructionsTranslated++; \
-        return TranslationResult::Success; \
+#define DEFINE_HANDLE_SPECIAL(name, callback)                                                                          \
+    TranslationResult CX64RecompilerOps::HandleSPECIAL_##name(const TranslationContext& ctx) {                         \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                           \
+        m_Stats.instructionsTranslated++;                                                                              \
+        return TranslationResult::Success;                                                                             \
     }
 
 DEFINE_HANDLE_SPECIAL(SLL, SLL)
@@ -1383,10 +1440,10 @@ TranslationResult CX64RecompilerOps::HandleSPECIAL_BREAK(const TranslationContex
 }
 
 // REGIMM Handle methods
-#define DEFINE_HANDLE_REGIMM_BRANCH(name) \
-    TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& /*ctx*/) { \
-        m_Stats.branchesTranslated++; \
-        return TranslationResult::BlockBoundary; \
+#define DEFINE_HANDLE_REGIMM_BRANCH(name)                                                                              \
+    TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& /*ctx*/) {                      \
+        m_Stats.branchesTranslated++;                                                                                  \
+        return TranslationResult::BlockBoundary;                                                                       \
     }
 
 DEFINE_HANDLE_REGIMM_BRANCH(BLTZ)
@@ -1398,10 +1455,10 @@ DEFINE_HANDLE_REGIMM_BRANCH(BGEZAL)
 DEFINE_HANDLE_REGIMM_BRANCH(BLTZALL)
 DEFINE_HANDLE_REGIMM_BRANCH(BGEZALL)
 
-#define DEFINE_HANDLE_REGIMM_TRAP(name, callback) \
-    TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& ctx) { \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value); \
-        return TranslationResult::Success; \
+#define DEFINE_HANDLE_REGIMM_TRAP(name, callback)                                                                      \
+    TranslationResult CX64RecompilerOps::HandleREGIMM_##name(const TranslationContext& ctx) {                          \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                           \
+        return TranslationResult::Success;                                                                             \
     }
 
 DEFINE_HANDLE_REGIMM_TRAP(TGEI, TGEI)
@@ -1412,11 +1469,11 @@ DEFINE_HANDLE_REGIMM_TRAP(TEQI, TEQI)
 DEFINE_HANDLE_REGIMM_TRAP(TNEI, TNEI)
 
 // Load/Store Handle methods
-#define DEFINE_HANDLE_LOAD(name, callback) \
-    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) { \
-        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value); \
-        m_Stats.loadsStoresTranslated++; \
-        return TranslationResult::Success; \
+#define DEFINE_HANDLE_LOAD(name, callback)                                                                             \
+    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) {                                 \
+        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                             \
+        m_Stats.loadsStoresTranslated++;                                                                               \
+        return TranslationResult::Success;                                                                             \
     }
 
 DEFINE_HANDLE_LOAD(LB, LB)
@@ -1431,11 +1488,11 @@ DEFINE_HANDLE_LOAD(LD, LD)
 DEFINE_HANDLE_LOAD(LDL, LDL)
 DEFINE_HANDLE_LOAD(LDR, LDR)
 
-#define DEFINE_HANDLE_STORE(name, callback) \
-    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) { \
-        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value); \
-        m_Stats.loadsStoresTranslated++; \
-        return TranslationResult::Success; \
+#define DEFINE_HANDLE_STORE(name, callback)                                                                            \
+    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) {                                 \
+        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                             \
+        m_Stats.loadsStoresTranslated++;                                                                               \
+        return TranslationResult::Success;                                                                             \
     }
 
 DEFINE_HANDLE_STORE(SB, SB)
@@ -1448,11 +1505,11 @@ DEFINE_HANDLE_STORE(SDR, SDR)
 DEFINE_HANDLE_STORE(SD, SD)
 
 // Immediate Handle methods
-#define DEFINE_HANDLE_IMM(name, callback) \
-    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) { \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value); \
-        m_Stats.instructionsTranslated++; \
-        return TranslationResult::Success; \
+#define DEFINE_HANDLE_IMM(name, callback)                                                                              \
+    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& ctx) {                                 \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_##callback), ctx.opcode.Value);                           \
+        m_Stats.instructionsTranslated++;                                                                              \
+        return TranslationResult::Success;                                                                             \
     }
 
 DEFINE_HANDLE_IMM(ADDI, ADDI)
@@ -1467,10 +1524,10 @@ DEFINE_HANDLE_IMM(DADDI, DADDI)
 DEFINE_HANDLE_IMM(DADDIU, DADDIU)
 
 // Branch Handle methods
-#define DEFINE_HANDLE_BRANCH(name) \
-    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& /*ctx*/) { \
-        m_Stats.branchesTranslated++; \
-        return TranslationResult::BlockBoundary; \
+#define DEFINE_HANDLE_BRANCH(name)                                                                                     \
+    TranslationResult CX64RecompilerOps::Handle##name(const TranslationContext& /*ctx*/) {                             \
+        m_Stats.branchesTranslated++;                                                                                  \
+        return TranslationResult::BlockBoundary;                                                                       \
     }
 
 DEFINE_HANDLE_BRANCH(J)
@@ -1513,82 +1570,68 @@ TranslationResult CX64RecompilerOps::HandleSDC1(const TranslationContext& ctx) {
 // Private - Helper Methods
 // =============================================================================
 
-void CX64RecompilerOps::EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit,
-                                          asmjit::x86::Gp dest, const asmjit::x86::Mem& src)
-{
+void CX64RecompilerOps::EmitLoadOperation(uint32_t size, bool isSigned, bool is64Bit, asmjit::x86::Gp dest,
+                                          const asmjit::x86::Mem& src) {
     m_Assembler->EmitSafeLoad(dest, src, size, isSigned);
 }
 
-void CX64RecompilerOps::EmitStoreOperation(uint32_t size, bool is64Bit,
-                                           const asmjit::x86::Mem& dest, asmjit::x86::Gp src)
-{
+void CX64RecompilerOps::EmitStoreOperation(uint32_t size, bool is64Bit, const asmjit::x86::Mem& dest,
+                                           asmjit::x86::Gp src) {
     m_Assembler->EmitSafeStore(dest, src, size);
 }
 
-void CX64RecompilerOps::EmitBranchCondition(ConditionType condition, asmjit::Label target)
-{
+void CX64RecompilerOps::EmitBranchCondition(ConditionType condition, asmjit::Label target) {
     using namespace asmjit::x86;
 
     switch (condition) {
-    case ConditionType::Equal:
-        m_Assembler->EmitConditionalJump(CondCode::kEqual, target); break;
-    case ConditionType::NotEqual:
-        m_Assembler->EmitConditionalJump(CondCode::kNotEqual, target); break;
-    case ConditionType::LessThanZero:
-        m_Assembler->EmitConditionalJump(CondCode::kSign, target); break;
-    case ConditionType::GreaterOrEqualZero:
-        m_Assembler->EmitConditionalJump(CondCode::kNotSign, target); break;
-    case ConditionType::LessOrEqualZero:
-        m_Assembler->EmitConditionalJump(CondCode::kSignedLE, target); break;
-    case ConditionType::GreaterThanZero:
-        m_Assembler->EmitConditionalJump(CondCode::kSignedGT, target); break;
-    default:
-        { auto& a = m_Assembler->GetAssembler(); a.jmp(target); break; }
+    case ConditionType::Equal:              m_Assembler->EmitConditionalJump(CondCode::kEqual, target); break;
+    case ConditionType::NotEqual:           m_Assembler->EmitConditionalJump(CondCode::kNotEqual, target); break;
+    case ConditionType::LessThanZero:       m_Assembler->EmitConditionalJump(CondCode::kSign, target); break;
+    case ConditionType::GreaterOrEqualZero: m_Assembler->EmitConditionalJump(CondCode::kNotSign, target); break;
+    case ConditionType::LessOrEqualZero:    m_Assembler->EmitConditionalJump(CondCode::kSignedLE, target); break;
+    case ConditionType::GreaterThanZero:    m_Assembler->EmitConditionalJump(CondCode::kSignedGT, target); break;
+    default:                                {
+        auto& a = m_Assembler->GetAssembler();
+        a.jmp(target);
+        break;
+    }
     }
 }
 
-void CX64RecompilerOps::EmitTrapCondition(ConditionType /*condition*/)
-{
+void CX64RecompilerOps::EmitTrapCondition(ConditionType /*condition*/) {
     // Trap conditions are handled by the interpreter callbacks
 }
 
-void CX64RecompilerOps::EmitSystemCall()
-{
+void CX64RecompilerOps::EmitSystemCall() {
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL),
                          m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
 }
 
-void CX64RecompilerOps::EmitBreak()
-{
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK),
-                         m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
+void CX64RecompilerOps::EmitBreak() {
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), m_CurrentContext ? m_CurrentContext->opcode.Value : 0);
 }
 
 // =============================================================================
 // Private - Register Allocation and Management
 // =============================================================================
 
-void CX64RecompilerOps::AllocateRegister(uint32_t regIndex, bool is64Bit)
-{
+void CX64RecompilerOps::AllocateRegister(uint32_t regIndex, bool is64Bit) {
     if (regIndex >= 32 || regIndex == 0) return;
     auto width = is64Bit ? RegisterWidth::Bits64 : RegisterWidth::Bits32;
     m_RegisterSet->MapRegister(regIndex, width);
 }
 
-void CX64RecompilerOps::FreeRegister(uint32_t regIndex)
-{
+void CX64RecompilerOps::FreeRegister(uint32_t regIndex) {
     if (regIndex >= 32 || regIndex == 0) return;
     m_RegisterSet->UnmapRegister(regIndex);
 }
 
-void CX64RecompilerOps::SpillRegister(uint32_t regIndex)
-{
+void CX64RecompilerOps::SpillRegister(uint32_t regIndex) {
     if (regIndex >= 32 || regIndex == 0) return;
     m_RegisterSet->SpillRegister(regIndex);
 }
 
-void CX64RecompilerOps::ReloadRegister(uint32_t regIndex)
-{
+void CX64RecompilerOps::ReloadRegister(uint32_t regIndex) {
     if (regIndex >= 32 || regIndex == 0) return;
     m_RegisterSet->ReloadRegister(regIndex);
 }
@@ -1597,9 +1640,8 @@ void CX64RecompilerOps::ReloadRegister(uint32_t regIndex)
 // Private - Memory Access Helpers
 // =============================================================================
 
-asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_t offset,
-                                                        uint32_t size, bool /*is64Bit*/)
-{
+asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_t offset, uint32_t size,
+                                                        bool /*is64Bit*/) {
     using namespace asmjit::x86;
     // Create a memory operand relative to the register base pointer
     // baseReg is a MIPS register index; offset is the immediate offset
@@ -1607,8 +1649,7 @@ asmjit::x86::Mem CX64RecompilerOps::CreateMemoryOperand(uint32_t baseReg, int32_
     return ptr(rbx, offset, size);
 }
 
-void CX64RecompilerOps::EmitMemoryBoundsCheck(uint32_t /*address*/)
-{
+void CX64RecompilerOps::EmitMemoryBoundsCheck(uint32_t /*address*/) {
     // Bounds checking is handled within the memory callbacks (MMU TLB lookup)
 }
 
@@ -1616,8 +1657,7 @@ void CX64RecompilerOps::EmitMemoryBoundsCheck(uint32_t /*address*/)
 // Private - Optimization Helpers
 // =============================================================================
 
-void CX64RecompilerOps::OptimizeCurrentBlock()
-{
+void CX64RecompilerOps::OptimizeCurrentBlock() {
     if (m_OptimizationLevel >= OptimizationLevel::Basic) {
         PeepholeOptimize();
     }
@@ -1628,25 +1668,21 @@ void CX64RecompilerOps::OptimizeCurrentBlock()
     }
 }
 
-void CX64RecompilerOps::PeepholeOptimize()
-{
+void CX64RecompilerOps::PeepholeOptimize() {
     // Peephole optimizations on the generated x64 code
     // (future: merge adjacent loads, eliminate redundant moves, etc.)
 }
 
-void CX64RecompilerOps::ConstantPropagation()
-{
+void CX64RecompilerOps::ConstantPropagation() {
     // Track constant values through the register set
     // and replace runtime computations with immediate values
 }
 
-void CX64RecompilerOps::DeadCodeElimination()
-{
+void CX64RecompilerOps::DeadCodeElimination() {
     // Remove generated code for instructions whose results are never used
 }
 
-void CX64RecompilerOps::RedundantMoveElimination()
-{
+void CX64RecompilerOps::RedundantMoveElimination(){
     // Remove mov reg, reg instructions and unnecessary register shuffling
 }
 
@@ -1656,7 +1692,8 @@ void CX64RecompilerOps::RedundantMoveElimination()
 
 // JIT offset helpers (used here and in SPECIAL/Immediate sections below)
 #ifndef JIT_GPR
-#define JIT_GPR(reg) (static_cast<int32_t>(offsetof(CRegisters, m_GPR)) + static_cast<int32_t>((reg) * sizeof(MipsRegisterType)))
+#define JIT_GPR(reg)                                                                                                   \
+    (static_cast<int32_t>(offsetof(CRegisters, m_GPR)) + static_cast<int32_t>((reg) * sizeof(MipsRegisterType)))
 #define JIT_HI      static_cast<int32_t>(offsetof(CRegisters, m_HI))
 #define JIT_LO      static_cast<int32_t>(offsetof(CRegisters, m_LO))
 #define JIT_PC      static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))
@@ -1679,7 +1716,9 @@ void CX64RecompilerOps::BEQ_Compare() {
     a.mov(rdx, takenPC);
     a.cmove(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BNE_Compare() {
@@ -1698,7 +1737,9 @@ void CX64RecompilerOps::BNE_Compare() {
     a.mov(rdx, takenPC);
     a.cmovne(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BGTZ_Compare() {
@@ -1717,7 +1758,9 @@ void CX64RecompilerOps::BGTZ_Compare() {
     a.mov(rdx, takenPC);
     a.cmovg(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BLEZ_Compare() {
@@ -1736,7 +1779,9 @@ void CX64RecompilerOps::BLEZ_Compare() {
     a.mov(rdx, takenPC);
     a.cmovle(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BLTZ_Compare() {
@@ -1755,7 +1800,9 @@ void CX64RecompilerOps::BLTZ_Compare() {
     a.mov(rdx, takenPC);
     a.cmovs(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BGEZ_Compare() {
@@ -1774,7 +1821,9 @@ void CX64RecompilerOps::BGEZ_Compare() {
     a.mov(rdx, takenPC);
     a.cmovns(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BLTZAL_Compare() {
@@ -1804,7 +1853,9 @@ void CX64RecompilerOps::BLTZAL_Compare() {
     a.mov(rdx, takenPC);
     a.cmovs(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::BGEZAL_Compare() {
@@ -1834,7 +1885,9 @@ void CX64RecompilerOps::BGEZAL_Compare() {
     a.mov(rdx, takenPC);
     a.cmovns(rax, rdx);
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::COP1_BCF_Compare() {
@@ -1852,9 +1905,11 @@ void CX64RecompilerOps::COP1_BCF_Compare() {
     a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
     a.mov(rax, notTakenPC);
     a.mov(rdx, takenPC);
-    a.cmovz(rax, rdx);  // if FPCSR_C not set → taken
+    a.cmovz(rax, rdx); // if FPCSR_C not set → taken
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 void CX64RecompilerOps::COP1_BCT_Compare() {
@@ -1872,23 +1927,24 @@ void CX64RecompilerOps::COP1_BCT_Compare() {
     a.test(dword_ptr(rbx, JIT_FPCR(31)), static_cast<int32_t>(FPCSR_C));
     a.mov(rax, notTakenPC);
     a.mov(rdx, takenPC);
-    a.cmovnz(rax, rdx);  // if FPCSR_C set → taken
+    a.cmovnz(rax, rdx); // if FPCSR_C set → taken
     a.mov(qword_ptr(rbx, JIT_PC), rax);
-    m_Stats.branchesTranslated++; m_Stats.categories.control++; m_BlockEnded = true;
+    m_Stats.branchesTranslated++;
+    m_Stats.categories.control++;
+    m_BlockEnded = true;
 }
 
 // Branch-likely compare methods: use EmitBranchLikelyCallback which returns
 // taken/not-taken and emits a conditional jz to skip the delay slot.
-#define DEFINE_BRANCH_LIKELY_COMPARE_IMPL(name, callback_fn) \
-    void CX64RecompilerOps::name##_Compare_Likely() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment(#name "_Likely"); \
-        EmitBranchLikelyCallback(reinterpret_cast<void*>(&callback_fn), \
-                           m_CurrentContext->opcode.Value, \
-                           m_CurrentContext->virtualAddress); \
-        m_Stats.branchesTranslated++; \
-        m_Stats.categories.control++; \
-        m_BlockEnded = true; \
+#define DEFINE_BRANCH_LIKELY_COMPARE_IMPL(name, callback_fn)                                                           \
+    void CX64RecompilerOps::name##_Compare_Likely() {                                                                  \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment(#name "_Likely");                                                                      \
+        EmitBranchLikelyCallback(reinterpret_cast<void*>(&callback_fn), m_CurrentContext->opcode.Value,                \
+                                 m_CurrentContext->virtualAddress);                                                    \
+        m_Stats.branchesTranslated++;                                                                                  \
+        m_Stats.categories.control++;                                                                                  \
+        m_BlockEnded = true;                                                                                           \
     }
 
 DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BEQL, Interp_BEQL_BranchLikely)
@@ -1906,8 +1962,7 @@ DEFINE_BRANCH_LIKELY_COMPARE_IMPL(BC1TL, Interp_BC1TL_BranchLikely)
 // Private - Jump Instructions (True JIT - Inline x64)
 // =============================================================================
 
-void CX64RecompilerOps::J()
-{
+void CX64RecompilerOps::J() {
     if (!m_CurrentContext) return;
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
@@ -1922,8 +1977,7 @@ void CX64RecompilerOps::J()
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::JAL()
-{
+void CX64RecompilerOps::JAL() {
     if (!m_CurrentContext) return;
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
@@ -1959,14 +2013,20 @@ void CX64RecompilerOps::ADDI() {
     m_Assembler->AddComment("ADDI (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::ADDIU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("ADDIU");
@@ -1974,14 +2034,20 @@ void CX64RecompilerOps::ADDIU() {
     a.add(eax, static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)));
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SLTI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SLTI");
@@ -1993,14 +2059,20 @@ void CX64RecompilerOps::SLTI() {
     a.setl(al);
     a.movzx(eax, al);
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SLTIU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SLTIU");
@@ -2012,66 +2084,91 @@ void CX64RecompilerOps::SLTIU() {
     a.setb(al);
     a.movzx(eax, al);
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::ANDI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("ANDI");
     // ANDI zero-extends the immediate (no sign extension)
     a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
-    a.and_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.and_(rax, static_cast<int32_t>(op.Itype.imm)); // zero-extended 16-bit
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::ORI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("ORI");
     // ORI zero-extends the immediate
     a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
-    a.or_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.or_(rax, static_cast<int32_t>(op.Itype.imm)); // zero-extended 16-bit
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::XORI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("XORI");
     // XORI zero-extends the immediate
     a.mov(rax, qword_ptr(rbx, JIT_GPR(op.Itype.rs)));
-    a.xor_(rax, static_cast<int32_t>(op.Itype.imm));  // zero-extended 16-bit
+    a.xor_(rax, static_cast<int32_t>(op.Itype.imm)); // zero-extended 16-bit
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::LUI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("LUI");
     // LUI: rt = sign_extend(imm << 16)
     int32_t val = static_cast<int32_t>(static_cast<int16_t>(op.Itype.imm)) << 16;
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), static_cast<int32_t>(val));
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::DADDI() {
@@ -2080,14 +2177,20 @@ void CX64RecompilerOps::DADDI() {
     m_Assembler->AddComment("DADDI (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_ImmDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::DADDIU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    R4300iOps op; op.Value = opcVal;
-    if (op.Itype.rt == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    R4300iOps op;
+    op.Value = opcVal;
+    if (op.Itype.rt == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("DADDIU");
@@ -2096,21 +2199,21 @@ void CX64RecompilerOps::DADDIU() {
     a.mov(rcx, immSext);
     a.add(rax, rcx);
     a.mov(qword_ptr(rbx, JIT_GPR(op.Itype.rt)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // =============================================================================
 // Private - Load Instructions
 // =============================================================================
 
-#define DEFINE_LOAD(name, callback) \
-    void CX64RecompilerOps::name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment(#name); \
-        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), \
-                           m_CurrentContext->opcode.Value); \
-        m_Stats.loadsStoresTranslated++; \
-        m_Stats.categories.memory++; \
+#define DEFINE_LOAD(name, callback)                                                                                    \
+    void CX64RecompilerOps::name() {                                                                                   \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment(#name);                                                                                \
+        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), m_CurrentContext->opcode.Value);               \
+        m_Stats.loadsStoresTranslated++;                                                                               \
+        m_Stats.categories.memory++;                                                                                   \
     }
 
 DEFINE_LOAD(LB, LB)
@@ -2132,16 +2235,17 @@ DEFINE_LOAD(LDC1, LDC1)
 void CX64RecompilerOps::LW() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rt   = mips_rt(opcVal);
+    uint32_t rt = mips_rt(opcVal);
     uint32_t base = mips_base(opcVal);
-    int32_t  off  = static_cast<int32_t>(mips_offset(opcVal)); // sign-extended
+    int32_t off = static_cast<int32_t>(mips_offset(opcVal)); // sign-extended
 
     // LW $0 still performs the memory access (alignment/TLB checks can trigger
     // exceptions), but the result is discarded.  Fall through to the slow path.
     if (rt == 0) {
         m_Assembler->AddComment("LW $0 (side-effects only)");
         EmitMemoryCallback(reinterpret_cast<void*>(&Interp_LW), opcVal);
-        m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+        m_Stats.loadsStoresTranslated++;
+        m_Stats.categories.memory++;
         return;
     }
 
@@ -2151,12 +2255,11 @@ void CX64RecompilerOps::LW() {
     m_Assembler->AddComment("LW (inline)");
 
     asmjit::Label slowPath = a.new_label();
-    asmjit::Label done     = a.new_label();
+    asmjit::Label done = a.new_label();
 
     // Compute vAddr32 = low32(GPR[base]) + sign_extend(offset)
     a.mov(eax, dword_ptr(rbx, JIT_GPR(base)));
-    if (off != 0)
-        a.add(eax, off);
+    if (off != 0) a.add(eax, off);
 
     // Alignment check: vAddr32 & 3
     a.test(eax, 3);
@@ -2164,9 +2267,9 @@ void CX64RecompilerOps::LW() {
 
     // Page lookup: rcx = ReadMap[vAddr32 >> 12]
     // R15 = m_MemoryReadMap base pointer (set in EnterCodeBlock)
-    a.mov(ecx, eax);                        // ecx = vAddr32 (zero-extends rcx)
-    a.shr(ecx, 12);                         // ecx = page index
-    a.mov(rcx, qword_ptr(r15, rcx, 3));     // rcx = ReadMap[page] (scale 8)
+    a.mov(ecx, eax);                    // ecx = vAddr32 (zero-extends rcx)
+    a.shr(ecx, 12);                     // ecx = page index
+    a.mov(rcx, qword_ptr(r15, rcx, 3)); // rcx = ReadMap[page] (scale 8)
 
     // Check unmapped (-1 sentinel)
     a.cmp(rcx, -1);
@@ -2188,21 +2291,21 @@ void CX64RecompilerOps::LW() {
 
     a.bind(done);
 
-    m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+    m_Stats.loadsStoresTranslated++;
+    m_Stats.categories.memory++;
 }
 
 // =============================================================================
 // Private - Store Instructions
 // =============================================================================
 
-#define DEFINE_STORE(name, callback) \
-    void CX64RecompilerOps::name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment(#name); \
-        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), \
-                           m_CurrentContext->opcode.Value); \
-        m_Stats.loadsStoresTranslated++; \
-        m_Stats.categories.memory++; \
+#define DEFINE_STORE(name, callback)                                                                                   \
+    void CX64RecompilerOps::name() {                                                                                   \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment(#name);                                                                                \
+        EmitMemoryCallback(reinterpret_cast<void*>(&Interp_##callback), m_CurrentContext->opcode.Value);               \
+        m_Stats.loadsStoresTranslated++;                                                                               \
+        m_Stats.categories.memory++;                                                                                   \
     }
 
 DEFINE_STORE(SB, SB)
@@ -2221,9 +2324,9 @@ DEFINE_STORE(SDC1, SDC1)
 void CX64RecompilerOps::SW() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
-    uint32_t rt   = mips_rt(opcVal);
+    uint32_t rt = mips_rt(opcVal);
     uint32_t base = mips_base(opcVal);
-    int32_t  off  = static_cast<int32_t>(mips_offset(opcVal));
+    int32_t off = static_cast<int32_t>(mips_offset(opcVal));
 
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
@@ -2231,12 +2334,11 @@ void CX64RecompilerOps::SW() {
     m_Assembler->AddComment("SW (inline)");
 
     asmjit::Label slowPath = a.new_label();
-    asmjit::Label done     = a.new_label();
+    asmjit::Label done = a.new_label();
 
     // Compute vAddr32 = low32(GPR[base]) + sign_extend(offset)
     a.mov(eax, dword_ptr(rbx, JIT_GPR(base)));
-    if (off != 0)
-        a.add(eax, off);
+    if (off != 0) a.add(eax, off);
 
     // Alignment check: vAddr32 & 3
     a.test(eax, 3);
@@ -2245,19 +2347,18 @@ void CX64RecompilerOps::SW() {
     // 64-bit sign-extension check: full 64-bit address must equal
     // sign-extension of low 32 bits, otherwise it's an Address Error.
     a.mov(r9, qword_ptr(rbx, JIT_GPR(base)));
-    if (off != 0)
-        a.add(r9, off);
+    if (off != 0) a.add(r9, off);
     a.movsxd(rcx, eax);
     a.cmp(rcx, r9);
     a.jne(slowPath);
 
     // Page lookup: rcx = WriteMap[vAddr32 >> 12]
     // Load WriteMap base pointer as immediate (friend access, stable allocation)
-    a.mov(ecx, eax);                        // ecx = vAddr32 (zero-extends rcx)
-    a.shr(ecx, 12);                         // ecx = page index
+    a.mov(ecx, eax); // ecx = vAddr32 (zero-extends rcx)
+    a.shr(ecx, 12);  // ecx = page index
     // Use rdx to hold WriteMap base (can't use r15, it's ReadMap)
     a.mov(rdx, reinterpret_cast<uint64_t>(m_Context.mmu.GetMemoryWriteMap()));
-    a.mov(rcx, qword_ptr(rdx, rcx, 3));     // rcx = WriteMap[page] (scale 8)
+    a.mov(rcx, qword_ptr(rdx, rcx, 3)); // rcx = WriteMap[page] (scale 8)
 
     // Check unmapped (-1 sentinel)
     a.cmp(rcx, -1);
@@ -2288,15 +2389,14 @@ void CX64RecompilerOps::SW() {
 
     a.bind(done);
 
-    m_Stats.loadsStoresTranslated++; m_Stats.categories.memory++;
+    m_Stats.loadsStoresTranslated++;
+    m_Stats.categories.memory++;
 }
 
-void CX64RecompilerOps::CACHE()
-{
+void CX64RecompilerOps::CACHE() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("CACHE");
-    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_CACHE),
-                       m_CurrentContext->opcode.Value);
+    EmitMemoryCallback(reinterpret_cast<void*>(&Interp_CACHE), m_CurrentContext->opcode.Value);
     m_Stats.instructionsTranslated++;
 }
 
@@ -2310,7 +2410,11 @@ void CX64RecompilerOps::SPECIAL_SLL() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SLL");
@@ -2319,14 +2423,19 @@ void CX64RecompilerOps::SPECIAL_SLL() {
     if (sa != 0) a.shl(eax, sa);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_SRL() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SRL");
@@ -2335,14 +2444,19 @@ void CX64RecompilerOps::SPECIAL_SRL() {
     if (sa != 0) a.shr(eax, sa);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_SRA() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SRA");
@@ -2352,7 +2466,8 @@ void CX64RecompilerOps::SPECIAL_SRA() {
     if (sa != 0) a.sar(rax, sa);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 // --- 32-bit Variable Shift Instructions ---
@@ -2361,7 +2476,11 @@ void CX64RecompilerOps::SPECIAL_SLLV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SLLV");
@@ -2371,14 +2490,19 @@ void CX64RecompilerOps::SPECIAL_SLLV() {
     a.shl(eax, cl);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_SRLV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SRLV");
@@ -2388,14 +2512,19 @@ void CX64RecompilerOps::SPECIAL_SRLV() {
     a.shr(eax, cl);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_SRAV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SRAV");
@@ -2406,7 +2535,8 @@ void CX64RecompilerOps::SPECIAL_SRAV() {
     a.sar(rax, cl);
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 // --- HI/LO Move Instructions ---
@@ -2415,13 +2545,18 @@ void CX64RecompilerOps::SPECIAL_MFHI() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_MFHI");
     a.mov(rax, qword_ptr(rbx, JIT_HI));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_MTHI() {
@@ -2432,20 +2567,26 @@ void CX64RecompilerOps::SPECIAL_MTHI() {
     m_Assembler->AddComment("SPECIAL_MTHI");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.mov(qword_ptr(rbx, JIT_HI), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_MFLO() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_MFLO");
     a.mov(rax, qword_ptr(rbx, JIT_LO));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_MTLO() {
@@ -2456,7 +2597,8 @@ void CX64RecompilerOps::SPECIAL_MTLO() {
     m_Assembler->AddComment("SPECIAL_MTLO");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.mov(qword_ptr(rbx, JIT_LO), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // --- 64-bit Variable Shift Instructions ---
@@ -2465,7 +2607,11 @@ void CX64RecompilerOps::SPECIAL_DSLLV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSLLV");
@@ -2474,14 +2620,19 @@ void CX64RecompilerOps::SPECIAL_DSLLV() {
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.shl(rax, cl);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRLV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRLV");
@@ -2490,14 +2641,19 @@ void CX64RecompilerOps::SPECIAL_DSRLV() {
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.shr(rax, cl);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRAV() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRAV");
@@ -2506,7 +2662,8 @@ void CX64RecompilerOps::SPECIAL_DSRAV() {
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.sar(rax, cl);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 // --- Multiply Instructions (inline 32-bit, callback for 64-bit) ---
@@ -2525,7 +2682,8 @@ void CX64RecompilerOps::SPECIAL_MULT() {
     a.mov(qword_ptr(rbx, JIT_LO), rcx);
     a.movsxd(rcx, edx);
     a.mov(qword_ptr(rbx, JIT_HI), rcx);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_MULTU() {
@@ -2542,7 +2700,8 @@ void CX64RecompilerOps::SPECIAL_MULTU() {
     a.mov(qword_ptr(rbx, JIT_LO), rcx);
     a.movsxd(rcx, edx);
     a.mov(qword_ptr(rbx, JIT_HI), rcx);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // DIV/DIVU/DMULT/DMULTU/DDIV/DDIVU: keep as interpreter callbacks (edge cases / 128-bit)
@@ -2550,37 +2709,43 @@ void CX64RecompilerOps::SPECIAL_DIV() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DIV");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DIV), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 void CX64RecompilerOps::SPECIAL_DIVU() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DIVU");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DIVU), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 void CX64RecompilerOps::SPECIAL_DMULT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DMULT");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DMULT), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 void CX64RecompilerOps::SPECIAL_DMULTU() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DMULTU");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DMULTU), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 void CX64RecompilerOps::SPECIAL_DDIV() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DDIV");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DDIV), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 void CX64RecompilerOps::SPECIAL_DDIVU() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_DDIVU");
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_DDIVU), m_CurrentContext->opcode.Value);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // --- 32-bit ALU Instructions ---
@@ -2591,14 +2756,19 @@ void CX64RecompilerOps::SPECIAL_ADD() {
     m_Assembler->AddComment("SPECIAL_ADD (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_ADDU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_ADDU");
@@ -2606,7 +2776,8 @@ void CX64RecompilerOps::SPECIAL_ADDU() {
     a.add(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_SUB() {
@@ -2615,14 +2786,19 @@ void CX64RecompilerOps::SPECIAL_SUB() {
     m_Assembler->AddComment("SPECIAL_SUB (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_SUBU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SUBU");
@@ -2630,7 +2806,8 @@ void CX64RecompilerOps::SPECIAL_SUBU() {
     a.sub(eax, dword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.movsxd(rax, eax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // --- 64-bit Logic Instructions ---
@@ -2639,49 +2816,68 @@ void CX64RecompilerOps::SPECIAL_AND() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_AND");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.and_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::SPECIAL_OR() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_OR");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.or_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::SPECIAL_XOR() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_XOR");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.xor_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 void CX64RecompilerOps::SPECIAL_NOR() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.logical++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.logical++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_NOR");
@@ -2689,7 +2885,8 @@ void CX64RecompilerOps::SPECIAL_NOR() {
     a.or_(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.not_(rax);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.logical++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.logical++;
 }
 
 // --- Set-Less-Than Instructions ---
@@ -2698,7 +2895,11 @@ void CX64RecompilerOps::SPECIAL_SLT() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SLT");
@@ -2707,14 +2908,19 @@ void CX64RecompilerOps::SPECIAL_SLT() {
     a.setl(al);
     a.movzx(eax, al);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_SLTU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_SLTU");
@@ -2723,7 +2929,8 @@ void CX64RecompilerOps::SPECIAL_SLTU() {
     a.setb(al);
     a.movzx(eax, al);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // --- 64-bit ALU Instructions ---
@@ -2734,21 +2941,27 @@ void CX64RecompilerOps::SPECIAL_DADD() {
     m_Assembler->AddComment("SPECIAL_DADD (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_DADDU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DADDU");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.add(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSUB() {
@@ -2757,21 +2970,27 @@ void CX64RecompilerOps::SPECIAL_DSUB() {
     m_Assembler->AddComment("SPECIAL_DSUB (callback - overflow trap)");
     EmitPCUpdate();
     EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SpecialDispatch), opcVal);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSUBU() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.arithmetic++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSUBU");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rs(opcVal))));
     a.sub(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.arithmetic++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.arithmetic++;
 }
 
 // --- 64-bit Shift Instructions ---
@@ -2780,7 +2999,11 @@ void CX64RecompilerOps::SPECIAL_DSLL() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSLL");
@@ -2788,14 +3011,19 @@ void CX64RecompilerOps::SPECIAL_DSLL() {
     uint32_t sa = mips_sa(opcVal);
     if (sa != 0) a.shl(rax, sa);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRL() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRL");
@@ -2803,14 +3031,19 @@ void CX64RecompilerOps::SPECIAL_DSRL() {
     uint32_t sa = mips_sa(opcVal);
     if (sa != 0) a.shr(rax, sa);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRA() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRA");
@@ -2818,99 +3051,106 @@ void CX64RecompilerOps::SPECIAL_DSRA() {
     uint32_t sa = mips_sa(opcVal);
     if (sa != 0) a.sar(rax, sa);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSLL32() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSLL32");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.shl(rax, mips_sa(opcVal) + 32);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRL32() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRL32");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.shr(rax, mips_sa(opcVal) + 32);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
 void CX64RecompilerOps::SPECIAL_DSRA32() {
     if (!m_CurrentContext) return;
     uint32_t opcVal = m_CurrentContext->opcode.Value;
     uint32_t rd = mips_rd(opcVal);
-    if (rd == 0) { m_Stats.instructionsTranslated++; m_Stats.categories.shift++; return; }
+    if (rd == 0) {
+        m_Stats.instructionsTranslated++;
+        m_Stats.categories.shift++;
+        return;
+    }
     auto& a = m_Assembler->GetAssembler();
     using namespace asmjit::x86;
     m_Assembler->AddComment("SPECIAL_DSRA32");
     a.mov(rax, qword_ptr(rbx, JIT_GPR(mips_rt(opcVal))));
     a.sar(rax, mips_sa(opcVal) + 32);
     a.mov(qword_ptr(rbx, JIT_GPR(rd)), rax);
-    m_Stats.instructionsTranslated++; m_Stats.categories.shift++;
+    m_Stats.instructionsTranslated++;
+    m_Stats.categories.shift++;
 }
 
-void CX64RecompilerOps::SPECIAL_JR()
-{
+void CX64RecompilerOps::SPECIAL_JR() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_JR");
-    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JR_Jump),
-                       m_CurrentContext->opcode.Value,
+    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JR_Jump), m_CurrentContext->opcode.Value,
                        m_CurrentContext->virtualAddress);
     m_Stats.branchesTranslated++;
     m_Stats.categories.control++;
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::SPECIAL_JALR()
-{
+void CX64RecompilerOps::SPECIAL_JALR() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_JALR");
-    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JALR_Jump),
-                       m_CurrentContext->opcode.Value,
+    EmitBranchCallback(reinterpret_cast<void*>(&Interp_JALR_Jump), m_CurrentContext->opcode.Value,
                        m_CurrentContext->virtualAddress);
     m_Stats.branchesTranslated++;
     m_Stats.categories.control++;
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::SPECIAL_SYSCALL()
-{
+void CX64RecompilerOps::SPECIAL_SYSCALL() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_SYSCALL");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_SYSCALL), m_CurrentContext->opcode.Value);
     m_Stats.categories.system++;
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::SPECIAL_BREAK()
-{
+void CX64RecompilerOps::SPECIAL_BREAK() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("SPECIAL_BREAK");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_BREAK), m_CurrentContext->opcode.Value);
     m_Stats.categories.system++;
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::SPECIAL_SYNC()
-{
+void CX64RecompilerOps::SPECIAL_SYNC() {
     m_Assembler->AddComment("SPECIAL_SYNC");
     // SYNC is a memory barrier - NOP in single-threaded context
     m_Stats.instructionsTranslated++;
@@ -2920,26 +3160,21 @@ void CX64RecompilerOps::SPECIAL_SYNC()
 // Private - COP0 Instructions
 // =============================================================================
 
-void CX64RecompilerOps::COP0_MF()
-{
+void CX64RecompilerOps::COP0_MF() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_MF");
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MFC0),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MFC0), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_DMF()
-{
+void CX64RecompilerOps::COP0_DMF() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_DMF");
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMFC0),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMFC0), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_MT()
-{
+void CX64RecompilerOps::COP0_MT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_MT");
     // Use PC+4 (next instruction) so that if Cop0_MT calls CheckInterrupts
@@ -2947,69 +3182,55 @@ void CX64RecompilerOps::COP0_MT()
     // to the next instruction — matching real VR4300 async interrupt timing.
     if (m_CurrentContext && !m_BlockEnded) {
         auto& a = m_Assembler->GetAssembler();
-        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
-              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
               static_cast<int32_t>(m_CurrentContext->virtualAddress + 4));
     }
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MTC0),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_MTC0), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_DMT()
-{
+void CX64RecompilerOps::COP0_DMT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_DMT");
     // Same PC+4 logic as COP0_MT — DMTC0 to Status also calls CheckInterrupts.
     if (m_CurrentContext && !m_BlockEnded) {
         auto& a = m_Assembler->GetAssembler();
-        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx,
-              static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
+        a.mov(asmjit::x86::qword_ptr(asmjit::x86::rbx, static_cast<int32_t>(offsetof(CRegisters, m_PROGRAM_COUNTER))),
               static_cast<int32_t>(m_CurrentContext->virtualAddress + 4));
     }
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMTC0),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP0_DMTC0), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_CO_TLBR()
-{
+void CX64RecompilerOps::COP0_CO_TLBR() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_TLBR");
-    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBR),
-                    m_CurrentContext->opcode.Value);
+    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBR), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_CO_TLBWI()
-{
+void CX64RecompilerOps::COP0_CO_TLBWI() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_TLBWI");
-    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBWI),
-                    m_CurrentContext->opcode.Value);
+    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBWI), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_CO_TLBWR()
-{
+void CX64RecompilerOps::COP0_CO_TLBWR() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_TLBWR");
-    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBWR),
-                    m_CurrentContext->opcode.Value);
+    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBWR), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_CO_TLBP()
-{
+void CX64RecompilerOps::COP0_CO_TLBP() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_TLBP");
-    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBP),
-                    m_CurrentContext->opcode.Value);
+    EmitTlbCallback(reinterpret_cast<void*>(&Interp_COP0_CO_TLBP), m_CurrentContext->opcode.Value);
     m_Stats.categories.coprocessor++;
 }
 
-void CX64RecompilerOps::COP0_CO_ERET()
-{
+void CX64RecompilerOps::COP0_CO_ERET() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_ERET");
     // ERET needs CN64System* to set m_TestTimer, so use system callback pattern
@@ -3033,8 +3254,7 @@ void CX64RecompilerOps::COP0_CO_ERET()
     m_BlockEnded = true;
 }
 
-void CX64RecompilerOps::COP0_CO_WAIT()
-{
+void CX64RecompilerOps::COP0_CO_WAIT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP0_CO_WAIT");
 
@@ -3056,76 +3276,63 @@ void CX64RecompilerOps::COP0_CO_WAIT()
 // Private - COP1 (FPU) Instructions
 // =============================================================================
 
-void CX64RecompilerOps::COP1_MF()
-{
+void CX64RecompilerOps::COP1_MF() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_MF");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MFC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MFC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_DMF()
-{
+void CX64RecompilerOps::COP1_DMF() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_DMF");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMFC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMFC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_CF()
-{
+void CX64RecompilerOps::COP1_CF() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_CF");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CFC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CFC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_MT()
-{
+void CX64RecompilerOps::COP1_MT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_MT");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MTC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_MTC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_DMT()
-{
+void CX64RecompilerOps::COP1_DMT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_DMT");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMTC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_DMTC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_CT()
-{
+void CX64RecompilerOps::COP1_CT() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_CT");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CTC1),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_CTC1), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
 // COP1 Single-precision arithmetic
-#define DEFINE_COP1_S_ARITH(name) \
-    void CX64RecompilerOps::COP1_S_##name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment("COP1_S_" #name); \
-        EmitPCUpdate(); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_Arith), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.floatingPointOps++; \
-        m_Stats.categories.floating++; \
+#define DEFINE_COP1_S_ARITH(name)                                                                                      \
+    void CX64RecompilerOps::COP1_S_##name() {                                                                          \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment("COP1_S_" #name);                                                                      \
+        EmitPCUpdate();                                                                                                \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_Arith), m_CurrentContext->opcode.Value);           \
+        m_Stats.floatingPointOps++;                                                                                    \
+        m_Stats.categories.floating++;                                                                                 \
     }
 
 DEFINE_COP1_S_ARITH(ADD)
@@ -3138,15 +3345,14 @@ DEFINE_COP1_S_ARITH(SQRT)
 DEFINE_COP1_S_ARITH(MOV)
 
 // COP1 Single-precision rounding/conversion
-#define DEFINE_COP1_S_CVT(name) \
-    void CX64RecompilerOps::COP1_S_##name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment("COP1_S_" #name); \
-        EmitPCUpdate(); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CVT), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.floatingPointOps++; \
-        m_Stats.categories.floating++; \
+#define DEFINE_COP1_S_CVT(name)                                                                                        \
+    void CX64RecompilerOps::COP1_S_##name() {                                                                          \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment("COP1_S_" #name);                                                                      \
+        EmitPCUpdate();                                                                                                \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CVT), m_CurrentContext->opcode.Value);             \
+        m_Stats.floatingPointOps++;                                                                                    \
+        m_Stats.categories.floating++;                                                                                 \
     }
 
 DEFINE_COP1_S_CVT(ROUND_L)
@@ -3161,27 +3367,24 @@ DEFINE_COP1_S_CVT(CVT_D)
 DEFINE_COP1_S_CVT(CVT_W)
 DEFINE_COP1_S_CVT(CVT_L)
 
-void CX64RecompilerOps::COP1_S_CMP()
-{
+void CX64RecompilerOps::COP1_S_CMP() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_S_CMP");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CMP),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_S_CMP), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
     m_Stats.categories.floating++;
 }
 
 // COP1 Double-precision arithmetic
-#define DEFINE_COP1_D_ARITH(name) \
-    void CX64RecompilerOps::COP1_D_##name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment("COP1_D_" #name); \
-        EmitPCUpdate(); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_Arith), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.floatingPointOps++; \
-        m_Stats.categories.floating++; \
+#define DEFINE_COP1_D_ARITH(name)                                                                                      \
+    void CX64RecompilerOps::COP1_D_##name() {                                                                          \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment("COP1_D_" #name);                                                                      \
+        EmitPCUpdate();                                                                                                \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_Arith), m_CurrentContext->opcode.Value);           \
+        m_Stats.floatingPointOps++;                                                                                    \
+        m_Stats.categories.floating++;                                                                                 \
     }
 
 DEFINE_COP1_D_ARITH(ADD)
@@ -3194,15 +3397,14 @@ DEFINE_COP1_D_ARITH(SQRT)
 DEFINE_COP1_D_ARITH(MOV)
 
 // COP1 Double-precision rounding/conversion
-#define DEFINE_COP1_D_CVT(name) \
-    void CX64RecompilerOps::COP1_D_##name() { \
-        if (!m_CurrentContext) return; \
-        m_Assembler->AddComment("COP1_D_" #name); \
-        EmitPCUpdate(); \
-        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CVT), \
-                             m_CurrentContext->opcode.Value); \
-        m_Stats.floatingPointOps++; \
-        m_Stats.categories.floating++; \
+#define DEFINE_COP1_D_CVT(name)                                                                                        \
+    void CX64RecompilerOps::COP1_D_##name() {                                                                          \
+        if (!m_CurrentContext) return;                                                                                 \
+        m_Assembler->AddComment("COP1_D_" #name);                                                                      \
+        EmitPCUpdate();                                                                                                \
+        EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CVT), m_CurrentContext->opcode.Value);             \
+        m_Stats.floatingPointOps++;                                                                                    \
+        m_Stats.categories.floating++;                                                                                 \
     }
 
 DEFINE_COP1_D_CVT(ROUND_L)
@@ -3217,55 +3419,45 @@ DEFINE_COP1_D_CVT(CVT_S)
 DEFINE_COP1_D_CVT(CVT_W)
 DEFINE_COP1_D_CVT(CVT_L)
 
-void CX64RecompilerOps::COP1_D_CMP()
-{
+void CX64RecompilerOps::COP1_D_CMP() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_D_CMP");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CMP),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_D_CMP), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
     m_Stats.categories.floating++;
 }
 
 // COP1 W/L format conversions
-void CX64RecompilerOps::COP1_W_CVT_S()
-{
+void CX64RecompilerOps::COP1_W_CVT_S() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_W_CVT_S");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_W_CVT_D()
-{
+void CX64RecompilerOps::COP1_W_CVT_D() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_W_CVT_D");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_W_CVT), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_L_CVT_S()
-{
+void CX64RecompilerOps::COP1_L_CVT_S() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_L_CVT_S");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
-void CX64RecompilerOps::COP1_L_CVT_D()
-{
+void CX64RecompilerOps::COP1_L_CVT_D() {
     if (!m_CurrentContext) return;
     m_Assembler->AddComment("COP1_L_CVT_D");
     EmitPCUpdate();
-    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT),
-                         m_CurrentContext->opcode.Value);
+    EmitRegisterCallback(reinterpret_cast<void*>(&Interp_COP1_L_CVT), m_CurrentContext->opcode.Value);
     m_Stats.floatingPointOps++;
 }
 
@@ -3273,8 +3465,7 @@ void CX64RecompilerOps::COP1_L_CVT_D()
 // Private - Unknown Instruction Handler
 // =============================================================================
 
-void CX64RecompilerOps::UnknownOpcode()
-{
+void CX64RecompilerOps::UnknownOpcode() {
     uint32_t opcVal = m_CurrentContext ? m_CurrentContext->opcode.Value : 0;
     Log::errorf("CX64RecompilerOps: Unknown opcode 0x%08X", opcVal);
     m_Assembler->AddComment("UNKNOWN OPCODE");
@@ -3286,10 +3477,7 @@ void CX64RecompilerOps::UnknownOpcode()
 // Factory Function
 // =============================================================================
 
-std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(
-    RecompilerContext& context,
-    CodeBlock& codeBlock)
-{
+std::unique_ptr<IRecompilerOps> CreateX64RecompilerOps(RecompilerContext& context, CodeBlock& codeBlock) {
     return std::make_unique<CX64RecompilerOps>(context, codeBlock);
 }
 

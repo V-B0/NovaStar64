@@ -33,15 +33,23 @@
 
 #include <immintrin.h>
 static inline uint32_t nova_mm_getcsr() { return _mm_getcsr(); }
-static inline void     nova_mm_setcsr(uint32_t v) { _mm_setcsr(v); }
+static inline void nova_mm_setcsr(uint32_t v) { _mm_setcsr(v); }
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
 
 namespace nova_fp_detail {
-static inline uint64_t rd_fpcr() { uint64_t v; __asm__ __volatile__("mrs %0, fpcr" : "=r"(v)); return v; }
-static inline void     wr_fpcr(uint64_t v) { __asm__ __volatile__("msr fpcr, %0" :: "r"(v)); }
-static inline uint64_t rd_fpsr() { uint64_t v; __asm__ __volatile__("mrs %0, fpsr" : "=r"(v)); return v; }
-static inline void     wr_fpsr(uint64_t v) { __asm__ __volatile__("msr fpsr, %0" :: "r"(v)); }
+static inline uint64_t rd_fpcr() {
+    uint64_t v;
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(v));
+    return v;
+}
+static inline void wr_fpcr(uint64_t v) { __asm__ __volatile__("msr fpcr, %0" ::"r"(v)); }
+static inline uint64_t rd_fpsr() {
+    uint64_t v;
+    __asm__ __volatile__("mrs %0, fpsr" : "=r"(v));
+    return v;
+}
+static inline void wr_fpsr(uint64_t v) { __asm__ __volatile__("msr fpsr, %0" ::"r"(v)); }
 } // namespace nova_fp_detail
 
 // Return the current FP state expressed in MXCSR bit layout.
@@ -63,10 +71,10 @@ static inline uint32_t nova_mm_getcsr() {
     const uint32_t rmode = static_cast<uint32_t>((fpcr >> 22) & 0x3);
     uint32_t rc;
     switch (rmode) {
-        case 0:  rc = 0; break; // Nearest
-        case 1:  rc = 2; break; // FPCR +Inf -> MXCSR +Inf (10)
-        case 2:  rc = 1; break; // FPCR -Inf -> MXCSR -Inf (01)
-        default: rc = 3; break; // Zero
+    case 0:  rc = 0; break; // Nearest
+    case 1:  rc = 2; break; // FPCR +Inf -> MXCSR +Inf (10)
+    case 2:  rc = 1; break; // FPCR -Inf -> MXCSR -Inf (01)
+    default: rc = 3; break; // Zero
     }
     mxcsr |= rc << 13;
 
@@ -80,20 +88,20 @@ static inline void nova_mm_setcsr(uint32_t mxcsr) {
     const uint32_t rc = (mxcsr >> 13) & 0x3;
     uint32_t rmode;
     switch (rc) {
-        case 0:  rmode = 0; break;
-        case 1:  rmode = 2; break; // MXCSR -Inf (01) -> FPCR -Inf (10)
-        case 2:  rmode = 1; break; // MXCSR +Inf (10) -> FPCR +Inf (01)
-        default: rmode = 3; break; // Zero
+    case 0:  rmode = 0; break;
+    case 1:  rmode = 2; break; // MXCSR -Inf (01) -> FPCR -Inf (10)
+    case 2:  rmode = 1; break; // MXCSR +Inf (10) -> FPCR +Inf (01)
+    default: rmode = 3; break; // Zero
     }
     uint64_t fpcr = nova_fp_detail::rd_fpcr();
     fpcr = (fpcr & ~(0x3ull << 22)) | (static_cast<uint64_t>(rmode) << 22);
-    if (mxcsr & (1u << 15)) fpcr |= (1ull << 24); else fpcr &= ~(1ull << 24); // FZ
+    if (mxcsr & (1u << 15)) fpcr |= (1ull << 24);
+    else fpcr &= ~(1ull << 24); // FZ
     nova_fp_detail::wr_fpcr(fpcr);
 
     // Exception flags -> FPSR (clear the translated bits, then set per MXCSR).
     uint64_t fpsr = nova_fp_detail::rd_fpsr();
-    fpsr &= ~((1ull << 0) | (1ull << 1) | (1ull << 2) |
-              (1ull << 3) | (1ull << 4) | (1ull << 7));
+    fpsr &= ~((1ull << 0) | (1ull << 1) | (1ull << 2) | (1ull << 3) | (1ull << 4) | (1ull << 7));
     if (mxcsr & (1u << 0)) fpsr |= (1ull << 0); // Invalid       -> IOC
     if (mxcsr & (1u << 1)) fpsr |= (1ull << 7); // Denormal      -> IDC
     if (mxcsr & (1u << 2)) fpsr |= (1ull << 1); // Divide-by-zero-> DZC

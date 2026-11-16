@@ -7,23 +7,16 @@ void RDPProcessor::HandleLoadBlock(const uint32_t* words) {
     m_decoder.DecodeLoadBlock(words, tile, uls, ult, texels, dxt);
     // GLideN64: gDPSetTileSize(tile, uls, ult, lrs, dxt) inside gDPLoadBlock
     auto& tileRef = m_state.rdp.tiles[tile];
-    tileRef.sl = uls; tileRef.tl = ult; tileRef.sh = texels; tileRef.th = dxt;
+    tileRef.sl = uls;
+    tileRef.tl = ult;
+    tileRef.sh = texels;
+    tileRef.th = dxt;
 
-    MM_RDP_TRACE("LoadBlock tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} uls={} ult={} texels={} dxt={} tileFmt={} tileSize={} tmem={} line={} pal={}",
-                 tile,
-                 m_state.rdp.textureImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.textureImage.format),
-                 static_cast<int>(m_state.rdp.textureImage.size),
-                 m_state.rdp.textureImage.width,
-                 uls,
-                 ult,
-                 texels,
-                 dxt,
-                 tileRef.format,
-                 tileRef.size,
-                 tileRef.tmemAddr,
-                 tileRef.line,
-                 tileRef.palette);
+    MM_RDP_TRACE("LoadBlock tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} uls={} ult={} texels={} dxt={} "
+                 "tileFmt={} tileSize={} tmem={} line={} pal={}",
+                 tile, m_state.rdp.textureImage.address & 0x7FFFFF, static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size), m_state.rdp.textureImage.width, uls, ult, texels, dxt,
+                 tileRef.format, tileRef.size, tileRef.tmemAddr, tileRef.line, tileRef.palette);
 
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
@@ -50,21 +43,11 @@ void RDPProcessor::HandleLoadTile(const uint32_t* words) {
     tileRef.sh = static_cast<int32_t>(sh * 4.0f);
     tileRef.th = static_cast<int32_t>(th * 4.0f);
 
-    MM_RDP_TRACE("LoadTile tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} sl={:.2f} tl={:.2f} sh={:.2f} th={:.2f} tileFmt={} tileSize={} tmem={} line={} pal={}",
-                 tile,
-                 m_state.rdp.textureImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.textureImage.format),
-                 static_cast<int>(m_state.rdp.textureImage.size),
-                 m_state.rdp.textureImage.width,
-                 sl,
-                 tl,
-                 sh,
-                 th,
-                 tileRef.format,
-                 tileRef.size,
-                 tileRef.tmemAddr,
-                 tileRef.line,
-                 tileRef.palette);
+    MM_RDP_TRACE("LoadTile tile={} tex=0x{:06X} texFmt={} texSize={} texWidth={} sl={:.2f} tl={:.2f} sh={:.2f} "
+                 "th={:.2f} tileFmt={} tileSize={} tmem={} line={} pal={}",
+                 tile, m_state.rdp.textureImage.address & 0x7FFFFF, static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size), m_state.rdp.textureImage.width, sl, tl, sh, th,
+                 tileRef.format, tileRef.size, tileRef.tmemAddr, tileRef.line, tileRef.palette);
 
     // Track which RDRAM source fed this tile (for correct 2-cycle texture keys)
     m_state.rdp.tileLoadAddress[tile & 7] = m_state.rdp.textureImage.address;
@@ -93,16 +76,9 @@ void RDPProcessor::HandleLoadTLUT(const uint32_t* words) {
     tileRef.sh = static_cast<int32_t>((count - 1) << 2);
     tileRef.th = 0;
     MM_RDP_TRACE("LoadTLUT tile={} count={} tex=0x{:06X} texFmt={} texSize={} texWidth={} tmem={} sl={} tl={} pal={}",
-                 tile,
-                 count,
-                 m_state.rdp.textureImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.textureImage.format),
-                 static_cast<int>(m_state.rdp.textureImage.size),
-                 m_state.rdp.textureImage.width,
-                 tileRef.tmemAddr,
-                 tileRef.sl,
-                 tileRef.tl,
-                 tileRef.palette);
+                 tile, count, m_state.rdp.textureImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.textureImage.format), static_cast<int>(m_state.rdp.textureImage.size),
+                 m_state.rdp.textureImage.width, tileRef.tmemAddr, tileRef.sl, tileRef.tl, tileRef.palette);
     ExecuteLoadTLUT(tile, count);
 }
 
@@ -110,7 +86,7 @@ void RDPProcessor::HandleScrollTex(const uint32_t* words) {
     int tile = (words[1] >> 8) & 0x7;
     int s = static_cast<int16_t>(words[1] & 0xFFFF);
     int t = static_cast<int16_t>(words[0] >> 16);
-    
+
     // Convert 10.2 fixed point to texel units
     m_state.rdp.scrollS[tile] = static_cast<float>(s) / 1024.0f;
     m_state.rdp.scrollT[tile] = static_cast<float>(t) / 1024.0f;
@@ -121,16 +97,13 @@ void RDPProcessor::HandleScrollTex(const uint32_t* words) {
 // Byte-swap copy from big-endian N64 RDRAM into little-endian TMEM byte array.
 // Mirrors GLideN64's UnswapCopyWrap: reverses bytes within each 32-bit word
 // while copying, wrapping the destination at destMask (0xFFF for TMEM).
-static void UnswapCopyWrap(const uint8_t* src, uint32_t srcIdx,
-                           uint8_t* dest, uint32_t destIdx,
-                           uint32_t destMask, uint32_t numBytes)
-{
+static void UnswapCopyWrap(const uint8_t* src, uint32_t srcIdx, uint8_t* dest, uint32_t destIdx, uint32_t destMask,
+                           uint32_t numBytes) {
     // Copy leading bytes to reach 4-byte alignment in source
     uint32_t leadingBytes = srcIdx & 3;
     if (leadingBytes != 0) {
         leadingBytes = 4 - leadingBytes;
-        if (leadingBytes > numBytes)
-            leadingBytes = numBytes;
+        if (leadingBytes > numBytes) leadingBytes = numBytes;
         numBytes -= leadingBytes;
         srcIdx ^= 3;
         for (uint32_t i = 0; i < leadingBytes; i++) {
@@ -164,9 +137,7 @@ static void UnswapCopyWrap(const uint8_t* src, uint32_t srcIdx,
 // Swap 32-bit halves of each 64-bit word on odd TMEM rows.
 // Mirrors GLideN64's DWordInterleaveWrap: works on uint32_t view of TMEM.
 // srcIdx and srcMask are in uint32_t units (not bytes).
-static void DWordInterleaveWrap(uint32_t* src, uint32_t srcIdx,
-                                uint32_t srcMask, uint32_t numQWords)
-{
+static void DWordInterleaveWrap(uint32_t* src, uint32_t srcIdx, uint32_t srcMask, uint32_t numQWords) {
     while (numQWords--) {
         uint32_t idx0 = srcIdx++ & srcMask;
         uint32_t idx1 = srcIdx++ & srcMask;
@@ -176,8 +147,7 @@ static void DWordInterleaveWrap(uint32_t* src, uint32_t srcIdx,
     }
 }
 
-void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
-                                     int texels, int dxt) {
+void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult, int texels, int dxt) {
     if (!m_rdram) return;
     FlushBatch();
 
@@ -187,11 +157,10 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     // Byte count from tile size (matches GLideN64)
     uint32_t width = (texels - uls + 1) & 0x0FFF;
     uint32_t bytes = width << tileDesc.size >> 1;
-    if ((bytes & 7) != 0)
-        bytes = (bytes & ~7u) + 8;
+    if ((bytes & 7) != 0) bytes = (bytes & ~7u) + 8;
 
-    uint32_t address = texImg.address + ult * texImg.width * GetBitsPerPixel(texImg.size) / 8
-                     + (uls << static_cast<int>(texImg.size) >> 1);
+    uint32_t address = texImg.address + ult * texImg.width * GetBitsPerPixel(texImg.size) / 8 +
+                       (uls << static_cast<int>(texImg.size) >> 1);
     address &= (m_rdramSize - 1);
 
     if (bytes == 0 || (address + bytes) > m_rdramSize) return;
@@ -199,24 +168,14 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     GPUFramebuffer* rawSrcFB = g_fbManager.FindByAddress(address);
     bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
     GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
-    MM_RDP_TRACE("ExecuteLoadBlock tile={} src=0x{:06X} bytes={} tmem={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} gpuModified={}",
-                 tile,
-                 address & 0x7FFFFF,
-                 bytes,
-                 tileDesc.tmemAddr,
-                 static_cast<int>(texImg.format),
-                 static_cast<int>(texImg.size),
-                 rawSrcFB != nullptr,
-                 canAliasSrcFB,
-                 rawSrcFB ? rawSrcFB->desc.address : 0u,
-                 rawSrcFB ? rawSrcFB->gpuModified : false);
+    MM_RDP_TRACE("ExecuteLoadBlock tile={} src=0x{:06X} bytes={} tmem={} texFmt={} texSize={} fbFound={} fbAlias={} "
+                 "fbAddr=0x{:06X} gpuModified={}",
+                 tile, address & 0x7FFFFF, bytes, tileDesc.tmemAddr, static_cast<int>(texImg.format),
+                 static_cast<int>(texImg.size), rawSrcFB != nullptr, canAliasSrcFB,
+                 rawSrcFB ? rawSrcFB->desc.address : 0u, rawSrcFB ? rawSrcFB->gpuModified : false);
     if (srcFB && srcFB->gpuModified) {
-        MM_RDP_TRACE("CopyFromGPU LoadBlock src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
-                     address & 0x7FFFFF,
-                     srcFB->desc.address,
-                     srcFB->desc.width,
-                     srcFB->desc.height,
-                     srcFB->desc.stride);
+        MM_RDP_TRACE("CopyFromGPU LoadBlock src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}", address & 0x7FFFFF,
+                     srcFB->desc.address, srcFB->desc.width, srcFB->desc.height, srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
 
         // Vulkan: CopyFromGPU is a no-op (no per-N64-FB GL textures).
@@ -231,15 +190,13 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
                 // is not overwritten while still being sampled by the in-flight frame.
                 m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
                 auto& slot = m_vkFBSnapshots[m_vkFBSnapshotIdx];
-                bool needRecreate = !slot
-                    || slot->GetWidth()  != snapW
-                    || slot->GetHeight() != snapH;
+                bool needRecreate = !slot || slot->GetWidth() != snapW || slot->GetHeight() != snapH;
                 if (needRecreate) {
                     TextureDesc snapDesc{};
-                    snapDesc.width     = snapW;
-                    snapDesc.height    = snapH;
-                    snapDesc.format    = TextureFormat::RGBA8;
-                    snapDesc.usage     = BufferUsage::Dynamic;
+                    snapDesc.width = snapW;
+                    snapDesc.height = snapH;
+                    snapDesc.format = TextureFormat::RGBA8;
+                    snapDesc.usage = BufferUsage::Dynamic;
                     snapDesc.mipLevels = 1;
                     slot = m_renderer->CreateTexture(snapDesc);
                 }
@@ -261,8 +218,8 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     if (tileDesc.size == static_cast<uint8_t>(ImageSize::Bpp32)) {
         const uint32_t* src = reinterpret_cast<const uint32_t*>(m_rdram);
         uint16_t* tmem16 = reinterpret_cast<uint16_t*>(m_state.rdp.tmem.data);
-        const uint32_t tb = tileDesc.tmemAddr << 2;  // in u16 units
-        const uint32_t line32 = tileDesc.line << 2;  // in u16 units
+        const uint32_t tb = tileDesc.tmemAddr << 2; // in u16 units
+        const uint32_t line32 = tileDesc.line << 2; // in u16 units
         uint32_t srcAddr = m_state.rdp.textureImage.address >> 2;
         uint32_t w32 = (static_cast<uint32_t>(texels) - uls + 1) << 2;
         if (w32 == 4) w32 = 1;
@@ -312,35 +269,33 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
             }
         }
     } else {
-    // Non-RGBA32: UnswapCopy + DXT interleave (matching GLideN64)
-    UnswapCopyWrap(m_rdram, address,
-                   m_state.rdp.tmem.data, tmemWordAddr << 3,
-                   0xFFF, bytes);
-    if (dxt != 0) {
-        uint32_t dxtCounter = 0;
-        uint32_t qwords = (bytes >> 3);
-        uint32_t line = 0;
-        uint32_t tmAddr = tmemWordAddr;
-        while (true) {
-            do {
-                ++tmAddr; --qwords;
-                if (qwords == 0) goto end_dxt;
-                dxtCounter += dxt;
-            } while ((dxtCounter & 0x800) == 0);
-            do {
-                ++line; --qwords;
-                if (qwords == 0) goto end_dxt;
-                dxtCounter += dxt;
-            } while ((dxtCounter & 0x800) != 0);
-            DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data),
-                                tmAddr << 1, 0x3FF, line);
-            tmAddr += line;
-            line = 0;
-        }
+        // Non-RGBA32: UnswapCopy + DXT interleave (matching GLideN64)
+        UnswapCopyWrap(m_rdram, address, m_state.rdp.tmem.data, tmemWordAddr << 3, 0xFFF, bytes);
+        if (dxt != 0) {
+            uint32_t dxtCounter = 0;
+            uint32_t qwords = (bytes >> 3);
+            uint32_t line = 0;
+            uint32_t tmAddr = tmemWordAddr;
+            while (true) {
+                do {
+                    ++tmAddr;
+                    --qwords;
+                    if (qwords == 0) goto end_dxt;
+                    dxtCounter += dxt;
+                } while ((dxtCounter & 0x800) == 0);
+                do {
+                    ++line;
+                    --qwords;
+                    if (qwords == 0) goto end_dxt;
+                    dxtCounter += dxt;
+                } while ((dxtCounter & 0x800) != 0);
+                DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data), tmAddr << 1, 0x3FF, line);
+                tmAddr += line;
+                line = 0;
+            }
         end_dxt:
-        DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data),
-                            tmAddr << 1, 0x3FF, line);
-    }
+            DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data), tmAddr << 1, 0x3FF, line);
+        }
     } // end non-RGBA32
 
     // Compute CRC for texture cache
@@ -348,8 +303,7 @@ void RDPProcessor::ExecuteLoadBlock(int tile, int uls, int ult,
     int crcLen = std::min(static_cast<int>(bytes), static_cast<int>(TMEM_SIZE - tmemByteAddr));
     if (crcLen > 0) {
         uint32_t crc = CRC32_Fast(m_state.rdp.tmem.data + tmemByteAddr, crcLen);
-        m_state.rdp.tmem.RecordLoad(address, tileDesc.tmemAddr,
-                                     static_cast<uint16_t>(crcLen), crc);
+        m_state.rdp.tmem.RecordLoad(address, tileDesc.tmemAddr, static_cast<uint16_t>(crcLen), crc);
     }
 
     m_stats.textureLoads++;
@@ -368,7 +322,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     int iult = static_cast<int>(tl) & 0x3FF;
     int ilrs = static_cast<int>(sh) & 0x3FF;
     int ilrt = static_cast<int>(th) & 0x3FF;
-    int width  = (ilrs - iuls + 1) & 0x3FF;
+    int width = (ilrs - iuls + 1) & 0x3FF;
     int height = (ilrt - iult + 1) & 0x3FF;
 
     if (width <= 0 || height <= 0) return;
@@ -383,22 +337,20 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     // Width-mask alignment (matches GLideN64)
     int wmask = 0;
     switch (texImg.size) {
-    case ImageSize::Bpp8:  wmask = 7;  break;
-    case ImageSize::Bpp16: wmask = 3;  break;
-    case ImageSize::Bpp32: wmask = 1;  break;
-    default: break;
+    case ImageSize::Bpp8:  wmask = 7; break;
+    case ImageSize::Bpp16: wmask = 3; break;
+    case ImageSize::Bpp32: wmask = 1; break;
+    default:               break;
     }
     int alignedWidth = width;
-    if (wmask != 0 && (width & wmask) != 0)
-        alignedWidth = (width & ~wmask) + wmask + 1;
+    if (wmask != 0 && (width & wmask) != 0) alignedWidth = (width & ~wmask) + wmask + 1;
 
     int tileBpp = GetBitsPerPixel(static_cast<ImageSize>(tileDesc.size));
     int rowBytes = alignedWidth * tileBpp / 8;
     if (dstLineBytes == 0) dstLineBytes = rowBytes;
 
-    uint32_t address = texImg.address
-        + static_cast<uint32_t>(iult) * srcLineBytes
-        + (static_cast<uint32_t>(iuls) << static_cast<int>(texImg.size) >> 1);
+    uint32_t address = texImg.address + static_cast<uint32_t>(iult) * srcLineBytes +
+                       (static_cast<uint32_t>(iuls) << static_cast<int>(texImg.size) >> 1);
     address &= (m_rdramSize - 1);
 
     // Override the base texImg.address that HandleLoadTile stored in tmemSourceAddress.
@@ -410,11 +362,11 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     // tmemLoad* comment and CalcTileSize's LOADTYPE_TILE branch).
     {
         const uint32_t slot = tileDesc.tmemAddr & 0x1FF;
-        m_state.rdp.tmemLoadType[slot]     = RDPState::LOADTYPE_TILE;
-        m_state.rdp.tmemLoadWidth[slot]    = static_cast<uint16_t>(width);
-        m_state.rdp.tmemLoadHeight[slot]   = static_cast<uint16_t>(height);
+        m_state.rdp.tmemLoadType[slot] = RDPState::LOADTYPE_TILE;
+        m_state.rdp.tmemLoadWidth[slot] = static_cast<uint16_t>(width);
+        m_state.rdp.tmemLoadHeight[slot] = static_cast<uint16_t>(height);
         m_state.rdp.tmemLoadTexWidth[slot] = static_cast<uint16_t>(texImg.width);
-        m_state.rdp.tmemLoadSize[slot]     = static_cast<uint8_t>(texImg.size);
+        m_state.rdp.tmemLoadSize[slot] = static_cast<uint8_t>(texImg.size);
     }
 
     GPUFramebuffer* rawSrcFB = g_fbManager.FindByAddress(address);
@@ -424,34 +376,18 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     bool canAliasSrcFB = CanAliasFramebuffer(rawSrcFB, address, IsRGBAFramebufferFormat(texImg.format, texImg.size));
     // Memory reused since the RDP last drew here: the buffer is stale, and the
     // readback below would overwrite the game's new data with its old pixels.
-    if (rawSrcFB && !canAliasSrcFB && !g_fbManager.RdramUnchanged(rawSrcFB, m_rdram, m_rdramSize))
-        rawSrcFB = nullptr;
+    if (rawSrcFB && !canAliasSrcFB && !g_fbManager.RdramUnchanged(rawSrcFB, m_rdram, m_rdramSize)) rawSrcFB = nullptr;
     GPUFramebuffer* srcFB = canAliasSrcFB ? rawSrcFB : nullptr;
-    MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} fbFound={} fbAlias={} fbAddr=0x{:06X} fbType={} fbW={} fbH={} gpuModified={} fbCount={}",
-                 tile,
-                 address & 0x7FFFFF,
-                 width,
-                 height,
-                 rowBytes,
-                 tileDesc.tmemAddr,
-                 tileDesc.line,
-                 static_cast<int>(texImg.format),
-                 static_cast<int>(texImg.size),
-                 rawSrcFB != nullptr,
-                 canAliasSrcFB,
-                 rawSrcFB ? rawSrcFB->desc.address : 0u,
-                 rawSrcFB ? static_cast<int>(rawSrcFB->desc.type) : -1,
-                 rawSrcFB ? rawSrcFB->desc.width : 0u,
-                 rawSrcFB ? rawSrcFB->desc.height : 0u,
-                 rawSrcFB ? rawSrcFB->gpuModified : false,
-                 g_fbManager.GetFBCount());
+    MM_RDP_TRACE("ExecuteLoadTile tile={} src=0x{:06X} size={}x{} rowBytes={} tmem={} line={} texFmt={} texSize={} "
+                 "fbFound={} fbAlias={} fbAddr=0x{:06X} fbType={} fbW={} fbH={} gpuModified={} fbCount={}",
+                 tile, address & 0x7FFFFF, width, height, rowBytes, tileDesc.tmemAddr, tileDesc.line,
+                 static_cast<int>(texImg.format), static_cast<int>(texImg.size), rawSrcFB != nullptr, canAliasSrcFB,
+                 rawSrcFB ? rawSrcFB->desc.address : 0u, rawSrcFB ? static_cast<int>(rawSrcFB->desc.type) : -1,
+                 rawSrcFB ? rawSrcFB->desc.width : 0u, rawSrcFB ? rawSrcFB->desc.height : 0u,
+                 rawSrcFB ? rawSrcFB->gpuModified : false, g_fbManager.GetFBCount());
     if (srcFB && (srcFB->gpuModified || srcFB->needsRdramResync)) {
-        MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}",
-                     address & 0x7FFFFF,
-                     srcFB->desc.address,
-                     srcFB->desc.width,
-                     srcFB->desc.height,
-                     srcFB->desc.stride);
+        MM_RDP_TRACE("CopyFromGPU LoadTile src=0x{:06X} fbAddr=0x{:06X} fbSize={}x{} stride={}", address & 0x7FFFFF,
+                     srcFB->desc.address, srcFB->desc.width, srcFB->desc.height, srcFB->desc.stride);
         g_fbManager.CopyFromGPU(srcFB, m_rdram);
         // CopyFromGPU is a GL-only no-op (FramebufferManager.cpp: `if (...||
         // !m_isGL) return;`). Clearing needsRdramResync unconditionally here
@@ -470,8 +406,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     }
     if (!g_fbManager.IsGL() && rawSrcFB && (rawSrcFB->gpuModified || rawSrcFB->needsRdramResync) && m_renderer) {
         const auto& d = rawSrcFB->desc;
-        m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
-                                            d.format == FBFormat::RGBA16, m_rdram);
+        m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height, d.format == FBFormat::RGBA16, m_rdram);
         g_fbManager.RecordRdramFingerprint(rawSrcFB, m_rdram, m_rdramSize);
         rawSrcFB->gpuModified = false;
         rawSrcFB->needsRdramResync = false;
@@ -484,7 +419,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
     if (tileDesc.size == static_cast<uint8_t>(ImageSize::Bpp32)) {
         const uint32_t* src = reinterpret_cast<const uint32_t*>(m_rdram);
         uint16_t* tmem16 = reinterpret_cast<uint16_t*>(m_state.rdp.tmem.data);
-        uint32_t line32 = tileDesc.line << 2;  // tile line in u16 units
+        uint32_t line32 = tileDesc.line << 2; // tile line in u16 units
         uint32_t tbase = tileDesc.tmemAddr << 2;
         uint32_t rdAddr32 = texImg.address >> 2;
         uint32_t maxIdx = m_rdramSize >> 2;
@@ -504,33 +439,28 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         }
         totalBytes = width * height * 4;
     } else {
-    // Non-RGBA32: UnswapCopyWrap per row + DWordInterleave on odd rows
-    // (matches GLideN64 gDPLoadTile: qwpr = bpr >> 3, i.e. the row's own
-    // aligned byte count, NOT the tile's full `line` stride)
-    uint32_t tmAddr = tmemWordAddr; // in 64-bit word units
-    uint32_t srcLineBpl = texImg.width * srcBpp / 8; // source bytes per line
-    uint32_t curAddr = address;
-    uint32_t qwpr = rowBytes >> 3;
+        // Non-RGBA32: UnswapCopyWrap per row + DWordInterleave on odd rows
+        // (matches GLideN64 gDPLoadTile: qwpr = bpr >> 3, i.e. the row's own
+        // aligned byte count, NOT the tile's full `line` stride)
+        uint32_t tmAddr = tmemWordAddr;                  // in 64-bit word units
+        uint32_t srcLineBpl = texImg.width * srcBpp / 8; // source bytes per line
+        uint32_t curAddr = address;
+        uint32_t qwpr = rowBytes >> 3;
 
-    for (int y = 0; y < height && curAddr < m_rdramSize; y++) {
-        uint32_t copyLen = rowBytes;
-        if (curAddr + copyLen > m_rdramSize)
-            copyLen = m_rdramSize - curAddr;
+        for (int y = 0; y < height && curAddr < m_rdramSize; y++) {
+            uint32_t copyLen = rowBytes;
+            if (curAddr + copyLen > m_rdramSize) copyLen = m_rdramSize - curAddr;
 
-        UnswapCopyWrap(m_rdram, curAddr,
-                       m_state.rdp.tmem.data, tmAddr << 3,
-                       0xFFF, copyLen);
-        totalBytes += copyLen;
+            UnswapCopyWrap(m_rdram, curAddr, m_state.rdp.tmem.data, tmAddr << 3, 0xFFF, copyLen);
+            totalBytes += copyLen;
 
-        if (y & 1) {
-            DWordInterleaveWrap(
-                reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data),
-                tmAddr << 1, 0x3FF, qwpr);
+            if (y & 1) {
+                DWordInterleaveWrap(reinterpret_cast<uint32_t*>(m_state.rdp.tmem.data), tmAddr << 1, 0x3FF, qwpr);
+            }
+
+            curAddr += srcLineBpl;
+            tmAddr += tileDesc.line; // advance by tile line (64-bit word units)
         }
-
-        curAddr += srcLineBpl;
-        tmAddr += tileDesc.line; // advance by tile line (64-bit word units)
-    }
     } // end non-RGBA32
 
     // CRC the loaded data
@@ -539,8 +469,7 @@ void RDPProcessor::ExecuteLoadTile(int tile, float sl, float tl, float sh, float
         int crcLen = std::min(totalBytes, static_cast<int>(TMEM_SIZE - tmemByteAddr));
         if (crcLen > 0) {
             uint32_t crc = CRC32_Fast(m_state.rdp.tmem.data + tmemByteAddr, crcLen);
-            m_state.rdp.tmem.RecordLoad(address, tileDesc.tmemAddr,
-                                         static_cast<uint16_t>(crcLen), crc);
+            m_state.rdp.tmem.RecordLoad(address, tileDesc.tmemAddr, static_cast<uint16_t>(crcLen), crc);
         }
     }
 
@@ -559,29 +488,20 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
     // GLideN64: tmem < 256 is wrong for TLUT (in 64-bit-word units, 256 = byte 2048)
     if (tileDesc.tmemAddr < 256) return;
 
-    uint32_t address = texImg.address
-        + (tileDesc.tl >> 2) * (texImg.width * GetBitsPerPixel(texImg.size) / 8)
-        + ((tileDesc.sl >> 2) << static_cast<int>(texImg.size) >> 1);
+    uint32_t address = texImg.address + (tileDesc.tl >> 2) * (texImg.width * GetBitsPerPixel(texImg.size) / 8) +
+                       ((tileDesc.sl >> 2) << static_cast<int>(texImg.size) >> 1);
 
-    MM_RDP_TRACE("ExecuteLoadTLUT tile={} count={} src=0x{:06X} baseTex=0x{:06X} tmem={} destU16={} texFmt={} texSize={} texWidth={}",
-                 tile,
-                 count,
-                 address & 0x7FFFFF,
-                 texImg.address & 0x7FFFFF,
-                 tileDesc.tmemAddr,
-                 tileDesc.tmemAddr << 2,
-                 static_cast<int>(texImg.format),
-                 static_cast<int>(texImg.size),
-                 texImg.width);
+    MM_RDP_TRACE("ExecuteLoadTLUT tile={} count={} src=0x{:06X} baseTex=0x{:06X} tmem={} destU16={} texFmt={} "
+                 "texSize={} texWidth={}",
+                 tile, count, address & 0x7FFFFF, texImg.address & 0x7FFFFF, tileDesc.tmemAddr, tileDesc.tmemAddr << 2,
+                 static_cast<int>(texImg.format), static_cast<int>(texImg.size), texImg.width);
 
     uint16_t* tmem16 = reinterpret_cast<uint16_t*>(m_state.rdp.tmem.data);
 
     // Byte-swap a 16-bit value (matches GLideN64's swapword)
-    auto swapword = [](uint16_t v) -> uint16_t {
-        return static_cast<uint16_t>((v << 8) | (v >> 8));
-    };
+    auto swapword = [](uint16_t v) -> uint16_t { return static_cast<uint16_t>((v << 8) | (v >> 8)); };
 
-        // TMEM layout: palettes live in the upper 2KB of TMEM (starting at byte 0x800).
+    // TMEM layout: palettes live in the upper 2KB of TMEM (starting at byte 0x800).
     // Each of the 256 palette entries occupies an 8-byte TMEM "word".
     // The N64 hardware replicates the 16-bit color across all 4 banks
     // so they are accessible regardless of the current CI format's bank-swizzling.
@@ -605,8 +525,8 @@ void RDPProcessor::ExecuteLoadTLUT(int tile, int count) {
     uint32_t crcBytes = count * 2;
     if (srcAddr + crcBytes <= m_rdramSize && crcBytes > 0) {
         uint32_t crc = CRC32_Fast(m_rdram + srcAddr, crcBytes);
-        m_state.rdp.tmem.RecordLoad(srcAddr, static_cast<uint16_t>(tileDesc.tmemAddr),
-                                     static_cast<uint16_t>(crcBytes), crc);
+        m_state.rdp.tmem.RecordLoad(srcAddr, static_cast<uint16_t>(tileDesc.tmemAddr), static_cast<uint16_t>(crcBytes),
+                                    crc);
     }
 
     // Raw copy of the palette memory for texture-pack checksums: the bytes as RDRAM holds
@@ -635,12 +555,10 @@ void RDPProcessor::HandleSyncFull() {
     // Count scene draws for readback decision (snapshot is handled by FlushBatch).
     int sceneDraws = 0;
     for (const auto& c : m_batch.drawCalls) {
-        if (c.type == DrawCall::Type::Triangle || c.type == DrawCall::Type::TextureRect)
-            ++sceneDraws;
+        if (c.type == DrawCall::Type::Triangle || c.type == DrawCall::Type::TextureRect) ++sceneDraws;
     }
 
     FlushBatch();
-
 
     // �� GPU � RDRAM readback ��
     // After the frame is complete, copy rendered pixels back to RDRAM so the
@@ -662,12 +580,10 @@ void RDPProcessor::HandleSyncFull() {
     // the capture reads stale/zero RDRAM exactly as if no readback existed.
     static uint64_t s_rbCounter = 0;
     constexpr uint64_t kRdpReadbackInterval = 8;
-    const bool readbackDue = !g_fbManager.IsGL()
-                           || ((s_rbCounter++ % kRdpReadbackInterval) == 0);
+    const bool readbackDue = !g_fbManager.IsGL() || ((s_rbCounter++ % kRdpReadbackInterval) == 0);
     if (sceneDraws >= 1 && m_rdram && readbackDue) {
         // Complete any previous async readback first
-        if (g_fbManager.IsReadbackPending())
-            g_fbManager.FinishAsyncReadback(m_rdram);
+        if (g_fbManager.IsReadbackPending()) g_fbManager.FinishAsyncReadback(m_rdram);
 
         GPUFramebuffer* colorFB = g_fbManager.GetCurrentColor();
         if (colorFB && colorFB->desc.address != 0) {
@@ -696,9 +612,7 @@ void RDPProcessor::HandleSyncFull() {
                 // is additionally deduped per address per frame by the backend's
                 // readback budget.
                 const auto& d = colorFB->desc;
-                m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height,
-                                                   d.format == FBFormat::RGBA16,
-                                                   m_rdram);
+                m_renderer->CopyFramebufferToRDRAM(d.address, d.width, d.height, d.format == FBFormat::RGBA16, m_rdram);
                 g_fbManager.RecordRdramFingerprint(colorFB, m_rdram, m_rdramSize);
                 // Also sync the DISPLAY buffer when it differs from the current
                 // render target. MM double-buffers (0x000500 / 0x7DA800) and the
@@ -710,12 +624,10 @@ void RDPProcessor::HandleSyncFull() {
                 // The backend dedupes per address per frame, so this adds at most
                 // one extra copy and none at all for single-buffered scenes.
                 GPUFramebuffer* displayFB = g_fbManager.GetDisplayFramebuffer();
-                if (displayFB && displayFB != colorFB &&
-                    displayFB->desc.address != 0 &&
+                if (displayFB && displayFB != colorFB && displayFB->desc.address != 0 &&
                     displayFB->desc.address != d.address) {
                     const auto& dd = displayFB->desc;
-                    m_renderer->CopyFramebufferToRDRAM(dd.address, dd.width, dd.height,
-                                                       dd.format == FBFormat::RGBA16,
+                    m_renderer->CopyFramebufferToRDRAM(dd.address, dd.width, dd.height, dd.format == FBFormat::RGBA16,
                                                        m_rdram);
                     g_fbManager.RecordRdramFingerprint(displayFB, m_rdram, m_rdramSize);
                 }
@@ -726,10 +638,8 @@ void RDPProcessor::HandleSyncFull() {
         // games that actually read depth from RDRAM (e.g., Perfect Dark).
         if (g_fbManager.m_fbHacks.pdDepthOncePerFrame) {
             if (m_state.rdp.zbufferImage.address != 0) {
-                GPUFramebuffer* depthFB = g_fbManager.FindByAddress(
-                    m_state.rdp.zbufferImage.address, FBType::Depth);
-                if (depthFB && depthFB->depthTex)
-                    g_fbManager.CopyDepthFromGPU(depthFB, m_rdram);
+                GPUFramebuffer* depthFB = g_fbManager.FindByAddress(m_state.rdp.zbufferImage.address, FBType::Depth);
+                if (depthFB && depthFB->depthTex) g_fbManager.CopyDepthFromGPU(depthFB, m_rdram);
             }
         }
     }
@@ -750,8 +660,7 @@ void RDPProcessor::HandleSyncFull() {
         GPUFramebuffer* fb = g_fbManager.GetCurrentColor();
         if (fb && fb->coverageTex) {
             const GLuint zero = 0;
-            glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER,
-                            GL_UNSIGNED_BYTE, &zero);
+            glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zero);
         }
     }
 
@@ -782,13 +691,9 @@ void RDPProcessor::HandleSyncPipe() {
     m_stats.syncPipeCount++;
 }
 
-void RDPProcessor::HandleSyncTile() {
-    m_stats.syncTileCount++;
-}
+void RDPProcessor::HandleSyncTile() { m_stats.syncTileCount++; }
 
-void RDPProcessor::HandleSyncLoad() {
-    m_stats.syncLoadCount++;
-}
+void RDPProcessor::HandleSyncLoad() { m_stats.syncLoadCount++; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Primitive Handlers

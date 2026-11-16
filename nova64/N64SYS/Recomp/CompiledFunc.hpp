@@ -33,7 +33,7 @@ namespace Recompiler {
  * CRegisters::m_PROGRAM_COUNTER so the execution loop can dispatch
  * the next block.
  */
-using BlockFunction = void(*)();
+using BlockFunction = void (*)();
 
 /**
  * @class CCompiledFunc
@@ -46,17 +46,9 @@ class CCompiledFunc {
 public:
     CCompiledFunc() = default;
 
-    CCompiledFunc(uint32_t enterPC,
-                  uint32_t minPC,
-                  uint32_t maxPC,
-                  BlockFunction func,
-                  std::unique_ptr<CodeBlock> block)
-        : m_EnterPC(enterPC)
-        , m_MinPC(minPC)
-        , m_MaxPC(maxPC)
-        , m_Function(func)
-        , m_CodeBlock(std::move(block))
-    {}
+    CCompiledFunc(uint32_t enterPC, uint32_t minPC, uint32_t maxPC, BlockFunction func,
+                  std::unique_ptr<CodeBlock> block) :
+        m_EnterPC(enterPC), m_MinPC(minPC), m_MaxPC(maxPC), m_Function(func), m_CodeBlock(std::move(block)) {}
 
     ~CCompiledFunc() = default;
 
@@ -82,16 +74,14 @@ public:
 
     // ---- Address info ----
 
-    uint32_t EnterPC()  const noexcept { return m_EnterPC; }
-    uint32_t MinPC()    const noexcept { return m_MinPC; }
-    uint32_t MaxPC()    const noexcept { return m_MaxPC; }
+    uint32_t EnterPC() const noexcept { return m_EnterPC; }
+    uint32_t MinPC() const noexcept { return m_MinPC; }
+    uint32_t MaxPC() const noexcept { return m_MaxPC; }
 
     // ---- Self-modifying-code detection ----
 
     /** @return true if the original MIPS memory still matches. */
-    bool MemoryValid() const {
-        return m_CodeBlock ? m_CodeBlock->verify_memory_snapshot() : true;
-    }
+    bool MemoryValid() const { return m_CodeBlock ? m_CodeBlock->verify_memory_snapshot() : true; }
 
     // ---- Linked list for FunctionMap hash chains ----
 
@@ -103,12 +93,12 @@ public:
     CodeBlock* GetCodeBlock() const noexcept { return m_CodeBlock.get(); }
 
 private:
-    uint32_t        m_EnterPC  = 0;
-    uint32_t        m_MinPC    = 0;
-    uint32_t        m_MaxPC    = 0;
-    BlockFunction   m_Function = nullptr;
+    uint32_t m_EnterPC = 0;
+    uint32_t m_MinPC = 0;
+    uint32_t m_MaxPC = 0;
+    BlockFunction m_Function = nullptr;
     std::unique_ptr<CodeBlock> m_CodeBlock;
-    CCompiledFunc*  m_Next     = nullptr;   // intrusive list for hash chains
+    CCompiledFunc* m_Next = nullptr; // intrusive list for hash chains
 };
 
 } // namespace Recompiler

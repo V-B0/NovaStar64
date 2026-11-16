@@ -19,26 +19,26 @@ enum class PipelineStage : uint32_t {
     Normal = 0,
 
     // Branch delay slot states
-    DoDelaySlot,                     // About to execute delay slot
-    DoDelaySlotExit,                 // Delay slot then exit execution
-    DoDelaySlotTaskExit,             // Delay slot then exit HLE task
-    DelaySlot,                       // Currently in delay slot
-    DelaySlotDone,                   // Delay slot completed
-    DelaySlotDoneBranchTarget,       // Delay done, jump to branch target
-    DelaySlotExit,                   // Delay slot with pending exit
-    DelaySlotExitDone,               // Delay slot exit completed
-    DelaySlotTaskExit,               // Delay slot HLE task exit
-    DelaySlotTaskExitDone,           // HLE task exit completed
+    DoDelaySlot,               // About to execute delay slot
+    DoDelaySlotExit,           // Delay slot then exit execution
+    DoDelaySlotTaskExit,       // Delay slot then exit HLE task
+    DelaySlot,                 // Currently in delay slot
+    DelaySlotDone,             // Delay slot completed
+    DelaySlotDoneBranchTarget, // Delay done, jump to branch target
+    DelaySlotExit,             // Delay slot with pending exit
+    DelaySlotExitDone,         // Delay slot exit completed
+    DelaySlotTaskExit,         // Delay slot HLE task exit
+    DelaySlotTaskExitDone,     // HLE task exit completed
 
     // Jump / single-step
-    Jump,                            // Unconditional jump pending
-    SingleStep,                      // Single-step mode
-    SingleStepDone,                  // Single-step completed
+    Jump,           // Unconditional jump pending
+    SingleStep,     // Single-step mode
+    SingleStepDone, // Single-step completed
 
     // Recompiler block boundaries
-    FinishBlock,                     // End of compiled block
-    FinishSubBlock,                  // End of sub-block
-    FinishTaskSubBlock,              // End of HLE task sub-block
+    FinishBlock,        // End of compiled block
+    FinishSubBlock,     // End of sub-block
+    FinishTaskSubBlock, // End of HLE task sub-block
 };
 
 // Alias for backward compatibility with legacy code

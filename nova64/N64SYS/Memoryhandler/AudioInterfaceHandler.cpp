@@ -25,22 +25,18 @@ static uint32_t s_aiDmaCompleteCount = 0;
 static uint32_t s_aiDacRateWriteCount = 0;
 static uint32_t s_aiAudioInitCount = 0;
 
-AudioInterfaceHandler::AudioInterfaceHandler(CN64System& system, CRegisters& registers)
-    : m_system(system),
-      m_sys_regs(registers),
-      m_system_timer(const_cast<N64System::SystemTimer&>(*system.GetSystemTimer())) // Const cast because referenced
+AudioInterfaceHandler::AudioInterfaceHandler(CN64System& system, CRegisters& registers) :
+    m_system(system), m_sys_regs(registers),
+    m_system_timer(const_cast<N64System::SystemTimer&>(*system.GetSystemTimer())) // Const cast because referenced
 {
     m_registers.fill(0);
 }
 
-AudioInterfaceHandler::~AudioInterfaceHandler()
-{
-    m_audioOutput.Shutdown();
-}
+AudioInterfaceHandler::~AudioInterfaceHandler() { m_audioOutput.Shutdown(); }
 
 bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
     uint32_t index = AI::OffsetToIndex(address & 0x1F);
-    
+
     if (index < static_cast<uint32_t>(AI::Register::REGISTER_COUNT)) {
         if (index == static_cast<uint32_t>(AI::Register::STATUS)) {
             value = m_ai_regs.status();
@@ -49,7 +45,7 @@ bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
             if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
                 uint32_t cycles_left = m_system_timer.get_timer(N64System::TimerType::AiTimerDMA);
                 uint32_t dac_period = m_ai_regs.dacrate() + 1;
-                
+
                 // len = (cycles * 4 * AI_CLOCK) / (dac_period * CPU_CLOCK)
                 uint64_t remaining = (static_cast<uint64_t>(cycles_left) * 4 * AIClock());
                 value = static_cast<uint32_t>(remaining / (static_cast<uint64_t>(dac_period) * 93750000ULL));
@@ -57,107 +53,107 @@ bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
                 value = 0; // Not busy -> 0 bytes remaining
             }
         } else {
-             value = m_registers[index];
+            value = m_registers[index];
         }
         return true;
     }
-    
+
     return false;
 }
 
 bool AudioInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t mask) {
     uint32_t index = AI::OffsetToIndex(address & 0x1F);
-    
+
     switch (static_cast<AI::Register>(index)) {
-        case AI::Register::DRAM_ADDR:
-            m_ai_regs.dram_addr() = value & 0x00FFFFFF; // 24-bit address
-            break;
-            
-        case AI::Register::LEN: {
-            uint32_t len = value & 0x3FFFF; // 18-bit length (align 8?)
-            // Note: Register stores the value, but we also use it to trigger
-            m_ai_regs.len() = len;
-            
-            if (len > 0) {
-                // Ensure audio output is initialised before first DMA.
-                // Normally DACRATE is written before LEN, but some games
-                // (or boot sequences) may write LEN first.
-                if (!m_audioInitialized && m_ai_regs.dacrate() > 0) {
-                    m_lastDacFreq = GetFrequency();
-                    InitAudioOutput();
+    case AI::Register::DRAM_ADDR:
+        m_ai_regs.dram_addr() = value & 0x00FFFFFF; // 24-bit address
+        break;
+
+    case AI::Register::LEN: {
+        uint32_t len = value & 0x3FFFF; // 18-bit length (align 8?)
+        // Note: Register stores the value, but we also use it to trigger
+        m_ai_regs.len() = len;
+
+        if (len > 0) {
+            // Ensure audio output is initialised before first DMA.
+            // Normally DACRATE is written before LEN, but some games
+            // (or boot sequences) may write LEN first.
+            if (!m_audioInitialized && m_ai_regs.dacrate() > 0) {
+                m_lastDacFreq = GetFrequency();
+                InitAudioOutput();
+            }
+
+            // Queue audio samples to the audio output device
+            QueueDmaSamples(m_ai_regs.dram_addr(), len);
+
+            if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
+                // FIFO Logic: Buffer the next DMA
+                if (m_pending_valid) {
+                    Logging::log(Logging::Level::Warning,
+                                 "AI: Register written while FIFO full - Overwriting pending DMA");
                 }
 
-                // Queue audio samples to the audio output device
-                QueueDmaSamples(m_ai_regs.dram_addr(), len);
-                
-                if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
-                    // FIFO Logic: Buffer the next DMA
-                    if (m_pending_valid) {
-                        Logging::log(Logging::Level::Warning, "AI: Register written while FIFO full - Overwriting pending DMA");
-                    }
-                    
-                    m_pending_dram_addr = m_ai_regs.dram_addr();
-                    m_pending_len = len;
-                    m_pending_valid = true;
-                    
-                    m_ai_regs.status() |= AI::STATUS_FULL;
-                } else {
-                    // Start immediately
-                    m_current_dma_len = len;
-                    m_current_dma_addr = m_ai_regs.dram_addr();
-                    
-                    m_ai_regs.status() |= AI::STATUS_DMA_BUSY;
-                    
-                    // Calculate time
-                    uint32_t cycles = CalculateCycles(len);
-                    
-                    // Schedule Timer
-                    m_system_timer.set_timer(N64System::TimerType::AiTimerDMA, cycles, false);
-                }
+                m_pending_dram_addr = m_ai_regs.dram_addr();
+                m_pending_len = len;
+                m_pending_valid = true;
+
+                m_ai_regs.status() |= AI::STATUS_FULL;
+            } else {
+                // Start immediately
+                m_current_dma_len = len;
+                m_current_dma_addr = m_ai_regs.dram_addr();
+
+                m_ai_regs.status() |= AI::STATUS_DMA_BUSY;
+
+                // Calculate time
+                uint32_t cycles = CalculateCycles(len);
+
+                // Schedule Timer
+                m_system_timer.set_timer(N64System::TimerType::AiTimerDMA, cycles, false);
             }
-            break;
         }
-            
-        case AI::Register::CONTROL:
-            // Bit 0 is the DMA-enable gate. DMA is already started by the LEN
-            // write above, and the interrupt is cleared by a STATUS write, so
-            // there is nothing to do here.
-            break;
-            
-        case AI::Register::STATUS:
-            // Write to Status Register clears AI Interrupt
-            m_sys_regs.m_Mips_Interface[MI_INTR_REG_INDEX] &= ~MI_INTR_AI_BIT; 
-            m_sys_regs.CheckInterrupts();
-            break;
-            
-        case AI::Register::DACRATE:
-            m_ai_regs.dacrate() = value & 0x3FFF; // 14-bit
-            // Frequency = VideoClock / (dacrate + 1)
-            // Reinitialize audio output if frequency changed
-            {
-                ++s_aiDacRateWriteCount;
-                uint32_t freq = GetFrequency();
-                if (s_aiDacRateWriteCount <= 5 || freq != m_lastDacFreq) {
-                    std::fprintf(stderr, "[AI] DACRATE write #%u: raw=%u freq=%u Hz (prev=%u)\n",
-                        s_aiDacRateWriteCount, value & 0x3FFF, freq, m_lastDacFreq);
-                }
-                if (freq != m_lastDacFreq) {
-                    m_lastDacFreq = freq;
-                    // Reset failure flag — a new DACRATE deserves a fresh attempt.
-                    // The previous failure may have been caused by a garbage
-                    // DACRATE during early boot.
-                    m_audioInitFailed = false;
-                    InitAudioOutput();
-                }
+        break;
+    }
+
+    case AI::Register::CONTROL:
+        // Bit 0 is the DMA-enable gate. DMA is already started by the LEN
+        // write above, and the interrupt is cleared by a STATUS write, so
+        // there is nothing to do here.
+        break;
+
+    case AI::Register::STATUS:
+        // Write to Status Register clears AI Interrupt
+        m_sys_regs.m_Mips_Interface[MI_INTR_REG_INDEX] &= ~MI_INTR_AI_BIT;
+        m_sys_regs.CheckInterrupts();
+        break;
+
+    case AI::Register::DACRATE:
+        m_ai_regs.dacrate() = value & 0x3FFF; // 14-bit
+        // Frequency = VideoClock / (dacrate + 1)
+        // Reinitialize audio output if frequency changed
+        {
+            ++s_aiDacRateWriteCount;
+            uint32_t freq = GetFrequency();
+            if (s_aiDacRateWriteCount <= 5 || freq != m_lastDacFreq) {
+                std::fprintf(stderr, "[AI] DACRATE write #%u: raw=%u freq=%u Hz (prev=%u)\n", s_aiDacRateWriteCount,
+                             value & 0x3FFF, freq, m_lastDacFreq);
             }
-            break;
-            
-        case AI::Register::BITRATE:
-            m_ai_regs.bitrate() = value & 0xF; // 4-bit
-            break;
-            
-        default:
-            return false;
+            if (freq != m_lastDacFreq) {
+                m_lastDacFreq = freq;
+                // Reset failure flag — a new DACRATE deserves a fresh attempt.
+                // The previous failure may have been caused by a garbage
+                // DACRATE during early boot.
+                m_audioInitFailed = false;
+                InitAudioOutput();
+            }
+        }
+        break;
+
+    case AI::Register::BITRATE:
+        m_ai_regs.bitrate() = value & 0xF; // 4-bit
+        break;
+
+    default: return false;
     }
     return true;
 }
@@ -169,7 +165,7 @@ uint32_t AudioInterfaceHandler::CalculateCycles(uint32_t len) {
     // AI DAC clock is region-dependent (see AIClock).  CPU clock = 93,750,000 Hz.
     // Convert: cpu_cycles = video_ticks * CPU_FREQ / VI_FREQ.
     uint32_t dac_period = m_ai_regs.dacrate() + 1;
-    uint32_t samples = len / 4;  // stereo sample pairs
+    uint32_t samples = len / 4; // stereo sample pairs
     uint64_t video_ticks = static_cast<uint64_t>(samples) * dac_period;
     return static_cast<uint32_t>(video_ticks * 93750000ULL / AIClock());
 }
@@ -177,8 +173,7 @@ uint32_t AudioInterfaceHandler::CalculateCycles(uint32_t len) {
 uint32_t AudioInterfaceHandler::AIClock() const {
     if (m_aiClock == 0) {
         N64Rom* rom = m_system.GetRom();
-        m_aiClock = (rom && rom->IsLoaded() && rom->GetImage().IsPal())
-                        ? AI_CLOCK_PAL : AI_CLOCK_NTSC;
+        m_aiClock = (rom && rom->IsLoaded() && rom->GetImage().IsPal()) ? AI_CLOCK_PAL : AI_CLOCK_NTSC;
     }
     return m_aiClock;
 }
@@ -197,17 +192,17 @@ void AudioInterfaceHandler::DMAComplete() {
     // Current DMA finished, trigger interrupt
     m_sys_regs.m_Mips_Interface[MI_INTR_REG_INDEX] |= MI_INTR_AI_BIT;
     m_sys_regs.CheckInterrupts();
-    
+
     // Check if we have pending DMA in FIFO
     if (m_pending_valid) {
         // Promote pending to current
         m_current_dma_addr = m_pending_dram_addr;
         m_current_dma_len = m_pending_len;
         m_pending_valid = false;
-        
+
         m_ai_regs.status() &= ~AI::STATUS_FULL;
         // Status remains BUSY
-        
+
         // Start Timer for next DMA
         uint32_t cycles = CalculateCycles(m_current_dma_len);
         m_system_timer.set_timer(N64System::TimerType::AiTimerDMA, cycles, false);
@@ -218,14 +213,12 @@ void AudioInterfaceHandler::DMAComplete() {
     }
 }
 
-void AudioInterfaceHandler::InitAudioOutput()
-{
+void AudioInterfaceHandler::InitAudioOutput() {
     // Don't retry after a failure — avoids busy-loop on broken audio devices
     if (m_audioInitFailed) return;
 
     // Shutdown previous instance if reinitializing
-    if (m_audioInitialized)
-    {
+    if (m_audioInitialized) {
         m_audioOutput.Shutdown();
         m_audioInitialized = false;
     }
@@ -239,15 +232,12 @@ void AudioInterfaceHandler::InitAudioOutput()
     ++s_aiAudioInitCount;
     std::fprintf(stderr, "[AI] InitAudioOutput #%u: freq=%u Hz\n", s_aiAudioInitCount, freq);
 
-    if (m_audioOutput.Initialize(freq, 2))
-    {
+    if (m_audioOutput.Initialize(freq, 2)) {
         m_audioOutput.SetSourceRate(freq);
         m_audioOutput.Start();
         m_audioInitialized = true;
         std::fprintf(stderr, "[AI] Audio output initialized successfully (source=%u Hz)\n", freq);
-    }
-    else
-    {
+    } else {
         std::fprintf(stderr, "[AI] Audio output initialization FAILED\n");
         Logging::log(Logging::Level::Error, "AI: Failed to initialize audio output (will not retry)");
         m_audioInitialized = false;
@@ -255,8 +245,7 @@ void AudioInterfaceHandler::InitAudioOutput()
     }
 }
 
-void AudioInterfaceHandler::QueueDmaSamples(uint32_t dramAddr, uint32_t len)
-{
+void AudioInterfaceHandler::QueueDmaSamples(uint32_t dramAddr, uint32_t len) {
     if (!m_audioInitialized) return;
 
     auto* mem = m_system.GetMemory();
@@ -273,8 +262,7 @@ void AudioInterfaceHandler::QueueDmaSamples(uint32_t dramAddr, uint32_t len)
     std::vector<int16_t> samples(sampleCount);
 
     // Read 16-bit samples from RDRAM with XOR byte-swap (N64 LE word layout)
-    for (uint32_t i = 0; i < sampleCount; i++)
-    {
+    for (uint32_t i = 0; i < sampleCount; i++) {
         uint32_t addr = (dramAddr + i * 2) ^ 2;
         samples[i] = *reinterpret_cast<const int16_t*>(rdram + addr);
     }

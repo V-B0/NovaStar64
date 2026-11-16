@@ -24,24 +24,24 @@ namespace Nova64::Video::GL {
 
 uint32_t ShaderStageToGL(ShaderStage stage) {
     switch (stage) {
-    case ShaderStage::Vertex:       return GL_VERTEX_SHADER;
-    case ShaderStage::Fragment:     return GL_FRAGMENT_SHADER;
-    case ShaderStage::Geometry:     return GL_GEOMETRY_SHADER;
-    case ShaderStage::TessControl:  return GL_TESS_CONTROL_SHADER;
-    case ShaderStage::TessEval:     return GL_TESS_EVALUATION_SHADER;
-    case ShaderStage::Compute:      return GL_COMPUTE_SHADER;
+    case ShaderStage::Vertex:      return GL_VERTEX_SHADER;
+    case ShaderStage::Fragment:    return GL_FRAGMENT_SHADER;
+    case ShaderStage::Geometry:    return GL_GEOMETRY_SHADER;
+    case ShaderStage::TessControl: return GL_TESS_CONTROL_SHADER;
+    case ShaderStage::TessEval:    return GL_TESS_EVALUATION_SHADER;
+    case ShaderStage::Compute:     return GL_COMPUTE_SHADER;
     }
     return GL_VERTEX_SHADER;
 }
 
 const char* ShaderStageName(ShaderStage stage) {
     switch (stage) {
-    case ShaderStage::Vertex:       return "Vertex";
-    case ShaderStage::Fragment:     return "Fragment";
-    case ShaderStage::Geometry:     return "Geometry";
-    case ShaderStage::TessControl:  return "TessControl";
-    case ShaderStage::TessEval:     return "TessEval";
-    case ShaderStage::Compute:      return "Compute";
+    case ShaderStage::Vertex:      return "Vertex";
+    case ShaderStage::Fragment:    return "Fragment";
+    case ShaderStage::Geometry:    return "Geometry";
+    case ShaderStage::TessControl: return "TessControl";
+    case ShaderStage::TessEval:    return "TessEval";
+    case ShaderStage::Compute:     return "Compute";
     }
     return "Unknown";
 }
@@ -52,9 +52,9 @@ const char* ShaderStageName(ShaderStage stage) {
 
 GLShader::~GLShader() { Destroy(); }
 
-GLShader::GLShader(GLShader&& other) noexcept
-    : m_handle(other.m_handle), m_stage(other.m_stage),
-      m_infoLog(std::move(other.m_infoLog)), m_source(std::move(other.m_source)) {
+GLShader::GLShader(GLShader&& other) noexcept :
+    m_handle(other.m_handle), m_stage(other.m_stage), m_infoLog(std::move(other.m_infoLog)),
+    m_source(std::move(other.m_source)) {
     other.m_handle = 0;
 }
 
@@ -115,8 +115,8 @@ bool GLShader::CompileFromSPIRV(ShaderStage stage, const std::vector<uint32_t>& 
         return false;
     }
 
-    glShaderBinary(1, &m_handle, GL_SHADER_BINARY_FORMAT_SPIR_V,
-                    spirv.data(), static_cast<GLsizei>(spirv.size() * sizeof(uint32_t)));
+    glShaderBinary(1, &m_handle, GL_SHADER_BINARY_FORMAT_SPIR_V, spirv.data(),
+                   static_cast<GLsizei>(spirv.size() * sizeof(uint32_t)));
     glSpecializeShader(m_handle, entry, 0, nullptr, nullptr);
 
     GLint status = 0;
@@ -158,10 +158,9 @@ void GLShader::SetLabel(const std::string& label) {
 
 GLProgram::~GLProgram() { Destroy(); }
 
-GLProgram::GLProgram(GLProgram&& other) noexcept
-    : m_handle(other.m_handle), m_infoLog(std::move(other.m_infoLog)),
-      m_reflection(std::move(other.m_reflection)),
-      m_uniformCache(std::move(other.m_uniformCache)) {
+GLProgram::GLProgram(GLProgram&& other) noexcept :
+    m_handle(other.m_handle), m_infoLog(std::move(other.m_infoLog)), m_reflection(std::move(other.m_reflection)),
+    m_uniformCache(std::move(other.m_uniformCache)) {
     other.m_handle = 0;
 }
 
@@ -258,9 +257,8 @@ bool GLProgram::BuildComputeFromSource(const std::string& src) {
     return LinkCompute(cs);
 }
 
-bool GLProgram::BuildFromSourceWithDefines(
-    const std::string& vertSrc, const std::string& fragSrc,
-    const std::vector<std::pair<std::string, std::string>>& defines) {
+bool GLProgram::BuildFromSourceWithDefines(const std::string& vertSrc, const std::string& fragSrc,
+                                           const std::vector<std::pair<std::string, std::string>>& defines) {
 
     ShaderPreprocessor preprocessor;
     for (auto& [name, val] : defines) {
@@ -287,9 +285,7 @@ void GLProgram::Use() const {
     if (m_handle) glUseProgram(m_handle);
 }
 
-void GLProgram::UseNone() {
-    glUseProgram(0);
-}
+void GLProgram::UseNone() { glUseProgram(0); }
 
 bool GLProgram::CheckLinkStatus() {
     GLint status = 0;
@@ -369,24 +365,24 @@ void GLProgram::Reflect() {
 
         // Map GL type to our enum
         switch (type) {
-        case GL_FLOAT:          info.type = UniformType::Float; break;
-        case GL_FLOAT_VEC2:     info.type = UniformType::Vec2; break;
-        case GL_FLOAT_VEC3:     info.type = UniformType::Vec3; break;
-        case GL_FLOAT_VEC4:     info.type = UniformType::Vec4; break;
-        case GL_INT:            info.type = UniformType::Int; break;
-        case GL_INT_VEC2:       info.type = UniformType::IVec2; break;
-        case GL_INT_VEC3:       info.type = UniformType::IVec3; break;
-        case GL_INT_VEC4:       info.type = UniformType::IVec4; break;
-        case GL_UNSIGNED_INT:   info.type = UniformType::UInt; break;
-        case GL_BOOL:           info.type = UniformType::Bool; break;
-        case GL_FLOAT_MAT2:     info.type = UniformType::Mat2; break;
-        case GL_FLOAT_MAT3:     info.type = UniformType::Mat3; break;
-        case GL_FLOAT_MAT4:     info.type = UniformType::Mat4; break;
-        case GL_SAMPLER_2D:     info.type = UniformType::Sampler2D; break;
-        case GL_SAMPLER_3D:     info.type = UniformType::Sampler3D; break;
-        case GL_SAMPLER_CUBE:   info.type = UniformType::SamplerCube; break;
-        case GL_IMAGE_2D:       info.type = UniformType::Image2D; break;
-        default:                info.type = UniformType::Float; break;
+        case GL_FLOAT:        info.type = UniformType::Float; break;
+        case GL_FLOAT_VEC2:   info.type = UniformType::Vec2; break;
+        case GL_FLOAT_VEC3:   info.type = UniformType::Vec3; break;
+        case GL_FLOAT_VEC4:   info.type = UniformType::Vec4; break;
+        case GL_INT:          info.type = UniformType::Int; break;
+        case GL_INT_VEC2:     info.type = UniformType::IVec2; break;
+        case GL_INT_VEC3:     info.type = UniformType::IVec3; break;
+        case GL_INT_VEC4:     info.type = UniformType::IVec4; break;
+        case GL_UNSIGNED_INT: info.type = UniformType::UInt; break;
+        case GL_BOOL:         info.type = UniformType::Bool; break;
+        case GL_FLOAT_MAT2:   info.type = UniformType::Mat2; break;
+        case GL_FLOAT_MAT3:   info.type = UniformType::Mat3; break;
+        case GL_FLOAT_MAT4:   info.type = UniformType::Mat4; break;
+        case GL_SAMPLER_2D:   info.type = UniformType::Sampler2D; break;
+        case GL_SAMPLER_3D:   info.type = UniformType::Sampler3D; break;
+        case GL_SAMPLER_CUBE: info.type = UniformType::SamplerCube; break;
+        case GL_IMAGE_2D:     info.type = UniformType::Image2D; break;
+        default:              info.type = UniformType::Float; break;
         }
 
         m_reflection.uniforms.push_back(info);
@@ -474,7 +470,7 @@ void GLProgram::Reflect() {
         nameBuffer[nameLen] = '\0';
         ssbo.name = nameBuffer;
 
-        GLenum props[] = { GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE };
+        GLenum props[] = {GL_BUFFER_BINDING, GL_BUFFER_DATA_SIZE};
         GLint values[2] = {0, 0};
         glGetProgramResourceiv(m_handle, GL_SHADER_STORAGE_BLOCK, i, 2, props, 2, nullptr, values);
         ssbo.binding = static_cast<uint32_t>(values[0]);
@@ -501,9 +497,7 @@ int32_t GLProgram::GetUniformLocation(const std::string& name) const {
     return loc;
 }
 
-int32_t GLProgram::GetUniformLocation(const char* name) const {
-    return GetUniformLocation(std::string(name));
-}
+int32_t GLProgram::GetUniformLocation(const char* name) const { return GetUniformLocation(std::string(name)); }
 
 int32_t GLProgram::GetUniformBlockIndex(const std::string& name) const {
     if (!m_handle) return -1;
@@ -594,13 +588,9 @@ void GLProgram::SetIntArray(int32_t loc, const int32_t* v, int count) const {
 //  Uniform Setters (by name — convenience wrappers)
 // ═══════════════════════════════════════════════════════════════
 
-void GLProgram::SetFloat(const std::string& name, float v) const {
-    SetFloat(GetUniformLocation(name), v);
-}
+void GLProgram::SetFloat(const std::string& name, float v) const { SetFloat(GetUniformLocation(name), v); }
 
-void GLProgram::SetVec2(const std::string& name, float x, float y) const {
-    SetVec2(GetUniformLocation(name), x, y);
-}
+void GLProgram::SetVec2(const std::string& name, float x, float y) const { SetVec2(GetUniformLocation(name), x, y); }
 
 void GLProgram::SetVec3(const std::string& name, float x, float y, float z) const {
     SetVec3(GetUniformLocation(name), x, y, z);
@@ -610,13 +600,9 @@ void GLProgram::SetVec4(const std::string& name, float x, float y, float z, floa
     SetVec4(GetUniformLocation(name), x, y, z, w);
 }
 
-void GLProgram::SetInt(const std::string& name, int32_t v) const {
-    SetInt(GetUniformLocation(name), v);
-}
+void GLProgram::SetInt(const std::string& name, int32_t v) const { SetInt(GetUniformLocation(name), v); }
 
-void GLProgram::SetBool(const std::string& name, bool v) const {
-    SetBool(GetUniformLocation(name), v);
-}
+void GLProgram::SetBool(const std::string& name, bool v) const { SetBool(GetUniformLocation(name), v); }
 
 void GLProgram::SetMat4(const std::string& name, const float* m, bool transpose) const {
     SetMat4(GetUniformLocation(name), m, transpose);
@@ -667,9 +653,7 @@ void GLProgram::DispatchForSize(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ) 
     Dispatch(gx, gy, gz);
 }
 
-void GLProgram::MemoryBarrier(uint32_t barriers) const {
-    glMemoryBarrier(barriers);
-}
+void GLProgram::MemoryBarrier(uint32_t barriers) const { glMemoryBarrier(barriers); }
 
 // ═══════════════════════════════════════════════════════════════
 //  Binary Cache
@@ -810,9 +794,7 @@ void GLProgramPipeline::Bind() const {
     if (m_handle) glBindProgramPipeline(m_handle);
 }
 
-void GLProgramPipeline::Unbind() {
-    glBindProgramPipeline(0);
-}
+void GLProgramPipeline::Unbind() { glBindProgramPipeline(0); }
 
 bool GLProgramPipeline::Validate() const {
     if (!m_handle) return false;
@@ -836,17 +818,11 @@ void ShaderIncludeManager::RegisterInclude(const std::string& path, const std::s
     m_includes[path] = source;
 }
 
-void ShaderIncludeManager::UnregisterInclude(const std::string& path) {
-    m_includes.erase(path);
-}
+void ShaderIncludeManager::UnregisterInclude(const std::string& path) { m_includes.erase(path); }
 
-void ShaderIncludeManager::ClearAll() {
-    m_includes.clear();
-}
+void ShaderIncludeManager::ClearAll() { m_includes.clear(); }
 
-bool ShaderIncludeManager::HasInclude(const std::string& path) const {
-    return m_includes.count(path) > 0;
-}
+bool ShaderIncludeManager::HasInclude(const std::string& path) const { return m_includes.count(path) > 0; }
 
 const std::string& ShaderIncludeManager::GetInclude(const std::string& path) const {
     auto it = m_includes.find(path);
@@ -905,14 +881,15 @@ void ShaderPreprocessor::SetVersion(int version, const std::string& profile) {
 
 void ShaderPreprocessor::AddDefine(const std::string& name, const std::string& value) {
     for (auto& [n, v] : m_defines) {
-        if (n == name) { v = value; return; }
+        if (n == name) {
+            v = value;
+            return;
+        }
     }
     m_defines.emplace_back(name, value);
 }
 
-void ShaderPreprocessor::AddDefine(const std::string& name, int value) {
-    AddDefine(name, std::to_string(value));
-}
+void ShaderPreprocessor::AddDefine(const std::string& name, int value) { AddDefine(name, std::to_string(value)); }
 
 void ShaderPreprocessor::AddDefine(const std::string& name, float value) {
     char buf[64];
@@ -921,15 +898,11 @@ void ShaderPreprocessor::AddDefine(const std::string& name, float value) {
 }
 
 void ShaderPreprocessor::RemoveDefine(const std::string& name) {
-    m_defines.erase(
-        std::remove_if(m_defines.begin(), m_defines.end(),
-                        [&](auto& p) { return p.first == name; }),
-        m_defines.end());
+    m_defines.erase(std::remove_if(m_defines.begin(), m_defines.end(), [&](auto& p) { return p.first == name; }),
+                    m_defines.end());
 }
 
-void ShaderPreprocessor::ClearDefines() {
-    m_defines.clear();
-}
+void ShaderPreprocessor::ClearDefines() { m_defines.clear(); }
 
 std::string ShaderPreprocessor::Process(const std::string& source) const {
     std::ostringstream result;
@@ -1029,15 +1002,11 @@ void ShaderHotReloader::AddWatch(const std::string& path, ShaderStage stage) {
 }
 
 void ShaderHotReloader::RemoveWatch(const std::string& path) {
-    m_watches.erase(
-        std::remove_if(m_watches.begin(), m_watches.end(),
-                        [&](auto& e) { return e.path == path; }),
-        m_watches.end());
+    m_watches.erase(std::remove_if(m_watches.begin(), m_watches.end(), [&](auto& e) { return e.path == path; }),
+                    m_watches.end());
 }
 
-void ShaderHotReloader::ClearAll() {
-    m_watches.clear();
-}
+void ShaderHotReloader::ClearAll() { m_watches.clear(); }
 
 std::vector<std::string> ShaderHotReloader::CheckForChanges() {
     std::vector<std::string> changed;
@@ -1060,15 +1029,17 @@ bool ShaderHotReloader::ReloadShader(GLShader& shader, const std::string& path) 
     // Find the entry for the path to get the shader stage
     ShaderStage stage = ShaderStage::Vertex;
     for (auto& e : m_watches) {
-        if (e.path == path) { stage = e.stage; break; }
+        if (e.path == path) {
+            stage = e.stage;
+            break;
+        }
     }
 
     // Read file
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return false;
 
-    std::string source((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
+    std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     return shader.CompileFromSource(stage, source);
 }

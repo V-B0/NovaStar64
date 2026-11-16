@@ -21,21 +21,14 @@ union SDL_Event;
 
 namespace NovaUI {
 
-enum class Tab {
-    Home,
-    Games,
-    Settings,
-    Scripts,
-    HexEditor,
-    Achievements,
-    Simulator
-};
+enum class Tab { Home, Games, Settings, Scripts, HexEditor, Achievements, Simulator };
 
 struct RomMetadata {
     std::string path;
     std::string name;
     std::string notes;
-    std::string cover;   ///< picture shown on the game's card; a path relative to the data folder ("covers/..."), or empty
+    std::string
+        cover; ///< picture shown on the game's card; a path relative to the data folder ("covers/..."), or empty
 };
 
 // -----------------------------------------------
@@ -58,18 +51,18 @@ struct SimNode {
     SimNodeKind kind = SimNodeKind::N64Console;
 
     bool showConfig = false;
-    bool isPowered  = false;
+    bool isPowered = false;
 
     // New nodes are placed once, the first time they are drawn in the editor.
-    bool  placed = false;
+    bool placed = false;
     float spawnX = 0.0f;
     float spawnY = 0.0f;
 
-    int  ramMB           = 4;
+    int ramMB = 4;
     bool hasExpansionPak = false;
-    bool has64DD         = false;
-    char cartName[128]   = {};
-    char cartPath[512]   = {};
+    bool has64DD = false;
+    char cartName[128] = {};
+    char cartPath[512] = {};
     char ddCartName[128] = {};
     char ddCartPath[512] = {};
 };
@@ -82,15 +75,16 @@ struct SimLink {
 
 /// Launcher options that aren't graphics settings (settings/launcher.ini).
 struct LaunchOptions {
-    int  speed            = 60;    ///< NTSC-equivalent: 30, 60, 120, or 0 = unlimited
-    int  displayMode      = 0;     ///< 0 = play in the launcher window as it is, 1 = go fullscreen while playing
-    int  cpuCore          = 0;     ///< 0 = platform default, 1 = interpreter, 2 = recompiler
-    int  rspEngine        = 0;     ///< RSP microcode: 0 = recompiler (faster; the interpreter where there isn't one), 1 = interpreter
-    bool rewind           = true;
+    int speed = 60;      ///< NTSC-equivalent: 30, 60, 120, or 0 = unlimited
+    int displayMode = 0; ///< 0 = play in the launcher window as it is, 1 = go fullscreen while playing
+    int cpuCore = 0;     ///< 0 = platform default, 1 = interpreter, 2 = recompiler
+    int rspEngine =
+        0; ///< RSP microcode: 0 = recompiler (faster; the interpreter where there isn't one), 1 = interpreter
+    bool rewind = true;
     bool pauseOnFocusLoss = false; ///< pause when another application becomes active
-    bool showFps          = false;
-    int  volume           = 100;   ///< 0-100
-    bool muted            = false;
+    bool showFps = false;
+    int volume = 100;              ///< 0-100
+    bool muted = false;
 
     void Load(const std::string& path);
     void Save(const std::string& path) const;
@@ -197,32 +191,32 @@ private:
     static const char* NodeIcon(SimNodeKind k);
     static const char* NodeLabel(SimNodeKind k);
     static bool IsN64DDDisk(const std::string& path);
-    static int  GetPinId(int nodeId, int pinIndex) { return (nodeId << 4) | pinIndex; }
-    static int  GetNodeIdFromPin(int pinId)        { return pinId >> 4; }
-    static bool IsInputPin(int pinId)              { return (pinId & 0xF) > 0; }
+    static int GetPinId(int nodeId, int pinIndex) { return (nodeId << 4) | pinIndex; }
+    static int GetNodeIdFromPin(int pinId) { return pinId >> 4; }
+    static bool IsInputPin(int pinId) { return (pinId & 0xF) > 0; }
 
     // ---- State ----
-    bool        m_shouldExit = false;
-    Tab         m_activeTab  = Tab::Home;
-    SDL_Window* m_window     = nullptr;
-    void*       m_glContext  = nullptr;   ///< the launcher's SDL_GLContext, while Run() is active
+    bool m_shouldExit = false;
+    Tab m_activeTab = Tab::Home;
+    SDL_Window* m_window = nullptr;
+    void* m_glContext = nullptr; ///< the launcher's SDL_GLContext, while Run() is active
 
     std::vector<RomMetadata> m_library;
-    bool m_showAddModal    = false;
-    bool m_showEditModal   = false;
-    int  m_editingRomIndex = -1;
-    char m_editPathBuffer[512]   = {};
-    char m_editNameBuffer[128]   = {};
+    bool m_showAddModal = false;
+    bool m_showEditModal = false;
+    int m_editingRomIndex = -1;
+    char m_editPathBuffer[512] = {};
+    char m_editNameBuffer[128] = {};
     char m_editNotesBuffer[1024] = {};
-    char m_editCoverBuffer[512]  = {};
+    char m_editCoverBuffer[512] = {};
     std::string m_modalError;
 
     /// A cover picture uploaded to the GPU, cached by file path.
     struct CoverTexture {
         uint32_t texture = 0;
-        int      width   = 0;
-        int      height  = 0;
-        bool     failed  = false;   ///< the file couldn't be read; don't retry every frame
+        int width = 0;
+        int height = 0;
+        bool failed = false; ///< the file couldn't be read; don't retry every frame
     };
     std::unordered_map<std::string, CoverTexture> m_coverTextures;
     /// The texture for a cover picture, loading it on first use; null if there is none.
@@ -234,11 +228,11 @@ private:
     bool DrawCover(const std::string& coverPath, float width);
 
     Nova64::Video::PluginConfig m_gfx;
-    LaunchOptions               m_launch;
-    NovaInput::KeyBindings      m_bindings;
-    int                         m_rebindTarget = -1;   ///< N64Input index being changed, or -1
+    LaunchOptions m_launch;
+    NovaInput::KeyBindings m_bindings;
+    int m_rebindTarget = -1;    ///< N64Input index being changed, or -1
     NovaInput::ControllerSettings m_padSettings;
-    int                         m_padRebindTarget = -1;   ///< N64Input index waiting for a controller input, or -1
+    int m_padRebindTarget = -1; ///< N64Input index waiting for a controller input, or -1
 
     int m_nextNodeId = 10;
     int m_nextLinkId = 100;
@@ -249,55 +243,55 @@ private:
     enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState = AnimState::FadeIn;
 
     // ---- The game running inside the launcher ----
-    std::thread       m_emuThread;
+    std::thread m_emuThread;
     std::atomic<bool> m_emuRunning{false};
     std::atomic<bool> m_emuStartFailed{false};
-    std::string       m_emuRomPath;
-    std::string       m_emuTitle;
-    uint32_t          m_iconTex  = 0;   ///< the NovaStar icon, drawn in the sidebar and on the Home tab
-    uint32_t          m_gameTex  = 0;
-    int               m_gameTexW = 0;
-    int               m_gameTexH = 0;
-    bool              m_turboMode      = false;
-    bool              m_resumePending  = false;
-    bool              m_wentFullscreen = false;
+    std::string m_emuRomPath;
+    std::string m_emuTitle;
+    uint32_t m_iconTex = 0; ///< the NovaStar icon, drawn in the sidebar and on the Home tab
+    uint32_t m_gameTex = 0;
+    int m_gameTexW = 0;
+    int m_gameTexH = 0;
+    bool m_turboMode = false;
+    bool m_resumePending = false;
+    bool m_wentFullscreen = false;
 
-    bool m_showPauseMenu  = false;
+    bool m_showPauseMenu = false;
     bool m_focusPauseMenu = false;
-    int  m_overwriteSlot  = -1;      ///< slot waiting for "replace?" confirmation
-    bool m_openOverwrite  = false;
+    int m_overwriteSlot = -1; ///< slot waiting for "replace?" confirmation
+    bool m_openOverwrite = false;
 
     // The rewind bar lists m_rewindPoints followed by a "Now" entry.
-    bool                             m_rewindOpen              = false;
-    bool                             m_rewindFromPauseMenu     = false;
-    bool                             m_rewindScrollToSelection = false;
-    int                              m_rewindSelection         = 0;
-    float                            m_rewindWheel             = 0.0f;
+    bool m_rewindOpen = false;
+    bool m_rewindFromPauseMenu = false;
+    bool m_rewindScrollToSelection = false;
+    int m_rewindSelection = 0;
+    float m_rewindWheel = 0.0f;
     std::vector<Nova64::RewindPoint> m_rewindPoints;
-    uint64_t                         m_stateRevision = 0;
-    ThumbnailTextures                m_thumbnails;
+    uint64_t m_stateRevision = 0;
+    ThumbnailTextures m_thumbnails;
 
     // Frame rate shown in the top bar, measured in video fields per second.
-    float    m_fps          = 0.0f;
+    float m_fps = 0.0f;
     uint64_t m_fpsLastField = 0;
-    uint32_t m_fpsLastTick  = 0;
+    uint32_t m_fpsLastTick = 0;
 
     std::string m_statusText;
-    uint32_t    m_statusUntil    = 0;   ///< SDL tick count
-    uint64_t    m_statusSequence = 0;
+    uint32_t m_statusUntil = 0; ///< SDL tick count
+    uint64_t m_statusSequence = 0;
 
-    LuaEngine                m_lua;
+    LuaEngine m_lua;
     std::vector<std::string> m_scriptFiles;
-    size_t                   m_shownLogLines = 0;
-    HexEditor                m_hexEditor;
+    size_t m_shownLogLines = 0;
+    HexEditor m_hexEditor;
 
     // ---- Unattended runs (NOVA64_UI_*, see the constructor) ----
-    std::string                      m_shotPath;
-    std::vector<int>                 m_shotFrames;
-    std::string                      m_forcedSubTab;
-    std::string                      m_autoRom;
-    std::vector<std::pair<int, int>> m_autoKeys;   ///< launcher frame, SDL scancode
-    int                              m_frameCount = 0;
+    std::string m_shotPath;
+    std::vector<int> m_shotFrames;
+    std::string m_forcedSubTab;
+    std::string m_autoRom;
+    std::vector<std::pair<int, int>> m_autoKeys; ///< launcher frame, SDL scancode
+    int m_frameCount = 0;
 };
 
 } // namespace NovaUI

@@ -50,24 +50,22 @@ public:
     void UpdateScreen() override;
     void SwapBuffers() override;
     ::Plugins::FrameBufferInfo GetFrameBufferInfo() const override;
-    void ReadFrameBuffer(uint8_t* dest, uint32_t addr, uint32_t width,
-                         uint32_t height, uint32_t size) override;
-    void WriteFrameBuffer(const uint8_t* src, uint32_t addr, uint32_t width,
-                          uint32_t height, uint32_t size) override;
+    void ReadFrameBuffer(uint8_t* dest, uint32_t addr, uint32_t width, uint32_t height, uint32_t size) override;
+    void WriteFrameBuffer(const uint8_t* src, uint32_t addr, uint32_t width, uint32_t height, uint32_t size) override;
     bool IsFrameReady() const override;
     void GetStatistics(float& fps, float& vis) const override;
     bool CaptureScreenshot(const std::string& filename) override;
     double GetLastSwapTimeMs() const override;
 
 private:
-    VideoPlugin                            m_videoPlugin;
-    bool                                   m_initialized = false;
+    VideoPlugin m_videoPlugin;
+    bool m_initialized = false;
 
     // Frame timing
-    uint64_t                               m_viCount = 0;
-    std::chrono::steady_clock::time_point  m_lastStatTime;
-    float                                  m_fps = 0.0f;
-    float                                  m_vis = 0.0f;
+    uint64_t m_viCount = 0;
+    std::chrono::steady_clock::time_point m_lastStatTime;
+    float m_fps = 0.0f;
+    float m_vis = 0.0f;
 };
 
 /// Factory function — called by PluginManager::CreateDefaultGraphicsPlugin

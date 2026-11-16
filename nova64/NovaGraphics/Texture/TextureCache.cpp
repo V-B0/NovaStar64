@@ -24,13 +24,15 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace Nova64 { namespace Video { namespace Tex {
+namespace Nova64 {
+namespace Video {
+namespace Tex {
 
 static bool ForensicEnabled() {
     static const bool enabled = []() {
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4996)
+#pragma warning(disable : 4996)
 #endif
         const char* v = std::getenv("NOVA64_FORENSIC");
 #ifdef _MSC_VER
@@ -77,14 +79,16 @@ static void BleedAlphaEdges(uint32_t* pixels, uint32_t width, uint32_t height) {
                     if (nx < 0 || nx >= static_cast<int>(width)) continue;
                     uint32_t np = src[ny * width + nx];
                     if ((np >> 24) == 0) continue; // also transparent
-                    r += (np >> 0)  & 0xFF;
-                    g += (np >> 8)  & 0xFF;
+                    r += (np >> 0) & 0xFF;
+                    g += (np >> 8) & 0xFF;
                     b += (np >> 16) & 0xFF;
                     ++count;
                 }
             }
             if (count > 0) {
-                r /= count; g /= count; b /= count;
+                r /= count;
+                g /= count;
+                b /= count;
                 pixels[idx] = (r) | (g << 8) | (b << 16); // alpha stays 0
             } else {
                 // No opaque neighbour at all — zero RGB to avoid bleeding white.
@@ -150,8 +154,7 @@ void TextureCache::SetConfig(const TextureCacheConfig& config) {
 namespace {
 // Replicate the edge texel past the clamp extent on each axis (no-op when the
 // key carries no decode-time clamp).
-void ApplyDecodeClamp(const TextureKey& key, std::vector<uint32_t>& pixels)
-{
+void ApplyDecodeClamp(const TextureKey& key, std::vector<uint32_t>& pixels) {
     const uint32_t w = key.width, h = key.height;
     const uint32_t cw = key.clampWidth, ch = key.clampHeight;
     if (w == 0 || h == 0) return;
@@ -166,23 +169,20 @@ void ApplyDecodeClamp(const TextureKey& key, std::vector<uint32_t>& pixels)
     if (ch > 0 && ch < h) {
         const uint32_t* edgeRow = pixels.data() + static_cast<size_t>(ch - 1) * w;
         for (uint32_t y = ch; y < h; ++y)
-            std::memcpy(pixels.data() + static_cast<size_t>(y) * w,
-                        edgeRow, static_cast<size_t>(w) * sizeof(uint32_t));
+            std::memcpy(pixels.data() + static_cast<size_t>(y) * w, edgeRow, static_cast<size_t>(w) * sizeof(uint32_t));
     }
 }
 } // namespace
 
-CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram,
-                                          const uint8_t* tmem) {
+CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram, const uint8_t* tmem) {
     // Look up in cache
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
         // Cache hit — update LRU
         m_stats.hits++;
         if (ForensicEnabled())
-            Logger::Info("[FORENSIC] CACHE HIT  crc=0x{:016X} fmt={} size={} pal={} w={} h={}",
-                         key.crc, static_cast<int>(key.format), static_cast<int>(key.size),
-                         key.palette, key.width, key.height);
+            Logger::Info("[FORENSIC] CACHE HIT  crc=0x{:016X} fmt={} size={} pal={} w={} h={}", key.crc,
+                         static_cast<int>(key.format), static_cast<int>(key.size), key.palette, key.width, key.height);
         auto& entry = it->second;
         entry.texture.lastUsedFrame = m_frameCounter;
         entry.texture.useCount++;
@@ -198,13 +198,11 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // Cache miss — decode and upload
     m_stats.misses++;
     if (ForensicEnabled())
-        Logger::Info("[FORENSIC] CACHE MISS crc=0x{:016X} fmt={} size={} pal={} w={} h={}",
-                     key.crc, static_cast<int>(key.format), static_cast<int>(key.size),
-                     key.palette, key.width, key.height);
+        Logger::Info("[FORENSIC] CACHE MISS crc=0x{:016X} fmt={} size={} pal={} w={} h={}", key.crc,
+                     static_cast<int>(key.format), static_cast<int>(key.size), key.palette, key.width, key.height);
 
     // Ensure we have room
-    while (m_stats.currentEntries >= m_config.maxEntries ||
-           m_stats.currentBytes >= m_config.maxCacheBytes) {
+    while (m_stats.currentEntries >= m_config.maxEntries || m_stats.currentBytes >= m_config.maxCacheBytes) {
         if (m_lruList.empty()) break;
         EvictLRU();
     }
@@ -223,8 +221,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
             m_stats.currentEntries++;
             m_stats.currentBytes += cacheEntry.texture.sizeBytes;
             m_stats.uploads++;
-            if (m_stats.currentBytes > m_stats.peakBytes)
-                m_stats.peakBytes = m_stats.currentBytes;
+            if (m_stats.currentBytes > m_stats.peakBytes) m_stats.peakBytes = m_stats.currentBytes;
 
             auto result = m_cache.emplace(key, std::move(cacheEntry));
             return &result.first->second.texture;
@@ -266,11 +263,11 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
                 if (px & 0xFF000000u) ++opaque;
             }
             std::fprintf(stderr,
-                "[TEXDBG] decode addr=0x%06X fmt=%d size=%d w=%u h=%u line=%u tmem=%u pal=%u tlut=%u crc=0x%016llX fromTMEM=%d nonZero=%zu/%zu opaque=%zu\n",
-                key.address & 0x7FFFFF, static_cast<int>(key.format), static_cast<int>(key.size),
-                key.width, key.height, key.line, key.tmemOffset, key.palette, key.tlutType,
-                static_cast<unsigned long long>(key.crc), tmem ? 1 : 0,
-                nonZero, pixels.size(), opaque);
+                         "[TEXDBG] decode addr=0x%06X fmt=%d size=%d w=%u h=%u line=%u tmem=%u pal=%u tlut=%u "
+                         "crc=0x%016llX fromTMEM=%d nonZero=%zu/%zu opaque=%zu\n",
+                         key.address & 0x7FFFFF, static_cast<int>(key.format), static_cast<int>(key.size), key.width,
+                         key.height, key.line, key.tmemOffset, key.palette, key.tlutType,
+                         static_cast<unsigned long long>(key.crc), tmem ? 1 : 0, nonZero, pixels.size(), opaque);
         }
     }
 
@@ -292,8 +289,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     desc.height = gpuHeight;
     desc.format = TextureFormat::RGBA8;
     desc.usage = BufferUsage::Dynamic;
-    desc.mipLevels = m_config.enableMipmaps
-        ? std::min<uint32_t>(4, MaxMipLevels(gpuWidth, gpuHeight)) : 1;
+    desc.mipLevels = m_config.enableMipmaps ? std::min<uint32_t>(4, MaxMipLevels(gpuWidth, gpuHeight)) : 1;
 
     auto gpuTex = m_renderer->CreateTexture(desc);
     if (!gpuTex) return nullptr;
@@ -307,8 +303,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         // Clear to transparent first, then upload sub-region
         std::vector<uint32_t> clearData(gpuWidth * gpuHeight, 0);
         gpuTex->Upload(clearData.data(), clearData.size() * sizeof(uint32_t));
-        gpuTex->UploadSubRegion(0, 0, key.width, key.height,
-                                  pixels.data(), pixels.size() * sizeof(uint32_t));
+        gpuTex->UploadSubRegion(0, 0, key.width, key.height, pixels.data(), pixels.size() * sizeof(uint32_t));
     }
 
     // Generate mipmaps if enabled
@@ -339,7 +334,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     // opposite edge / transparent-black border — the MM file-select black
     // shard mosaic on the MoltenVK backend.
     auto translateWrap = [](uint8_t mode, uint8_t mask) -> TextureWrap {
-        if (mask > 0)   return TextureWrap::ClampToEdge;
+        if (mask > 0) return TextureWrap::ClampToEdge;
         if (mode & 0x2) return TextureWrap::ClampToEdge;
         if (mode & 0x1) return TextureWrap::MirroredRepeat;
         return TextureWrap::Repeat;
@@ -369,8 +364,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     m_stats.currentEntries++;
     m_stats.currentBytes += cacheEntry.texture.sizeBytes;
     m_stats.uploads++;
-    if (m_stats.currentBytes > m_stats.peakBytes)
-        m_stats.peakBytes = m_stats.currentBytes;
+    if (m_stats.currentBytes > m_stats.peakBytes) m_stats.peakBytes = m_stats.currentBytes;
 
     auto result = m_cache.emplace(key, std::move(cacheEntry));
     return &result.first->second.texture;
@@ -380,9 +374,8 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 //  MIPMAPPED TEXTURE LOOKUP / CREATION (TILE-CHAIN)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram,
-                                          const uint8_t* tmem,
-                                          const MipTileInfo* mipTiles, int mipCount) {
+CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rdram, const uint8_t* tmem,
+                                        const MipTileInfo* mipTiles, int mipCount) {
     // Look up in cache — same as non-mip path
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
@@ -398,8 +391,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
     // Cache miss — decode base level
     m_stats.misses++;
-    while (m_stats.currentEntries >= m_config.maxEntries ||
-           m_stats.currentBytes >= m_config.maxCacheBytes) {
+    while (m_stats.currentEntries >= m_config.maxEntries || m_stats.currentBytes >= m_config.maxCacheBytes) {
         if (m_lruList.empty()) break;
         EvictLRU();
     }
@@ -450,8 +442,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     } else {
         std::vector<uint32_t> clearData(gpuWidth * gpuHeight, 0);
         gpuTex->Upload(clearData.data(), clearData.size() * sizeof(uint32_t), 0);
-        gpuTex->UploadSubRegion(0, 0, key.width, key.height,
-                                  pixels.data(), pixels.size() * sizeof(uint32_t), 0);
+        gpuTex->UploadSubRegion(0, 0, key.width, key.height, pixels.data(), pixels.size() * sizeof(uint32_t), 0);
     }
 
     // Upload each mip level from N64 tile chain TMEM data
@@ -463,36 +454,33 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
 
         // Build a temporary key for this mip tile's format/size/TMEM location
         TextureKey mipKey{};
-        mipKey.width      = mipW;
-        mipKey.height     = mipH;
-        mipKey.format     = static_cast<N64TexFormat>(mt.format);
-        mipKey.size       = static_cast<N64TexSize>(mt.size);
-        mipKey.line       = mt.line;
+        mipKey.width = mipW;
+        mipKey.height = mipH;
+        mipKey.format = static_cast<N64TexFormat>(mt.format);
+        mipKey.size = static_cast<N64TexSize>(mt.size);
+        mipKey.line = mt.line;
         mipKey.tmemOffset = mt.tmemAddr;
-        mipKey.palette    = mt.palette;
-        mipKey.tlutType   = key.tlutType;
+        mipKey.palette = mt.palette;
+        mipKey.tlutType = key.tlutType;
 
         std::vector<uint32_t> mipPixels;
         const uint8_t* mipData = tmem ? tmem : (rdram + key.address);
-            DecodeTexture(mipKey, mipData, mipPixels, tmem != nullptr);
+        DecodeTexture(mipKey, mipData, mipPixels, tmem != nullptr);
         if (mipPixels.empty()) continue;
 
         uint32_t mipGpuW = std::max(1u, gpuWidth >> (mip + 1));
         uint32_t mipGpuH = std::max(1u, gpuHeight >> (mip + 1));
 
         if (mipGpuW == mipW && mipGpuH == mipH) {
-            gpuTex->Upload(mipPixels.data(), mipPixels.size() * sizeof(uint32_t),
-                           static_cast<uint32_t>(mip + 1));
+            gpuTex->Upload(mipPixels.data(), mipPixels.size() * sizeof(uint32_t), static_cast<uint32_t>(mip + 1));
         } else {
             // Mip level dimensions don't match the GL mip size — upload as sub-region
             std::vector<uint32_t> clearMip(mipGpuW * mipGpuH, 0);
-            gpuTex->Upload(clearMip.data(), clearMip.size() * sizeof(uint32_t),
-                           static_cast<uint32_t>(mip + 1));
+            gpuTex->Upload(clearMip.data(), clearMip.size() * sizeof(uint32_t), static_cast<uint32_t>(mip + 1));
             uint32_t uploadW = std::min(mipW, static_cast<uint16_t>(mipGpuW));
             uint32_t uploadH = std::min(mipH, static_cast<uint16_t>(mipGpuH));
-            gpuTex->UploadSubRegion(0, 0, uploadW, uploadH,
-                                      mipPixels.data(), mipPixels.size() * sizeof(uint32_t),
-                                      static_cast<uint32_t>(mip + 1));
+            gpuTex->UploadSubRegion(0, 0, uploadW, uploadH, mipPixels.data(), mipPixels.size() * sizeof(uint32_t),
+                                    static_cast<uint32_t>(mip + 1));
         }
     }
 
@@ -509,7 +497,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
         samplerDesc.magFilter = SamplerFilter::Nearest;
     }
     auto translateWrap = [](uint8_t mode, uint8_t mask) -> TextureWrap {
-        if (mask > 0)   return TextureWrap::ClampToEdge;  // shader handles wrap
+        if (mask > 0) return TextureWrap::ClampToEdge; // shader handles wrap
         if (mode & 0x2) return TextureWrap::ClampToEdge;
         if (mode & 0x1) return TextureWrap::MirroredRepeat;
         return TextureWrap::Repeat;
@@ -537,8 +525,7 @@ CachedTexture* TextureCache::GetTexture(const TextureKey& key, const uint8_t* rd
     m_stats.currentEntries++;
     m_stats.currentBytes += cacheEntry.texture.sizeBytes;
     m_stats.uploads++;
-    if (m_stats.currentBytes > m_stats.peakBytes)
-        m_stats.peakBytes = m_stats.currentBytes;
+    if (m_stats.currentBytes > m_stats.peakBytes) m_stats.peakBytes = m_stats.currentBytes;
 
     auto result = m_cache.emplace(key, std::move(cacheEntry));
     return &result.first->second.texture;
@@ -642,14 +629,12 @@ void TextureCache::EvictLRU() {
 //  TEXTURE DECODING — DISPATCH
 // ═══════════════════════════════════════════════════════════════════════════════
 
-static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset,
-                                      uint32_t y, bool fromTMEM) {
+static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset, uint32_t y, bool fromTMEM) {
     // DWordInterleave at load time models the N64 TMEM write interleave.
     // This read-time XOR models the TMEM read de-interleave: on odd rows,
     // swap the two 32-bit halves of each 64-bit word (XOR byte offset by 4).
     // Both operations are needed together (matching GLideN64's i=(ty&1)<<1 pattern).
-    if (fromTMEM && (y & 1))
-        byteOffset ^= 4;
+    if (fromTMEM && (y & 1)) byteOffset ^= 4;
     return row[byteOffset];
 }
 
@@ -658,16 +643,14 @@ static inline uint8_t ReadTextureByte(const uint8_t* row, uint32_t byteOffset,
 // banks: non-CI textures (no TLUT) can use the full 4KB (wrapMask = 0x1FF
 // QWords), while CI textures with a TLUT only get the lower 2KB (wrapMask
 // = 0xFF QWords) since the upper half holds the palette.
-static inline const uint8_t* GetWrappedRow(const uint8_t* tmemBase,
-                                            uint32_t tmemAddrQW,
-                                            uint32_t lineQW, uint32_t y,
-                                            uint32_t wrapMaskQW) {
+static inline const uint8_t* GetWrappedRow(const uint8_t* tmemBase, uint32_t tmemAddrQW, uint32_t lineQW, uint32_t y,
+                                           uint32_t wrapMaskQW) {
     uint32_t rowQW = (tmemAddrQW + lineQW * y) & wrapMaskQW;
     return tmemBase + rowQW * 8;
 }
 
-void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
-                                   std::vector<uint32_t>& outPixels, bool fromTMEM) {
+void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data, std::vector<uint32_t>& outPixels,
+                                 bool fromTMEM) {
     uint32_t count = key.width * key.height;
     outPixels.resize(count);
     m_stats.conversions++;
@@ -718,60 +701,57 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
     }
 
     switch (effectiveFormat) {
-        case N64TexFormat::RGBA:
-            if (key.size == N64TexSize::Bits16)
-                DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            else if (key.size == N64TexSize::Bits32) {
-                if (fromTMEM)
-                    DecodeRGBA32_TMEM(data, key.tmemOffset, key.line, outPixels.data(), key.width, key.height);
-                else
-                    DecodeRGBA32(tileData, outPixels.data(), key.width, key.height, lineBytes * 2, false);
-            }
-            break;
+    case N64TexFormat::RGBA:
+        if (key.size == N64TexSize::Bits16)
+            DecodeRGBA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        else if (key.size == N64TexSize::Bits32) {
+            if (fromTMEM) DecodeRGBA32_TMEM(data, key.tmemOffset, key.line, outPixels.data(), key.width, key.height);
+            else DecodeRGBA32(tileData, outPixels.data(), key.width, key.height, lineBytes * 2, false);
+        }
+        break;
 
-        case N64TexFormat::IA:
-            if (key.size == N64TexSize::Bits16)
-                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            else if (key.size == N64TexSize::Bits8)
-                DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+    case N64TexFormat::IA:
+        if (key.size == N64TexSize::Bits16)
+            DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        else if (key.size == N64TexSize::Bits8)
+            DecodeIA8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        else if (key.size == N64TexSize::Bits4)
+            DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        break;
+
+    case N64TexFormat::I:
+        if (key.size == N64TexSize::Bits16)
+            // I16 is not a native N64 format; treat as IA16 (intensity+alpha, 8-bit each).
+            // Some games use format=I size=16b for the coverage-framebuffer copy path.
+            DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        else if (key.size == N64TexSize::Bits8)
+            DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        else if (key.size == N64TexSize::Bits4)
+            DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        break;
+
+    case N64TexFormat::CI:
+        // CI textures: tileData is the index stream; data is the full TMEM base
+        // (palette lives at the upper TMEM half, data[TMEM_PALETTE_BASE+...])
+        {
+            uint8_t pal = static_cast<uint8_t>(key.palette);
+            bool isIA = (key.tlutType == 3); // G_TT_IA16
+
+            if (key.size == N64TexSize::Bits8)
+                DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA,
+                          wrapMaskQW);
             else if (key.size == N64TexSize::Bits4)
-                DecodeIA4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            break;
+                DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA,
+                          wrapMaskQW);
+        }
+        break;
 
-        case N64TexFormat::I:
-            if (key.size == N64TexSize::Bits16)
-                // I16 is not a native N64 format; treat as IA16 (intensity+alpha, 8-bit each).
-                // Some games use format=I size=16b for the coverage-framebuffer copy path.
-                DecodeIA16(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            else if (key.size == N64TexSize::Bits8)
-                DecodeI8(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            else if (key.size == N64TexSize::Bits4)
-                DecodeI4(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            break;
+    case N64TexFormat::YUV:
+        DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
+        break;
 
-        case N64TexFormat::CI:
-            // CI textures: tileData is the index stream; data is the full TMEM base
-            // (palette lives at the upper TMEM half, data[TMEM_PALETTE_BASE+...])
-            {
-                uint8_t pal = static_cast<uint8_t>(key.palette);
-                bool isIA = (key.tlutType == 3);  // G_TT_IA16
-
-                if (key.size == N64TexSize::Bits8)
-                    DecodeCI8(tileData, data, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA, wrapMaskQW);
-                else if (key.size == N64TexSize::Bits4)
-                    DecodeCI4(tileData, data, pal, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, isIA, wrapMaskQW);
-            }
-            break;
-
-        case N64TexFormat::YUV:
-            DecodeYUV(tileData, outPixels.data(), key.width, key.height, lineBytes, fromTMEM, data, wrapMaskQW);
-            break;
-
-        default:
-            std::memset(outPixels.data(), 0xFF, count * 4);
-            break;
+    default: std::memset(outPixels.data(), 0xFF, count * 4); break;
     }
-
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -781,8 +761,8 @@ void TextureCache::DecodeTexture(const TextureKey& key, const uint8_t* data,
 // Convert N64 RGBA5551 to RGBA8888
 static inline uint32_t RGBA5551toRGBA8(uint16_t c) {
     uint8_t r = ((c >> 11) & 0x1F) << 3;
-    uint8_t g = ((c >>  6) & 0x1F) << 3;
-    uint8_t b = ((c >>  1) & 0x1F) << 3;
+    uint8_t g = ((c >> 6) & 0x1F) << 3;
+    uint8_t b = ((c >> 1) & 0x1F) << 3;
     uint8_t a = (c & 1) ? 0xFF : 0x00;
     // Replicate high bits into low bits for proper 5→8 expansion
     r |= r >> 5;
@@ -798,15 +778,13 @@ static inline uint32_t IA88toRGBA8(uint16_t c) {
     return (a << 24) | (i << 16) | (i << 8) | i;
 }
 
-void TextureCache::DecodeRGBA16(const uint8_t* src, uint32_t* dst,
-                                  uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                                  const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeRGBA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                                bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint16_t pixel = (static_cast<uint16_t>(ReadTextureByte(row, x * 2, y, fromTMEM)) << 8) |
                              ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
@@ -815,8 +793,8 @@ void TextureCache::DecodeRGBA16(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeRGBA32(const uint8_t* src, uint32_t* dst,
-                                  uint32_t width, uint32_t height, uint32_t lineBytes, bool fromTMEM) {
+void TextureCache::DecodeRGBA32(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t lineBytes,
+                                bool fromTMEM) {
     for (uint32_t y = 0; y < height; y++) {
         const uint8_t* row = src + y * lineBytes;
         for (uint32_t x = 0; x < width; x++) {
@@ -829,16 +807,13 @@ void TextureCache::DecodeRGBA32(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr,
-                                      uint16_t tileLine, uint32_t* dst,
-                                      uint32_t width, uint32_t height) {
+void TextureCache::DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr, uint16_t tileLine, uint32_t* dst,
+                                     uint32_t width, uint32_t height) {
     // Split-bank RGBA32 decode matching GLideN64's _getTextureDestData for 32b
     const uint16_t* tmem16 = reinterpret_cast<const uint16_t*>(tmemBase);
-    const uint32_t tbase = static_cast<uint32_t>(tmemAddr) << 2;  // in u16 units
+    const uint32_t tbase = static_cast<uint32_t>(tmemAddr) << 2; // in u16 units
 
-    auto swapword = [](uint16_t v) -> uint16_t {
-        return static_cast<uint16_t>((v << 8) | (v >> 8));
-    };
+    auto swapword = [](uint16_t v) -> uint16_t { return static_cast<uint16_t>((v << 8) | (v >> 8)); };
 
     // Compute line32 stride in u16 units (matching GLideN64)
     int wid_64 = static_cast<int>(width) << 2;
@@ -863,15 +838,13 @@ void TextureCache::DecodeRGBA32_TMEM(const uint8_t* tmemBase, uint16_t tmemAddr,
     }
 }
 
-void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst,
-                                uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                                const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                              bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t intensity = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
             uint8_t alpha = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
@@ -880,15 +853,13 @@ void TextureCache::DecodeIA16(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                             bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t val = ReadTextureByte(row, x, y, fromTMEM);
             uint8_t intensity = (val >> 4) & 0xF;
@@ -900,15 +871,13 @@ void TextureCache::DecodeIA8(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                             bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
@@ -922,15 +891,13 @@ void TextureCache::DecodeIA4(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                              const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                            bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t i = ReadTextureByte(row, x, y, fromTMEM);
             dst[y * width + x] = (i << 24) | (i << 16) | (i << 8) | i;
@@ -938,15 +905,13 @@ void TextureCache::DecodeI8(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
-                              uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                              const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                            bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t val = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
@@ -956,17 +921,15 @@ void TextureCache::DecodeI4(const uint8_t* src, uint32_t* dst,
     }
 }
 
-void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA,
-                               uint32_t wrapMaskQW) {
+void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32_t* dst, uint32_t width,
+                             uint32_t height, uint32_t line, bool fromTMEM, bool isIA, uint32_t wrapMaskQW) {
     if (!tmemBase) return;
 
     const uint32_t tmemOff = (wrapMaskQW > 0) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t idx = ReadTextureByte(row, x, y, fromTMEM);
             // CI8: palette at TMEM_PALETTE_BASE, 8-byte stride (GLideN64 TLUT layout)
@@ -977,52 +940,47 @@ void TextureCache::DecodeCI8(const uint8_t* src, const uint8_t* tmemBase, uint32
     }
 }
 
-void TextureCache::DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette,
-                               uint32_t* dst, uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA,
-                               uint32_t wrapMaskQW) {
+void TextureCache::DecodeCI4(const uint8_t* src, const uint8_t* tmemBase, uint8_t palette, uint32_t* dst,
+                             uint32_t width, uint32_t height, uint32_t line, bool fromTMEM, bool isIA,
+                             uint32_t wrapMaskQW) {
     if (!tmemBase) return;
 
     const uint32_t tmemOff = (wrapMaskQW > 0) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x++) {
             uint8_t byte = ReadTextureByte(row, x / 2, y, fromTMEM);
             uint8_t idx = (x & 1) ? (byte & 0xF) : ((byte >> 4) & 0xF);
 
             // CI4: palette at TMEM_PALETTE_BASE + palette * 0x80, 8-byte stride (GLideN64 TLUT layout)
-            uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(palette) * 0x80 +
-                            static_cast<uint32_t>(idx) * 8;
+            uint32_t addr = TMEM_PALETTE_BASE + static_cast<uint32_t>(palette) * 0x80 + static_cast<uint32_t>(idx) * 8;
             uint16_t color = (static_cast<uint16_t>(tmemBase[addr]) << 8) | tmemBase[addr + 1];
             dst[y * width + x] = isIA ? IA88toRGBA8(color) : RGBA5551toRGBA8(color);
         }
     }
 }
 
-void TextureCache::DecodeYUV(const uint8_t* src, uint32_t* dst,
-                               uint32_t width, uint32_t height, uint32_t line, bool fromTMEM,
-                               const uint8_t* tmemBase, uint32_t wrapMaskQW) {
+void TextureCache::DecodeYUV(const uint8_t* src, uint32_t* dst, uint32_t width, uint32_t height, uint32_t line,
+                             bool fromTMEM, const uint8_t* tmemBase, uint32_t wrapMaskQW) {
     // YUV422: 2 pixels per 32 bits (Y0 U Y1 V)
     // Store raw Y/U/V in R/G/B channels — the shader performs the actual
     // YUV→RGB conversion using the N64's programmable K coefficients.
     const uint32_t tmemOff = (wrapMaskQW > 0 && tmemBase) ? static_cast<uint32_t>((src - tmemBase) >> 3) : 0;
     const uint32_t lineQW = line >> 3;
     for (uint32_t y = 0; y < height; y++) {
-        const uint8_t* row = (wrapMaskQW > 0 && tmemBase)
-            ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW)
-            : src + y * line;
+        const uint8_t* row =
+            (wrapMaskQW > 0 && tmemBase) ? GetWrappedRow(tmemBase, tmemOff, lineQW, y, wrapMaskQW) : src + y * line;
         for (uint32_t x = 0; x < width; x += 2) {
             uint8_t y0 = ReadTextureByte(row, x * 2 + 0, y, fromTMEM);
-            uint8_t u  = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
+            uint8_t u = ReadTextureByte(row, x * 2 + 1, y, fromTMEM);
             uint8_t y1 = ReadTextureByte(row, x * 2 + 2, y, fromTMEM);
-            uint8_t v  = ReadTextureByte(row, x * 2 + 3, y, fromTMEM);
+            uint8_t v = ReadTextureByte(row, x * 2 + 3, y, fromTMEM);
 
             // RGBA8 layout: R=Y, G=U(Cb), B=V(Cr), A=255
             dst[y * width + x + 0] = (0xFF << 24) | (v << 16) | (u << 8) | y0;
-            if (x + 1 < width)
-                dst[y * width + x + 1] = (0xFF << 24) | (v << 16) | (u << 8) | y1;
+            if (x + 1 < width) dst[y * width + x + 1] = (0xFF << 24) | (v << 16) | (u << 8) | y1;
         }
     }
 }
@@ -1037,10 +995,8 @@ uint32_t TextureCache::CalculateTextureCRC(const uint8_t* data, uint32_t sizeByt
     for (uint32_t i = 0; i < sizeBytes; i++) {
         crc ^= data[i];
         for (int bit = 0; bit < 8; bit++) {
-            if (crc & 1)
-                crc = (crc >> 1) ^ 0xEDB88320;
-            else
-                crc >>= 1;
+            if (crc & 1) crc = (crc >> 1) ^ 0xEDB88320;
+            else crc >>= 1;
         }
     }
     return ~crc;
@@ -1049,11 +1005,11 @@ uint32_t TextureCache::CalculateTextureCRC(const uint8_t* data, uint32_t sizeByt
 uint32_t TextureCache::CalculateTMEMSize(const TextureKey& key) const {
     uint32_t bitsPerPixel = 0;
     switch (key.size) {
-        case N64TexSize::Bits4:  bitsPerPixel = 4; break;
-        case N64TexSize::Bits8:  bitsPerPixel = 8; break;
-        case N64TexSize::Bits16: bitsPerPixel = 16; break;
-        case N64TexSize::Bits32: bitsPerPixel = 32; break;
-        default: bitsPerPixel = 16; break;
+    case N64TexSize::Bits4:  bitsPerPixel = 4; break;
+    case N64TexSize::Bits8:  bitsPerPixel = 8; break;
+    case N64TexSize::Bits16: bitsPerPixel = 16; break;
+    case N64TexSize::Bits32: bitsPerPixel = 32; break;
+    default:                 bitsPerPixel = 16; break;
     }
     return (key.width * key.height * bitsPerPixel) / 8;
 }
@@ -1073,7 +1029,10 @@ uint32_t TextureCache::MaxMipLevels(uint32_t w, uint32_t h) {
     uint32_t dim = std::max(w, h);
     if (dim == 0) return 1;
     uint32_t levels = 1;
-    while (dim > 1) { dim >>= 1; levels++; }
+    while (dim > 1) {
+        dim >>= 1;
+        levels++;
+    }
     return levels;
 }
 
@@ -1094,23 +1053,23 @@ void TextureCache::SetDumpFolder(const std::filesystem::path& folder, const std:
 
 void TextureCache::DumpTexture(const TextureKey& key, const std::vector<uint32_t>& pixels) {
     if (key.hiresTexCrc == 0 && key.hiresPalCrc == 0) return;
-    const uint64_t identity = ((static_cast<uint64_t>(key.hiresPalCrc) << 32) | key.hiresTexCrc)
-                            ^ (static_cast<uint64_t>(key.format) << 60) ^ (static_cast<uint64_t>(key.size) << 56);
+    const uint64_t identity = ((static_cast<uint64_t>(key.hiresPalCrc) << 32) | key.hiresTexCrc) ^
+                              (static_cast<uint64_t>(key.format) << 60) ^ (static_cast<uint64_t>(key.size) << 56);
     if (!m_dumped.insert(identity).second) return;
 
     // The picture covers the region the checksum was computed over, which can be smaller
     // than the decoded tile (clamped textures are padded out to the sampled size).
-    const uint32_t w = (key.hiresWidth  != 0 && key.hiresWidth  <= key.width)  ? key.hiresWidth  : key.width;
+    const uint32_t w = (key.hiresWidth != 0 && key.hiresWidth <= key.width) ? key.hiresWidth : key.width;
     const uint32_t h = (key.hiresHeight != 0 && key.hiresHeight <= key.height) ? key.hiresHeight : key.height;
     if (w == 0 || h == 0 || pixels.size() < static_cast<size_t>(key.width) * key.height) return;
 
     char name[512];
     if (key.hiresPalCrc != 0) {
-        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X#%08X_all.png", m_dumpGameName.c_str(),
-                      key.hiresTexCrc, static_cast<unsigned>(key.format), static_cast<unsigned>(key.size), key.hiresPalCrc);
+        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X#%08X_all.png", m_dumpGameName.c_str(), key.hiresTexCrc,
+                      static_cast<unsigned>(key.format), static_cast<unsigned>(key.size), key.hiresPalCrc);
     } else {
-        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X_all.png", m_dumpGameName.c_str(),
-                      key.hiresTexCrc, static_cast<unsigned>(key.format), static_cast<unsigned>(key.size));
+        std::snprintf(name, sizeof(name), "%s#%08X#%X#%X_all.png", m_dumpGameName.c_str(), key.hiresTexCrc,
+                      static_cast<unsigned>(key.format), static_cast<unsigned>(key.size));
     }
     std::error_code ec;
     std::filesystem::create_directories(m_dumpFolder, ec);
@@ -1122,7 +1081,8 @@ void TextureCache::DumpTexture(const TextureKey& key, const std::vector<uint32_t
     if (w != key.width || h != key.height) {
         cropped.resize(static_cast<size_t>(w) * h);
         for (uint32_t y = 0; y < h; ++y)
-            std::memcpy(&cropped[static_cast<size_t>(y) * w], &pixels[static_cast<size_t>(y) * key.width], w * sizeof(uint32_t));
+            std::memcpy(&cropped[static_cast<size_t>(y) * w], &pixels[static_cast<size_t>(y) * key.width],
+                        w * sizeof(uint32_t));
         src = cropped.data();
     }
     Nova::WritePNG(file.string().c_str(), static_cast<int>(w), static_cast<int>(h), 4, src);
@@ -1138,15 +1098,15 @@ bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key)
     id.texCrc = key.hiresTexCrc;
     id.palCrc = key.hiresPalCrc;
     id.format = static_cast<uint8_t>(key.format);
-    id.size   = static_cast<uint8_t>(key.size);
+    id.size = static_cast<uint8_t>(key.size);
     const std::unique_ptr<HiResImage> image = m_hiResPack->Find(id);
     if (!image || image->width == 0 || image->height == 0) return false;
 
     TextureDesc desc;
-    desc.width  = image->width;
+    desc.width = image->width;
     desc.height = image->height;
     desc.format = TextureFormat::RGBA8;
-    desc.usage  = BufferUsage::Static;
+    desc.usage = BufferUsage::Static;
     desc.mipLevels = m_config.enableMipmaps ? std::min<uint32_t>(5, MaxMipLevels(desc.width, desc.height)) : 1;
 
     auto gpuTex = m_renderer->CreateTexture(desc);
@@ -1167,11 +1127,11 @@ bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key)
 
     entry.key = key;
     entry.gpuTexture = std::move(gpuTex);
-    entry.realWidth  = image->width;
+    entry.realWidth = image->width;
     entry.realHeight = image->height;
-    entry.sizeBytes  = image->width * image->height * 4 * desc.mipLevels;
-    entry.isHiRes    = true;
-    entry.hiresWidth  = key.hiresWidth  ? key.hiresWidth  : key.width;
+    entry.sizeBytes = image->width * image->height * 4 * desc.mipLevels;
+    entry.isHiRes = true;
+    entry.hiresWidth = key.hiresWidth ? key.hiresWidth : key.width;
     entry.hiresHeight = key.hiresHeight ? key.hiresHeight : key.height;
     entry.scaleS = 1.0f;
     entry.scaleT = 1.0f;
@@ -1180,4 +1140,6 @@ bool TextureCache::LoadHiResTexture(CachedTexture& entry, const TextureKey& key)
     return true;
 }
 
-}}} // namespace Nova64::Video::Tex
+} // namespace Tex
+} // namespace Video
+} // namespace Nova64

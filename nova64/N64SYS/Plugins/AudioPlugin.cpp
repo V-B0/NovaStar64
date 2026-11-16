@@ -33,8 +33,7 @@ public:
     ~DefaultAudioPlugin() override = default;
 
     // PluginBase interface
-    PluginInfo GetPluginInfo() const override
-    {
+    PluginInfo GetPluginInfo() const override {
         PluginInfo info;
         info.Type = PluginType::Audio;
         info.Version = 0x0102;
@@ -48,16 +47,14 @@ public:
         return info;
     }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         m_Initialized = true;
         Log::info("DefaultAudioPlugin: Initialized");
         return true;
     }
 
-    void Shutdown() override
-    {
+    void Shutdown() override {
         m_Initialized = false;
         m_System = nullptr;
         Log::info("DefaultAudioPlugin: Shutdown");
@@ -106,14 +103,14 @@ private:
  * Matches the N64 audio plugin specification.
  */
 struct AUDIO_INFO_DLL {
-    void*     hWnd;
-    void*     hinst;
-    int32_t   Reserved;
+    void* hWnd;
+    void* hinst;
+    int32_t Reserved;
 
-    uint8_t*  HEADER;
-    uint8_t*  RDRAM;
-    uint8_t*  DMEM;
-    uint8_t*  IMEM;
+    uint8_t* HEADER;
+    uint8_t* RDRAM;
+    uint8_t* DMEM;
+    uint8_t* IMEM;
 
     uint32_t* MI_INTR_REG;
 
@@ -141,13 +138,9 @@ static void CALL DummyCheckInterrupts() {}
  */
 class DynLibAudioPlugin final : public AudioPlugin {
 public:
-    explicit DynLibAudioPlugin(const std::string& path)
-        : m_LibPath(path)
-    {
-    }
+    explicit DynLibAudioPlugin(const std::string& path) : m_LibPath(path) {}
 
-    ~DynLibAudioPlugin() override
-    {
+    ~DynLibAudioPlugin() override {
         Shutdown();
         UnloadDLL();
     }
@@ -155,8 +148,7 @@ public:
     // PluginBase interface
     PluginInfo GetPluginInfo() const override { return m_Info; }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         if (!LoadDLL()) return false;
         if (!LoadFunctions()) return false;
@@ -165,12 +157,9 @@ public:
         return true;
     }
 
-    void Shutdown() override
-    {
-        if (m_Initialized && m_fnRomClosed)
-            m_fnRomClosed();
-        if (m_fnCloseDLL)
-            m_fnCloseDLL();
+    void Shutdown() override {
+        if (m_Initialized && m_fnRomClosed) m_fnRomClosed();
+        if (m_fnCloseDLL) m_fnCloseDLL();
         m_Initialized = false;
     }
 
@@ -178,8 +167,7 @@ public:
     void Pause() override {}
     void Resume() override {}
     bool IsInitialized() const override { return m_Initialized; }
-    void ShowConfigDialog(void* /*hwndParent*/) override
-    {
+    void ShowConfigDialog(void* /*hwndParent*/) override {
         if (m_fnDllConfig) m_fnDllConfig(nullptr);
     }
 
@@ -190,21 +178,17 @@ public:
     bool InitializeAudio(const AudioSettings& /*settings*/) override { return m_Initialized; }
     void SetAudioInfo(const AudioInfo& /*info*/) override {}
 
-    void ProcessAICommand() override
-    {
+    void ProcessAICommand() override {
         if (m_fnAiLenChanged) m_fnAiLenChanged();
     }
 
-    uint32_t GetAILength() override
-    {
+    uint32_t GetAILength() override {
         if (m_fnAiReadLength) return m_fnAiReadLength();
         return 0;
     }
 
-    void SetDACRate(uint32_t /*frequency*/) override
-    {
-        if (m_fnAiDacrateChanged)
-        {
+    void SetDACRate(uint32_t /*frequency*/) override {
+        if (m_fnAiDacrateChanged) {
             // NTSC = 1, PAL = 0
             m_fnAiDacrateChanged(1);
         }
@@ -221,23 +205,24 @@ public:
     void SetMute(bool /*mute*/) override {}
 
 private:
-    bool LoadDLL()
-    {
-        try
-        {
+    bool LoadDLL() {
+        try {
             m_Lib.Load(m_LibPath);
-        }
-        catch (const std::exception& e)
-        {
+        } catch (const std::exception& e) {
             Log::errorf("DynLibAudioPlugin: Failed to load %s: %s", m_LibPath.c_str(), e.what());
             return false;
         }
 
         using GetDllInfoFunc = void(CALL*)(void*);
         auto getDllInfo = m_Lib.GetSymbol<GetDllInfoFunc>("GetDllInfo");
-        if (getDllInfo)
-        {
-            struct { uint16_t Version; uint16_t Type; char Name[100]; int NormalMemory; int MemoryBswaped; } dllInfo{};
+        if (getDllInfo) {
+            struct {
+                uint16_t Version;
+                uint16_t Type;
+                char Name[100];
+                int NormalMemory;
+                int MemoryBswaped;
+            } dllInfo{};
             getDllInfo(&dllInfo);
             m_Info.Type = PluginType::Audio;
             m_Info.Version = dllInfo.Version;
@@ -246,33 +231,29 @@ private:
         return true;
     }
 
-    bool LoadFunctions()
-    {
+    bool LoadFunctions() {
         if (!m_Lib.IsLoaded()) return false;
 
-        m_fnAiLenChanged    = m_Lib.GetSymbol<void(CALL*)()>("AiLenChanged");
-        m_fnAiReadLength    = m_Lib.GetSymbol<uint32_t(CALL*)()>("AiReadLength");
+        m_fnAiLenChanged = m_Lib.GetSymbol<void(CALL*)()>("AiLenChanged");
+        m_fnAiReadLength = m_Lib.GetSymbol<uint32_t(CALL*)()>("AiReadLength");
         m_fnAiDacrateChanged = m_Lib.GetSymbol<void(CALL*)(int)>("AiDacrateChanged");
-        m_fnAiUpdate        = m_Lib.GetSymbol<void(CALL*)(int32_t)>("AiUpdate");
-        m_fnProcessAList    = m_Lib.GetSymbol<void(CALL*)()>("ProcessAList");
-        m_fnRomClosed       = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
-        m_fnCloseDLL        = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
-        m_fnDllConfig       = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
+        m_fnAiUpdate = m_Lib.GetSymbol<void(CALL*)(int32_t)>("AiUpdate");
+        m_fnProcessAList = m_Lib.GetSymbol<void(CALL*)()>("ProcessAList");
+        m_fnRomClosed = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
+        m_fnCloseDLL = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
+        m_fnDllConfig = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
 
-        if (!m_fnAiLenChanged || !m_fnAiDacrateChanged || !m_fnProcessAList)
-        {
+        if (!m_fnAiLenChanged || !m_fnAiDacrateChanged || !m_fnProcessAList) {
             Log::error("DynLibAudioPlugin: Missing required functions");
             return false;
         }
         return true;
     }
 
-    bool Initiate()
-    {
+    bool Initiate() {
         using InitiateAudioFunc = int32_t(CALL*)(AUDIO_INFO_DLL);
         auto initiateAudio = m_Lib.GetSymbol<InitiateAudioFunc>("InitiateAudio");
-        if (!initiateAudio)
-        {
+        if (!initiateAudio) {
             Log::error("DynLibAudioPlugin: Missing InitiateAudio");
             return false;
         }
@@ -283,13 +264,11 @@ private:
         info.Reserved = 1;
         info.CheckInterrupts = DummyCheckInterrupts;
 
-        if (m_System)
-        {
+        if (m_System) {
             auto* regs = m_System->GetRegisters();
             auto* mem = m_System->GetMemory();
 
-            if (regs && mem)
-            {
+            if (regs && mem) {
                 info.RDRAM = mem->Rdram();
                 info.DMEM = mem->Dmem();
                 info.IMEM = mem->Imem();
@@ -298,16 +277,14 @@ private:
 
                 // AI registers (indices 0-5 in m_Audio_Interface)
                 info.AI_DRAM_ADDR_REG = &regs->m_Audio_Interface[0];
-                info.AI_LEN_REG       = &regs->m_Audio_Interface[1];
-                info.AI_CONTROL_REG   = &regs->m_Audio_Interface[2];
-                info.AI_STATUS_REG    = &regs->m_Audio_Interface[3];
-                info.AI_DACRATE_REG   = &regs->m_Audio_Interface[4];
-                info.AI_BITRATE_REG   = &regs->m_Audio_Interface[5];
+                info.AI_LEN_REG = &regs->m_Audio_Interface[1];
+                info.AI_CONTROL_REG = &regs->m_Audio_Interface[2];
+                info.AI_STATUS_REG = &regs->m_Audio_Interface[3];
+                info.AI_DACRATE_REG = &regs->m_Audio_Interface[4];
+                info.AI_BITRATE_REG = &regs->m_Audio_Interface[5];
             }
-        }
-        else
-        {
-            static uint8_t  dummyMem[100]{};
+        } else {
+            static uint8_t dummyMem[100]{};
             static uint32_t dummyReg = 0;
             info.HEADER = dummyMem;
             info.RDRAM = dummyMem;
@@ -325,8 +302,7 @@ private:
         return initiateAudio(info) != 0;
     }
 
-    void UnloadDLL()
-    {
+    void UnloadDLL() {
         m_fnAiLenChanged = nullptr;
         m_fnAiReadLength = nullptr;
         m_fnAiDacrateChanged = nullptr;
@@ -358,13 +334,9 @@ private:
 // Factory functions
 // ============================================================================
 
-std::unique_ptr<AudioPlugin> CreateDefaultAudioPlugin()
-{
-    return std::make_unique<DefaultAudioPlugin>();
-}
+std::unique_ptr<AudioPlugin> CreateDefaultAudioPlugin() { return std::make_unique<DefaultAudioPlugin>(); }
 
-std::unique_ptr<AudioPlugin> CreateAudioPluginFromDLL(const std::string& path)
-{
+std::unique_ptr<AudioPlugin> CreateAudioPluginFromDLL(const std::string& path) {
     return std::make_unique<DynLibAudioPlugin>(path);
 }
 

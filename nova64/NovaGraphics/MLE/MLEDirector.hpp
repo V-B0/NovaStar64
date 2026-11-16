@@ -31,7 +31,7 @@
 #include "../Core/RDPState.hpp"
 #include "../Common/Logger.hpp"
 #include <cstdint>
-#include <cstdlib>  // getenv
+#include <cstdlib> // getenv
 
 namespace Nova64::Video {
 
@@ -39,28 +39,28 @@ namespace Nova64::Video {
 //  MLELevel  —  rendering path classification
 // ─────────────────────────────────────────────────────────────────────────────
 enum class MLELevel : uint8_t {
-    HLE_Fast     = 0,   // Rasterise with current GL/VK pipeline, no accuracy pass
-    HLE_Accurate = 1,   // Full combiner/blender accuracy via GL/VK shaders
-    LLE          = 2,   // True RDP emulation (fallback to HLE_Accurate for now)
+    HLE_Fast = 0,     // Rasterise with current GL/VK pipeline, no accuracy pass
+    HLE_Accurate = 1, // Full combiner/blender accuracy via GL/VK shaders
+    LLE = 2,          // True RDP emulation (fallback to HLE_Accurate for now)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  RenderBatch metadata (minimal view for the director)
 // ─────────────────────────────────────────────────────────────────────────────
 struct BatchInfo {
-    uint32_t drawCallCount  = 0;
-    uint32_t triangleCount  = 0;
+    uint32_t drawCallCount = 0;
+    uint32_t triangleCount = 0;
 
     // Aggregate RDP state from the batch draw calls
-    uint32_t otherModeH     = 0;
-    uint32_t otherModeL     = 0;
-    uint64_t combineModeRaw = 0;    // First combine mode word in batch
-    uint32_t geometryMode   = 0;
+    uint32_t otherModeH = 0;
+    uint32_t otherModeL = 0;
+    uint64_t combineModeRaw = 0; // First combine mode word in batch
+    uint32_t geometryMode = 0;
 
-    bool     hasFillOps     = false;    // Any G_FILLRECT / cycle-type Fill
-    bool     hasCopyOps     = false;    // Any cycle-type Copy
-    bool     hasTexturedTri = false;    // Any triangle with a texture bound
-    bool     hasTranslucent = false;    // Any triangle with ALPHA_CVG_SEL/blending
+    bool hasFillOps = false;     // Any G_FILLRECT / cycle-type Fill
+    bool hasCopyOps = false;     // Any cycle-type Copy
+    bool hasTexturedTri = false; // Any triangle with a texture bound
+    bool hasTranslucent = false; // Any triangle with ALPHA_CVG_SEL/blending
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ public:
 
         // ── Rule 2: Translucent / alpha coverage → HLE_Accurate ───────
         //   ALPHA_CVG_SEL bit 6 of otherModeL, or CVG_TIMES_ALPHA bit 12
-        const bool alphaCvgSel   = (state.otherModeL & (1u << 6)) != 0;
+        const bool alphaCvgSel = (state.otherModeL & (1u << 6)) != 0;
         const bool cvgTimesAlpha = (state.otherModeL & (1u << 12)) != 0;
         if (alphaCvgSel || cvgTimesAlpha || batch.hasTranslucent) {
             LogIfEnabled(MLELevel::HLE_Accurate, "translucent alpha batch");
@@ -119,13 +119,12 @@ private:
         // specific combine mode involving COMBINED_ALPHA.  No geometry flags.
         // (Placeholder hash — calibrate from ROM probe.)
         constexpr uint64_t kBKMirrorCombineHash = 0xFC121824FC65E4FFull;
-        if (batch.combineModeRaw == kBKMirrorCombineHash &&
-            batch.hasTexturedTri && !batch.hasTranslucent) {
+        if (batch.combineModeRaw == kBKMirrorCombineHash && batch.hasTexturedTri && !batch.hasTranslucent) {
             return true;
         }
 
         // Heat haze / OOT fire: cycle-2 mode with LOD_FRAC in alpha channel.
-        constexpr uint64_t kHeatHazeCombineHash  = 0xFC119623FE043020ull;
+        constexpr uint64_t kHeatHazeCombineHash = 0xFC119623FE043020ull;
         if (batch.combineModeRaw == kHeatHazeCombineHash) {
             return true;
         }
@@ -138,7 +137,7 @@ private:
         static const bool kEnabled = []() {
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4996)
+#pragma warning(disable : 4996)
 #endif
             const char* v = std::getenv("NOVA64_MLE_DEBUG");
 #ifdef _MSC_VER
@@ -147,9 +146,9 @@ private:
             return v && v[0] != '0';
         }();
         if (!kEnabled) return;
-        const char* levelStr = (level == MLELevel::HLE_Fast)     ? "HLE_Fast"
-                             : (level == MLELevel::HLE_Accurate) ? "HLE_Accurate"
-                             :                                      "LLE";
+        const char* levelStr = (level == MLELevel::HLE_Fast)       ? "HLE_Fast"
+                               : (level == MLELevel::HLE_Accurate) ? "HLE_Accurate"
+                                                                   : "LLE";
         Logger::Info("[MLE] level=%s  reason=%s", levelStr, reason);
     }
 };

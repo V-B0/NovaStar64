@@ -10,21 +10,19 @@
 #include <sstream>
 #include <cassert>
 
-namespace Nova64 { namespace Video { namespace Shader {
+namespace Nova64 {
+namespace Video {
+namespace Shader {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTRUCTION / DESTRUCTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-ShaderGenerator::ShaderGenerator()
-    : m_language(ShaderLanguage::GLSL_460)
-{}
+ShaderGenerator::ShaderGenerator() : m_language(ShaderLanguage::GLSL_460) {}
 
 ShaderGenerator::~ShaderGenerator() = default;
 
-void ShaderGenerator::Initialize(ShaderLanguage language) {
-    m_language = language;
-}
+void ShaderGenerator::Initialize(ShaderLanguage language) { m_language = language; }
 
 void ShaderGenerator::Shutdown() {
     // Nothing to clean up currently
@@ -36,11 +34,11 @@ void ShaderGenerator::Shutdown() {
 
 std::string ShaderGenerator::GetVersionDirective() const {
     switch (m_language) {
-        case ShaderLanguage::GLSL_460: return "#version 460 core\n";
-        case ShaderLanguage::GLSL_450: return "#version 450 core\n";
-        case ShaderLanguage::HLSL_SM5: return ""; // HLSL doesn't use a version directive
-        case ShaderLanguage::SPIRV:    return "#version 460 core\n"; // GLSL for SPIR-V cross-compile
-        default:                       return "#version 460 core\n";
+    case ShaderLanguage::GLSL_460: return "#version 460 core\n";
+    case ShaderLanguage::GLSL_450: return "#version 450 core\n";
+    case ShaderLanguage::HLSL_SM5: return "";                    // HLSL doesn't use a version directive
+    case ShaderLanguage::SPIRV:    return "#version 460 core\n"; // GLSL for SPIR-V cross-compile
+    default:                       return "#version 460 core\n";
     }
 }
 
@@ -48,26 +46,25 @@ std::string ShaderGenerator::GetHLSLCompatPreamble() const {
     // GLSL → HLSL compatibility defines.
     // This lets the combiner/blender code (which uses GLSL syntax) compile
     // unchanged as HLSL. The combiner tables emit vec4/vec3/texture().
-    return
-        "// GLSL → HLSL compatibility\n"
-        "#define vec2 float2\n"
-        "#define vec3 float3\n"
-        "#define vec4 float4\n"
-        "#define mat4 float4x4\n"
-        "#define mat3 float3x3\n"
-        "#define mix lerp\n"
-        "#define fract frac\n"
-        "#define mod fmod\n"
-        "#define dFdx ddx\n"
-        "#define dFdy ddy\n"
-        "#define ivec2 int2\n"
-        "#define uvec4 uint4\n"
-        "float4 texture(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }\n"
-        "#define texture(sampler, uv) sampler.Sample(sLinear, uv)\n"
-        "#define textureLod(sampler, uv, lod) sampler.SampleLevel(sLinear, uv, lod)\n"
-        "#define gl_FragCoord input.position\n"
-        "#define discard clip(-1)\n"
-        "\n";
+    return "// GLSL → HLSL compatibility\n"
+           "#define vec2 float2\n"
+           "#define vec3 float3\n"
+           "#define vec4 float4\n"
+           "#define mat4 float4x4\n"
+           "#define mat3 float3x3\n"
+           "#define mix lerp\n"
+           "#define fract frac\n"
+           "#define mod fmod\n"
+           "#define dFdx ddx\n"
+           "#define dFdy ddy\n"
+           "#define ivec2 int2\n"
+           "#define uvec4 uint4\n"
+           "float4 texture(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }\n"
+           "#define texture(sampler, uv) sampler.Sample(sLinear, uv)\n"
+           "#define textureLod(sampler, uv, lod) sampler.SampleLevel(sLinear, uv, lod)\n"
+           "#define gl_FragCoord input.position\n"
+           "#define discard clip(-1)\n"
+           "\n";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,277 +73,271 @@ std::string ShaderGenerator::GetHLSLCompatPreamble() const {
 
 std::string ShaderGenerator::GetCommonUniforms() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        return
-            "cbuffer NovaConstants : register(b0) {\n"
-            "    float4x4 uMVPMatrix;\n"
-            "    float4x4 uModelView;\n"
-            "    float4x4 uProjection;\n"
-            "    float4 uPrimColor;\n"
-            "    float4 uEnvColor;\n"
-            "    float4 uFogColor;\n"
-            "    float4 uBlendColor;\n"
-            "    float4 uFillColor;\n"
-            "    float  uPrimLOD;\n"
-            "    float  uPrimLODFrac;\n"
-            "    float  uK4;\n"
-            "    float  uK5;\n"
-            "    float4 uConvertK;\n"
-            "    float2 uTexScale0;\n"
-            "    float2 uTexScale1;\n"
-            "    float2 uTexOffset0;\n"
-            "    float2 uTexOffset1;\n"
-            "    float4 uTexClamp0;\n"
-            "    float4 uTexClamp1;\n"
-            "    float2 uTexMask0;\n"
-            "    float2 uTexMask1;\n"
-            "    float2 uTexSize0;\n"
-            "    float2 uTexSize1;\n"
-            "    float  uAlphaRef;\n"
-            "    float  uFogMultiplier;\n"
-            "    float  uFogOffset;\n"
-            "    float  uDepthScale;\n"
-            "    float  uDepthOffset;\n"
-            "    float  uPrimDepth;\n"
-            "    float2 uScreenSize;\n"
-            "    float2 uInvScreenSize;\n"
-            "    int    uFrameCount;\n"
-            "    float  uPrimDeltaZ;\n"
-            "    float2 uResolutionScale;\n"
-            "    float3 uCenterColor;\n"
-            "    float  _pad1;\n"
-            "    float3 uScaleColor;\n"
-            "    float  _pad2;\n"
-            "    float2 uGPUScale0;\n"
-            "    float2 uGPUScale1;\n"
-            "    float2 uScreenScale;\n"
-            "    float3 uKeyWidth;\n"
-            "    float  _pad3;\n"
-            "    float  uMinLod;\n"
-            "    int    uMaxTile;\n"
-            "    int    uTextureDetail;\n"
-            "    int    uFogUsage;\n"
-            "    int    uScreenSpaceTriangle;\n"
-            "    int    uTexturePersp;\n"
-            "    int    uFbMonochrome0;\n"
-            "    int    uFbMonochrome1;\n"
-            "    int    uFbFixedAlpha0;\n"
-            "    int    uFbFixedAlpha1;\n"
-            "    int    uUseTexCoordBounds;\n"
-            "    int    uZMode;\n"
-            "    float  _pad3;\n"
-            "    float4 uTexCoordBounds0;\n"
-            "    float4 uTexCoordBounds1;\n"
-            "};\n";
+        return "cbuffer NovaConstants : register(b0) {\n"
+               "    float4x4 uMVPMatrix;\n"
+               "    float4x4 uModelView;\n"
+               "    float4x4 uProjection;\n"
+               "    float4 uPrimColor;\n"
+               "    float4 uEnvColor;\n"
+               "    float4 uFogColor;\n"
+               "    float4 uBlendColor;\n"
+               "    float4 uFillColor;\n"
+               "    float  uPrimLOD;\n"
+               "    float  uPrimLODFrac;\n"
+               "    float  uK4;\n"
+               "    float  uK5;\n"
+               "    float4 uConvertK;\n"
+               "    float2 uTexScale0;\n"
+               "    float2 uTexScale1;\n"
+               "    float2 uTexOffset0;\n"
+               "    float2 uTexOffset1;\n"
+               "    float4 uTexClamp0;\n"
+               "    float4 uTexClamp1;\n"
+               "    float2 uTexMask0;\n"
+               "    float2 uTexMask1;\n"
+               "    float2 uTexSize0;\n"
+               "    float2 uTexSize1;\n"
+               "    float  uAlphaRef;\n"
+               "    float  uFogMultiplier;\n"
+               "    float  uFogOffset;\n"
+               "    float  uDepthScale;\n"
+               "    float  uDepthOffset;\n"
+               "    float  uPrimDepth;\n"
+               "    float2 uScreenSize;\n"
+               "    float2 uInvScreenSize;\n"
+               "    int    uFrameCount;\n"
+               "    float  uPrimDeltaZ;\n"
+               "    float2 uResolutionScale;\n"
+               "    float3 uCenterColor;\n"
+               "    float  _pad1;\n"
+               "    float3 uScaleColor;\n"
+               "    float  _pad2;\n"
+               "    float2 uGPUScale0;\n"
+               "    float2 uGPUScale1;\n"
+               "    float2 uScreenScale;\n"
+               "    float3 uKeyWidth;\n"
+               "    float  _pad3;\n"
+               "    float  uMinLod;\n"
+               "    int    uMaxTile;\n"
+               "    int    uTextureDetail;\n"
+               "    int    uFogUsage;\n"
+               "    int    uScreenSpaceTriangle;\n"
+               "    int    uTexturePersp;\n"
+               "    int    uFbMonochrome0;\n"
+               "    int    uFbMonochrome1;\n"
+               "    int    uFbFixedAlpha0;\n"
+               "    int    uFbFixedAlpha1;\n"
+               "    int    uUseTexCoordBounds;\n"
+               "    int    uZMode;\n"
+               "    float  _pad3;\n"
+               "    float4 uTexCoordBounds0;\n"
+               "    float4 uTexCoordBounds1;\n"
+               "};\n";
     }
     // ── Vulkan / SPIR-V path: all uniforms packed in a single UBO ────────
     // std140 layout; all 16-byte aligned. vec2 pairs packed into vec4.
     // #define aliases expose the original uniform names to shader body code.
     if (m_language == ShaderLanguage::SPIRV) {
-        return
-            "layout(set=0, binding=0, std140) uniform N64UBO {\n"
-            "    mat4  uMVPMatrix;\n"         //  [0]
-            "    mat4  uModelView;\n"         //  [64]
-            "    mat4  uProjection;\n"        //  [128]
-            "    vec4  uPrimColor;\n"         //  [192]
-            "    vec4  uEnvColor;\n"          //  [208]
-            "    vec4  uFogColor;\n"          //  [224]
-            "    vec4  uBlendColor;\n"        //  [240]
-            "    vec4  uFillColor;\n"         //  [256]
-            "    vec4  uCenterColor;\n"       //  [272] xyz used
-            "    vec4  uScaleColor;\n"        //  [288] xyz used
-            "    vec4  uConvertK;\n"          //  [304]
-            "    vec4  uTexClamp0;\n"         //  [320]
-            "    vec4  uTexClamp1;\n"         //  [336]
-            "    vec4  uTexCoordBounds0;\n"   //  [352]
-            "    vec4  uTexCoordBounds1;\n"   //  [368]
-            "    vec4  uKeyWidth_MinLod;\n"   //  [384] xyz=uKeyWidth w=uMinLod
-            "    vec4  uTexScale01;\n"        //  [400] xy=scale0 zw=scale1
-            "    vec4  uTexOffset01;\n"       //  [416] xy=off0 zw=off1
-            "    vec4  uTexMask01;\n"         //  [432] xy=mask0 zw=mask1
-            "    vec4  uTexSize01;\n"         //  [448] xy=size0 zw=size1
-            "    vec4  uGPUScale01;\n"        //  [464] xy=gpu0 zw=gpu1
-            "    vec4  uScreenSizes;\n"       //  [480] xy=screenSz zw=invScreenSz
-            "    vec4  uScreenScaleResScale;\n" // [496] xy=screenScale zw=resScale
-            "    vec4  uPrimLODs_K4K5;\n"    //  [512] x=primLOD y=primLODFrac z=K4 w=K5
-            "    vec4  uFogParams;\n"         //  [528] x=alphaRef y=fogMult z=fogOff w=primDepth
-            "    vec4  uDepthParams;\n"       //  [544] x=depthScale y=depthOff z=primDeltaZ w=0
-            "    ivec4 uIntBits0;\n"          //  [560] x=frameCount y=zMode z=useTexCoordBounds w=texPersp
-            "    ivec4 uIntBits1;\n"          //  [576] x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
-            "    ivec4 uIntBits2;\n"          //  [592] x=fogUsage y=sst z=texDetail w=maxTile
-            "    ivec4 uIntBits3;\n"          //  [608] x=debugOutput y=texCvgAlpha z=texHiRes (bit0 tex0, bit1 tex1) w=0
-            "} uN64;\n"
-            // Aliases mapping original uniform names → UBO fields
-            "#define uMVPMatrix           uN64.uMVPMatrix\n"
-            "#define uModelView           uN64.uModelView\n"
-            "#define uProjection          uN64.uProjection\n"
-            "#define uPrimColor           uN64.uPrimColor\n"
-            "#define uEnvColor            uN64.uEnvColor\n"
-            "#define uFogColor            uN64.uFogColor\n"
-            "#define uBlendColor          uN64.uBlendColor\n"
-            "#define uFillColor           uN64.uFillColor\n"
-            "#define uCenterColor         uN64.uCenterColor.xyz\n"
-            "#define uScaleColor          uN64.uScaleColor.xyz\n"
-            "#define uConvertK            uN64.uConvertK\n"
-            "#define uTexClamp0           uN64.uTexClamp0\n"
-            "#define uTexClamp1           uN64.uTexClamp1\n"
-            "#define uTexCoordBounds0     uN64.uTexCoordBounds0\n"
-            "#define uTexCoordBounds1     uN64.uTexCoordBounds1\n"
-            "#define uKeyWidth            uN64.uKeyWidth_MinLod.xyz\n"
-            "#define uMinLod              uN64.uKeyWidth_MinLod.w\n"
-            "#define uTexScale0           uN64.uTexScale01.xy\n"
-            "#define uTexScale1           uN64.uTexScale01.zw\n"
-            "#define uTexOffset0          uN64.uTexOffset01.xy\n"
-            "#define uTexOffset1          uN64.uTexOffset01.zw\n"
-            "#define uTexMask0            uN64.uTexMask01.xy\n"
-            "#define uTexMask1            uN64.uTexMask01.zw\n"
-            "#define uTexSize0            uN64.uTexSize01.xy\n"
-            "#define uTexSize1            uN64.uTexSize01.zw\n"
-            "#define uGPUScale0           uN64.uGPUScale01.xy\n"
-            "#define uGPUScale1           uN64.uGPUScale01.zw\n"
-            "#define uScreenSize          uN64.uScreenSizes.xy\n"
-            "#define uInvScreenSize       uN64.uScreenSizes.zw\n"
-            "#define uScreenScale         uN64.uScreenScaleResScale.xy\n"
-            "#define uResolutionScale     uN64.uScreenScaleResScale.zw\n"
-            "#define uPrimLOD             uN64.uPrimLODs_K4K5.x\n"
-            "#define uPrimLODFrac         uN64.uPrimLODs_K4K5.y\n"
-            "#define uK4                  uN64.uPrimLODs_K4K5.z\n"
-            "#define uK5                  uN64.uPrimLODs_K4K5.w\n"
-            "#define uAlphaRef            uN64.uFogParams.x\n"
-            "#define uFogMultiplier       uN64.uFogParams.y\n"
-            "#define uFogOffset           uN64.uFogParams.z\n"
-            "#define uPrimDepth           uN64.uFogParams.w\n"
-            "#define uDepthScale          uN64.uDepthParams.x\n"
-            "#define uDepthOffset         uN64.uDepthParams.y\n"
-            "#define uPrimDeltaZ          uN64.uDepthParams.z\n"
-            "#define uFrameCount          uN64.uIntBits0.x\n"
-            "#define uZMode               uN64.uIntBits0.y\n"
-            "#define uUseTexCoordBounds   uN64.uIntBits0.z\n"
-            "#define uTexturePersp        uN64.uIntBits0.w\n"
-            "#define uFbMonochrome0       uN64.uIntBits1.x\n"
-            "#define uFbMonochrome1       uN64.uIntBits1.y\n"
-            "#define uFbFixedAlpha0       uN64.uIntBits1.z\n"
-            "#define uFbFixedAlpha1       uN64.uIntBits1.w\n"
-            "#define uFogUsage            uN64.uIntBits2.x\n"
-            "#define uScreenSpaceTriangle uN64.uIntBits2.y\n"
-            "#define uTextureDetail       uN64.uIntBits2.z\n"
-            "#define uMaxTile             uN64.uIntBits2.w\n"
-            "#define uDebugOutput         uN64.uIntBits3.x\n"
-            "#define uTexCvgAlpha         uN64.uIntBits3.y\n"
-            "#define uTexHiRes            uN64.uIntBits3.z\n";
+        return "layout(set=0, binding=0, std140) uniform N64UBO {\n"
+               "    mat4  uMVPMatrix;\n"           //  [0]
+               "    mat4  uModelView;\n"           //  [64]
+               "    mat4  uProjection;\n"          //  [128]
+               "    vec4  uPrimColor;\n"           //  [192]
+               "    vec4  uEnvColor;\n"            //  [208]
+               "    vec4  uFogColor;\n"            //  [224]
+               "    vec4  uBlendColor;\n"          //  [240]
+               "    vec4  uFillColor;\n"           //  [256]
+               "    vec4  uCenterColor;\n"         //  [272] xyz used
+               "    vec4  uScaleColor;\n"          //  [288] xyz used
+               "    vec4  uConvertK;\n"            //  [304]
+               "    vec4  uTexClamp0;\n"           //  [320]
+               "    vec4  uTexClamp1;\n"           //  [336]
+               "    vec4  uTexCoordBounds0;\n"     //  [352]
+               "    vec4  uTexCoordBounds1;\n"     //  [368]
+               "    vec4  uKeyWidth_MinLod;\n"     //  [384] xyz=uKeyWidth w=uMinLod
+               "    vec4  uTexScale01;\n"          //  [400] xy=scale0 zw=scale1
+               "    vec4  uTexOffset01;\n"         //  [416] xy=off0 zw=off1
+               "    vec4  uTexMask01;\n"           //  [432] xy=mask0 zw=mask1
+               "    vec4  uTexSize01;\n"           //  [448] xy=size0 zw=size1
+               "    vec4  uGPUScale01;\n"          //  [464] xy=gpu0 zw=gpu1
+               "    vec4  uScreenSizes;\n"         //  [480] xy=screenSz zw=invScreenSz
+               "    vec4  uScreenScaleResScale;\n" // [496] xy=screenScale zw=resScale
+               "    vec4  uPrimLODs_K4K5;\n"       //  [512] x=primLOD y=primLODFrac z=K4 w=K5
+               "    vec4  uFogParams;\n"           //  [528] x=alphaRef y=fogMult z=fogOff w=primDepth
+               "    vec4  uDepthParams;\n"         //  [544] x=depthScale y=depthOff z=primDeltaZ w=0
+               "    ivec4 uIntBits0;\n"            //  [560] x=frameCount y=zMode z=useTexCoordBounds w=texPersp
+               "    ivec4 uIntBits1;\n"            //  [576] x=fbMono0 y=fbMono1 z=fbFixAlpha0 w=fbFixAlpha1
+               "    ivec4 uIntBits2;\n"            //  [592] x=fogUsage y=sst z=texDetail w=maxTile
+               "    ivec4 uIntBits3;\n" //  [608] x=debugOutput y=texCvgAlpha z=texHiRes (bit0 tex0, bit1 tex1) w=0
+               "} uN64;\n"
+               // Aliases mapping original uniform names → UBO fields
+               "#define uMVPMatrix           uN64.uMVPMatrix\n"
+               "#define uModelView           uN64.uModelView\n"
+               "#define uProjection          uN64.uProjection\n"
+               "#define uPrimColor           uN64.uPrimColor\n"
+               "#define uEnvColor            uN64.uEnvColor\n"
+               "#define uFogColor            uN64.uFogColor\n"
+               "#define uBlendColor          uN64.uBlendColor\n"
+               "#define uFillColor           uN64.uFillColor\n"
+               "#define uCenterColor         uN64.uCenterColor.xyz\n"
+               "#define uScaleColor          uN64.uScaleColor.xyz\n"
+               "#define uConvertK            uN64.uConvertK\n"
+               "#define uTexClamp0           uN64.uTexClamp0\n"
+               "#define uTexClamp1           uN64.uTexClamp1\n"
+               "#define uTexCoordBounds0     uN64.uTexCoordBounds0\n"
+               "#define uTexCoordBounds1     uN64.uTexCoordBounds1\n"
+               "#define uKeyWidth            uN64.uKeyWidth_MinLod.xyz\n"
+               "#define uMinLod              uN64.uKeyWidth_MinLod.w\n"
+               "#define uTexScale0           uN64.uTexScale01.xy\n"
+               "#define uTexScale1           uN64.uTexScale01.zw\n"
+               "#define uTexOffset0          uN64.uTexOffset01.xy\n"
+               "#define uTexOffset1          uN64.uTexOffset01.zw\n"
+               "#define uTexMask0            uN64.uTexMask01.xy\n"
+               "#define uTexMask1            uN64.uTexMask01.zw\n"
+               "#define uTexSize0            uN64.uTexSize01.xy\n"
+               "#define uTexSize1            uN64.uTexSize01.zw\n"
+               "#define uGPUScale0           uN64.uGPUScale01.xy\n"
+               "#define uGPUScale1           uN64.uGPUScale01.zw\n"
+               "#define uScreenSize          uN64.uScreenSizes.xy\n"
+               "#define uInvScreenSize       uN64.uScreenSizes.zw\n"
+               "#define uScreenScale         uN64.uScreenScaleResScale.xy\n"
+               "#define uResolutionScale     uN64.uScreenScaleResScale.zw\n"
+               "#define uPrimLOD             uN64.uPrimLODs_K4K5.x\n"
+               "#define uPrimLODFrac         uN64.uPrimLODs_K4K5.y\n"
+               "#define uK4                  uN64.uPrimLODs_K4K5.z\n"
+               "#define uK5                  uN64.uPrimLODs_K4K5.w\n"
+               "#define uAlphaRef            uN64.uFogParams.x\n"
+               "#define uFogMultiplier       uN64.uFogParams.y\n"
+               "#define uFogOffset           uN64.uFogParams.z\n"
+               "#define uPrimDepth           uN64.uFogParams.w\n"
+               "#define uDepthScale          uN64.uDepthParams.x\n"
+               "#define uDepthOffset         uN64.uDepthParams.y\n"
+               "#define uPrimDeltaZ          uN64.uDepthParams.z\n"
+               "#define uFrameCount          uN64.uIntBits0.x\n"
+               "#define uZMode               uN64.uIntBits0.y\n"
+               "#define uUseTexCoordBounds   uN64.uIntBits0.z\n"
+               "#define uTexturePersp        uN64.uIntBits0.w\n"
+               "#define uFbMonochrome0       uN64.uIntBits1.x\n"
+               "#define uFbMonochrome1       uN64.uIntBits1.y\n"
+               "#define uFbFixedAlpha0       uN64.uIntBits1.z\n"
+               "#define uFbFixedAlpha1       uN64.uIntBits1.w\n"
+               "#define uFogUsage            uN64.uIntBits2.x\n"
+               "#define uScreenSpaceTriangle uN64.uIntBits2.y\n"
+               "#define uTextureDetail       uN64.uIntBits2.z\n"
+               "#define uMaxTile             uN64.uIntBits2.w\n"
+               "#define uDebugOutput         uN64.uIntBits3.x\n"
+               "#define uTexCvgAlpha         uN64.uIntBits3.y\n"
+               "#define uTexHiRes            uN64.uIntBits3.z\n";
     }
-    return
-        "uniform mat4  uMVPMatrix;\n"
-        "uniform mat4  uModelView;\n"
-        "uniform mat4  uProjection;\n"
-        "\n"
-        "uniform vec4  uPrimColor;\n"
-        "uniform vec4  uEnvColor;\n"
-        "uniform vec4  uFogColor;\n"
-        "uniform vec4  uBlendColor;\n"
-        "uniform vec4  uFillColor;\n"
-        "uniform vec3  uCenterColor;\n"
-        "uniform vec3  uScaleColor;\n"
-        "uniform float uPrimLOD;\n"
-        "uniform float uPrimLODFrac;\n"
-        "uniform float uK4;\n"
-        "uniform float uK5;\n"
-        "uniform vec4  uConvertK;\n"
-        "\n"
-        "uniform vec2  uTexScale0;\n"
-        "uniform vec2  uTexScale1;\n"
-        "uniform vec2  uTexOffset0;\n"
-        "uniform vec2  uTexOffset1;\n"
-        "uniform vec4  uTexClamp0;\n"
-        "uniform vec4  uTexClamp1;\n"
-        "uniform vec2  uTexMask0;\n"
-        "uniform vec2  uTexMask1;\n"
-        "uniform vec2  uTexSize0;\n"
-        "uniform vec2  uTexSize1;\n"
-        "uniform vec2  uGPUScale0;\n"
-        "uniform vec2  uGPUScale1;\n"
-        "\n"
-        "uniform float uAlphaRef;\n"
-        "uniform float uFogMultiplier;\n"
-        "uniform float uFogOffset;\n"
-        "uniform float uDepthScale;\n"
-        "uniform float uDepthOffset;\n"
-        "uniform float uPrimDepth;\n"
-        "uniform vec2  uScreenSize;\n"
-        "uniform vec2  uInvScreenSize;\n"
-        "uniform int   uFrameCount;\n"
-        "uniform int   uZMode;\n"
-        "uniform float uPrimDeltaZ;\n"
-        "uniform vec4  uTexCoordBounds0;\n"
-        "uniform vec4  uTexCoordBounds1;\n"
-        "uniform int   uUseTexCoordBounds;\n"
-        "uniform int   uTexturePersp;\n"
-        "uniform int   uFbMonochrome0;\n"
-        "uniform int   uFbMonochrome1;\n"
-        "uniform int   uFbFixedAlpha0;\n"
-        "uniform int   uFbFixedAlpha1;\n"
-        "uniform vec2  uScreenScale;\n"
-        "uniform vec3  uKeyWidth;\n"
-        "uniform float uMinLod;\n"
-        "uniform int   uMaxTile;\n"
-        "uniform int   uTextureDetail;\n"
-        "uniform int   uFogUsage;\n"
-        "uniform int   uScreenSpaceTriangle;\n"
-        "uniform vec2  uResolutionScale;\n"
-        "uniform int   uDebugOutput;\n"
-        "uniform int   uTexCvgAlpha;\n"
-        "uniform int   uTexHiRes;\n";
+    return "uniform mat4  uMVPMatrix;\n"
+           "uniform mat4  uModelView;\n"
+           "uniform mat4  uProjection;\n"
+           "\n"
+           "uniform vec4  uPrimColor;\n"
+           "uniform vec4  uEnvColor;\n"
+           "uniform vec4  uFogColor;\n"
+           "uniform vec4  uBlendColor;\n"
+           "uniform vec4  uFillColor;\n"
+           "uniform vec3  uCenterColor;\n"
+           "uniform vec3  uScaleColor;\n"
+           "uniform float uPrimLOD;\n"
+           "uniform float uPrimLODFrac;\n"
+           "uniform float uK4;\n"
+           "uniform float uK5;\n"
+           "uniform vec4  uConvertK;\n"
+           "\n"
+           "uniform vec2  uTexScale0;\n"
+           "uniform vec2  uTexScale1;\n"
+           "uniform vec2  uTexOffset0;\n"
+           "uniform vec2  uTexOffset1;\n"
+           "uniform vec4  uTexClamp0;\n"
+           "uniform vec4  uTexClamp1;\n"
+           "uniform vec2  uTexMask0;\n"
+           "uniform vec2  uTexMask1;\n"
+           "uniform vec2  uTexSize0;\n"
+           "uniform vec2  uTexSize1;\n"
+           "uniform vec2  uGPUScale0;\n"
+           "uniform vec2  uGPUScale1;\n"
+           "\n"
+           "uniform float uAlphaRef;\n"
+           "uniform float uFogMultiplier;\n"
+           "uniform float uFogOffset;\n"
+           "uniform float uDepthScale;\n"
+           "uniform float uDepthOffset;\n"
+           "uniform float uPrimDepth;\n"
+           "uniform vec2  uScreenSize;\n"
+           "uniform vec2  uInvScreenSize;\n"
+           "uniform int   uFrameCount;\n"
+           "uniform int   uZMode;\n"
+           "uniform float uPrimDeltaZ;\n"
+           "uniform vec4  uTexCoordBounds0;\n"
+           "uniform vec4  uTexCoordBounds1;\n"
+           "uniform int   uUseTexCoordBounds;\n"
+           "uniform int   uTexturePersp;\n"
+           "uniform int   uFbMonochrome0;\n"
+           "uniform int   uFbMonochrome1;\n"
+           "uniform int   uFbFixedAlpha0;\n"
+           "uniform int   uFbFixedAlpha1;\n"
+           "uniform vec2  uScreenScale;\n"
+           "uniform vec3  uKeyWidth;\n"
+           "uniform float uMinLod;\n"
+           "uniform int   uMaxTile;\n"
+           "uniform int   uTextureDetail;\n"
+           "uniform int   uFogUsage;\n"
+           "uniform int   uScreenSpaceTriangle;\n"
+           "uniform vec2  uResolutionScale;\n"
+           "uniform int   uDebugOutput;\n"
+           "uniform int   uTexCvgAlpha;\n"
+           "uniform int   uTexHiRes;\n";
 }
 
 std::string ShaderGenerator::GetTextureUniforms() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        return
-            "Texture2D    tTexture0     : register(t0);\n"
-            "Texture2D    tTexture1     : register(t1);\n"
-            "Texture2D    tTLUT0        : register(t2);\n"
-            "Texture2D    tTLUT1        : register(t3);\n"
-            "Texture2D    tDepthTexture : register(t4);\n"
-            "Texture2D    tNoiseTexture : register(t5);\n"
-            "Texture2D    tDitherTexture: register(t6);\n"
-            "Texture2D    tFBTexture    : register(t7);\n"
-            "SamplerState sLinear       : register(s0);\n"
-            "SamplerState sPoint        : register(s1);\n"
-            "\n"
-            "// GLSL texture() equivalent macros\n"
-            "#define texture2D_0(uv)  tTexture0.Sample(sLinear, uv)\n"
-            "#define texture2D_1(uv)  tTexture1.Sample(sLinear, uv)\n"
-            "#define texture2D_fb(uv) tFBTexture.Sample(sLinear, uv)\n"
-            "#define texture2D_depth(uv) tDepthTexture.Sample(sPoint, uv)\n"
-            "#define texture2D_noise(uv) tNoiseTexture.Sample(sPoint, uv)\n"
-            "#define texture2D_dither(uv) tDitherTexture.Sample(sPoint, uv)\n";
+        return "Texture2D    tTexture0     : register(t0);\n"
+               "Texture2D    tTexture1     : register(t1);\n"
+               "Texture2D    tTLUT0        : register(t2);\n"
+               "Texture2D    tTLUT1        : register(t3);\n"
+               "Texture2D    tDepthTexture : register(t4);\n"
+               "Texture2D    tNoiseTexture : register(t5);\n"
+               "Texture2D    tDitherTexture: register(t6);\n"
+               "Texture2D    tFBTexture    : register(t7);\n"
+               "SamplerState sLinear       : register(s0);\n"
+               "SamplerState sPoint        : register(s1);\n"
+               "\n"
+               "// GLSL texture() equivalent macros\n"
+               "#define texture2D_0(uv)  tTexture0.Sample(sLinear, uv)\n"
+               "#define texture2D_1(uv)  tTexture1.Sample(sLinear, uv)\n"
+               "#define texture2D_fb(uv) tFBTexture.Sample(sLinear, uv)\n"
+               "#define texture2D_depth(uv) tDepthTexture.Sample(sPoint, uv)\n"
+               "#define texture2D_noise(uv) tNoiseTexture.Sample(sPoint, uv)\n"
+               "#define texture2D_dither(uv) tDitherTexture.Sample(sPoint, uv)\n";
     }
-    return
-        "layout(binding = 0) uniform sampler2D uTexture0;\n"
-        "layout(binding = 1) uniform sampler2D uTexture1;\n"
-        "layout(binding = 2) uniform sampler2D uTLUT0;\n"
-        "layout(binding = 3) uniform sampler2D uTLUT1;\n"
-        "layout(binding = 4) uniform sampler2D uDepthTexture;\n"
-        "layout(binding = 5) uniform sampler2D uNoiseTexture;\n"
-        "layout(binding = 6) uniform sampler2D uDitherTexture;\n"
-        "layout(binding = 7) uniform sampler2D uFBTexture;\n"
-        "layout(binding = 8) uniform sampler2D uZImageTex;\n"
-        "layout(binding = 9) uniform sampler2D uDeltaZImageTex;\n"
-        "layout(binding = 10) uniform sampler2D uZLUT;\n";
+    return "layout(binding = 0) uniform sampler2D uTexture0;\n"
+           "layout(binding = 1) uniform sampler2D uTexture1;\n"
+           "layout(binding = 2) uniform sampler2D uTLUT0;\n"
+           "layout(binding = 3) uniform sampler2D uTLUT1;\n"
+           "layout(binding = 4) uniform sampler2D uDepthTexture;\n"
+           "layout(binding = 5) uniform sampler2D uNoiseTexture;\n"
+           "layout(binding = 6) uniform sampler2D uDitherTexture;\n"
+           "layout(binding = 7) uniform sampler2D uFBTexture;\n"
+           "layout(binding = 8) uniform sampler2D uZImageTex;\n"
+           "layout(binding = 9) uniform sampler2D uDeltaZImageTex;\n"
+           "layout(binding = 10) uniform sampler2D uZLUT;\n";
 }
 
 // Vulkan-specific texture uniforms: binding 0 = UBO, textures start at 1.
 std::string ShaderGenerator::GetTextureUniformsVK() const {
-    return
-        "layout(set=0, binding=1)  uniform sampler2D uTexture0;\n"
-        "layout(set=0, binding=2)  uniform sampler2D uTexture1;\n"
-        "layout(set=0, binding=3)  uniform sampler2D uTLUT0;\n"
-        "layout(set=0, binding=4)  uniform sampler2D uTLUT1;\n"
-        "layout(set=0, binding=5)  uniform sampler2D uDepthTexture;\n"
-        "layout(set=0, binding=6)  uniform sampler2D uNoiseTexture;\n"
-        "layout(set=0, binding=7)  uniform sampler2D uDitherTexture;\n"
-        "layout(set=0, binding=8)  uniform sampler2D uFBTexture;\n"
-        "layout(set=0, binding=9)  uniform sampler2D uZImageTex;\n"
-        "layout(set=0, binding=10) uniform sampler2D uDeltaZImageTex;\n"
-        "layout(set=0, binding=11) uniform sampler2D uZLUT;\n";
+    return "layout(set=0, binding=1)  uniform sampler2D uTexture0;\n"
+           "layout(set=0, binding=2)  uniform sampler2D uTexture1;\n"
+           "layout(set=0, binding=3)  uniform sampler2D uTLUT0;\n"
+           "layout(set=0, binding=4)  uniform sampler2D uTLUT1;\n"
+           "layout(set=0, binding=5)  uniform sampler2D uDepthTexture;\n"
+           "layout(set=0, binding=6)  uniform sampler2D uNoiseTexture;\n"
+           "layout(set=0, binding=7)  uniform sampler2D uDitherTexture;\n"
+           "layout(set=0, binding=8)  uniform sampler2D uFBTexture;\n"
+           "layout(set=0, binding=9)  uniform sampler2D uZImageTex;\n"
+           "layout(set=0, binding=10) uniform sampler2D uDeltaZImageTex;\n"
+           "layout(set=0, binding=11) uniform sampler2D uZLUT;\n";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -355,105 +346,97 @@ std::string ShaderGenerator::GetTextureUniformsVK() const {
 
 std::string ShaderGenerator::GetVertexInputs() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        return
-            "struct VSInput {\n"
-            "    float4 aPosition  : POSITION;\n"
-            "    float4 aColor     : COLOR;\n"
-            "    float2 aTexCoord0 : TEXCOORD0;\n"
-            "    float2 aTexCoord1 : TEXCOORD1;\n"
-            "    float  aFog       : FOG;\n"
-            "    float  aClipW     : TEXCOORD2;\n"
-            "    float2 aBaryCoord : TEXCOORD3;\n"
-            "};\n";
+        return "struct VSInput {\n"
+               "    float4 aPosition  : POSITION;\n"
+               "    float4 aColor     : COLOR;\n"
+               "    float2 aTexCoord0 : TEXCOORD0;\n"
+               "    float2 aTexCoord1 : TEXCOORD1;\n"
+               "    float  aFog       : FOG;\n"
+               "    float  aClipW     : TEXCOORD2;\n"
+               "    float2 aBaryCoord : TEXCOORD3;\n"
+               "};\n";
     }
-    return
-        "layout(location = 0) in vec4 aPosition;\n"
-        "layout(location = 1) in vec4 aColor;\n"
-        "layout(location = 2) in vec2 aTexCoord0;\n"
-        "layout(location = 3) in vec2 aTexCoord1;\n"
-        "layout(location = 4) in float aFog;\n"
-        "layout(location = 5) in float aClipW;\n"
-        "layout(location = 6) in vec2 aBaryCoord;\n";
+    return "layout(location = 0) in vec4 aPosition;\n"
+           "layout(location = 1) in vec4 aColor;\n"
+           "layout(location = 2) in vec2 aTexCoord0;\n"
+           "layout(location = 3) in vec2 aTexCoord1;\n"
+           "layout(location = 4) in float aFog;\n"
+           "layout(location = 5) in float aClipW;\n"
+           "layout(location = 6) in vec2 aBaryCoord;\n";
 }
 
 std::string ShaderGenerator::GetVertexOutputs() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        return
-            "struct VSOutput {\n"
-            "    float4 position  : SV_Position;\n"
-            "    float4 vColor    : COLOR;\n"
-            "    noperspective float4 vColorNP : COLOR1;\n"
-            // vTexCoord0/1 and vClipW are already pre-divided by clip W in the
-            // vertex stage (so the fragment can recover screen-space tc via
-            // tc / vClipW).  They MUST be noperspective — otherwise the
-            // rasterizer divides them by W a second time, producing the
-            // close-up texel-marching artefact on near geometry.
-            "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
-            "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
-            "    float  vFog      : FOG;\n"
-            "    float  vDepth    : DEPTH_INTERP;\n"
-            "    noperspective float  vClipW    : TEXCOORD2;\n"
-            "    float4 vBaryCoord: TEXCOORD3;\n"
-            "};\n";
+        return "struct VSOutput {\n"
+               "    float4 position  : SV_Position;\n"
+               "    float4 vColor    : COLOR;\n"
+               "    noperspective float4 vColorNP : COLOR1;\n"
+               // vTexCoord0/1 and vClipW are already pre-divided by clip W in the
+               // vertex stage (so the fragment can recover screen-space tc via
+               // tc / vClipW).  They MUST be noperspective — otherwise the
+               // rasterizer divides them by W a second time, producing the
+               // close-up texel-marching artefact on near geometry.
+               "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
+               "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
+               "    float  vFog      : FOG;\n"
+               "    float  vDepth    : DEPTH_INTERP;\n"
+               "    noperspective float  vClipW    : TEXCOORD2;\n"
+               "    float4 vBaryCoord: TEXCOORD3;\n"
+               "};\n";
     }
     if (m_language == ShaderLanguage::SPIRV) {
-        return
-            "layout(location=0) out vec4 vColor;\n"
-            "layout(location=1) noperspective out vec4 vColorNP;\n"
-            "layout(location=2) noperspective out vec2 vTexCoord0;\n"
-            "layout(location=3) noperspective out vec2 vTexCoord1;\n"
-            "layout(location=4) out float vFog;\n"
-            "layout(location=5) out float vDepth;\n"
-            "layout(location=6) noperspective out float vClipW;\n"
-            "layout(location=7) out vec4 vBaryCoord;\n";
+        return "layout(location=0) out vec4 vColor;\n"
+               "layout(location=1) noperspective out vec4 vColorNP;\n"
+               "layout(location=2) noperspective out vec2 vTexCoord0;\n"
+               "layout(location=3) noperspective out vec2 vTexCoord1;\n"
+               "layout(location=4) out float vFog;\n"
+               "layout(location=5) out float vDepth;\n"
+               "layout(location=6) noperspective out float vClipW;\n"
+               "layout(location=7) out vec4 vBaryCoord;\n";
     }
-    return
-        "out vec4 vColor;\n"
-        "noperspective out vec4 vColorNP;\n"
-        "noperspective out vec2 vTexCoord0;\n"
-        "noperspective out vec2 vTexCoord1;\n"
-        "out float vFog;\n"
-        "out float vDepth;\n"
-        "noperspective out float vClipW;\n"
-        "out vec4 vBaryCoord;\n";
+    return "out vec4 vColor;\n"
+           "noperspective out vec4 vColorNP;\n"
+           "noperspective out vec2 vTexCoord0;\n"
+           "noperspective out vec2 vTexCoord1;\n"
+           "out float vFog;\n"
+           "out float vDepth;\n"
+           "noperspective out float vClipW;\n"
+           "out vec4 vBaryCoord;\n";
 }
 
 std::string ShaderGenerator::GetFragmentInputs() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        return
-            "struct PSInput {\n"
-            "    float4 position  : SV_Position;\n"
-            "    float4 vColor    : COLOR;\n"
-            "    noperspective float4 vColorNP : COLOR1;\n"
-            // Must match VSOutput qualifiers exactly.
-            "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
-            "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
-            "    float  vFog      : FOG;\n"
-            "    float  vDepth    : DEPTH_INTERP;\n"
-            "    noperspective float  vClipW    : TEXCOORD2;\n"
-            "    float4 vBaryCoord: TEXCOORD3;\n"
-            "};\n";
+        return "struct PSInput {\n"
+               "    float4 position  : SV_Position;\n"
+               "    float4 vColor    : COLOR;\n"
+               "    noperspective float4 vColorNP : COLOR1;\n"
+               // Must match VSOutput qualifiers exactly.
+               "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
+               "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
+               "    float  vFog      : FOG;\n"
+               "    float  vDepth    : DEPTH_INTERP;\n"
+               "    noperspective float  vClipW    : TEXCOORD2;\n"
+               "    float4 vBaryCoord: TEXCOORD3;\n"
+               "};\n";
     }
     if (m_language == ShaderLanguage::SPIRV) {
-        return
-            "layout(location=0) in vec4 vColor;\n"
-            "layout(location=1) noperspective in vec4 vColorNP;\n"
-            "layout(location=2) noperspective in vec2 vTexCoord0;\n"
-            "layout(location=3) noperspective in vec2 vTexCoord1;\n"
-            "layout(location=4) in float vFog;\n"
-            "layout(location=5) in float vDepth;\n"
-            "layout(location=6) noperspective in float vClipW;\n"
-            "layout(location=7) in vec4 vBaryCoord;\n";
+        return "layout(location=0) in vec4 vColor;\n"
+               "layout(location=1) noperspective in vec4 vColorNP;\n"
+               "layout(location=2) noperspective in vec2 vTexCoord0;\n"
+               "layout(location=3) noperspective in vec2 vTexCoord1;\n"
+               "layout(location=4) in float vFog;\n"
+               "layout(location=5) in float vDepth;\n"
+               "layout(location=6) noperspective in float vClipW;\n"
+               "layout(location=7) in vec4 vBaryCoord;\n";
     }
-    return
-        "in vec4 vColor;\n"
-        "noperspective in vec4 vColorNP;\n"
-        "noperspective in vec2 vTexCoord0;\n"
-        "noperspective in vec2 vTexCoord1;\n"
-        "in float vFog;\n"
-        "in float vDepth;\n"
-        "noperspective in float vClipW;\n"
-        "in vec4 vBaryCoord;\n";
+    return "in vec4 vColor;\n"
+           "noperspective in vec4 vColorNP;\n"
+           "noperspective in vec2 vTexCoord0;\n"
+           "noperspective in vec2 vTexCoord1;\n"
+           "in float vFog;\n"
+           "in float vDepth;\n"
+           "noperspective in float vClipW;\n"
+           "in vec4 vBaryCoord;\n";
 }
 
 std::string ShaderGenerator::GetFragmentOutputs(uint64_t features) const {
@@ -461,16 +444,13 @@ std::string ShaderGenerator::GetFragmentOutputs(uint64_t features) const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
         std::string s = "struct PSOutput {\n"
                         "    float4 fragColor : SV_Target0;\n";
-        if (dualSrc)
-            s += "    float4 fragColor1 : SV_Target1;\n";
-        if (features & (SF_DEPTH_SOURCE_PRIM | SF_DEPTH_RENDER))
-            s += "    float  fragDepth : SV_Depth;\n";
+        if (dualSrc) s += "    float4 fragColor1 : SV_Target1;\n";
+        if (features & (SF_DEPTH_SOURCE_PRIM | SF_DEPTH_RENDER)) s += "    float  fragDepth : SV_Depth;\n";
         s += "};\n";
         return s;
     }
     std::string s = "layout(location = 0) out vec4 fragColor;\n";
-    if (dualSrc)
-        s += "layout(location = 0, index = 1) out vec4 fragColor1;\n";
+    if (dualSrc) s += "layout(location = 0, index = 1) out vec4 fragColor1;\n";
     return s;
 }
 
@@ -483,39 +463,28 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
     // The 64-bit mux word encodes input selectors for both cycles.
 
     // Input expression tables (adapted to ShaderGenerator naming)
-    static const char* const kRGBInputA[] = {
-        "combined.rgb", "texel0.rgb", "texel1.rgb", "uPrimColor.rgb",
-        "shadeColor.rgb", "uEnvColor.rgb", "vec3(1.0)", "vec3(noise)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)"
-    };
-    static const char* const kRGBInputB[] = {
-        "combined.rgb", "texel0.rgb", "texel1.rgb", "uPrimColor.rgb",
-        "shadeColor.rgb", "uEnvColor.rgb", "uCenterColor.rgb", "vec3(uK4)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)"
-    };
+    static const char* const kRGBInputA[] = {"combined.rgb",   "texel0.rgb",    "texel1.rgb", "uPrimColor.rgb",
+                                             "shadeColor.rgb", "uEnvColor.rgb", "vec3(1.0)",  "vec3(noise)",
+                                             "vec3(0.0)",      "vec3(0.0)",     "vec3(0.0)",  "vec3(0.0)",
+                                             "vec3(0.0)",      "vec3(0.0)",     "vec3(0.0)",  "vec3(0.0)"};
+    static const char* const kRGBInputB[] = {"combined.rgb",   "texel0.rgb",    "texel1.rgb",       "uPrimColor.rgb",
+                                             "shadeColor.rgb", "uEnvColor.rgb", "uCenterColor.rgb", "vec3(uK4)",
+                                             "vec3(0.0)",      "vec3(0.0)",     "vec3(0.0)",        "vec3(0.0)",
+                                             "vec3(0.0)",      "vec3(0.0)",     "vec3(0.0)",        "vec3(0.0)"};
     static const char* const kRGBInputC[] = {
-        "combined.rgb", "texel0.rgb", "texel1.rgb", "uPrimColor.rgb",
-        "shadeColor.rgb", "uEnvColor.rgb", "uScaleColor.rgb", "vec3(combined.a)",
-        "vec3(texel0.a)", "vec3(texel1.a)", "vec3(uPrimColor.a)", "vec3(shadeColor.a)",
-        "vec3(uEnvColor.a)", "vec3(lodFrac)", "vec3(uPrimLODFrac)", "vec3(uK5)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)",
-        "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)", "vec3(0.0)"
-    };
-    static const char* const kRGBInputD[] = {
-        "combined.rgb", "texel0.rgb", "texel1.rgb", "uPrimColor.rgb",
-        "shadeColor.rgb", "uEnvColor.rgb", "vec3(1.0)", "vec3(0.0)"
-    };
-    static const char* const kAlphaABD[] = {
-        "combined.a", "texel0.a", "texel1.a", "uPrimColor.a",
-        "shadeColor.a", "uEnvColor.a", "1.0", "0.0"
-    };
-    static const char* const kAlphaC[] = {
-        "lodFrac", "texel0.a", "texel1.a", "uPrimColor.a",
-        "shadeColor.a", "uEnvColor.a", "uPrimLODFrac", "0.0"
-    };
+        "combined.rgb",       "texel0.rgb",         "texel1.rgb",        "uPrimColor.rgb", "shadeColor.rgb",
+        "uEnvColor.rgb",      "uScaleColor.rgb",    "vec3(combined.a)",  "vec3(texel0.a)", "vec3(texel1.a)",
+        "vec3(uPrimColor.a)", "vec3(shadeColor.a)", "vec3(uEnvColor.a)", "vec3(lodFrac)",  "vec3(uPrimLODFrac)",
+        "vec3(uK5)",          "vec3(0.0)",          "vec3(0.0)",         "vec3(0.0)",      "vec3(0.0)",
+        "vec3(0.0)",          "vec3(0.0)",          "vec3(0.0)",         "vec3(0.0)",      "vec3(0.0)",
+        "vec3(0.0)",          "vec3(0.0)",          "vec3(0.0)",         "vec3(0.0)",      "vec3(0.0)",
+        "vec3(0.0)",          "vec3(0.0)"};
+    static const char* const kRGBInputD[] = {"combined.rgb",   "texel0.rgb",    "texel1.rgb", "uPrimColor.rgb",
+                                             "shadeColor.rgb", "uEnvColor.rgb", "vec3(1.0)",  "vec3(0.0)"};
+    static const char* const kAlphaABD[] = {"combined.a",   "texel0.a",    "texel1.a", "uPrimColor.a",
+                                            "shadeColor.a", "uEnvColor.a", "1.0",      "0.0"};
+    static const char* const kAlphaC[] = {"lodFrac",      "texel0.a",    "texel1.a",     "uPrimColor.a",
+                                          "shadeColor.a", "uEnvColor.a", "uPrimLODFrac", "0.0"};
 
     uint32_t hi = static_cast<uint32_t>(mux >> 32);
     uint32_t lo = static_cast<uint32_t>(mux & 0xFFFFFFFF);
@@ -523,18 +492,14 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
     std::ostringstream ss;
 
     // texel1 / noise defaults (texel0 is declared at the top of main())
-    if (!(features & SF_TEXTURE_1))
-        ss << "    vec4 texel1 = texel0;\n";
-    if (!(features & SF_NOISE_ENABLE))
-        ss << "    float noise = 0.0;\n";
+    if (!(features & SF_TEXTURE_1)) ss << "    vec4 texel1 = texel0;\n";
+    if (!(features & SF_NOISE_ENABLE)) ss << "    float noise = 0.0;\n";
 
     // N64 hardware clears the combiner pipeline to 0x80 (=0.5) before
     // cycle 0.  In 2-cycle mode, any COMBINED reference in cycle 0 thus
     // reads 0.5; in 1-cycle mode GLideN64 forces COMBINED to zero.
-    if (features & SF_2CYCLE)
-        ss << "    vec4 combined = vec4(0.5);\n";
-    else
-        ss << "    vec4 combined = vec4(0.0);\n";
+    if (features & SF_2CYCLE) ss << "    vec4 combined = vec4(0.5);\n";
+    else ss << "    vec4 combined = vec4(0.0);\n";
 
     auto emitCycle = [&](int cycle) {
         // N64 SET_COMBINE (0xFC) mux encoding per libultra gbi.h:
@@ -550,23 +515,23 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
         //     [8:6]=dRGB1(D)   [5:3]=bA1(B)      [2:0]=dA1(D)
         int aRGB, bRGB, cRGB, dRGB, aA, bA, cA, dA;
         if (cycle == 0) {
-            aRGB = (hi >> 20) & 0xF;     // saRGB0 [23:20]
-            cRGB = (hi >> 15) & 0x1F;    // mRGB0  [19:15]
-            aA   = (hi >> 12) & 0x7;     // saA0   [14:12]
-            cA   = (hi >>  9) & 0x7;     // mA0    [11:9]
-            bRGB = (lo >> 28) & 0xF;     // sbRGB0 [31:28]
-            dRGB = (lo >> 15) & 0x7;     // dRGB0  [17:15]
-            bA   = (lo >> 12) & 0x7;     // bA0    [14:12]
-            dA   = (lo >>  9) & 0x7;     // dA0    [11:9]
+            aRGB = (hi >> 20) & 0xF;  // saRGB0 [23:20]
+            cRGB = (hi >> 15) & 0x1F; // mRGB0  [19:15]
+            aA = (hi >> 12) & 0x7;    // saA0   [14:12]
+            cA = (hi >> 9) & 0x7;     // mA0    [11:9]
+            bRGB = (lo >> 28) & 0xF;  // sbRGB0 [31:28]
+            dRGB = (lo >> 15) & 0x7;  // dRGB0  [17:15]
+            bA = (lo >> 12) & 0x7;    // bA0    [14:12]
+            dA = (lo >> 9) & 0x7;     // dA0    [11:9]
         } else {
-            aRGB = (hi >>  5) & 0xF;     // saRGB1 [8:5]
-            cRGB = (hi >>  0) & 0x1F;    // mRGB1  [4:0]
-            bRGB = (lo >> 24) & 0xF;     // sbRGB1 [27:24]
-            aA   = (lo >> 21) & 0x7;     // saA1   [23:21]
-            cA   = (lo >> 18) & 0x7;     // mA1    [20:18]
-            dRGB = (lo >>  6) & 0x7;     // dRGB1  [8:6]
-            bA   = (lo >>  3) & 0x7;     // bA1    [5:3]
-            dA   = (lo >>  0) & 0x7;     // dA1    [2:0]
+            aRGB = (hi >> 5) & 0xF;   // saRGB1 [8:5]
+            cRGB = (hi >> 0) & 0x1F;  // mRGB1  [4:0]
+            bRGB = (lo >> 24) & 0xF;  // sbRGB1 [27:24]
+            aA = (lo >> 21) & 0x7;    // saA1   [23:21]
+            cA = (lo >> 18) & 0x7;    // mA1    [20:18]
+            dRGB = (lo >> 6) & 0x7;   // dRGB1  [8:6]
+            bA = (lo >> 3) & 0x7;     // bA1    [5:3]
+            dA = (lo >> 0) & 0x7;     // dA1    [2:0]
         }
 
         // N64 2-cycle texel pipeline corrections:
@@ -580,34 +545,44 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
             // Swap helper for 4-bit RGB A/B and 3-bit D/alpha indices
             // where index 1=texel0, 2=texel1
             auto swapTex = [cycle, hasTex1](int idx) -> int {
-                if (cycle == 0) { if (!hasTex1 && idx == 2) return 1; }
-                else { if (idx == 1) return 2; if (idx == 2) return 1; }
+                if (cycle == 0) {
+                    if (!hasTex1 && idx == 2) return 1;
+                } else {
+                    if (idx == 1) return 2;
+                    if (idx == 2) return 1;
+                }
                 return idx;
             };
             // RGB C table (5-bit): additionally 8=texel0_alpha, 9=texel1_alpha
             auto swapTexC = [cycle, hasTex1](int idx) -> int {
-                if (cycle == 0) { if (!hasTex1) { if (idx == 2) return 1; if (idx == 9) return 8; } }
-                else { if (idx == 1) return 2; if (idx == 2) return 1;
-                       if (idx == 8) return 9; if (idx == 9) return 8; }
+                if (cycle == 0) {
+                    if (!hasTex1) {
+                        if (idx == 2) return 1;
+                        if (idx == 9) return 8;
+                    }
+                } else {
+                    if (idx == 1) return 2;
+                    if (idx == 2) return 1;
+                    if (idx == 8) return 9;
+                    if (idx == 9) return 8;
+                }
                 return idx;
             };
-            aRGB = swapTex(aRGB);  bRGB = swapTex(bRGB);
-            cRGB = swapTexC(cRGB); dRGB = swapTex(dRGB);
-            aA = swapTex(aA); bA = swapTex(bA);
-            cA = swapTex(cA); dA = swapTex(dA);
+            aRGB = swapTex(aRGB);
+            bRGB = swapTex(bRGB);
+            cRGB = swapTexC(cRGB);
+            dRGB = swapTex(dRGB);
+            aA = swapTex(aA);
+            bA = swapTex(bA);
+            cA = swapTex(cA);
+            dA = swapTex(dA);
         }
 
         ss << "\n    // Cycle " << cycle << ": (A - B) * C + D\n";
-        ss << "    combined.rgb = ("
-           << kRGBInputA[aRGB & 0xF] << " - "
-           << kRGBInputB[bRGB & 0xF] << ") * "
-           << kRGBInputC[cRGB & 0x1F] << " + "
-           << kRGBInputD[dRGB & 0x7] << ";\n";
-        ss << "    combined.a = ("
-           << kAlphaABD[aA & 0x7] << " - "
-           << kAlphaABD[bA & 0x7] << ") * "
-           << kAlphaC[cA & 0x7] << " + "
-           << kAlphaABD[dA & 0x7] << ";\n";
+        ss << "    combined.rgb = (" << kRGBInputA[aRGB & 0xF] << " - " << kRGBInputB[bRGB & 0xF] << ") * "
+           << kRGBInputC[cRGB & 0x1F] << " + " << kRGBInputD[dRGB & 0x7] << ";\n";
+        ss << "    combined.a = (" << kAlphaABD[aA & 0x7] << " - " << kAlphaABD[bA & 0x7] << ") * " << kAlphaC[cA & 0x7]
+           << " + " << kAlphaABD[dA & 0x7] << ";\n";
     };
 
     if (features & SF_FILL_RECT) {
@@ -619,7 +594,7 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
     } else {
         bool is2cycle = (features & SF_2CYCLE) != 0;
         if (is2cycle) {
-            emitCycle(0);   // Cycle 0 intermediate (unclamped)
+            emitCycle(0); // Cycle 0 intermediate (unclamped)
 
             // N64 sign extension: the combiner intermediate is a signed 9-bit
             // value.  Apply only when cycle 1 references COMBINED (index 0).
@@ -632,49 +607,41 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
                 int c1_bRGB = (lo >> 24) & 0xF;
                 int c1_cRGB = hi & 0x1F;
                 int c1_dRGB = (lo >> 6) & 0x7;
-                int c1_aA   = (lo >> 21) & 0x7;
-                int c1_bA   = (lo >> 3) & 0x7;
-                int c1_cA   = (lo >> 18) & 0x7;
-                int c1_dA   = lo & 0x7;
+                int c1_aA = (lo >> 21) & 0x7;
+                int c1_bA = (lo >> 3) & 0x7;
+                int c1_cA = (lo >> 18) & 0x7;
+                int c1_dA = lo & 0x7;
 
                 // RGB: check if COMBINED (0) is used in C vs A/B/D
-                bool rgbUsesC   = (c1_cRGB == 0);
-                bool rgbUsesABD = (c1_dRGB == 0) ||
-                    ((c1_aRGB == 0 || c1_bRGB == 0) && c1_cRGB != 31);
-                if (rgbUsesC)
-                    ss << "    combined.rgb = mod(combined.rgb - (-1.01), 2.02) + (-1.01);\n";
-                else if (rgbUsesABD)
-                    ss << "    combined.rgb = mod(combined.rgb - (-0.51), 2.02) + (-0.51);\n";
+                bool rgbUsesC = (c1_cRGB == 0);
+                bool rgbUsesABD = (c1_dRGB == 0) || ((c1_aRGB == 0 || c1_bRGB == 0) && c1_cRGB != 31);
+                if (rgbUsesC) ss << "    combined.rgb = mod(combined.rgb - (-1.01), 2.02) + (-1.01);\n";
+                else if (rgbUsesABD) ss << "    combined.rgb = mod(combined.rgb - (-0.51), 2.02) + (-0.51);\n";
 
                 // Alpha: check if COMBINED (0) is used in C vs A/B/D
-                bool alphaUsesC   = (c1_cA == 0);
-                bool alphaUsesABD = (c1_dA == 0) ||
-                    ((c1_aA == 0 || c1_bA == 0) && c1_cA != 7);
-                if (alphaUsesC)
-                    ss << "    combined.a = mod(combined.a - (-1.01), 2.02) + (-1.01);\n";
-                else if (alphaUsesABD)
-                    ss << "    combined.a = mod(combined.a - (-0.51), 2.02) + (-0.51);\n";
+                bool alphaUsesC = (c1_cA == 0);
+                bool alphaUsesABD = (c1_dA == 0) || ((c1_aA == 0 || c1_bA == 0) && c1_cA != 7);
+                if (alphaUsesC) ss << "    combined.a = mod(combined.a - (-1.01), 2.02) + (-1.01);\n";
+                else if (alphaUsesABD) ss << "    combined.a = mod(combined.a - (-0.51), 2.02) + (-0.51);\n";
             }
 
             // Save cycle 0 alpha for alpha test (GLideN64 tests alpha1 after cycle 0)
             ss << "    float c0Alpha = combined.a;\n";
 
-            emitCycle(1);   // Cycle 1 (unclamped — we WRAP-then-clamp below)
+            emitCycle(1); // Cycle 1 (unclamped — we WRAP-then-clamp below)
 
             // CVG×Alpha threshold after cycle 1 (GLideN64: alpha2 < 0.125)
-            if (features & SF_ALPHA_CVG)
-                ss << "    if (combined.a < 0.125) discard;\n";
+            if (features & SF_ALPHA_CVG) ss << "    if (combined.a < 0.125) discard;\n";
         } else {
             // In 1-cycle mode N64 hardware uses cycle 1 fields, not cycle 0.
             // COMBINED inputs read as zero (already handled by combined init).
-            emitCycle(1);   // Unclamped — we WRAP-then-clamp below
+            emitCycle(1); // Unclamped — we WRAP-then-clamp below
 
             // In 1-cycle mode, c0Alpha is just the single-cycle alpha
             ss << "    float c0Alpha = combined.a;\n";
 
             // CVG×Alpha threshold (GLideN64: alpha1 < 0.125)
-            if (features & SF_ALPHA_CVG)
-                ss << "    if (combined.a < 0.125) discard;\n";
+            if (features & SF_ALPHA_CVG) ss << "    if (combined.a < 0.125) discard;\n";
         }
         // N64 final color wrap-then-clamp: values outside [-0.5, 1.5) wrap
         // around by 2.0 before clamping to [0,1].  This matches the hardware
@@ -730,18 +697,15 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         // The depth-compare code opens the interlock and leaves it open for
         // the MLE blender to close ONLY when both SF_DEPTH_COMPARE and
         // SF_N64_DEPTH_COMPARE are set.  Otherwise we must open it ourselves.
-        bool depthWillInterlock = (features & SF_N64_DEPTH_COMPARE) &&
-                                  (features & SF_DEPTH_COMPARE);
+        bool depthWillInterlock = (features & SF_N64_DEPTH_COMPARE) && (features & SF_DEPTH_COMPARE);
         bool needOwnInterlock = !depthWillInterlock;
-        if (needOwnInterlock)
-            ss << "        BEGIN_INTERLOCK();\n";
+        if (needOwnInterlock) ss << "        BEGIN_INTERLOCK();\n";
 
         // When combined with N64 depth compare, the depth code sets
         // n64DepthPassed = false on depth failure.  Skip the blender body
         // for failed pixels but still close the interlock at the top level
         // (Intel Iris Xe rejects endInvocationInterlockARB inside flow control).
-        if (depthWillInterlock)
-            ss << "        if (n64DepthPassed) {\n";
+        if (depthWillInterlock) ss << "        if (n64DepthPassed) {\n";
 
         ss << "        vec4 memColor = IMG_LOAD_F4(uColorImage, blendCoord);\n";
         ss << "        uint mem_cvg_raw = IMG_LOAD_U(uCoverageImage, blendCoord);\n";
@@ -749,19 +713,19 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
 
         auto pmColor = [](int s, bool isCycle2) -> const char* {
             switch (s) {
-            case 0: return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
-            case 1: return "memColor.rgb";
-            case 2: return "uBlendColor.rgb";
-            case 3: return "uFogColor.rgb";
+            case 0:  return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
+            case 1:  return "memColor.rgb";
+            case 2:  return "uBlendColor.rgb";
+            case 3:  return "uFogColor.rgb";
             default: return "vec3(0.0)";
             }
         };
         auto aAlpha = [](int s, bool isCycle2) -> const char* {
             switch (s) {
-            case 0: return isCycle2 ? "blenderOut.a" : "combined.a";
-            case 1: return "uFogColor.a";
-            case 2: return "shadeColor.a";
-            case 3: return "0.0";
+            case 0:  return isCycle2 ? "blenderOut.a" : "combined.a";
+            case 1:  return "uFogColor.a";
+            case 2:  return "shadeColor.a";
+            case 3:  return "0.0";
             default: return "0.0";
             }
         };
@@ -837,8 +801,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         ss << "        IMG_STORE_U(uCoverageImage, blendCoord, uint(final_cvg));\n";
 
         // Close the depth-guarded block if active
-        if (depthWillInterlock)
-            ss << "        } // end if (n64DepthPassed)\n";
+        if (depthWillInterlock) ss << "        } // end if (n64DepthPassed)\n";
 
         // Always close the interlock region at the top level — either we
         // opened it ourselves or the depth-compare code opened it and left
@@ -847,8 +810,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         ss << "        END_INTERLOCK();\n";
 
         // Discard depth-failed fragments AFTER ending the interlock
-        if (depthWillInterlock)
-            ss << "        if (!n64DepthPassed) discard;\n";
+        if (depthWillInterlock) ss << "        if (!n64DepthPassed) discard;\n";
 
         ss << "    }\n";
         return ss.str();
@@ -880,10 +842,10 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     // We use "blenderOut.rgb" for this after cycle 1 runs.
     auto pmColorSel = [](int s, bool isCycle2) -> const char* {
         switch (s) {
-        case 0: return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
-        case 1: return "memColor.rgb";
-        case 2: return "uBlendColor.rgb";
-        case 3: return "uFogColor.rgb";
+        case 0:  return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
+        case 1:  return "memColor.rgb";
+        case 2:  return "uBlendColor.rgb";
+        case 3:  return "uFogColor.rgb";
         default: return "vec3(0.0)";
         }
     };
@@ -891,10 +853,10 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     // For dual-source: memColor is handled by HW blend, so P/M source 1 → vec3(0)
     auto pmColorSelDS = [](int s, bool isCycle2) -> const char* {
         switch (s) {
-        case 0: return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
-        case 1: return "vec3(0.0)"; // memColor excluded — handled by HW blend
-        case 2: return "uBlendColor.rgb";
-        case 3: return "uFogColor.rgb";
+        case 0:  return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
+        case 1:  return "vec3(0.0)"; // memColor excluded — handled by HW blend
+        case 2:  return "uBlendColor.rgb";
+        case 3:  return "uFogColor.rgb";
         default: return "vec3(0.0)";
         }
     };
@@ -902,10 +864,10 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     // A alpha sources — cycle 2 source 0 uses cycle 1 output alpha
     auto aAlphaSel = [](int s, bool isCycle2) -> const char* {
         switch (s) {
-        case 0: return isCycle2 ? "blenderOut.a" : "combined.a";
-        case 1: return "uFogColor.a";
-        case 2: return "shadeColor.a";
-        case 3: return "0.0";
+        case 0:  return isCycle2 ? "blenderOut.a" : "combined.a";
+        case 1:  return "uFogColor.a";
+        case 2:  return "shadeColor.a";
+        case 3:  return "0.0";
         default: return "0.0";
         }
     };
@@ -925,14 +887,10 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         if (forceBlend) {
             ss << "        vec3 srcContrib = vec3(0.0);\n";
             ss << "        float dstFactor = 0.0;\n";
-            if (!p_is_mem)
-                ss << "        srcContrib += bP * bA;\n";
-            else
-                ss << "        dstFactor += bA;\n";
-            if (!m_is_mem)
-                ss << "        srcContrib += bM * bB;\n";
-            else
-                ss << "        dstFactor += bB;\n";
+            if (!p_is_mem) ss << "        srcContrib += bP * bA;\n";
+            else ss << "        dstFactor += bA;\n";
+            if (!m_is_mem) ss << "        srcContrib += bM * bB;\n";
+            else ss << "        dstFactor += bB;\n";
             ss << "        combined.rgb = clamp(srcContrib, 0.0, 1.0);\n";
             ss << "        fragColor1 = vec4(clamp(dstFactor, 0.0, 1.0));\n";
         } else {
@@ -994,13 +952,11 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
 
     // B source: 0=(1-A), 1=memColor.a, 2=1.0, 3=0.0
     switch (b1) {
-    case 0:  ss << "        float bB = 1.0 - bA;\n"; break;
+    case 0: ss << "        float bB = 1.0 - bA;\n"; break;
     case 1:
         // For dual-source final cycle, approximate memColor.a as 1.0
-        if (dualSource && !is2Cycle)
-            ss << "        float bB = 1.0; // memColor.a approx for dual-source\n";
-        else
-            ss << "        float bB = memColor.a;\n";
+        if (dualSource && !is2Cycle) ss << "        float bB = 1.0; // memColor.a approx for dual-source\n";
+        else ss << "        float bB = memColor.a;\n";
         break;
     case 2:  ss << "        float bB = 1.0;\n"; break;
     default: ss << "        float bB = 0.0;\n"; break;
@@ -1008,10 +964,8 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
 
     if (!is2Cycle) {
         // 1-cycle mode: cycle 1 is the only (and final) cycle.
-        if (dualSource)
-            emitFinalCycleDS(p1, m1, b1, false);
-        else
-            emitFinalCycleOrig();
+        if (dualSource) emitFinalCycleDS(p1, m1, b1, false);
+        else emitFinalCycleOrig();
         ss << "    }\n";
     } else {
         // 2-cycle mode: cycle 1 always runs the full formula (intermediate).
@@ -1035,21 +989,17 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
             ss << "        vec3 bM = " << pmColorSel(m2, true) << ";\n";
         }
         switch (b2) {
-        case 0:  ss << "        float bB = 1.0 - bA;\n"; break;
+        case 0: ss << "        float bB = 1.0 - bA;\n"; break;
         case 1:
-            if (dualSource)
-                ss << "        float bB = 1.0; // memColor.a approx for dual-source\n";
-            else
-                ss << "        float bB = memColor.a;\n";
+            if (dualSource) ss << "        float bB = 1.0; // memColor.a approx for dual-source\n";
+            else ss << "        float bB = memColor.a;\n";
             break;
         case 2:  ss << "        float bB = 1.0;\n"; break;
         default: ss << "        float bB = 0.0;\n"; break;
         }
         // Cycle 2 is the final cycle.
-        if (dualSource)
-            emitFinalCycleDS(p2, m2, b2, true);
-        else
-            emitFinalCycleOrig();
+        if (dualSource) emitFinalCycleDS(p2, m2, b2, true);
+        else emitFinalCycleOrig();
         ss << "    }\n";
     }
 
@@ -1111,32 +1061,30 @@ std::string ShaderGenerator::GenerateFogCode(uint64_t features) const {
     // uFogUsage: 0=standard fog, 1=F3DAM fog→shadeAlpha, 2=F3DAM fog→shadeRGB
     // When uFogUsage==2, fog was baked into shade RGB; no post-process needed.
     // For modes 0 and 1, use vShadeColor.a (= vFog = RSP fog factor).
-    return
-        "    if (uFogUsage == 0 || uFogUsage == 1) {\n"
-        "        float fogFactor = clamp(vFog, 0.0, 1.0);\n"
-        "        fragColor.rgb = mix(fragColor.rgb, uFogColor.rgb, fogFactor);\n"
-        "    }\n";
+    return "    if (uFogUsage == 0 || uFogUsage == 1) {\n"
+           "        float fogFactor = clamp(vFog, 0.0, 1.0);\n"
+           "        fragColor.rgb = mix(fragColor.rgb, uFogColor.rgb, fogFactor);\n"
+           "    }\n";
 }
 
 std::string ShaderGenerator::GenerateNoiseCode(uint64_t features) const {
     if (!(features & SF_NOISE_ENABLE)) return "";
     // Hash-based pseudorandom noise (GLideN64 approach).
     // Uses screen coords + per-frame seed — no texture lookup needed.
-    return
-        "    float noise;\n"
-        "    {\n"
-        "        vec2 noiseCoord = floor(gl_FragCoord.xy / uScreenScale);\n"
-        "        vec3 p3 = fract(vec3(noiseCoord, float(uFrameCount)) * vec3(0.1031, 0.1030, 0.0973));\n"
-        "        p3 += dot(p3, p3.yzx + 33.33);\n"
-        "        noise = fract((p3.x + p3.y) * p3.z);\n"
-        "    }\n";
+    return "    float noise;\n"
+           "    {\n"
+           "        vec2 noiseCoord = floor(gl_FragCoord.xy / uScreenScale);\n"
+           "        vec3 p3 = fract(vec3(noiseCoord, float(uFrameCount)) * vec3(0.1031, 0.1030, 0.0973));\n"
+           "        p3 += dot(p3, p3.yzx + 33.33);\n"
+           "        noise = fract((p3.x + p3.y) * p3.z);\n"
+           "    }\n";
 }
 
 std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const {
     std::string code;
     // Per-draw N64 texture filter: 0 = point, 1 = bilinear, 2 = 3-point.
-    const std::string texFilterMode = (features & SF_TEXTURE_3POINT) ? "2"
-                                    : ((features & SF_TEXTURE_BILINEAR) ? "1" : "0");
+    const std::string texFilterMode =
+        (features & SF_TEXTURE_3POINT) ? "2" : ((features & SF_TEXTURE_BILINEAR) ? "1" : "0");
     if (features & SF_TEXTURE_0) {
         // Perspective-correct texture coordinates: divide by vClipW (1/W)
         // to recover screen-space texels.  The vertex setup pre-multiplied
@@ -1227,8 +1175,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             // A texture-pack picture is sampled at the fragment's own position rather than at
             // the centres of the N64 texels it stands in for (see n64ReadHiRes).
             code += "    vec4 texel0;\n";
-            code += "    if ((uTexHiRes & 1) != 0) texel0 = n64ReadHiRes(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0);\n";
-            code += "    else texel0 = n64ReadTexture(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0, uGPUScale0, " + texFilterMode + ");\n";
+            code += "    if ((uTexHiRes & 1) != 0) texel0 = n64ReadHiRes(uTexture0, tileCoord0, uTexSize0, uTexClamp0, "
+                    "uTexMask0);\n";
+            code += "    else texel0 = n64ReadTexture(uTexture0, tileCoord0, uTexSize0, uTexClamp0, uTexMask0, "
+                    "uGPUScale0, " +
+                    texFilterMode + ");\n";
         }
         // FB monochrome/fixedAlpha for tile 0 — when texture comes from a framebuffer
         code += "    if (uFbMonochrome0 == 1) texel0 = vec4(texel0.r);\n";
@@ -1241,9 +1192,12 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             // Width defines the acceptance radius; scale sharpens the falloff.
             // texel0.a = min(keyR, keyG, keyB)
             code += "    {\n";
-            code += "        float keyR = clamp(uKeyWidth.r - abs(texel0.r - uCenterColor.r) * uScaleColor.r, 0.0, 1.0);\n";
-            code += "        float keyG = clamp(uKeyWidth.g - abs(texel0.g - uCenterColor.g) * uScaleColor.g, 0.0, 1.0);\n";
-            code += "        float keyB = clamp(uKeyWidth.b - abs(texel0.b - uCenterColor.b) * uScaleColor.b, 0.0, 1.0);\n";
+            code +=
+                "        float keyR = clamp(uKeyWidth.r - abs(texel0.r - uCenterColor.r) * uScaleColor.r, 0.0, 1.0);\n";
+            code +=
+                "        float keyG = clamp(uKeyWidth.g - abs(texel0.g - uCenterColor.g) * uScaleColor.g, 0.0, 1.0);\n";
+            code +=
+                "        float keyB = clamp(uKeyWidth.b - abs(texel0.b - uCenterColor.b) * uScaleColor.b, 0.0, 1.0);\n";
             code += "        texel0.a = min(min(keyR, keyG), keyB);\n";
             code += "    }\n";
         }
@@ -1251,7 +1205,8 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
     if (features & SF_TEXTURE_1) {
         if (features & SF_TEXTURE_LOD) {
             // ── LOD mode: texel1 from next mip level of same texture ──
-            code += "    vec4 texel1 = textureLod(uTexture0, uv0 * uGPUScale0, float(min(sample_tile + 1, uMaxTile)));\n";
+            code +=
+                "    vec4 texel1 = textureLod(uTexture0, uv0 * uGPUScale0, float(min(sample_tile + 1, uMaxTile)));\n";
         } else {
             // ── Non-LOD: texel1 from separate texture unit 1 ──
             code += "    vec2 tc1 = (vClipW > 1e-6) ? vTexCoord1 / vClipW : vTexCoord1;\n";
@@ -1293,11 +1248,15 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "      }\n";
             code += "    }\n";
             code += "    vec4 texel1;\n";
-            code += "    if ((uTexHiRes & 2) != 0) texel1 = n64ReadHiRes(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1);\n";
-            code += "    else texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, uGPUScale1, " + texFilterMode + ");\n";
+            code += "    if ((uTexHiRes & 2) != 0) texel1 = n64ReadHiRes(uTexture1, tileCoord1, uTexSize1, uTexClamp1, "
+                    "uTexMask1);\n";
+            code += "    else texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, "
+                    "uGPUScale1, " +
+                    texFilterMode + ");\n";
             // FB monochrome/fixedAlpha for tile 1
             code += "    if (uFbMonochrome1 == 1) texel1 = vec4(texel1.r);\n";
-            code += "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
+            code +=
+                "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
             code += "    if (uFbFixedAlpha1 == 1) texel1.a = 0.825;\n";
         }
     }
@@ -1305,10 +1264,10 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
 }
 
 std::string ShaderGenerator::GenerateN64TexFilterCode() const {
-      // N64 3-point bilinear filter with GPU padding scaling.
-      // Includes a color-bleeding variant that pre-multiplies alpha before
-      // interpolation to prevent color fringing at transparent edges.
-      return R"(
+    // N64 3-point bilinear filter with GPU padding scaling.
+    // Includes a color-bleeding variant that pre-multiplies alpha before
+    // interpolation to prevent color fringing at transparent edges.
+    return R"(
 vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
     vec2 texelPos = uv * texSize - 0.5;
     vec2 fracPart = fract(texelPos);
@@ -1495,8 +1454,7 @@ std::string ShaderGenerator::GenerateDepthCompareCode(uint64_t features) const {
 
         std::string code;
         code += "    // ─── N64-accurate depth compare (normalized, GLideN64-style) ───\n";
-        if (mleBlender)
-            code += "    bool n64DepthPassed = true;\n";
+        if (mleBlender) code += "    bool n64DepthPassed = true;\n";
         code += "    {\n";
         code += "        ivec2 zCoord = ivec2(gl_FragCoord.xy);\n";
         if (primDepth) {
@@ -1550,9 +1508,8 @@ std::string ShaderGenerator::GenerateDepthCompareCode(uint64_t features) const {
     }
 
     // Fallback: simple depth texture compare (used when Z-image textures aren't bound)
-    return
-        "    float depthRef = texture(uDepthTexture, gl_FragCoord.xy * uInvScreenSize).r;\n"
-        "    if (gl_FragCoord.z > depthRef) discard;\n";
+    return "    float depthRef = texture(uDepthTexture, gl_FragCoord.xy * uInvScreenSize).r;\n"
+           "    if (gl_FragCoord.z > depthRef) discard;\n";
 }
 
 // When Z_SOURCE_SEL=PRIM (SF_DEPTH_SOURCE_PRIM), all fragments output a fixed
@@ -1561,7 +1518,7 @@ std::string ShaderGenerator::GenerateDepthCompareCode(uint64_t features) const {
 // path has it set (GLSL requires this when gl_FragDepth is written at all).
 std::string ShaderGenerator::GeneratePrimDepthCode(uint64_t features) const {
     if (!(features & SF_DEPTH_SOURCE_PRIM)) return "";
-    if (m_language == ShaderLanguage::HLSL_SM5) return "";  // HLSL needs SV_Depth in PSOutput
+    if (m_language == ShaderLanguage::HLSL_SM5) return ""; // HLSL needs SV_Depth in PSOutput
     return "    gl_FragDepth = uPrimDepth;\n";
 }
 
@@ -1575,7 +1532,7 @@ std::string ShaderGenerator::GenerateCoverageCode(uint64_t features) const {
     bool hasCvgAlpha = (features & SF_ALPHA_CVG) != 0;
     bool hasAlphaSel = (features & SF_ALPHA_CVG_SEL) != 0;
     bool hasClrOnCvg = (features & SF_COLOR_ON_COVERAGE) != 0;
-    bool hasAA       = (features & SF_COVERAGE_ENABLE) != 0;
+    bool hasAA = (features & SF_COVERAGE_ENABLE) != 0;
 
     std::string code;
     code += "    // N64 coverage emulation (8-sample sub-pixel AA)\n";
@@ -1641,8 +1598,8 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
     std::string code = "    {\n";
 
     // Emit the two 4×4 matrices if any structured pattern is needed
-    bool needMatrices = ((features & SF_DITHER_ENABLE) && colorDitherMode <= 1)
-                     || ((features & SF_ALPHA_DITHER)  && alphaDitherMode <= 1);
+    bool needMatrices = ((features & SF_DITHER_ENABLE) && colorDitherMode <= 1) ||
+                        ((features & SF_ALPHA_DITHER) && alphaDitherMode <= 1);
     if (needMatrices) {
         // Use flat const arrays + scalar index instead of mat4×vec4 dot product.
         // The mat4/vec4 dynamic-index pattern crashes Intel Iris Xe (driver
@@ -1700,16 +1657,12 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
         // Mode 3: none
         switch (alphaDitherMode) {
         case 0:
-            if (colorDitherMode == 0 || colorDitherMode == 2)
-                code += "        float alphaThreshold = mSquareVal;\n";
-            else
-                code += "        float alphaThreshold = bayerVal;\n";
+            if (colorDitherMode == 0 || colorDitherMode == 2) code += "        float alphaThreshold = mSquareVal;\n";
+            else code += "        float alphaThreshold = bayerVal;\n";
             break;
         case 1:
-            if (colorDitherMode == 0 || colorDitherMode == 2)
-                code += "        float alphaThreshold = bayerVal;\n";
-            else
-                code += "        float alphaThreshold = mSquareVal;\n";
+            if (colorDitherMode == 0 || colorDitherMode == 2) code += "        float alphaThreshold = bayerVal;\n";
+            else code += "        float alphaThreshold = mSquareVal;\n";
             break;
         case 2: { // Noise — hash13
             code += "        { vec2 ditherCoord2 = floor(gl_FragCoord.xy / uScreenScale);\n";
@@ -1736,17 +1689,15 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
 
 std::string ShaderGenerator::GenerateMonochromeCode(uint64_t features) const {
     if (!(features & SF_MONOCHROME)) return "";
-    return
-        "    // Monochrome desaturation (game hack — e.g. Zelda OoT cutscenes)\n"
-        "    {\n"
-        "        float monoLuma = dot(fragColor.rgb, vec3(0.2126, 0.7152, 0.0722));\n"
-        "        fragColor.rgb = vec3(monoLuma);\n"
-        "    }\n";
+    return "    // Monochrome desaturation (game hack — e.g. Zelda OoT cutscenes)\n"
+           "    {\n"
+           "        float monoLuma = dot(fragColor.rgb, vec3(0.2126, 0.7152, 0.0722));\n"
+           "        fragColor.rgb = vec3(monoLuma);\n"
+           "    }\n";
 }
 
 std::string ShaderGenerator::GenerateGammaCorrectionCode() const {
-    return
-        "    fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));\n";
+    return "    fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));\n";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1758,22 +1709,21 @@ std::string ShaderGenerator::GenerateGammaCorrectionCode() const {
 
 std::string ShaderGenerator::GenerateYUVConversionCode(uint64_t features) const {
     if (!(features & SF_TEXTURE_YUV)) return "";
-    return
-        "    // YUV → RGB conversion (N64 BT.601)\n"
-        "    {\n"
-        "        // texel0.r = Y', texel0.g = Cb (U), texel0.b = Cr (V)\n"
-        "        float yy  = texel0.r;\n"
-        "        float cb  = texel0.g - 0.5;\n"
-        "        float cr  = texel0.b - 0.5;\n"
-        "        // RDP uses programmable K coefficients:\n"
-        "        // R = Y + K0 * Cr\n"
-        "        // G = Y + K1 * Cr + K2 * Cb\n"
-        "        // B = Y + K3 * Cb\n"
-        "        texel0.r = clamp(yy + uConvertK.x * cr,                      0.0, 1.0);\n"
-        "        texel0.g = clamp(yy + uConvertK.y * cr + uConvertK.z * cb,   0.0, 1.0);\n"
-        "        texel0.b = clamp(yy + uConvertK.w * cb,                      0.0, 1.0);\n"
-        "        texel0.a = 1.0;\n"
-        "    }\n";
+    return "    // YUV → RGB conversion (N64 BT.601)\n"
+           "    {\n"
+           "        // texel0.r = Y', texel0.g = Cb (U), texel0.b = Cr (V)\n"
+           "        float yy  = texel0.r;\n"
+           "        float cb  = texel0.g - 0.5;\n"
+           "        float cr  = texel0.b - 0.5;\n"
+           "        // RDP uses programmable K coefficients:\n"
+           "        // R = Y + K0 * Cr\n"
+           "        // G = Y + K1 * Cr + K2 * Cb\n"
+           "        // B = Y + K3 * Cb\n"
+           "        texel0.r = clamp(yy + uConvertK.x * cr,                      0.0, 1.0);\n"
+           "        texel0.g = clamp(yy + uConvertK.y * cr + uConvertK.z * cb,   0.0, 1.0);\n"
+           "        texel0.b = clamp(yy + uConvertK.w * cb,                      0.0, 1.0);\n"
+           "        texel0.a = 1.0;\n"
+           "    }\n";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1807,7 +1757,6 @@ std::string ShaderGenerator::GenerateDetailSharpenCode(uint64_t features) const 
     return "";
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC: FULL SHADER GENERATION FOR A COMBINER KEY
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1817,20 +1766,17 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     uint64_t f = key.features;
 
     // ── defines ──────────────────────────────────────────────────────────
-    tmpl.AddDefineIf(f & SF_TEXTURE_0,     "HAS_TEXTURE0");
-    tmpl.AddDefineIf(f & SF_TEXTURE_1,     "HAS_TEXTURE1");
-    tmpl.AddDefineIf(f & SF_ALPHA_TEST,    "ALPHA_TEST");
-    tmpl.AddDefineIf(f & SF_FOG,           "USE_FOG");
-    tmpl.AddDefineIf(f & SF_NOISE_ENABLE,  "USE_NOISE");
+    tmpl.AddDefineIf(f & SF_TEXTURE_0, "HAS_TEXTURE0");
+    tmpl.AddDefineIf(f & SF_TEXTURE_1, "HAS_TEXTURE1");
+    tmpl.AddDefineIf(f & SF_ALPHA_TEST, "ALPHA_TEST");
+    tmpl.AddDefineIf(f & SF_FOG, "USE_FOG");
+    tmpl.AddDefineIf(f & SF_NOISE_ENABLE, "USE_NOISE");
     tmpl.AddDefineIf(f & SF_DEPTH_COMPARE, "DEPTH_COMPARE");
     tmpl.AddDefineIf(f & SF_DITHER_ENABLE, "USE_DITHER");
 
     if (m_language == ShaderLanguage::HLSL_SM5) {
         // ── HLSL Vertex ──────────────────────────────────────────────────
-        tmpl.vertexHeader =
-            GetVertexInputs() +
-            GetVertexOutputs() +
-            GetCommonUniforms();
+        tmpl.vertexHeader = GetVertexInputs() + GetVertexOutputs() + GetCommonUniforms();
         tmpl.vertexBody =
             "VSOutput main(VSInput input) {\n"
             "    VSOutput output;\n"
@@ -1876,10 +1822,8 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
                           "#define IMG_STORE_F(img, coord, val) (img)[(coord)] = (val)\n"
                           "#define IMG_STORE_U(img, coord, val) (img)[(coord)] = (val)\n";
         }
-        if (f & SF_TEXTURE_3POINT)
-            fragHeader += GenerateN64TexFilterCode();
-        if (f & (SF_TEXTURE_0 | SF_TEXTURE_1))
-            fragHeader += GenerateN64TexelReadCode();
+        if (f & SF_TEXTURE_3POINT) fragHeader += GenerateN64TexFilterCode();
+        if (f & (SF_TEXTURE_0 | SF_TEXTURE_1)) fragHeader += GenerateN64TexelReadCode();
         tmpl.fragmentHeader = std::move(fragHeader);
 
         std::string frag;
@@ -1893,8 +1837,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         frag += "    float vClipW = input.vClipW;\n";
         frag += "    float4 vBaryCoord = input.vBaryCoord;\n";
         frag += "    float4 fragColor;\n";
-        if (f & SF_DUAL_SOURCE_BLEND)
-            frag += "    float4 fragColor1 = float4(0,0,0,0);\n";
+        if (f & SF_DUAL_SOURCE_BLEND) frag += "    float4 fragColor1 = float4(0,0,0,0);\n";
         frag += "    int lod_tile = 0;\n";
         frag += "    float lodFrac = 1.0;\n";
         frag += GeneratePrimDepthCode(f);
@@ -1905,20 +1848,17 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         frag += GenerateNoiseCode(f);
         frag += "    float4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
         frag += GenerateCombinerCode(key.mux, f);
-        frag += GenerateAlphaTestCode(f);                // N64: alpha compare before blender
-        frag += GenerateCoverageCode(f);                 // Coverage modifies alpha AFTER test
+        frag += GenerateAlphaTestCode(f); // N64: alpha compare before blender
+        frag += GenerateCoverageCode(f);  // Coverage modifies alpha AFTER test
         // Texture-alpha coverage: for RGBA16 sprites the A bit masks per-pixel visibility.
         // When uTexCvgAlpha is set, discard transparent texture pixels so that
         // background pixels (A=0 in RGBA16) don't overdraw the framebuffer.
         frag += "    if (uTexCvgAlpha != 0 && texel0.a < 0.5) discard;\n";
-        frag += GenerateDitherCode(f, key.otherModeH);   // N64: dither combiner output before blender
+        frag += GenerateDitherCode(f, key.otherModeH); // N64: dither combiner output before blender
         std::string blenderCode0 = GenerateBlenderCode(key.blenderBits, key.otherModeL, f);
-        bool mleDepthInterlock0 = (f & SF_MLE_BLENDER) &&
-                                  (f & SF_N64_DEPTH_COMPARE) &&
-                                  (f & SF_DEPTH_COMPARE) &&
-                                  !(f & SF_DEPTH_RENDER);
-        if (mleDepthInterlock0)
-            frag += GenerateDepthCompareCode(f);
+        bool mleDepthInterlock0 =
+            (f & SF_MLE_BLENDER) && (f & SF_N64_DEPTH_COMPARE) && (f & SF_DEPTH_COMPARE) && !(f & SF_DEPTH_RENDER);
+        if (mleDepthInterlock0) frag += GenerateDepthCompareCode(f);
         frag += blenderCode0;
         frag += "    fragColor = combined;\n";
         if (f & SF_DEPTH_RENDER) {
@@ -1930,18 +1870,14 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
             if (blenderCode0.empty()) {
                 frag += GenerateFogCode(f);
             }
-            if (!mleDepthInterlock0)
-                frag += GenerateDepthCompareCode(f);
+            if (!mleDepthInterlock0) frag += GenerateDepthCompareCode(f);
             frag += GenerateMonochromeCode(f);
         }
         frag += "    PSOutput psOut;\n";
         frag += "    psOut.fragColor = fragColor;\n";
-        if (f & SF_DUAL_SOURCE_BLEND)
-            frag += "    psOut.fragColor1 = fragColor1;\n";
-        if (f & SF_DEPTH_RENDER)
-            frag += "    psOut.fragDepth = depthRenderZ;\n";
-        else if (f & SF_DEPTH_SOURCE_PRIM)
-            frag += "    psOut.fragDepth = uPrimDepth;\n";
+        if (f & SF_DUAL_SOURCE_BLEND) frag += "    psOut.fragColor1 = fragColor1;\n";
+        if (f & SF_DEPTH_RENDER) frag += "    psOut.fragDepth = depthRenderZ;\n";
+        else if (f & SF_DEPTH_SOURCE_PRIM) frag += "    psOut.fragDepth = uPrimDepth;\n";
         frag += "    return psOut;\n";
         frag += "}\n";
         tmpl.fragmentBody = std::move(frag);
@@ -1952,36 +1888,30 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     const bool isVK = (m_language == ShaderLanguage::SPIRV);
 
     // ── vertex header ────────────────────────────────────────────────────
-    tmpl.vertexHeader =
-        GetVersionDirective() +
-        GetVertexInputs() +
-        GetVertexOutputs() +
-        GetCommonUniforms();
+    tmpl.vertexHeader = GetVersionDirective() + GetVertexInputs() + GetVertexOutputs() + GetCommonUniforms();
 
     // ── vertex body ──────────────────────────────────────────────────────
-    tmpl.vertexBody =
-        "void main() {\n"
-        "    gl_Position = uMVPMatrix * aPosition;\n"
-        + std::string(isVK ?
-        // Vulkan NDC fixup: remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
-        // Y-flip is handled by the negative-height viewport (VK_KHR_maintenance1),
-        // so no shader Y-flip is needed here — adding one would double-flip the image.
-        "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n"
-        : "")
-        +
-        "    vDepth      = gl_Position.z / gl_Position.w;\n"
-        "    vColor      = aColor;\n"
-        "    vTexCoord0  = aTexCoord0;\n"
-        "    vTexCoord1  = aTexCoord1;\n"
-        "    vFog        = aFog;\n"
-        "    vClipW      = aClipW;\n"
-        "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
-        "    if (uFogUsage == 1)\n"
-        "        vColor.a = vFog;\n"
-        "    else if (uFogUsage == 2)\n"
-        "        vColor.rgb = vec3(vFog);\n"
-        "    vColorNP    = vColor;\n"
-        "}\n";
+    tmpl.vertexBody = "void main() {\n"
+                      "    gl_Position = uMVPMatrix * aPosition;\n" +
+                      std::string(isVK ?
+                                       // Vulkan NDC fixup: remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
+                                      // Y-flip is handled by the negative-height viewport (VK_KHR_maintenance1),
+                                      // so no shader Y-flip is needed here — adding one would double-flip the image.
+                                      "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n"
+                                       : "") +
+                      "    vDepth      = gl_Position.z / gl_Position.w;\n"
+                      "    vColor      = aColor;\n"
+                      "    vTexCoord0  = aTexCoord0;\n"
+                      "    vTexCoord1  = aTexCoord1;\n"
+                      "    vFog        = aFog;\n"
+                      "    vClipW      = aClipW;\n"
+                      "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
+                      "    if (uFogUsage == 1)\n"
+                      "        vColor.a = vFog;\n"
+                      "    else if (uFogUsage == 2)\n"
+                      "        vColor.rgb = vec3(vFog);\n"
+                      "    vColorNP    = vColor;\n"
+                      "}\n";
 
     // ── fragment header ──────────────────────────────────────────────────
     tmpl.fragmentHeader = GetVersionDirective();
@@ -1990,26 +1920,20 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     // between overlapping fragments from the same draw call.
     bool needsInterlock = (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) != 0;
     if (needsInterlock && !isVK) {
-        tmpl.fragmentHeader +=
-            "#extension GL_ARB_fragment_shader_interlock : enable\n"
-            "layout(pixel_interlock_ordered) in;\n";
+        tmpl.fragmentHeader += "#extension GL_ARB_fragment_shader_interlock : enable\n"
+                               "layout(pixel_interlock_ordered) in;\n";
     }
-    tmpl.fragmentHeader +=
-        GetFragmentInputs() +
-        GetFragmentOutputs(f) +
-        GetCommonUniforms() +
-        (isVK ? GetTextureUniformsVK() : GetTextureUniforms());
+    tmpl.fragmentHeader += GetFragmentInputs() + GetFragmentOutputs(f) + GetCommonUniforms() +
+                           (isVK ? GetTextureUniformsVK() : GetTextureUniforms());
     if (!isVK) {
         // OpenGL image load/store bindings
         if (f & SF_N64_DEPTH_COMPARE) {
-            tmpl.fragmentHeader +=
-                "layout(binding = 0, r32f) uniform restrict image2D uZImageImg;\n"
-                "layout(binding = 1, r32f) uniform restrict image2D uDeltaZImageImg;\n";
+            tmpl.fragmentHeader += "layout(binding = 0, r32f) uniform restrict image2D uZImageImg;\n"
+                                   "layout(binding = 1, r32f) uniform restrict image2D uDeltaZImageImg;\n";
         }
         if (f & SF_MLE_BLENDER) {
-            tmpl.fragmentHeader +=
-                "layout(binding = 2, rgba8) uniform restrict image2D uColorImage;\n"
-                "layout(binding = 3, r8ui) uniform restrict uimage2D uCoverageImage;\n";
+            tmpl.fragmentHeader += "layout(binding = 2, rgba8) uniform restrict image2D uColorImage;\n"
+                                   "layout(binding = 3, r8ui) uniform restrict uimage2D uCoverageImage;\n";
         }
     } else {
         // Vulkan: image load/store not yet wired — emit dummy declarations
@@ -2020,27 +1944,22 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     }
     if (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) {
         if (needsInterlock && !isVK) {
-            tmpl.fragmentHeader +=
-                "#define BEGIN_INTERLOCK() beginInvocationInterlockARB()\n"
-                "#define END_INTERLOCK() endInvocationInterlockARB()\n";
+            tmpl.fragmentHeader += "#define BEGIN_INTERLOCK() beginInvocationInterlockARB()\n"
+                                   "#define END_INTERLOCK() endInvocationInterlockARB()\n";
         } else {
             // No interlock: Intel Iris Xe workaround OR Vulkan path.
-            tmpl.fragmentHeader +=
-                "#define BEGIN_INTERLOCK()\n"
-                "#define END_INTERLOCK()\n";
+            tmpl.fragmentHeader += "#define BEGIN_INTERLOCK()\n"
+                                   "#define END_INTERLOCK()\n";
         }
-        tmpl.fragmentHeader +=
-            "#define IMG_LOAD_F4(img, coord) imageLoad(img, coord)\n"
-            "#define IMG_LOAD_F(img, coord) imageLoad(img, coord).r\n"
-            "#define IMG_LOAD_U(img, coord) imageLoad(img, coord).r\n"
-            "#define IMG_STORE_F4(img, coord, val) imageStore(img, coord, val)\n"
-            "#define IMG_STORE_F(img, coord, val) imageStore(img, coord, vec4(val, 0.0, 0.0, 0.0))\n"
-            "#define IMG_STORE_U(img, coord, val) imageStore(img, coord, uvec4(val, 0u, 0u, 0u))\n";
+        tmpl.fragmentHeader += "#define IMG_LOAD_F4(img, coord) imageLoad(img, coord)\n"
+                               "#define IMG_LOAD_F(img, coord) imageLoad(img, coord).r\n"
+                               "#define IMG_LOAD_U(img, coord) imageLoad(img, coord).r\n"
+                               "#define IMG_STORE_F4(img, coord, val) imageStore(img, coord, val)\n"
+                               "#define IMG_STORE_F(img, coord, val) imageStore(img, coord, vec4(val, 0.0, 0.0, 0.0))\n"
+                               "#define IMG_STORE_U(img, coord, val) imageStore(img, coord, uvec4(val, 0u, 0u, 0u))\n";
     }
-    if (f & SF_TEXTURE_3POINT)
-        tmpl.fragmentHeader += GenerateN64TexFilterCode();
-    if (f & (SF_TEXTURE_0 | SF_TEXTURE_1))
-        tmpl.fragmentHeader += GenerateN64TexelReadCode();
+    if (f & SF_TEXTURE_3POINT) tmpl.fragmentHeader += GenerateN64TexFilterCode();
+    if (f & (SF_TEXTURE_0 | SF_TEXTURE_1)) tmpl.fragmentHeader += GenerateN64TexelReadCode();
 
     // ── fragment body ────────────────────────────────────────────────────
     std::string frag;
@@ -2058,19 +1977,17 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     frag += GenerateNoiseCode(f);
     frag += "    vec4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
     frag += GenerateCombinerCode(key.mux, f);
-    frag += GenerateAlphaTestCode(f);                // N64: alpha compare on RAW combiner output
-    frag += GenerateDitherCode(f, key.otherModeH);   // N64: dither combiner output before coverage
-    frag += GenerateCoverageCode(f);                  // CVG_X_ALPHA uses post-dither alpha
+    frag += GenerateAlphaTestCode(f);              // N64: alpha compare on RAW combiner output
+    frag += GenerateDitherCode(f, key.otherModeH); // N64: dither combiner output before coverage
+    frag += GenerateCoverageCode(f);               // CVG_X_ALPHA uses post-dither alpha
     std::string blenderCode1 = GenerateBlenderCode(key.blenderBits, key.otherModeL, f);
 
     // When MLE blender + N64 depth compare are both active, the depth
     // compare opens the interlock and sets n64DepthPassed; the blender
     // reads the flag, conditionally blends, and closes the interlock.
     // Depth compare must therefore be emitted BEFORE the blender.
-    bool mleDepthInterlock1 = (f & SF_MLE_BLENDER) &&
-                              (f & SF_N64_DEPTH_COMPARE) &&
-                              (f & SF_DEPTH_COMPARE) &&
-                              !(f & SF_DEPTH_RENDER);
+    bool mleDepthInterlock1 =
+        (f & SF_MLE_BLENDER) && (f & SF_N64_DEPTH_COMPARE) && (f & SF_DEPTH_COMPARE) && !(f & SF_DEPTH_RENDER);
     if (mleDepthInterlock1) {
         frag += GenerateDepthCompareCode(f);
     }
@@ -2085,7 +2002,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     frag += "    else if (uDebugOutput == 5) combined = vec4(vTexCoord0, 0.0, 1.0);\n";
     frag += "    else if (uDebugOutput == 6) combined = vec4(vec3(gl_FragCoord.z), 1.0);\n";
     frag += "    else if (uDebugOutput == 7) combined = vec4(vec3(combined.a), 1.0);\n";
-    frag += "    else if (uDebugOutput == 8) combined.a = 1.0;\n"; // force opaque
+    frag += "    else if (uDebugOutput == 8) combined.a = 1.0;\n";                    // force opaque
     frag += "    else if (uDebugOutput == 9) combined = vec4(1.0, 0.0, 1.0, 1.0);\n"; // magenta
 
     frag += "    fragColor = combined;\n";
@@ -2099,8 +2016,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         if (blenderCode1.empty()) {
             frag += GenerateFogCode(f);
         }
-        if (!mleDepthInterlock1)
-            frag += GenerateDepthCompareCode(f);
+        if (!mleDepthInterlock1) frag += GenerateDepthCompareCode(f);
         frag += GenerateMonochromeCode(f);
     }
     frag += "}\n";
@@ -2119,24 +2035,23 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
         src += GetVertexInputs();
         src += GetVertexOutputs();
         src += GetCommonUniforms();
-        src +=
-            "VSOutput main(VSInput input) {\n"
-            "    VSOutput output;\n"
-            "    output.position  = mul(uMVPMatrix, input.aPosition);\n"
-            "    output.vColor    = input.aColor;\n"
-            "    output.vTexCoord0= input.aTexCoord0;\n"
-            "    output.vTexCoord1= input.aTexCoord1;\n"
-            "    output.vFog      = input.aFog;\n"
-            "    output.vClipW    = input.aClipW;\n"
-            "    output.vBaryCoord= float4(input.aBaryCoord, 1.0 - input.aBaryCoord.x - input.aBaryCoord.y, 0.5);\n"
-            "    output.vDepth    = output.position.z / output.position.w;\n"
-            "    if (uFogUsage == 1)\n"
-            "        output.vColor.a = output.vFog;\n"
-            "    else if (uFogUsage == 2)\n"
-            "        output.vColor.rgb = float3(output.vFog, output.vFog, output.vFog);\n"
-            "    output.vColorNP  = output.vColor;\n"
-            "    return output;\n"
-            "}\n";
+        src += "VSOutput main(VSInput input) {\n"
+               "    VSOutput output;\n"
+               "    output.position  = mul(uMVPMatrix, input.aPosition);\n"
+               "    output.vColor    = input.aColor;\n"
+               "    output.vTexCoord0= input.aTexCoord0;\n"
+               "    output.vTexCoord1= input.aTexCoord1;\n"
+               "    output.vFog      = input.aFog;\n"
+               "    output.vClipW    = input.aClipW;\n"
+               "    output.vBaryCoord= float4(input.aBaryCoord, 1.0 - input.aBaryCoord.x - input.aBaryCoord.y, 0.5);\n"
+               "    output.vDepth    = output.position.z / output.position.w;\n"
+               "    if (uFogUsage == 1)\n"
+               "        output.vColor.a = output.vFog;\n"
+               "    else if (uFogUsage == 2)\n"
+               "        output.vColor.rgb = float3(output.vFog, output.vFog, output.vFog);\n"
+               "    output.vColorNP  = output.vColor;\n"
+               "    return output;\n"
+               "}\n";
         return src;
     }
     const bool isVKvs = (m_language == ShaderLanguage::SPIRV);
@@ -2145,29 +2060,26 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
     src += GetVertexInputs();
     src += GetVertexOutputs();
     src += GetCommonUniforms();
-    src +=
-        "void main() {\n"
-        "    gl_Position = uMVPMatrix * aPosition;\n";
+    src += "void main() {\n"
+           "    gl_Position = uMVPMatrix * aPosition;\n";
     if (isVKvs) {
         // Remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
         // Y-flip is handled by the negative-height viewport — no shader flip needed.
-        src +=
-            "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
+        src += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
     }
-    src +=
-        "    vDepth      = gl_Position.z / gl_Position.w;\n"
-        "    vColor      = aColor;\n"
-        "    vTexCoord0  = aTexCoord0;\n"
-        "    vTexCoord1  = aTexCoord1;\n"
-        "    vFog        = aFog;\n"
-        "    vClipW      = aClipW;\n"
-        "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
-        "    if (uFogUsage == 1)\n"
-        "        vColor.a = vFog;\n"
-        "    else if (uFogUsage == 2)\n"
-        "        vColor.rgb = vec3(vFog);\n"
-        "    vColorNP    = vColor;\n"
-        "}\n";
+    src += "    vDepth      = gl_Position.z / gl_Position.w;\n"
+           "    vColor      = aColor;\n"
+           "    vTexCoord0  = aTexCoord0;\n"
+           "    vTexCoord1  = aTexCoord1;\n"
+           "    vFog        = aFog;\n"
+           "    vClipW      = aClipW;\n"
+           "    vBaryCoord  = vec4(aBaryCoord, 1.0 - aBaryCoord.x - aBaryCoord.y, 0.5);\n"
+           "    if (uFogUsage == 1)\n"
+           "        vColor.a = vFog;\n"
+           "    else if (uFogUsage == 2)\n"
+           "        vColor.rgb = vec3(vFog);\n"
+           "    vColorNP    = vColor;\n"
+           "}\n";
     return src;
 }
 
@@ -2206,10 +2118,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
                    "#define IMG_STORE_F(img, coord, val) (img)[(coord)] = (val)\n"
                    "#define IMG_STORE_U(img, coord, val) (img)[(coord)] = (val)\n";
         }
-        if (key.features & SF_TEXTURE_3POINT)
-            src += GenerateN64TexFilterCode();
-        if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1))
-            src += GenerateN64TexelReadCode();
+        if (key.features & SF_TEXTURE_3POINT) src += GenerateN64TexFilterCode();
+        if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1)) src += GenerateN64TexelReadCode();
         src += "PSOutput main(PSInput input) {\n";
         src += "    float4 vColor = input.vColor;\n";
         src += "    float4 vColorNP = input.vColorNP;\n";
@@ -2220,8 +2130,7 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
         src += "    float vClipW = input.vClipW;\n";
         src += "    float4 vBaryCoord = input.vBaryCoord;\n";
         src += "    float4 fragColor;\n";
-        if (key.features & SF_DUAL_SOURCE_BLEND)
-            src += "    float4 fragColor1 = float4(0,0,0,0);\n";
+        if (key.features & SF_DUAL_SOURCE_BLEND) src += "    float4 fragColor1 = float4(0,0,0,0);\n";
         src += "    int lod_tile = 0;\n";
         src += "    float lodFrac = 1.0;\n";
         src += GeneratePrimDepthCode(key.features);
@@ -2251,12 +2160,9 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
         }
         src += "    PSOutput psOut;\n";
         src += "    psOut.fragColor = fragColor;\n";
-        if (key.features & SF_DUAL_SOURCE_BLEND)
-            src += "    psOut.fragColor1 = fragColor1;\n";
-        if (key.features & SF_DEPTH_RENDER)
-            src += "    psOut.fragDepth = depthRenderZ;\n";
-        else if (key.features & SF_DEPTH_SOURCE_PRIM)
-            src += "    psOut.fragDepth = uPrimDepth;\n";
+        if (key.features & SF_DUAL_SOURCE_BLEND) src += "    psOut.fragColor1 = fragColor1;\n";
+        if (key.features & SF_DEPTH_RENDER) src += "    psOut.fragDepth = depthRenderZ;\n";
+        else if (key.features & SF_DEPTH_SOURCE_PRIM) src += "    psOut.fragDepth = uPrimDepth;\n";
         src += "    return psOut;\n";
         src += "}\n";
         return src;
@@ -2297,10 +2203,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
                "#define IMG_STORE_F(img, coord, val) imageStore(img, coord, vec4(val, 0.0, 0.0, 0.0))\n"
                "#define IMG_STORE_U(img, coord, val) imageStore(img, coord, uvec4(val, 0u, 0u, 0u))\n";
     }
-    if (key.features & SF_TEXTURE_3POINT)
-        src += GenerateN64TexFilterCode();
-    if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1))
-        src += GenerateN64TexelReadCode();
+    if (key.features & SF_TEXTURE_3POINT) src += GenerateN64TexFilterCode();
+    if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1)) src += GenerateN64TexelReadCode();
     src += "void main() {\n";
     // Declare texel0 default before GenerateDetailSharpenCode which may use it
     if (!(key.features & SF_TEXTURE_0)) src += "    vec4 texel0 = vec4(0.0, 0.0, 0.0, 1.0);\n";
@@ -2315,19 +2219,17 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     src += GenerateNoiseCode(key.features);
     src += "    vec4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
     src += GenerateCombinerCode(key.mux, key.features);
-    src += GenerateAlphaTestCode(key.features);          // N64: alpha compare on RAW combiner output
-    src += GenerateCoverageCode(key.features);            // Coverage modifies alpha AFTER test
-    src += GenerateDitherCode(key.features, key.otherModeH);  // N64: dither before blender
+    src += GenerateAlphaTestCode(key.features);              // N64: alpha compare on RAW combiner output
+    src += GenerateCoverageCode(key.features);               // Coverage modifies alpha AFTER test
+    src += GenerateDitherCode(key.features, key.otherModeH); // N64: dither before blender
     std::string blenderCode3 = GenerateBlenderCode(key.blenderBits, key.otherModeL, key.features);
 
     // When MLE blender + N64 depth compare are both active, the depth
     // compare opens the interlock and sets n64DepthPassed; the blender
     // reads the flag, conditionally blends, and closes the interlock.
     // Depth compare must therefore be emitted BEFORE the blender.
-    bool mleDepthInterlock = (key.features & SF_MLE_BLENDER) &&
-                             (key.features & SF_N64_DEPTH_COMPARE) &&
-                             (key.features & SF_DEPTH_COMPARE) &&
-                             !(key.features & SF_DEPTH_RENDER);
+    bool mleDepthInterlock = (key.features & SF_MLE_BLENDER) && (key.features & SF_N64_DEPTH_COMPARE) &&
+                             (key.features & SF_DEPTH_COMPARE) && !(key.features & SF_DEPTH_RENDER);
     if (mleDepthInterlock) {
         src += GenerateDepthCompareCode(key.features);
         src += blenderCode3;
@@ -2343,8 +2245,7 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
         if (blenderCode3.empty()) {
             src += GenerateFogCode(key.features);
         }
-        if (!mleDepthInterlock)
-            src += GenerateDepthCompareCode(key.features);
+        if (!mleDepthInterlock) src += GenerateDepthCompareCode(key.features);
         src += GenerateMonochromeCode(key.features);
     }
     src += "}\n";
@@ -2362,25 +2263,23 @@ std::string ShaderGenerator::GenerateShadowMapShader() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
         src += GetHLSLCompatPreamble();
         src += GetFragmentInputs();
-        src +=
-            "struct PSOutput {\n"
-            "    float4 fragColor : SV_Target0;\n"
-            "};\n";
+        src += "struct PSOutput {\n"
+               "    float4 fragColor : SV_Target0;\n"
+               "};\n";
         src += GetCommonUniforms();
         src += GetTextureUniforms();
-        src +=
-            "PSOutput main(PSInput input) {\n"
-            "    // Read GL depth at this fragment\n"
-            "    int2 coord = int2(input.position.xy);\n"
-            "    float bufZ = tDepthTexture.Load(int3(coord, 0)).r;\n"
-            "    // Map [0,1] depth to 0..255 TLUT index\n"
-            "    int index = min(255, int(bufZ * 255.0));\n"
-            "    // Look up shadow alpha from TLUT (palette loaded from TMEM)\n"
-            "    float alpha = tTLUT0.Load(int3(index, 0, 0)).r;\n"
-            "    PSOutput psOut;\n"
-            "    psOut.fragColor = float4(uFogColor.rgb, alpha);\n"
-            "    return psOut;\n"
-            "}\n";
+        src += "PSOutput main(PSInput input) {\n"
+               "    // Read GL depth at this fragment\n"
+               "    int2 coord = int2(input.position.xy);\n"
+               "    float bufZ = tDepthTexture.Load(int3(coord, 0)).r;\n"
+               "    // Map [0,1] depth to 0..255 TLUT index\n"
+               "    int index = min(255, int(bufZ * 255.0));\n"
+               "    // Look up shadow alpha from TLUT (palette loaded from TMEM)\n"
+               "    float alpha = tTLUT0.Load(int3(index, 0, 0)).r;\n"
+               "    PSOutput psOut;\n"
+               "    psOut.fragColor = float4(uFogColor.rgb, alpha);\n"
+               "    return psOut;\n"
+               "}\n";
         return src;
     }
     // GLSL path (OpenGL 4.6)
@@ -2389,17 +2288,16 @@ std::string ShaderGenerator::GenerateShadowMapShader() const {
     src += "out vec4 fragColor;\n";
     src += GetCommonUniforms();
     src += GetTextureUniforms();
-    src +=
-        "void main() {\n"
-        "    // Read GL depth at this fragment\n"
-        "    ivec2 coord = ivec2(gl_FragCoord.xy);\n"
-        "    float bufZ = texelFetch(uDepthTexture, coord, 0).r;\n"
-        "    // Map [0,1] depth to 0..255 TLUT index\n"
-        "    int index = min(255, int(bufZ * 255.0));\n"
-        "    // Look up shadow alpha from TLUT (palette loaded from TMEM)\n"
-        "    float alpha = texelFetch(uTLUT0, ivec2(index, 0), 0).r;\n"
-        "    fragColor = vec4(uFogColor.rgb, alpha);\n"
-        "}\n";
+    src += "void main() {\n"
+           "    // Read GL depth at this fragment\n"
+           "    ivec2 coord = ivec2(gl_FragCoord.xy);\n"
+           "    float bufZ = texelFetch(uDepthTexture, coord, 0).r;\n"
+           "    // Map [0,1] depth to 0..255 TLUT index\n"
+           "    int index = min(255, int(bufZ * 255.0));\n"
+           "    // Look up shadow alpha from TLUT (palette loaded from TMEM)\n"
+           "    float alpha = texelFetch(uTLUT0, ivec2(index, 0), 0).r;\n"
+           "    fragColor = vec4(uFogColor.rgb, alpha);\n"
+           "}\n";
     return src;
 }
 
@@ -2412,19 +2310,18 @@ std::string ShaderGenerator::GenerateGeometryShader(uint64_t features) const {
 
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "layout(triangles) in;\n"
-        "layout(line_strip, max_vertices = 4) out;\n"
-        "\n"
-        "void main() {\n"
-        "    for (int i = 0; i < 3; ++i) {\n"
-        "        gl_Position = gl_in[i].gl_Position;\n"
-        "        EmitVertex();\n"
-        "    }\n"
-        "    gl_Position = gl_in[0].gl_Position;\n"
-        "    EmitVertex();\n"
-        "    EndPrimitive();\n"
-        "}\n";
+    src += "layout(triangles) in;\n"
+           "layout(line_strip, max_vertices = 4) out;\n"
+           "\n"
+           "void main() {\n"
+           "    for (int i = 0; i < 3; ++i) {\n"
+           "        gl_Position = gl_in[i].gl_Position;\n"
+           "        EmitVertex();\n"
+           "    }\n"
+           "    gl_Position = gl_in[0].gl_Position;\n"
+           "    EmitVertex();\n"
+           "    EndPrimitive();\n"
+           "}\n";
     return src;
 }
 
@@ -2435,24 +2332,22 @@ std::string ShaderGenerator::GenerateGeometryShader(uint64_t features) const {
 std::string ShaderGenerator::GenerateDepthOnlyVertex() const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "layout(location = 0) in vec4 aPosition;\n"
-        "\n"
-        "uniform mat4 uMVPMatrix;\n"
-        "\n"
-        "void main() {\n"
-        "    gl_Position = uMVPMatrix * aPosition;\n"
-        "}\n";
+    src += "layout(location = 0) in vec4 aPosition;\n"
+           "\n"
+           "uniform mat4 uMVPMatrix;\n"
+           "\n"
+           "void main() {\n"
+           "    gl_Position = uMVPMatrix * aPosition;\n"
+           "}\n";
     return src;
 }
 
 std::string ShaderGenerator::GenerateDepthOnlyFragment() const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "void main() {\n"
-        "    // Depth is written automatically\n"
-        "}\n";
+    src += "void main() {\n"
+           "    // Depth is written automatically\n"
+           "}\n";
     return src;
 }
 
@@ -2463,62 +2358,57 @@ std::string ShaderGenerator::GenerateDepthOnlyFragment() const {
 std::string ShaderGenerator::GeneratePostProcessVertex() const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "layout(location = 0) in vec2 aPosition;\n"
-        "layout(location = 1) in vec2 aTexCoord;\n"
-        "\n"
-        "out vec2 vTexCoord;\n"
-        "\n"
-        "void main() {\n"
-        "    gl_Position = vec4(aPosition, 0.0, 1.0);\n"
-        "    vTexCoord   = aTexCoord;\n"
-        "}\n";
+    src += "layout(location = 0) in vec2 aPosition;\n"
+           "layout(location = 1) in vec2 aTexCoord;\n"
+           "\n"
+           "out vec2 vTexCoord;\n"
+           "\n"
+           "void main() {\n"
+           "    gl_Position = vec4(aPosition, 0.0, 1.0);\n"
+           "    vTexCoord   = aTexCoord;\n"
+           "}\n";
     return src;
 }
 
 std::string ShaderGenerator::GeneratePostProcessFragment(uint64_t features) const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "in vec2 vTexCoord;\n"
-        "layout(location = 0) out vec4 fragColor;\n"
-        "\n"
-        "uniform sampler2D uFBTexture;\n"
-        "uniform vec2 uScreenSize;\n"
-        "uniform vec2 uInvScreenSize;\n"
-        "\n"
-        "void main() {\n"
-        "    fragColor = texture(uFBTexture, vTexCoord);\n";
+    src += "in vec2 vTexCoord;\n"
+           "layout(location = 0) out vec4 fragColor;\n"
+           "\n"
+           "uniform sampler2D uFBTexture;\n"
+           "uniform vec2 uScreenSize;\n"
+           "uniform vec2 uInvScreenSize;\n"
+           "\n"
+           "void main() {\n"
+           "    fragColor = texture(uFBTexture, vTexCoord);\n";
 
-    if (features & SF_GAMMA_CORRECT)
-        src += GenerateGammaCorrectionCode();
+    if (features & SF_GAMMA_CORRECT) src += GenerateGammaCorrectionCode();
     if (features & SF_AA_ENABLE)
-        src +=
-            "    // N64-style anti-aliasing: 3x3 weighted blur on coverage edges\n"
-            "    {\n"
-            "        vec4 center = fragColor;\n"
-            "        vec4 sum = center * 4.0;\n"
-            "        sum += texture(uFBTexture, vTexCoord + vec2(-uInvScreenSize.x, 0.0));\n"
-            "        sum += texture(uFBTexture, vTexCoord + vec2( uInvScreenSize.x, 0.0));\n"
-            "        sum += texture(uFBTexture, vTexCoord + vec2(0.0, -uInvScreenSize.y));\n"
-            "        sum += texture(uFBTexture, vTexCoord + vec2(0.0,  uInvScreenSize.y));\n"
-            "        // Edge detection: blend only where neighbors differ significantly\n"
-            "        vec4 avg = sum / 8.0;\n"
-            "        float diff = length(center.rgb - avg.rgb);\n"
-            "        float blend = smoothstep(0.02, 0.15, diff);\n"
-            "        fragColor = mix(center, avg, blend);\n"
-            "    }\n";
+        src += "    // N64-style anti-aliasing: 3x3 weighted blur on coverage edges\n"
+               "    {\n"
+               "        vec4 center = fragColor;\n"
+               "        vec4 sum = center * 4.0;\n"
+               "        sum += texture(uFBTexture, vTexCoord + vec2(-uInvScreenSize.x, 0.0));\n"
+               "        sum += texture(uFBTexture, vTexCoord + vec2( uInvScreenSize.x, 0.0));\n"
+               "        sum += texture(uFBTexture, vTexCoord + vec2(0.0, -uInvScreenSize.y));\n"
+               "        sum += texture(uFBTexture, vTexCoord + vec2(0.0,  uInvScreenSize.y));\n"
+               "        // Edge detection: blend only where neighbors differ significantly\n"
+               "        vec4 avg = sum / 8.0;\n"
+               "        float diff = length(center.rgb - avg.rgb);\n"
+               "        float blend = smoothstep(0.02, 0.15, diff);\n"
+               "        fragColor = mix(center, avg, blend);\n"
+               "    }\n";
     if (features & SF_DIVOT_ENABLE)
-        src +=
-            "    // Divot filter: 3-pixel horizontal median to remove single-pixel errors\n"
-            "    {\n"
-            "        vec4 left  = texture(uFBTexture, vTexCoord + vec2(-uInvScreenSize.x, 0.0));\n"
-            "        vec4 right = texture(uFBTexture, vTexCoord + vec2( uInvScreenSize.x, 0.0));\n"
-            "        // Per-channel median of (left, center, right)\n"
-            "        vec4 mn = min(min(left, right), fragColor);\n"
-            "        vec4 mx = max(max(left, right), fragColor);\n"
-            "        fragColor = left + right + fragColor - mn - mx;\n"
-            "    }\n";
+        src += "    // Divot filter: 3-pixel horizontal median to remove single-pixel errors\n"
+               "    {\n"
+               "        vec4 left  = texture(uFBTexture, vTexCoord + vec2(-uInvScreenSize.x, 0.0));\n"
+               "        vec4 right = texture(uFBTexture, vTexCoord + vec2( uInvScreenSize.x, 0.0));\n"
+               "        // Per-channel median of (left, center, right)\n"
+               "        vec4 mn = min(min(left, right), fragColor);\n"
+               "        vec4 mx = max(max(left, right), fragColor);\n"
+               "        fragColor = left + right + fragColor - mn - mx;\n"
+               "    }\n";
 
     src += "}\n";
     return src;
@@ -2531,41 +2421,39 @@ std::string ShaderGenerator::GeneratePostProcessFragment(uint64_t features) cons
 std::string ShaderGenerator::GenerateUIVertex() const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "layout(location = 0) in vec2 aPosition;\n"
-        "layout(location = 1) in vec2 aTexCoord;\n"
-        "layout(location = 2) in vec4 aColor;\n"
-        "\n"
-        "uniform mat4 uProjection;\n"
-        "\n"
-        "out vec2 vTexCoord;\n"
-        "out vec4 vColor;\n"
-        "\n"
-        "void main() {\n"
-        "    gl_Position = uProjection * vec4(aPosition, 0.0, 1.0);\n"
-        "    vTexCoord   = aTexCoord;\n"
-        "    vColor      = aColor;\n"
-        "}\n";
+    src += "layout(location = 0) in vec2 aPosition;\n"
+           "layout(location = 1) in vec2 aTexCoord;\n"
+           "layout(location = 2) in vec4 aColor;\n"
+           "\n"
+           "uniform mat4 uProjection;\n"
+           "\n"
+           "out vec2 vTexCoord;\n"
+           "out vec4 vColor;\n"
+           "\n"
+           "void main() {\n"
+           "    gl_Position = uProjection * vec4(aPosition, 0.0, 1.0);\n"
+           "    vTexCoord   = aTexCoord;\n"
+           "    vColor      = aColor;\n"
+           "}\n";
     return src;
 }
 
 std::string ShaderGenerator::GenerateUIFragment() const {
     std::string src;
     src += GetVersionDirective();
-    src +=
-        "in vec2 vTexCoord;\n"
-        "in vec4 vColor;\n"
-        "\n"
-        "layout(location = 0) out vec4 fragColor;\n"
-        "\n"
-        "uniform sampler2D uTexture0;\n"
-        "\n"
-        "void main() {\n"
-        "    fragColor = vColor * texture(uTexture0, vTexCoord);\n"
-        "}\n";
+    src += "in vec2 vTexCoord;\n"
+           "in vec4 vColor;\n"
+           "\n"
+           "layout(location = 0) out vec4 fragColor;\n"
+           "\n"
+           "uniform sampler2D uTexture0;\n"
+           "\n"
+           "void main() {\n"
+           "    fragColor = vColor * texture(uTexture0, vTexCoord);\n"
+           "}\n";
     return src;
 }
 
-}}} // namespace Nova64::Video::Shader
-
-
+} // namespace Shader
+} // namespace Video
+} // namespace Nova64

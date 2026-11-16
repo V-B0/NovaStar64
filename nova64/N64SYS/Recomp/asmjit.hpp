@@ -45,49 +45,44 @@
 
 // Include platform-specific assembler headers
 #if defined(__amd64__) || defined(_M_X64) || defined(__x86_64__)
-    #ifndef NOVA64_ARCH_X64
-    #define NOVA64_ARCH_X64
-    #endif
-    #include <asmjit/x86.h>
-    namespace Nova64Asm = asmjit::x86;
+#ifndef NOVA64_ARCH_X64
+#define NOVA64_ARCH_X64
+#endif
+#include <asmjit/x86.h>
+namespace Nova64Asm = asmjit::x86;
 #elif defined(__i386__) || defined(_M_IX86)
-    #ifndef NOVA64_ARCH_X86
-    #define NOVA64_ARCH_X86
-    #endif
-    #include <asmjit/x86.h>
-    namespace Nova64Asm = asmjit::x86;
+#ifndef NOVA64_ARCH_X86
+#define NOVA64_ARCH_X86
+#endif
+#include <asmjit/x86.h>
+namespace Nova64Asm = asmjit::x86;
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #ifndef NOVA64_ARCH_ARM64
-    #define NOVA64_ARCH_ARM64
-    #endif
-    #include <asmjit/a64.h>
-    namespace Nova64Asm = asmjit::a64;
+#ifndef NOVA64_ARCH_ARM64
+#define NOVA64_ARCH_ARM64
+#endif
+#include <asmjit/a64.h>
+namespace Nova64Asm = asmjit::a64;
 #elif defined(__arm__) || defined(_M_ARM)
-    #ifndef NOVA64_ARCH_ARM32
-    #define NOVA64_ARCH_ARM32
-    #endif
-    #include <asmjit/arm.h>
-    namespace Nova64Asm = asmjit::arm;
+#ifndef NOVA64_ARCH_ARM32
+#define NOVA64_ARCH_ARM32
+#endif
+#include <asmjit/arm.h>
+namespace Nova64Asm = asmjit::arm;
 #else
-    #error "Unsupported architecture for recompiler"
+#error "Unsupported architecture for recompiler"
 #endif
 
 // Custom hasher for map keys (Real AsmJit)
 struct AsmJitLabelHash {
-    std::size_t operator()(const asmjit::Label& k) const noexcept {
-        return std::hash<uint32_t>{}(k.id());
-    }
+    std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
 };
 
 // Also specialize std::hash just in case
 namespace std {
-    template<>
-    struct hash<asmjit::Label> {
-        std::size_t operator()(const asmjit::Label& k) const noexcept {
-            return std::hash<uint32_t>{}(k.id());
-        }
-    };
-}
+template <> struct hash<asmjit::Label> {
+    std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
+};
+} // namespace std
 
 #else
 // AsmJit not available - use stub declarations
@@ -96,177 +91,204 @@ namespace std {
 
 // Detect target architecture
 #if defined(__amd64__) || defined(_M_X64) || defined(__x86_64__)
-    #ifndef NOVA64_ARCH_X64
-    #define NOVA64_ARCH_X64
-    #endif
+#ifndef NOVA64_ARCH_X64
+#define NOVA64_ARCH_X64
+#endif
 #elif defined(__i386__) || defined(_M_IX86)
-    #ifndef NOVA64_ARCH_X86
-    #define NOVA64_ARCH_X86
-    #endif
+#ifndef NOVA64_ARCH_X86
+#define NOVA64_ARCH_X86
+#endif
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    #ifndef NOVA64_ARCH_ARM64
-    #define NOVA64_ARCH_ARM64
-    #endif
+#ifndef NOVA64_ARCH_ARM64
+#define NOVA64_ARCH_ARM64
+#endif
 #elif defined(__arm__) || defined(_M_ARM)
-    #ifndef NOVA64_ARCH_ARM32
-    #define NOVA64_ARCH_ARM32
-    #endif
+#ifndef NOVA64_ARCH_ARM32
+#define NOVA64_ARCH_ARM32
+#endif
 #else
-    #error "Unsupported architecture for recompiler"
+#error "Unsupported architecture for recompiler"
 #endif
 
-    class ErrorHandler;
-    class BaseEmitter; 
+class ErrorHandler;
+class BaseEmitter;
 
-    // Forward declarations for AsmJit types (stubs until library is integrated)
-    namespace asmjit {
-        enum Error : uint32_t { kErrorOk = 0 };
+// Forward declarations for AsmJit types (stubs until library is integrated)
+namespace asmjit {
+enum Error : uint32_t { kErrorOk = 0 };
 
-        class Environment {
-        public: Environment() = default; static Environment host() { return Environment(); } };
+class Environment {
+public:
+    Environment() = default;
+    static Environment host() { return Environment(); }
+};
 
-        class BaseEmitter;
-        class ErrorHandler {
-        public: virtual ~ErrorHandler() = default; virtual void handleError(Error, const char*, BaseEmitter*) = 0; };
+class BaseEmitter;
+class ErrorHandler {
+public:
+    virtual ~ErrorHandler() = default;
+    virtual void handleError(Error, const char*, BaseEmitter*) = 0;
+};
 
-        class Section {
-        public:
-            size_t bufferSize() const { return 0; }
-        };
+class Section {
+public:
+    size_t bufferSize() const { return 0; }
+};
 
-        class JitRuntime {
-        public:
-            JitRuntime() = default;
-            virtual ~JitRuntime() = default;
-            Environment environment() const { return Environment(); }
-            void release(void*) {}
-            Error add(void** dst, CodeHolder*) { *dst = nullptr; return kErrorOk; }
-        };
-
-        class CodeHolder {
-        public:
-            CodeHolder() = default;
-            virtual ~CodeHolder() = default;
-            void init(const Environment&) {}
-            Error attach(BaseEmitter*) { return kErrorOk; }
-            void detach(BaseEmitter*) {}
-            size_t codeSize() const { return 0; }
-            void setErrorHandler(ErrorHandler*) {}
-            Section* textSection() { return &m_textSection; }
-        private:
-            Section m_textSection;
-        };
-
-        class Logger { public: virtual ~Logger() = default; };
-        class FormatOptions {};
-        class Operand {};
-        class Label : public Operand { public: Label() = default; bool isValid() const { return true; } uint32_t id() const { return 0; } };
-    class Imm : public Operand { public: Imm(int64_t) {} };
-    class BaseEmitter { public: virtual ~BaseEmitter() = default; };
-
-    namespace x86 {
-        // Stub register instances
-        struct Gp : public Operand {};
-        struct Gpd : public Gp {};
-        struct Gpq : public Gp {};
-        inline Gpq rax{}, rbx{}, rcx{}, rdx{}, rsi{}, rdi{}, rbp{}, rsp{};
-        inline Gpq r8{}, r9{}, r10{}, r11{}, r12{}, r13{}, r14{}, r15{};
-        inline Gpd eax{}, ebx{}, ecx{}, edx{}, esi{}, edi{}, ebp{}, esp{};
-
-        class Assembler : public BaseEmitter { 
-        public: 
-            Assembler(CodeHolder*) {} 
-            void ret() {}
-            void push(const Operand&) {}
-            void pop(const Operand&) {}
-            void mov(const Operand&, const Operand&) {}
-            void add(const Operand&, const Operand&) {}
-            void sub(const Operand&, const Operand&) {}
-            void xor_(const Operand&, const Operand&) {}
-            void and_(const Operand&, const Operand&) {}
-            void or_(const Operand&, const Operand&) {}
-            void cmp(const Operand&, const Operand&) {}
-            void test(const Operand&, const Operand&) {}
-            void jmp(const Label&) {}
-            void je(const Label&) {}
-            void jne(const Label&) {}
-            void jz(const Label&) {}
-            void jnz(const Label&) {}
-            void call(const Operand&) {}
-            void nop() {}
-            Label newLabel() { return Label(); }
-            void bind(const Label&) {}
-        };
-        class Compiler {}; class Builder {};
-        class Xmm : public Operand {};
-        class Ymm : public Operand {};
-        class Mm : public Operand {};
-        class St : public Operand {};
-        class Mem : public Operand {};
-        enum class Condition : uint32_t {};
+class JitRuntime {
+public:
+    JitRuntime() = default;
+    virtual ~JitRuntime() = default;
+    Environment environment() const { return Environment(); }
+    void release(void*) {}
+    Error add(void** dst, CodeHolder*) {
+        *dst = nullptr;
+        return kErrorOk;
     }
+};
 
-    namespace a64 {
-        class Assembler : public BaseEmitter { public: Assembler(CodeHolder*) {} };
-        class Compiler {}; class Builder {};
-        class Gp : public Operand {};
-        class Vec : public Operand {};
-        class Mem : public Operand {};
-        enum class Condition : uint32_t {};
-    }
+class CodeHolder {
+public:
+    CodeHolder() = default;
+    virtual ~CodeHolder() = default;
+    void init(const Environment&) {}
+    Error attach(BaseEmitter*) { return kErrorOk; }
+    void detach(BaseEmitter*) {}
+    size_t codeSize() const { return 0; }
+    void setErrorHandler(ErrorHandler*) {}
+    Section* textSection() { return &m_textSection; }
 
-    namespace arm {
-        class Assembler : public BaseEmitter { public: Assembler(CodeHolder*) {} };
-        class Compiler {}; class Gp : public Operand {};
-        class Vec : public Operand {}; class Mem : public Operand {};
-    }
+private:
+    Section m_textSection;
+};
 
-    namespace DebugUtils {
-        inline const char* errorAsString(Error) { return "AsmJit stub"; }
-    }
-}
+class Logger {
+public:
+    virtual ~Logger() = default;
+};
+class FormatOptions {};
+class Operand {};
+class Label : public Operand {
+public:
+    Label() = default;
+    bool isValid() const { return true; }
+    uint32_t id() const { return 0; }
+};
+class Imm : public Operand {
+public:
+    Imm(int64_t) {}
+};
+class BaseEmitter {
+public:
+    virtual ~BaseEmitter() = default;
+};
+
+namespace x86 {
+// Stub register instances
+struct Gp : public Operand {};
+struct Gpd : public Gp {};
+struct Gpq : public Gp {};
+inline Gpq rax{}, rbx{}, rcx{}, rdx{}, rsi{}, rdi{}, rbp{}, rsp{};
+inline Gpq r8{}, r9{}, r10{}, r11{}, r12{}, r13{}, r14{}, r15{};
+inline Gpd eax{}, ebx{}, ecx{}, edx{}, esi{}, edi{}, ebp{}, esp{};
+
+class Assembler : public BaseEmitter {
+public:
+    Assembler(CodeHolder*) {}
+    void ret() {}
+    void push(const Operand&) {}
+    void pop(const Operand&) {}
+    void mov(const Operand&, const Operand&) {}
+    void add(const Operand&, const Operand&) {}
+    void sub(const Operand&, const Operand&) {}
+    void xor_(const Operand&, const Operand&) {}
+    void and_(const Operand&, const Operand&) {}
+    void or_(const Operand&, const Operand&) {}
+    void cmp(const Operand&, const Operand&) {}
+    void test(const Operand&, const Operand&) {}
+    void jmp(const Label&) {}
+    void je(const Label&) {}
+    void jne(const Label&) {}
+    void jz(const Label&) {}
+    void jnz(const Label&) {}
+    void call(const Operand&) {}
+    void nop() {}
+    Label newLabel() { return Label(); }
+    void bind(const Label&) {}
+};
+class Compiler {};
+class Builder {};
+class Xmm : public Operand {};
+class Ymm : public Operand {};
+class Mm : public Operand {};
+class St : public Operand {};
+class Mem : public Operand {};
+enum class Condition : uint32_t {};
+} // namespace x86
+
+namespace a64 {
+class Assembler : public BaseEmitter {
+public:
+    Assembler(CodeHolder*) {}
+};
+class Compiler {};
+class Builder {};
+class Gp : public Operand {};
+class Vec : public Operand {};
+class Mem : public Operand {};
+enum class Condition : uint32_t {};
+} // namespace a64
+
+namespace arm {
+class Assembler : public BaseEmitter {
+public:
+    Assembler(CodeHolder*) {}
+};
+class Compiler {};
+class Gp : public Operand {};
+class Vec : public Operand {};
+class Mem : public Operand {};
+} // namespace arm
+
+namespace DebugUtils {
+inline const char* errorAsString(Error) { return "AsmJit stub"; }
+} // namespace DebugUtils
+} // namespace asmjit
 
 // std::hash specialization for asmjit::Label (needed for unordered_map keys)
 namespace std {
-    template<>
-    struct hash<asmjit::Label> {
-        size_t operator()(const asmjit::Label& /*label*/) const noexcept {
-            return 0; // Stub implementation
-        }
-    };
-    template<>
-    struct equal_to<asmjit::Label> {
-        bool operator()(const asmjit::Label& /*a*/, const asmjit::Label& /*b*/) const noexcept {
-            return true; // Stub implementation
-        }
-    };
-}
+template <> struct hash<asmjit::Label> {
+    size_t operator()(const asmjit::Label& /*label*/) const noexcept {
+        return 0; // Stub implementation
+    }
+};
+template <> struct equal_to<asmjit::Label> {
+    bool operator()(const asmjit::Label& /*a*/, const asmjit::Label& /*b*/) const noexcept {
+        return true; // Stub implementation
+    }
+};
+} // namespace std
 
 // Namespace alias for platform-specific types
 #if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
-    namespace Nova64Asm = asmjit::x86;
+namespace Nova64Asm = asmjit::x86;
 #elif defined(NOVA64_ARCH_ARM64)
-    namespace Nova64Asm = asmjit::a64;
+namespace Nova64Asm = asmjit::a64;
 #elif defined(NOVA64_ARCH_ARM32)
-    namespace Nova64Asm = asmjit::arm;
+namespace Nova64Asm = asmjit::arm;
 #endif
 
 // Custom hasher for map keys
 struct AsmJitLabelHash {
-    std::size_t operator()(const asmjit::Label& k) const noexcept {
-        return std::hash<uint32_t>{}(k.id());
-    }
+    std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
 };
 
 // Also specialize std::hash just in case
 namespace std {
-    template<>
-    struct hash<asmjit::Label> {
-        std::size_t operator()(const asmjit::Label& k) const noexcept {
-            return std::hash<uint32_t>{}(k.id());
-        }
-    };
-}
+template <> struct hash<asmjit::Label> {
+    std::size_t operator()(const asmjit::Label& k) const noexcept { return std::hash<uint32_t>{}(k.id()); }
+};
+} // namespace std
 
 #endif // NOVA64_ASMJIT_ENABLED
 
@@ -295,35 +317,35 @@ using Error = asmjit::Error;
 
 // Platform-specific assembler types
 #if defined(NOVA64_ARCH_X64) || defined(NOVA64_ARCH_X86)
-    using Assembler = asmjit::x86::Assembler;
-    using Compiler = asmjit::x86::Compiler;
-    using Builder = asmjit::x86::Builder;
-    using Gp = asmjit::x86::Gp;       // General purpose register
-    using Gpd = asmjit::x86::Gp;      // 32-bit GP register (aliased to Gp)
-    using Gpq = asmjit::x86::Gp;      // 64-bit GP register (aliased to Gp)
-    using Vec = asmjit::x86::Vec;      // Unified vector register (XMM/YMM/ZMM)
-    using Xmm = asmjit::x86::Vec;     // SSE register (alias for Vec)
-    using Ymm = asmjit::x86::Vec;     // AVX register (alias for Vec)
-    using Mm = asmjit::x86::Mm;       // MMX register
-    using St = asmjit::x86::St;       // x87 FPU register
-    using Mem = asmjit::x86::Mem;     // Memory operand
-    using CondCode = asmjit::x86::CondCode;  // Condition code enum
-    using Condition = asmjit::x86::CondCode;  // Legacy alias
+using Assembler = asmjit::x86::Assembler;
+using Compiler = asmjit::x86::Compiler;
+using Builder = asmjit::x86::Builder;
+using Gp = asmjit::x86::Gp;              // General purpose register
+using Gpd = asmjit::x86::Gp;             // 32-bit GP register (aliased to Gp)
+using Gpq = asmjit::x86::Gp;             // 64-bit GP register (aliased to Gp)
+using Vec = asmjit::x86::Vec;            // Unified vector register (XMM/YMM/ZMM)
+using Xmm = asmjit::x86::Vec;            // SSE register (alias for Vec)
+using Ymm = asmjit::x86::Vec;            // AVX register (alias for Vec)
+using Mm = asmjit::x86::Mm;              // MMX register
+using St = asmjit::x86::St;              // x87 FPU register
+using Mem = asmjit::x86::Mem;            // Memory operand
+using CondCode = asmjit::x86::CondCode;  // Condition code enum
+using Condition = asmjit::x86::CondCode; // Legacy alias
 #elif defined(NOVA64_ARCH_ARM64)
-    using Assembler = asmjit::a64::Assembler;
-    using Compiler = asmjit::a64::Compiler;
-    using Builder = asmjit::a64::Builder;
-    using Gp = asmjit::a64::Gp;       // General purpose register
-    using Vec = asmjit::a64::Vec;     // Vector register
-    using Mem = asmjit::a64::Mem;     // Memory operand
-    using CondCode = asmjit::arm::CondCode;   // Condition code enum (shared a32/a64)
-    using Condition = asmjit::arm::CondCode;  // Legacy alias
+using Assembler = asmjit::a64::Assembler;
+using Compiler = asmjit::a64::Compiler;
+using Builder = asmjit::a64::Builder;
+using Gp = asmjit::a64::Gp;              // General purpose register
+using Vec = asmjit::a64::Vec;            // Vector register
+using Mem = asmjit::a64::Mem;            // Memory operand
+using CondCode = asmjit::arm::CondCode;  // Condition code enum (shared a32/a64)
+using Condition = asmjit::arm::CondCode; // Legacy alias
 #elif defined(NOVA64_ARCH_ARM32)
-    using Assembler = asmjit::arm::Assembler;
-    using Compiler = asmjit::arm::Compiler;
-    using Gp = asmjit::arm::Gp;
-    using Vec = asmjit::arm::Vec;
-    using Mem = asmjit::arm::Mem;
+using Assembler = asmjit::arm::Assembler;
+using Compiler = asmjit::arm::Compiler;
+using Gp = asmjit::arm::Gp;
+using Vec = asmjit::arm::Vec;
+using Mem = asmjit::arm::Mem;
 #endif
 
 // =============================================================================
@@ -346,19 +368,17 @@ public:
     virtual void handleError(asmjit::Error err, const char* message, asmjit::BaseEmitter* /*origin*/) {
         m_lastError = err;
         m_lastMessage = message ? message : "Unknown AsmJit error";
-        
-        Log::errorf("AsmJit Error [%u]: %s", 
-                   static_cast<uint32_t>(err), 
-                   m_lastMessage.c_str());
+
+        Log::errorf("AsmJit Error [%u]: %s", static_cast<uint32_t>(err), m_lastMessage.c_str());
     }
 
     // Get last error information
     [[nodiscard]] asmjit::Error getLastError() const noexcept { return m_lastError; }
     [[nodiscard]] const std::string& getLastMessage() const noexcept { return m_lastMessage; }
-    
+
     // Check if an error occurred
     [[nodiscard]] bool hasError() const noexcept { return m_lastError != asmjit::kErrorOk; }
-    
+
     // Clear error state
     void clearError() noexcept {
         m_lastError = asmjit::kErrorOk;
@@ -385,18 +405,12 @@ struct CodeBufferInfo {
     size_t codeSize = 0;
     size_t capacity = 0;
     uint32_t instructionCount = 0;
-    
-    [[nodiscard]] bool isValid() const noexcept { 
-        return baseAddress != nullptr && codeSize > 0; 
-    }
-    
-    [[nodiscard]] void* getEndAddress() const noexcept {
-        return static_cast<uint8_t*>(baseAddress) + codeSize;
-    }
-    
-    [[nodiscard]] size_t getUsedPercentage() const noexcept {
-        return capacity > 0 ? (codeSize * 100) / capacity : 0;
-    }
+
+    [[nodiscard]] bool isValid() const noexcept { return baseAddress != nullptr && codeSize > 0; }
+
+    [[nodiscard]] void* getEndAddress() const noexcept { return static_cast<uint8_t*>(baseAddress) + codeSize; }
+
+    [[nodiscard]] size_t getUsedPercentage() const noexcept { return capacity > 0 ? (codeSize * 100) / capacity : 0; }
 };
 
 // =============================================================================
@@ -407,7 +421,7 @@ struct CodeBufferInfo {
  * @brief Get human-readable error message for AsmJit error code
  */
 [[nodiscard]] inline const char* GetErrorString(asmjit::Error /*err*/) noexcept {
-    return "AsmJit Error (details unavailable)"; 
+    return "AsmJit Error (details unavailable)";
 }
 
 /**
@@ -470,9 +484,7 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 /**
  * @brief Get pointer size for current architecture
  */
-[[nodiscard]] inline constexpr size_t GetPointerSize() noexcept {
-    return Is64BitArch() ? 8 : 4;
-}
+[[nodiscard]] inline constexpr size_t GetPointerSize() noexcept { return Is64BitArch() ? 8 : 4; }
 
 } // namespace Recomp
 } // namespace Nova64
@@ -482,28 +494,28 @@ inline void LogAsmJitError(asmjit::Error err, const char* context = nullptr) {
 // =============================================================================
 
 // Error checking macros
-#define ASMJIT_CHECK(expr) \
-    do { \
-        asmjit::Error _err = (expr); \
-        if (_err != asmjit::kErrorOk) { \
-            Nova64::Recomp::LogAsmJitError(_err, #expr); \
-        } \
+#define ASMJIT_CHECK(expr)                                                                                             \
+    do {                                                                                                               \
+        asmjit::Error _err = (expr);                                                                                   \
+        if (_err != asmjit::kErrorOk) {                                                                                \
+            Nova64::Recomp::LogAsmJitError(_err, #expr);                                                               \
+        }                                                                                                              \
     } while (0)
 
-#define ASMJIT_CHECK_RETURN(expr) \
-    do { \
-        asmjit::Error _err = (expr); \
-        if (_err != asmjit::kErrorOk) { \
-            Nova64::Recomp::LogAsmJitError(_err, #expr); \
-            return false; \
-        } \
+#define ASMJIT_CHECK_RETURN(expr)                                                                                      \
+    do {                                                                                                               \
+        asmjit::Error _err = (expr);                                                                                   \
+        if (_err != asmjit::kErrorOk) {                                                                                \
+            Nova64::Recomp::LogAsmJitError(_err, #expr);                                                               \
+            return false;                                                                                              \
+        }                                                                                                              \
     } while (0)
 
-#define ASMJIT_CHECK_RETURN_NULL(expr) \
-    do { \
-        asmjit::Error _err = (expr); \
-        if (_err != asmjit::kErrorOk) { \
-            Nova64::Recomp::LogAsmJitError(_err, #expr); \
-            return nullptr; \
-        } \
+#define ASMJIT_CHECK_RETURN_NULL(expr)                                                                                 \
+    do {                                                                                                               \
+        asmjit::Error _err = (expr);                                                                                   \
+        if (_err != asmjit::kErrorOk) {                                                                                \
+            Nova64::Recomp::LogAsmJitError(_err, #expr);                                                               \
+            return nullptr;                                                                                            \
+        }                                                                                                              \
     } while (0)

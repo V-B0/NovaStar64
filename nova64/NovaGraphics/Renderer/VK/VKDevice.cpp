@@ -7,25 +7,25 @@
 #include <vector>
 #include <set>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
-bool VKDevice::Create(VkPhysicalDevice physical,
-                      uint32_t graphicsFamily,
-                      uint32_t presentFamily) {
+bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32_t presentFamily) {
     if (!physical) return false;
 
     m_graphicsFamily = graphicsFamily;
-    m_presentFamily  = presentFamily;
+    m_presentFamily = presentFamily;
 
     // ── unique queue create infos ──────────────────────────
-    std::set<uint32_t> uniqueFamilies = { graphicsFamily, presentFamily };
+    std::set<uint32_t> uniqueFamilies = {graphicsFamily, presentFamily};
     std::vector<VkDeviceQueueCreateInfo> qcis;
     qcis.reserve(uniqueFamilies.size());
     const float prio = 1.0f;
     for (uint32_t fam : uniqueFamilies) {
         VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         qci.queueFamilyIndex = fam;
-        qci.queueCount       = 1;
+        qci.queueCount = 1;
         qci.pQueuePriorities = &prio;
         qcis.push_back(qci);
     }
@@ -42,13 +42,13 @@ bool VKDevice::Create(VkPhysicalDevice physical,
     };
 
     // ── enabled extensions ─────────────────────────────────
-    std::vector<const char*> deviceExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    std::vector<const char*> deviceExts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     // RT extension quartet — all four must be present together.
-    const bool hasAS   = hasExt(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-    const bool hasRTP  = hasExt(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-    const bool hasBDA  = hasExt(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-    const bool hasDHO  = hasExt(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    const bool hasAS = hasExt(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    const bool hasRTP = hasExt(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    const bool hasBDA = hasExt(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    const bool hasDHO = hasExt(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
     m_supportsRayTracing = hasAS && hasRTP && hasBDA && hasDHO;
     if (m_supportsRayTracing) {
         deviceExts.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
@@ -75,7 +75,7 @@ bool VKDevice::Create(VkPhysicalDevice physical,
         deviceExts.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
         edsFeatures.extendedDynamicState = VK_TRUE;
         edsFeatures.pNext = features2.pNext;
-        features2.pNext   = &edsFeatures;
+        features2.pNext = &edsFeatures;
         Logger::Info("VKDevice: VK_EXT_extended_dynamic_state ENABLED (ISA warmup depth override)");
     } else {
         Logger::Info("VKDevice: VK_EXT_extended_dynamic_state not available (ISA warmup may be less effective)");
@@ -90,43 +90,40 @@ bool VKDevice::Create(VkPhysicalDevice physical,
 
     // Query available features first, then enable only what's there.
     if (m_supportsRayTracing) {
-        bdaFeatures.pNext  = nullptr;
-        asFeatures.pNext   = &bdaFeatures;
-        rtpFeatures.pNext  = &asFeatures;
-        features2.pNext    = &rtpFeatures;
+        bdaFeatures.pNext = nullptr;
+        asFeatures.pNext = &bdaFeatures;
+        rtpFeatures.pNext = &asFeatures;
+        features2.pNext = &rtpFeatures;
         vkGetPhysicalDeviceFeatures2(physical, &features2);
 
         // Enforce minimum requirements.  Disable RT if core features are absent.
-        if (!bdaFeatures.bufferDeviceAddress ||
-            !asFeatures.accelerationStructure ||
-            !rtpFeatures.rayTracingPipeline) {
+        if (!bdaFeatures.bufferDeviceAddress || !asFeatures.accelerationStructure || !rtpFeatures.rayTracingPipeline) {
             Logger::Info("VKDevice: RT feature flags missing — hardware raytracing DISABLED");
             m_supportsRayTracing = false;
             deviceExts.erase(deviceExts.begin() + 1, deviceExts.end()); // keep swapchain only
             features2.pNext = nullptr;
-            vkGetPhysicalDeviceFeatures2(physical, &features2); // re-query without RT
+            vkGetPhysicalDeviceFeatures2(physical, &features2);         // re-query without RT
         }
     } else {
         vkGetPhysicalDeviceFeatures2(physical, &features2);
     }
 
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-    dci.pNext                   = &features2;
-    dci.queueCreateInfoCount    = static_cast<uint32_t>(qcis.size());
-    dci.pQueueCreateInfos       = qcis.data();
-    dci.enabledExtensionCount   = static_cast<uint32_t>(deviceExts.size());
+    dci.pNext = &features2;
+    dci.queueCreateInfoCount = static_cast<uint32_t>(qcis.size());
+    dci.pQueueCreateInfos = qcis.data();
+    dci.enabledExtensionCount = static_cast<uint32_t>(deviceExts.size());
     dci.ppEnabledExtensionNames = deviceExts.data();
     // pEnabledFeatures must be NULL when pNext chain contains features2
-    dci.pEnabledFeatures        = nullptr;
+    dci.pEnabledFeatures = nullptr;
 
     VK_CHECK(vkCreateDevice(physical, &dci, nullptr, &m_device));
     volkLoadDevice(m_device);
 
     vkGetDeviceQueue(m_device, graphicsFamily, 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_device, presentFamily,  0, &m_presentQueue);
+    vkGetDeviceQueue(m_device, presentFamily, 0, &m_presentQueue);
 
-    Logger::Info("VKDevice: created (graphicsFamily={}, presentFamily={})",
-                 graphicsFamily, presentFamily);
+    Logger::Info("VKDevice: created (graphicsFamily={}, presentFamily={})", graphicsFamily, presentFamily);
     return true;
 }
 
@@ -142,4 +139,6 @@ void VKDevice::WaitIdle() {
     if (m_device) vkDeviceWaitIdle(m_device);
 }
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

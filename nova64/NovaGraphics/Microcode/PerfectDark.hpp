@@ -20,16 +20,16 @@ class F3DPDHandler : public GBIHandler {
 public:
     F3DPDHandler() = default;
     ~F3DPDHandler() override = default;
-    
+
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3DPD; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
     int GetVertexCacheSize() const override { return 80; } // PD handles extended vertex buffer size up to 80
     const char* GetName() const override { return "F3DPD (Perfect Dark)"; }
-    
+
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
     void OnFrameBegin(DListContext& ctx) override;
-    
+
 private:
     // ─── PD-specific command handlers ────────────────────────────────
     void Cmd_G_VTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -54,7 +54,7 @@ private:
     void Cmd_G_LOAD_UCODE_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_BRANCH_Z_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MODIFYVTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1);
-    
+
     // PD stores vertex colors separately from positions
     struct PDVertexColor {
         uint8_t r, g, b, a;
@@ -69,7 +69,7 @@ private:
 
 inline void F3DPDHandler::Initialize(const MicrocodeInfo& info) {
     (void)info;
-    m_vtxColors.fill({ 255, 255, 255, 255 });
+    m_vtxColors.fill({255, 255, 255, 255});
     m_vtxColorAddress = 0;
     ResetStats();
 }
@@ -81,30 +81,40 @@ inline void F3DPDHandler::OnFrameBegin(DListContext& ctx) {
 
 inline bool F3DPDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     if (opcode >= 0xC0) {
         HandleRDPCommand(ctx, w0, w1);
         return true;
     }
-    
+
     switch (opcode) {
     case 0x00: break; // NOOP
     case 0x01: Cmd_G_MTX_PD(ctx, w0, w1); break;
     case 0x03: Cmd_G_MOVEMEM_PD(ctx, w0, w1); break;
     case 0x04: Cmd_G_VTX_PD(ctx, w0, w1); break;
     case 0x06: Cmd_G_DL_PD(ctx, w0, w1); break;
-    
+
     // PD-specific: vertex color load (unique command)
     case 0x07: Cmd_G_VTX_COLOR_PD(ctx, w0, w1); break;
-    
+
     // PD uses a special TRI4 that packs 4 triangles into 3 words
-    case 0x10: case 0x11: case 0x12: case 0x13:
-    case 0x14: case 0x15: case 0x16: case 0x17:
-    case 0x18: case 0x19: case 0x1A: case 0x1B:
-    case 0x1C: case 0x1D: case 0x1E: case 0x1F:
-        Cmd_G_TRI4_PD(ctx, w0, w1);
-        break;
-    
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13:
+    case 0x14:
+    case 0x15:
+    case 0x16:
+    case 0x17:
+    case 0x18:
+    case 0x19:
+    case 0x1A:
+    case 0x1B:
+    case 0x1C:
+    case 0x1D:
+    case 0x1E:
+    case 0x1F: Cmd_G_TRI4_PD(ctx, w0, w1); break;
+
     case 0xAF: Cmd_G_LOAD_UCODE_PD(ctx, w0, w1); break;
     case 0xB0: Cmd_G_BRANCH_Z_PD(ctx, w0, w1); break;
     case 0xB1: Cmd_G_TRI2_PD(ctx, w0, w1); break;
@@ -121,13 +131,10 @@ inline bool F3DPDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     case 0xBD: Cmd_G_POPMTX_PD(ctx, w0, w1); break;
     case 0xBE: Cmd_G_CULLDL_PD(ctx, w0, w1); break;
     case 0xBF: Cmd_G_TRI1_PD(ctx, w0, w1); break;
-    
-    default:
-        NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                "F3DPD: Unknown opcode 0x{:02X}", opcode);
-        break;
+
+    default: NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3DPD: Unknown opcode 0x{:02X}", opcode); break;
     }
-    
+
     return !ctx.halted;
 }
 
@@ -137,14 +144,14 @@ inline void F3DPDHandler::Cmd_G_VTX_PD(DListContext& ctx, uint32_t w0, uint32_t 
     // PD vertex: count in bits [20:10], start in bits [9:0]
     int count = (w0 >> 10) & 0x3F;
     int startIndex = w0 & 0x3FF;
-    
+
     // PD has 80 vertex buffer
     if (startIndex + count > 80) {
         count = 80 - startIndex;
     }
-    
+
     LoadVertices(ctx, w1, count, startIndex);
-    
+
     // Apply separately stored vertex colors
     if (ctx.state && m_vtxColorAddress != 0) {
         auto& geo = ctx.state->geometry;
@@ -165,13 +172,13 @@ inline void F3DPDHandler::Cmd_G_VTX_COLOR_PD(DListContext& ctx, uint32_t w0, uin
     int start = (w0 >> 16) & 0xFF;
     int count = (w0 >> 10) & 0x3F;
     uint32_t address = ctx.ResolveAddress(w1);
-    
+
     m_vtxColorAddress = address;
-    
+
     for (int i = 0; i < count && (start + i) < 80; ++i) {
         uint32_t colorAddr = address + i * 4;
         if (colorAddr + 4 > ctx.rdramSize) break;
-        
+
         m_vtxColors[start + i].r = ctx.rdram[colorAddr + 0];
         m_vtxColors[start + i].g = ctx.rdram[colorAddr + 1];
         m_vtxColors[start + i].b = ctx.rdram[colorAddr + 2];
@@ -218,33 +225,33 @@ inline void F3DPDHandler::Cmd_G_TRI4_PD(DListContext& ctx, uint32_t w0, uint32_t
     uint8_t flags = w0 >> 24;
     int numTris = flags & 0x0F;
     if (numTris == 0) numTris = 1;
-    
+
     // First triangle always present
     int v0 = ((w0 >> 16) & 0xFF) / 2;
     int v1 = ((w0 >> 8) & 0xFF) / 2;
     int v2 = (w0 & 0xFF) / 2;
     DrawTriangle(ctx, v0, v1, v2);
-    
+
     if (numTris >= 2) {
         int v3 = ((w1 >> 16) & 0xFF) / 2;
         int v4 = ((w1 >> 8) & 0xFF) / 2;
         int v5 = (w1 & 0xFF) / 2;
         DrawTriangle(ctx, v3, v4, v5);
     }
-    
+
     // For 3-4 triangles, need to read additional words (1 full GBI command)
     if (numTris >= 3) {
         uint32_t w2 = ctx.ReadWord(ctx.pc);
         uint32_t w3 = ctx.ReadWord(ctx.pc + 4);
         ctx.AdvancePC(2); // Always advance by 8 bytes to maintain GBI alignment
-        
+
         int v6 = ((w2 >> 16) & 0xFF) / 2;
         int v7 = ((w2 >> 8) & 0xFF) / 2;
         int v8 = (w2 & 0xFF) / 2;
         DrawTriangle(ctx, v6, v7, v8);
-        
+
         if (numTris >= 4) {
-            int v9  = ((w2 >> 24) & 0xFF) / 2;  // High byte encodes 4th tri start
+            int v9 = ((w2 >> 24) & 0xFF) / 2; // High byte encodes 4th tri start
             int v10 = ((w3 >> 16) & 0xFF) / 2;
             int v11 = ((w3 >> 8) & 0xFF) / 2;
             DrawTriangle(ctx, v9, v10, v11);
@@ -280,20 +287,21 @@ inline void F3DPDHandler::Cmd_G_SETOTHERMODE_L_PD(DListContext& ctx, uint32_t w0
 }
 
 inline void F3DPDHandler::Cmd_G_ENDDL_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0; (void)w1;
+    (void)w0;
+    (void)w1;
     EndDisplayList(ctx);
 }
 
 /// Translate GBI1 geometry mode bits to GBI2 (internal) format.
 static inline uint32_t TranslateGBI1ToGBI2_PD(uint32_t gbi1) {
     constexpr uint32_t GBI1_SHADING_SMOOTH = 0x00000200;
-    constexpr uint32_t GBI1_CULL_FRONT     = 0x00001000;
-    constexpr uint32_t GBI1_CULL_BACK      = 0x00002000;
+    constexpr uint32_t GBI1_CULL_FRONT = 0x00001000;
+    constexpr uint32_t GBI1_CULL_BACK = 0x00002000;
     constexpr uint32_t GBI1_MASK = GBI1_SHADING_SMOOTH | GBI1_CULL_FRONT | GBI1_CULL_BACK;
     uint32_t result = gbi1 & ~GBI1_MASK;
     if (gbi1 & GBI1_SHADING_SMOOTH) result |= 0x00200000;
-    if (gbi1 & GBI1_CULL_FRONT)     result |= 0x00000200;
-    if (gbi1 & GBI1_CULL_BACK)      result |= 0x00000400;
+    if (gbi1 & GBI1_CULL_FRONT) result |= 0x00000200;
+    if (gbi1 & GBI1_CULL_BACK) result |= 0x00000400;
     return result;
 }
 
@@ -308,7 +316,8 @@ inline void F3DPDHandler::Cmd_G_CLEARGEOMETRYMODE_PD(DListContext& ctx, uint32_t
 }
 
 inline void F3DPDHandler::Cmd_G_POPMTX_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0; (void)w1;
+    (void)w0;
+    (void)w1;
     // F3D-derived (GBI1 command encoding): pops exactly one model-view matrix.
     PopMatrixN(ctx, 1);
 }
@@ -320,12 +329,14 @@ inline void F3DPDHandler::Cmd_G_CULLDL_PD(DListContext& ctx, uint32_t w0, uint32
 }
 
 inline void F3DPDHandler::Cmd_G_RDPHALF_1_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf1 = w1;
 }
 
 inline void F3DPDHandler::Cmd_G_RDPHALF_2_PD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf2 = w1;
 }
 

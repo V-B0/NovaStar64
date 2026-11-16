@@ -20,43 +20,44 @@ extern ed::EditorContext* g_NodeEditor;
 
 const char* NovaLauncher::NodeIcon(SimNodeKind k) {
     switch (k) {
-        case SimNodeKind::N64Console:    return "[N64]";
-        case SimNodeKind::TV:            return "[TV]";
-        case SimNodeKind::N64DD:         return "[DD]";
-        case SimNodeKind::Controller:    return "[CTL]";
-        case SimNodeKind::ExpansionPak:  return "[EXP]";
-        case SimNodeKind::Cartridge:     return "[CART]";
-        case SimNodeKind::RumblePak:     return "[RMB]";
-        case SimNodeKind::ControllerPak: return "[MEM]";
-        case SimNodeKind::TransferPak:   return "[T-PAK]";
+    case SimNodeKind::N64Console:    return "[N64]";
+    case SimNodeKind::TV:            return "[TV]";
+    case SimNodeKind::N64DD:         return "[DD]";
+    case SimNodeKind::Controller:    return "[CTL]";
+    case SimNodeKind::ExpansionPak:  return "[EXP]";
+    case SimNodeKind::Cartridge:     return "[CART]";
+    case SimNodeKind::RumblePak:     return "[RMB]";
+    case SimNodeKind::ControllerPak: return "[MEM]";
+    case SimNodeKind::TransferPak:   return "[T-PAK]";
     }
     return "[?]";
 }
 
 const char* NovaLauncher::NodeLabel(SimNodeKind k) {
     switch (k) {
-        case SimNodeKind::N64Console:    return "Console";
-        case SimNodeKind::TV:            return "TV";
-        case SimNodeKind::N64DD:         return "64DD Drive";
-        case SimNodeKind::Controller:    return "Controller";
-        case SimNodeKind::ExpansionPak:  return "Expansion Pak";
-        case SimNodeKind::Cartridge:     return "Cartridge";
-        case SimNodeKind::RumblePak:     return "Rumble Pak";
-        case SimNodeKind::ControllerPak: return "Controller Pak";
-        case SimNodeKind::TransferPak:   return "Transfer Pak";
+    case SimNodeKind::N64Console:    return "Console";
+    case SimNodeKind::TV:            return "TV";
+    case SimNodeKind::N64DD:         return "64DD Drive";
+    case SimNodeKind::Controller:    return "Controller";
+    case SimNodeKind::ExpansionPak:  return "Expansion Pak";
+    case SimNodeKind::Cartridge:     return "Cartridge";
+    case SimNodeKind::RumblePak:     return "Rumble Pak";
+    case SimNodeKind::ControllerPak: return "Controller Pak";
+    case SimNodeKind::TransferPak:   return "Transfer Pak";
     }
     return "Accessory";
 }
 
 bool NovaLauncher::IsN64DDDisk(const std::string& path) {
     std::string ext = std::filesystem::path(path).extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext == ".ndd" || ext == ".d64";
 }
 
 void NovaLauncher::SpawnNode(SimNodeKind kind, int cartIndex) {
     SimNode n;
-    n.id   = m_nextNodeId++;
+    n.id = m_nextNodeId++;
     n.kind = kind;
     // Lay new nodes out in a grid so they don't land on top of each other.
     const int slot = static_cast<int>(m_simNodes.size());
@@ -142,8 +143,8 @@ void NovaLauncher::RenderSimNode(SimNode& node) {
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("HW_NODE")) {
             const int srcId = *static_cast<const int*>(pl->Data);
-            auto it = std::find_if(m_simNodes.begin(), m_simNodes.end(),
-                                   [srcId](const SimNode& n) { return n.id == srcId; });
+            auto it =
+                std::find_if(m_simNodes.begin(), m_simNodes.end(), [srcId](const SimNode& n) { return n.id == srcId; });
             if (it != m_simNodes.end()) {
                 if (it->kind == SimNodeKind::Cartridge) {
                     if (IsN64DDDisk(it->cartPath)) {
@@ -177,8 +178,7 @@ void NovaLauncher::RenderSimulatorTab() {
     // RenderSimNode holds valid, and indexing avoids iterator invalidation.
     m_simNodes.reserve(m_simNodes.size() * 2 + 1);
     for (size_t i = 0; i < m_simNodes.size(); ++i) RenderSimNode(m_simNodes[i]);
-    for (const auto& lnk : m_simLinks)
-        ed::Link(ed::LinkId(lnk.id), ed::PinId(lnk.fromPin), ed::PinId(lnk.toPin));
+    for (const auto& lnk : m_simLinks) ed::Link(ed::LinkId(lnk.id), ed::PinId(lnk.fromPin), ed::PinId(lnk.toPin));
 
     if (ed::BeginCreate()) {
         ed::PinId fromPin, toPin;
@@ -187,9 +187,9 @@ void NovaLauncher::RenderSimulatorTab() {
             const int b = static_cast<int>(toPin.Get());
             if (IsInputPin(a) != IsInputPin(b) && ed::AcceptNewItem(ImVec4(0.2f, 0.7f, 0.3f, 1.0f), 2.0f)) {
                 SimLink lnk;
-                lnk.id      = m_nextLinkId++;
+                lnk.id = m_nextLinkId++;
                 lnk.fromPin = IsInputPin(a) ? b : a;
-                lnk.toPin   = IsInputPin(a) ? a : b;
+                lnk.toPin = IsInputPin(a) ? a : b;
                 m_simLinks.push_back(lnk);
             }
         }
@@ -201,7 +201,8 @@ void NovaLauncher::RenderSimulatorTab() {
         while (ed::QueryDeletedLink(&deleted)) {
             if (!ed::AcceptDeletedItem()) continue;
             m_simLinks.erase(std::remove_if(m_simLinks.begin(), m_simLinks.end(),
-                [&](const SimLink& l) { return l.id == static_cast<int>(deleted.Get()); }), m_simLinks.end());
+                                            [&](const SimLink& l) { return l.id == static_cast<int>(deleted.Get()); }),
+                             m_simLinks.end());
         }
     }
     ed::EndDelete();
@@ -242,8 +243,8 @@ void NovaLauncher::RenderSimulatorTab() {
             if (lnk.toPin != GetPinId(tv.id, 1)) continue;
             const int consoleId = GetNodeIdFromPin(lnk.fromPin);
             for (const auto& console : m_simNodes) {
-                if (console.id == consoleId && console.kind == SimNodeKind::N64Console &&
-                    console.isPowered && console.cartPath[0] != '\0')
+                if (console.id == consoleId && console.kind == SimNodeKind::N64Console && console.isPowered &&
+                    console.cartPath[0] != '\0')
                     ready = &console;
             }
         }

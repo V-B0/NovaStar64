@@ -48,11 +48,11 @@ public:
     void Flush();
 
     struct Stats {
-        uint64_t blocksCompiled  = 0;
-        uint64_t blocksRun       = 0;
-        uint64_t flushes         = 0;
-        uint64_t setSwitches     = 0;   ///< Times execution moved to another IMEM image's code
-        uint64_t interpreterRuns = 0;   ///< Tasks finished by the interpreter after a compile failure
+        uint64_t blocksCompiled = 0;
+        uint64_t blocksRun = 0;
+        uint64_t flushes = 0;
+        uint64_t setSwitches = 0;     ///< Times execution moved to another IMEM image's code
+        uint64_t interpreterRuns = 0; ///< Tasks finished by the interpreter after a compile failure
     };
     [[nodiscard]] const Stats& GetStats() const { return m_Stats; }
 
@@ -61,28 +61,28 @@ private:
     // times a frame. Code is kept per IMEM image, so going back to one already seen
     // costs a lookup instead of a recompile.
     struct CodeSet {
-        uint64_t                  hash = 0;
-        uint64_t                  lastUse = 0;
-        bool                      valid = false;
-        std::array<BlockFn, 1024> blocks{};   // indexed by IMEM address / 4
+        uint64_t hash = 0;
+        uint64_t lastUse = 0;
+        bool valid = false;
+        std::array<BlockFn, 1024> blocks{}; // indexed by IMEM address / 4
     };
     static constexpr size_t kCodeSets = 16;
 
     CodeSet* SelectSet(uint64_t imemHash);
-    void     ClearSet(CodeSet& set);
+    void ClearSet(CodeSet& set);
 
     BlockFn Lookup(uint32_t pc);
-    bool    Discover(uint32_t startPc, Block& block) const;
+    bool Discover(uint32_t startPc, Block& block) const;
     uint32_t Fetch(uint32_t pc) const;
     uint64_t HashImem() const;
 
-    CRSPSystem&                m_System;
-    std::unique_ptr<Backend>   m_Backend;
+    CRSPSystem& m_System;
+    std::unique_ptr<Backend> m_Backend;
     std::array<CodeSet, kCodeSets> m_Sets{};
-    CodeSet*                   m_Active{nullptr};
-    uint64_t                   m_Clock{0};
-    bool                       m_ImemDirty{false};
-    Stats                      m_Stats;
+    CodeSet* m_Active{nullptr};
+    uint64_t m_Clock{0};
+    bool m_ImemDirty{false};
+    Stats m_Stats;
 };
 
 } // namespace Nova64::RSP::Jit

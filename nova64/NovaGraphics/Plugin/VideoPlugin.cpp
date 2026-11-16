@@ -56,7 +56,7 @@ const char* PluginStatusName(PluginStatus status) {
     case PluginStatus::Paused:        return "Paused";
     case PluginStatus::Error:         return "Error";
     case PluginStatus::ShuttingDown:  return "ShuttingDown";
-    default: return "Unknown";
+    default:                          return "Unknown";
     }
 }
 
@@ -72,13 +72,9 @@ VideoPlugin::~VideoPlugin() {
 //  Lifecycle
 // ═══════════════════════════════════════════════════════════════
 
-void VideoPlugin::SetExternalWindow(WindowManager* window) {
-    m_externalWindow = window;
-}
+void VideoPlugin::SetExternalWindow(WindowManager* window) { m_externalWindow = window; }
 
-WindowManager* VideoPlugin::GetActiveWindow() const {
-    return m_externalWindow ? m_externalWindow : m_window.get();
-}
+WindowManager* VideoPlugin::GetActiveWindow() const { return m_externalWindow ? m_externalWindow : m_window.get(); }
 
 bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& callbacks) {
     if (m_status != PluginStatus::Uninitialized) {
@@ -92,13 +88,13 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         logCfg.consoleOutput = true;
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4996)
+#pragma warning(disable : 4996)
 #endif
         const char* videoLogPath = std::getenv("NOVA64_VIDEO_LOG");
-        logCfg.fileOutput    = videoLogPath && videoLogPath[0] != '\0';
+        logCfg.fileOutput = videoLogPath && videoLogPath[0] != '\0';
         if (logCfg.fileOutput) logCfg.logFilePath = videoLogPath;
-        logCfg.colorConsole  = true;
-        logCfg.globalLevel   = ParseVideoLogLevel(std::getenv("NOVA64_VIDEO_LOG_LEVEL"));
+        logCfg.colorConsole = true;
+        logCfg.globalLevel = ParseVideoLogLevel(std::getenv("NOVA64_VIDEO_LOG_LEVEL"));
         if (std::getenv("NOVA64_MM_RDP_TRACE")) {
             logCfg.subsystemLevels[static_cast<size_t>(LogSubsystem::RDP)] = LogLevel::Info;
         }
@@ -110,7 +106,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     Log::info("NovaGraphics initializing...");
     LOG_INFO("NovaGraphics {} initializing...", m_version);
-    m_sysInfo   = sysInfo;
+    m_sysInfo = sysInfo;
     m_callbacks = callbacks;
 
     // Load configuration
@@ -144,18 +140,16 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
             // LLE: DoRspCycles still tries HLE first, which keeps audio HLE working,
             // and runs the graphics microcode on the RSP engine (recompiler or
             // interpreter, see CRSPSettings::Engine).
-            Nova64::RSP::CRSPSettings::SetCPUMethod(
-                Nova64::RSP::RSPCpuMethod::HleWithFallback);
+            Nova64::RSP::CRSPSettings::SetCPUMethod(Nova64::RSP::RSPCpuMethod::HleWithFallback);
         }
-        LOG_INFO("MLE: renderingMode={} → graphicsHle={}",
-                 static_cast<int>(mode), wantGfxHle ? "true" : "false");
+        LOG_INFO("MLE: renderingMode={} → graphicsHle={}", static_cast<int>(mode), wantGfxHle ? "true" : "false");
     }
 
     // Apply CLI overrides (set by NovaGraphicsGFXPlugin before Initialize)
     if (m_pendingResScale > 0) {
         m_config.internalResScale = m_pendingResScale;
-        m_config.windowWidth      = m_pendingWindowW;
-        m_config.windowHeight     = m_pendingWindowH;
+        m_config.windowWidth = m_pendingWindowW;
+        m_config.windowHeight = m_pendingWindowH;
         m_pendingResScale = 0;
     }
 
@@ -173,7 +167,6 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
             return false;
         }
     }
-
 
     // Guard against a missing OpenGL context before touching any GL entry point.
     // In embedded mode the emulator runs on a background thread, and macOS/Cocoa
@@ -208,9 +201,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         GetOutputSize(winW, winH);
         void* windowHandle = nullptr;
         if (auto* win = GetActiveWindow()) windowHandle = win->GetSDLWindow();
-        if (!m_renderer->Initialize(windowHandle,
-                                     static_cast<uint32_t>(winW),
-                                     static_cast<uint32_t>(winH))) {
+        if (!m_renderer->Initialize(windowHandle, static_cast<uint32_t>(winW), static_cast<uint32_t>(winH))) {
             // Abort instead of limping on: downstream init (RDPProcessor →
             // CreateTexture) dereferences the renderer's device context and
             // SEGFAULTS on a half-initialized renderer (seen with LLE mode in
@@ -232,7 +223,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     {
         Tex::TextureCacheConfig tcConfig;
         tcConfig.enableMipmaps = m_config.enableMipmaps;
-        tcConfig.lodBias       = m_config.lodBias;
+        tcConfig.lodBias = m_config.lodBias;
         m_textureCache->Initialize(m_renderer.get(), tcConfig);
     }
 
@@ -241,8 +232,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     m_shaderManager = std::make_unique<Shader::ShaderManager>();
     {
         const bool isVulkan = (m_renderer->GetBackendType() == BackendType::Vulkan);
-        const Shader::BackendAPI shaderApi =
-            isVulkan ? Shader::BackendAPI::Vulkan : Shader::BackendAPI::OpenGL;
+        const Shader::BackendAPI shaderApi = isVulkan ? Shader::BackendAPI::Vulkan : Shader::BackendAPI::OpenGL;
         m_shaderManager->Initialize(shaderApi);
 
         if (isVulkan) {
@@ -262,9 +252,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Initialize RDP processor with real renderer, texture cache, and shader manager
     m_rdpProcessor = std::make_unique<RDPProcessor>();
-    m_rdpProcessor->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize,
-                               m_renderer.get(),
-                               m_textureCache.get(),
+    m_rdpProcessor->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize, m_renderer.get(), m_textureCache.get(),
                                m_shaderManager.get());
     m_rdpProcessor->SetMLEDirector(&m_mleDirector);
 
@@ -278,25 +266,25 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
 
     // Create microcode dispatcher for HLE display list processing
     m_dispatcher = std::make_unique<MicrocodeDispatcher>();
-    m_dispatcher->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize,
-                            &m_rdpProcessor->GetVideoStateMutable().rdp,
-                            m_rdpProcessor.get());
+    m_dispatcher->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize, &m_rdpProcessor->GetVideoStateMutable().rdp,
+                             m_rdpProcessor.get());
 
     // Initialize framebuffer manager (creates blit/filter GL resources)
     g_fbManager.Init(static_cast<uint32_t>(m_config.internalResScale));
 
     // Apply widescreen hack if configured
     if (m_config.aspectRatio == AspectRatio::Widescreen16_9) {
-        float wsScale = (16.0f / 9.0f) / (4.0f / 3.0f);  // ≈ 1.333
+        float wsScale = (16.0f / 9.0f) / (4.0f / 3.0f); // ≈ 1.333
         m_rdpProcessor->GetVideoStateMutable().rdp.geometry.widescreenScale = wsScale;
         LOG_INFO("Widescreen 16:9 hack enabled (scale={:.3f})", wsScale);
     }
 
     // Shape of the picture in the window, the same for both renderers: 4:3
     // like the N64's video output, 16:9 with either widescreen setting.
-    const float outputAspect = (m_config.aspectRatio == AspectRatio::Widescreen16_9 ||
-                                m_config.aspectRatio == AspectRatio::Stretch16_9)
-                                   ? 16.0f / 9.0f : 4.0f / 3.0f;
+    const float outputAspect =
+        (m_config.aspectRatio == AspectRatio::Widescreen16_9 || m_config.aspectRatio == AspectRatio::Stretch16_9)
+            ? 16.0f / 9.0f
+            : 4.0f / 3.0f;
     g_fbManager.SetOutputAspect(outputAspect);
     if (m_renderer) m_renderer->SetOutputAspect(outputAspect);
 
@@ -456,8 +444,14 @@ void VideoPlugin::Shutdown() {
     // Destroy VI blit resources (GL-only)
     m_viTexture.reset();
     if (g_fbManager.IsGL()) {
-        if (m_viBlitProgram) { glDeleteProgram(m_viBlitProgram); m_viBlitProgram = 0; }
-        if (m_viBlitVAO) { glDeleteVertexArrays(1, &m_viBlitVAO); m_viBlitVAO = 0; }
+        if (m_viBlitProgram) {
+            glDeleteProgram(m_viBlitProgram);
+            m_viBlitProgram = 0;
+        }
+        if (m_viBlitVAO) {
+            glDeleteVertexArrays(1, &m_viBlitVAO);
+            m_viBlitVAO = 0;
+        }
     }
 
     // Shut down depth buffer manager
@@ -465,18 +459,25 @@ void VideoPlugin::Shutdown() {
 
     // Destroy post-processing intermediate FBO (GL-only)
     if (g_fbManager.IsGL()) {
-        if (m_ppFBO) { glDeleteFramebuffers(1, &m_ppFBO); m_ppFBO = 0; }
-        if (m_ppTex) { glDeleteTextures(1, &m_ppTex); m_ppTex = 0; }
+        if (m_ppFBO) {
+            glDeleteFramebuffers(1, &m_ppFBO);
+            m_ppFBO = 0;
+        }
+        if (m_ppTex) {
+            glDeleteTextures(1, &m_ppTex);
+            m_ppTex = 0;
+        }
     }
-    m_ppWidth = 0; m_ppHeight = 0;
+    m_ppWidth = 0;
+    m_ppHeight = 0;
 
     DestroyDisplayRenderer();
     DestroyDisplayWindow();
 
     m_activeProfile = nullptr;
-    m_romLoaded     = false;
-    m_frameCount    = 0;
-    m_dlistIndex    = 0;
+    m_romLoaded = false;
+    m_frameCount = 0;
+    m_dlistIndex = 0;
 
     m_status = PluginStatus::Uninitialized;
     LOG_INFO("NovaGraphics shutdown complete");
@@ -496,11 +497,11 @@ void VideoPlugin::Reset() {
     m_hleRenderedThisFrame = false;
     m_hleEverRendered = false;
     m_framesWithoutHLE = 0;
-    m_viStatus   = 0;
-    m_viOrigin   = 0;
-    m_viWidth    = 0;
-    m_viXScale   = 0;
-    m_viYScale   = 0;
+    m_viStatus = 0;
+    m_viOrigin = 0;
+    m_viWidth = 0;
+    m_viXScale = 0;
+    m_viYScale = 0;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -526,9 +527,9 @@ void VideoPlugin::ProcessDListShadow() {
         return *reinterpret_cast<const uint32_t*>(m_sysInfo.dmem + absOff);
     };
 
-    uint32_t taskDataPtr   = readDMEM(0xFF0) & 0x00FFFFFF;
-    uint32_t ucodeAddr     = readDMEM(0xFD0) & 0x00FFFFFF;
-    uint32_t ucodeSize     = readDMEM(0xFD4);
+    uint32_t taskDataPtr = readDMEM(0xFF0) & 0x00FFFFFF;
+    uint32_t ucodeAddr = readDMEM(0xFD0) & 0x00FFFFFF;
+    uint32_t ucodeSize = readDMEM(0xFD4);
     uint32_t ucodeDataAddr = readDMEM(0xFD8) & 0x00FFFFFF;
     uint32_t ucodeDataSize = readDMEM(0xFDC);
 
@@ -542,13 +543,8 @@ void VideoPlugin::ProcessDListShadow() {
         m_shadowSceneInitialized = true;
     }
 
-    m_dispatcher->RunShadow(taskDataPtr,
-                            ucodeAddr, ucodeSize,
-                            ucodeDataAddr, ucodeDataSize,
-                            taskDataPtr,
-                            &m_rtScene,
-                            (m_config.aspectRatio == AspectRatio::Widescreen16_9)
-                                ? m_sysInfo.rdram : nullptr);
+    m_dispatcher->RunShadow(taskDataPtr, ucodeAddr, ucodeSize, ucodeDataAddr, ucodeDataSize, taskDataPtr, &m_rtScene,
+                            (m_config.aspectRatio == AspectRatio::Widescreen16_9) ? m_sysInfo.rdram : nullptr);
 }
 
 void VideoPlugin::ProcessDList() {
@@ -591,21 +587,19 @@ void VideoPlugin::ProcessDList() {
     taskDataPtr &= 0x00FFFFFF;
 
     if (taskDataPtr >= m_sysInfo.rdramSize) {
-        LOG_WARN("ProcessDList: taskDataPtr=0x{:08X} >= rdramSize=0x{:08X}",
-                 taskDataPtr, m_sysInfo.rdramSize);
+        LOG_WARN("ProcessDList: taskDataPtr=0x{:08X} >= rdramSize=0x{:08X}", taskDataPtr, m_sysInfo.rdramSize);
         return;
     }
 
-    LOG_DEBUG("ProcessDList: taskDataPtr=0x{:08X} rdramSize=0x{:08X}",
-              taskDataPtr, m_sysInfo.rdramSize);
+    LOG_DEBUG("ProcessDList: taskDataPtr=0x{:08X} rdramSize=0x{:08X}", taskDataPtr, m_sysInfo.rdramSize);
 
     // Process the display list through the microcode interpreter
     if (m_dispatcher && m_rdpProcessor) {
-        uint32_t ucodeAddr     = readDMEM_native(0xFD0) & 0x00FFFFFF; // Ucode
-        uint32_t ucodeSize     = readDMEM_native(0xFD4);              // UcodeSize
+        uint32_t ucodeAddr = readDMEM_native(0xFD0) & 0x00FFFFFF;     // Ucode
+        uint32_t ucodeSize = readDMEM_native(0xFD4);                  // UcodeSize
         uint32_t ucodeDataAddr = readDMEM_native(0xFD8) & 0x00FFFFFF; // UcodeData
         uint32_t ucodeDataSize = readDMEM_native(0xFDC);              // UcodeDataSize
-        uint32_t dlAddr        = taskDataPtr;
+        uint32_t dlAddr = taskDataPtr;
 
         // Notify the renderer of the window size BEFORE BeginFrame so that any
         // swapchain recreation triggered by OnResize happens before the render
@@ -635,7 +629,7 @@ void VideoPlugin::ProcessDList() {
         // clean state (fill color, blend mode, depth test flags, etc.), not inherit from the
         // previous frame.
         if (m_rdpProcessor) {
-            m_rdpProcessor->Reset(false);  // warm reset: fresh RDP state, keep frame stats
+            m_rdpProcessor->Reset(false); // warm reset: fresh RDP state, keep frame stats
         }
 
         // RT scene extraction — only collect geometry when the backend actually
@@ -650,15 +644,14 @@ void VideoPlugin::ProcessDList() {
             return v && v[0] && v[0] != '0';
         }();
         const bool computeRT = s_computeRTEnv || m_config.rayTracing;
-        const bool hwRT    = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
+        const bool hwRT = m_renderer && m_renderer->GetCapabilities().supportsRayTracing;
         const bool needsRT = m_renderer && (hwRT || computeRT);
         // One-time confirmation so it's obvious whether RT is active.
         {
             static bool s_logged = false;
             if (!s_logged) {
                 s_logged = true;
-                LOG_INFO("Compute ray tracing: {} (env={}, ini={}, hwRT={})",
-                         needsRT ? "ENABLED" : "disabled",
+                LOG_INFO("Compute ray tracing: {} (env={}, ini={}, hwRT={})", needsRT ? "ENABLED" : "disabled",
                          s_computeRTEnv, m_config.rayTracing, hwRT);
             }
         }
@@ -667,9 +660,7 @@ void VideoPlugin::ProcessDList() {
             m_dispatcher->SetGeometryConsumer(&m_rtScene);
         }
 
-        m_dispatcher->ProcessGraphicsTask(
-            taskDataPtr, ucodeAddr, ucodeSize,
-            ucodeDataAddr, ucodeDataSize, dlAddr);
+        m_dispatcher->ProcessGraphicsTask(taskDataPtr, ucodeAddr, ucodeSize, ucodeDataAddr, ucodeDataSize, dlAddr);
 
         // Detach consumer before batch flush (consumer already has all triangles)
         m_dispatcher->SetGeometryConsumer(nullptr);
@@ -680,10 +671,7 @@ void VideoPlugin::ProcessDList() {
         // Dispatch hardware ray tracing if the backend supports it and the
         // scene accumulated geometry this frame.
         if (needsRT && m_rtScene.GetTriangleCount() > 0) {
-            m_renderer->ExecuteRayTracing(
-                &m_rtScene,
-                static_cast<uint32_t>(winW),
-                static_cast<uint32_t>(winH));
+            m_renderer->ExecuteRayTracing(&m_rtScene, static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
         }
 
         // Log RT scene stats if debug logging is enabled
@@ -705,16 +693,15 @@ void VideoPlugin::ProcessRDPList() {
     if (m_status != PluginStatus::Running && m_status != PluginStatus::Initialized) return;
     if (!m_sysInfo.dpcCurrentReg || !m_sysInfo.dpcEndReg) return;
 
-    uint32_t startAddr   = *m_sysInfo.dpcCurrentReg & 0x00FFFFFF;
-    uint32_t endAddr     = *m_sysInfo.dpcEndReg & 0x00FFFFFF;
+    uint32_t startAddr = *m_sysInfo.dpcCurrentReg & 0x00FFFFFF;
+    uint32_t endAddr = *m_sysInfo.dpcEndReg & 0x00FFFFFF;
 
     // ── LLE diagnostic: trace first 4 ProcessRDPList invocations ──
     static uint32_t s_traceCount = 0;
     const bool trace = (++s_traceCount <= 4);
     if (trace) {
-        Log::infof("VPLLE[%u] ProcessRDPList enter dpcStart=0x%06X dpcEnd=0x%06X status=%d rdram=%p",
-                   s_traceCount, startAddr, endAddr,
-                   static_cast<int>(m_status.load()), m_sysInfo.rdram);
+        Log::infof("VPLLE[%u] ProcessRDPList enter dpcStart=0x%06X dpcEnd=0x%06X status=%d rdram=%p", s_traceCount,
+                   startAddr, endAddr, static_cast<int>(m_status.load()), m_sysInfo.rdram);
     }
 
     if (endAddr <= startAddr) {
@@ -722,8 +709,9 @@ void VideoPlugin::ProcessRDPList() {
         return;
     }
     if (endAddr > m_sysInfo.rdramSize) {
-        if (trace) Log::infof("VPLLE[%u] skipped: endAddr 0x%06X > rdramSize 0x%X",
-                              s_traceCount, endAddr, m_sysInfo.rdramSize);
+        if (trace)
+            Log::infof("VPLLE[%u] skipped: endAddr 0x%06X > rdramSize 0x%X", s_traceCount, endAddr,
+                       m_sysInfo.rdramSize);
         return;
     }
 
@@ -767,16 +755,13 @@ void VideoPlugin::ProcessRDPList() {
 
     m_rdpCmdScratch.resize(wordCount);
     const uint32_t* srcWords = reinterpret_cast<const uint32_t*>(m_sysInfo.rdram + startAddr);
-    for (int i = 0; i < wordCount; ++i)
-        m_rdpCmdScratch[i] = srcWords[i];
+    for (int i = 0; i < wordCount; ++i) m_rdpCmdScratch[i] = srcWords[i];
 
     m_rdpProcessor->ProcessCommandBuffer(m_rdpCmdScratch.data(), wordCount);
     m_frameStats.rdpCommandCount += static_cast<uint32_t>(wordCount / 2);
     if (trace) {
-        Log::infof("VPLLE[%u] ProcessCommandBuffer done: words=%d firstWord=0x%08X rdpCount=%u",
-                   s_traceCount, wordCount,
-                   wordCount > 0 ? m_rdpCmdScratch[0] : 0u,
-                   m_frameStats.rdpCommandCount);
+        Log::infof("VPLLE[%u] ProcessCommandBuffer done: words=%d firstWord=0x%08X rdpCount=%u", s_traceCount,
+                   wordCount, wordCount > 0 ? m_rdpCmdScratch[0] : 0u, m_frameStats.rdpCommandCount);
     }
 
     // Update DPC current register
@@ -801,10 +786,14 @@ void VideoPlugin::ProcessRDPCommand(uint32_t w0, uint32_t w1) {
     // Track statistics
     uint8_t opcode = (w0 >> 24) & 0x3F;
     switch (opcode) {
-    case 0x08: case 0x09: case 0x0A: case 0x0B:
-    case 0x0C: case 0x0D: case 0x0E: case 0x0F:
-        m_frameStats.triangleCount++;
-        break;
+    case 0x08:
+    case 0x09:
+    case 0x0A:
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+    case 0x0E:
+    case 0x0F: m_frameStats.triangleCount++; break;
     case 0x24: // Texture rectangle
     case 0x25: // Texture rectangle flip
     case 0x36: // Fill rectangle
@@ -833,9 +822,12 @@ void VideoPlugin::UpdateScreen() {
 
     auto start = std::chrono::high_resolution_clock::now();
     auto stage = start;
-    double tSwap=0, tCompose=0, tPost=0, tImgui=0, tAlpha=0, tFlush=0, tRead=0;
-    auto markStage = [&](double& slot){ auto now = std::chrono::high_resolution_clock::now();
-        slot += std::chrono::duration<double, std::milli>(now - stage).count(); stage = now; };
+    double tSwap = 0, tCompose = 0, tPost = 0, tImgui = 0, tAlpha = 0, tFlush = 0, tRead = 0;
+    auto markStage = [&](double& slot) {
+        auto now = std::chrono::high_resolution_clock::now();
+        slot += std::chrono::duration<double, std::milli>(now - stage).count();
+        stage = now;
+    };
     std::lock_guard<std::mutex> lock(m_glMutex);
 
     // Ensure GL context is current on this thread (may be called from CPU thread)
@@ -850,8 +842,7 @@ void VideoPlugin::UpdateScreen() {
         auto swapStart = std::chrono::high_resolution_clock::now();
         win->SwapBuffers();
         auto swapEnd = std::chrono::high_resolution_clock::now();
-        m_frameStats.swapTimeMs = std::chrono::duration<double, std::milli>(
-            swapEnd - swapStart).count();
+        m_frameStats.swapTimeMs = std::chrono::duration<double, std::milli>(swapEnd - swapStart).count();
         m_swapPending = false;
     }
 
@@ -878,10 +869,7 @@ void VideoPlugin::UpdateScreen() {
         if (canRT && hadShadowScene && m_rtScene.GetTriangleCount() > 0) {
             int32_t winW = 0, winH = 0;
             GetOutputSize(winW, winH);
-            m_renderer->ExecuteRayTracing(
-                &m_rtScene,
-                static_cast<uint32_t>(winW),
-                static_cast<uint32_t>(winH));
+            m_renderer->ExecuteRayTracing(&m_rtScene, static_cast<uint32_t>(winW), static_cast<uint32_t>(winH));
         }
     }
 
@@ -892,8 +880,7 @@ void VideoPlugin::UpdateScreen() {
     // Diagnostics: publish the authoritative per-VI frame index so the headless
     // screenshot capture (VKBackend) can key off it. The Vulkan present counter
     // is decoupled from VI rate in HLE, so VI count is the consistent timeline.
-    g_presentIndex.store(static_cast<long>(m_frameStats.viInterrupts),
-                         std::memory_order_relaxed);
+    g_presentIndex.store(static_cast<long>(m_frameStats.viInterrupts), std::memory_order_relaxed);
 
     // Read VI registers
     UpdateVIRegisters();
@@ -902,23 +889,23 @@ void VideoPlugin::UpdateScreen() {
     // Without this, m_viConfig.origin stays 0 and BlitToScreen() always returns early.
     {
         VIConfig viCfg;
-        viCfg.origin  = m_viOrigin;
-        viCfg.width   = m_viWidth;
-        viCfg.xScale  = m_viXScale;
-        viCfg.yScale  = m_viYScale;
+        viCfg.origin = m_viOrigin;
+        viCfg.width = m_viWidth;
+        viCfg.xScale = m_viXScale;
+        viCfg.yScale = m_viYScale;
         viCfg.control = m_viStatus;
         // Bits 8-9 = AA mode: 0/1 = AA enabled, 2 = resample only, 3 = replicate
         uint32_t aaMode = (m_viStatus >> 8) & 0x3;
         viCfg.antiAlias = (aaMode <= 1);
-        viCfg.dedither  = (aaMode == 0);  // Only AA mode 0 enables dither removal
-        viCfg.divot     = (m_viStatus & (1u << 4)) != 0;
+        viCfg.dedither = (aaMode == 0);                     // Only AA mode 0 enables dither removal
+        viCfg.divot = (m_viStatus & (1u << 4)) != 0;
         viCfg.gammaCorrect = (m_viStatus & (1u << 3)) != 0; // VI_STATUS gamma enable
-        viCfg.gammaDither  = (m_viStatus & (1u << 2)) != 0; // VI_STATUS gamma dither
-        viCfg.interlaced = (m_viStatus & (1u << 6)) != 0; // Serrate bit
-        viCfg.field      = static_cast<uint32_t>(m_frameCount & 1);
+        viCfg.gammaDither = (m_viStatus & (1u << 2)) != 0;  // VI_STATUS gamma dither
+        viCfg.interlaced = (m_viStatus & (1u << 6)) != 0;   // Serrate bit
+        viCfg.field = static_cast<uint32_t>(m_frameCount & 1);
         uint32_t yscale = m_viYScale & 0xFFF;
-        uint32_t baseH  = m_sysInfo.isPAL ? 288u : 240u;
-        viCfg.height    = (yscale > 0) ? (baseH * yscale) / 1024u : baseH;
+        uint32_t baseH = m_sysInfo.isPAL ? 288u : 240u;
+        viCfg.height = (yscale > 0) ? (baseH * yscale) / 1024u : baseH;
         g_fbManager.UpdateVI(viCfg);
 
         // ── CPU->GPU framebuffer upload (Vulkan) ──
@@ -928,24 +915,20 @@ void VideoPlugin::UpdateScreen() {
         // display buffer whenever the RDP has NOT rendered into it this frame
         // (gpuModified false) -- that is exactly the "content came from the CPU,
         // not from us" case, and it avoids stomping GPU-rendered frames.
-        if (m_renderer && !g_fbManager.IsGL() && m_sysInfo.rdram &&
-            m_config.fbWriteAccess) {
+        if (m_renderer && !g_fbManager.IsGL() && m_sysInfo.rdram && m_config.fbWriteAccess) {
             if (auto* viFB = g_fbManager.GetDisplayFramebuffer()) {
                 // Sticky check, NOT gpuModified: the read-back clears
                 // gpuModified, so using it would let a later frame upload an
                 // N64-resolution RDRAM copy over a GPU-rendered frame and
                 // discard the internal-resolution detail.
-                if (!viFB->everGpuRendered)
-                    g_fbManager.CopyToGPUVulkan(viFB, m_sysInfo.rdram, m_renderer.get());
+                if (!viFB->everGpuRendered) g_fbManager.CopyToGPUVulkan(viFB, m_sysInfo.rdram, m_renderer.get());
             }
         }
     }
 
     // Determine output dimensions from VI registers
-    uint32_t viType   = m_viStatus & 0x3;
-    bool     viActive = (viType == 2 || viType == 3); // 16-bit or 32-bit
-
-
+    uint32_t viType = m_viStatus & 0x3;
+    bool viActive = (viType == 2 || viType == 3); // 16-bit or 32-bit
 
     // ── Compositing strategy ─────────────────────────────────────
     // If the HLE path rendered triangles this frame (ProcessDList called
@@ -996,8 +979,7 @@ void VideoPlugin::UpdateScreen() {
 
         // Vulkan per-buffer canvases: present the buffer VI says is display-
         // ready, not the one the display list is still drawing into.
-        if (m_renderer && m_viOrigin != 0)
-            m_renderer->SetPresentOrigin(m_viOrigin & 0x00FFFFFF);
+        if (m_renderer && m_viOrigin != 0) m_renderer->SetPresentOrigin(m_viOrigin & 0x00FFFFFF);
 
         // VI_STATUS bottom 2 bits = colour depth: 0 = blank.
         // When the game intentionally blanks the screen (transitions,
@@ -1044,8 +1026,6 @@ void VideoPlugin::UpdateScreen() {
         uint32_t yscale = m_viYScale & 0xFFF;
         uint32_t baseHeight = m_sysInfo.isPAL ? 288u : 240u;
         uint32_t outHeight = (yscale > 0) ? (baseHeight * yscale) / 1024 : baseHeight;
-
-
 
         if (m_sysInfo.rdram && m_viBlitProgram && m_viWidth > 0 && outHeight > 0 && g_fbManager.IsGL()) {
             m_renderer->BeginFrame();
@@ -1102,8 +1082,14 @@ void VideoPlugin::UpdateScreen() {
 
         // (Re)create intermediate FBO if window size changed
         if (m_ppFBO == 0 || m_ppWidth != ppW || m_ppHeight != ppH) {
-            if (m_ppFBO) { glDeleteFramebuffers(1, &m_ppFBO); m_ppFBO = 0; }
-            if (m_ppTex) { glDeleteTextures(1, &m_ppTex); m_ppTex = 0; }
+            if (m_ppFBO) {
+                glDeleteFramebuffers(1, &m_ppFBO);
+                m_ppFBO = 0;
+            }
+            if (m_ppTex) {
+                glDeleteTextures(1, &m_ppTex);
+                m_ppTex = 0;
+            }
 
             glCreateTextures(GL_TEXTURE_2D, 1, &m_ppTex);
             glTextureStorage2D(m_ppTex, 1, GL_RGBA8, ppW, ppH);
@@ -1114,14 +1100,12 @@ void VideoPlugin::UpdateScreen() {
             glNamedFramebufferTexture(m_ppFBO, GL_COLOR_ATTACHMENT0, m_ppTex, 0);
 
             m_ppWidth = ppW;
-            m_ppHeight = ppH; m_postProcess->Resize(ppW, ppH);
+            m_ppHeight = ppH;
+            m_postProcess->Resize(ppW, ppH);
         }
 
         // Capture default FB → intermediate
-        glBlitNamedFramebuffer(0, m_ppFBO,
-                               0, 0, ppW, ppH,
-                               0, 0, ppW, ppH,
-                               GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBlitNamedFramebuffer(0, m_ppFBO, 0, 0, ppW, ppH, 0, 0, ppW, ppH, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
         // Run post-process chain: intermediate tex → default FB 0
         m_postProcess->Apply(m_ppTex, 0, ppW, ppH);
@@ -1146,7 +1130,9 @@ void VideoPlugin::UpdateScreen() {
     // Deferred swap: submit all GPU work now so the GPU can finish while
     // the CPU continues emulating.  The actual SwapBuffers is deferred to
     // the start of the next UpdateScreen call.
-    if (g_fbManager.IsGL()) { glFlush(); }
+    if (g_fbManager.IsGL()) {
+        glFlush();
+    }
     m_swapPending = true;
     markStage(tFlush);
 
@@ -1166,9 +1152,9 @@ void VideoPlugin::UpdateScreen() {
                 const size_t row = static_cast<size_t>(cbW) * 4;
                 g_framePixels.resize(row * static_cast<size_t>(cbH));
                 glReadPixels(0, 0, cbW, cbH, GL_RGBA, GL_UNSIGNED_BYTE, g_framePixels.data());
-                std::vector<uint8_t> rowBuffer(row);   // GL rows are bottom-up
+                std::vector<uint8_t> rowBuffer(row); // GL rows are bottom-up
                 for (int32_t y = 0; y < cbH / 2; ++y) {
-                    uint8_t* top    = g_framePixels.data() + static_cast<size_t>(y) * row;
+                    uint8_t* top = g_framePixels.data() + static_cast<size_t>(y) * row;
                     uint8_t* bottom = g_framePixels.data() + static_cast<size_t>(cbH - 1 - y) * row;
                     std::memcpy(rowBuffer.data(), top, row);
                     std::memcpy(top, bottom, row);
@@ -1195,7 +1181,7 @@ void VideoPlugin::UpdateScreen() {
     // non-blocking and incurs at most one frame of latency. We only submit a
     // new readback here as a fallback, when nothing is in flight and the
     // display FB still has unsynced GPU writes.
-    double tFinish=0, tBegin=0;
+    double tFinish = 0, tBegin = 0;
     if (m_sysInfo.rdram && m_viOrigin && m_hleEverRendered && m_config.fbReadAccess) {
         // Throttle GPU→RDRAM readback. On Intel iGPUs the glMapBufferRange
         // call inside FinishAsyncReadback blocks ~10ms even with a fence,
@@ -1221,8 +1207,6 @@ void VideoPlugin::UpdateScreen() {
     }
     markStage(tRead);
 
-
-
     auto end = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(end - start).count();
     m_frameStats.frameTimeMs = totalMs;
@@ -1230,20 +1214,32 @@ void VideoPlugin::UpdateScreen() {
 
     // Diagnostic: log when UpdateScreen is exceptionally slow
     if (totalMs > 100.0) {
-        LOG_WARN("UpdateScreen slow: total={:.1f}ms swap={:.1f}ms frame={}",
-                 totalMs, m_frameStats.swapTimeMs, m_frameCount);
+        LOG_WARN("UpdateScreen slow: total={:.1f}ms swap={:.1f}ms frame={}", totalMs, m_frameStats.swapTimeMs,
+                 m_frameCount);
     }
 
     // Per-stage averages every 60 frames
     {
-        static double aSwap=0,aCompose=0,aPost=0,aImgui=0,aAlpha=0,aFlush=0,aRead=0,aFin=0,aBeg=0,aTotal=0;
-        static int aFrames=0;
-        aSwap+=tSwap; aCompose+=tCompose; aPost+=tPost; aImgui+=tImgui;
-        aAlpha+=tAlpha; aFlush+=tFlush; aRead+=tRead; aFin+=tFinish; aBeg+=tBegin; aTotal+=totalMs;
+        static double aSwap = 0, aCompose = 0, aPost = 0, aImgui = 0, aAlpha = 0, aFlush = 0, aRead = 0, aFin = 0,
+                      aBeg = 0, aTotal = 0;
+        static int aFrames = 0;
+        aSwap += tSwap;
+        aCompose += tCompose;
+        aPost += tPost;
+        aImgui += tImgui;
+        aAlpha += tAlpha;
+        aFlush += tFlush;
+        aRead += tRead;
+        aFin += tFinish;
+        aBeg += tBegin;
+        aTotal += totalMs;
         if (++aFrames >= 60) {
-            Log::infof("RENDER[60f avg ms] total=%.2f | swap=%.2f compose=%.2f post=%.2f imgui=%.2f alpha=%.2f flush=%.2f read=%.2f (fin=%.2f beg=%.2f)",
-                       aTotal/60, aSwap/60, aCompose/60, aPost/60, aImgui/60, aAlpha/60, aFlush/60, aRead/60, aFin/60, aBeg/60);
-            aSwap=aCompose=aPost=aImgui=aAlpha=aFlush=aRead=aFin=aBeg=aTotal=0; aFrames=0;
+            Log::infof("RENDER[60f avg ms] total=%.2f | swap=%.2f compose=%.2f post=%.2f imgui=%.2f alpha=%.2f "
+                       "flush=%.2f read=%.2f (fin=%.2f beg=%.2f)",
+                       aTotal / 60, aSwap / 60, aCompose / 60, aPost / 60, aImgui / 60, aAlpha / 60, aFlush / 60,
+                       aRead / 60, aFin / 60, aBeg / 60);
+            aSwap = aCompose = aPost = aImgui = aAlpha = aFlush = aRead = aFin = aBeg = aTotal = 0;
+            aFrames = 0;
         }
     }
 }
@@ -1256,11 +1252,10 @@ void VideoPlugin::ShowCFB() {
 
     UpdateVIRegisters();
 
-    uint32_t viType   = m_viStatus & 0x3;
-    bool     viActive = (viType == 2 || viType == 3);
+    uint32_t viType = m_viStatus & 0x3;
+    bool viActive = (viType == 2 || viType == 3);
     if (!viActive || m_viOrigin == 0 || m_viWidth == 0) {
-        LOG_DEBUG("ShowCFB: VI not active (type={}, origin=0x{:06X}, width={})",
-                  viType, m_viOrigin, m_viWidth);
+        LOG_DEBUG("ShowCFB: VI not active (type={}, origin=0x{:06X}, width={})", viType, m_viOrigin, m_viWidth);
         return;
     }
 
@@ -1291,12 +1286,10 @@ void VideoPlugin::ShowCFB() {
 //  Shared VI framebuffer decode + blit helper
 // ─────────────────────────────────────────────────────────────────
 
-void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
-                                     uint32_t fbWidth, uint32_t fbHeight) {
-    if (!m_sysInfo.rdram || !m_viBlitProgram || fbWidth == 0 || fbHeight == 0)
-        return;
+void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr, uint32_t fbWidth, uint32_t fbHeight) {
+    if (!m_sysInfo.rdram || !m_viBlitProgram || fbWidth == 0 || fbHeight == 0) return;
 
-    uint32_t bpp    = (viType == 3) ? 4 : 2;
+    uint32_t bpp = (viType == 3) ? 4 : 2;
     uint32_t fbSize = fbWidth * fbHeight * bpp;
 
     if (fbAddr + fbSize > m_sysInfo.rdramSize) return;
@@ -1313,8 +1306,8 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
             uint32_t word = *reinterpret_cast<const uint32_t*>(src + i * 4);
             uint8_t r = (word >> 24) & 0xFF;
             uint8_t g = (word >> 16) & 0xFF;
-            uint8_t b = (word >>  8) & 0xFF;
-            uint8_t a =  word        & 0xFF;
+            uint8_t b = (word >> 8) & 0xFF;
+            uint8_t a = word & 0xFF;
             pixels[i] = (a << 24) | (b << 16) | (g << 8) | r; // ABGR for GL
         }
     } else {
@@ -1323,24 +1316,23 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
         for (uint32_t i = 0; i < fbWidth * fbHeight; ++i) {
             uint16_t pixel = *reinterpret_cast<const uint16_t*>(src + ((i * 2) ^ 2));
             uint8_t r = static_cast<uint8_t>((pixel >> 11) & 0x1F) << 3;
-            uint8_t g = static_cast<uint8_t>((pixel >>  6) & 0x1F) << 3;
-            uint8_t b = static_cast<uint8_t>((pixel >>  1) & 0x1F) << 3;
+            uint8_t g = static_cast<uint8_t>((pixel >> 6) & 0x1F) << 3;
+            uint8_t b = static_cast<uint8_t>((pixel >> 1) & 0x1F) << 3;
             uint8_t a = (pixel & 1) ? 0xFF : 0x00;
             pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
         }
     }
 
     // Create or resize the VI texture
-    if (m_viTexture &&
-        (m_viTexture->GetWidth() != fbWidth || m_viTexture->GetHeight() != fbHeight)) {
+    if (m_viTexture && (m_viTexture->GetWidth() != fbWidth || m_viTexture->GetHeight() != fbHeight)) {
         m_viTexture.reset(); // Dimensions changed — recreate
     }
     if (!m_viTexture) {
         TextureDesc desc;
-        desc.width  = fbWidth;
+        desc.width = fbWidth;
         desc.height = fbHeight;
         desc.format = TextureFormat::RGBA8;
-        desc.usage  = BufferUsage::Dynamic;
+        desc.usage = BufferUsage::Dynamic;
         desc.mipLevels = 1;
         m_viTexture = m_renderer->CreateTexture(desc);
         // Use nearest-neighbor for crisp pixel-perfect VI output
@@ -1357,8 +1349,6 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
     if (m_viTexture) {
         m_viTexture->Upload(pixels.data(), fbWidth * fbHeight * 4);
     }
-
-
 
     // Draw fullscreen blit
     // IMPORTANT: Always bind the default framebuffer (FBO 0) before drawing.
@@ -1377,8 +1367,7 @@ void VideoPlugin::BlitVIFramebuffer(uint32_t viType, uint32_t fbAddr,
         float cropU1 = (fw > kCrop) ? ((fw - kCrop) / fw) : 1.0f;
         float cropV1 = (fh > kCrop) ? ((fh - kCrop) / fh) : 1.0f;
         GLint cropLoc = glGetUniformLocation(m_viBlitProgram, "uCropRect");
-        if (cropLoc >= 0)
-            glUniform4f(cropLoc, cropU0, cropV0, cropU1, cropV1);
+        if (cropLoc >= 0) glUniform4f(cropLoc, cropU0, cropV0, cropU1, cropV1);
     }
 
     glBindVertexArray(m_viBlitVAO);
@@ -1406,8 +1395,7 @@ void VideoPlugin::ViStatusChanged() {
     m_viStatus = newStatus;
 
     if (oldType != newType) {
-        LOG_DEBUG("VI type changed: {} -> {} ({}bpp)",
-                  oldType, newType, newType == 2 ? 16 : newType == 3 ? 32 : 0);
+        LOG_DEBUG("VI type changed: {} -> {} ({}bpp)", oldType, newType, newType == 2 ? 16 : newType == 3 ? 32 : 0);
     }
 }
 
@@ -1422,35 +1410,34 @@ void VideoPlugin::ViWidthChanged() {
 void VideoPlugin::UpdateVIRegisters() {
     m_viStatus = ReadVIRegister(m_sysInfo.viStatusReg);
     m_viOrigin = ReadVIRegister(m_sysInfo.viOriginReg) & 0x00FFFFFF;
-    m_viWidth  = ReadVIRegister(m_sysInfo.viWidthReg);
+    m_viWidth = ReadVIRegister(m_sysInfo.viWidthReg);
     m_viXScale = ReadVIRegister(m_sysInfo.viXScaleReg);
     m_viYScale = ReadVIRegister(m_sysInfo.viYScaleReg);
 }
 
-uint32_t VideoPlugin::ReadVIRegister(uint32_t* reg) const {
-    return reg ? *reg : 0;
-}
+uint32_t VideoPlugin::ReadVIRegister(uint32_t* reg) const { return reg ? *reg : 0; }
 
 bool VideoPlugin::IsFramebufferValid(const uint8_t* fbData, uint32_t width, uint32_t height, uint32_t bpp) const {
     if (!fbData || width == 0 || height == 0) return false;
-    
+
     // Quick heuristic: Check first 100 pixels to see if it's completely empty.
-    // If it's entirely filled with 0s, we consider it uninitialized to prevent 
+    // If it's entirely filled with 0s, we consider it uninitialized to prevent
     // garbage display when the grace period ends too early.
     uint32_t zeroCount = 0;
     uint32_t pixelsToCheck = std::min(width * height, 100u);
     for (uint32_t i = 0; i < pixelsToCheck; i++) {
         if (bpp == 2) {
-            if (fbData[i*2] == 0 && fbData[i*2+1] == 0) zeroCount++;
+            if (fbData[i * 2] == 0 && fbData[i * 2 + 1] == 0) zeroCount++;
         } else {
-            if (fbData[i*4] == 0 && fbData[i*4+1] == 0 && fbData[i*4+2] == 0 && fbData[i*4+3] == 0) zeroCount++;
+            if (fbData[i * 4] == 0 && fbData[i * 4 + 1] == 0 && fbData[i * 4 + 2] == 0 && fbData[i * 4 + 3] == 0)
+                zeroCount++;
         }
     }
-    
+
     // Also a fully zeroed frame is technically just black, delaying it rendering
     // just keeps the screen black. So rejecting it is safe.
     if (zeroCount == pixelsToCheck) return false;
-    
+
     return true;
 }
 
@@ -1462,21 +1449,18 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
     m_sysInfo = sysInfo;
     m_romLoaded = true;
 
-    LOG_INFO("ROM loaded: {} [{}] CRC:{:08X}/{:08X}",
-             sysInfo.romName, sysInfo.romGameId, sysInfo.romCRC1, sysInfo.romCRC2);
+    LOG_INFO("ROM loaded: {} [{}] CRC:{:08X}/{:08X}", sysInfo.romName, sysInfo.romGameId, sysInfo.romCRC1,
+             sysInfo.romCRC2);
 
     // Re-initialize subsystems with new RDRAM pointers
     if (m_rdpProcessor) {
-        m_rdpProcessor->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize,
-                                   m_renderer.get(),
-                                   m_textureCache.get(),
+        m_rdpProcessor->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize, m_renderer.get(), m_textureCache.get(),
                                    m_shaderManager.get());
         m_rdpProcessor->SetMLEDirector(&m_mleDirector);
     }
     if (m_dispatcher && m_rdpProcessor) {
-        m_dispatcher->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize,
-                                &m_rdpProcessor->GetVideoStateMutable().rdp,
-                                m_rdpProcessor.get());
+        m_dispatcher->Initialize(m_sysInfo.rdram, m_sysInfo.rdramSize, &m_rdpProcessor->GetVideoStateMutable().rdp,
+                                 m_rdpProcessor.get());
     }
 
     // Depth-buffer texture rectangles mean different things in different
@@ -1487,10 +1471,9 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         auto found = [&](const char* part) { return name.find(part) != std::string::npos; };
         auto& hacks = m_rdpProcessor->m_hacks;
-        hacks.texRectShadowMap = found("BEETLE") || found("HSV") ||
-                                 found("DUCK DODGERS") || found("DAFFY DUCK");
-        hacks.texRectDepthBufferCopy = !hacks.texRectShadowMap &&
-                                       (found("PERFECT DARK") || found("TUROK_DINOSAUR_HUNTE"));
+        hacks.texRectShadowMap = found("BEETLE") || found("HSV") || found("DUCK DODGERS") || found("DAFFY DUCK");
+        hacks.texRectDepthBufferCopy =
+            !hacks.texRectShadowMap && (found("PERFECT DARK") || found("TUROK_DINOSAUR_HUNTE"));
     }
 
     // Look up game profile
@@ -1501,8 +1484,7 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
     }
 
     if (m_activeProfile) {
-        LOG_INFO("Game profile found: {} [{}]", 
-                 m_activeProfile->name, CompatRatingName(m_activeProfile->rating));
+        LOG_INFO("Game profile found: {} [{}]", m_activeProfile->name, CompatRatingName(m_activeProfile->rating));
         ApplyGameSpecificHacks();
     } else {
         LOG_INFO("No game profile found, using defaults");
@@ -1527,8 +1509,7 @@ void VideoPlugin::RomOpen(const SystemInfo& sysInfo) {
 // GLideN64 name theirs, so packs made for those work unchanged.
 static std::string TexturePackName(const std::string& romName) {
     std::string name;
-    for (char c : romName)
-        name += (std::strchr("\\/:*?\"<>|", c) != nullptr) ? '_' : c;
+    for (char c : romName) name += (std::strchr("\\/:*?\"<>|", c) != nullptr) ? '_' : c;
     while (!name.empty() && name.back() == ' ') name.pop_back();
     return name;
 }
@@ -1537,7 +1518,10 @@ static std::string TexturePackName(const std::string& romName) {
 static std::filesystem::path FindGameFolder(const std::filesystem::path& root, const std::string& game) {
     std::error_code ec;
     if (game.empty() || !std::filesystem::is_directory(root, ec)) return {};
-    auto lower = [](std::string s) { for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
+    auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
     const std::string wanted = lower(game);
     for (const auto& entry : std::filesystem::directory_iterator(root, ec))
         if (entry.is_directory(ec) && lower(entry.path().filename().string()) == wanted) return entry.path();
@@ -1550,7 +1534,8 @@ void VideoPlugin::SetupTexturePack() {
 
     std::shared_ptr<Tex::HiResPack> pack;
     if (m_config.hiResTexEnabled) {
-        const std::filesystem::path folder = FindGameFolder(m_config.hiResTexPath.empty() ? "hires_texture" : m_config.hiResTexPath, game);
+        const std::filesystem::path folder =
+            FindGameFolder(m_config.hiResTexPath.empty() ? "hires_texture" : m_config.hiResTexPath, game);
         if (!folder.empty()) {
             pack = std::make_shared<Tex::HiResPack>();
             if (pack->Load(folder)) {
@@ -1566,7 +1551,8 @@ void VideoPlugin::SetupTexturePack() {
     const char* dumpEnv = std::getenv("NOVA64_DUMP_TEXTURES");
     const bool dump = (m_config.textureDump || (dumpEnv && dumpEnv[0] && dumpEnv[0] != '0')) && !game.empty();
     if (dump) {
-        const std::filesystem::path folder = std::filesystem::path(m_config.textureDumpPath.empty() ? "texture_dump" : m_config.textureDumpPath) / game;
+        const std::filesystem::path folder =
+            std::filesystem::path(m_config.textureDumpPath.empty() ? "texture_dump" : m_config.textureDumpPath) / game;
         LOG_INFO("Dumping textures to {}", folder.string());
         m_textureCache->SetDumpFolder(folder, game);
     } else {
@@ -1651,7 +1637,7 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
     // TGA header
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4996)
+#pragma warning(disable : 4996)
 #endif
     FILE* fp = fopen(path.c_str(), "wb");
 #ifdef _MSC_VER
@@ -1662,16 +1648,18 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
         return;
     }
     uint8_t header[18] = {};
-    header[2]  = 2;  // Uncompressed RGB
-    header[12] = w & 0xFF; header[13] = (w >> 8) & 0xFF;
-    header[14] = h & 0xFF; header[15] = (h >> 8) & 0xFF;
-    header[16] = 32; // 32 bpp
+    header[2] = 2; // Uncompressed RGB
+    header[12] = w & 0xFF;
+    header[13] = (w >> 8) & 0xFF;
+    header[14] = h & 0xFF;
+    header[15] = (h >> 8) & 0xFF;
+    header[16] = 32;   // 32 bpp
     header[17] = 0x20; // Top-left origin
     fwrite(header, 1, 18, fp);
 
     // Convert RGBA to BGRA for TGA
     for (uint32_t i = 0; i < w * h; ++i) {
-        uint8_t bgra[4] = { pixels[i*4+2], pixels[i*4+1], pixels[i*4+0], pixels[i*4+3] };
+        uint8_t bgra[4] = {pixels[i * 4 + 2], pixels[i * 4 + 1], pixels[i * 4 + 0], pixels[i * 4 + 3]};
         fwrite(bgra, 1, 4, fp);
     }
     fclose(fp);
@@ -1681,25 +1669,17 @@ void VideoPlugin::TakeScreenshot(const std::string& path) {
 
 void VideoPlugin::DumpFrameInfo() {
     LOG_INFO("=== Frame {} Info ===", m_frameCount);
-    LOG_INFO("DLists: {} | RDP cmds: {} | Tris: {} | Rects: {}",
-             m_frameStats.dlistCount, m_frameStats.rdpCommandCount,
+    LOG_INFO("DLists: {} | RDP cmds: {} | Tris: {} | Rects: {}", m_frameStats.dlistCount, m_frameStats.rdpCommandCount,
              m_frameStats.triangleCount, m_frameStats.rectCount);
-    LOG_INFO("Frame: {:.2f}ms | DList: {:.2f}ms | Render: {:.2f}ms | Swap: {:.2f}ms",
-             m_frameStats.frameTimeMs, m_frameStats.dlistTimeMs,
-             m_frameStats.renderTimeMs, m_frameStats.swapTimeMs);
+    LOG_INFO("Frame: {:.2f}ms | DList: {:.2f}ms | Render: {:.2f}ms | Swap: {:.2f}ms", m_frameStats.frameTimeMs,
+             m_frameStats.dlistTimeMs, m_frameStats.renderTimeMs, m_frameStats.swapTimeMs);
 }
 
-PluginFrameStats VideoPlugin::GetFrameStats() const {
-    return m_frameStats;
-}
+PluginFrameStats VideoPlugin::GetFrameStats() const { return m_frameStats; }
 
-void VideoPlugin::LockRender() {
-    m_glMutex.lock();
-}
+void VideoPlugin::LockRender() { m_glMutex.lock(); }
 
-void VideoPlugin::UnlockRender() {
-    m_glMutex.unlock();
-}
+void VideoPlugin::UnlockRender() { m_glMutex.unlock(); }
 
 // ═══════════════════════════════════════════════════════════════
 //  Internal: Renderer & Window
@@ -1707,9 +1687,9 @@ void VideoPlugin::UnlockRender() {
 
 bool VideoPlugin::CreateDisplayWindow() {
     WindowConfig wc;
-    wc.width     = m_config.windowWidth;
-    wc.height    = m_config.windowHeight;
-    wc.title     = "NovaStar64 - NovaGraphics";
+    wc.width = m_config.windowWidth;
+    wc.height = m_config.windowHeight;
+    wc.title = "NovaStar64 - NovaGraphics";
     wc.resizable = true;
 
     // A game drawn inside the launcher has no visible window. Vulkan renders
@@ -1719,8 +1699,8 @@ bool VideoPlugin::CreateDisplayWindow() {
         if (m_config.backendType == 1) return true;
         int32_t w = 0, h = 0;
         GetOutputSize(w, h);
-        wc.width    = w;
-        wc.height   = h;
+        wc.width = w;
+        wc.height = h;
         wc.headless = true;
     }
 
@@ -1744,7 +1724,7 @@ void VideoPlugin::GetOutputSize(int32_t& width, int32_t& height) const {
     }
     const int scale = std::clamp(m_config.internalResScale, 1, 8);
     height = 240 * scale;
-    width  = (m_config.aspectRatio == AspectRatio::Widescreen16_9) ? height * 16 / 9 : 320 * scale;
+    width = (m_config.aspectRatio == AspectRatio::Widescreen16_9) ? height * 16 / 9 : 320 * scale;
 }
 
 bool VideoPlugin::CreateDisplayRenderer() {
@@ -1792,7 +1772,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
     // ── Framebuffer flags ────────────────────────────────────
     if (prof.flags & CFBReadWrite) {
         LOG_INFO("  Enabling CFB read/write emulation");
-        m_config.fbReadAccess  = true;
+        m_config.fbReadAccess = true;
         m_config.fbWriteAccess = true;
     }
     if (prof.flags & NoFBEmulation) {
@@ -1810,7 +1790,7 @@ void VideoPlugin::ApplyGameSpecificHacks() {
     }
     if (prof.flags & NoDepthCompare) {
         LOG_INFO("  Disabling depth compare");
-        m_config.depthCompare    = false;
+        m_config.depthCompare = false;
         m_config.n64DepthCompare = false;
     }
 
@@ -1833,26 +1813,26 @@ void VideoPlugin::ApplyGameSpecificHacks() {
         if (prof.flags & PointSampleTextures) {
             LOG_INFO("  Forcing point-sample textures");
             tcCfg.enable3PointFilter = false;
-            tcCfg.forceLinearFilter  = false;
+            tcCfg.forceLinearFilter = false;
             texCfgChanged = true;
         }
         if (prof.flags & DisableHiResTex) {
             LOG_INFO("  Disabling hi-res texture packs");
             tcCfg.enableHiResTextures = false;
-            m_config.hiResTexEnabled  = false;
+            m_config.hiResTexEnabled = false;
             texCfgChanged = true;
         }
         if (prof.textureFilter >= 0) {
             LOG_INFO("  Overriding texture filter to {}", prof.textureFilter);
             if (prof.textureFilter == 0) {
                 tcCfg.enable3PointFilter = false;
-                tcCfg.forceLinearFilter  = false;
+                tcCfg.forceLinearFilter = false;
             } else if (prof.textureFilter == 1) {
                 tcCfg.enable3PointFilter = false;
-                tcCfg.forceLinearFilter  = true;
+                tcCfg.forceLinearFilter = true;
             } else {
                 tcCfg.enable3PointFilter = true;
-                tcCfg.forceLinearFilter  = false;
+                tcCfg.forceLinearFilter = false;
             }
             texCfgChanged = true;
         }
@@ -1903,19 +1883,19 @@ void VideoPlugin::ApplyGameSpecificHacks() {
     // ── Game-specific hacks ─────────────────────────────────
     if (prof.zelda64Hack) {
         LOG_INFO("  Applying Zelda 64 hacks (FB copy + depth bias)");
-        m_config.fbReadAccess  = true;
-        m_config.depthCopy     = true;
+        m_config.fbReadAccess = true;
+        m_config.depthCopy = true;
     }
     if (prof.perfectDarkHack) {
         LOG_INFO("  Applying Perfect Dark hacks (CFB + native res FB)");
-        m_config.fbReadAccess  = true;
+        m_config.fbReadAccess = true;
         m_config.fbWriteAccess = true;
-        m_config.nativeResFB   = true;
+        m_config.nativeResFB = true;
     }
     if (prof.conkerHack) {
         LOG_INFO("  Applying Conker hacks (FB emulation + accurate blend)");
-        m_config.fbEmulation   = true;
-        m_config.fbReadAccess  = true;
+        m_config.fbEmulation = true;
+        m_config.fbReadAccess = true;
         m_config.fbWriteAccess = true;
     }
     if (prof.paperMarioHack) {
@@ -1929,29 +1909,29 @@ void VideoPlugin::ApplyGameSpecificHacks() {
 
     // ── RDP Processor hack flags ────────────────────────────
     if (m_rdpProcessor) {
-        m_rdpProcessor->m_hacks.skipTexRect            = prof.winBackSkipTexrect;
-        m_rdpProcessor->m_hacks.noDepthFrameBuffers    = prof.noDepthFrameBuffers;
-        m_rdpProcessor->m_hacks.doNotResetOtherMode    = prof.doNotResetOtherMode;
-        m_rdpProcessor->m_hacks.forceDepthClear        = prof.perfectDarkDepthClear;
-        m_rdpProcessor->m_hacks.tonyHawkBlendFix       = prof.tonyHawkBlendFix;
-        m_rdpProcessor->m_hacks.blastCorpsBlendFix     = prof.blastCorpsBlendFix;
-        m_rdpProcessor->m_hacks.zeldaMonochrome        = prof.zeldaMonochrome;
-        m_rdpProcessor->m_hacks.zeldaSubscreen         = prof.zeldaSubscreen;
-        m_rdpProcessor->m_hacks.paperMarioSubscreen    = prof.paperMarioSubscreen;
-        m_rdpProcessor->m_hacks.conkerBlurPauseScreen  = prof.conkerBlurPauseScreen;
-        m_rdpProcessor->m_hacks.conkerFBTextureOffset  = prof.conkerHack;
-        m_rdpProcessor->m_hacks.conkerDepthCopySkip    = prof.conkerHack;
-        m_rdpProcessor->m_hacks.starCraftBgSkip        = prof.starCraftBgSkip;
-        m_rdpProcessor->m_hacks.snapForceCopy          = prof.snapForceCopy;
-        m_rdpProcessor->m_hacks.pdDepthCopyOnce        = prof.perfectDarkHack;
+        m_rdpProcessor->m_hacks.skipTexRect = prof.winBackSkipTexrect;
+        m_rdpProcessor->m_hacks.noDepthFrameBuffers = prof.noDepthFrameBuffers;
+        m_rdpProcessor->m_hacks.doNotResetOtherMode = prof.doNotResetOtherMode;
+        m_rdpProcessor->m_hacks.forceDepthClear = prof.perfectDarkDepthClear;
+        m_rdpProcessor->m_hacks.tonyHawkBlendFix = prof.tonyHawkBlendFix;
+        m_rdpProcessor->m_hacks.blastCorpsBlendFix = prof.blastCorpsBlendFix;
+        m_rdpProcessor->m_hacks.zeldaMonochrome = prof.zeldaMonochrome;
+        m_rdpProcessor->m_hacks.zeldaSubscreen = prof.zeldaSubscreen;
+        m_rdpProcessor->m_hacks.paperMarioSubscreen = prof.paperMarioSubscreen;
+        m_rdpProcessor->m_hacks.conkerBlurPauseScreen = prof.conkerBlurPauseScreen;
+        m_rdpProcessor->m_hacks.conkerFBTextureOffset = prof.conkerHack;
+        m_rdpProcessor->m_hacks.conkerDepthCopySkip = prof.conkerHack;
+        m_rdpProcessor->m_hacks.starCraftBgSkip = prof.starCraftBgSkip;
+        m_rdpProcessor->m_hacks.snapForceCopy = prof.snapForceCopy;
+        m_rdpProcessor->m_hacks.pdDepthCopyOnce = prof.perfectDarkHack;
     }
 
     // ── Framebuffer Manager hack flags ──────────────────────────
-    g_fbManager.m_fbHacks.paperMarioBlueBoost  = prof.paperMarioSubscreen;
-    g_fbManager.m_fbHacks.conkerBlurDetect     = prof.conkerHack;
-    g_fbManager.m_fbHacks.pdDepthOncePerFrame  = prof.perfectDarkHack;
-    g_fbManager.m_fbHacks.starCraftBlockFB     = prof.starCraftBgSkip;
-    g_fbManager.m_fbHacks.snapSkipAuxCopy      = prof.snapForceCopy;
+    g_fbManager.m_fbHacks.paperMarioBlueBoost = prof.paperMarioSubscreen;
+    g_fbManager.m_fbHacks.conkerBlurDetect = prof.conkerHack;
+    g_fbManager.m_fbHacks.pdDepthOncePerFrame = prof.perfectDarkHack;
+    g_fbManager.m_fbHacks.starCraftBlockFB = prof.starCraftBgSkip;
+    g_fbManager.m_fbHacks.snapSkipAuxCopy = prof.snapForceCopy;
 }
 
 } // namespace Nova64::Video

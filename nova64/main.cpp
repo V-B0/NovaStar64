@@ -34,8 +34,7 @@
 
 // Returns the directory containing the running executable, or an empty path
 // if it can't be determined.
-static std::filesystem::path GetExecutableDir()
-{
+static std::filesystem::path GetExecutableDir() {
 #if defined(__APPLE__)
     char exePath[4096];
     uint32_t sz = sizeof(exePath);
@@ -61,8 +60,7 @@ static std::filesystem::path GetExecutableDir()
 // moves the process. Paths typed on the command line are relative to this.
 static std::filesystem::path g_startDir;
 
-static std::string ResolveFromStartDir(const std::string& path)
-{
+static std::string ResolveFromStartDir(const std::string& path) {
     const std::filesystem::path p(path);
     if (p.is_absolute() || g_startDir.empty()) return path;
     return (g_startDir / p).string();
@@ -71,8 +69,7 @@ static std::string ResolveFromStartDir(const std::string& path)
 // A ROM named on the command line: relative to where the user typed it, or, if
 // nothing is there, relative to the data folder, so `nova64 roms/game.z64` still
 // picks a game from the library when started from anywhere.
-static std::string ResolveRomPath(const std::string& path)
-{
+static std::string ResolveRomPath(const std::string& path) {
     const std::string fromStart = ResolveFromStartDir(path);
     std::error_code ec;
     return std::filesystem::exists(fromStart, ec) ? fromStart : path;
@@ -82,8 +79,7 @@ static std::string ResolveRomPath(const std::string& path)
 // Saves/, covers/, hires_texture/ and the shader cache. An installed program can't
 // write next to itself (/Applications and Program Files are not the user's to
 // change), and wiping the program by reinstalling it must not wipe the saves.
-static std::filesystem::path GetUserDataDir()
-{
+static std::filesystem::path GetUserDataDir() {
 #if defined(__APPLE__)
     if (const char* home = std::getenv("HOME"); home && *home)
         return std::filesystem::path(home) / "Library" / "Application Support" / "NovaStar64";
@@ -92,8 +88,7 @@ static std::filesystem::path GetUserDataDir()
     if (const wchar_t* local = _wgetenv(L"LOCALAPPDATA"); local && *local)
         return std::filesystem::path(local) / L"NovaStar64";
 #else
-    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg)
-        return std::filesystem::path(xdg) / "NovaStar64";
+    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg) return std::filesystem::path(xdg) / "NovaStar64";
     if (const char* home = std::getenv("HOME"); home && *home)
         return std::filesystem::path(home) / ".local" / "share" / "NovaStar64";
 #endif
@@ -104,13 +99,11 @@ static std::filesystem::path GetUserDataDir()
 // sits next to the executable (the build and the portable download put one there),
 // or if that folder already holds settings, games or saves, which is how every copy
 // before the installers behaved and keeps working unchanged.
-static bool IsPortableInstall(const std::filesystem::path& exeDir)
-{
+static bool IsPortableInstall(const std::filesystem::path& exeDir) {
     std::error_code ec;
     return std::filesystem::exists(exeDir / "portable.txt", ec) ||
            std::filesystem::is_directory(exeDir / "settings", ec) ||
-           std::filesystem::is_directory(exeDir / "roms", ec) ||
-           std::filesystem::is_directory(exeDir / "saves", ec);
+           std::filesystem::is_directory(exeDir / "roms", ec) || std::filesystem::is_directory(exeDir / "saves", ec);
 }
 
 // The launcher, the ROM loader, the save code and the shader cache all use
@@ -125,8 +118,7 @@ static bool IsPortableInstall(const std::filesystem::path& exeDir)
 // every time: $NOVA64_HOME if it is set (tests), otherwise the folder containing
 // the executable for a portable copy, otherwise the user's own data folder.
 // Nothing about the shell's directory matters.
-static void SelectDataDirectory()
-{
+static void SelectDataDirectory() {
     std::error_code ec;
     g_startDir = std::filesystem::current_path(ec);
 
@@ -152,15 +144,14 @@ static void SelectDataDirectory()
 
     if (!g_startDir.empty() && std::filesystem::equivalent(dataDir, g_startDir, ec)) return;
 
-    const bool startLooksLikeData =
-        std::filesystem::is_directory(g_startDir / "settings", ec) ||
-        std::filesystem::is_directory(g_startDir / "roms", ec) ||
-        std::filesystem::is_directory(g_startDir / "saves", ec);
+    const bool startLooksLikeData = std::filesystem::is_directory(g_startDir / "settings", ec) ||
+                                    std::filesystem::is_directory(g_startDir / "roms", ec) ||
+                                    std::filesystem::is_directory(g_startDir / "saves", ec);
 
     std::filesystem::current_path(dataDir, ec);
     if (ec) {
-        Log::errorf("Couldn't switch to the data folder %s: %s -- staying in %s",
-                    dataDir.string().c_str(), ec.message().c_str(), g_startDir.string().c_str());
+        Log::errorf("Couldn't switch to the data folder %s: %s -- staying in %s", dataDir.string().c_str(),
+                    ec.message().c_str(), g_startDir.string().c_str());
         return;
     }
     Log::infof("Data folder (settings/, roms/, saves/): %s", dataDir.string().c_str());
@@ -176,8 +167,7 @@ static void SelectDataDirectory()
 // here (RTLD_GLOBAL) so volk's later bare-name dlopen resolves to this image —
 // no DYLD_LIBRARY_PATH needed. Harmless if the dylib is absent (GL/other paths).
 #ifdef __APPLE__
-static void PreloadMoltenVK()
-{
+static void PreloadMoltenVK() {
     char exePath[4096];
     uint32_t sz = sizeof(exePath);
     if (_NSGetExecutablePath(exePath, &sz) != 0) return;
@@ -185,7 +175,7 @@ static void PreloadMoltenVK()
     std::filesystem::path dir = std::filesystem::path(exePath).parent_path();
     // Next to the executable in a plain build; in Contents/Frameworks inside an app bundle.
     for (const std::filesystem::path& dylib :
-         { dir / "libMoltenVK.dylib", dir / ".." / "Frameworks" / "libMoltenVK.dylib" }) {
+         {dir / "libMoltenVK.dylib", dir / ".." / "Frameworks" / "libMoltenVK.dylib"}) {
         if (!std::filesystem::exists(dylib, ec)) continue;
         if (!dlopen(dylib.c_str(), RTLD_NOW | RTLD_GLOBAL)) {
             Log::infof("PreloadMoltenVK: dlopen failed: %s", dlerror());
@@ -195,8 +185,7 @@ static void PreloadMoltenVK()
 }
 #endif
 
-static void PrintUsage(const char* programName)
-{
+static void PrintUsage(const char* programName) {
     std::printf("NovaStar64 - Nintendo 64 Emulator\n");
     std::printf("Usage: %s [options] [rom_file]\n\n", programName);
     std::printf("Options:\n");
@@ -212,7 +201,8 @@ static void PrintUsage(const char* programName)
     std::printf("  --windowed       Run in windowed mode (default: borderless fullscreen)\n");
     std::printf("  --interpreter    Force interpreter mode (slower, but better for debugging)\n");
     std::printf("  --recompiler     Force the dynamic recompiler (JIT) instead of the interpreter\n");
-    std::printf("  --rsp-recompiler Run the RSP (graphics and audio microcode) on its recompiler (the default where there is one)\n");
+    std::printf("  --rsp-recompiler Run the RSP (graphics and audio microcode) on its recompiler (the default where "
+                "there is one)\n");
     std::printf("  --rsp-interpreter  Force the RSP interpreter\n");
     std::printf("  --headless       Run without opening a window (useful with --pipe)\n");
     std::printf("  --pipe <name>    Connect to a named pipe for IPC commands/framebuffer\n");
@@ -221,29 +211,35 @@ static void PrintUsage(const char* programName)
 // `nova64 --rsp-selftest [--seed N] [--programs N] [--only N] [--length N] [--verbose]`
 // Runs random programs on the RSP interpreter and the RSP recompiler and compares the
 // results. A development tool: it needs no ROM and no window, and leaves no files behind.
-static int RunRspSelfTest(int argc, char* argv[])
-{
+static int RunRspSelfTest(int argc, char* argv[]) {
     Nova64::RSP::Test::DiffTestOptions opt;
-    for (int i = 1; i < argc; i++)
-    {
+    for (int i = 1; i < argc; i++) {
         auto number = [&](uint64_t& out) {
             if (i + 1 < argc) out = std::strtoull(argv[++i], nullptr, 0);
         };
         uint64_t n = 0;
-        if (!std::strcmp(argv[i], "--seed"))          { number(n); opt.seed = n; }
-        else if (!std::strcmp(argv[i], "--programs")) { number(n); opt.programs = static_cast<uint32_t>(n); }
-        else if (!std::strcmp(argv[i], "--only"))     { number(n); opt.only = static_cast<uint32_t>(n); }
-        else if (!std::strcmp(argv[i], "--length"))   { number(n); opt.maxLength = static_cast<uint32_t>(n); }
-        else if (!std::strcmp(argv[i], "--verbose"))  { opt.verbose = true; }
+        if (!std::strcmp(argv[i], "--seed")) {
+            number(n);
+            opt.seed = n;
+        } else if (!std::strcmp(argv[i], "--programs")) {
+            number(n);
+            opt.programs = static_cast<uint32_t>(n);
+        } else if (!std::strcmp(argv[i], "--only")) {
+            number(n);
+            opt.only = static_cast<uint32_t>(n);
+        } else if (!std::strcmp(argv[i], "--length")) {
+            number(n);
+            opt.maxLength = static_cast<uint32_t>(n);
+        } else if (!std::strcmp(argv[i], "--verbose")) {
+            opt.verbose = true;
+        }
     }
     return Nova64::RSP::Test::RunDifferentialTest(opt);
 }
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++)
-        if (!std::strcmp(argv[i], "--rsp-selftest"))
-            return RunRspSelfTest(argc, argv);
+        if (!std::strcmp(argv[i], "--rsp-selftest")) return RunRspSelfTest(argc, argv);
 
     // Initialize logging
     LoggingConfig::set_min_level(Logging::Level::Info);
@@ -261,115 +257,91 @@ int main(int argc, char* argv[])
     std::string configPath;
     uint64_t frameLimit = 0; // 0 = unlimited
     int targetFPS = 60;      // Default: 60 FPS (NTSC)
-    int windowWidth = 1280;   // Default: 16:9 HD (1280x720)
+    int windowWidth = 1280;  // Default: 16:9 HD (1280x720)
     int windowHeight = 720;
     // Sentinel 0 means "don't override config". A non-zero value comes from
     // an explicit --scale CLI flag and overrides NovaGraphics.ini.  Resolution
     // presets only set window size now — they used to also force scale, which
     // silently overwrote the ini every run.
     int internalResScale = 0;
-    int fullscreenMode = 1;  // 0 = windowed, 1 = borderless fullscreen (default), 2 = exclusive fullscreen
+    int fullscreenMode = 1; // 0 = windowed, 1 = borderless fullscreen (default), 2 = exclusive fullscreen
 
     // Parse command line arguments
-    for (int i = 1; i < argc; i++)
-    {
-        if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
-        {
+    for (int i = 1; i < argc; i++) {
+        if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
             PrintUsage(argv[0]);
             return 0;
-        }
-        else if (std::strcmp(argv[i], "--debug") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--debug") == 0) {
             LoggingConfig::set_min_level(Logging::Level::Debug);
-        }
-        else if (std::strcmp(argv[i], "--log") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             LoggingConfig::open_log_file(ResolveFromStartDir(argv[++i]));
-        }
-        else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
             configPath = ResolveFromStartDir(argv[++i]);
-        }
-        else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             frameLimit = std::strtoull(argv[++i], nullptr, 10);
             Log::infof("Frame limit set to: %llu", (unsigned long long)frameLimit);
-        }
-        else if (std::strcmp(argv[i], "--fps") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--fps") == 0 && i + 1 < argc) {
             targetFPS = std::atoi(argv[++i]);
             Log::infof("Target FPS set to: %d", targetFPS);
-        }
-        else if (std::strcmp(argv[i], "--resolution") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--resolution") == 0 && i + 1 < argc) {
             const char* res = argv[++i];
             // Window size only — internal scale is governed by NovaGraphics.ini
             // (or by an explicit --scale flag below).
-            if (std::strcmp(res, "480p") == 0)       { windowWidth = 854;  windowHeight = 480;  }
-            else if (std::strcmp(res, "720p") == 0)  { windowWidth = 1280; windowHeight = 720;  }
-            else if (std::strcmp(res, "960p") == 0)  { windowWidth = 1706; windowHeight = 960;  }
-            else if (std::strcmp(res, "1080p") == 0) { windowWidth = 1920; windowHeight = 1080; }
-            else if (std::strcmp(res, "1440p") == 0) { windowWidth = 2560; windowHeight = 1440; }
-            else if (std::strcmp(res, "4k") == 0)    { windowWidth = 3840; windowHeight = 2160; }
-            else {
+            if (std::strcmp(res, "480p") == 0) {
+                windowWidth = 854;
+                windowHeight = 480;
+            } else if (std::strcmp(res, "720p") == 0) {
+                windowWidth = 1280;
+                windowHeight = 720;
+            } else if (std::strcmp(res, "960p") == 0) {
+                windowWidth = 1706;
+                windowHeight = 960;
+            } else if (std::strcmp(res, "1080p") == 0) {
+                windowWidth = 1920;
+                windowHeight = 1080;
+            } else if (std::strcmp(res, "1440p") == 0) {
+                windowWidth = 2560;
+                windowHeight = 1440;
+            } else if (std::strcmp(res, "4k") == 0) {
+                windowWidth = 3840;
+                windowHeight = 2160;
+            } else {
                 std::fprintf(stderr, "Unknown resolution: %s (use 480p, 720p, 960p, 1080p, 1440p, 4k)\n", res);
                 return 1;
             }
             Log::infof("Resolution set to: %dx%d", windowWidth, windowHeight);
-        }
-        else if (std::strcmp(argv[i], "--scale") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
             internalResScale = std::atoi(argv[++i]);
             if (internalResScale < 1 || internalResScale > 8) {
                 std::fprintf(stderr, "--scale must be 1..8\n");
                 return 1;
             }
             Log::infof("Internal resolution scale: %dx (overrides ini)", internalResScale);
-        }
-        else if (std::strcmp(argv[i], "--fullscreen") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--fullscreen") == 0) {
             fullscreenMode = 2;
             Log::info("Exclusive fullscreen mode enabled");
-        }
-        else if (std::strcmp(argv[i], "--windowed") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--windowed") == 0) {
             fullscreenMode = 0;
             Log::info("Windowed mode enabled");
-        }
-        else if (std::strcmp(argv[i], "--interpreter") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--interpreter") == 0) {
             CN64System::s_UseInterpreter = true;
             Log::info("Interpreter mode forced via CLI");
-        }
-        else if (std::strcmp(argv[i], "--recompiler") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--recompiler") == 0) {
             CN64System::s_UseInterpreter = false;
             Log::info("Dynamic recompiler forced via CLI");
-        }
-        else if (std::strcmp(argv[i], "--rsp-recompiler") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--rsp-recompiler") == 0) {
             Nova64::RSP::CRSPSettings::SetEngine(Nova64::RSP::RSPEngine::Recompiler);
-        }
-        else if (std::strcmp(argv[i], "--rsp-interpreter") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--rsp-interpreter") == 0) {
             Nova64::RSP::CRSPSettings::SetEngine(Nova64::RSP::RSPEngine::Interpreter);
-        }
-        else if (std::strcmp(argv[i], "--headless") == 0)
-        {
+        } else if (std::strcmp(argv[i], "--headless") == 0) {
             CN64System::s_HeadlessMode = true;
             Log::info("Headless mode enabled");
-        }
-        else if (std::strcmp(argv[i], "--pipe") == 0 && i + 1 < argc)
-        {
+        } else if (std::strcmp(argv[i], "--pipe") == 0 && i + 1 < argc) {
             CN64System::s_PipeName = argv[++i];
             Log::infof("IPC Pipe name set to: %s", CN64System::s_PipeName.c_str());
-        }
-        else if (argv[i][0] != '-')
-        {
+        } else if (argv[i][0] != '-') {
             romPath = ResolveRomPath(argv[i]);
-        }
-        else
-        {
+        } else {
             std::fprintf(stderr, "Unknown option: %s\n", argv[i]);
             PrintUsage(argv[0]);
             return 1;
@@ -378,8 +350,7 @@ int main(int argc, char* argv[])
 
     Log::info("NovaStar64 initialized successfully");
 
-    if (romPath.empty() && !CN64System::s_HeadlessMode)
-    {
+    if (romPath.empty() && !CN64System::s_HeadlessMode) {
         Log::info("No ROM specified. Launching Nova UI...");
         NovaUI::NovaLauncher launcher;
         launcher.Run();
@@ -389,18 +360,18 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    if (!romPath.empty())
-    {
+    if (!romPath.empty()) {
         std::filesystem::path sourcePath(romPath);
         std::filesystem::path romsDir("roms");
         if (!std::filesystem::exists(romsDir)) {
             std::filesystem::create_directory(romsDir);
         }
-        
+
         std::filesystem::path destPath = romsDir / sourcePath.filename();
-        
+
         std::error_code ec;
-        if (!std::filesystem::exists(sourcePath) || !std::filesystem::equivalent(sourcePath.parent_path(), std::filesystem::absolute(romsDir), ec)) {
+        if (!std::filesystem::exists(sourcePath) ||
+            !std::filesystem::equivalent(sourcePath.parent_path(), std::filesystem::absolute(romsDir), ec)) {
             if (std::filesystem::exists(sourcePath)) {
                 Log::infof("Copying ROM to roms directory: %s", destPath.string().c_str());
                 std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing, ec);
@@ -411,15 +382,14 @@ int main(int argc, char* argv[])
                 }
             }
         }
-        
+
         Log::infof("Loading ROM: %s", romPath.c_str());
         CN64System::s_TargetFPS = targetFPS;
         CN64System::s_WindowWidth = windowWidth;
         CN64System::s_WindowHeight = windowHeight;
         CN64System::s_InternalResScale = internalResScale;
         CN64System::s_FullscreenMode = fullscreenMode;
-        if (!CN64System::RunFileImage(romPath.c_str(), frameLimit))
-        {
+        if (!CN64System::RunFileImage(romPath.c_str(), frameLimit)) {
             Log::error("Failed to load ROM. Exiting.");
             Logging::stop_logging();
             return 1;

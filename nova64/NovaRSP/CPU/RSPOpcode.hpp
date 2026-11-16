@@ -57,7 +57,7 @@ union RSPOpcode {
 
     // Vector load/store offset
     struct {
-        signed   voffset : 7;
+        signed voffset : 7;
         unsigned del : 4;
         unsigned : 5;
         unsigned dest : 5;
@@ -95,67 +95,67 @@ union RSPOpcode {
 // ──────────────────────────────────────────────
 enum RSPOpCodes : uint32_t {
     RSP_SPECIAL = 0,
-    RSP_REGIMM  = 1,
-    RSP_J       = 2,
-    RSP_JAL     = 3,
-    RSP_BEQ     = 4,
-    RSP_BNE     = 5,
-    RSP_BLEZ    = 6,
-    RSP_BGTZ    = 7,
-    RSP_ADDI    = 8,
-    RSP_ADDIU   = 9,
-    RSP_SLTI    = 10,
-    RSP_SLTIU   = 11,
-    RSP_ANDI    = 12,
-    RSP_ORI     = 13,
-    RSP_XORI    = 14,
-    RSP_LUI     = 15,
-    RSP_CP0     = 16,
-    RSP_CP2     = 18,
-    RSP_LB      = 32,
-    RSP_LH      = 33,
-    RSP_LW      = 35,
-    RSP_LBU     = 36,
-    RSP_LHU     = 37,
-    RSP_LWU     = 39,
-    RSP_SB      = 40,
-    RSP_SH      = 41,
-    RSP_SW      = 43,
-    RSP_LC2     = 50,
-    RSP_SC2     = 58,
+    RSP_REGIMM = 1,
+    RSP_J = 2,
+    RSP_JAL = 3,
+    RSP_BEQ = 4,
+    RSP_BNE = 5,
+    RSP_BLEZ = 6,
+    RSP_BGTZ = 7,
+    RSP_ADDI = 8,
+    RSP_ADDIU = 9,
+    RSP_SLTI = 10,
+    RSP_SLTIU = 11,
+    RSP_ANDI = 12,
+    RSP_ORI = 13,
+    RSP_XORI = 14,
+    RSP_LUI = 15,
+    RSP_CP0 = 16,
+    RSP_CP2 = 18,
+    RSP_LB = 32,
+    RSP_LH = 33,
+    RSP_LW = 35,
+    RSP_LBU = 36,
+    RSP_LHU = 37,
+    RSP_LWU = 39,
+    RSP_SB = 40,
+    RSP_SH = 41,
+    RSP_SW = 43,
+    RSP_LC2 = 50,
+    RSP_SC2 = 58,
 };
 
 // ──────────────────────────────────────────────
 // SPECIAL function codes
 // ──────────────────────────────────────────────
 enum RSPSpecialCodes : uint32_t {
-    RSP_SPECIAL_SLL   = 0,
-    RSP_SPECIAL_SRL   = 2,
-    RSP_SPECIAL_SRA   = 3,
-    RSP_SPECIAL_SLLV  = 4,
-    RSP_SPECIAL_SRLV  = 6,
-    RSP_SPECIAL_SRAV  = 7,
-    RSP_SPECIAL_JR    = 8,
-    RSP_SPECIAL_JALR  = 9,
+    RSP_SPECIAL_SLL = 0,
+    RSP_SPECIAL_SRL = 2,
+    RSP_SPECIAL_SRA = 3,
+    RSP_SPECIAL_SLLV = 4,
+    RSP_SPECIAL_SRLV = 6,
+    RSP_SPECIAL_SRAV = 7,
+    RSP_SPECIAL_JR = 8,
+    RSP_SPECIAL_JALR = 9,
     RSP_SPECIAL_BREAK = 13,
-    RSP_SPECIAL_ADD   = 32,
-    RSP_SPECIAL_ADDU  = 33,
-    RSP_SPECIAL_SUB   = 34,
-    RSP_SPECIAL_SUBU  = 35,
-    RSP_SPECIAL_AND   = 36,
-    RSP_SPECIAL_OR    = 37,
-    RSP_SPECIAL_XOR   = 38,
-    RSP_SPECIAL_NOR   = 39,
-    RSP_SPECIAL_SLT   = 42,
-    RSP_SPECIAL_SLTU  = 43,
+    RSP_SPECIAL_ADD = 32,
+    RSP_SPECIAL_ADDU = 33,
+    RSP_SPECIAL_SUB = 34,
+    RSP_SPECIAL_SUBU = 35,
+    RSP_SPECIAL_AND = 36,
+    RSP_SPECIAL_OR = 37,
+    RSP_SPECIAL_XOR = 38,
+    RSP_SPECIAL_NOR = 39,
+    RSP_SPECIAL_SLT = 42,
+    RSP_SPECIAL_SLTU = 43,
 };
 
 // ──────────────────────────────────────────────
 // REGIMM codes
 // ──────────────────────────────────────────────
 enum RSPRegImmOpCodes : uint32_t {
-    RSP_REGIMM_BLTZ   = 0,
-    RSP_REGIMM_BGEZ   = 1,
+    RSP_REGIMM_BLTZ = 0,
+    RSP_REGIMM_BGEZ = 1,
     RSP_REGIMM_BLTZAL = 16,
     RSP_REGIMM_BGEZAL = 17,
 };
@@ -172,10 +172,10 @@ enum RSPCOP0OpCodes : uint32_t {
 // COP2 sub-opcodes (vector unit)
 // ──────────────────────────────────────────────
 enum RSPCOP2OpCodes : uint32_t {
-    RSP_COP2_MF = 0,  // Move From Vector
-    RSP_COP2_CF = 2,  // Move Control From (flags)
-    RSP_COP2_MT = 4,  // Move To Vector
-    RSP_COP2_CT = 6,  // Move Control To (flags)
+    RSP_COP2_MF = 0, // Move From Vector
+    RSP_COP2_CF = 2, // Move Control From (flags)
+    RSP_COP2_MT = 4, // Move To Vector
+    RSP_COP2_CT = 6, // Move Control To (flags)
 };
 
 // ──────────────────────────────────────────────
@@ -183,14 +183,14 @@ enum RSPCOP2OpCodes : uint32_t {
 // ──────────────────────────────────────────────
 enum RSPVectorOpCodes : uint32_t {
     // Multiply operations
-    RSP_VECTOR_VMULF = 0,   // Signed frac multiply
-    RSP_VECTOR_VMULU = 1,   // Unsigned frac multiply
-    RSP_VECTOR_VRNDP = 2,   // Round positive
-    RSP_VECTOR_VMULQ = 3,   // Quarter multiply
-    RSP_VECTOR_VMUDL = 4,   // Multiply low×low
-    RSP_VECTOR_VMUDM = 5,   // Multiply mid×low
-    RSP_VECTOR_VMUDN = 6,   // Multiply low×mid
-    RSP_VECTOR_VMUDH = 7,   // Multiply high×high
+    RSP_VECTOR_VMULF = 0, // Signed frac multiply
+    RSP_VECTOR_VMULU = 1, // Unsigned frac multiply
+    RSP_VECTOR_VRNDP = 2, // Round positive
+    RSP_VECTOR_VMULQ = 3, // Quarter multiply
+    RSP_VECTOR_VMUDL = 4, // Multiply low×low
+    RSP_VECTOR_VMUDM = 5, // Multiply mid×low
+    RSP_VECTOR_VMUDN = 6, // Multiply low×mid
+    RSP_VECTOR_VMUDH = 7, // Multiply high×high
 
     // Multiply-accumulate
     RSP_VECTOR_VMACF = 8,
@@ -203,58 +203,58 @@ enum RSPVectorOpCodes : uint32_t {
     RSP_VECTOR_VMADH = 15,
 
     // Add / subtract
-    RSP_VECTOR_VADD  = 16,
-    RSP_VECTOR_VSUB  = 17,
-    RSP_VECTOR_VSUT  = 18,
-    RSP_VECTOR_VABS  = 19,
+    RSP_VECTOR_VADD = 16,
+    RSP_VECTOR_VSUB = 17,
+    RSP_VECTOR_VSUT = 18,
+    RSP_VECTOR_VABS = 19,
     RSP_VECTOR_VADDC = 20,
     RSP_VECTOR_VSUBC = 21,
     RSP_VECTOR_VADDB = 22,
     RSP_VECTOR_VSUBB = 23,
     RSP_VECTOR_VACCB = 24,
     RSP_VECTOR_VSUCB = 25,
-    RSP_VECTOR_VSAD  = 26,
-    RSP_VECTOR_VSAC  = 27,
-    RSP_VECTOR_VSUM  = 28,
-    RSP_VECTOR_VSAW  = 29,  // Read accumulator
-    RSP_VECTOR_VACC  = 30,
-    RSP_VECTOR_VSUC  = 31,
+    RSP_VECTOR_VSAD = 26,
+    RSP_VECTOR_VSAC = 27,
+    RSP_VECTOR_VSUM = 28,
+    RSP_VECTOR_VSAW = 29, // Read accumulator
+    RSP_VECTOR_VACC = 30,
+    RSP_VECTOR_VSUC = 31,
 
     // Compare / select
-    RSP_VECTOR_VLT   = 32,
-    RSP_VECTOR_VEQ   = 33,
-    RSP_VECTOR_VNE   = 34,
-    RSP_VECTOR_VGE   = 35,
-    RSP_VECTOR_VCL   = 36,
-    RSP_VECTOR_VCH   = 37,
-    RSP_VECTOR_VCR   = 38,
-    RSP_VECTOR_VMRG  = 39,
+    RSP_VECTOR_VLT = 32,
+    RSP_VECTOR_VEQ = 33,
+    RSP_VECTOR_VNE = 34,
+    RSP_VECTOR_VGE = 35,
+    RSP_VECTOR_VCL = 36,
+    RSP_VECTOR_VCH = 37,
+    RSP_VECTOR_VCR = 38,
+    RSP_VECTOR_VMRG = 39,
 
     // Logical
-    RSP_VECTOR_VAND  = 40,
+    RSP_VECTOR_VAND = 40,
     RSP_VECTOR_VNAND = 41,
-    RSP_VECTOR_VOR   = 42,
-    RSP_VECTOR_VNOR  = 43,
-    RSP_VECTOR_VXOR  = 44,
+    RSP_VECTOR_VOR = 42,
+    RSP_VECTOR_VNOR = 43,
+    RSP_VECTOR_VXOR = 44,
     RSP_VECTOR_VNXOR = 45,
-    RSP_VECTOR_V056  = 46,
-    RSP_VECTOR_V057  = 47,
+    RSP_VECTOR_V056 = 46,
+    RSP_VECTOR_V057 = 47,
 
     // Reciprocal / move / sqrt
-    RSP_VECTOR_VRCP  = 48,
+    RSP_VECTOR_VRCP = 48,
     RSP_VECTOR_VRCPL = 49,
     RSP_VECTOR_VRCPH = 50,
-    RSP_VECTOR_VMOV  = 51,
-    RSP_VECTOR_VRSQ  = 52,
+    RSP_VECTOR_VMOV = 51,
+    RSP_VECTOR_VRSQ = 52,
     RSP_VECTOR_VRSQL = 53,
     RSP_VECTOR_VRSQH = 54,
-    RSP_VECTOR_VNOP  = 55,
+    RSP_VECTOR_VNOP = 55,
 
     // Pack / extract / insert
     RSP_VECTOR_VEXTT = 56,
     RSP_VECTOR_VEXTQ = 57,
     RSP_VECTOR_VEXTN = 58,
-    RSP_VECTOR_V073  = 59,
+    RSP_VECTOR_V073 = 59,
     RSP_VECTOR_VINST = 60,
     RSP_VECTOR_VINSQ = 61,
     RSP_VECTOR_VINSN = 62,
@@ -265,41 +265,47 @@ enum RSPVectorOpCodes : uint32_t {
 // Load/Store COP2 opcodes (vector memory)
 // ──────────────────────────────────────────────
 enum RSPLSC2OpCodes : uint32_t {
-    RSP_LSC2_BV = 0,   // Byte
-    RSP_LSC2_SV = 1,   // Short (halfword)
-    RSP_LSC2_LV = 2,   // Long (word)
-    RSP_LSC2_DV = 3,   // Double (doubleword)
-    RSP_LSC2_QV = 4,   // Quad (16 bytes)
-    RSP_LSC2_RV = 5,   // Rest (remainder of quad)
-    RSP_LSC2_PV = 6,   // Packed
-    RSP_LSC2_UV = 7,   // Unsigned packed
-    RSP_LSC2_HV = 8,   // Half-packed
-    RSP_LSC2_FV = 9,   // Fourth
-    RSP_LSC2_WV = 10,  // Wrap
-    RSP_LSC2_TV = 11,  // Transpose
+    RSP_LSC2_BV = 0,  // Byte
+    RSP_LSC2_SV = 1,  // Short (halfword)
+    RSP_LSC2_LV = 2,  // Long (word)
+    RSP_LSC2_DV = 3,  // Double (doubleword)
+    RSP_LSC2_QV = 4,  // Quad (16 bytes)
+    RSP_LSC2_RV = 5,  // Rest (remainder of quad)
+    RSP_LSC2_PV = 6,  // Packed
+    RSP_LSC2_UV = 7,  // Unsigned packed
+    RSP_LSC2_HV = 8,  // Half-packed
+    RSP_LSC2_FV = 9,  // Fourth
+    RSP_LSC2_WV = 10, // Wrap
+    RSP_LSC2_TV = 11, // Transpose
 };
 
 // ──────────────────────────────────────────────
 // GPR name strings
 // ──────────────────────────────────────────────
 inline constexpr const char* GPR_Names[32] = {
-    "R0", "AT", "V0", "V1", "A0", "A1", "A2", "A3",
-    "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
-    "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7",
-    "T8", "T9", "K0", "K1", "GP", "SP", "S8", "RA",
+    "R0", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
+    "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "T8", "T9", "K0", "K1", "GP", "SP", "S8", "RA",
 };
 
 // COP0 register name helper
 inline constexpr const char* COP0_Name(uint32_t reg) {
     constexpr const char* names[] = {
-        "SP memory address",    "SP DRAM DMA address",
-        "SP read DMA length",   "SP write DMA length",
-        "SP status",            "SP DMA full",
-        "SP DMA busy",          "SP semaphore",
-        "DP CMD DMA start",     "DP CMD DMA end",
-        "DP CMD DMA current",   "DP CMD status",
-        "DP clock counter",     "DP buffer busy counter",
-        "DP pipe busy counter", "DP TMEM load counter",
+        "SP memory address",
+        "SP DRAM DMA address",
+        "SP read DMA length",
+        "SP write DMA length",
+        "SP status",
+        "SP DMA full",
+        "SP DMA busy",
+        "SP semaphore",
+        "DP CMD DMA start",
+        "DP CMD DMA end",
+        "DP CMD DMA current",
+        "DP CMD status",
+        "DP clock counter",
+        "DP buffer busy counter",
+        "DP pipe busy counter",
+        "DP TMEM load counter",
     };
     return (reg < 16) ? names[reg] : "Unknown Register";
 }

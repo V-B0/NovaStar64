@@ -9,10 +9,10 @@
 #include <cstring>
 
 #ifdef _MSC_VER
-    #include <intrin.h>
-    #include <nmmintrin.h>
+#include <intrin.h>
+#include <nmmintrin.h>
 #elif defined(__x86_64__) || defined(__i386__)
-    #include <x86intrin.h>
+#include <x86intrin.h>
 #endif
 
 namespace Nova64::Video {
@@ -32,10 +32,8 @@ struct CRC32Table {
         for (uint32_t i = 0; i < 256; i++) {
             uint32_t c = i;
             for (int j = 0; j < 8; j++) {
-                if (c & 1)
-                    c = kCRC32Poly ^ (c >> 1);
-                else
-                    c >>= 1;
+                if (c & 1) c = kCRC32Poly ^ (c >> 1);
+                else c >>= 1;
             }
             tab[i] = c;
         }
@@ -76,10 +74,8 @@ uint32_t CRC32_Software(const void* data, size_t length, uint32_t seed) noexcept
         std::memcpy(&word, p, 4);
         crc ^= word;
 
-        crc = sCRC32Slice.tab[3][(crc >>  0) & 0xFF]
-            ^ sCRC32Slice.tab[2][(crc >>  8) & 0xFF]
-            ^ sCRC32Slice.tab[1][(crc >> 16) & 0xFF]
-            ^ sCRC32Slice.tab[0][(crc >> 24) & 0xFF];
+        crc = sCRC32Slice.tab[3][(crc >> 0) & 0xFF] ^ sCRC32Slice.tab[2][(crc >> 8) & 0xFF] ^
+              sCRC32Slice.tab[1][(crc >> 16) & 0xFF] ^ sCRC32Slice.tab[0][(crc >> 24) & 0xFF];
 
         p += 4;
         length -= 4;
@@ -141,7 +137,7 @@ static bool HasSSE42CRC() noexcept {
 #ifdef _MSC_VER
     int regs[4];
     __cpuid(regs, 1);
-    return (regs[2] & (1 << 20)) != 0;  // SSE4.2 bit
+    return (regs[2] & (1 << 20)) != 0; // SSE4.2 bit
 #elif defined(__SSE4_2__)
     return true;
 #else
@@ -176,10 +172,8 @@ struct CRC64Table {
         for (uint64_t i = 0; i < 256; i++) {
             uint64_t c = i;
             for (int j = 0; j < 8; j++) {
-                if (c & 1)
-                    c = kCRC64Poly ^ (c >> 1);
-                else
-                    c >>= 1;
+                if (c & 1) c = kCRC64Poly ^ (c >> 1);
+                else c >>= 1;
             }
             tab[i] = c;
         }

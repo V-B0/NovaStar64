@@ -20,8 +20,12 @@ union SDL_Event;
 // Forward declarations — avoid pulling in heavy N64 system headers
 class CN64System;
 class CRegisters;
-namespace Nova64 { class MipsMemoryVM; }
-namespace Nova64::Video { class VideoPlugin; }
+namespace Nova64 {
+class MipsMemoryVM;
+}
+namespace Nova64::Video {
+class VideoPlugin;
+}
 
 namespace Nova64::Video {
 
@@ -53,10 +57,10 @@ public:
     void SetVideoPlugin(VideoPlugin* vp) { m_videoPlugin = vp; }
 
 private:
-    bool m_visible     = false;
+    bool m_visible = false;
     bool m_initialized = false;
 
-    CN64System*  m_system      = nullptr;
+    CN64System* m_system = nullptr;
     VideoPlugin* m_videoPlugin = nullptr;
 
     // ─── Panel draw methods ──────────────────────────────────────
@@ -85,16 +89,16 @@ private:
     void DrawRSPHiddenTab(MipsMemoryVM* mem);
 
     // Memory panel state
-    uint32_t m_memViewAddr   = 0x80000000;
-    char     m_memAddrInput[16] = "80000000";
-    bool     m_memShowHex    = true;
-    bool     m_memShowAscii  = true;
-    int      m_memBytesPerRow = 16;
+    uint32_t m_memViewAddr = 0x80000000;
+    char m_memAddrInput[16] = "80000000";
+    bool m_memShowHex = true;
+    bool m_memShowAscii = true;
+    int m_memBytesPerRow = 16;
 
     // Commands panel state
-    uint32_t m_cpuJumpAddr   = 0;
-    char     m_cpuJumpInput[16] = "";
-    int      m_cmdTab        = 0;  // 0=CPU, 1=RSP, 2=RDP
+    uint32_t m_cpuJumpAddr = 0;
+    char m_cpuJumpInput[16] = "";
+    int m_cmdTab = 0; // 0=CPU, 1=RSP, 2=RDP
 };
 
 extern ImGuiDebugUI g_imguiDebugUI;

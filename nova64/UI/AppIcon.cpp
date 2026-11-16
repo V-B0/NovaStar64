@@ -19,10 +19,10 @@ const IconImage& AppIconImage() {
     static const IconImage image = []() {
         IconImage out;
         int w = 0, h = 0, channels = 0;
-        unsigned char* pixels = stbi_load_from_memory(kIconPng, static_cast<int>(sizeof(kIconPng)),
-                                                      &w, &h, &channels, 4);
+        unsigned char* pixels =
+            stbi_load_from_memory(kIconPng, static_cast<int>(sizeof(kIconPng)), &w, &h, &channels, 4);
         if (pixels) {
-            out.width  = w;
+            out.width = w;
             out.height = h;
             out.rgba.assign(pixels, pixels + static_cast<size_t>(w) * h * 4);
             stbi_image_free(pixels);
@@ -36,11 +36,10 @@ void ApplyAppIcon(SDL_Window* window) {
     const IconImage& icon = AppIconImage();
     if (!window || icon.width == 0) return;
 
-    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(
-        const_cast<uint8_t*>(icon.rgba.data()), icon.width, icon.height, 32, icon.width * 4,
-        SDL_PIXELFORMAT_RGBA32);
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(const_cast<uint8_t*>(icon.rgba.data()), icon.width,
+                                                              icon.height, 32, icon.width * 4, SDL_PIXELFORMAT_RGBA32);
     if (!surface) return;
-    SDL_SetWindowIcon(window, surface);   // SDL copies what it needs
+    SDL_SetWindowIcon(window, surface); // SDL copies what it needs
     SDL_FreeSurface(surface);
 }
 

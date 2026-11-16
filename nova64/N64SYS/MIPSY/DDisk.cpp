@@ -27,94 +27,84 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
     // Reset transient status flags at start of new command
     status.command_complete = false;
     status.error = false;
-    
+
     // Most commands require logic, some might set busy
     status.busy = true;
 
     switch (command) {
-        case DiskCommand::Seek:
-            // Parameter is typically the target track (or cylinder)
-            if (SeekToTrack(parameter)) {
-                status.seek_complete = true;
-            } else {
-                HandleError();
-            }
-            break;
-            
-        case DiskCommand::ReadSector:
-            if (!status.motor_on) {
-                HandleError();
-                break;
-            }
-            current_mode = DiskMode::Reading;
-            // Uses current_track/current_sector set by previous Seek commands
-            if (ReadSector(current_track, current_sector)) {
-               // Read success
-            }
-            break;
-            
-        case DiskCommand::WriteSector:
-            if (!status.motor_on || status.write_protected) {
-                HandleError();
-                break;
-            }
-            current_mode = DiskMode::Writing;
-            if (WriteSector(current_track, current_sector)) {
-                // Write success
-            }
-            break;
-            
-        case DiskCommand::Reset:
-            Reset();
-            break;
-            
-        case DiskCommand::MotorOn:
-            MotorOn();
-            break;
-            
-        case DiskCommand::MotorOff:
-            MotorOff();
-            break;
-            
-        case DiskCommand::CheckDisk:
-            // Just checks status, effectively
-            UpdateStatus();
-            break;
-            
-        case DiskCommand::GetStatus:
-            // Return status (handled by caller reading status register)
-            break;
-            
-        case DiskCommand::SetZone:
-            SetZone(static_cast<DiskZone>(parameter));
-            break;
-            
-        case DiskCommand::ReadBlock:
-            if (!status.motor_on) {
-                HandleError();
-            } else {
-                current_mode = DiskMode::Reading;
-                ReadBlock(parameter);
-            }
-            break;
-            
-        case DiskCommand::WriteBlock:
-            if (!status.motor_on || status.write_protected) {
-                HandleError();
-            } else {
-                current_mode = DiskMode::Writing;
-                WriteBlock(parameter);
-            }
-            break;
-            
-        default:
+    case DiskCommand::Seek:
+        // Parameter is typically the target track (or cylinder)
+        if (SeekToTrack(parameter)) {
+            status.seek_complete = true;
+        } else {
+            HandleError();
+        }
+        break;
+
+    case DiskCommand::ReadSector:
+        if (!status.motor_on) {
             HandleError();
             break;
+        }
+        current_mode = DiskMode::Reading;
+        // Uses current_track/current_sector set by previous Seek commands
+        if (ReadSector(current_track, current_sector)) {
+            // Read success
+        }
+        break;
+
+    case DiskCommand::WriteSector:
+        if (!status.motor_on || status.write_protected) {
+            HandleError();
+            break;
+        }
+        current_mode = DiskMode::Writing;
+        if (WriteSector(current_track, current_sector)) {
+            // Write success
+        }
+        break;
+
+    case DiskCommand::Reset: Reset(); break;
+
+    case DiskCommand::MotorOn: MotorOn(); break;
+
+    case DiskCommand::MotorOff: MotorOff(); break;
+
+    case DiskCommand::CheckDisk:
+        // Just checks status, effectively
+        UpdateStatus();
+        break;
+
+    case DiskCommand::GetStatus:
+        // Return status (handled by caller reading status register)
+        break;
+
+    case DiskCommand::SetZone: SetZone(static_cast<DiskZone>(parameter)); break;
+
+    case DiskCommand::ReadBlock:
+        if (!status.motor_on) {
+            HandleError();
+        } else {
+            current_mode = DiskMode::Reading;
+            ReadBlock(parameter);
+        }
+        break;
+
+    case DiskCommand::WriteBlock:
+        if (!status.motor_on || status.write_protected) {
+            HandleError();
+        } else {
+            current_mode = DiskMode::Writing;
+            WriteBlock(parameter);
+        }
+        break;
+
+    default: HandleError(); break;
     }
-    
+
     status.busy = false;
     status.command_complete = true;
-    
+
     // Revert mode to idle unless operation is ongoing (like DMA or continuous read)
     // For this simple implementation, we revert immediately
     current_mode = DiskMode::Idle;
@@ -123,27 +113,27 @@ void DiskController::ExecuteCommand(DiskCommand command, uint32_t parameter) {
 void DiskController::Reset() {
     current_mode = DiskMode::Idle;
     current_zone = DiskZone::Zone0;
-    
+
     // Reset status bits
     status = {};
     status.disk_present = true; // Assume disk is inserted for emulation
     status.motor_on = false;
-    
+
     current_track = 0;
     current_sector = 0;
     current_block = 0;
-    
+
     dma_start_address = 0;
     dma_length = 0;
     dma_active = false;
-    
+
     std::memset(sector_buffer, 0, BUFFER_SIZE);
 }
 
 void DiskController::SetZone(DiskZone zone) {
     if (static_cast<uint8_t>(zone) < 16) {
         current_zone = zone;
-    } 
+    }
 }
 
 bool DiskController::ReadSector(uint32_t track, uint32_t sector) {
@@ -160,7 +150,7 @@ bool DiskController::ReadSector(uint32_t track, uint32_t sector) {
         // No disk image attached or offset out of range — zero-fill
         std::memset(sector_buffer, 0, BYTES_PER_SECTOR);
     }
-    
+
     status.data_ready = true;
     return true;
 }
@@ -170,7 +160,7 @@ bool DiskController::WriteSector(uint32_t track, uint32_t sector) {
         HandleError();
         return false;
     }
-    
+
     uint32_t offset = CalculatePhysicalOffset(current_zone, track, sector);
 
     if (disk_data_writable && offset + BYTES_PER_SECTOR <= disk_data_size) {
@@ -179,7 +169,7 @@ bool DiskController::WriteSector(uint32_t track, uint32_t sector) {
         HandleError();
         return false;
     }
-    
+
     return true;
 }
 
@@ -203,14 +193,14 @@ void DiskController::StartDMA(uint32_t address, uint32_t length, bool is_write) 
     dma_start_address = address;
     dma_length = length;
     dma_active = true;
-    
+
     // In this implementation, we process DMA lazily or immediately
     ProcessDMA();
 }
 
 void DiskController::ProcessDMA() {
     if (!dma_active) return;
-    
+
     // Transfer completes instantly for now
     dma_active = false;
     dma_length = 0;
@@ -228,7 +218,7 @@ bool DiskController::SeekToTrack(uint32_t track) {
 
 bool DiskController::SeekToSector(uint32_t track, uint32_t sector) {
     if (!SeekToTrack(track)) return false;
-    
+
     const auto& info = GetZoneInfo(current_zone);
     if (sector >= info.sectors_per_track) {
         return false;
@@ -237,9 +227,7 @@ bool DiskController::SeekToSector(uint32_t track, uint32_t sector) {
     return true;
 }
 
-const ZoneInfo& DiskController::GetZoneInfo(DiskZone zone) {
-    return ZONE_TABLE[static_cast<uint8_t>(zone) & 0xF];
-}
+const ZoneInfo& DiskController::GetZoneInfo(DiskZone zone) { return ZONE_TABLE[static_cast<uint8_t>(zone) & 0xF]; }
 
 uint32_t DiskController::CalculatePhysicalOffset(DiskZone zone, uint32_t track, uint32_t sector) {
     return DiskGeometry::CalculateSectorOffset(zone, track, sector);
@@ -275,9 +263,7 @@ void DiskController::MotorOn() {
     status.disk_present = true;
 }
 
-void DiskController::MotorOff() {
-    status.motor_on = false;
-}
+void DiskController::MotorOff() { status.motor_on = false; }
 
 void DiskController::ProcessGapSector() {
     // Stub
@@ -293,9 +279,7 @@ void DiskCommandExecute() {
     g_DiskController.ExecuteCommand(static_cast<DiskCommand>(dd_current));
 }
 
-void DiskReset() {
-    g_DiskController.Reset();
-}
+void DiskReset() { g_DiskController.Reset(); }
 
 void DiskBMControl() {
     // Stub
@@ -306,7 +290,7 @@ void DiskGapSectorCheck() {
 }
 
 void DiskBMUpdate() {
-   // Stub
+    // Stub
 }
 
 bool DiskBMReadWrite(bool write) {

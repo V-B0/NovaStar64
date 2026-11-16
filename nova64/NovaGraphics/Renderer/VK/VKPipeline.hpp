@@ -19,7 +19,9 @@
 #include "VKMemory.hpp"
 #include "../Renderer.hpp"
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 // Engine-wide fixed descriptor set layout (set 0):
 //   binding 0  : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER          (vertex+fragment)
@@ -36,33 +38,29 @@ public:
     /// the pipeline will be used inside (e.g. the swapchain's). `setLayout`
     /// is the standard layout from CreateStandardSetLayout. Returns false on
     /// failure; check Logger for details.
-    bool Build(const VKContext& ctx,
-               const PipelineDesc& desc,
-               VkRenderPass compatibleRenderPass,
+    bool Build(const VKContext& ctx, const PipelineDesc& desc, VkRenderPass compatibleRenderPass,
                VkDescriptorSetLayout setLayout);
 
     /// Build a compute pipeline from `cs` (a compiled VkShaderModule with a
     /// single entry point `main`). Uses the same standard descriptor set layout.
-    bool BuildCompute(const VKContext& ctx,
-                      VkShaderModule cs,
-                      VkDescriptorSetLayout setLayout);
+    bool BuildCompute(const VKContext& ctx, VkShaderModule cs, VkDescriptorSetLayout setLayout);
     void Destroy(const VKContext& ctx);
 
     bool IsCompute() const { return m_isCompute; }
 
     // IPipeline
     void Bind() override {} // bound by VKBackend during draw recording
-    uint64_t GetNativeHandle() const override {
-        return reinterpret_cast<uint64_t>(m_pipeline);
-    }
+    uint64_t GetNativeHandle() const override { return reinterpret_cast<uint64_t>(m_pipeline); }
 
-    VkPipeline       Get()       const { return m_pipeline; }
+    VkPipeline Get() const { return m_pipeline; }
     VkPipelineLayout GetLayout() const { return m_layout; }
 
 private:
-    VkPipeline       m_pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_layout   = VK_NULL_HANDLE;
-    bool             m_isCompute = false;
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_layout = VK_NULL_HANDLE;
+    bool m_isCompute = false;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

@@ -50,7 +50,7 @@ using PI::PeripheralInterfaceHandler;
 
 // Forward declarations from N64System namespace
 namespace N64System {
-    class CTLB;
+class CTLB;
 }
 class CRegisters;
 
@@ -72,13 +72,20 @@ void WatchDMA(uint32_t pAddr, uint32_t length, const char* source);
 class N64Rom;
 
 namespace Recompiler {
-    namespace x64 { class X64RecompilerOps; }
-    namespace x86 { class X86RecompilerOps; }
-    namespace Arm { class ArmRecompilerOps; class ArmRegInfo; }
+namespace x64 {
+class X64RecompilerOps;
 }
+namespace x86 {
+class X86RecompilerOps;
+}
+namespace Arm {
+class ArmRecompilerOps;
+class ArmRegInfo;
+} // namespace Arm
+} // namespace Recompiler
 
 namespace Interpreter {
-    class R4300iInterpreter;
+class R4300iInterpreter;
 }
 
 /**
@@ -372,8 +379,7 @@ public:
      * @param entryLo0  CP0 EntryLo0 register value (even page: PFN, V, D, G)
      * @param entryLo1  CP0 EntryLo1 register value (odd page:  PFN, V, D, G)
      */
-    void ApplyTLBMapping(uint64_t entryHi, uint64_t pageMask,
-                         uint64_t entryLo0, uint64_t entryLo1);
+    void ApplyTLBMapping(uint64_t entryHi, uint64_t pageMask, uint64_t entryLo0, uint64_t entryLo1);
 
     /**
      * @brief Remove a TLB mapping that was previously applied.
@@ -391,7 +397,7 @@ public:
 private:
     // Friends for internal access
     friend class Interpreter::R4300iInterpreter;
-    
+
 #if defined(__amd64__) || defined(_M_X64)
     friend class Recompiler::x64::X64RecompilerOps;
 #elif defined(__i386__) || defined(_M_IX86)
@@ -546,7 +552,7 @@ public:
     // Checked inline by the SW JIT fast path; if set, falls through
     // to slow path which does the write + code invalidation.
     static constexpr uint32_t kRdramPages = 0x800000 / 0x1000; // 2048
-    static constexpr uint32_t kSmcShift = 6; // 64-byte chunks
+    static constexpr uint32_t kSmcShift = 6;                   // 64-byte chunks
     static constexpr uint32_t kSmcChunkSize = 1 << kSmcShift;
     static constexpr uint32_t kSmcChunks = 8388608 / kSmcChunkSize;
 
@@ -557,21 +563,20 @@ public:
     // ========================================================================
     // IS-Viewer Debug Output (0x13FF0000)
     // ========================================================================
-    static constexpr uint32_t IS_VIEWER_BASE   = 0x13FF0000;
+    static constexpr uint32_t IS_VIEWER_BASE = 0x13FF0000;
     static constexpr uint32_t IS_VIEWER_LENGTH = 0x13FF0014;
     static constexpr uint32_t IS_VIEWER_BUFFER = 0x13FF0020;
-    static constexpr uint32_t IS_VIEWER_BUF_END= 0x13FF0220;
+    static constexpr uint32_t IS_VIEWER_BUF_END = 0x13FF0220;
 
-    uint8_t  m_ISViewerBuf[0x200] = {};
+    uint8_t m_ISViewerBuf[0x200] = {};
     uint32_t m_ISViewerLen = 0;
-    char     m_ISViewerLineBuf[1024] = {};
+    char m_ISViewerLineBuf[1024] = {};
     uint32_t m_ISViewerLinePos = 0;
 
     void ISViewer_Write32(uint32_t pAddr, uint32_t value);
     void ISViewer_WriteByte(uint32_t pAddr, uint8_t value);
 
 private:
-
     // Register modification value for exception handling
     static uint32_t RegModValue;
 };
@@ -659,13 +664,13 @@ constexpr uint32_t CART_DOM1_ADDR3_START = 0x1FD00000;
 constexpr uint32_t CART_DOM1_ADDR3_END = 0x7FFFFFFF;
 
 // Kernel segments
-constexpr uint32_t KSEG0_START = 0x80000000;  // Cached, unmapped
+constexpr uint32_t KSEG0_START = 0x80000000; // Cached, unmapped
 constexpr uint32_t KSEG0_END = 0x9FFFFFFF;
-constexpr uint32_t KSEG1_START = 0xA0000000;  // Uncached, unmapped
+constexpr uint32_t KSEG1_START = 0xA0000000; // Uncached, unmapped
 constexpr uint32_t KSEG1_END = 0xBFFFFFFF;
-constexpr uint32_t KSSEG_START = 0xC0000000;  // TLB mapped
+constexpr uint32_t KSSEG_START = 0xC0000000; // TLB mapped
 constexpr uint32_t KSSEG_END = 0xDFFFFFFF;
-constexpr uint32_t KSEG3_START = 0xE0000000;  // TLB mapped
+constexpr uint32_t KSEG3_START = 0xE0000000; // TLB mapped
 constexpr uint32_t KSEG3_END = 0xFFFFFFFF;
 
 /**
@@ -673,30 +678,22 @@ constexpr uint32_t KSEG3_END = 0xFFFFFFFF;
  * @param vAddr Virtual address in KSEG0 or KSEG1
  * @return Physical address
  */
-constexpr uint32_t ToPhysical(uint32_t vAddr) noexcept {
-    return vAddr & 0x1FFFFFFF;
-}
+constexpr uint32_t ToPhysical(uint32_t vAddr) noexcept { return vAddr & 0x1FFFFFFF; }
 
 /**
  * @brief Check if address is in KSEG0 (cached unmapped)
  */
-constexpr bool IsKSeg0(uint32_t vAddr) noexcept {
-    return vAddr >= KSEG0_START && vAddr <= KSEG0_END;
-}
+constexpr bool IsKSeg0(uint32_t vAddr) noexcept { return vAddr >= KSEG0_START && vAddr <= KSEG0_END; }
 
 /**
  * @brief Check if address is in KSEG1 (uncached unmapped)
  */
-constexpr bool IsKSeg1(uint32_t vAddr) noexcept {
-    return vAddr >= KSEG1_START && vAddr <= KSEG1_END;
-}
+constexpr bool IsKSeg1(uint32_t vAddr) noexcept { return vAddr >= KSEG1_START && vAddr <= KSEG1_END; }
 
 /**
  * @brief Check if address requires TLB translation
  */
-constexpr bool NeedsTLB(uint32_t vAddr) noexcept {
-    return vAddr < KSEG0_START || vAddr >= KSSEG_START;
-}
+constexpr bool NeedsTLB(uint32_t vAddr) noexcept { return vAddr < KSEG0_START || vAddr >= KSSEG_START; }
 
 } // namespace MemoryMap
 

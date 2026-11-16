@@ -21,35 +21,39 @@
 #pragma comment(lib, "dwmapi.lib")
 #endif
 
-namespace Nova64 { namespace Video {
+namespace Nova64 {
+namespace Video {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL DEBUG CALLBACK
 // ═══════════════════════════════════════════════════════════════════════════════
 
-static void GLAD_API_PTR GLDebugCallback(GLenum source, GLenum type, GLuint id,
-                                       GLenum severity, GLsizei length,
-                                       const GLchar* message, const void* userParam) {
-    (void)source; (void)type; (void)id; (void)length; (void)userParam;
+static void GLAD_API_PTR GLDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+                                         const GLchar* message, const void* userParam) {
+    (void)source;
+    (void)type;
+    (void)id;
+    (void)length;
+    (void)userParam;
 
     // Ignore non-significant notifications
     if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) return;
 
     const char* sevStr = "UNKNOWN";
     switch (severity) {
-        case GL_DEBUG_SEVERITY_HIGH:   sevStr = "HIGH";   break;
-        case GL_DEBUG_SEVERITY_MEDIUM: sevStr = "MEDIUM"; break;
-        case GL_DEBUG_SEVERITY_LOW:    sevStr = "LOW";    break;
+    case GL_DEBUG_SEVERITY_HIGH:   sevStr = "HIGH"; break;
+    case GL_DEBUG_SEVERITY_MEDIUM: sevStr = "MEDIUM"; break;
+    case GL_DEBUG_SEVERITY_LOW:    sevStr = "LOW"; break;
     }
 
     const char* typeStr = "UNKNOWN";
     switch (type) {
-        case GL_DEBUG_TYPE_ERROR:               typeStr = "ERROR";       break;
-        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeStr = "DEPRECATED";  break;
-        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  typeStr = "UNDEFINED";   break;
-        case GL_DEBUG_TYPE_PORTABILITY:         typeStr = "PORTABILITY"; break;
-        case GL_DEBUG_TYPE_PERFORMANCE:         typeStr = "PERFORMANCE"; break;
-        case GL_DEBUG_TYPE_OTHER:               typeStr = "OTHER";       break;
+    case GL_DEBUG_TYPE_ERROR:               typeStr = "ERROR"; break;
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeStr = "DEPRECATED"; break;
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  typeStr = "UNDEFINED"; break;
+    case GL_DEBUG_TYPE_PORTABILITY:         typeStr = "PORTABILITY"; break;
+    case GL_DEBUG_TYPE_PERFORMANCE:         typeStr = "PERFORMANCE"; break;
+    case GL_DEBUG_TYPE_OTHER:               typeStr = "OTHER"; break;
     }
 
     std::cerr << "[GL " << sevStr << "/" << typeStr << "] " << message << std::endl;
@@ -61,9 +65,7 @@ static void GLAD_API_PTR GLDebugCallback(GLenum source, GLenum type, GLuint id,
 
 WindowManager::WindowManager() = default;
 
-WindowManager::~WindowManager() {
-    Shutdown();
-}
+WindowManager::~WindowManager() { Shutdown(); }
 
 bool WindowManager::Initialize(const WindowConfig& configIn) {
     WindowConfig config = configIn;
@@ -118,16 +120,10 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
         flags |= SDL_WINDOW_BORDERLESS;
     }
 
-
     int posX = config.posX >= 0 ? config.posX : SDL_WINDOWPOS_CENTERED;
     int posY = config.posY >= 0 ? config.posY : SDL_WINDOWPOS_CENTERED;
 
-    m_window = SDL_CreateWindow(
-        config.title.c_str(),
-        posX, posY,
-        config.width, config.height,
-        flags
-    );
+    m_window = SDL_CreateWindow(config.title.c_str(), posX, posY, config.width, config.height, flags);
 
     if (!m_window) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
@@ -155,8 +151,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
             // Strategy 1: Set border color to black (Windows 11 22H2+)
             // DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE
             COLORREF borderBlack = 0x00000000; // Black border = invisible on black background
-            DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/,
-                                  &borderBlack, sizeof(borderBlack));
+            DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &borderBlack, sizeof(borderBlack));
 
             // Strategy 2: Remove WS_BORDER from window style (all Windows versions)
             LONG style = GetWindowLongW(hwnd, GWL_STYLE);
@@ -164,8 +159,7 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
                 style &= ~WS_BORDER;
                 SetWindowLongW(hwnd, GWL_STYLE, style);
                 // Force the window to redraw its non-client area with the new style
-                SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+                SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
             }
         }
     }
@@ -206,8 +200,8 @@ bool WindowManager::Initialize(const WindowConfig& configIn) {
             return false;
         }
 
-        std::cout << "OpenGL " << GLAD_VERSION_MAJOR(version) << "." << GLAD_VERSION_MINOR(version)
-                << " loaded" << std::endl;
+        std::cout << "OpenGL " << GLAD_VERSION_MAJOR(version) << "." << GLAD_VERSION_MINOR(version) << " loaded"
+                  << std::endl;
         std::cout << "  Vendor:   " << glGetString(GL_VENDOR) << std::endl;
         std::cout << "  Renderer: " << glGetString(GL_RENDERER) << std::endl;
         std::cout << "  Version:  " << glGetString(GL_VERSION) << std::endl;
@@ -260,17 +254,16 @@ void WindowManager::Shutdown() {
     }
     // For external windows, just null out our pointers (don't destroy)
     m_glContext = nullptr;
-    m_window    = nullptr;
+    m_window = nullptr;
 }
-
 
 // static
 WindowManager* WindowManager::WrapExternal(SDL_Window* sdlWindow, SDL_GLContext glCtx) {
     if (!sdlWindow) return nullptr;
     auto* wm = new WindowManager();
-    wm->m_window     = sdlWindow;
-    wm->m_glContext  = glCtx;
-    wm->m_isExternal = true;  // do NOT destroy on Shutdown
+    wm->m_window = sdlWindow;
+    wm->m_glContext = glCtx;
+    wm->m_isExternal = true; // do NOT destroy on Shutdown
     return wm;
 }
 
@@ -387,9 +380,7 @@ DisplayMode WindowManager::GetCurrentDisplayMode() const {
     return result;
 }
 
-int32_t WindowManager::GetDisplayCount() const {
-    return SDL_GetNumVideoDisplays();
-}
+int32_t WindowManager::GetDisplayCount() const { return SDL_GetNumVideoDisplays(); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GL CONTEXT
@@ -401,9 +392,7 @@ void WindowManager::MakeContextCurrent() {
     }
 }
 
-void WindowManager::ReleaseContext() {
-    SDL_GL_MakeCurrent(m_window, nullptr);
-}
+void WindowManager::ReleaseContext() { SDL_GL_MakeCurrent(m_window, nullptr); }
 
 void WindowManager::SwapBuffers() {
     if (m_window) {
@@ -470,18 +459,17 @@ bool WindowManager::ProcessEvents() {
             g_imguiDebugUI.ToggleForceOpaque();
         }
         // Ctrl+D = disable depth (diagnostic)
-        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_d &&
-            (event.key.keysym.mod & KMOD_CTRL)) {
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_d && (event.key.keysym.mod & KMOD_CTRL)) {
             g_imguiDebugUI.ToggleDisableDepth();
         }
         // Ctrl+Shift+C = disable culling (diagnostic)
-        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c &&
-            (event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT)) {
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_c && (event.key.keysym.mod & KMOD_CTRL) &&
+            (event.key.keysym.mod & KMOD_SHIFT)) {
             g_imguiDebugUI.ToggleDisableCulling();
         }
         // Ctrl+Shift+M = magenta highlight (diagnostic)
-        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_m &&
-            (event.key.keysym.mod & KMOD_CTRL) && (event.key.keysym.mod & KMOD_SHIFT)) {
+        if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_m && (event.key.keysym.mod & KMOD_CTRL) &&
+            (event.key.keysym.mod & KMOD_SHIFT)) {
             g_imguiDebugUI.ToggleMagenta();
         }
 
@@ -502,57 +490,52 @@ void WindowManager::HandleSDLEvent(const void* sdlEventPtr) {
         WindowEventData data;
 
         switch (event.window.event) {
-            case SDL_WINDOWEVENT_RESIZED:
-                data.type = WindowEvent::Resized;
-                data.param1 = event.window.data1;
-                data.param2 = event.window.data2;
-                // Note: glViewport is deferred to the render thread
-                // (GL context may not be current on the event thread)
-                break;
+        case SDL_WINDOWEVENT_RESIZED:
+            data.type = WindowEvent::Resized;
+            data.param1 = event.window.data1;
+            data.param2 = event.window.data2;
+            // Note: glViewport is deferred to the render thread
+            // (GL context may not be current on the event thread)
+            break;
 
-            case SDL_WINDOWEVENT_MINIMIZED:
-                data.type = WindowEvent::Minimized;
-                m_minimized = true;
-                break;
+        case SDL_WINDOWEVENT_MINIMIZED:
+            data.type = WindowEvent::Minimized;
+            m_minimized = true;
+            break;
 
-            case SDL_WINDOWEVENT_RESTORED:
-                data.type = WindowEvent::Restored;
-                m_minimized = false;
-                break;
+        case SDL_WINDOWEVENT_RESTORED:
+            data.type = WindowEvent::Restored;
+            m_minimized = false;
+            break;
 
-            case SDL_WINDOWEVENT_MAXIMIZED:
-                data.type = WindowEvent::Maximized;
-                break;
+        case SDL_WINDOWEVENT_MAXIMIZED: data.type = WindowEvent::Maximized; break;
 
-            case SDL_WINDOWEVENT_FOCUS_GAINED:
-                data.type = WindowEvent::FocusGained;
-                m_hasFocus = true;
-                break;
+        case SDL_WINDOWEVENT_FOCUS_GAINED:
+            data.type = WindowEvent::FocusGained;
+            m_hasFocus = true;
+            break;
 
-            case SDL_WINDOWEVENT_FOCUS_LOST:
-                data.type = WindowEvent::FocusLost;
-                m_hasFocus = false;
-                break;
+        case SDL_WINDOWEVENT_FOCUS_LOST:
+            data.type = WindowEvent::FocusLost;
+            m_hasFocus = false;
+            break;
 
-            case SDL_WINDOWEVENT_MOVED:
-                data.type = WindowEvent::Moved;
-                data.param1 = event.window.data1;
-                data.param2 = event.window.data2;
-                break;
+        case SDL_WINDOWEVENT_MOVED:
+            data.type = WindowEvent::Moved;
+            data.param1 = event.window.data1;
+            data.param2 = event.window.data2;
+            break;
 
-            case SDL_WINDOWEVENT_CLOSE: {
-                data.type = WindowEvent::Closed;
-                static const bool s_ignoreQuit = std::getenv("NOVA64_IGNORE_QUIT") != nullptr;
-                if (!s_ignoreQuit) m_shouldClose = true;
-                break;
-            }
+        case SDL_WINDOWEVENT_CLOSE: {
+            data.type = WindowEvent::Closed;
+            static const bool s_ignoreQuit = std::getenv("NOVA64_IGNORE_QUIT") != nullptr;
+            if (!s_ignoreQuit) m_shouldClose = true;
+            break;
+        }
 
-            case SDL_WINDOWEVENT_EXPOSED:
-                data.type = WindowEvent::Exposed;
-                break;
+        case SDL_WINDOWEVENT_EXPOSED: data.type = WindowEvent::Exposed; break;
 
-            default:
-                return; // Unhandled window event
+        default: return; // Unhandled window event
         }
 
         m_pendingEvents.push_back(data);
@@ -565,8 +548,7 @@ void WindowManager::HandleSDLEvent(const void* sdlEventPtr) {
     // Handle keyboard shortcuts
     if (event.type == SDL_KEYDOWN) {
         // Alt+Enter = toggle fullscreen
-        if (event.key.keysym.sym == SDLK_RETURN &&
-            (event.key.keysym.mod & KMOD_ALT)) {
+        if (event.key.keysym.sym == SDLK_RETURN && (event.key.keysym.mod & KMOD_ALT)) {
             SetFullscreen(!m_fullscreen, true);
         }
 
@@ -626,7 +608,8 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
     std::vector<uint8_t> bmp(fileSize);
 
     // File header
-    bmp[0] = 'B'; bmp[1] = 'M';
+    bmp[0] = 'B';
+    bmp[1] = 'M';
     memcpy(&bmp[2], &fileSize, 4);
     memcpy(&bmp[10], &pixelDataOffset, 4);
 
@@ -648,7 +631,7 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
             uint32_t pixel = pixels[y * w + x];
             row[x * 3 + 0] = (pixel >> 16) & 0xFF; // B
             row[x * 3 + 1] = (pixel >> 8) & 0xFF;  // G
-            row[x * 3 + 2] = pixel & 0xFF;          // R
+            row[x * 3 + 2] = pixel & 0xFF;         // R
         }
     }
 
@@ -664,9 +647,7 @@ bool WindowManager::SaveScreenshot(const std::string& path) {
 //  CURSOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
-void WindowManager::ShowCursor(bool show) {
-    SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE);
-}
+void WindowManager::ShowCursor(bool show) { SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
 
 void WindowManager::GrabCursor(bool grab) {
     if (m_window) {
@@ -674,8 +655,7 @@ void WindowManager::GrabCursor(bool grab) {
     }
 }
 
-void WindowManager::SetRelativeMouseMode(bool relative) {
-    SDL_SetRelativeMouseMode(relative ? SDL_TRUE : SDL_FALSE);
-}
+void WindowManager::SetRelativeMouseMode(bool relative) { SDL_SetRelativeMouseMode(relative ? SDL_TRUE : SDL_FALSE); }
 
-}} // namespace Nova64::Video
+} // namespace Video
+} // namespace Nova64

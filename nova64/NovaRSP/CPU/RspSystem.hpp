@@ -21,7 +21,6 @@ namespace Nova64::RSP {
 // Forward declarations
 class RSPRegisterHandlerPlugin;
 
-
 namespace HLE {
 class CHle;
 }
@@ -31,10 +30,10 @@ class CHle;
 // Mirrors N64's RSP_INFO plugin spec
 // ──────────────────────────────────────────────
 struct RSP_INFO {
-    uint8_t*  HEADER;
-    uint8_t*  RDRAM;
-    uint8_t*  DMEM;
-    uint8_t*  IMEM;
+    uint8_t* HEADER;
+    uint8_t* RDRAM;
+    uint8_t* DMEM;
+    uint8_t* IMEM;
     uint32_t* MI_INTR_REG;
     uint32_t* SP_MEM_ADDR_REG;
     uint32_t* SP_DRAM_ADDR_REG;
@@ -53,18 +52,20 @@ struct RSP_INFO {
     uint32_t* DPC_BUFBUSY_REG;
     uint32_t* DPC_PIPEBUSY_REG;
     uint32_t* DPC_TMEM_REG;
-    uint32_t  RdramSize;
+    uint32_t RdramSize;
     void (*CheckInterrupts)();
     void (*ProcessDList)();
     void (*ProcessRdpList)();
-    void (*ProcessDListShadow)();  // Optional: shadow HLE for RT geometry under LLE
+    void (*ProcessDListShadow)(); // Optional: shadow HLE for RT geometry under LLE
 };
 
 // ──────────────────────────────────────────────
 // CRSPSystem - Central RSP subsystem
 // Owns interpreter, registers, recompiler, and HLE
 // ──────────────────────────────────────────────
-namespace Jit { class RspJit; }
+namespace Jit {
+class RspJit;
+}
 
 class CRSPSystem {
     friend class RSPOp;
@@ -86,7 +87,7 @@ public:
     void RomClosed();
 
     // Execution
-    void ExecuteOps(uint32_t cycles, uint32_t targetPC);   // the interpreter, always
+    void ExecuteOps(uint32_t cycles, uint32_t targetPC); // the interpreter, always
 
     /// Run until the RSP halts (BREAK or a halt request) or `cycles` instructions
     /// have run, on whichever engine is selected. The recompiler only handles an
@@ -94,21 +95,23 @@ public:
     void Run(uint32_t cycles);
 
     /// Forget a branch that was still waiting for its delay slot (used between unrelated programs).
-    void      ResetPipeline() { m_NextInstruction = PipelineStage::Normal; m_JumpTo = 0; }
+    void ResetPipeline() {
+        m_NextInstruction = PipelineStage::Normal;
+        m_JumpTo = 0;
+    }
     /// Runs the instruction `word` on the interpreter, for code that only needs one
     /// instruction's effect (the recompiler uses this for what it doesn't translate).
     /// Control-transfer instructions are not for this: they need the pipeline state.
-    void      ExecuteOne(uint32_t word);
+    void ExecuteOne(uint32_t word);
 
     /// MFC0 and MTC0 without the opcode-table walk ExecuteOne does. They are the
     /// only instructions the recompiler still hands to the interpreter in numbers
     /// (the microcode polls and programs the SP and DPC registers constantly).
-    void      ExecuteMfc0(uint32_t word);
-    void      ExecuteMtc0(uint32_t word);
+    void ExecuteMfc0(uint32_t word);
+    void ExecuteMtc0(uint32_t word);
 
-    void      SetEngine(RSPEngine engine) { m_Engine = engine; }
+    void SetEngine(RSPEngine engine) { m_Engine = engine; }
     [[nodiscard]] RSPEngine GetEngine() const { return m_Engine; }
-
 
     // Sync CPU support (for debugging / verification)
     void SetupSyncCPU();
@@ -125,15 +128,14 @@ public:
 
     // Profiling
     void ResetProfilingStats();
-    void GetProfilingStats(uint64_t& opsExecuted, uint64_t& cyclesUsed,
-                           uint32_t& dmaTransfers, uint32_t& breaks) const;
+    void GetProfilingStats(uint64_t& opsExecuted, uint64_t& cyclesUsed, uint32_t& dmaTransfers, uint32_t& breaks) const;
 
     // Custom allocator for alignment
     void* operator new(size_t size);
-    void  operator delete(void* ptr);
+    void operator delete(void* ptr);
 
     // Register file access
-    [[nodiscard]] CRSPRegisters&       Registers()       { return m_Reg; }
+    [[nodiscard]] CRSPRegisters& Registers() { return m_Reg; }
     [[nodiscard]] const CRSPRegisters& Registers() const { return m_Reg; }
 
     // Memory access (read-only pointers for instruction analysis)
@@ -158,16 +160,16 @@ private:
     // Core components
     std::unique_ptr<RSPRegisterHandlerPlugin> m_RSPRegisterHandler;
     CRSPRegisters m_Reg;
-    RSPOp         m_Op;
-    RSPOpcode     m_OpCode;
+    RSPOp m_Op;
+    RSPOpcode m_OpCode;
     PipelineStage m_NextInstruction{PipelineStage::Normal};
-    uint32_t      m_JumpTo{0};
+    uint32_t m_JumpTo{0};
 
     // Memory / hardware register pointers (set by Reset)
-    uint8_t*  m_HEADER{nullptr};
-    uint8_t*  m_RDRAM{nullptr};
-    uint8_t*  m_DMEM{nullptr};
-    uint8_t*  m_IMEM{nullptr};
+    uint8_t* m_HEADER{nullptr};
+    uint8_t* m_RDRAM{nullptr};
+    uint8_t* m_DMEM{nullptr};
+    uint8_t* m_IMEM{nullptr};
 
     // MI / SP / DPC registers
     uint32_t* m_MI_INTR_REG{nullptr};
@@ -188,7 +190,7 @@ private:
     uint32_t* m_DPC_BUFBUSY_REG{nullptr};
     uint32_t* m_DPC_PIPEBUSY_REG{nullptr};
     uint32_t* m_DPC_TMEM_REG{nullptr};
-    uint32_t  m_RdramSize{0};
+    uint32_t m_RdramSize{0};
 
     // Sync register buffer
     uint32_t* m_SyncReg{nullptr};
@@ -197,7 +199,7 @@ private:
     void (*CheckInterrupts)(){nullptr};
     void (*ProcessDList)(){nullptr};
     void (*ProcessRdpList)(){nullptr};
-    void (*ProcessDListShadow)(){nullptr};  // Shadow HLE for RT geometry under LLE
+    void (*ProcessDListShadow)(){nullptr}; // Shadow HLE for RT geometry under LLE
 
     // Profiling counters
     uint64_t m_ProfileOpsExecuted{0};

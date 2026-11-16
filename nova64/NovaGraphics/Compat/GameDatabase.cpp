@@ -24,7 +24,7 @@ const char* CompatRatingName(CompatRating rating) {
     case CompatRating::Menus:    return "Menus";
     case CompatRating::Intro:    return "Intro";
     case CompatRating::Nothing:  return "Nothing";
-    default: return "Unknown";
+    default:                     return "Unknown";
     }
 }
 
@@ -48,8 +48,7 @@ void GameDatabase::BuildIndices() {
             m_idIndex[p.gameId] = i;
         }
         if (p.crc1 != 0 || p.crc2 != 0) {
-            uint64_t key = static_cast<uint64_t>(p.crc1) |
-                          (static_cast<uint64_t>(p.crc2) << 32);
+            uint64_t key = static_cast<uint64_t>(p.crc1) | (static_cast<uint64_t>(p.crc2) << 32);
             m_crcIndex[key] = i;
         }
     }
@@ -80,8 +79,7 @@ void GameDatabase::AddProfile(const GameProfile& profile) {
     int idx = static_cast<int>(m_profiles.size()) - 1;
     if (!profile.gameId.empty()) m_idIndex[profile.gameId] = idx;
     if (profile.crc1 || profile.crc2) {
-        uint64_t key = static_cast<uint64_t>(profile.crc1) |
-                      (static_cast<uint64_t>(profile.crc2) << 32);
+        uint64_t key = static_cast<uint64_t>(profile.crc1) | (static_cast<uint64_t>(profile.crc2) << 32);
         m_crcIndex[key] = idx;
     }
 }
@@ -159,34 +157,49 @@ bool GameDatabase::LoadCustomProfiles(const std::string& path) {
 
         if (key == "name") current.name = val;
         else if (key == "rating") {
-            try { current.rating = static_cast<CompatRating>(std::stoi(val)); }
-            catch (...) { current.rating = CompatRating::Playable; }
-        }
-        else if (key == "crc1") {
-            try { current.crc1 = static_cast<uint32_t>(std::stoul(val, nullptr, 16)); }
-            catch (...) { current.crc1 = 0; }
-        }
-        else if (key == "crc2") {
-            try { current.crc2 = static_cast<uint32_t>(std::stoul(val, nullptr, 16)); }
-            catch (...) { current.crc2 = 0; }
-        }
-        else if (key == "flags") {
-            try { current.flags = std::stoull(val, nullptr, 16); }
-            catch (...) { current.flags = 0; }
-        }
-        else if (key == "microcode") current.forcedMicrocode = val;
+            try {
+                current.rating = static_cast<CompatRating>(std::stoi(val));
+            } catch (...) {
+                current.rating = CompatRating::Playable;
+            }
+        } else if (key == "crc1") {
+            try {
+                current.crc1 = static_cast<uint32_t>(std::stoul(val, nullptr, 16));
+            } catch (...) {
+                current.crc1 = 0;
+            }
+        } else if (key == "crc2") {
+            try {
+                current.crc2 = static_cast<uint32_t>(std::stoul(val, nullptr, 16));
+            } catch (...) {
+                current.crc2 = 0;
+            }
+        } else if (key == "flags") {
+            try {
+                current.flags = std::stoull(val, nullptr, 16);
+            } catch (...) {
+                current.flags = 0;
+            }
+        } else if (key == "microcode") current.forcedMicrocode = val;
         else if (key == "issues") current.knownIssues = val;
         else if (key == "depthBias") {
-            try { current.depthBias = std::stoi(val); }
-            catch (...) { current.depthBias = 0; }
-        }
-        else if (key == "texLodBias") {
-            try { current.textureLodBias = std::stof(val); }
-            catch (...) { current.textureLodBias = 0.0f; }
-        }
-        else if (key == "aspect") {
-            try { current.aspectRatioOverride = std::stof(val); }
-            catch (...) { current.aspectRatioOverride = 0.0f; }
+            try {
+                current.depthBias = std::stoi(val);
+            } catch (...) {
+                current.depthBias = 0;
+            }
+        } else if (key == "texLodBias") {
+            try {
+                current.textureLodBias = std::stof(val);
+            } catch (...) {
+                current.textureLodBias = 0.0f;
+            }
+        } else if (key == "aspect") {
+            try {
+                current.aspectRatioOverride = std::stof(val);
+            } catch (...) {
+                current.aspectRatioOverride = 0.0f;
+            }
         }
     }
 
@@ -229,17 +242,15 @@ bool GameDatabase::SaveCustomProfiles(const std::string& path) const {
 // ═══════════════════════════════════════════════════════════════
 
 // Macro for compact profile definition
-#define GAME(id, title, rat, flg) \
-    { title, id, 0, 0, 0, CompatRating::rat, "", flg }
+#define GAME(id, title, rat, flg) {title, id, 0, 0, 0, CompatRating::rat, "", flg}
 
-#define GAME_CRC(id, title, c1, c2, rat, flg) \
-    { title, id, c1, c2, 0, CompatRating::rat, "", flg }
+#define GAME_CRC(id, title, c1, c2, rat, flg) {title, id, c1, c2, 0, CompatRating::rat, "", flg}
 
-#define GAME_HACK(id, title, rat, flg, ...) \
-    [&]() -> GameProfile { \
-        GameProfile p = GAME(id, title, rat, flg); \
-        __VA_ARGS__; \
-        return p; \
+#define GAME_HACK(id, title, rat, flg, ...)                                                                            \
+    [&]() -> GameProfile {                                                                                             \
+        GameProfile p = GAME(id, title, rat, flg);                                                                     \
+        __VA_ARGS__;                                                                                                   \
+        return p;                                                                                                      \
     }()
 
 void GameDatabase::PopulateBuiltinDatabase() {
@@ -290,8 +301,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
         GAME("NGEE", "GoldenEye 007 (U)", Perfect, None),
         GAME("NJFE", "Jet Force Gemini (U)", Playable, CFBReadWrite),
         GAME("NDKE", "Donkey Kong 64 (U)", Playable, CFBReadWrite),
-        GAME("NFUE", "Conker's Bad Fur Day (U)", Playable, 
-             CFBReadWrite | AccurateBlending),
+        GAME("NFUE", "Conker's Bad Fur Day (U)", Playable, CFBReadWrite | AccurateBlending),
 
         // ═══════════════════════════════════════════════
         //  Third Party — Action/Adventure
@@ -388,22 +398,19 @@ void GameDatabase::PopulateBuiltinDatabase() {
         //  Factor 5 (Advanced microcode)
         // ═══════════════════════════════════════════════
         // Factor 5 (Advanced microcode) — uses primary NRSE entry above
-        GAME("NISE", "Indiana Jones and the Infernal Machine (U)", Playable,
-             AccurateBlending),
+        GAME("NISE", "Indiana Jones and the Infernal Machine (U)", Playable, AccurateBlending),
 
         // ═══════════════════════════════════════════════
         //  Games with Special Microcode
         // ═══════════════════════════════════════════════
         // Games with Special Microcode — uses primary NWRE entry above
-        GAME("NDPE", "Dinosaur Planet (Prototype)", InGame, 
-             CFBReadWrite | AccurateBlending),
+        GAME("NDPE", "Dinosaur Planet (Prototype)", InGame, CFBReadWrite | AccurateBlending),
     };
 
     // Apply special hacks to specific entries
     for (auto& p : m_profiles) {
         // Zelda games: special handling
-        if (p.gameId == "NZLE" || p.gameId == "NZLP" || p.gameId == "NZLJ" ||
-            p.gameId == "NZSE") {
+        if (p.gameId == "NZLE" || p.gameId == "NZLP" || p.gameId == "NZLJ" || p.gameId == "NZSE") {
             p.zelda64Hack = true;
             p.zeldaMonochrome = true;
             p.zeldaSubscreen = true;
@@ -456,8 +463,7 @@ void GameDatabase::PopulateBuiltinDatabase() {
             p.doNotResetOtherMode = true;
         }
         // F1 Pole Position, Vigilante 8, Roadsters, Extreme G 2
-        if (p.gameId == "NF1E" || p.gameId == "NV8E" || p.gameId == "NRDE" ||
-            p.gameId == "NGXE") {
+        if (p.gameId == "NF1E" || p.gameId == "NV8E" || p.gameId == "NRDE" || p.gameId == "NGXE") {
             p.noDepthFrameBuffers = true;
         }
     }

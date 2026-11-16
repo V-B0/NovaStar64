@@ -43,67 +43,67 @@ enum class PostEffectType : uint8_t {
 // ──────────────────────────────────────────────────────────────
 
 struct GammaParams {
-    float gamma            = 2.2f;
-    float brightness       = 1.0f;
-    float contrast         = 1.0f;
-    float saturation       = 1.0f;
+    float gamma = 2.2f;
+    float brightness = 1.0f;
+    float contrast = 1.0f;
+    float saturation = 1.0f;
 };
 
 struct FXAAParams {
-    float qualitySubpix    = 0.75f;  // Sub-pixel aliasing removal amount
-    float edgeThreshold    = 0.166f; // Minimum amount of local contrast required
-    float edgeThresholdMin = 0.0833f;// Trims the algorithm from processing darks
+    float qualitySubpix = 0.75f;      // Sub-pixel aliasing removal amount
+    float edgeThreshold = 0.166f;     // Minimum amount of local contrast required
+    float edgeThresholdMin = 0.0833f; // Trims the algorithm from processing darks
 };
 
 struct BloomParams {
-    float threshold        = 1.0f;   // Brightness threshold
-    float intensity        = 0.5f;   // Bloom intensity
-    float radius           = 0.5f;   // Blur radius 
-    int   mipLevels        = 5;      // Downsample levels (5 = 1/32 res)
-    float softKnee         = 0.5f;   // Soft threshold knee
+    float threshold = 1.0f; // Brightness threshold
+    float intensity = 0.5f; // Bloom intensity
+    float radius = 0.5f;    // Blur radius
+    int mipLevels = 5;      // Downsample levels (5 = 1/32 res)
+    float softKnee = 0.5f;  // Soft threshold knee
 };
 
 struct CRTParams {
-    float curvature        = 0.03f;  // Screen curvature amount
-    float scanlineWeight   = 0.3f;   // Scanline darkness 
-    float maskDotPitch     = 0.65f;  // Shadow mask dot pitch
-    float cornerBlur       = 0.02f;  // Corner edge blur
-    bool  interlace        = false;  // Interlace effect
-    float phosphorPersist  = 0.0f;   // Phosphor persistence (0 = off)
-    float vignetteStrength = 0.3f;   // Vignette at edges
+    float curvature = 0.03f;       // Screen curvature amount
+    float scanlineWeight = 0.3f;   // Scanline darkness
+    float maskDotPitch = 0.65f;    // Shadow mask dot pitch
+    float cornerBlur = 0.02f;      // Corner edge blur
+    bool interlace = false;        // Interlace effect
+    float phosphorPersist = 0.0f;  // Phosphor persistence (0 = off)
+    float vignetteStrength = 0.3f; // Vignette at edges
 };
 
 struct SharpenParams {
-    float strength         = 0.5f;
-    float clamp            = 0.035f; // Limit sharpening on bright pixels
+    float strength = 0.5f;
+    float clamp = 0.035f; // Limit sharpening on bright pixels
 };
 
 struct ChromaticAberrationParams {
-    float intensity        = 0.003f;
-    float offsetR          = 1.0f;
-    float offsetB          = -1.0f;
+    float intensity = 0.003f;
+    float offsetR = 1.0f;
+    float offsetB = -1.0f;
 };
 
 struct FilmGrainParams {
-    float intensity        = 0.05f;
-    float response         = 0.5f;   // Grain response to luminance
+    float intensity = 0.05f;
+    float response = 0.5f; // Grain response to luminance
 };
 
 struct ColorGradingParams {
-    float temperature      = 0.0f;   // Color temperature shift
-    float tint             = 0.0f;   // Green-magenta shift
-    float hueShift         = 0.0f;   // Hue rotation
-    float shadows          = 0.0f;   // Shadow adjustment
-    float highlights       = 0.0f;   // Highlight adjustment
+    float temperature = 0.0f; // Color temperature shift
+    float tint = 0.0f;        // Green-magenta shift
+    float hueShift = 0.0f;    // Hue rotation
+    float shadows = 0.0f;     // Shadow adjustment
+    float highlights = 0.0f;  // Highlight adjustment
     // Lift/gamma/gain
     float liftR = 0, liftG = 0, liftB = 0;
     float gainR = 1, gainG = 1, gainB = 1;
 };
 
 struct VignetteParams {
-    float intensity        = 0.5f;
-    float roundness        = 0.5f;
-    float smoothness       = 0.5f;
+    float intensity = 0.5f;
+    float roundness = 0.5f;
+    float smoothness = 0.5f;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -120,6 +120,7 @@ public:
     virtual void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) = 0;
     virtual bool IsEnabled() const { return m_enabled; }
     virtual void SetEnabled(bool e) { m_enabled = e; }
+
 protected:
     bool m_enabled = true;
 };
@@ -137,6 +138,7 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     GammaParams params;
+
 private:
     uint32_t m_shader = 0;
     uint32_t m_vao = 0;
@@ -156,10 +158,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     FXAAParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -175,18 +178,19 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     BloomParams params;
+
 private:
     struct MipLevel {
-        uint32_t fbo   = 0;
-        uint32_t tex   = 0;
-        int width      = 0;
-        int height     = 0;
+        uint32_t fbo = 0;
+        uint32_t tex = 0;
+        int width = 0;
+        int height = 0;
     };
     std::vector<MipLevel> m_mips;
-    uint32_t m_thresholdShader   = 0;
-    uint32_t m_downsampleShader  = 0;
-    uint32_t m_upsampleShader   = 0;
-    uint32_t m_compositeShader  = 0;
+    uint32_t m_thresholdShader = 0;
+    uint32_t m_downsampleShader = 0;
+    uint32_t m_upsampleShader = 0;
+    uint32_t m_compositeShader = 0;
     uint32_t m_vao = 0;
     uint32_t m_vbo = 0;
 };
@@ -204,10 +208,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     CRTParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -223,10 +228,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     SharpenParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -242,10 +248,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     ChromaticAberrationParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -262,10 +269,11 @@ public:
 
     void SetFrameCount(uint32_t frame) { m_frameCount = frame; }
     FilmGrainParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
     uint32_t m_frameCount = 0;
 };
 
@@ -283,8 +291,8 @@ public:
 
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -300,10 +308,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     ColorGradingParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -312,8 +321,8 @@ private:
 
 struct DepthOfFieldParams {
     float focalDistance = 0.5f;
-    float focalRange    = 0.2f;
-    float blurStrength  = 3.0f;
+    float focalRange = 0.2f;
+    float blurStrength = 3.0f;
 };
 
 class DepthOfFieldEffect : public PostEffect {
@@ -326,10 +335,11 @@ public:
 
     void SetDepthTexture(uint32_t tex) { m_depthTex = tex; }
     DepthOfFieldParams params;
+
 private:
-    uint32_t m_shader   = 0;
-    uint32_t m_vao      = 0;
-    uint32_t m_vbo      = 0;
+    uint32_t m_shader = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
     uint32_t m_depthTex = 0;
 };
 
@@ -338,8 +348,8 @@ private:
 // ──────────────────────────────────────────────────────────────
 
 struct MotionBlurParams {
-    float strength  = 0.5f;
-    int   samples   = 8;
+    float strength = 0.5f;
+    int samples = 8;
 };
 
 class MotionBlurEffect : public PostEffect {
@@ -351,13 +361,14 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     MotionBlurParams params;
+
 private:
-    uint32_t m_shader  = 0;
-    uint32_t m_vao     = 0;
-    uint32_t m_vbo     = 0;
+    uint32_t m_shader = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
     uint32_t m_prevTex = 0;
-    int      m_width   = 0;
-    int      m_height  = 0;
+    int m_width = 0;
+    int m_height = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -373,10 +384,11 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
     VignetteParams params;
+
 private:
     uint32_t m_shader = 0;
-    uint32_t m_vao    = 0;
-    uint32_t m_vbo    = 0;
+    uint32_t m_vao = 0;
+    uint32_t m_vbo = 0;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -392,13 +404,13 @@ public:
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) override;
 
 private:
-    uint32_t m_edgeShader  = 0;
+    uint32_t m_edgeShader = 0;
     uint32_t m_blendShader = 0;
     uint32_t m_vao = 0;
     uint32_t m_vbo = 0;
     uint32_t m_edgeTex = 0;
     uint32_t m_edgeFBO = 0;
-    int m_width  = 0;
+    int m_width = 0;
     int m_height = 0;
 };
 
@@ -446,9 +458,9 @@ private:
     uint32_t m_pingTex = 0;
     uint32_t m_pongFBO = 0;
     uint32_t m_pongTex = 0;
-    int      m_width   = 0;
-    int      m_height  = 0;
-    bool     m_initialized = false;
+    int m_width = 0;
+    int m_height = 0;
+    bool m_initialized = false;
 };
 
 } // namespace Nova64::Video

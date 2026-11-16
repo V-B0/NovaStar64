@@ -27,35 +27,31 @@ namespace {
 std::recursive_mutex g_logMutex;
 
 struct LoggingState {
-    Logging::Level minLevel      = Logging::Level::Info;
-    bool           consoleOutput = true;
-    bool           fileOutput    = false;
-    std::string    filename;
+    Logging::Level minLevel = Logging::Level::Info;
+    bool consoleOutput = true;
+    bool fileOutput = false;
+    std::string filename;
 };
 
-LoggingState& State()
-{
+LoggingState& State() {
     static LoggingState state;
     return state;
 }
 
-const char* LevelName(Logging::Level level)
-{
+const char* LevelName(Logging::Level level) {
     switch (level) {
-        case Logging::Level::Debug:    return "DEBUG";
-        case Logging::Level::Info:     return "INFO";
-        case Logging::Level::Warning:  return "WARNING";
-        case Logging::Level::Error:    return "ERROR";
-        case Logging::Level::Critical: return "CRITICAL";
+    case Logging::Level::Debug:    return "DEBUG";
+    case Logging::Level::Info:     return "INFO";
+    case Logging::Level::Warning:  return "WARNING";
+    case Logging::Level::Error:    return "ERROR";
+    case Logging::Level::Critical: return "CRITICAL";
     }
     return "UNKNOWN";
 }
 
 /// "[YYYY-MM-DD HH:MM:SS]"
-std::string Timestamp()
-{
-    const std::time_t now = std::chrono::system_clock::to_time_t(
-        std::chrono::system_clock::now());
+std::string Timestamp() {
+    const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     std::tm local{};
 #if PLATFORM_WINDOWS
@@ -72,8 +68,7 @@ std::string Timestamp()
 }
 
 /// Always newline-terminated so callers need not supply one.
-std::string FormatLine(Logging::Level level, const std::string& message)
-{
+std::string FormatLine(Logging::Level level, const std::string& message) {
     std::string line = Timestamp();
     line += " [";
     line += LevelName(level);
@@ -83,18 +78,17 @@ std::string FormatLine(Logging::Level level, const std::string& message)
     return line;
 }
 
-void WriteConsole(Logging::Level level, const std::string& line)
-{
+void WriteConsole(Logging::Level level, const std::string& line) {
 #if PLATFORM_WINDOWS
     HANDLE console = GetStdHandle(STD_ERROR_HANDLE);
     if (console != INVALID_HANDLE_VALUE) {
         WORD colour = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
         switch (level) {
-            case Logging::Level::Debug:    colour = FOREGROUND_INTENSITY; break;
-            case Logging::Level::Info:     colour = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY; break;
-            case Logging::Level::Warning:  colour = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY; break;
-            case Logging::Level::Error:    colour = FOREGROUND_RED | FOREGROUND_INTENSITY; break;
-            case Logging::Level::Critical: colour = FOREGROUND_RED | FOREGROUND_INTENSITY | BACKGROUND_RED; break;
+        case Logging::Level::Debug:    colour = FOREGROUND_INTENSITY; break;
+        case Logging::Level::Info:     colour = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY; break;
+        case Logging::Level::Warning:  colour = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY; break;
+        case Logging::Level::Error:    colour = FOREGROUND_RED | FOREGROUND_INTENSITY; break;
+        case Logging::Level::Critical: colour = FOREGROUND_RED | FOREGROUND_INTENSITY | BACKGROUND_RED; break;
         }
         SetConsoleTextAttribute(console, colour);
         std::cerr << line;
@@ -106,19 +100,18 @@ void WriteConsole(Logging::Level level, const std::string& line)
 #else
     const char* colour = "";
     switch (level) {
-        case Logging::Level::Debug:    colour = "\033[90m";   break;
-        case Logging::Level::Info:     colour = "\033[36m";   break;
-        case Logging::Level::Warning:  colour = "\033[33m";   break;
-        case Logging::Level::Error:    colour = "\033[31m";   break;
-        case Logging::Level::Critical: colour = "\033[1;31m"; break;
+    case Logging::Level::Debug:    colour = "\033[90m"; break;
+    case Logging::Level::Info:     colour = "\033[36m"; break;
+    case Logging::Level::Warning:  colour = "\033[33m"; break;
+    case Logging::Level::Error:    colour = "\033[31m"; break;
+    case Logging::Level::Critical: colour = "\033[1;31m"; break;
     }
     std::cerr << colour << line << "\033[0m";
 #endif
     std::cerr.flush();
 }
 
-void WriteFile(const std::string& line)
-{
+void WriteFile(const std::string& line) {
     if (!Logging::log_file.is_open()) return;
 
     const size_t written = Logging::log_file.write(line.c_str(), line.size());
@@ -130,8 +123,7 @@ void WriteFile(const std::string& line)
 }
 
 /// Renders a printf-style message, growing the buffer if the first try truncates.
-std::string FormatVa(const char* format, std::va_list args)
-{
+std::string FormatVa(const char* format, std::va_list args) {
     if (!format) return {};
 
     std::va_list copy;
@@ -146,15 +138,13 @@ std::string FormatVa(const char* format, std::va_list args)
     return std::string(buffer.data(), static_cast<size_t>(needed));
 }
 
-void LogFormatted(Logging::Level level, const char* format, std::va_list args)
-{
+void LogFormatted(Logging::Level level, const char* format, std::va_list args) {
     Logging::log(level, FormatVa(format, args));
 }
 
 } // namespace
 
-void Logging::log(Level level, const std::string& message)
-{
+void Logging::log(Level level, const std::string& message) {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
 
     LoggingState& state = State();
@@ -162,11 +152,10 @@ void Logging::log(Level level, const std::string& message)
 
     const std::string line = FormatLine(level, message);
     if (state.consoleOutput) WriteConsole(level, line);
-    if (state.fileOutput)    WriteFile(line);
+    if (state.fileOutput) WriteFile(line);
 }
 
-void Logging::stop_logging()
-{
+void Logging::stop_logging() {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
 
     if (log_file.is_open()) log_file.close();
@@ -175,32 +164,27 @@ void Logging::stop_logging()
 
 namespace LoggingConfig {
 
-void set_min_level(Logging::Level level)
-{
+void set_min_level(Logging::Level level) {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     State().minLevel = level;
 }
 
-Logging::Level get_min_level()
-{
+Logging::Level get_min_level() {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     return State().minLevel;
 }
 
-void enable_console_output(bool enable)
-{
+void enable_console_output(bool enable) {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     State().consoleOutput = enable;
 }
 
-bool is_console_output_enabled()
-{
+bool is_console_output_enabled() {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     return State().consoleOutput;
 }
 
-bool open_log_file(const std::string& filename, bool append)
-{
+bool open_log_file(const std::string& filename, bool append) {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
 
     LoggingState& state = State();
@@ -208,8 +192,7 @@ bool open_log_file(const std::string& filename, bool append)
 
     const FileSystem::OpenMode mode =
         append ? (FileSystem::OpenMode::ReadWrite | FileSystem::OpenMode::Create)
-               : (FileSystem::OpenMode::Write | FileSystem::OpenMode::Create |
-                  FileSystem::OpenMode::Truncate);
+               : (FileSystem::OpenMode::Write | FileSystem::OpenMode::Create | FileSystem::OpenMode::Truncate);
 
     try {
         Logging::log_file.open(filename, mode);
@@ -226,12 +209,11 @@ bool open_log_file(const std::string& filename, bool append)
     }
 
     state.fileOutput = true;
-    state.filename   = filename;
+    state.filename = filename;
     return true;
 }
 
-void close_log_file()
-{
+void close_log_file() {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
 
     if (Logging::log_file.is_open()) Logging::log_file.close();
@@ -239,8 +221,7 @@ void close_log_file()
     State().filename.clear();
 }
 
-const std::string& get_log_filename()
-{
+const std::string& get_log_filename() {
     std::lock_guard<std::recursive_mutex> lock(g_logMutex);
     return State().filename;
 }
@@ -249,25 +230,24 @@ const std::string& get_log_filename()
 
 namespace Log {
 
-void debug   (const std::string& m) { Logging::log(Logging::Level::Debug,    m); }
-void info    (const std::string& m) { Logging::log(Logging::Level::Info,     m); }
-void warning (const std::string& m) { Logging::log(Logging::Level::Warning,  m); }
-void error   (const std::string& m) { Logging::log(Logging::Level::Error,    m); }
+void debug(const std::string& m) { Logging::log(Logging::Level::Debug, m); }
+void info(const std::string& m) { Logging::log(Logging::Level::Info, m); }
+void warning(const std::string& m) { Logging::log(Logging::Level::Warning, m); }
+void error(const std::string& m) { Logging::log(Logging::Level::Error, m); }
 void critical(const std::string& m) { Logging::log(Logging::Level::Critical, m); }
 
-#define NOVA_LOG_VARIADIC(fnName, levelName)                    \
-    void fnName(const char* format, ...)                        \
-    {                                                           \
-        std::va_list args;                                      \
-        va_start(args, format);                                 \
-        LogFormatted(Logging::Level::levelName, format, args);  \
-        va_end(args);                                           \
+#define NOVA_LOG_VARIADIC(fnName, levelName)                                                                           \
+    void fnName(const char* format, ...) {                                                                             \
+        std::va_list args;                                                                                             \
+        va_start(args, format);                                                                                        \
+        LogFormatted(Logging::Level::levelName, format, args);                                                         \
+        va_end(args);                                                                                                  \
     }
 
-NOVA_LOG_VARIADIC(debugf,    Debug)
-NOVA_LOG_VARIADIC(infof,     Info)
-NOVA_LOG_VARIADIC(warningf,  Warning)
-NOVA_LOG_VARIADIC(errorf,    Error)
+NOVA_LOG_VARIADIC(debugf, Debug)
+NOVA_LOG_VARIADIC(infof, Info)
+NOVA_LOG_VARIADIC(warningf, Warning)
+NOVA_LOG_VARIADIC(errorf, Error)
 NOVA_LOG_VARIADIC(criticalf, Critical)
 
 #undef NOVA_LOG_VARIADIC

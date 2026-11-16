@@ -22,7 +22,8 @@
 struct SDL_Window;
 typedef void* SDL_GLContext;
 
-namespace Nova64 { namespace Video {
+namespace Nova64 {
+namespace Video {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  WINDOW EVENTS
@@ -43,8 +44,8 @@ enum class WindowEvent : uint32_t {
 
 struct WindowEventData {
     WindowEvent type = WindowEvent::None;
-    int32_t param1 = 0;   // width for Resized, x for Moved
-    int32_t param2 = 0;   // height for Resized, y for Moved
+    int32_t param1 = 0; // width for Resized, x for Moved
+    int32_t param2 = 0; // height for Resized, y for Moved
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -66,7 +67,7 @@ struct WindowConfig {
     std::string title = "NovaStar64 - NovaGraphics";
     int32_t width = 640;
     int32_t height = 480;
-    int32_t posX = -1;          // -1 = centered
+    int32_t posX = -1; // -1 = centered
     int32_t posY = -1;
     bool fullscreen = false;
     bool borderless = false;
@@ -80,11 +81,11 @@ struct WindowConfig {
     int32_t glMajor = 4;
     int32_t glMinor = 6;
     bool glDebug = false;
-    int32_t multiSamples = 0;      // 0 = disabled
+    int32_t multiSamples = 0; // 0 = disabled
 
     // Backend selection
-    int32_t backendType = 0;       // 0 = OpenGL, 1 = Vulkan
-    bool headless = false;         // If true, do not create a visible window
+    int32_t backendType = 0; // 0 = OpenGL, 1 = Vulkan
+    bool headless = false;   // If true, do not create a visible window
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -110,7 +111,6 @@ public:
 
     /// Destroy window and clean up
     void Shutdown();
-
 
     /// Check if initialized
     bool IsInitialized() const { return m_window != nullptr; }
@@ -225,7 +225,6 @@ private:
     bool m_shouldClose = false;
     bool m_isExternal = false; // if true, Shutdown() does not destroy window/context
 
-
     // Pending window events
     std::vector<WindowEventData> m_pendingEvents;
     EventCallback m_eventCallback;
@@ -237,4 +236,5 @@ private:
     int32_t m_windowedH = 0;
 };
 
-}} // namespace Nova64::Video
+} // namespace Video
+} // namespace Nova64

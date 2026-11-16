@@ -36,21 +36,16 @@ struct ControllerState {
     bool CButtonDown;
     bool CButtonLeft;
     bool CButtonRight;
-    
+
     // Analog stick (-128 to +127)
     int8_t AnalogX;
     int8_t AnalogY;
-    
+
     // Controller presence
     bool Connected;
-    
+
     // Pak type
-    enum class PakType : uint8_t {
-        None = 0,
-        MemPak = 1,
-        RumblePak = 2,
-        TransferPak = 3
-    } Pak;
+    enum class PakType : uint8_t { None = 0, MemPak = 1, RumblePak = 2, TransferPak = 3 } Pak;
 };
 
 /**
@@ -58,18 +53,18 @@ struct ControllerState {
  * @brief Input interface information
  */
 struct InputInfo {
-    void* hwnd;                     // Window handle
-    uint32_t* RDRAM;                // Pointer to RDRAM
-    uint32_t* MI_INTR_REG;          // MI interrupt register
-    
-    uint32_t* SI_DRAM_ADDR_REG;     // SI registers
+    void* hwnd;                 // Window handle
+    uint32_t* RDRAM;            // Pointer to RDRAM
+    uint32_t* MI_INTR_REG;      // MI interrupt register
+
+    uint32_t* SI_DRAM_ADDR_REG; // SI registers
     uint32_t* SI_PIF_ADDR_RD64B_REG;
     uint32_t* SI_PIF_ADDR_WR64B_REG;
     uint32_t* SI_STATUS_REG;
-    
-    uint8_t* PIF_RAM;               // PIF RAM pointer
-    
-    void (*CheckInterrupts)();      // Interrupt check callback
+
+    uint8_t* PIF_RAM;          // PIF RAM pointer
+
+    void (*CheckInterrupts)(); // Interrupt check callback
 };
 
 /**
@@ -79,64 +74,64 @@ struct InputInfo {
 class InputPlugin : public PluginBase {
 public:
     virtual ~InputPlugin() = default;
-    
+
     // ========================================================================
     // Input Initialization
     // ========================================================================
-    
+
     /**
      * @brief Initialize input system
      * @param info Input interface info
      * @return true on success
      */
     virtual bool InitializeInput(const InputInfo& info) = 0;
-    
+
     /**
      * @brief Set input focus
      * @param focus true if window has focus
      */
     virtual void SetFocus(bool focus) = 0;
-    
+
     // ========================================================================
     // Controller Management
     // ========================================================================
-    
+
     /**
      * @brief Get number of connected controllers
      * @return Controller count (1-4)
      */
     virtual uint32_t GetControllerCount() const = 0;
-    
+
     /**
      * @brief Check if controller is present
      * @param controller Controller index (0-3)
      * @return true if connected
      */
     virtual bool IsControllerPresent(uint32_t controller) const = 0;
-    
+
     /**
      * @brief Get controller state
      * @param controller Controller index (0-3)
      * @return Controller state
      */
     virtual ControllerState GetControllerState(uint32_t controller) = 0;
-    
+
     /**
      * @brief Update controller states
      * Called once per frame
      */
     virtual void UpdateControllers() = 0;
-    
+
     // ========================================================================
     // PIF/SI Processing
     // ========================================================================
-    
+
     /**
      * @brief Process PIF RAM command
      * Called when SI writes to PIF RAM
      */
     virtual void ProcessPIFCommand() = 0;
-    
+
     /**
      * @brief Read controller data
      * @param controller Controller index (0-3)
@@ -144,25 +139,25 @@ public:
      * @return true on success
      */
     virtual bool ReadController(uint32_t controller, uint8_t* command) = 0;
-    
+
     /**
      * @brief Get raw controller data (for movie recording)
      * @param controller Controller index (0-3)
      * @param data Output buffer (4 bytes)
      */
     virtual void GetRawControllerData(uint32_t controller, uint8_t* data) = 0;
-    
+
     /**
      * @brief Set controller data (for movie playback)
      * @param controller Controller index (0-3)
      * @param data Input buffer (4 bytes)
      */
     virtual void SetControllerData(uint32_t controller, const uint8_t* data) = 0;
-    
+
     // ========================================================================
     // Pak Accessories
     // ========================================================================
-    
+
     /**
      * @brief Read from controller pak
      * @param controller Controller index (0-3)
@@ -172,7 +167,7 @@ public:
      * @return true on success
      */
     virtual bool ReadPak(uint32_t controller, uint16_t address, uint8_t* data, uint32_t length) = 0;
-    
+
     /**
      * @brief Write to controller pak
      * @param controller Controller index (0-3)
@@ -182,18 +177,18 @@ public:
      * @return true on success
      */
     virtual bool WritePak(uint32_t controller, uint16_t address, const uint8_t* data, uint32_t length) = 0;
-    
+
     /**
      * @brief Start rumble effect
      * @param controller Controller index (0-3)
      * @param strength Rumble strength (0-255)
      */
     virtual void SetRumble(uint32_t controller, uint8_t strength) = 0;
-    
+
     // ========================================================================
     // Configuration
     // ========================================================================
-    
+
     /**
      * @brief Open controller configuration dialog
      * @param controller Controller index (0-3)

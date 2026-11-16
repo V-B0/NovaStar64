@@ -27,20 +27,20 @@ class F3DEX2Handler : public GBIHandler {
 public:
     F3DEX2Handler() = default;
     ~F3DEX2Handler() override = default;
-    
+
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return m_type; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI2; }
     int GetVertexCacheSize() const override { return 32; } // F3DEX2 standard vertex cache is 32
     const char* GetName() const override { return m_name; }
-    
+
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
     void OnFrameBegin(DListContext& ctx) override;
-    
+
 protected:
     MicrocodeType m_type = MicrocodeType::F3DEX2;
     const char* m_name = "F3DEX2";
-    
+
     // ─── GBI2 command handlers ───────────────────────────────────────
     void Cmd_G_NOOP(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -80,11 +80,11 @@ public:
         m_type = MicrocodeType::F3DZEX;
         m_name = "F3DZEX (Zelda)";
     }
-    
+
     // F3DZEX is essentially F3DEX2 with a few extensions
     // Any Zelda-specific overrides can go here
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
-    
+
 private:
     // Zelda-specific: point lighting
     void Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -100,9 +100,9 @@ public:
         m_type = MicrocodeType::F3DCBFD;
         m_name = "F3DCBFD (Conker)";
     }
-    
+
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
-    
+
 private:
     // CBFD-specific commands
     void Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -110,14 +110,14 @@ private:
     void Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
     void Cmd_G_LOAD_UCODE_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1);
-    
+
     // CBFD CoordMod: 16-element vertex position modifier for CBFD lighting
     void ProcessCoordMod(uint32_t w0, uint32_t w1);
-    
+
     // CBFD state
-    uint32_t m_vertexNormalBase = 0;  // RDRAM address of vertex normals table
-    bool     m_advancedLighting = false;
-    float    m_coordMod[16] = {};
+    uint32_t m_vertexNormalBase = 0; // RDRAM address of vertex normals table
+    bool m_advancedLighting = false;
+    float m_coordMod[16] = {};
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -143,7 +143,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
         HandleRDPCommand(ctx, w0, w1);
         return true;
     }
-    
+
     switch (opcode) {
     // ─── Low opcodes (0x00-0x08): vertex & triangle commands ─────────
     case 0x00: Cmd_G_NOOP(ctx, w0, w1); break;
@@ -155,7 +155,7 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0x06: Cmd_G_TRI2(ctx, w0, w1); break;
     case 0x07: Cmd_G_QUAD(ctx, w0, w1); break;
     case 0x08: Cmd_G_LINE3D(ctx, w0, w1); break;
-    
+
     // ─── High opcodes (0xD0-0xFF): state & control commands ──────────
     case 0xD3: Cmd_G_SPECIAL_3(ctx, w0, w1); break;
     case 0xD4: Cmd_G_SPECIAL_2(ctx, w0, w1); break;
@@ -170,14 +170,14 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
     case 0xDD: Cmd_G_LOAD_UCODE(ctx, w0, w1); break;
     case 0xDE: Cmd_G_DL(ctx, w0, w1); break;
     case 0xDF: Cmd_G_ENDDL(ctx, w0, w1); break;
-    
+
     case 0xE1: Cmd_G_RDPHALF_1(ctx, w0, w1); break;
     // F3DEX2 swaps the opcodes vs F3D: 0xE2=SetOtherMode_L, 0xE3=SetOtherMode_H
     case 0xE2: Cmd_G_SETOTHERMODE_L(ctx, w0, w1); break;
     case 0xE3: Cmd_G_SETOTHERMODE_H(ctx, w0, w1); break;
-    
+
     case 0xF1: Cmd_G_RDPHALF_2(ctx, w0, w1); break;
-    
+
     default:
         // Remaining 0xE0-0xFF are RDP commands
         if (opcode >= 0xE0) {
@@ -186,10 +186,9 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
             // Warn once per unique opcode without a mutex on the hot path.
             // A 256-bit bitset (one bit per opcode) is lock-free: test-and-set
             // with a relaxed CAS is cheaper than std::mutex + std::set insertion.
-            static std::atomic<uint32_t> warnedLo{0}, warnedHi{0},
-                                          warnedLo2{0}, warnedHi2{0};
-            const uint8_t slot = opcode >> 5;   // 0-7
-            const uint32_t bit  = 1u << (opcode & 31u);
+            static std::atomic<uint32_t> warnedLo{0}, warnedHi{0}, warnedLo2{0}, warnedHi2{0};
+            const uint8_t slot = opcode >> 5; // 0-7
+            const uint32_t bit = 1u << (opcode & 31u);
             [[maybe_unused]] std::atomic<uint32_t>* buckets[8] = {
                 &warnedLo, &warnedHi, &warnedLo2, &warnedHi2,
                 &warnedLo, &warnedHi, &warnedLo2, &warnedHi2 // opcode <=255, 8 buckets
@@ -197,27 +196,29 @@ inline bool F3DEX2Handler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32
             // Use the correct 32-bit bucket for this opcode
             std::atomic<uint32_t>* bkt;
             switch (slot) {
-            case 0: bkt = &warnedLo;  break;
-            case 1: bkt = &warnedHi;  break;
-            case 2: bkt = &warnedLo2; break;
+            case 0:  bkt = &warnedLo; break;
+            case 1:  bkt = &warnedHi; break;
+            case 2:  bkt = &warnedLo2; break;
             default: bkt = &warnedHi2; break;
             }
             const uint32_t prev = bkt->fetch_or(bit, std::memory_order_relaxed);
             if (!(prev & bit)) {
                 NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
-                        "F3DEX2: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
+                         "F3DEX2: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", opcode, w0, w1);
             }
         }
         break;
     }
-    
+
     return !ctx.halted;
 }
 
 // ─── GBI2 Command Implementations ───────────────────────────────────────
 
 inline void F3DEX2Handler::Cmd_G_NOOP(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
     // Some games use NOOP w1 as a tag/ID for debugging
 }
 
@@ -226,7 +227,7 @@ inline void F3DEX2Handler::Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1
     int count = (w0 >> 12) & 0xFF;
     int vbidx = ((w0 >> 1) & 0x7F) - count;
     if (vbidx < 0) vbidx = 0;
-    
+
     LoadVertices(ctx, w1, count, vbidx);
 }
 
@@ -298,7 +299,9 @@ inline void F3DEX2Handler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t
     // uses a proprietary microcode path with no triangle equivalent.
     // Prior code emitted DrawTriangle(v0,v1,v0) which is silently culled by
     // the v0==v2 degenerate guard; making it an explicit no-op is cleaner.
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
 }
 
 inline void F3DEX2Handler::Cmd_G_DMA_IO(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -308,16 +311,13 @@ inline void F3DEX2Handler::Cmd_G_DMA_IO(DListContext& ctx, uint32_t w0, uint32_t
     uint32_t dmemAddr = (w0 >> 13) & 0x3FF;
     uint32_t length = ((w0 & 0x1FFF) + 1);
     uint32_t dramAddr = w1;
-    
-    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-            "G_DMA_IO: {} dmem=0x{:03X} dram=0x{:08X} len={}",
-            isWrite ? "write" : "read", dmemAddr, dramAddr, length);
+
+    NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "G_DMA_IO: {} dmem=0x{:03X} dram=0x{:08X} len={}",
+             isWrite ? "write" : "read", dmemAddr, dramAddr, length);
     (void)ctx;
 }
 
-inline void F3DEX2Handler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    SetTextureState(ctx, w0, w1);
-}
+inline void F3DEX2Handler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w1) { SetTextureState(ctx, w0, w1); }
 
 inline void F3DEX2Handler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
     (void)w0;
@@ -327,7 +327,7 @@ inline void F3DEX2Handler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t
 
 inline void F3DEX2Handler::Cmd_G_GEOMETRYMODE(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // GBI2 combined clear & set: clear bits in w0, set bits in w1
-    uint32_t clearBits = ~(w0 & 0x00FFFFFF);  // w0 low 24 = inverse clear mask
+    uint32_t clearBits = ~(w0 & 0x00FFFFFF); // w0 low 24 = inverse clear mask
     SetGeometryMode(ctx, clearBits, w1);
 }
 
@@ -337,7 +337,7 @@ inline void F3DEX2Handler::Cmd_G_MTX(DListContext& ctx, uint32_t w0, uint32_t w1
     bool push = (params & 0x01) != 0;
     bool load = (params & 0x02) != 0;
     bool proj = (params & 0x04) != 0;
-    
+
     LoadMatrix(ctx, w1, push, load, proj);
 }
 
@@ -352,7 +352,7 @@ inline void F3DEX2Handler::Cmd_G_MOVEMEM(DListContext& ctx, uint32_t w0, uint32_
     uint8_t index = w0 & 0xFF;
     uint8_t size = static_cast<uint8_t>((((w0 >> 19) & 0x1F) + 1) * 8);
     uint8_t offset = static_cast<uint8_t>(((w0 >> 8) & 0xFF) * 8);
-    
+
     MoveMemGBI2(ctx, index, size, offset, w1);
 }
 
@@ -367,7 +367,8 @@ inline void F3DEX2Handler::Cmd_G_DL(DListContext& ctx, uint32_t w0, uint32_t w1)
 }
 
 inline void F3DEX2Handler::Cmd_G_ENDDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0; (void)w1;
+    (void)w0;
+    (void)w1;
     EndDisplayList(ctx);
 }
 
@@ -387,17 +388,21 @@ inline void F3DEX2Handler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, 
 }
 
 inline void F3DEX2Handler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf1 = w1;
 }
 
 inline void F3DEX2Handler::Cmd_G_RDPHALF_2(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf2 = w1;
 }
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
     // Reserved for game-specific extensions.  GLideN64's real F3DEX2_Special_1
     // is NOT a no-op: it's gSPCombineMatrices (explicit projection*modelview
     // recombine) when the detected ucode string has combineMatrices=true, or
@@ -412,11 +417,15 @@ inline void F3DEX2Handler::Cmd_G_SPECIAL_1(DListContext& ctx, uint32_t w0, uint3
 }
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_2(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
 }
 
 inline void F3DEX2Handler::Cmd_G_SPECIAL_3(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -425,15 +434,15 @@ inline void F3DEX2Handler::Cmd_G_SPECIAL_3(DListContext& ctx, uint32_t w0, uint3
 
 inline bool F3DZEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     // F3DZEX-specific commands (Zelda OoT/MM)
     switch (opcode) {
     case 0x04: // G_BRANCH_W — F3DZEX2 uses W-based LOD culling (not Z like F3DEX2)
     {
         // GLideN64 reference (F3DZEX2_Branch_W):
-          //   vtx = _SHIFTR(w0, 1, 11)
-          //   wval = w1 (full 32-bit integer)
-          uint32_t vtxIndex = (w0 & 0xFFF) / 2;
+        //   vtx = _SHIFTR(w0, 1, 11)
+        //   wval = w1 (full 32-bit integer)
+        uint32_t vtxIndex = (w0 & 0xFFF) / 2;
         BranchW(ctx, vtxIndex, w1, m_rdpHalf1);
         return !ctx.halted;
     }
@@ -452,7 +461,9 @@ inline void F3DZEXHandler::Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, u
     // point-light extension as an earlier version of this comment claimed --
     // no such mechanism exists in GLideN64's F3DZEX/F3DEX2 handling of this
     // opcode). Kept as a no-op to match.
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
     NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3DZEX: Zelda special command");
 }
 
@@ -462,7 +473,7 @@ inline void F3DZEXHandler::Cmd_G_SPECIAL_ZelDA(DListContext& ctx, uint32_t w0, u
 
 inline bool F3DCBFDHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     // CBFD overrides: VTX, MoveWord, MoveMem, LoadUcode, and opcodes 0x10-0x1F are Tri4
     switch (opcode) {
     case 0x01: Cmd_G_VTX_CBFD(ctx, w0, w1); return !ctx.halted;
@@ -484,10 +495,10 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
     int count = (w0 >> 12) & 0xFF;
     int vbidx = ((w0 >> 1) & 0x7F) - count;
     if (vbidx < 0) vbidx = 0;
-    
+
     // Load standard vertex data (position, texcoords, color/normal bytes)
     LoadVertices(ctx, w1, count, vbidx);
-    
+
     // CBFD-specific fixups:
     // 1) Bytes 12-15 are ALWAYS colors in CBFD (LoadVertices treats them as normals
     //    when lighting is on — we must fix that)
@@ -497,13 +508,13 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
         auto& geo = ctx.state->geometry;
         uint32_t resolvedAddr = ctx.ResolveAddress(w1);
         bool lighting = (geo.geometryMode & G_LIGHTING) != 0;
-        
+
         for (int i = 0; i < count; ++i) {
             int vi = vbidx + i;
             if (vi >= VERTEX_BUFFER_SIZE) break;
             uint32_t vtxAddr = resolvedAddr + i * 16;
             if (vtxAddr + 16 > ctx.rdramSize) break;
-            
+
             if (lighting) {
                 // Colors: always read from vertex bytes 12-15 (LoadVertices
                 // stored them as normals, overwrite with correct color values)
@@ -515,7 +526,7 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                 geo.vertexBuffer[vi].color[1] = static_cast<float>(g) / 255.0f;
                 geo.vertexBuffer[vi].color[2] = static_cast<float>(b) / 255.0f;
                 geo.vertexBuffer[vi].color[3] = static_cast<float>(a) / 255.0f;
-                
+
                 // Normals: from separate RDRAM table
                 if (m_vertexNormalBase != 0) {
                     uint32_t normAddr = m_vertexNormalBase + static_cast<uint32_t>(vi << 1);
@@ -524,7 +535,7 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                         int8_t ny = static_cast<int8_t>(ctx.rdram[(normAddr + 1) ^ 3]);
                         // NZ from vertex flag field (offset 6, low byte)
                         int8_t nz = static_cast<int8_t>(ctx.ReadHalf(vtxAddr + 6) & 0xFF);
-                        
+
                         geo.vertexBuffer[vi].normal[0] = static_cast<float>(nx) / 127.0f;
                         geo.vertexBuffer[vi].normal[1] = static_cast<float>(ny) / 127.0f;
                         geo.vertexBuffer[vi].normal[2] = static_cast<float>(nz) / 127.0f;
@@ -532,7 +543,7 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                 }
             }
         }
-        
+
         // ---- CBFD Lighting ----
         // Standard lighting was already applied by TransformVertexBatch but used
         // wrong normals (bytes 12-15 are colors in CBFD, not normals).  The fixup
@@ -542,42 +553,41 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
         if (lighting) {
             constexpr float FIXED2FLOATRECIP16 = 1.0f / 65536.0f;
             const int numLights = geo.numLights;
-            
+
             for (int i = 0; i < count; ++i) {
                 int vi = vbidx + i;
                 if (vi >= VERTEX_BUFFER_SIZE) break;
                 auto& tv = geo.vertexBuffer[vi];
                 uint32_t vtxAddr = resolvedAddr + i * 16;
                 if (vtxAddr + 16 > ctx.rdramSize) break;
-                
+
                 // Skip vertices with negative flag (matches GLideN64)
                 int16_t flag = static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 6));
                 if (flag < 0) continue;
-                
+
                 // Re-read raw object-space position from RDRAM
                 // (TransformVertexBatch overwrote position[] with clip coords)
                 float objX = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 0)));
                 float objY = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 2)));
                 float objZ = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(vtxAddr + 4)));
-                
+
                 // CBFD coordinate-modified position
-                float vPosX = (objX + m_coordMod[8])  * m_coordMod[12];
-                float vPosY = (objY + m_coordMod[9])  * m_coordMod[13];
+                float vPosX = (objX + m_coordMod[8]) * m_coordMod[12];
+                float vPosY = (objY + m_coordMod[9]) * m_coordMod[13];
                 float vPosZ = (objZ + m_coordMod[10]) * m_coordMod[14];
-                
+
                 // Start with ambient light
                 float r = geo.lights[numLights].color[0];
                 float g = geo.lights[numLights].color[1];
                 float b = geo.lights[numLights].color[2];
-                
+
                 if (m_advancedLighting) {
                     // Top light (numLights-1) is directional: dot(normal, lightDir)
                     int topLight = numLights - 1;
                     if (topLight >= 0) {
-                        float intensity = std::min(1.0f,
-                            tv.normal[0] * geo.lights[topLight].direction[0] +
-                            tv.normal[1] * geo.lights[topLight].direction[1] +
-                            tv.normal[2] * geo.lights[topLight].direction[2]);
+                        float intensity = std::min(1.0f, tv.normal[0] * geo.lights[topLight].direction[0] +
+                                                             tv.normal[1] * geo.lights[topLight].direction[1] +
+                                                             tv.normal[2] * geo.lights[topLight].direction[2]);
                         if (intensity > 0.0f) {
                             r += geo.lights[topLight].color[0] * intensity;
                             g += geo.lights[topLight].color[1] * intensity;
@@ -589,13 +599,12 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                         float vx = vPosX - geo.lights[l].position[0];
                         float vy = vPosY - geo.lights[l].position[1];
                         float vz = vPosZ - geo.lights[l].position[2];
-                        float len = 2.0f * (vx*vx + vy*vy + vz*vz) * FIXED2FLOATRECIP16;
+                        float len = 2.0f * (vx * vx + vy * vy + vz * vz) * FIXED2FLOATRECIP16;
                         float intensity = std::min(1.0f, geo.lights[l].ca / len);
                         if ((geo.geometryMode & G_POINT_LIGHTING) != 0) {
-                            intensity *= std::min(1.0f,
-                                tv.normal[0] * geo.lights[l].direction[0] +
-                                tv.normal[1] * geo.lights[l].direction[1] +
-                                tv.normal[2] * geo.lights[l].direction[2]);
+                            intensity *= std::min(1.0f, tv.normal[0] * geo.lights[l].direction[0] +
+                                                            tv.normal[1] * geo.lights[l].direction[1] +
+                                                            tv.normal[2] * geo.lights[l].direction[2]);
                         }
                         if (intensity > 0.0f) {
                             r += geo.lights[l].color[0] * intensity;
@@ -609,7 +618,7 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                         float vx = vPosX - geo.lights[l].position[0];
                         float vy = vPosY - geo.lights[l].position[1];
                         float vz = vPosZ - geo.lights[l].position[2];
-                        float len = 2.0f * (vx*vx + vy*vy + vz*vz) * FIXED2FLOATRECIP16;
+                        float len = 2.0f * (vx * vx + vy * vy + vz * vz) * FIXED2FLOATRECIP16;
                         float intensity = std::min(1.0f, geo.lights[l].ca / len);
                         if (intensity > 0.0f) {
                             r += geo.lights[l].color[0] * intensity;
@@ -618,11 +627,11 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
                         }
                     }
                 }
-                
+
                 r = std::min(1.0f, r);
                 g = std::min(1.0f, g);
                 b = std::min(1.0f, b);
-                
+
                 tv.color[0] *= r;
                 tv.color[1] *= g;
                 tv.color[2] *= b;
@@ -634,24 +643,24 @@ inline void F3DCBFDHandler::Cmd_G_VTX_CBFD(DListContext& ctx, uint32_t w0, uint3
 inline void F3DCBFDHandler::Cmd_G_TRI4_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     // Tri4: draws 4 triangles packed into two 32-bit words
     // Vertex indices are 5-bit, packed across w0 and w1
-    int v0  = (w0 >> 23) & 0x1F;
-    int v1  = (w0 >> 18) & 0x1F;
-    int v2a = (w0 >> 15) & 0x07;  // upper 3 bits of v2
-    int v2b = (w1 >> 30) & 0x03;  // lower 2 bits of v2
-    int v2  = (v2a << 2) | v2b;
-    
-    int v3  = (w0 >> 10) & 0x1F;
-    int v4  = (w0 >>  5) & 0x1F;
-    int v5  = (w0 >>  0) & 0x1F;
-    
-    int v6  = (w1 >> 25) & 0x1F;
-    int v7  = (w1 >> 20) & 0x1F;
-    int v8  = (w1 >> 15) & 0x1F;
-    
-    int v9  = (w1 >> 10) & 0x1F;
-    int v10 = (w1 >>  5) & 0x1F;
-    int v11 = (w1 >>  0) & 0x1F;
-    
+    int v0 = (w0 >> 23) & 0x1F;
+    int v1 = (w0 >> 18) & 0x1F;
+    int v2a = (w0 >> 15) & 0x07; // upper 3 bits of v2
+    int v2b = (w1 >> 30) & 0x03; // lower 2 bits of v2
+    int v2 = (v2a << 2) | v2b;
+
+    int v3 = (w0 >> 10) & 0x1F;
+    int v4 = (w0 >> 5) & 0x1F;
+    int v5 = (w0 >> 0) & 0x1F;
+
+    int v6 = (w1 >> 25) & 0x1F;
+    int v7 = (w1 >> 20) & 0x1F;
+    int v8 = (w1 >> 15) & 0x1F;
+
+    int v9 = (w1 >> 10) & 0x1F;
+    int v10 = (w1 >> 5) & 0x1F;
+    int v11 = (w1 >> 0) & 0x1F;
+
     DrawTriangle(ctx, v0, v1, v2);
     DrawTriangle(ctx, v3, v4, v5);
     DrawTriangle(ctx, v6, v7, v8);
@@ -660,10 +669,10 @@ inline void F3DCBFDHandler::Cmd_G_TRI4_CBFD(DListContext& ctx, uint32_t w0, uint
 
 inline void F3DCBFDHandler::Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t index = (w0 >> 16) & 0xFF;
-    
+
     // CBFD-specific MoveWord indices
-    constexpr uint8_t G_MW_COORD_MOD = 0x10;  // CBFD coordinate modifier
-    
+    constexpr uint8_t G_MW_COORD_MOD = 0x10; // CBFD coordinate modifier
+
     if (index == MoveWord::MW_NUMLIGHT) {
         // CBFD uses 48 bytes per light instead of 32
         if (!ctx.state) return;
@@ -682,16 +691,16 @@ inline void F3DCBFDHandler::Cmd_G_MOVEWORD_CBFD(DListContext& ctx, uint32_t w0, 
 
 inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t index = w0 & 0xFF;
-    
-    constexpr uint8_t G_MV_NORMALES = 0x0E;  // CBFD normals table (14)
+
+    constexpr uint8_t G_MV_NORMALES = 0x0E; // CBFD normals table (14)
     constexpr uint8_t G_MV_LIGHT = 0x0A;    // Light (10)
-    
+
     if (index == G_MV_NORMALES) {
         // Set the RDRAM address of the vertex normals table
         m_vertexNormalBase = ctx.ResolveAddress(w1);
     } else if (index == G_MV_LIGHT) {
         uint32_t offset = (w0 >> 5) & 0x3FFF;
-        uint32_t n = offset / 48;  // CBFD: 48 bytes per light
+        uint32_t n = offset / 48; // CBFD: 48 bytes per light
         if (n < 2) {
             // LookAt vectors (same as F3DEX2)
             MoveMemGBI2(ctx, index, 0, static_cast<uint8_t>(offset), w1);
@@ -702,11 +711,11 @@ inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, u
             auto& geo = ctx.state->geometry;
             uint32_t addr = ctx.ResolveAddress(w1);
             if (addr + 48 > ctx.rdramSize) return;
-            
+
             if (lightIndex < MAX_LIGHTS) {
                 const uint8_t* src = ctx.rdram + addr;
                 auto& light = geo.lights[lightIndex];
-                
+
                 // Color (bytes 0-2)
                 // Words are stored big-endian, so byte i of the light is at i ^ 3.
                 auto byteAt = [src](int i) { return src[i ^ 3]; };
@@ -716,28 +725,30 @@ inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, u
                 light.color[0] = static_cast<float>(light.r) / 255.0f;
                 light.color[1] = static_cast<float>(light.g) / 255.0f;
                 light.color[2] = static_cast<float>(light.b) / 255.0f;
-                
+
                 // Direction (bytes 8-10), then normalize
                 float dx = static_cast<float>(static_cast<int8_t>(byteAt(8)));
                 float dy = static_cast<float>(static_cast<int8_t>(byteAt(9)));
                 float dz = static_cast<float>(static_cast<int8_t>(byteAt(10)));
-                float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+                float len = std::sqrt(dx * dx + dy * dy + dz * dz);
                 if (len > 0.0001f) {
                     float inv = 1.0f / len;
-                    dx *= inv; dy *= inv; dz *= inv;
+                    dx *= inv;
+                    dy *= inv;
+                    dz *= inv;
                 }
                 light.direction[0] = dx;
                 light.direction[1] = dy;
                 light.direction[2] = dz;
-                
+
                 // Ca attenuation (byte 12)
                 light.ca = static_cast<float>(src[12 ^ 3]) / 16.0f;
-                
+
                 // Position (bytes 32-37 as int16_t, using halfword swap)
                 light.position[0] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 32)));
                 light.position[1] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 34)));
                 light.position[2] = static_cast<float>(static_cast<int16_t>(ctx.ReadHalf(addr + 36)));
-                
+
                 ctx.state->MarkDirty(RDPDirtyFlag::Lights);
             }
         }
@@ -750,18 +761,20 @@ inline void F3DCBFDHandler::Cmd_G_MOVEMEM_CBFD(DListContext& ctx, uint32_t w0, u
 }
 
 inline void F3DCBFDHandler::Cmd_G_LOAD_UCODE_CBFD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
     // In CBFD, G_LOAD_UCODE is repurposed to switch to advanced lighting mode
     m_advancedLighting = true;
 }
 
 inline void F3DCBFDHandler::ProcessCoordMod(uint32_t w0, uint32_t w1) {
     // CBFD coordinate modifier: 16-element position modifier array for CBFD lighting
-    if ((w0 & 8) != 0) return;  // Bit 3 set = skip
-    
+    if ((w0 & 8) != 0) return; // Bit 3 set = skip
+
     uint32_t idx = (w0 >> 1) & 0x03;
     uint32_t pos = w0 & 0x30;
-    
+
     if (pos == 0x00) {
         m_coordMod[0 + idx] = static_cast<float>(static_cast<int16_t>((w1 >> 16) & 0xFFFF));
         m_coordMod[1 + idx] = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF));

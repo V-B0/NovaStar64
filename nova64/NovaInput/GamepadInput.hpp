@@ -26,8 +26,8 @@ constexpr const char* kControllerSettingsPath = "settings/controllers.ini";
 /// One input on a game controller: a button, or one direction of an axis.
 struct PadBinding {
     enum class Kind : uint8_t { None, Button, AxisPositive, AxisNegative };
-    Kind kind  = Kind::None;
-    int  index = 0;   ///< SDL_GameControllerButton or SDL_GameControllerAxis
+    Kind kind = Kind::None;
+    int index = 0; ///< SDL_GameControllerButton or SDL_GameControllerAxis
 
     bool operator==(const PadBinding& other) const {
         return kind == other.kind && (kind == Kind::None || index == other.index);
@@ -40,7 +40,7 @@ std::string PadBindingName(const PadBinding& binding);
 
 /// What sits in a player's controller slot.
 enum class Accessory : uint8_t {
-    Automatic,   ///< a Rumble Pak when that player's controller can rumble
+    Automatic, ///< a Rumble Pak when that player's controller can rumble
     None,
     RumblePak,
 };
@@ -48,8 +48,8 @@ enum class Accessory : uint8_t {
 struct ControllerSettings {
     std::array<PadBinding, kN64InputCount> primary{};
     std::array<PadBinding, kN64InputCount> alternate{};
-    int deadzone = 12;    ///< percent of stick travel ignored around the centre
-    int range    = 100;   ///< percent; 100 reaches a real N64 stick's edge
+    int deadzone = 12; ///< percent of stick travel ignored around the centre
+    int range = 100;   ///< percent; 100 reaches a real N64 stick's edge
     std::array<Accessory, kMaxPlayers> accessory{};
     /// SDL_JoystickGUID string of the controller that should get this player
     /// slot, empty for "whichever connects first". A device whose preferred
@@ -71,14 +71,13 @@ struct ControllerSettings {
 /// Converts a stick position (-1..1 per axis, +y up) into N64 stick values:
 /// radial deadzone, then the N64's octagonal gate (80 straight, about 69 on
 /// the diagonals at 100% range).
-void StickToN64(float x, float y, int deadzonePercent, int rangePercent,
-                int8_t& outX, int8_t& outY);
+void StickToN64(float x, float y, int deadzonePercent, int rangePercent, int8_t& outX, int8_t& outY);
 
 struct ConnectedPad {
-    int         player = 0;   ///< 0-3
+    int player = 0;   ///< 0-3
     std::string name;
-    std::string guid;         ///< SDL_JoystickGUID string; stable across reconnects
-    bool        canRumble = false;
+    std::string guid; ///< SDL_JoystickGUID string; stable across reconnects
+    bool canRumble = false;
 };
 
 /// The connected game controllers. Controllers are opened and closed on the
@@ -119,12 +118,12 @@ public:
 private:
     struct Pad {
         _SDL_GameController* controller = nullptr;
-        int32_t              id         = -1;   ///< SDL_JoystickID
-        std::string          name;
-        std::string          guid;
-        bool                 canRumble  = false;
-        bool                 rumbling   = false;
-        uint32_t             rumbleSentAt = 0;  ///< SDL ticks
+        int32_t id = -1; ///< SDL_JoystickID
+        std::string name;
+        std::string guid;
+        bool canRumble = false;
+        bool rumbling = false;
+        uint32_t rumbleSentAt = 0; ///< SDL ticks
     };
 
     Gamepads() = default;
@@ -132,13 +131,13 @@ private:
     void RefreshSettingsLocked();
 
     std::mutex m_mutex;
-    bool       m_initialized = false;
+    bool m_initialized = false;
     std::array<Pad, kMaxPlayers> m_pads{};
 
     ControllerSettings m_settings;
     uint32_t m_settingsCheckedAt = 0;
-    bool     m_settingsChecked   = false;
-    long long m_settingsStamp    = -1;   ///< file time the settings were read at
+    bool m_settingsChecked = false;
+    long long m_settingsStamp = -1; ///< file time the settings were read at
 };
 
 } // namespace NovaInput

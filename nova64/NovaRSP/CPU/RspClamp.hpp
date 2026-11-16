@@ -37,9 +37,7 @@ namespace Nova64::RSP {
 // Saturate to signed 16-bit (for HLE audio)
 // ──────────────────────────────────────────────
 [[nodiscard]] inline constexpr int16_t ClampS16(int32_t x) noexcept {
-    return static_cast<int16_t>(std::clamp(x, 
-        static_cast<int32_t>(INT16_MIN), 
-        static_cast<int32_t>(INT16_MAX)));
+    return static_cast<int16_t>(std::clamp(x, static_cast<int32_t>(INT16_MIN), static_cast<int32_t>(INT16_MAX)));
 }
 
 // ──────────────────────────────────────────────

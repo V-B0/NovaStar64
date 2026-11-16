@@ -41,9 +41,9 @@ std::string PickRomFileNative() {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.lpstrFilter = L"N64 games (*.z64;*.n64;*.v64;*.ndd;*.d64)\0*.z64;*.n64;*.v64;*.ndd;*.d64\0All files\0*.*\0";
-    ofn.lpstrFile   = file;
-    ofn.nMaxFile    = MAX_PATH;
-    ofn.lpstrTitle  = L"Select an N64 ROM";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"Select an N64 ROM";
     // NOCHANGEDIR: settings/, roms/ and saves/ are found relative to the working
     // directory, which the dialog would otherwise change.
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
@@ -51,7 +51,7 @@ std::string PickRomFileNative() {
     try {
         return fs::path(file).string();
     } catch (const std::exception&) {
-        return {};   // a name the narrow code page can't represent
+        return {}; // a name the narrow code page can't represent
     }
 #else
 #if defined(__APPLE__)
@@ -61,7 +61,8 @@ std::string PickRomFileNative() {
 #else
     // Whichever of the GNOME or KDE file pickers is installed.
     const char* cmd = "if command -v zenity >/dev/null 2>&1; then zenity --file-selection --title='Select an N64 ROM';"
-                      " elif command -v kdialog >/dev/null 2>&1; then kdialog --getopenfilename . --title 'Select an N64 ROM'; fi 2>/dev/null";
+                      " elif command -v kdialog >/dev/null 2>&1; then kdialog --getopenfilename . --title 'Select an "
+                      "N64 ROM'; fi 2>/dev/null";
 #endif
     FILE* pipe = ::popen(cmd, "r");
     if (!pipe) return {};
@@ -80,9 +81,9 @@ std::string PickImageFileNative() {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.lpstrFilter = L"Pictures (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0All files\0*.*\0";
-    ofn.lpstrFile   = file;
-    ofn.nMaxFile    = MAX_PATH;
-    ofn.lpstrTitle  = L"Select a cover image";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"Select a cover image";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (!GetOpenFileNameW(&ofn)) return {};
     try {
@@ -92,10 +93,13 @@ std::string PickImageFileNative() {
     }
 #else
 #if defined(__APPLE__)
-    const char* cmd = "osascript -e 'POSIX path of (choose file of type {\"public.png\", \"public.jpeg\"} with prompt \"Select a cover image\")' 2>/dev/null";
+    const char* cmd = "osascript -e 'POSIX path of (choose file of type {\"public.png\", \"public.jpeg\"} with prompt "
+                      "\"Select a cover image\")' 2>/dev/null";
 #else
-    const char* cmd = "if command -v zenity >/dev/null 2>&1; then zenity --file-selection --title='Select a cover image' --file-filter='Pictures | *.png *.jpg *.jpeg';"
-                      " elif command -v kdialog >/dev/null 2>&1; then kdialog --getopenfilename . 'Pictures (*.png *.jpg *.jpeg)' --title 'Select a cover image'; fi 2>/dev/null";
+    const char* cmd = "if command -v zenity >/dev/null 2>&1; then zenity --file-selection --title='Select a cover "
+                      "image' --file-filter='Pictures | *.png *.jpg *.jpeg';"
+                      " elif command -v kdialog >/dev/null 2>&1; then kdialog --getopenfilename . 'Pictures (*.png "
+                      "*.jpg *.jpeg)' --title 'Select a cover image'; fi 2>/dev/null";
 #endif
     FILE* pipe = ::popen(cmd, "r");
     if (!pipe) return {};
@@ -119,12 +123,11 @@ std::string ImportCoverImage(const std::string& source, const std::string& gameN
     // Already in covers/? Then there is nothing to copy.
     const fs::path covers = fs::path("covers");
     const fs::path absCovers = fs::absolute(covers, ec).lexically_normal();
-    const fs::path absSrc    = fs::absolute(src, ec).lexically_normal();
+    const fs::path absSrc = fs::absolute(src, ec).lexically_normal();
     if (absSrc.parent_path() == absCovers) return (covers / src.filename()).generic_string();
 
     std::string stem;
-    for (unsigned char c : gameName)
-        stem += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
+    for (unsigned char c : gameName) stem += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
     if (stem.empty()) stem = "game";
     std::string ext = src.extension().string();
     for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -142,10 +145,10 @@ bool ReadN64RomHeader(const std::string& path, std::string* internalName) {
     if (!f.read(reinterpret_cast<char*>(h), sizeof(h))) return false;
 
     const uint32_t magic = (uint32_t(h[0]) << 24) | (uint32_t(h[1]) << 16) | (uint32_t(h[2]) << 8) | h[3];
-    int swap;   // index mask that maps a big-endian offset to this file's layout
-    if      (magic == 0x80371240) swap = 0;   // .z64, big-endian
-    else if (magic == 0x37804012) swap = 1;   // .v64, byte-swapped pairs
-    else if (magic == 0x40123780) swap = 3;   // .n64, little-endian words
+    int swap;                               // index mask that maps a big-endian offset to this file's layout
+    if (magic == 0x80371240) swap = 0;      // .z64, big-endian
+    else if (magic == 0x37804012) swap = 1; // .v64, byte-swapped pairs
+    else if (magic == 0x40123780) swap = 3; // .n64, little-endian words
     else return false;
 
     if (internalName) {
@@ -187,7 +190,7 @@ namespace {
 std::string Escape(const std::string& s) {
     std::string out;
     for (char c : s) {
-        if      (c == '\\') out += "\\\\";
+        if (c == '\\') out += "\\\\";
         else if (c == '\t') out += "\\t";
         else if (c == '\n') out += "\\n";
         else if (c != '\r') out += c;
@@ -198,7 +201,10 @@ std::string Escape(const std::string& s) {
 std::string Unescape(const std::string& s) {
     std::string out;
     for (size_t i = 0; i < s.size(); ++i) {
-        if (s[i] != '\\' || i + 1 == s.size()) { out += s[i]; continue; }
+        if (s[i] != '\\' || i + 1 == s.size()) {
+            out += s[i];
+            continue;
+        }
         const char n = s[++i];
         out += (n == 't') ? '\t' : (n == 'n') ? '\n' : n;
     }
@@ -237,8 +243,8 @@ void NovaLauncher::LoadLibrary() {
         cols.push_back(line.substr(start));
 
         RomMetadata rom;
-        rom.path  = Unescape(cols[0]);
-        rom.name  = cols.size() > 1 ? Unescape(cols[1]) : std::string{};
+        rom.path = Unescape(cols[0]);
+        rom.name = cols.size() > 1 ? Unescape(cols[1]) : std::string{};
         rom.notes = cols.size() > 2 ? Unescape(cols[2]) : std::string{};
         rom.cover = cols.size() > 3 ? Unescape(cols[3]) : std::string{};
         if (rom.path.empty()) continue;
@@ -276,8 +282,8 @@ void NovaLauncher::SaveLibrary() const {
 
 void NovaLauncher::AddToLibrary(const std::string& path, const std::string& name, const std::string& notes,
                                 const std::string& cover) {
-    const bool known = std::any_of(m_library.begin(), m_library.end(),
-                                   [&](const RomMetadata& r) { return SamePath(r.path, path); });
+    const bool known =
+        std::any_of(m_library.begin(), m_library.end(), [&](const RomMetadata& r) { return SamePath(r.path, path); });
     if (known) return;
     m_library.push_back({path, name.empty() ? fs::path(path).stem().string() : name, notes, cover});
     SaveLibrary();
@@ -293,8 +299,8 @@ void NovaLauncher::OpenEditDialog(int index) {
     if (index < 0 || index >= static_cast<int>(m_library.size())) return;
     const auto& rom = m_library[index];
     m_editingRomIndex = index;
-    std::snprintf(m_editPathBuffer,  sizeof(m_editPathBuffer),  "%s", rom.path.c_str());
-    std::snprintf(m_editNameBuffer,  sizeof(m_editNameBuffer),  "%s", rom.name.c_str());
+    std::snprintf(m_editPathBuffer, sizeof(m_editPathBuffer), "%s", rom.path.c_str());
+    std::snprintf(m_editNameBuffer, sizeof(m_editNameBuffer), "%s", rom.name.c_str());
     std::snprintf(m_editNotesBuffer, sizeof(m_editNotesBuffer), "%s", rom.notes.c_str());
     std::snprintf(m_editCoverBuffer, sizeof(m_editCoverBuffer), "%s", rom.cover.c_str());
     m_modalError.clear();
@@ -322,7 +328,8 @@ constexpr int kMaxCoverSize = 512;
 std::vector<uint8_t> ShrinkToFit(const uint8_t* rgba, int w, int h, int* outW, int* outH) {
     const int longest = std::max(w, h);
     if (longest <= kMaxCoverSize) {
-        *outW = w; *outH = h;
+        *outW = w;
+        *outH = h;
         return std::vector<uint8_t>(rgba, rgba + static_cast<size_t>(w) * h * 4);
     }
     const float scale = static_cast<float>(kMaxCoverSize) / static_cast<float>(longest);
@@ -339,10 +346,12 @@ std::vector<uint8_t> ShrinkToFit(const uint8_t* rgba, int w, int h, int* outW, i
                 for (int sx = x0; sx < x1; ++sx)
                     for (int c = 0; c < 4; ++c) sum[c] += rgba[(static_cast<size_t>(sy) * w + sx) * 4 + c];
             const uint32_t n = static_cast<uint32_t>((y1 - y0) * (x1 - x0));
-            for (int c = 0; c < 4; ++c) out[(static_cast<size_t>(y) * nw + x) * 4 + c] = static_cast<uint8_t>(sum[c] / n);
+            for (int c = 0; c < 4; ++c)
+                out[(static_cast<size_t>(y) * nw + x) * 4 + c] = static_cast<uint8_t>(sum[c] / n);
         }
     }
-    *outW = nw; *outH = nh;
+    *outW = nw;
+    *outH = nh;
     return out;
 }
 
@@ -357,8 +366,8 @@ const NovaLauncher::CoverTexture* NovaLauncher::GetCoverTexture(const std::strin
         std::vector<char> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         int w = 0, h = 0, channels = 0;
         uint8_t* pixels = bytes.empty() ? nullptr
-            : stbi_load_from_memory(reinterpret_cast<const uint8_t*>(bytes.data()), static_cast<int>(bytes.size()),
-                                    &w, &h, &channels, 4);
+                                        : stbi_load_from_memory(reinterpret_cast<const uint8_t*>(bytes.data()),
+                                                                static_cast<int>(bytes.size()), &w, &h, &channels, 4);
         if (!pixels || w <= 0 || h <= 0) {
             cover.failed = true;
         } else {
@@ -373,7 +382,9 @@ const NovaLauncher::CoverTexture* NovaLauncher::GetCoverTexture(const std::strin
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, small.data());
             glBindTexture(GL_TEXTURE_2D, 0);
-            cover.texture = tex; cover.width = sw; cover.height = sh;
+            cover.texture = tex;
+            cover.width = sw;
+            cover.height = sh;
         }
         if (pixels) stbi_image_free(pixels);
         it = m_coverTextures.emplace(path, cover).first;
@@ -384,18 +395,24 @@ const NovaLauncher::CoverTexture* NovaLauncher::GetCoverTexture(const std::strin
 void NovaLauncher::ForgetCoverTexture(const std::string& path) {
     auto it = m_coverTextures.find(path);
     if (it == m_coverTextures.end()) return;
-    if (it->second.texture) { const GLuint t = it->second.texture; glDeleteTextures(1, &t); }
+    if (it->second.texture) {
+        const GLuint t = it->second.texture;
+        glDeleteTextures(1, &t);
+    }
     m_coverTextures.erase(it);
 }
 
 void NovaLauncher::ReleaseCoverTextures() {
     for (auto& [path, cover] : m_coverTextures)
-        if (cover.texture) { const GLuint t = cover.texture; glDeleteTextures(1, &t); }
+        if (cover.texture) {
+            const GLuint t = cover.texture;
+            glDeleteTextures(1, &t);
+        }
     m_coverTextures.clear();
 }
 
 bool NovaLauncher::DrawCover(const std::string& coverPath, float width) {
-    const float height = width * 0.72f;   // N64 boxes are wider than tall
+    const float height = width * 0.72f; // N64 boxes are wider than tall
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const bool clicked = ImGui::InvisibleButton("##cover", ImVec2(width, height));
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -410,8 +427,8 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, float width) {
     } else if (m_iconTex) {
         const float size = height * 0.45f;
         const ImVec2 p0(origin.x + (width - size) * 0.5f, origin.y + (height - size) * 0.5f);
-        draw->AddImage(static_cast<ImTextureID>(m_iconTex), p0, ImVec2(p0.x + size, p0.y + size),
-                       ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 70));
+        draw->AddImage(static_cast<ImTextureID>(m_iconTex), p0, ImVec2(p0.x + size, p0.y + size), ImVec2(0, 0),
+                       ImVec2(1, 1), IM_COL32(255, 255, 255, 70));
     }
     if (ImGui::IsItemHovered())
         draw->AddRect(origin, ImVec2(origin.x + width, origin.y + height), IM_COL32(217, 110, 66, 255), 3.0f, 0, 2.0f);
@@ -432,8 +449,7 @@ void NovaLauncher::RenderGamesTab() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (m_library.empty())
-        ImGui::TextDisabled("No games yet. Add one, or drag a ROM file onto this window.");
+    if (m_library.empty()) ImGui::TextDisabled("No games yet. Add one, or drag a ROM file onto this window.");
 
     int removeIndex = -1;
     const int columns = std::max(1, static_cast<int>(ImGui::GetContentRegionAvail().x / 240.0f));
@@ -481,12 +497,12 @@ void NovaLauncher::RenderGamesTab() {
     auto validate = [&](std::string& path, std::string& title) {
         path = Trim(m_editPathBuffer);
         std::error_code ec;
-        if (path.empty())                         m_modalError = "Choose a ROM file.";
-        else if (!fs::is_regular_file(path, ec))  m_modalError = "That file doesn't exist.";
+        if (path.empty()) m_modalError = "Choose a ROM file.";
+        else if (!fs::is_regular_file(path, ec)) m_modalError = "That file doesn't exist.";
         else if (!IsN64DDDisk(path) && !detail::ReadN64RomHeader(path, &title))
-                                                  m_modalError = "That file isn't an N64 ROM.";
+            m_modalError = "That file isn't an N64 ROM.";
         else if (m_editCoverBuffer[0] != '\0' && !fs::is_regular_file(Trim(m_editCoverBuffer), ec))
-                                                  m_modalError = "The cover image doesn't exist.";
+            m_modalError = "The cover image doesn't exist.";
         else return true;
         return false;
     };
@@ -541,7 +557,7 @@ void NovaLauncher::RenderGamesTab() {
                 std::string cover;
                 if (const std::string picked = Trim(m_editCoverBuffer); !picked.empty()) {
                     cover = detail::ImportCoverImage(picked, finalName);
-                    ForgetCoverTexture(cover);   // the file may have replaced an older picture
+                    ForgetCoverTexture(cover); // the file may have replaced an older picture
                 }
                 AddToLibrary(path, finalName, m_editNotesBuffer, cover);
                 m_showAddModal = false;
@@ -565,8 +581,8 @@ void NovaLauncher::RenderGamesTab() {
                 validate(path, title)) {
                 auto& rom = m_library[m_editingRomIndex];
                 const std::string name = Trim(m_editNameBuffer);
-                rom.path  = path;
-                rom.name  = !name.empty() ? name : !title.empty() ? title : fs::path(path).stem().string();
+                rom.path = path;
+                rom.name = !name.empty() ? name : !title.empty() ? title : fs::path(path).stem().string();
                 rom.notes = m_editNotesBuffer;
                 if (const std::string picked = Trim(m_editCoverBuffer); picked.empty()) {
                     rom.cover.clear();

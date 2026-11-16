@@ -59,7 +59,7 @@ private:
     void Cmd_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         // Turbo3D vertex count: encoded differently than F3D
         // w0 bits [15:4] = data size / 10 = vertex count
-        int count  = ((w0 >> 4) & 0xFFF) / 10;
+        int count = ((w0 >> 4) & 0xFFF) / 10;
         int offset = w0 & 0xF;
         if (count <= 0) return;
 
@@ -72,8 +72,8 @@ private:
         (void)w0;
         // Turbo3D triangle: v indices divided by 5 (not 10 like F3DEX)
         int v0 = ((w1 >> 16) & 0xFF) / 5;
-        int v1 = ((w1 >> 8)  & 0xFF) / 5;
-        int v2 = ( w1        & 0xFF) / 5;
+        int v1 = ((w1 >> 8) & 0xFF) / 5;
+        int v2 = (w1 & 0xFF) / 5;
 
         DrawTriangle(ctx, v0, v1, v2);
         m_trianglesProcessed++;
@@ -128,15 +128,15 @@ public:
         case 0x07: Cmd_ZOBJ(ctx, w0, w1); return !ctx.halted;
         case 0x08: /* WAITSIGNAL - no-op in HLE */ return !ctx.halted;
         case 0x09: Cmd_SENDSIGNAL(ctx, w0, w1); return !ctx.halted;
-        case 0xB8: case 0xDF:
-            EndDisplayList(ctx); return false;
+        case 0xB8:
+        case 0xDF: EndDisplayList(ctx); return false;
         default:
             // RDP passthrough for 0xC0-0xFF range
             if (cmd >= 0xC0) {
                 HandleRDPCommand(ctx, w0, w1);
             } else {
                 NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
-                        "ZSort: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
+                         "ZSort: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
             }
             return !ctx.halted;
         }
@@ -145,16 +145,14 @@ public:
 private:
     struct ZSortObject {
         uint32_t rdramAddr;
-        float    zValue;
+        float zValue;
         uint32_t flags;
     };
 
     std::vector<ZSortObject> m_zObjects;
     uint32_t m_signalMask = 0;
 
-    void Cmd_RDPCMD(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        HandleRDPCommand(ctx, w0, w1);
-    }
+    void Cmd_RDPCMD(DListContext& ctx, uint32_t w0, uint32_t w1) { HandleRDPCommand(ctx, w0, w1); }
 
     void Cmd_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         int count = (w0 >> 12) & 0xFF;
@@ -168,8 +166,8 @@ private:
     void Cmd_TRI(DListContext& ctx, uint32_t w0, uint32_t w1) {
         (void)w0;
         int v0 = ((w1 >> 16) & 0xFF) / 2;
-        int v1 = ((w1 >> 8)  & 0xFF) / 2;
-        int v2 = ( w1        & 0xFF) / 2;
+        int v1 = ((w1 >> 8) & 0xFF) / 2;
+        int v2 = (w1 & 0xFF) / 2;
 
         DrawTriangle(ctx, v0, v1, v2);
         m_trianglesProcessed++;
@@ -191,8 +189,12 @@ private:
         float lx = static_cast<float>(static_cast<int8_t>(src[0])) / 127.0f;
         float ly = static_cast<float>(static_cast<int8_t>(src[1])) / 127.0f;
         float lz = static_cast<float>(static_cast<int8_t>(src[2])) / 127.0f;
-        float len = std::sqrt(lx*lx + ly*ly + lz*lz);
-        if (len > 0.0001f) { lx /= len; ly /= len; lz /= len; }
+        float len = std::sqrt(lx * lx + ly * ly + lz * lz);
+        if (len > 0.0001f) {
+            lx /= len;
+            ly /= len;
+            lz /= len;
+        }
 
         if (geo.numLights < MAX_LIGHTS) {
             geo.lights[0].direction[0] = lx;
@@ -204,12 +206,11 @@ private:
         }
     }
 
-    void Cmd_XFMLIGHT(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        Cmd_LIGHTING(ctx, w0, w1);
-    }
+    void Cmd_XFMLIGHT(DListContext& ctx, uint32_t w0, uint32_t w1) { Cmd_LIGHTING(ctx, w0, w1); }
 
     void Cmd_SETMASK(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        (void)ctx; (void)w0;
+        (void)ctx;
+        (void)w0;
         m_signalMask = w1;
     }
 
@@ -217,19 +218,18 @@ private:
         (void)ctx;
         ZSortObject obj;
         obj.rdramAddr = w1;
-        obj.zValue    = static_cast<float>(static_cast<int16_t>((w0 >> 8) & 0xFFFF)) / 256.0f;
-        obj.flags     = w0 & 0xFF;
+        obj.zValue = static_cast<float>(static_cast<int16_t>((w0 >> 8) & 0xFFFF)) / 256.0f;
+        obj.flags = w0 & 0xFF;
         m_zObjects.push_back(obj);
     }
 
     void Cmd_SENDSIGNAL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        (void)w0; (void)w1;
+        (void)w0;
+        (void)w1;
 
         // Sort accumulated Z-objects back-to-front for correct transparency
         std::sort(m_zObjects.begin(), m_zObjects.end(),
-            [](const ZSortObject& a, const ZSortObject& b) {
-                return a.zValue > b.zValue;
-            });
+                  [](const ZSortObject& a, const ZSortObject& b) { return a.zValue > b.zValue; });
 
         // Process each object's sub-display-list
         for (const auto& obj : m_zObjects) {
@@ -238,13 +238,13 @@ private:
                 uint32_t savedPc = ctx.pc;
                 int savedDepth = ctx.dlStackDepth;
                 bool savedHalted = ctx.halted;
-                
+
                 // Hide outer stack so ENDDL nicely halts inner execution
                 ctx.dlStackDepth = 0;
                 ctx.halted = false;
-                
+
                 ExecuteDisplayList(ctx, addr);
-                
+
                 // Restore outer context state
                 ctx.pc = savedPc;
                 ctx.dlStackDepth = savedDepth;
@@ -292,27 +292,27 @@ public:
         case 0xBB: Cmd_TEXTURE(ctx, w0, w1); return !ctx.halted;
         case 0xDE: Cmd_DL(ctx, w0, w1); return !ctx.halted;
         case 0x09: Cmd_BILLBOARD(ctx, w0, w1); return !ctx.halted;
-        case 0xB8: case 0xDF:
-            EndDisplayList(ctx); return false;
+        case 0xB8:
+        case 0xDF: EndDisplayList(ctx); return false;
         default:
             if (cmd >= 0xC0) {
                 HandleRDPCommand(ctx, w0, w1);
             } else {
                 NOVA_LOG(LogLevel::Warning, LogSubsystem::Microcode,
-                        "DKR: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
+                         "DKR: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
             }
             return !ctx.halted;
         }
     }
 
 private:
-    bool     m_billboardEnabled = false;
+    bool m_billboardEnabled = false;
     uint32_t m_vtxBaseAddr = 0;
-    int      m_textureIndex = 0;
+    int m_textureIndex = 0;
 
     void Cmd_VTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         // DKR vertex format: 10 bytes per vertex
-        int count  = ((w0 >> 4) & 0x1F) + 1;
+        int count = ((w0 >> 4) & 0x1F) + 1;
         int offset = (w0 >> 9) & 0x1F;
         uint32_t addr = ctx.ResolveAddress(w1);
 
@@ -353,8 +353,8 @@ private:
     void Cmd_TRI1(DListContext& ctx, uint32_t w0, uint32_t w1) {
         (void)w0;
         int v0 = ((w1 >> 16) & 0xFF) / 10;
-        int v1 = ((w1 >> 8)  & 0xFF) / 10;
-        int v2 = ( w1        & 0xFF) / 10;
+        int v1 = ((w1 >> 8) & 0xFF) / 10;
+        int v2 = (w1 & 0xFF) / 10;
 
         DrawTriangle(ctx, v0, v1, v2);
         m_trianglesProcessed++;
@@ -362,11 +362,11 @@ private:
 
     void Cmd_TRI2(DListContext& ctx, uint32_t w0, uint32_t w1) {
         int v0 = ((w0 >> 16) & 0xFF) / 10;
-        int v1 = ((w0 >> 8)  & 0xFF) / 10;
-        int v2 = ( w0        & 0xFF) / 10;
+        int v1 = ((w0 >> 8) & 0xFF) / 10;
+        int v2 = (w0 & 0xFF) / 10;
         int v3 = ((w1 >> 16) & 0xFF) / 10;
-        int v4 = ((w1 >> 8)  & 0xFF) / 10;
-        int v5 = ( w1        & 0xFF) / 10;
+        int v4 = ((w1 >> 8) & 0xFF) / 10;
+        int v5 = (w1 & 0xFF) / 10;
 
         DrawTriangle(ctx, v0, v1, v2);
         DrawTriangle(ctx, v3, v4, v5);
@@ -411,8 +411,7 @@ private:
             }
             break;
         }
-        default:
-            break;
+        default: break;
         }
     }
 
@@ -428,9 +427,15 @@ private:
             auto& geo = ctx.state->geometry;
             auto& mv = geo.modelView;
             // Preserve translation (column 3), set rotation to identity
-            mv.m[0][0] = 1.0f; mv.m[0][1] = 0.0f; mv.m[0][2] = 0.0f;
-            mv.m[1][0] = 0.0f; mv.m[1][1] = 1.0f; mv.m[1][2] = 0.0f;
-            mv.m[2][0] = 0.0f; mv.m[2][1] = 0.0f; mv.m[2][2] = 1.0f;
+            mv.m[0][0] = 1.0f;
+            mv.m[0][1] = 0.0f;
+            mv.m[0][2] = 0.0f;
+            mv.m[1][0] = 0.0f;
+            mv.m[1][1] = 1.0f;
+            mv.m[1][2] = 0.0f;
+            mv.m[2][0] = 0.0f;
+            mv.m[2][1] = 0.0f;
+            mv.m[2][2] = 1.0f;
             geo.combinedDirty = true;
         }
     }
@@ -449,7 +454,7 @@ private:
             int idx = startIndex + i;
             if (idx >= VERTEX_BUFFER_SIZE) break;
             TransformedVertex& tv = geo.vertexBuffer[idx];
-            float in[4] = { tv.position[0], tv.position[1], tv.position[2], 1.0f };
+            float in[4] = {tv.position[0], tv.position[1], tv.position[2], 1.0f};
             float out[4];
             // Row-vector convention (v_clip = v * combinedMatrix), matching
             // every other transform in this codebase (GBIHandler::
@@ -460,10 +465,8 @@ private:
             // vector, M*v) convention -- which transposes the transform and
             // produces wrong vertex positions for any DKR-microcode content.
             for (int c = 0; c < 4; ++c) {
-                out[c] = in[0] * geo.combinedMatrix.m[0][c] +
-                         in[1] * geo.combinedMatrix.m[1][c] +
-                         in[2] * geo.combinedMatrix.m[2][c] +
-                         in[3] * geo.combinedMatrix.m[3][c];
+                out[c] = in[0] * geo.combinedMatrix.m[0][c] + in[1] * geo.combinedMatrix.m[1][c] +
+                         in[2] * geo.combinedMatrix.m[2][c] + in[3] * geo.combinedMatrix.m[3][c];
             }
             tv.position[0] = out[0];
             tv.position[1] = out[1];
@@ -502,26 +505,25 @@ public:
         case 0x0A: Cmd_WATER(ctx, w0, w1); return !ctx.halted;
         case 0x0B: Cmd_HEIGHTMAP(ctx, w0, w1); return !ctx.halted;
         case 0x0C: Cmd_AMBIENT(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DEXHandler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DEXHandler::ProcessCommand(ctx, w0, w1);
         }
     }
 
 private:
     struct WaterState {
-        float    amplitude   = 0.0f;
-        float    frequency   = 0.0f;
-        float    phase       = 0.0f;
+        float amplitude = 0.0f;
+        float frequency = 0.0f;
+        float phase = 0.0f;
         uint32_t heightmapAddr = 0;
-        int      gridWidth   = 0;
-        int      gridHeight  = 0;
+        int gridWidth = 0;
+        int gridHeight = 0;
     };
     WaterState m_water;
 
     void Cmd_WATER(DListContext& ctx, uint32_t w0, uint32_t w1) {
         m_water.amplitude = static_cast<float>(static_cast<int16_t>((w0 >> 8) & 0xFFFF)) / 256.0f;
         m_water.frequency = static_cast<float>(static_cast<int16_t>(w1 >> 16)) / 256.0f;
-        m_water.phase     = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF)) / 256.0f;
+        m_water.phase = static_cast<float>(static_cast<int16_t>(w1 & 0xFFFF)) / 256.0f;
 
         if (!ctx.state) return;
         auto& geo = ctx.state->geometry;
@@ -529,8 +531,7 @@ private:
         for (int i = 0; i < VERTEX_BUFFER_SIZE; ++i) {
             auto& tv = geo.vertexBuffer[i];
             if (geo.vertexLoaded[i] && tv.position[3] != 0.0f) {
-                float waveOffset = m_water.amplitude *
-                    std::sin(m_water.frequency * tv.position[0] + m_water.phase);
+                float waveOffset = m_water.amplitude * std::sin(m_water.frequency * tv.position[0] + m_water.phase);
                 tv.position[1] += waveOffset;
             }
         }
@@ -538,8 +539,8 @@ private:
 
     void Cmd_HEIGHTMAP(DListContext& ctx, uint32_t w0, uint32_t w1) {
         m_water.heightmapAddr = ctx.ResolveAddress(w1);
-        m_water.gridWidth     = (w0 >> 8) & 0xFF;
-        m_water.gridHeight    = w0 & 0xFF;
+        m_water.gridWidth = (w0 >> 8) & 0xFF;
+        m_water.gridHeight = w0 & 0xFF;
 
         if (!ctx.state || m_water.gridWidth == 0 || m_water.gridHeight == 0) return;
 
@@ -553,8 +554,7 @@ private:
         for (int z = 0; z < m_water.gridHeight && cellIdx < VERTEX_BUFFER_SIZE; z++) {
             for (int x = 0; x < m_water.gridWidth && cellIdx < VERTEX_BUFFER_SIZE; x++) {
                 int mapOffset = (z * m_water.gridWidth + x) * 2;
-                int16_t height = static_cast<int16_t>(
-                    (mapData[mapOffset] << 8) | mapData[mapOffset + 1]);
+                int16_t height = static_cast<int16_t>((mapData[mapOffset] << 8) | mapData[mapOffset + 1]);
                 geo.vertexBuffer[cellIdx].position[1] += static_cast<float>(height) / 256.0f;
                 cellIdx++;
             }
@@ -611,8 +611,8 @@ private:
     bool m_compressedVtx = false;
 
     void Cmd_VTX_SW(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        int count  = ((w0 >> 12) & 0xFF);
-        int vbidx  = ((w0 >> 1) & 0x7F) - count;
+        int count = ((w0 >> 12) & 0xFF);
+        int vbidx = ((w0 >> 1) & 0x7F) - count;
         if (vbidx < 0) vbidx = 0;
 
         if (m_compressedVtx) {
@@ -646,8 +646,8 @@ private:
             // Color packed as RGBA5551
             uint16_t rgba = static_cast<uint16_t>((src[6] << 8) | src[7]);
             tv.color[0] = static_cast<float>((rgba >> 11) & 0x1F) / 31.0f;
-            tv.color[1] = static_cast<float>((rgba >> 6)  & 0x1F) / 31.0f;
-            tv.color[2] = static_cast<float>((rgba >> 1)  & 0x1F) / 31.0f;
+            tv.color[1] = static_cast<float>((rgba >> 6) & 0x1F) / 31.0f;
+            tv.color[2] = static_cast<float>((rgba >> 1) & 0x1F) / 31.0f;
             tv.color[3] = (rgba & 1) ? 1.0f : 0.0f;
 
             tv.texCoord[0] = 0.0f;
@@ -661,13 +661,11 @@ private:
             // indexing was the transposed (column-vector) convention,
             // inconsistent with how combinedMatrix is populated everywhere
             // else in this codebase.
-            float in[4] = { x, y, z, 1.0f };
+            float in[4] = {x, y, z, 1.0f};
             float out[4];
             for (int c = 0; c < 4; ++c) {
-                out[c] = in[0] * geo.combinedMatrix.m[0][c] +
-                         in[1] * geo.combinedMatrix.m[1][c] +
-                         in[2] * geo.combinedMatrix.m[2][c] +
-                         in[3] * geo.combinedMatrix.m[3][c];
+                out[c] = in[0] * geo.combinedMatrix.m[0][c] + in[1] * geo.combinedMatrix.m[1][c] +
+                         in[2] * geo.combinedMatrix.m[2][c] + in[3] * geo.combinedMatrix.m[3][c];
             }
             tv.position[0] = out[0];
             tv.position[1] = out[1];
@@ -696,18 +694,19 @@ private:
         // -of-every-quad bug (root cause of "shattered glass" skies/backgrounds)
         // independently, since it decodes QUAD itself instead of delegating.
         int v0 = ((w0 >> 16) & 0xFF) / 2;
-        int v1 = ((w0 >> 8)  & 0xFF) / 2;
-        int v2 = ( w0        & 0xFF) / 2;
+        int v1 = ((w0 >> 8) & 0xFF) / 2;
+        int v2 = (w0 & 0xFF) / 2;
         int v3 = ((w1 >> 16) & 0xFF) / 2;
-        int v4 = ((w1 >> 8)  & 0xFF) / 2;
-        int v5 = ( w1        & 0xFF) / 2;
+        int v4 = ((w1 >> 8) & 0xFF) / 2;
+        int v5 = (w1 & 0xFF) / 2;
 
         DrawTriangle2(ctx, v0, v1, v2, v3, v4, v5);
         m_trianglesProcessed += 2;
     }
 
     void Cmd_SPECIAL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-        (void)ctx; (void)w1;
+        (void)ctx;
+        (void)w1;
         int subCmd = (w0 >> 16) & 0xFF;
 
         switch (subCmd) {
@@ -728,8 +727,8 @@ private:
     void Cmd_SETOTHERMODE_L_EX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
         uint32_t shift = (w0 >> 8) & 0xFF;
-        uint32_t len   = (w0     ) & 0xFF;
-        uint32_t mask  = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
+        uint32_t len = (w0) & 0xFF;
+        uint32_t mask = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
         ctx.state->otherModeL = (ctx.state->otherModeL & ~mask) | (w1 & mask);
     }
 
@@ -737,8 +736,8 @@ private:
     void Cmd_SETOTHERMODE_H_EX(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
         uint32_t shift = (w0 >> 8) & 0xFF;
-        uint32_t len   = (w0     ) & 0xFF;
-        uint32_t mask  = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
+        uint32_t len = (w0) & 0xFF;
+        uint32_t mask = (len < 32) ? ((1u << len) - 1u) << shift : 0xFFFFFFFFu;
         ctx.state->otherModeH = (ctx.state->otherModeH & ~mask) | (w1 & mask);
     }
 
@@ -772,15 +771,14 @@ public:
         switch (cmd) {
         case 0xB5: Cmd_LINE3D(ctx, w0, w1); return !ctx.halted;
         case 0xBF: Cmd_TRI1_AsLines(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DHandler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DHandler::ProcessCommand(ctx, w0, w1);
         }
     }
 
 private:
     void Cmd_LINE3D(DListContext& ctx, uint32_t /*w0*/, uint32_t w1) {
         int v0 = ((w1 >> 16) & 0xFF) / 10;
-        int v1 = ((w1 >> 8)  & 0xFF) / 10;
+        int v1 = ((w1 >> 8) & 0xFF) / 10;
         // Render line as degenerate triangle
         DrawTriangle(ctx, v0, v1, v0);
         m_trianglesProcessed++;
@@ -788,8 +786,8 @@ private:
 
     void Cmd_TRI1_AsLines(DListContext& ctx, uint32_t /*w0*/, uint32_t w1) {
         int v0 = ((w1 >> 16) & 0xFF) / 10;
-        int v1 = ((w1 >> 8)  & 0xFF) / 10;
-        int v2 = ( w1        & 0xFF) / 10;
+        int v1 = ((w1 >> 8) & 0xFF) / 10;
+        int v2 = (w1 & 0xFF) / 10;
         // Decompose triangle into 3 lines
         DrawTriangle(ctx, v0, v1, v0);
         DrawTriangle(ctx, v1, v2, v1);
@@ -817,23 +815,22 @@ public:
         case 0xB1: Cmd_TRI2_AsLines(ctx, w0, w1); return !ctx.halted;
         case 0xB5: Cmd_LINE3D(ctx, w0, w1); return !ctx.halted;
         case 0xBF: Cmd_TRI1_AsLines(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DEXHandler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DEXHandler::ProcessCommand(ctx, w0, w1);
         }
     }
 
 private:
     void Cmd_LINE3D(DListContext& ctx, uint32_t /*w0*/, uint32_t w1) {
         int v0 = ((w1 >> 16) & 0xFF) / 2;
-        int v1 = ((w1 >> 8)  & 0xFF) / 2;
+        int v1 = ((w1 >> 8) & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         m_trianglesProcessed++;
     }
 
     void Cmd_TRI1_AsLines(DListContext& ctx, uint32_t /*w0*/, uint32_t w1) {
         int v0 = ((w1 >> 16) & 0xFF) / 2;
-        int v1 = ((w1 >> 8)  & 0xFF) / 2;
-        int v2 = ( w1        & 0xFF) / 2;
+        int v1 = ((w1 >> 8) & 0xFF) / 2;
+        int v2 = (w1 & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         DrawTriangle(ctx, v1, v2, v1);
         DrawTriangle(ctx, v2, v0, v2);
@@ -842,11 +839,11 @@ private:
 
     void Cmd_TRI2_AsLines(DListContext& ctx, uint32_t w0, uint32_t w1) {
         int v0 = ((w0 >> 16) & 0xFF) / 2;
-        int v1 = ((w0 >> 8)  & 0xFF) / 2;
-        int v2 = ( w0        & 0xFF) / 2;
+        int v1 = ((w0 >> 8) & 0xFF) / 2;
+        int v2 = (w0 & 0xFF) / 2;
         int v3 = ((w1 >> 16) & 0xFF) / 2;
-        int v4 = ((w1 >> 8)  & 0xFF) / 2;
-        int v5 = ( w1        & 0xFF) / 2;
+        int v4 = ((w1 >> 8) & 0xFF) / 2;
+        int v5 = (w1 & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         DrawTriangle(ctx, v1, v2, v1);
         DrawTriangle(ctx, v2, v0, v2);
@@ -876,23 +873,22 @@ public:
         case 0x05: Cmd_TRI1_AsLines(ctx, w0, w1); return !ctx.halted;
         case 0x06: Cmd_TRI2_AsLines(ctx, w0, w1); return !ctx.halted;
         case 0x08: Cmd_LINE3D(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
         }
     }
 
 private:
     void Cmd_LINE3D(DListContext& ctx, uint32_t w0, uint32_t /*w1*/) {
         int v0 = ((w0 >> 16) & 0xFF) / 2;
-        int v1 = ((w0 >> 8)  & 0xFF) / 2;
+        int v1 = ((w0 >> 8) & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         m_trianglesProcessed++;
     }
 
     void Cmd_TRI1_AsLines(DListContext& ctx, uint32_t w0, uint32_t /*w1*/) {
         int v0 = ((w0 >> 16) & 0xFF) / 2;
-        int v1 = ((w0 >> 8)  & 0xFF) / 2;
-        int v2 = ( w0        & 0xFF) / 2;
+        int v1 = ((w0 >> 8) & 0xFF) / 2;
+        int v2 = (w0 & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         DrawTriangle(ctx, v1, v2, v1);
         DrawTriangle(ctx, v2, v0, v2);
@@ -901,11 +897,11 @@ private:
 
     void Cmd_TRI2_AsLines(DListContext& ctx, uint32_t w0, uint32_t w1) {
         int v0 = ((w0 >> 16) & 0xFF) / 2;
-        int v1 = ((w0 >> 8)  & 0xFF) / 2;
-        int v2 = ( w0        & 0xFF) / 2;
+        int v1 = ((w0 >> 8) & 0xFF) / 2;
+        int v2 = (w0 & 0xFF) / 2;
         int v3 = ((w1 >> 16) & 0xFF) / 2;
-        int v4 = ((w1 >> 8)  & 0xFF) / 2;
-        int v5 = ( w1        & 0xFF) / 2;
+        int v4 = ((w1 >> 8) & 0xFF) / 2;
+        int v5 = (w1 & 0xFF) / 2;
         DrawTriangle(ctx, v0, v1, v0);
         DrawTriangle(ctx, v1, v2, v1);
         DrawTriangle(ctx, v2, v0, v2);
@@ -940,8 +936,7 @@ public:
         case 0xB3: /* G_RDPHALF_1 in SetA */ m_rdpHalf1 = w1; return !ctx.halted;
         case 0xB4: /* G_PERSPNORM in SetA (no-op in HLE) */ return !ctx.halted;
         case 0xBC: Cmd_MOVEWORD_SETA(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DHandler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DHandler::ProcessCommand(ctx, w0, w1);
         }
     }
 
@@ -1010,8 +1005,7 @@ public:
         uint8_t cmd = (w0 >> 24) & 0xFF;
         switch (cmd) {
         case 0xDC: Cmd_MOVEMEM_Acclaim(ctx, w0, w1); return !ctx.halted;
-        default:
-            return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
+        default:   return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
         }
     }
 
@@ -1037,11 +1031,15 @@ private:
             geo.lights[lightIdx].color[1] = static_cast<float>(src[1]) / 255.0f;
             geo.lights[lightIdx].color[2] = static_cast<float>(src[2]) / 255.0f;
 
-            float nx = static_cast<float>(static_cast<int8_t>(src[8]))  / 127.0f;
-            float ny = static_cast<float>(static_cast<int8_t>(src[9]))  / 127.0f;
+            float nx = static_cast<float>(static_cast<int8_t>(src[8])) / 127.0f;
+            float ny = static_cast<float>(static_cast<int8_t>(src[9])) / 127.0f;
             float nz = static_cast<float>(static_cast<int8_t>(src[10])) / 127.0f;
-            float len = std::sqrt(nx*nx + ny*ny + nz*nz);
-            if (len > 0.0001f) { nx /= len; ny /= len; nz /= len; }
+            float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 0.0001f) {
+                nx /= len;
+                ny /= len;
+                nz /= len;
+            }
             geo.lights[lightIdx].direction[0] = nx;
             geo.lights[lightIdx].direction[1] = ny;
             geo.lights[lightIdx].direction[2] = nz;
@@ -1078,8 +1076,7 @@ public:
             F3DEX2Handler::ProcessCommand(ctx, w0, w1);
             UpdateF3DAMFogUsage(ctx);
             return !ctx.halted;
-        default:
-            return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
+        default: return F3DEX2Handler::ProcessCommand(ctx, w0, w1);
         }
         return !ctx.halted;
     }
@@ -1098,12 +1095,9 @@ private:
         if (!ctx.state) return;
         auto& geo = ctx.state->geometry;
         int16_t fogMode = static_cast<int16_t>(((geo.geometryMode >> 13) & 9) + 0xFFF8);
-        if (fogMode == 0)
-            geo.fogUsage = 1; // standard fog
-        else if (fogMode > 0)
-            geo.fogUsage = 2; // F3DAM mode 2: fog replaces shade RGB
-        else
-            geo.fogUsage = (geo.geometryMode & 0x00010000) ? 1 : 0; // G_FOG flag
+        if (fogMode == 0) geo.fogUsage = 1;                          // standard fog
+        else if (fogMode > 0) geo.fogUsage = 2;                      // F3DAM mode 2: fog replaces shade RGB
+        else geo.fogUsage = (geo.geometryMode & 0x00010000) ? 1 : 0; // G_FOG flag
     }
 
     // ─── F3DAM MoveWord: extends MW_FOG with texcoord scale registers ───
@@ -1117,12 +1111,8 @@ private:
             case 0x00: // Standard fog factor
                 MoveWord(ctx, index, offset, w1);
                 return;
-            case 0x0C:
-                m_textureCoordScale[0] = w1;
-                return;
-            case 0x10:
-                m_textureCoordScale[1] = w1;
-                return;
+            case 0x0C: m_textureCoordScale[0] = w1; return;
+            case 0x10: m_textureCoordScale[1] = w1; return;
             }
         }
         // Fallthrough for all other MoveWord types
@@ -1214,10 +1204,10 @@ private:
         uint32_t sres = ((((m_textureCoordScaleOrg >> 16) & 0xFFFF) * s0) << 1) + acum_0;
         uint32_t tres = ((((m_textureCoordScale[1] >> 16) & 0xFFFF) * s0) << 1) + acum_1;
 
-        int16_t finalS = static_cast<int16_t>((sres >> 16) & 0xFFFF) +
-                         static_cast<int16_t>((m_textureCoordScale[0] >> 16) & 0xFFFF);
-        int16_t finalT = static_cast<int16_t>((tres >> 16) & 0xFFFF) +
-                         static_cast<int16_t>(m_textureCoordScale[0] & 0xFFFF);
+        int16_t finalS =
+            static_cast<int16_t>((sres >> 16) & 0xFFFF) + static_cast<int16_t>((m_textureCoordScale[0] >> 16) & 0xFFFF);
+        int16_t finalT =
+            static_cast<int16_t>((tres >> 16) & 0xFFFF) + static_cast<int16_t>(m_textureCoordScale[0] & 0xFFFF);
 
         tv.s = static_cast<float>(finalS) * (1.0f / 32.0f);
         tv.t = static_cast<float>(finalT) * (1.0f / 32.0f);
@@ -1300,7 +1290,7 @@ public:
                 HandleRDPCommand(ctx, w0, w1);
             } else {
                 NOVA_LOG(LogLevel::Debug, LogSubsystem::Microcode,
-                    "ZSortBOSS: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
+                         "ZSortBOSS: Unknown opcode 0x{:02X} (w0=0x{:08X}, w1=0x{:08X})", cmd, w0, w1);
             }
             return !ctx.halted;
         }
@@ -1311,19 +1301,19 @@ private:
     enum DLState : uint8_t { DEFAULT_DL = 0, PROCESSED_DL = 1 };
 
     struct BOSSState {
-        DLState  mainDL = DEFAULT_DL;
-        DLState  subDL  = DEFAULT_DL;
+        DLState mainDL = DEFAULT_DL;
+        DLState subDL = DEFAULT_DL;
         uint32_t updateMask[2] = {};
-        float    viewScale[2] = {};
-        float    viewTrans[2] = {};
+        float viewScale[2] = {};
+        float viewTrans[2] = {};
         uint32_t rdpCmds[3] = {};
-        float    invwFactor = 10.0f;
-        uint8_t  fogTable[256] = {};
-        int16_t  table[8][8] = {};
+        float invwFactor = 10.0f;
+        uint8_t fogTable[256] = {};
+        int16_t table[8][8] = {};
 
         // DMEM buffer for vertex data, normals, etc.
         static constexpr uint32_t DMEM_SIZE = 4096;
-        uint8_t  dmem[DMEM_SIZE] = {};
+        uint8_t dmem[DMEM_SIZE] = {};
     };
     BOSSState m_boss;
 
@@ -1333,23 +1323,26 @@ private:
     void ResetState() {
         m_boss = BOSSState{};
         m_boss.invwFactor = 10.0f;
-        m_lookat[0][0] = 1.0f; m_lookat[0][1] = 0.0f; m_lookat[0][2] = 0.0f;
-        m_lookat[1][0] = 0.0f; m_lookat[1][1] = 1.0f; m_lookat[1][2] = 0.0f;
+        m_lookat[0][0] = 1.0f;
+        m_lookat[0][1] = 0.0f;
+        m_lookat[0][2] = 0.0f;
+        m_lookat[1][0] = 0.0f;
+        m_lookat[1][1] = 1.0f;
+        m_lookat[1][2] = 0.0f;
     }
 
     // ─── Helper: read s16 from DMEM with XOR swap ────────────
     int16_t DmemReadS16(uint32_t addr) const {
         addr &= (BOSSState::DMEM_SIZE - 1);
         uint32_t swapped = addr ^ 2;
-        return static_cast<int16_t>(
-            (static_cast<uint16_t>(m_boss.dmem[swapped]) << 8) |
-             static_cast<uint16_t>(m_boss.dmem[swapped + 1]));
+        return static_cast<int16_t>((static_cast<uint16_t>(m_boss.dmem[swapped]) << 8) |
+                                    static_cast<uint16_t>(m_boss.dmem[swapped + 1]));
     }
 
     void DmemWriteS16(uint32_t addr, int16_t val) {
         addr &= (BOSSState::DMEM_SIZE - 1);
         uint32_t swapped = addr ^ 2;
-        m_boss.dmem[swapped]     = static_cast<uint8_t>((val >> 8) & 0xFF);
+        m_boss.dmem[swapped] = static_cast<uint8_t>((val >> 8) & 0xFF);
         m_boss.dmem[swapped + 1] = static_cast<uint8_t>(val & 0xFF);
     }
 
@@ -1359,10 +1352,8 @@ private:
 
     uint32_t DmemReadU32(uint32_t addr) const {
         addr &= (BOSSState::DMEM_SIZE - 1);
-        return (static_cast<uint32_t>(m_boss.dmem[addr]) << 24) |
-               (static_cast<uint32_t>(m_boss.dmem[addr + 1]) << 16) |
-               (static_cast<uint32_t>(m_boss.dmem[addr + 2]) << 8) |
-                static_cast<uint32_t>(m_boss.dmem[addr + 3]);
+        return (static_cast<uint32_t>(m_boss.dmem[addr]) << 24) | (static_cast<uint32_t>(m_boss.dmem[addr + 1]) << 16) |
+               (static_cast<uint32_t>(m_boss.dmem[addr + 2]) << 8) | static_cast<uint32_t>(m_boss.dmem[addr + 3]);
     }
 
     // ─── Resolve matrix pointer from DMEM offset ─────────────
@@ -1374,7 +1365,7 @@ private:
         case 0x830: return &geo.modelViewStack[geo.modelViewStackDepth];
         case 0x870: return &geo.projectionStack[geo.projectionStackDepth];
         case 0x8b0: return &geo.combinedMatrix;
-        default: return nullptr;
+        default:    return nullptr;
         }
     }
 
@@ -1382,9 +1373,7 @@ private:
     static float Fixed2Float(int16_t val, int fracBits) {
         return static_cast<float>(val) / static_cast<float>(1 << fracBits);
     }
-    static float FixedColor(uint8_t val) {
-        return static_cast<float>(val) / 255.0f;
-    }
+    static float FixedColor(uint8_t val) { return static_cast<float>(val) / 255.0f; }
 
     // ─── Helper: Calc_invw (from GlideN64) ──────────────────
     static float CalcInvW(int _w) {
@@ -1404,9 +1393,9 @@ private:
                 uint16_t fracPart = static_cast<uint16_t>(fixedVal & 0xFFFF);
                 uint32_t intOff = addr + (i * 8) + ((j ^ 1) * 2);
                 uint32_t fracOff = addr + 32 + (i * 8) + ((j ^ 1) * 2);
-                rdram[intOff]     = static_cast<uint8_t>((intPart >> 8) & 0xFF);
+                rdram[intOff] = static_cast<uint8_t>((intPart >> 8) & 0xFF);
                 rdram[intOff + 1] = static_cast<uint8_t>(intPart & 0xFF);
-                rdram[fracOff]     = static_cast<uint8_t>((fracPart >> 8) & 0xFF);
+                rdram[fracOff] = static_cast<uint8_t>((fracPart >> 8) & 0xFF);
                 rdram[fracOff + 1] = static_cast<uint8_t>(fracPart & 0xFF);
             }
         }
@@ -1418,7 +1407,7 @@ private:
         vr[0] = mtx.m[0][0] * vec[0] + mtx.m[1][0] * vec[1] + mtx.m[2][0] * vec[2];
         vr[1] = mtx.m[0][1] * vec[0] + mtx.m[1][1] * vec[1] + mtx.m[2][1] * vec[2];
         vr[2] = mtx.m[0][2] * vec[0] + mtx.m[1][2] * vec[1] + mtx.m[2][2] * vec[2];
-        float len = vr[0]*vr[0] + vr[1]*vr[1] + vr[2]*vr[2];
+        float len = vr[0] * vr[0] + vr[1] * vr[1] + vr[2] * vr[2];
         float recip = (len > 0.0f) ? (1.0f / std::sqrt(len)) : 256.0f;
         if (recip > 256.0f) recip = 256.0f;
         vec[0] = vr[0] * recip;
@@ -1427,9 +1416,7 @@ private:
     }
 
     // ─── Dot product ─────────────────────────────────────────
-    static float Dot3(const float a[3], const float b[3]) {
-        return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-    }
+    static float Dot3(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
     // ═══ Command implementations ══════════════════════════════
 
@@ -1466,7 +1453,7 @@ private:
         }
         // Write to DMEM emulation
         if (dmemOff + 4 <= BOSSState::DMEM_SIZE) {
-            m_boss.dmem[dmemOff]     = static_cast<uint8_t>((w1 >> 24) & 0xFF);
+            m_boss.dmem[dmemOff] = static_cast<uint8_t>((w1 >> 24) & 0xFF);
             m_boss.dmem[dmemOff + 1] = static_cast<uint8_t>((w1 >> 16) & 0xFF);
             m_boss.dmem[dmemOff + 2] = static_cast<uint8_t>((w1 >> 8) & 0xFF);
             m_boss.dmem[dmemOff + 3] = static_cast<uint8_t>(w1 & 0xFF);
@@ -1542,7 +1529,7 @@ private:
             geo.fogOffset = fogOff;
 
             geo.viewport.scaleX = scaleX;
-            geo.viewport.scaleY = -scaleY;  // negate: N64 Y-down → GL Y-up
+            geo.viewport.scaleY = -scaleY; // negate: N64 Y-down → GL Y-up
             geo.viewport.scaleZ = scaleZ;
             geo.viewport.transX = transX;
             geo.viewport.transY = transY;
@@ -1585,7 +1572,7 @@ private:
 
         Matrix4x4* srcS = ResolveMtx(ctx, S);
         Matrix4x4* srcT = ResolveMtx(ctx, T);
-        Matrix4x4* dst  = ResolveMtx(ctx, D);
+        Matrix4x4* dst = ResolveMtx(ctx, D);
         if (!srcS || !srcT || !dst) return;
 
         *dst = (*srcS) * (*srcT);
@@ -1599,8 +1586,7 @@ private:
 
         Matrix4x4 tmp = *mtx;
         for (int i = 0; i < 3; i++)
-            for (int j = 0; j < 3; j++)
-                mtx->m[j][i] = tmp.m[i][j];
+            for (int j = 0; j < 3; j++) mtx->m[j][i] = tmp.m[i][j];
     }
 
     void Cmd_MultMPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -1630,13 +1616,12 @@ private:
             srcDmem += 6;
 
             const auto& cm = geo.combinedMatrix;
-            float x = sx*cm.m[0][0] + sy*cm.m[1][0] + sz*cm.m[2][0] + cm.m[3][0];
-            float y = sx*cm.m[0][1] + sy*cm.m[1][1] + sz*cm.m[2][1] + cm.m[3][1];
-            float z = sx*cm.m[0][2] + sy*cm.m[1][2] + sz*cm.m[2][2] + cm.m[3][2];
-            float w = sx*cm.m[0][3] + sy*cm.m[1][3] + sz*cm.m[2][3] + cm.m[3][3];
+            float x = sx * cm.m[0][0] + sy * cm.m[1][0] + sz * cm.m[2][0] + cm.m[3][0];
+            float y = sx * cm.m[0][1] + sy * cm.m[1][1] + sz * cm.m[2][1] + cm.m[3][1];
+            float z = sx * cm.m[0][2] + sy * cm.m[1][2] + sz * cm.m[2][2] + cm.m[3][2];
+            float w = sx * cm.m[0][3] + sy * cm.m[1][3] + sz * cm.m[2][3] + cm.m[3][3];
 
-            uint16_t invw_val = static_cast<uint16_t>(
-                CalcInvW(static_cast<int>(w * m_boss.invwFactor)) * 65536.0f);
+            uint16_t invw_val = static_cast<uint16_t>(CalcInvW(static_cast<int>(w * m_boss.invwFactor)) * 65536.0f);
             (void)invw_val;
 
             float invw = (w <= 0.0f) ? m_boss.invwFactor : (1.0f / w);
@@ -1653,9 +1638,9 @@ private:
             (void)fogVal;
 
             [[maybe_unused]] uint8_t cc = 0;
-            if (x >= w)  cc |= 0x10;
-            if (y >= w)  cc |= 0x20;
-            if (z >= w)  cc |= 0x40;
+            if (x >= w) cc |= 0x10;
+            if (y >= w) cc |= 0x20;
+            if (z >= w) cc |= 0x40;
             if (x <= -w) cc |= 0x01;
             if (y <= -w) cc |= 0x02;
             if (z <= -w) cc |= 0x04;
@@ -1675,8 +1660,8 @@ private:
     }
 
     // Object drawing types
-    static constexpr uint32_t ZH_NULL   = 0;
-    static constexpr uint32_t ZH_TXTRI  = 4;
+    static constexpr uint32_t ZH_NULL = 0;
+    static constexpr uint32_t ZH_TXTRI = 4;
     static constexpr uint32_t ZH_TXQUAD = 8;
 
     void DrawZSortObject(DListContext& ctx, const uint8_t* addr, uint32_t type) {
@@ -1688,7 +1673,7 @@ private:
         case ZH_NULL:   return;
         case ZH_TXTRI:  vnum = 3; break;
         case ZH_TXQUAD: vnum = 4; break;
-        default: return;
+        default:        return;
         }
 
         // Build screen-space rectangles as DecodedRectangle or use DrawTriangleRaw
@@ -1710,15 +1695,12 @@ private:
                 vtx.s = Fixed2Float(static_cast<int16_t>((addr[8] << 8) | addr[9]), 5);
                 vtx.t = Fixed2Float(static_cast<int16_t>((addr[10] << 8) | addr[11]), 5);
 
-                int32_t invwRaw = static_cast<int32_t>(
-                    (addr[12] << 24) | (addr[13] << 16) | (addr[14] << 8) | addr[15]);
-                int32_t rgbaRaw = static_cast<int32_t>(
-                    (addr[4] << 24) | (addr[5] << 16) | (addr[6] << 8) | addr[7]);
+                int32_t invwRaw =
+                    static_cast<int32_t>((addr[12] << 24) | (addr[13] << 16) | (addr[14] << 8) | addr[15]);
+                int32_t rgbaRaw = static_cast<int32_t>((addr[4] << 24) | (addr[5] << 16) | (addr[6] << 8) | addr[7]);
 
-                if (invwRaw == rgbaRaw || invwRaw < 0)
-                    vtx.w = 1.0f;
-                else
-                    vtx.w = CalcInvW(invwRaw) / m_boss.invwFactor;
+                if (invwRaw == rgbaRaw || invwRaw < 0) vtx.w = 1.0f;
+                else vtx.w = CalcInvW(invwRaw) / m_boss.invwFactor;
             }
 
             vtx.screenX = vtx.x;
@@ -1786,7 +1768,7 @@ private:
 
     void Cmd_Lighting(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
-        
+
         uint32_t num = 1 + ((w1 >> 24) & 0xFF);
         uint32_t nsrs = w0 & 0xFFF;
         uint32_t tdest = (w1 & 0xFFF) >> 1;
@@ -1871,8 +1853,8 @@ private:
         if (!ctx.state) return;
         uint32_t shift = w0 & 0x1F;
         uint32_t shr = (w0 >> 8) & 0x1F;
-        uint32_t mask = (shift == 0) ? 0x80000000u
-                                     : static_cast<uint32_t>(static_cast<int32_t>(0x80000000) / (1 << shift));
+        uint32_t mask =
+            (shift == 0) ? 0x80000000u : static_cast<uint32_t>(static_cast<int32_t>(0x80000000) / (1 << shift));
         mask >>= shr;
         ctx.state->otherModeL = (ctx.state->otherModeL & ~mask) | w1;
     }
@@ -1881,18 +1863,16 @@ private:
         if (!ctx.state) return;
         uint32_t shift = w0 & 0x1F;
         uint32_t shr = (w0 >> 8) & 0x1F;
-        uint32_t mask = (shift == 0) ? 0x80000000u
-                                     : static_cast<uint32_t>(static_cast<int32_t>(0x80000000) / (1 << shift));
+        uint32_t mask =
+            (shift == 0) ? 0x80000000u : static_cast<uint32_t>(static_cast<int32_t>(0x80000000) / (1 << shift));
         mask >>= shr;
         ctx.state->otherModeH = (ctx.state->otherModeH & ~mask) | w1;
     }
 
     void Cmd_SetOtherMode(DListContext& ctx, uint32_t w0, uint32_t w1) {
         if (!ctx.state) return;
-        ctx.state->otherModeH = (w0 & m_boss.updateMask[0]) |
-                                (ctx.state->otherModeH & ~m_boss.updateMask[0]);
-        ctx.state->otherModeL = (w1 & m_boss.updateMask[1]) |
-                                (ctx.state->otherModeL & ~m_boss.updateMask[1]);
+        ctx.state->otherModeH = (w0 & m_boss.updateMask[0]) | (ctx.state->otherModeH & ~m_boss.updateMask[0]);
+        ctx.state->otherModeL = (w1 & m_boss.updateMask[1]) | (ctx.state->otherModeL & ~m_boss.updateMask[1]);
     }
 };
 

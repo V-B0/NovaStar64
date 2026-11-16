@@ -15,7 +15,9 @@
 
 #include <memory>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 /// Returns true if a usable Vulkan 1.2+ loader and physical device are
 /// present on the system. Performs a real probe (volkInitialize +
@@ -27,4 +29,6 @@ bool IsVulkanAvailable();
 /// so the factory can report a useful error.
 std::unique_ptr<IRenderer> CreateVulkanRenderer();
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

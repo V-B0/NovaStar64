@@ -18,15 +18,15 @@ class F3DEXHandler : public GBIHandler {
 public:
     F3DEXHandler() = default;
     ~F3DEXHandler() override = default;
-    
+
     void Initialize(const MicrocodeInfo& info) override;
     MicrocodeType GetType() const override { return MicrocodeType::F3DEX; }
     GBIVersion GetGBIVersion() const override { return GBIVersion::GBI1; }
     int GetVertexCacheSize() const override { return 32; } // F3DEX has a 32-vertex cache
     const char* GetName() const override { return "F3DEX"; }
-    
+
     bool ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) override;
-    
+
 protected:
     // ─── F3DEX command handlers (extending F3D) ──────────────────────
     void Cmd_G_VTX(DListContext& ctx, uint32_t w0, uint32_t w1);
@@ -64,19 +64,19 @@ inline void F3DEXHandler::Initialize(const MicrocodeInfo& info) {
 
 inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint8_t opcode = (w0 >> 24) & 0xFF;
-    
+
     if (opcode >= 0xC0) {
         HandleRDPCommand(ctx, w0, w1);
         return true;
     }
-    
+
     switch (opcode) {
     case 0x00: break; // G_SPNOOP
     case 0x01: Cmd_G_MTX(ctx, w0, w1); break;
     case 0x03: Cmd_G_MOVEMEM(ctx, w0, w1); break;
     case 0x04: Cmd_G_VTX(ctx, w0, w1); break;
     case 0x06: Cmd_G_DL(ctx, w0, w1); break;
-    
+
     case 0xAF: Cmd_G_LOAD_UCODE(ctx, w0, w1); break;
     case 0xB0: Cmd_G_BRANCH_Z(ctx, w0, w1); break;
     case 0xB1: Cmd_G_TRI2(ctx, w0, w1); break;
@@ -94,17 +94,16 @@ inline bool F3DEXHandler::ProcessCommand(DListContext& ctx, uint32_t w0, uint32_
     case 0xBD: Cmd_G_POPMTX(ctx, w0, w1); break;
     case 0xBE: Cmd_G_CULLDL(ctx, w0, w1); break;
     case 0xBF: Cmd_G_TRI1(ctx, w0, w1); break;
-    
+
     default: {
         static int s_unknownLogCount = 0;
         if (++s_unknownLogCount <= 4) {
-            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core,
-                    "F3DEX: Unknown opcode 0x{:02X}", opcode);
+            NOVA_LOG(LogLevel::Debug, LogSubsystem::Core, "F3DEX: Unknown opcode 0x{:02X}", opcode);
         }
         break;
     }
     }
-    
+
     return !ctx.halted;
 }
 
@@ -179,7 +178,9 @@ inline void F3DEXHandler::Cmd_G_LINE3D(DListContext& ctx, uint32_t w0, uint32_t 
     // approach (DrawTriangle(ctx, v0, v1, v0)) is silently discarded by the
     // v0==v2 guard in DrawTriangle, so it was a no-op. Skip until a proper
     // line-draw path (thin-quad or rasterizer line) is added.
-    (void)ctx; (void)w0; (void)w1;
+    (void)ctx;
+    (void)w0;
+    (void)w1;
 }
 
 inline void F3DEXHandler::Cmd_G_MODIFYVTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
@@ -238,7 +239,7 @@ inline void F3DEXHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_
                 auto& light = ctx.state->geometry.lights[lightIdx];
                 light.color[0] = static_cast<float>((w1 >> 24) & 0xFF) / 255.0f;
                 light.color[1] = static_cast<float>((w1 >> 16) & 0xFF) / 255.0f;
-                light.color[2] = static_cast<float>((w1 >> 8)  & 0xFF) / 255.0f;
+                light.color[2] = static_cast<float>((w1 >> 8) & 0xFF) / 255.0f;
                 ctx.state->MarkDirty(RDPDirtyFlag::Lights);
             }
         }
@@ -248,37 +249,36 @@ inline void F3DEXHandler::Cmd_G_MOVEWORD(DListContext& ctx, uint32_t w0, uint32_
     MoveWord(ctx, index, offset, w1);
 }
 
-inline void F3DEXHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    SetTextureState(ctx, w0, w1);
-}
+inline void F3DEXHandler::Cmd_G_TEXTURE(DListContext& ctx, uint32_t w0, uint32_t w1) { SetTextureState(ctx, w0, w1); }
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_H(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeH(ctx, shift, length, w1);
 }
 
 inline void F3DEXHandler::Cmd_G_SETOTHERMODE_L(DListContext& ctx, uint32_t w0, uint32_t w1) {
     uint32_t shift = (w0 >> 8) & 0xFF;
-    uint32_t length = (w0 & 0xFF);  // GBI1: raw byte IS the length (no -1 encoding)
+    uint32_t length = (w0 & 0xFF); // GBI1: raw byte IS the length (no -1 encoding)
     SetOtherModeL(ctx, shift, length, w1);
 }
 
 inline void F3DEXHandler::Cmd_G_ENDDL(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0; (void)w1;
+    (void)w0;
+    (void)w1;
     EndDisplayList(ctx);
 }
 
 /// Translate GBI1 geometry mode bits to GBI2 (internal) format.
 static inline uint32_t TranslateGBI1ToGBI2_F3DEX(uint32_t gbi1) {
     constexpr uint32_t GBI1_SHADING_SMOOTH = 0x00000200;
-    constexpr uint32_t GBI1_CULL_FRONT     = 0x00001000;
-    constexpr uint32_t GBI1_CULL_BACK      = 0x00002000;
+    constexpr uint32_t GBI1_CULL_FRONT = 0x00001000;
+    constexpr uint32_t GBI1_CULL_BACK = 0x00002000;
     constexpr uint32_t GBI1_MASK = GBI1_SHADING_SMOOTH | GBI1_CULL_FRONT | GBI1_CULL_BACK;
     uint32_t result = gbi1 & ~GBI1_MASK;
     if (gbi1 & GBI1_SHADING_SMOOTH) result |= 0x00200000; // G_SHADING_SMOOTH
-    if (gbi1 & GBI1_CULL_FRONT)     result |= 0x00000200; // G_CULL_FRONT
-    if (gbi1 & GBI1_CULL_BACK)      result |= 0x00000400; // G_CULL_BACK
+    if (gbi1 & GBI1_CULL_FRONT) result |= 0x00000200;     // G_CULL_FRONT
+    if (gbi1 & GBI1_CULL_BACK) result |= 0x00000400;      // G_CULL_BACK
     return result;
 }
 
@@ -295,18 +295,21 @@ inline void F3DEXHandler::Cmd_G_CLEARGEOMETRYMODE(DListContext& ctx, uint32_t w0
 }
 
 inline void F3DEXHandler::Cmd_G_POPMTX(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)w0; (void)w1;
+    (void)w0;
+    (void)w1;
     // GBI1: w1 is G_MTX_MODELVIEW (0) or G_MTX_PROJECTION (1), not a count.
     PopMatrixN(ctx, 1);
 }
 
 inline void F3DEXHandler::Cmd_G_RDPHALF_1(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf1 = w1;
 }
 
 inline void F3DEXHandler::Cmd_G_RDPHALF_2(DListContext& ctx, uint32_t w0, uint32_t w1) {
-    (void)ctx; (void)w0;
+    (void)ctx;
+    (void)w0;
     m_rdpHalf2 = w1;
 }
 

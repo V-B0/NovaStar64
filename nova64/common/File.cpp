@@ -28,8 +28,7 @@ namespace FileSystem {
 // FileError implementation
 // =============================================================================
 
-FileError FileError::from_last_error(const std::string& operation)
-{
+FileError FileError::from_last_error(const std::string& operation) {
 #ifdef _WIN32
     const DWORD err = ::GetLastError();
     return FileError(operation, static_cast<int>(err));
@@ -38,10 +37,7 @@ FileError FileError::from_last_error(const std::string& operation)
 #endif
 }
 
-const char* FileError::what() const noexcept
-{
-    return std::system_error::what();
-}
+const char* FileError::what() const noexcept { return std::system_error::what(); }
 
 // =============================================================================
 // FileImpl - pimpl implementation
@@ -62,12 +58,8 @@ public:
     FileImpl() = default;
     ~FileImpl() { close_handle(); }
 
-    FileImpl(FileImpl&& other) noexcept
-        : fileName(std::move(other.fileName))
-        , mode(other.mode)
-        , share(other.share)
-        , lastError(other.lastError)
-    {
+    FileImpl(FileImpl&& other) noexcept :
+        fileName(std::move(other.fileName)), mode(other.mode), share(other.share), lastError(other.lastError) {
 #ifdef _WIN32
         hFile = other.hFile;
         other.hFile = INVALID_HANDLE_VALUE;
@@ -77,10 +69,8 @@ public:
 #endif
     }
 
-    FileImpl& operator=(FileImpl&& other) noexcept
-    {
-        if (this != &other)
-        {
+    FileImpl& operator=(FileImpl&& other) noexcept {
+        if (this != &other) {
             close_handle();
             fileName = std::move(other.fileName);
             mode = other.mode;
@@ -97,8 +87,7 @@ public:
         return *this;
     }
 
-    [[nodiscard]] bool is_open() const noexcept
-    {
+    [[nodiscard]] bool is_open() const noexcept {
 #ifdef _WIN32
         return hFile != INVALID_HANDLE_VALUE;
 #else
@@ -106,8 +95,7 @@ public:
 #endif
     }
 
-    void set_error_from_system()
-    {
+    void set_error_from_system() {
 #ifdef _WIN32
         lastError = std::error_code(static_cast<int>(::GetLastError()), std::system_category());
 #else
@@ -115,22 +103,16 @@ public:
 #endif
     }
 
-    void clear_error() noexcept
-    {
-        lastError.clear();
-    }
+    void clear_error() noexcept { lastError.clear(); }
 
-    void close_handle() noexcept
-    {
+    void close_handle() noexcept {
 #ifdef _WIN32
-        if (hFile != INVALID_HANDLE_VALUE)
-        {
+        if (hFile != INVALID_HANDLE_VALUE) {
             ::CloseHandle(hFile);
             hFile = INVALID_HANDLE_VALUE;
         }
 #else
-        if (fd >= 0)
-        {
+        if (fd >= 0) {
             ::close(fd);
             fd = -1;
         }
@@ -143,14 +125,9 @@ public:
 // File - Constructors / Destructor / Move
 // =============================================================================
 
-File::File()
-    : m_impl(std::make_unique<FileImpl>())
-{
-}
+File::File() : m_impl(std::make_unique<FileImpl>()) {}
 
-File::File(const std::string& filename, OpenMode mode, ShareMode share)
-    : m_impl(std::make_unique<FileImpl>())
-{
+File::File(const std::string& filename, OpenMode mode, ShareMode share) : m_impl(std::make_unique<FileImpl>()) {
     open(filename, mode, share);
 }
 
@@ -163,8 +140,7 @@ File& File::operator=(File&& other) noexcept = default;
 // File - Open / Close / State
 // =============================================================================
 
-void File::open(const std::string& filename, OpenMode mode, ShareMode share)
-{
+void File::open(const std::string& filename, OpenMode mode, ShareMode share) {
     close();
     m_impl->clear_error();
     m_impl->mode = mode;
@@ -173,54 +149,41 @@ void File::open(const std::string& filename, OpenMode mode, ShareMode share)
 #ifdef _WIN32
     // Map OpenMode to Windows access flags
     DWORD dwAccess = 0;
-    if (has_flag(mode, OpenMode::Read))
-    {
+    if (has_flag(mode, OpenMode::Read)) {
         dwAccess |= GENERIC_READ;
     }
-    if (has_flag(mode, OpenMode::Write) || has_flag(mode, OpenMode::Append))
-    {
+    if (has_flag(mode, OpenMode::Write) || has_flag(mode, OpenMode::Append)) {
         dwAccess |= GENERIC_WRITE;
     }
 
     // Map ShareMode
     DWORD dwShare = 0;
     if (has_flag(static_cast<OpenMode>(static_cast<uint32_t>(share)),
-                 static_cast<OpenMode>(static_cast<uint32_t>(ShareMode::Read))))
-    {
+                 static_cast<OpenMode>(static_cast<uint32_t>(ShareMode::Read)))) {
         dwShare |= FILE_SHARE_READ;
     }
-    if (static_cast<uint32_t>(share) & static_cast<uint32_t>(ShareMode::Write))
-    {
+    if (static_cast<uint32_t>(share) & static_cast<uint32_t>(ShareMode::Write)) {
         dwShare |= FILE_SHARE_WRITE;
     }
-    if (static_cast<uint32_t>(share) & static_cast<uint32_t>(ShareMode::Delete))
-    {
+    if (static_cast<uint32_t>(share) & static_cast<uint32_t>(ShareMode::Delete)) {
         dwShare |= FILE_SHARE_DELETE;
     }
 
     // Map creation disposition
     DWORD dwCreation = OPEN_EXISTING;
-    if (has_flag(mode, OpenMode::CreateNew))
-    {
+    if (has_flag(mode, OpenMode::CreateNew)) {
         dwCreation = CREATE_NEW;
-    }
-    else if (has_flag(mode, OpenMode::Create) && has_flag(mode, OpenMode::Truncate))
-    {
+    } else if (has_flag(mode, OpenMode::Create) && has_flag(mode, OpenMode::Truncate)) {
         dwCreation = CREATE_ALWAYS;
-    }
-    else if (has_flag(mode, OpenMode::Create))
-    {
+    } else if (has_flag(mode, OpenMode::Create)) {
         dwCreation = OPEN_ALWAYS;
-    }
-    else if (has_flag(mode, OpenMode::Truncate))
-    {
+    } else if (has_flag(mode, OpenMode::Truncate)) {
         dwCreation = TRUNCATE_EXISTING;
     }
 
     // Convert filename to wide string for proper Unicode support
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
+    if (wideLen <= 0) {
         m_impl->set_error_from_system();
         throw FileError::from_last_error("Failed to convert filename: " + filename);
     }
@@ -228,19 +191,16 @@ void File::open(const std::string& filename, OpenMode mode, ShareMode share)
     auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
     MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
 
-    m_impl->hFile = ::CreateFileW(
-        wideName.get(), dwAccess, dwShare, nullptr,
-        dwCreation, FILE_ATTRIBUTE_NORMAL, nullptr);
+    m_impl->hFile =
+        ::CreateFileW(wideName.get(), dwAccess, dwShare, nullptr, dwCreation, FILE_ATTRIBUTE_NORMAL, nullptr);
 
-    if (m_impl->hFile == INVALID_HANDLE_VALUE)
-    {
+    if (m_impl->hFile == INVALID_HANDLE_VALUE) {
         m_impl->set_error_from_system();
         throw FileError::from_last_error("Failed to open file: " + filename);
     }
 
     // Handle append mode: seek to end
-    if (has_flag(mode, OpenMode::Append))
-    {
+    if (has_flag(mode, OpenMode::Append)) {
         ::SetFilePointerEx(m_impl->hFile, LARGE_INTEGER{}, nullptr, FILE_END);
     }
 
@@ -250,39 +210,29 @@ void File::open(const std::string& filename, OpenMode mode, ShareMode share)
     const bool wantRead = has_flag(mode, OpenMode::Read);
     const bool wantWrite = has_flag(mode, OpenMode::Write) || has_flag(mode, OpenMode::Append);
 
-    if (wantRead && wantWrite)
-    {
+    if (wantRead && wantWrite) {
         flags = O_RDWR;
-    }
-    else if (wantWrite)
-    {
+    } else if (wantWrite) {
         flags = O_WRONLY;
-    }
-    else
-    {
+    } else {
         flags = O_RDONLY;
     }
 
-    if (has_flag(mode, OpenMode::Create))
-    {
+    if (has_flag(mode, OpenMode::Create)) {
         flags |= O_CREAT;
     }
-    if (has_flag(mode, OpenMode::CreateNew))
-    {
+    if (has_flag(mode, OpenMode::CreateNew)) {
         flags |= O_CREAT | O_EXCL;
     }
-    if (has_flag(mode, OpenMode::Truncate))
-    {
+    if (has_flag(mode, OpenMode::Truncate)) {
         flags |= O_TRUNC;
     }
-    if (has_flag(mode, OpenMode::Append))
-    {
+    if (has_flag(mode, OpenMode::Append)) {
         flags |= O_APPEND;
     }
 
     m_impl->fd = ::open(filename.c_str(), flags, 0644);
-    if (m_impl->fd < 0)
-    {
+    if (m_impl->fd < 0) {
         m_impl->set_error_from_system();
         throw FileError::from_last_error("Failed to open file: " + filename);
     }
@@ -291,39 +241,29 @@ void File::open(const std::string& filename, OpenMode mode, ShareMode share)
     m_impl->fileName = filename;
 }
 
-void File::close()
-{
-    m_impl->close_handle();
-}
+void File::close() { m_impl->close_handle(); }
 
-bool File::is_open() const noexcept
-{
-    return m_impl->is_open();
-}
+bool File::is_open() const noexcept { return m_impl->is_open(); }
 
 // =============================================================================
 // File - Read operations
 // =============================================================================
 
-size_t File::read(void* buffer, size_t count)
-{
-    if (!is_open() || count == 0 || buffer == nullptr)
-    {
+size_t File::read(void* buffer, size_t count) {
+    if (!is_open() || count == 0 || buffer == nullptr) {
         return 0;
     }
 
 #ifdef _WIN32
     DWORD bytesRead = 0;
-    if (!::ReadFile(m_impl->hFile, buffer, static_cast<DWORD>(count), &bytesRead, nullptr))
-    {
+    if (!::ReadFile(m_impl->hFile, buffer, static_cast<DWORD>(count), &bytesRead, nullptr)) {
         m_impl->set_error_from_system();
         return 0;
     }
     return static_cast<size_t>(bytesRead);
 #else
     const ssize_t result = ::read(m_impl->fd, buffer, count);
-    if (result < 0)
-    {
+    if (result < 0) {
         m_impl->set_error_from_system();
         return 0;
     }
@@ -331,16 +271,13 @@ size_t File::read(void* buffer, size_t count)
 #endif
 }
 
-std::vector<uint8_t> File::read_all()
-{
-    if (!is_open())
-    {
+std::vector<uint8_t> File::read_all() {
+    if (!is_open()) {
         return {};
     }
 
     const int64_t fileSize = size();
-    if (fileSize <= 0)
-    {
+    if (fileSize <= 0) {
         return {};
     }
 
@@ -352,16 +289,13 @@ std::vector<uint8_t> File::read_all()
     return data;
 }
 
-std::string File::read_text()
-{
-    if (!is_open())
-    {
+std::string File::read_text() {
+    if (!is_open()) {
         return {};
     }
 
     const int64_t fileSize = size();
-    if (fileSize <= 0)
-    {
+    if (fileSize <= 0) {
         return {};
     }
 
@@ -377,25 +311,21 @@ std::string File::read_text()
 // File - Write operations
 // =============================================================================
 
-size_t File::write(const void* buffer, size_t count)
-{
-    if (!is_open() || count == 0 || buffer == nullptr)
-    {
+size_t File::write(const void* buffer, size_t count) {
+    if (!is_open() || count == 0 || buffer == nullptr) {
         return 0;
     }
 
 #ifdef _WIN32
     DWORD bytesWritten = 0;
-    if (!::WriteFile(m_impl->hFile, buffer, static_cast<DWORD>(count), &bytesWritten, nullptr))
-    {
+    if (!::WriteFile(m_impl->hFile, buffer, static_cast<DWORD>(count), &bytesWritten, nullptr)) {
         m_impl->set_error_from_system();
         return 0;
     }
     return static_cast<size_t>(bytesWritten);
 #else
     const ssize_t result = ::write(m_impl->fd, buffer, count);
-    if (result < 0)
-    {
+    if (result < 0) {
         m_impl->set_error_from_system();
         return 0;
     }
@@ -403,32 +333,23 @@ size_t File::write(const void* buffer, size_t count)
 #endif
 }
 
-size_t File::write(const std::string& text)
-{
-    return write(text.data(), text.size());
-}
+size_t File::write(const std::string& text) { return write(text.data(), text.size()); }
 
-size_t File::write(const std::vector<uint8_t>& data)
-{
-    return write(data.data(), data.size());
-}
+size_t File::write(const std::vector<uint8_t>& data) { return write(data.data(), data.size()); }
 
 // =============================================================================
 // File - Seek / Position operations
 // =============================================================================
 
-int64_t File::tell() const
-{
-    if (!is_open())
-    {
+int64_t File::tell() const {
+    if (!is_open()) {
         return -1;
     }
 
 #ifdef _WIN32
     LARGE_INTEGER pos;
     LARGE_INTEGER zero{};
-    if (!::SetFilePointerEx(m_impl->hFile, zero, &pos, FILE_CURRENT))
-    {
+    if (!::SetFilePointerEx(m_impl->hFile, zero, &pos, FILE_CURRENT)) {
         return -1;
     }
     return pos.QuadPart;
@@ -437,10 +358,8 @@ int64_t File::tell() const
 #endif
 }
 
-int64_t File::seek(int64_t offset, SeekOrigin origin)
-{
-    if (!is_open())
-    {
+int64_t File::seek(int64_t offset, SeekOrigin origin) {
+    if (!is_open()) {
         return -1;
     }
 
@@ -449,87 +368,70 @@ int64_t File::seek(int64_t offset, SeekOrigin origin)
     li.QuadPart = offset;
     LARGE_INTEGER newPos;
     DWORD dwOrigin;
-    switch (origin)
-    {
+    switch (origin) {
     case SeekOrigin::Begin:   dwOrigin = FILE_BEGIN; break;
     case SeekOrigin::Current: dwOrigin = FILE_CURRENT; break;
     case SeekOrigin::End:     dwOrigin = FILE_END; break;
     default:                  return -1;
     }
-    if (!::SetFilePointerEx(m_impl->hFile, li, &newPos, dwOrigin))
-    {
+    if (!::SetFilePointerEx(m_impl->hFile, li, &newPos, dwOrigin)) {
         m_impl->set_error_from_system();
         return -1;
     }
     return newPos.QuadPart;
 #else
     int whence;
-    switch (origin)
-    {
+    switch (origin) {
     case SeekOrigin::Begin:   whence = SEEK_SET; break;
     case SeekOrigin::Current: whence = SEEK_CUR; break;
     case SeekOrigin::End:     whence = SEEK_END; break;
     default:                  return -1;
     }
     const off_t result = ::lseek(m_impl->fd, static_cast<off_t>(offset), whence);
-    if (result == static_cast<off_t>(-1))
-    {
+    if (result == static_cast<off_t>(-1)) {
         m_impl->set_error_from_system();
     }
     return static_cast<int64_t>(result);
 #endif
 }
 
-void File::seek_to_begin()
-{
-    (void)seek(0, SeekOrigin::Begin);
-}
+void File::seek_to_begin() { (void)seek(0, SeekOrigin::Begin); }
 
-int64_t File::seek_to_end()
-{
-    return seek(0, SeekOrigin::End);
-}
+int64_t File::seek_to_end() { return seek(0, SeekOrigin::End); }
 
 // =============================================================================
 // File - Properties
 // =============================================================================
 
-int64_t File::size() const
-{
-    if (!is_open())
-    {
+int64_t File::size() const {
+    if (!is_open()) {
         return -1;
     }
 
 #ifdef _WIN32
     LARGE_INTEGER fileSize;
-    if (!::GetFileSizeEx(m_impl->hFile, &fileSize))
-    {
+    if (!::GetFileSizeEx(m_impl->hFile, &fileSize)) {
         return -1;
     }
     return fileSize.QuadPart;
 #else
     struct stat st;
-    if (::fstat(m_impl->fd, &st) != 0)
-    {
+    if (::fstat(m_impl->fd, &st) != 0) {
         return -1;
     }
     return static_cast<int64_t>(st.st_size);
 #endif
 }
 
-void File::resize(int64_t new_size)
-{
-    if (!is_open())
-    {
+void File::resize(int64_t new_size) {
+    if (!is_open()) {
         return;
     }
 
 #ifdef _WIN32
     LARGE_INTEGER li;
     li.QuadPart = new_size;
-    if (::SetFilePointerEx(m_impl->hFile, li, nullptr, FILE_BEGIN))
-    {
+    if (::SetFilePointerEx(m_impl->hFile, li, nullptr, FILE_BEGIN)) {
         ::SetEndOfFile(m_impl->hFile);
     }
 #else
@@ -537,10 +439,8 @@ void File::resize(int64_t new_size)
 #endif
 }
 
-bool File::is_eof() const
-{
-    if (!is_open())
-    {
+bool File::is_eof() const {
+    if (!is_open()) {
         return true;
     }
 
@@ -549,10 +449,8 @@ bool File::is_eof() const
     return current >= fileSize;
 }
 
-void File::flush()
-{
-    if (!is_open())
-    {
+void File::flush() {
+    if (!is_open()) {
         return;
     }
 
@@ -563,10 +461,8 @@ void File::flush()
 #endif
 }
 
-NativeHandle File::native_handle() const
-{
-    if (!is_open())
-    {
+NativeHandle File::native_handle() const {
+    if (!is_open()) {
 #ifdef _WIN32
         return INVALID_HANDLE_VALUE;
 #else
@@ -585,55 +481,34 @@ NativeHandle File::native_handle() const
 // File - Error state
 // =============================================================================
 
-const std::error_code& File::last_error() const noexcept
-{
-    return m_impl->lastError;
-}
+const std::error_code& File::last_error() const noexcept { return m_impl->lastError; }
 
-void File::clear_error() noexcept
-{
-    m_impl->clear_error();
-}
+void File::clear_error() noexcept { m_impl->clear_error(); }
 
-bool File::has_error() const noexcept
-{
-    return static_cast<bool>(m_impl->lastError);
-}
+bool File::has_error() const noexcept { return static_cast<bool>(m_impl->lastError); }
 
 // =============================================================================
 // File - Metadata accessors
 // =============================================================================
 
-std::string File::filename() const
-{
-    return m_impl->fileName;
-}
+std::string File::filename() const { return m_impl->fileName; }
 
-OpenMode File::open_mode() const
-{
-    return m_impl->mode;
-}
+OpenMode File::open_mode() const { return m_impl->mode; }
 
-ShareMode File::share_mode() const
-{
-    return m_impl->share;
-}
+ShareMode File::share_mode() const { return m_impl->share; }
 
 // =============================================================================
 // File - Timestamps
 // =============================================================================
 
-std::chrono::system_clock::time_point File::get_last_write_time() const
-{
-    if (!is_open())
-    {
+std::chrono::system_clock::time_point File::get_last_write_time() const {
+    if (!is_open()) {
         return {};
     }
 
 #ifdef _WIN32
     FILETIME ftWrite;
-    if (!::GetFileTime(m_impl->hFile, nullptr, nullptr, &ftWrite))
-    {
+    if (!::GetFileTime(m_impl->hFile, nullptr, nullptr, &ftWrite)) {
         return {};
     }
 
@@ -646,24 +521,20 @@ std::chrono::system_clock::time_point File::get_last_write_time() const
     uli.LowPart = ftWrite.dwLowDateTime;
     uli.HighPart = ftWrite.dwHighDateTime;
 
-    const int64_t unixSeconds =
-        static_cast<int64_t>(uli.QuadPart / kWindowsTicksPerSecond) - kEpochDifference;
+    const int64_t unixSeconds = static_cast<int64_t>(uli.QuadPart / kWindowsTicksPerSecond) - kEpochDifference;
 
     return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(unixSeconds));
 #else
     struct stat st;
-    if (::fstat(m_impl->fd, &st) != 0)
-    {
+    if (::fstat(m_impl->fd, &st) != 0) {
         return {};
     }
     return std::chrono::system_clock::from_time_t(st.st_mtime);
 #endif
 }
 
-void File::set_last_write_time(const std::chrono::system_clock::time_point& time)
-{
-    if (!is_open())
-    {
+void File::set_last_write_time(const std::chrono::system_clock::time_point& time) {
+    if (!is_open()) {
         return;
     }
 
@@ -672,8 +543,7 @@ void File::set_last_write_time(const std::chrono::system_clock::time_point& time
     constexpr int64_t kEpochDifference = 11'644'473'600LL;
 
     const auto tt = std::chrono::system_clock::to_time_t(time);
-    const int64_t windowsTicks =
-        (static_cast<int64_t>(tt) + kEpochDifference) * kWindowsTicksPerSecond;
+    const int64_t windowsTicks = (static_cast<int64_t>(tt) + kEpochDifference) * kWindowsTicksPerSecond;
 
     FILETIME ft;
     ULARGE_INTEGER uli;
@@ -698,12 +568,10 @@ void File::set_last_write_time(const std::chrono::system_clock::time_point& time
 // File - Static utility methods
 // =============================================================================
 
-bool File::exists(const std::string& filename)
-{
+bool File::exists(const std::string& filename) {
 #ifdef _WIN32
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
+    if (wideLen <= 0) {
         return false;
     }
     auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
@@ -717,12 +585,10 @@ bool File::exists(const std::string& filename)
 #endif
 }
 
-bool File::remove(const std::string& filename)
-{
+bool File::remove(const std::string& filename) {
 #ifdef _WIN32
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
+    if (wideLen <= 0) {
         return false;
     }
     auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
@@ -730,8 +596,7 @@ bool File::remove(const std::string& filename)
 
     // Remove read-only attribute if present
     const DWORD attrs = ::GetFileAttributesW(wideName.get());
-    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY))
-    {
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY)) {
         ::SetFileAttributesW(wideName.get(), attrs & ~FILE_ATTRIBUTE_READONLY);
     }
 
@@ -741,13 +606,11 @@ bool File::remove(const std::string& filename)
 #endif
 }
 
-bool File::rename(const std::string& old_name, const std::string& new_name)
-{
+bool File::rename(const std::string& old_name, const std::string& new_name) {
 #ifdef _WIN32
     const int wideOldLen = MultiByteToWideChar(CP_UTF8, 0, old_name.c_str(), -1, nullptr, 0);
     const int wideNewLen = MultiByteToWideChar(CP_UTF8, 0, new_name.c_str(), -1, nullptr, 0);
-    if (wideOldLen <= 0 || wideNewLen <= 0)
-    {
+    if (wideOldLen <= 0 || wideNewLen <= 0) {
         return false;
     }
 
@@ -762,20 +625,17 @@ bool File::rename(const std::string& old_name, const std::string& new_name)
 #endif
 }
 
-int64_t File::get_size(const std::string& filename)
-{
+int64_t File::get_size(const std::string& filename) {
 #ifdef _WIN32
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
+    if (wideLen <= 0) {
         return -1;
     }
     auto wideName = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));
     MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wideName.get(), wideLen);
 
     WIN32_FILE_ATTRIBUTE_DATA fad;
-    if (!::GetFileAttributesExW(wideName.get(), GetFileExInfoStandard, &fad))
-    {
+    if (!::GetFileAttributesExW(wideName.get(), GetFileExInfoStandard, &fad)) {
         return -1;
     }
     LARGE_INTEGER fileSize;
@@ -784,28 +644,24 @@ int64_t File::get_size(const std::string& filename)
     return fileSize.QuadPart;
 #else
     struct stat st;
-    if (::stat(filename.c_str(), &st) != 0)
-    {
+    if (::stat(filename.c_str(), &st) != 0) {
         return -1;
     }
     return static_cast<int64_t>(st.st_size);
 #endif
 }
 
-std::string File::get_current_directory()
-{
+std::string File::get_current_directory() {
 #ifdef _WIN32
     const DWORD len = ::GetCurrentDirectoryW(0, nullptr);
-    if (len == 0)
-    {
+    if (len == 0) {
         return {};
     }
     auto wideBuf = std::make_unique<wchar_t[]>(len);
     ::GetCurrentDirectoryW(len, wideBuf.get());
 
     const int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideBuf.get(), -1, nullptr, 0, nullptr, nullptr);
-    if (utf8Len <= 0)
-    {
+    if (utf8Len <= 0) {
         return {};
     }
     std::string result(static_cast<size_t>(utf8Len - 1), '\0');
@@ -813,20 +669,17 @@ std::string File::get_current_directory()
     return result;
 #else
     char buf[4096];
-    if (::getcwd(buf, sizeof(buf)) != nullptr)
-    {
+    if (::getcwd(buf, sizeof(buf)) != nullptr) {
         return std::string(buf);
     }
     return {};
 #endif
 }
 
-bool File::set_current_directory(const std::string& path)
-{
+bool File::set_current_directory(const std::string& path) {
 #ifdef _WIN32
     const int wideLen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-    if (wideLen <= 0)
-    {
+    if (wideLen <= 0) {
         return false;
     }
     auto widePath = std::make_unique<wchar_t[]>(static_cast<size_t>(wideLen));

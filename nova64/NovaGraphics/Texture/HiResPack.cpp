@@ -14,7 +14,9 @@
 
 namespace fs = std::filesystem;
 
-namespace Nova64 { namespace Video { namespace Tex {
+namespace Nova64 {
+namespace Video {
+namespace Tex {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Checksum
@@ -74,19 +76,19 @@ uint32_t MaxIndex4(const uint8_t* src, int width, int height, int rowStride) {
 
 } // namespace
 
-HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address,
-                       int width, int height, int format, int size, int rowStride,
-                       const uint8_t* palette) {
+HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address, int width, int height, int format,
+                       int size, int rowStride, const uint8_t* palette) {
     HiResId id;
     id.format = static_cast<uint8_t>(format);
-    id.size   = static_cast<uint8_t>(size);
+    id.size = static_cast<uint8_t>(size);
     if (!rdram || width <= 0 || height <= 0 || size < 0 || size > 3 || rowStride < 0) return id;
 
     // The checksum reads whole words, starting a word before the end of each row's
     // bytes, and (for rows narrower than 4 bytes) a little before the row itself.
     const int64_t bytesPerLine = (static_cast<int64_t>(width) << size) >> 1;
     const int64_t first = static_cast<int64_t>(address) + std::min<int64_t>(0, bytesPerLine - 4);
-    const int64_t last  = static_cast<int64_t>(address) + static_cast<int64_t>(height - 1) * rowStride + std::max<int64_t>(bytesPerLine, 4);
+    const int64_t last = static_cast<int64_t>(address) + static_cast<int64_t>(height - 1) * rowStride +
+                         std::max<int64_t>(bytesPerLine, 4);
     if (first < 0 || last > static_cast<int64_t>(rdramSize)) return id;
     const uint8_t* src = rdram + address;
 
@@ -95,10 +97,10 @@ HiResId ComputeHiResId(const uint8_t* rdram, size_t rdramSize, uint32_t address,
         // checksum only the entries those indices can reach.
         uint32_t texCrc, maxIndex;
         if (size == 1) {
-            texCrc   = RiceCrc32(src, width, height, 1, rowStride);
+            texCrc = RiceCrc32(src, width, height, 1, rowStride);
             maxIndex = MaxIndex8(src, width, height, rowStride);
         } else {
-            texCrc   = RiceCrc32(src, width, height, 0, rowStride);
+            texCrc = RiceCrc32(src, width, height, 0, rowStride);
             maxIndex = MaxIndex4(src, width, height, rowStride);
         }
         // Palette entries are 16 bits and the checksum reads a word at a time, so an odd
@@ -124,12 +126,12 @@ namespace {
 enum class Kind { All, Rgb, Alpha };
 
 struct ParsedName {
-    bool     texWildcard = false;
-    bool     palWildcard = false;
-    bool     hasPalette  = false;
+    bool texWildcard = false;
+    bool palWildcard = false;
+    bool hasPalette = false;
     uint32_t tex = 0, pal = 0;
-    uint8_t  format = 0, size = 0;
-    Kind     kind = Kind::All;
+    uint8_t format = 0, size = 0;
+    Kind kind = Kind::All;
 };
 
 bool IsHex(const std::string& s, size_t digits) {
@@ -150,30 +152,31 @@ bool ParseName(const std::string& stem, ParsedName& out) {
     const size_t underscore = stem.rfind('_');
     if (underscore == std::string::npos) return false;
     const std::string suffix = stem.substr(underscore + 1);
-    if      (suffix == "all" || suffix == "ciByRGBA" || suffix == "allciByRGBA") out.kind = Kind::All;
+    if (suffix == "all" || suffix == "ciByRGBA" || suffix == "allciByRGBA") out.kind = Kind::All;
     else if (suffix == "rgb") out.kind = Kind::Rgb;
-    else if (suffix == "a")   out.kind = Kind::Alpha;
+    else if (suffix == "a") out.kind = Kind::Alpha;
     else return false;
 
     const auto tok = SplitOn(stem.substr(0, underscore), '#');
     const size_t n = tok.size();
     auto crcOrWildcard = [](const std::string& s) { return s == "$" || IsHex(s, 8); };
 
-    if (n >= 5 && crcOrWildcard(tok[n - 4]) && IsHex(tok[n - 3], 1) && IsHex(tok[n - 2], 1) && crcOrWildcard(tok[n - 1])) {
-        out.hasPalette  = true;
+    if (n >= 5 && crcOrWildcard(tok[n - 4]) && IsHex(tok[n - 3], 1) && IsHex(tok[n - 2], 1) &&
+        crcOrWildcard(tok[n - 1])) {
+        out.hasPalette = true;
         out.texWildcard = tok[n - 4] == "$";
         out.palWildcard = tok[n - 1] == "$";
         if (out.texWildcard && out.palWildcard) return false;
         if (!out.texWildcard) out.tex = static_cast<uint32_t>(std::stoul(tok[n - 4], nullptr, 16));
         if (!out.palWildcard) out.pal = static_cast<uint32_t>(std::stoul(tok[n - 1], nullptr, 16));
         out.format = static_cast<uint8_t>(std::stoul(tok[n - 3], nullptr, 16));
-        out.size   = static_cast<uint8_t>(std::stoul(tok[n - 2], nullptr, 16));
+        out.size = static_cast<uint8_t>(std::stoul(tok[n - 2], nullptr, 16));
         return true;
     }
     if (n >= 4 && IsHex(tok[n - 3], 8) && IsHex(tok[n - 2], 1) && IsHex(tok[n - 1], 1)) {
-        out.tex    = static_cast<uint32_t>(std::stoul(tok[n - 3], nullptr, 16));
+        out.tex = static_cast<uint32_t>(std::stoul(tok[n - 3], nullptr, 16));
         out.format = static_cast<uint8_t>(std::stoul(tok[n - 2], nullptr, 16));
-        out.size   = static_cast<uint8_t>(std::stoul(tok[n - 1], nullptr, 16));
+        out.size = static_cast<uint8_t>(std::stoul(tok[n - 1], nullptr, 16));
         return true;
     }
     return false;
@@ -198,7 +201,7 @@ std::unique_ptr<HiResImage> LoadPng(const fs::path& path) {
         return nullptr;
     }
     auto image = std::make_unique<HiResImage>();
-    image->width  = static_cast<uint32_t>(w);
+    image->width = static_cast<uint32_t>(w);
     image->height = static_cast<uint32_t>(h);
     image->rgba.assign(pixels, pixels + static_cast<size_t>(w) * h * 4);
     stbi_image_free(pixels);
@@ -229,10 +232,8 @@ bool HiResPack::Load(const fs::path& folder) {
         const uint16_t formatSize = static_cast<uint16_t>((name.format << 8) | name.size);
         if (name.hasPalette && !name.texWildcard && !name.palWildcard)
             assign(m_byTexAndPal[{name.tex, name.pal, formatSize}], name.kind, it->path());
-        else if (name.hasPalette && name.texWildcard)
-            assign(m_byPal[{name.pal, formatSize}], name.kind, it->path());
-        else
-            assign(m_byTex[{name.tex, formatSize}], name.kind, it->path());
+        else if (name.hasPalette && name.texWildcard) assign(m_byPal[{name.pal, formatSize}], name.kind, it->path());
+        else assign(m_byTex[{name.tex, formatSize}], name.kind, it->path());
     }
     m_count = m_byTexAndPal.size() + m_byTex.size() + m_byPal.size();
     return m_count != 0;
@@ -245,7 +246,8 @@ std::unique_ptr<HiResImage> HiResPack::Decode(const Files& files) {
     if (!image) return nullptr;
     if (!files.alpha.empty()) {
         // The alpha picture is a greyscale image; its brightness is the alpha.
-        if (auto alpha = LoadPng(files.alpha); alpha && alpha->width == image->width && alpha->height == image->height) {
+        if (auto alpha = LoadPng(files.alpha);
+            alpha && alpha->width == image->width && alpha->height == image->height) {
             for (size_t i = 0; i < static_cast<size_t>(image->width) * image->height; ++i)
                 image->rgba[i * 4 + 3] = alpha->rgba[i * 4];
         }
@@ -261,9 +263,10 @@ std::unique_ptr<HiResImage> HiResPack::Find(const HiResId& id) const {
         if (auto it = m_byPal.find({id.palCrc, formatSize}); it != m_byPal.end())
             if (auto image = Decode(it->second)) return image;
     }
-    if (auto it = m_byTex.find({id.texCrc, formatSize}); it != m_byTex.end())
-        return Decode(it->second);
+    if (auto it = m_byTex.find({id.texCrc, formatSize}); it != m_byTex.end()) return Decode(it->second);
     return nullptr;
 }
 
-}}} // namespace Nova64::Video::Tex
+} // namespace Tex
+} // namespace Video
+} // namespace Nova64

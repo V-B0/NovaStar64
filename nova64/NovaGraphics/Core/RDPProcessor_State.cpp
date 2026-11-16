@@ -14,12 +14,9 @@ void RDPProcessor::HandleSetTile(const uint32_t* words) {
     m_decoder.DecodeSetTile(words, m_state.rdp.tiles[tileIdx]);
     m_state.rdp.MarkDirty(RDPDirtyFlag::Tiles);
     m_stats.stateChanges++;
-    MM_RDP_TRACE("SetTile tile={} fmt={} size={} line={} tmem={} pal={}",
-                 tileIdx,
-                 static_cast<int>(m_state.rdp.tiles[tileIdx].format),
-                 static_cast<int>(m_state.rdp.tiles[tileIdx].size),
-                 m_state.rdp.tiles[tileIdx].line,
-                 m_state.rdp.tiles[tileIdx].tmemAddr,
+    MM_RDP_TRACE("SetTile tile={} fmt={} size={} line={} tmem={} pal={}", tileIdx,
+                 static_cast<int>(m_state.rdp.tiles[tileIdx].format), static_cast<int>(m_state.rdp.tiles[tileIdx].size),
+                 m_state.rdp.tiles[tileIdx].line, m_state.rdp.tiles[tileIdx].tmemAddr,
                  static_cast<int>(m_state.rdp.tiles[tileIdx].palette));
 }
 
@@ -73,15 +70,13 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
                 // overwritten by this capture.
                 m_vkFBSnapshotIdx = (m_vkFBSnapshotIdx + 1) % kVkFBSnapshotSlots;
                 auto& slot = m_vkFBSnapshots[m_vkFBSnapshotIdx];
-                bool needRecreate = !slot
-                    || slot->GetWidth()  != snapW
-                    || slot->GetHeight() != snapH;
+                bool needRecreate = !slot || slot->GetWidth() != snapW || slot->GetHeight() != snapH;
                 if (needRecreate) {
                     TextureDesc snapDesc{};
-                    snapDesc.width     = snapW;
-                    snapDesc.height    = snapH;
-                    snapDesc.format    = TextureFormat::RGBA8;
-                    snapDesc.usage     = BufferUsage::Dynamic;
+                    snapDesc.width = snapW;
+                    snapDesc.height = snapH;
+                    snapDesc.format = TextureFormat::RGBA8;
+                    snapDesc.usage = BufferUsage::Dynamic;
                     snapDesc.mipLevels = 1;
                     slot = m_renderer->CreateTexture(snapDesc);
                 }
@@ -97,12 +92,9 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
     m_decoder.DecodeSetColorImage(words, m_state.rdp.colorImage);
     m_state.rdp.colorImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.colorImage.address);
 
-    MM_RDP_TRACE("SetColorImage prev=0x{:06X} addr=0x{:06X} fmt={} size={} width={} z=0x{:06X}",
-                 prevAddr & 0x7FFFFF,
-                 m_state.rdp.colorImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.colorImage.format),
-                 static_cast<int>(m_state.rdp.colorImage.size),
-                 m_state.rdp.colorImage.width,
+    MM_RDP_TRACE("SetColorImage prev=0x{:06X} addr=0x{:06X} fmt={} size={} width={} z=0x{:06X}", prevAddr & 0x7FFFFF,
+                 m_state.rdp.colorImage.address & 0x7FFFFF, static_cast<int>(m_state.rdp.colorImage.format),
+                 static_cast<int>(m_state.rdp.colorImage.size), m_state.rdp.colorImage.width,
                  m_state.rdp.zbufferImage.address & 0x7FFFFF);
 
     // NOTE: We intentionally do NOT do a proactive CopyFromGPU here.
@@ -117,11 +109,9 @@ void RDPProcessor::HandleSetColorImage(const uint32_t* words) {
     // Vulkan per-buffer canvas isolation: tell the backend which N64 color
     // buffer subsequent draws target so it can swap persistent canvases.
     // (GL default no-op — the FB manager binds a real FBO below instead.)
-    if (m_renderer)
-        m_renderer->SetActiveCanvas(m_state.rdp.colorImage.address & 0x7FFFFF);
+    if (m_renderer) m_renderer->SetActiveCanvas(m_state.rdp.colorImage.address & 0x7FFFFF);
 
-    g_fbManager.OnSetColorImage(m_state.rdp.colorImage.address,
-                                m_state.rdp.colorImage.width,
+    g_fbManager.OnSetColorImage(m_state.rdp.colorImage.address, m_state.rdp.colorImage.width,
                                 static_cast<uint32_t>(m_state.rdp.colorImage.format),
                                 static_cast<uint32_t>(m_state.rdp.colorImage.size));
     // Evict any stale TextureCache entries at this address � it is now a GPU render target
@@ -137,10 +127,8 @@ void RDPProcessor::HandleSetMaskImage(const uint32_t* words) {
     m_state.rdp.zbufferImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.zbufferImage.address);
 
     MM_RDP_TRACE("SetMaskImage z=0x{:06X} color=0x{:06X} colorFmt={} colorSize={} colorWidth={}",
-                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
-                 m_state.rdp.colorImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.colorImage.format),
-                 static_cast<int>(m_state.rdp.colorImage.size),
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF, m_state.rdp.colorImage.address & 0x7FFFFF,
+                 static_cast<int>(m_state.rdp.colorImage.format), static_cast<int>(m_state.rdp.colorImage.size),
                  m_state.rdp.colorImage.width);
 
     m_state.rdp.MarkDirty(RDPDirtyFlag::ZBufferImage);
@@ -149,8 +137,7 @@ void RDPProcessor::HandleSetMaskImage(const uint32_t* words) {
     g_fbManager.OnSetDepthImage(m_state.rdp.zbufferImage.address);
 
     // Wire into the N64-accurate depth buffer manager
-    g_depthManager.OnSetDepthImage(m_state.rdp.zbufferImage.address,
-                                   m_state.rdp.colorImage.width);
+    g_depthManager.OnSetDepthImage(m_state.rdp.zbufferImage.address, m_state.rdp.colorImage.width);
 
     // Proactively initialize Z-image textures so SF_N64_DEPTH_COMPARE can be
     // set on the very first draw call after SetMaskImage.  Without this, the
@@ -172,12 +159,9 @@ void RDPProcessor::HandleSetTextureImage(const uint32_t* words) {
     m_state.rdp.textureImage.address = m_state.rdp.geometry.ResolveAddress(m_state.rdp.textureImage.address);
 
     MM_RDP_TRACE("SetTextureImage addr=0x{:06X} fmt={} size={} width={} color=0x{:06X} z=0x{:06X}",
-                 m_state.rdp.textureImage.address & 0x7FFFFF,
-                 static_cast<int>(m_state.rdp.textureImage.format),
-                 static_cast<int>(m_state.rdp.textureImage.size),
-                 m_state.rdp.textureImage.width,
-                 m_state.rdp.colorImage.address & 0x7FFFFF,
-                 m_state.rdp.zbufferImage.address & 0x7FFFFF);
+                 m_state.rdp.textureImage.address & 0x7FFFFF, static_cast<int>(m_state.rdp.textureImage.format),
+                 static_cast<int>(m_state.rdp.textureImage.size), m_state.rdp.textureImage.width,
+                 m_state.rdp.colorImage.address & 0x7FFFFF, m_state.rdp.zbufferImage.address & 0x7FFFFF);
 
     m_state.rdp.MarkDirty(RDPDirtyFlag::TextureImage);
     m_stats.stateChanges++;
@@ -188,8 +172,7 @@ void RDPProcessor::HandleSetFillColor(const uint32_t* words) {
     // (in case the color image size changes between SetFillColor and FillRect).
     uint32_t raw = words[1];
     m_state.rdp.fillColorRaw = raw;
-    DecodeFillColor(raw, m_state.rdp.colorImage.size,
-                    m_state.rdp.fillColor.r, m_state.rdp.fillColor.g,
+    DecodeFillColor(raw, m_state.rdp.colorImage.size, m_state.rdp.fillColor.r, m_state.rdp.fillColor.g,
                     m_state.rdp.fillColor.b, m_state.rdp.fillColor.a);
     m_state.rdp.MarkDirty(RDPDirtyFlag::FillColor);
 }
@@ -212,9 +195,8 @@ void RDPProcessor::HandleSetPrimColor(const uint32_t* words) {
 void RDPProcessor::HandleSetEnvColor(const uint32_t* words) {
     m_decoder.DecodeSetEnvColor(words, m_state.rdp.envColor);
     m_state.rdp.MarkDirty(RDPDirtyFlag::EnvColor);
-    MM_RDP_TRACE("[ENV-COLOR] r={} g={} b={} a={}",
-        m_state.rdp.envColor.r, m_state.rdp.envColor.g,
-        m_state.rdp.envColor.b, m_state.rdp.envColor.a);
+    MM_RDP_TRACE("[ENV-COLOR] r={} g={} b={} a={}", m_state.rdp.envColor.r, m_state.rdp.envColor.g,
+                 m_state.rdp.envColor.b, m_state.rdp.envColor.a);
 }
 
 void RDPProcessor::HandleSetPrimDepth(const uint32_t* words) {
@@ -223,17 +205,11 @@ void RDPProcessor::HandleSetPrimDepth(const uint32_t* words) {
     m_state.rdp.MarkDirty(RDPDirtyFlag::PrimDepth);
 }
 
-void RDPProcessor::HandleSetConvert(const uint32_t* words) {
-    m_decoder.DecodeSetConvert(words, m_state.rdp.convertK);
-}
+void RDPProcessor::HandleSetConvert(const uint32_t* words) { m_decoder.DecodeSetConvert(words, m_state.rdp.convertK); }
 
-void RDPProcessor::HandleSetKeyGB(const uint32_t* words) {
-    m_decoder.DecodeSetKeyGB(words, m_state.rdp);
-}
+void RDPProcessor::HandleSetKeyGB(const uint32_t* words) { m_decoder.DecodeSetKeyGB(words, m_state.rdp); }
 
-void RDPProcessor::HandleSetKeyR(const uint32_t* words) {
-    m_decoder.DecodeSetKeyR(words, m_state.rdp);
-}
+void RDPProcessor::HandleSetKeyR(const uint32_t* words) { m_decoder.DecodeSetKeyR(words, m_state.rdp); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Texture Load Handlers

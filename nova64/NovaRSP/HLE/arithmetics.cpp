@@ -30,10 +30,10 @@ static_assert(clamp_s16(-1) == -1);
 
 // vmulf correctness (fractional multiply with round)
 static_assert(vmulf(0, 0) == 0);
-static_assert(vmulf(0x7FFF, 0x7FFF) == 0x7FFE);  // Near-max positive
-static_assert(vmulf(1, 1) == 0);                   // Below rounding threshold
-static_assert(vmulf(0x4000, 2) == 1);              // 0.5 * 2/32768 ≈ round up
-static_assert(vmulf(-1, 1) == 0);                   // Tiny negative
+static_assert(vmulf(0x7FFF, 0x7FFF) == 0x7FFE); // Near-max positive
+static_assert(vmulf(1, 1) == 0);                // Below rounding threshold
+static_assert(vmulf(0x4000, 2) == 1);           // 0.5 * 2/32768 ≈ round up
+static_assert(vmulf(-1, 1) == 0);               // Tiny negative
 
 // Type traits
 static_assert(std::is_same_v<decltype(clamp_s16(0)), int16_t>);

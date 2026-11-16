@@ -34,21 +34,21 @@ struct AlistAudio {
     uint32_t segments[N_SEGMENTS]{};
     uint16_t in{0}, out{0}, count{0};
     uint16_t dry_right{0}, wet_left{0}, wet_right{0};
-    int16_t  dry{0}, wet{0};
-    int16_t  vol[2]{};
-    int16_t  target[2]{};
-    int32_t  rate[2]{};
+    int16_t dry{0}, wet{0};
+    int16_t vol[2]{};
+    int16_t target[2]{};
+    int32_t rate[2]{};
     uint32_t loop{0};
-    int16_t  table[16 * 8]{};
+    int16_t table[16 * 8]{};
 };
 
 struct AlistNaudio {
-    int16_t  dry{0}, wet{0};
-    int16_t  vol[2]{};
-    int16_t  target[2]{};
-    int32_t  rate[2]{};
+    int16_t dry{0}, wet{0};
+    int16_t vol[2]{};
+    int16_t target[2]{};
+    int32_t rate[2]{};
     uint32_t loop{0};
-    int16_t  table[16 * 8]{};
+    int16_t table[16 * 8]{};
 };
 
 struct AlistNead {
@@ -56,7 +56,7 @@ struct AlistNead {
     uint16_t env_values[3]{};
     uint16_t env_steps[3]{};
     uint32_t loop{0};
-    int16_t  table[16 * 8]{};
+    int16_t table[16 * 8]{};
     uint16_t filter_count{0};
     uint32_t filter_lut_address[2]{};
 };

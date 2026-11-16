@@ -29,14 +29,14 @@ namespace Nova64::RSP::Jit {
 namespace {
 
 #ifdef NOVA_RSP_NATIVE_VECTORS
-using V8s = int16_t  __attribute__((vector_size(16)));
+using V8s = int16_t __attribute__((vector_size(16)));
 using V8u = uint16_t __attribute__((vector_size(16)));
-using V8w = int32_t  __attribute__((vector_size(32)));
+using V8w = int32_t __attribute__((vector_size(32)));
 using V8x = uint32_t __attribute__((vector_size(32)));
-using V8l = int64_t  __attribute__((vector_size(64)));
+using V8l = int64_t __attribute__((vector_size(64)));
 
-template <class To, class From> inline To Cvt(From v) { return __builtin_convertvector(v, To); }   // per-lane conversion
-template <class To, class From> inline To Bc(From v) { return (To)v; }                               // same bits, other lane type
+template <class To, class From> inline To Cvt(From v) { return __builtin_convertvector(v, To); } // per-lane conversion
+template <class To, class From> inline To Bc(From v) { return (To)v; } // same bits, other lane type
 
 inline V8s Splat(int16_t x) { return V8s{x, x, x, x, x, x, x, x}; }
 inline V8w SplatW(int32_t x) { return V8w{x, x, x, x, x, x, x, x}; }
@@ -51,7 +51,11 @@ inline V8s Splat(int16_t x) { return V8s::Splat(x); }
 inline V8w SplatW(int32_t x) { return V8w::Splat(x); }
 #endif
 
-inline V8s Ld(const void* p) { V8s v; std::memcpy(&v, p, sizeof(v)); return v; }
+inline V8s Ld(const void* p) {
+    V8s v;
+    std::memcpy(&v, p, sizeof(v));
+    return v;
+}
 inline void St(void* p, V8s v) { std::memcpy(p, &v, sizeof(v)); }
 
 // (mask & a) | (~mask & b), for masks that are all ones or all zeros per lane.
@@ -61,13 +65,11 @@ inline V8w SelW(V8w mask, V8w a, V8w b) { return (mask & a) | (~mask & b); }
 // ---- operand fetch -------------------------------------------------------------
 struct Op {
     unsigned vd, vs, vt, e;
-    explicit Op(uint32_t w)
-        : vd((w >> 6) & 31), vs((w >> 11) & 31), vt((w >> 16) & 31), e((w >> 21) & 15) {}
+    explicit Op(uint32_t w) : vd((w >> 6) & 31), vs((w >> 11) & 31), vt((w >> 16) & 31), e((w >> 21) & 15) {}
 };
 
 // VT with the instruction's element selector applied (RSPVector::BroadcastIndex).
-inline V8s Select(V8s v, unsigned e)
-{
+inline V8s Select(V8s v, unsigned e) {
     if (e < 2) return v;
 #if defined(__clang__) && defined(NOVA_RSP_NATIVE_VECTORS)
     switch (e) {
@@ -77,15 +79,15 @@ inline V8s Select(V8s v, unsigned e)
     case 5:  return __builtin_shufflevector(v, v, 2, 2, 2, 2, 6, 6, 6, 6);
     case 6:  return __builtin_shufflevector(v, v, 1, 1, 1, 1, 5, 5, 5, 5);
     case 7:  return __builtin_shufflevector(v, v, 0, 0, 0, 0, 4, 4, 4, 4);
-    default: return Splat(v[15 - e]);     // 8..15: one lane, 7 - (e & 7)
+    default: return Splat(v[15 - e]); // 8..15: one lane, 7 - (e & 7)
     }
 #else
     V8s r;
     for (unsigned i = 0; i < 8; ++i) {
         unsigned idx;
-        if (e < 4)      idx = (i & 6) | (~e & 1);
+        if (e < 4) idx = (i & 6) | (~e & 1);
         else if (e < 8) idx = (i & 4) | (~e & 3);
-        else            idx = 7 - (e & 7);
+        else idx = 7 - (e & 7);
         r[i] = v[idx];
     }
     return r;
@@ -97,28 +99,28 @@ inline V8s Vt(CRSPRegisters* r, const Op& o) { return Select(Ld(r->m_Vect[o.vt].
 inline void SetVd(CRSPRegisters* r, const Op& o, V8s v) { St(r->m_Vect[o.vd].Data(), v); }
 
 // ---- flags: each is 8 lanes of 0 or 0xFFFF ---------------------------------------
-inline V8s FlagMask(const RSPFlag& f) { return Ld(f.Value()) != 0; }   // -1 where set
+inline V8s FlagMask(const RSPFlag& f) { return Ld(f.Value()) != 0; } // -1 where set
 inline void SetFlag(RSPFlag& f, V8s mask) { St(f.Value(), mask); }
 inline void ClearFlag(RSPFlag& f) { St(f.Value(), V8s{}); }
 
 // ---- the accumulator ------------------------------------------------------------
-struct Acc { V8s H, M, L; };
+struct Acc {
+    V8s H, M, L;
+};
 
-inline Acc LoadAcc(CRSPRegisters* r)
-{
+inline Acc LoadAcc(CRSPRegisters* r) {
     return {Ld(r->m_ACCUM.HighData()), Ld(r->m_ACCUM.MidData()), Ld(r->m_ACCUM.LowData())};
 }
-inline void StoreAcc(CRSPRegisters* r, const Acc& a)
-{
+inline void StoreAcc(CRSPRegisters* r, const Acc& a) {
     St(r->m_ACCUM.HighData(), a.H);
-    St(r->m_ACCUM.MidData(),  a.M);
-    St(r->m_ACCUM.LowData(),  a.L);
+    St(r->m_ACCUM.MidData(), a.M);
+    St(r->m_ACCUM.LowData(), a.L);
 }
-inline V8l AccGet(const Acc& a)   // RSPAccumulator::Get
+inline V8l AccGet(const Acc& a) // RSPAccumulator::Get
 {
     return (Cvt<V8l>(a.H) << 32) | (Cvt<V8l>(Bc<V8u>(a.M)) << 16) | Cvt<V8l>(Bc<V8u>(a.L));
 }
-inline void AccSet(Acc& a, V8l v)   // RSPAccumulator::Set
+inline void AccSet(Acc& a, V8l v) // RSPAccumulator::Set
 {
     a.L = Cvt<V8s>(v);
     a.M = Cvt<V8s>(v >> 16);
@@ -126,32 +128,28 @@ inline void AccSet(Acc& a, V8l v)   // RSPAccumulator::Set
 }
 
 // RSPAccumulator::Saturate(el, true) and (el, false)
-inline V8s SatHigh(V8s H, V8s M)
-{
-    const V8s negH       = H < 0;
+inline V8s SatHigh(V8s H, V8s M) {
+    const V8s negH = H < 0;
     const V8s inRangeNeg = (H == -1) & (M < 0);
-    const V8s rNeg       = Sel(inRangeNeg, M, Splat(static_cast<int16_t>(0x8000)));
-    const V8s overflow   = (H != 0) | (M < 0);
-    const V8s rPos       = Sel(overflow, Splat(0x7FFF), M);
+    const V8s rNeg = Sel(inRangeNeg, M, Splat(static_cast<int16_t>(0x8000)));
+    const V8s overflow = (H != 0) | (M < 0);
+    const V8s rPos = Sel(overflow, Splat(0x7FFF), M);
     return Sel(negH, rNeg, rPos);
 }
-inline V8s SatLow(const Acc& a)
-{
+inline V8s SatLow(const Acc& a) {
     const V8s fits = ((a.H == 0) & (a.M >= 0)) | ((a.H == -1) & (a.M < 0));
-    const V8s neg  = a.H < 0;
+    const V8s neg = a.H < 0;
     return Sel(fits, a.L, Sel(neg, V8s{}, Splat(-1)));
 }
 
-inline V8s Clamp16(V8w v)
-{
+inline V8s Clamp16(V8w v) {
     v = SelW(v < SplatW(-32768), SplatW(-32768), v);
     v = SelW(v > SplatW(32767), SplatW(32767), v);
     return Cvt<V8s>(v);
 }
 
 // ---- multiplies -------------------------------------------------------------------
-void VMULF(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMULF(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -161,8 +159,7 @@ void VMULF(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatHigh(a.H, a.M));
 }
 
-void VMUDL(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMUDL(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -174,8 +171,7 @@ void VMUDL(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, a.L);
 }
 
-void VMUDM(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMUDM(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -185,8 +181,7 @@ void VMUDM(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, a.M);
 }
 
-void VMUDN(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMUDN(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -196,8 +191,7 @@ void VMUDN(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, a.L);
 }
 
-void VMUDH(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMUDH(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -207,8 +201,7 @@ void VMUDH(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatHigh(a.H, a.M));
 }
 
-void VMACF(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMACF(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -218,8 +211,7 @@ void VMACF(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatHigh(a.H, a.M));
 }
 
-void VMADL(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMADL(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -229,8 +221,7 @@ void VMADL(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatLow(a));
 }
 
-void VMADM(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMADM(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -241,8 +232,7 @@ void VMADM(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatHigh(a.H, a.M));
 }
 
-void VMADN(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMADN(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -253,14 +243,14 @@ void VMADN(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, SatLow(a));
 }
 
-void VMADH(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMADH(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
     // Only the upper 32 bits (high:mid) take part; the low lane is left alone.
     const V8w hm = (Cvt<V8w>(a.H) << 16) | Bc<V8w>(Cvt<V8x>(Bc<V8u>(a.M)));
-    const V8w value = Bc<V8w>(Bc<V8x>(hm) + Bc<V8x>(Cvt<V8w>(S) * Cvt<V8w>(T)));   // wraps at 32 bits, as the interpreter's int32 does
+    const V8w value =
+        Bc<V8w>(Bc<V8x>(hm) + Bc<V8x>(Cvt<V8w>(S) * Cvt<V8w>(T))); // wraps at 32 bits, as the interpreter's int32 does
     a.H = Cvt<V8s>(value >> 16);
     a.M = Cvt<V8s>(value);
     StoreAcc(r, a);
@@ -268,8 +258,7 @@ void VMADH(CRSPRegisters* r, uint8_t*, uint32_t w)
 }
 
 // ---- add / subtract ---------------------------------------------------------------
-void VADD(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VADD(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -282,8 +271,7 @@ void VADD(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCOH);
 }
 
-void VSUB(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VSUB(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8w carry = -Cvt<V8w>(FlagMask(r->m_VCOL));
@@ -294,8 +282,7 @@ void VSUB(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCOH);
 }
 
-void VADDC(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VADDC(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8w temp = Cvt<V8w>(Bc<V8u>(S)) + Cvt<V8w>(Bc<V8u>(T));
@@ -306,8 +293,7 @@ void VADDC(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetFlag(r->m_VCOL, Cvt<V8s>((temp >> 16) != 0));
 }
 
-void VSUBC(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VSUBC(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8w temp = Cvt<V8w>(Bc<V8u>(S)) - Cvt<V8w>(Bc<V8u>(T));
@@ -319,8 +305,7 @@ void VSUBC(CRSPRegisters* r, uint8_t*, uint32_t w)
 }
 
 // ---- compare and select -----------------------------------------------------------
-void VLT(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VLT(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s both = FlagMask(r->m_VCOL) & FlagMask(r->m_VCOH);
@@ -334,8 +319,7 @@ void VLT(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCOH);
 }
 
-void VEQ(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VEQ(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s eq = (S == T) & ~FlagMask(r->m_VCOH);
@@ -348,8 +332,7 @@ void VEQ(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCCH);
 }
 
-void VNE(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VNE(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s ne = (S != T) | FlagMask(r->m_VCOH);
@@ -362,8 +345,7 @@ void VNE(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCOH);
 }
 
-void VGE(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VGE(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s both = FlagMask(r->m_VCOL) & FlagMask(r->m_VCOH);
@@ -377,8 +359,7 @@ void VGE(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCOH);
 }
 
-void VMRG(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMRG(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s result = Sel(FlagMask(r->m_VCCL), S, T);
@@ -389,47 +370,42 @@ void VMRG(CRSPRegisters* r, uint8_t*, uint32_t w)
 }
 
 // ---- logic ---------------------------------------------------------------------------
-template <int Kind>
-void Logic(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+template <int Kind> void Logic(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     V8s result;
     switch (Kind) {
-    case 0:  result = S & T; break;      // VAND
-    case 1:  result = ~(S & T); break;   // VNAND
-    case 2:  result = S | T; break;      // VOR
-    case 3:  result = ~(S | T); break;   // VNOR
-    case 4:  result = S ^ T; break;      // VXOR
-    default: result = ~(S ^ T); break;   // VNXOR
+    case 0:  result = S & T; break;    // VAND
+    case 1:  result = ~(S & T); break; // VNAND
+    case 2:  result = S | T; break;    // VOR
+    case 3:  result = ~(S | T); break; // VNOR
+    case 4:  result = S ^ T; break;    // VXOR
+    default: result = ~(S ^ T); break; // VNXOR
     }
     St(r->m_ACCUM.LowData(), result);
     SetVd(r, o, result);
 }
 
-void VSAW(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VSAW(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     V8s result{};
-    switch (o.e) {   // the interpreter reads the selector from the rs field's low four bits
+    switch (o.e) { // the interpreter reads the selector from the rs field's low four bits
     case 8:  result = Ld(r->m_ACCUM.HighData()); break;
-    case 9:  result = Ld(r->m_ACCUM.MidData());  break;
-    case 10: result = Ld(r->m_ACCUM.LowData());  break;
+    case 9:  result = Ld(r->m_ACCUM.MidData()); break;
+    case 10: result = Ld(r->m_ACCUM.LowData()); break;
     default: break;
     }
     SetVd(r, o, result);
 }
 
-
 // ---- decoding for vector loads and stores ---------------------------------------------------
 inline uint32_t BaseValue(CRSPRegisters* r, uint32_t w) { return r->m_GPR[(w >> 21) & 31].UW; }
-inline int32_t  VOffset(uint32_t w) { return static_cast<int32_t>(w << 25) >> 25; }   // signed 7 bits
+inline int32_t VOffset(uint32_t w) { return static_cast<int32_t>(w << 25) >> 25; } // signed 7 bits
 inline unsigned Del(uint32_t w) { return (w >> 7) & 15; }
 inline uint8_t* VBytes(CRSPRegisters* r, uint32_t w) { return static_cast<uint8_t*>(r->m_Vect[(w >> 16) & 31].Data()); }
 
 // ---- more vector computation ---------------------------------------------------------------
-void VMULU(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMULU(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -438,8 +414,7 @@ void VMULU(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, Sel(a.H < 0, V8s{}, Sel((a.H ^ a.M) < 0, Splat(-1), a.M)));
 }
 
-void VMACU(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMACU(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -448,12 +423,11 @@ void VMACU(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, Sel(a.H < 0, V8s{}, Sel((a.H != 0) | (a.M < 0), Splat(-1), a.M)));
 }
 
-void VABS(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VABS(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s pos = S > 0, neg = S < 0;
-    const V8s negT = Bc<V8s>(V8u{} - Bc<V8u>(T));           // -vt, wrapping like the interpreter's store
+    const V8s negT = Bc<V8s>(V8u{} - Bc<V8u>(T)); // -vt, wrapping like the interpreter's store
     const V8s special = neg & (T == Splat(static_cast<int16_t>(0x8000)));
     const V8s result = Sel(pos, T, Sel(neg, Sel(special, Splat(0x7FFF), negT), V8s{}));
     const V8s accLow = Sel(pos, T, Sel(neg, Sel(special, Splat(static_cast<int16_t>(0x8000)), negT), V8s{}));
@@ -461,8 +435,7 @@ void VABS(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, result);
 }
 
-void VCL(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VCL(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s coL = FlagMask(r->m_VCOL), coH = FlagMask(r->m_VCOH);
@@ -476,12 +449,9 @@ void VCL(CRSPRegisters* r, uint8_t*, uint32_t w)
     const V8s caseD = ~coL & ~coH;
 
     const V8s setB = Cvt<V8s>(SelW(Cvt<V8w>(ce), (Su + Tu) <= SplatW(0x10000), (Tu + Su) == SplatW(0)));
-    const V8s geD  = Cvt<V8s>((Su - Tu) >= SplatW(0));
+    const V8s geD = Cvt<V8s>((Su - Tu) >= SplatW(0));
 
-    V8s low = Sel(caseA, Sel(ccL, negT, S),
-              Sel(caseB, Sel(setB, negT, S),
-              Sel(caseC, Sel(ccH, T, S),
-                         Sel(geD, T, S))));
+    V8s low = Sel(caseA, Sel(ccL, negT, S), Sel(caseB, Sel(setB, negT, S), Sel(caseC, Sel(ccH, T, S), Sel(geD, T, S))));
     SetFlag(r->m_VCCL, Sel(caseB, setB, ccL));
     SetFlag(r->m_VCCH, Sel(caseD, geD, ccH));
     St(r->m_ACCUM.LowData(), low);
@@ -491,44 +461,42 @@ void VCL(CRSPRegisters* r, uint8_t*, uint32_t w)
     ClearFlag(r->m_VCE);
 }
 
-void VCH(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VCH(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
-    const V8s signs = (S ^ T) < 0;                              // lanes where the signs differ
-    const V8s negT  = Bc<V8s>(V8u{} - Bc<V8u>(T));
-    const V8s notT  = ~T;
-    const V8s sum   = S + T;                                    // int16 wrap, as in the interpreter
-    const V8s diff  = S - T;
+    const V8s signs = (S ^ T) < 0; // lanes where the signs differ
+    const V8s negT = Bc<V8s>(V8u{} - Bc<V8u>(T));
+    const V8s notT = ~T;
+    const V8s sum = S + T; // int16 wrap, as in the interpreter
+    const V8s diff = S - T;
     const V8s neMask = S != notT;
 
     // signs differ
     const V8s sumLE0 = sum <= 0;
-    const V8s lowN   = Sel(sumLE0, negT, S);
-    const V8s cohN   = (sum != 0) & neMask;
-    const V8s cclN   = sumLE0;
-    const V8s cchN   = T < 0;
-    const V8s ceN    = sum == Splat(-1);
+    const V8s lowN = Sel(sumLE0, negT, S);
+    const V8s cohN = (sum != 0) & neMask;
+    const V8s cclN = sumLE0;
+    const V8s cchN = T < 0;
+    const V8s ceN = sum == Splat(-1);
 
     // signs agree
     const V8s diffGE0 = diff >= 0;
-    const V8s lowP    = Sel(diffGE0, T, S);
-    const V8s cohP    = (diff != 0) & neMask;
-    const V8s cclP    = T < 0;
-    const V8s cchP    = diffGE0;
+    const V8s lowP = Sel(diffGE0, T, S);
+    const V8s cohP = (diff != 0) & neMask;
+    const V8s cclP = T < 0;
+    const V8s cchP = diffGE0;
 
     const V8s low = Sel(signs, lowN, lowP);
     SetFlag(r->m_VCOL, signs);
     SetFlag(r->m_VCOH, Sel(signs, cohN, cohP));
     SetFlag(r->m_VCCL, Sel(signs, cclN, cclP));
     SetFlag(r->m_VCCH, Sel(signs, cchN, cchP));
-    SetFlag(r->m_VCE,  signs & ceN);
+    SetFlag(r->m_VCE, signs & ceN);
     St(r->m_ACCUM.LowData(), low);
     SetVd(r, o, low);
 }
 
-void VCR(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VCR(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     const V8s signs = (S ^ T) < 0;
@@ -554,19 +522,19 @@ void VCR(CRSPRegisters* r, uint8_t*, uint32_t w)
 }
 
 // ---- reciprocal, reciprocal square root and element moves (scalar by nature) -------------
-inline uint32_t Clz32(uint32_t v) { return static_cast<uint32_t>(std::countl_zero(v)); }   // 32 for zero, as the interpreter's
+inline uint32_t Clz32(uint32_t v) {
+    return static_cast<uint32_t>(std::countl_zero(v));
+} // 32 for zero, as the interpreter's
 inline int16_t* Lanes(CRSPRegisters* r, unsigned reg) { return static_cast<int16_t*>(r->m_Vect[reg].Data()); }
 
-void FinishReciprocal(CRSPRegisters* r, const Op& o, uint32_t w, int32_t result)
-{
+void FinishReciprocal(CRSPRegisters* r, const Op& o, uint32_t w, int32_t result) {
     r->m_High = false;
     r->m_Result = static_cast<uint16_t>(static_cast<uint32_t>(result) >> 16);
     St(r->m_ACCUM.LowData(), Vt(r, o));
     Lanes(r, o.vd)[7 - ((w >> 11) & 7)] = static_cast<int16_t>(result);
 }
 
-int32_t ReciprocalOf(CRSPRegisters* r, int32_t input)
-{
+int32_t ReciprocalOf(CRSPRegisters* r, int32_t input) {
     const int32_t mask = input >> 31;
     int32_t data = input ^ mask;
     if (input > -32768) data -= mask;
@@ -577,25 +545,21 @@ int32_t ReciprocalOf(CRSPRegisters* r, int32_t input)
     return (((0x10000 | r->m_Reciprocals[index]) << 14) >> (31 - shift)) ^ mask;
 }
 
-void VRCP(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VRCP(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const int32_t input = Lanes(r, o.vt)[7 - (o.e & 7)];
     FinishReciprocal(r, o, w, ReciprocalOf(r, input));
 }
 
-void VRCPL(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VRCPL(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const uint16_t lane = static_cast<uint16_t>(Lanes(r, o.vt)[7 - (o.e & 7)]);
-    const int32_t input = r->m_High
-        ? static_cast<int32_t>((static_cast<uint32_t>(r->m_In) << 16) | lane)
-        : static_cast<int32_t>(static_cast<int16_t>(lane));
+    const int32_t input = r->m_High ? static_cast<int32_t>((static_cast<uint32_t>(r->m_In) << 16) | lane)
+                                    : static_cast<int32_t>(static_cast<int16_t>(lane));
     FinishReciprocal(r, o, w, ReciprocalOf(r, input));
 }
 
-void VRCPH(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VRCPH(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     r->m_High = true;
     r->m_In = static_cast<uint16_t>(Lanes(r, o.vt)[7 - (o.e & 7)]);
@@ -603,8 +567,7 @@ void VRCPH(CRSPRegisters* r, uint8_t*, uint32_t w)
     Lanes(r, o.vd)[7 - ((w >> 11) & 7)] = static_cast<int16_t>(r->m_Result);
 }
 
-int32_t InverseRootOf(CRSPRegisters* r, uint32_t uinput)
-{
+int32_t InverseRootOf(CRSPRegisters* r, uint32_t uinput) {
     if (uinput == 0) return 0x7FFFFFFF;
     if (uinput == 0xFFFF8000u) return static_cast<int32_t>(0xFFFF0000u);
     if (uinput > 0xFFFF8000u) uinput--;
@@ -618,30 +581,25 @@ int32_t InverseRootOf(CRSPRegisters* r, uint32_t uinput)
     return static_cast<int32_t>((0x40000000u | rom) >> rShift) ^ mask;
 }
 
-void VRSQ(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VRSQ(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const uint32_t uinput = static_cast<uint32_t>(static_cast<int32_t>(Lanes(r, o.vt)[7 - (o.e & 7)]));
     FinishReciprocal(r, o, w, InverseRootOf(r, uinput));
 }
 
-void VRSQL(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VRSQL(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const uint16_t lane = static_cast<uint16_t>(Lanes(r, o.vt)[7 - (o.e & 7)]);
-    const uint32_t uinput = r->m_High
-        ? ((static_cast<uint32_t>(r->m_In) << 16) | lane)
-        : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(lane)));
+    const uint32_t uinput = r->m_High ? ((static_cast<uint32_t>(r->m_In) << 16) | lane)
+                                      : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(lane)));
     FinishReciprocal(r, o, w, InverseRootOf(r, uinput));
 }
 
-void VRSQH(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
-    VRCPH(r, nullptr, w);   // identical: same lane in, same lane out
+void VRSQH(CRSPRegisters* r, uint8_t*, uint32_t w) {
+    VRCPH(r, nullptr, w); // identical: same lane in, same lane out
 }
 
-void VMOV(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMOV(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s T = Vt(r, o);
     St(r->m_ACCUM.LowData(), T);
@@ -650,31 +608,28 @@ void VMOV(CRSPRegisters* r, uint8_t*, uint32_t w)
 }
 
 // ---- moves between scalar and vector registers --------------------------------------------
-inline uint8_t PackFlag(const RSPFlag& f)
-{
+inline uint8_t PackFlag(const RSPFlag& f) {
     const uint16_t* v = f.Value();
     uint8_t packed = 0;
-    for (int i = 0; i < 8; ++i) if (v[i]) packed |= static_cast<uint8_t>(1u << (7 - i));
+    for (int i = 0; i < 8; ++i)
+        if (v[i]) packed |= static_cast<uint8_t>(1u << (7 - i));
     return packed;
 }
-inline void UnpackFlag(RSPFlag& f, uint8_t packed)
-{
+inline void UnpackFlag(RSPFlag& f, uint8_t packed) {
     uint16_t* v = f.Value();
     for (int i = 0; i < 8; ++i) v[i] = (packed & (1u << (7 - i))) ? 0xFFFF : 0x0000;
 }
 
-void MFC2(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void MFC2(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const unsigned rt = (w >> 16) & 31;
     if (rt == 0) return;
-    const unsigned element = (w >> 7) & 15;                       // the interpreter's `sa >> 1`
+    const unsigned element = (w >> 7) & 15; // the interpreter's `sa >> 1`
     const uint8_t* v = static_cast<const uint8_t*>(r->m_Vect[(w >> 11) & 31].Data());
     const uint16_t hi = v[15 - element], lo = v[15 - ((element + 1) % 16)];
     r->m_GPR[rt].W = static_cast<int16_t>(static_cast<uint16_t>((hi << 8) | lo));
 }
 
-void CFC2(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void CFC2(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const unsigned rt = (w >> 16) & 31;
     if (rt == 0) return;
     switch ((w >> 11) & 3) {
@@ -684,28 +639,31 @@ void CFC2(CRSPRegisters* r, uint8_t*, uint32_t w)
     }
 }
 
-void MTC2(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void MTC2(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const unsigned element = 15 - ((w >> 7) & 15);
     uint8_t* v = static_cast<uint8_t*>(r->m_Vect[(w >> 11) & 31].Data());
     const uint32_t value = r->m_GPR[(w >> 16) & 31].UW;
-    v[element] = static_cast<uint8_t>(value >> 8);                // GPR.B[1]
-    if (element != 0) v[element - 1] = static_cast<uint8_t>(value);   // GPR.B[0]
+    v[element] = static_cast<uint8_t>(value >> 8);                  // GPR.B[1]
+    if (element != 0) v[element - 1] = static_cast<uint8_t>(value); // GPR.B[0]
 }
 
-void CTC2(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void CTC2(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const uint32_t value = r->m_GPR[(w >> 16) & 31].UW;
     switch ((w >> 11) & 3) {
-    case 0:  UnpackFlag(r->m_VCOL, static_cast<uint8_t>(value)); UnpackFlag(r->m_VCOH, static_cast<uint8_t>(value >> 8)); break;
-    case 1:  UnpackFlag(r->m_VCCL, static_cast<uint8_t>(value)); UnpackFlag(r->m_VCCH, static_cast<uint8_t>(value >> 8)); break;
+    case 0:
+        UnpackFlag(r->m_VCOL, static_cast<uint8_t>(value));
+        UnpackFlag(r->m_VCOH, static_cast<uint8_t>(value >> 8));
+        break;
+    case 1:
+        UnpackFlag(r->m_VCCL, static_cast<uint8_t>(value));
+        UnpackFlag(r->m_VCCH, static_cast<uint8_t>(value >> 8));
+        break;
     default: UnpackFlag(r->m_VCE, static_cast<uint8_t>(value)); break;
     }
 }
 
 // ---- packed loads ----------------------------------------------------------------------------
-void LPV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LPV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 8);
     const uint32_t off = (addr & 7) - Del(w);
     addr &= ~7u;
@@ -714,8 +672,7 @@ void LPV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
         vec[7 - i] = static_cast<uint16_t>(dmem[((addr + ((off + i) & 0xF)) ^ 3) & 0xFFF] << 8);
 }
 
-void LUV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LUV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 8);
     const uint32_t off = (addr & 7) - Del(w);
     addr &= ~7u;
@@ -728,11 +685,8 @@ void LUV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
 // The vector register is 16 bytes with byte i of the N64 register at u8(15 - i);
 // DMEM is stored with each 4-byte word byte-reversed, hence the `^ 3`.
 
-
 // A load or store of `size` bytes (1, 2, 4, 8), starting at element `del`.
-template <unsigned LogSize>
-void LoadSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+template <unsigned LogSize> void LoadSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     constexpr unsigned size = 1u << LogSize;
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * static_cast<int32_t>(size))) & 0xFFF;
     uint8_t* vec = VBytes(r, w);
@@ -751,13 +705,10 @@ void LoadSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
             return;
         }
     }
-    for (unsigned i = del, n = length + del; i < n; ++i, ++addr)
-        vec[15 - i] = dmem[(addr ^ 3) & 0xFFF];
+    for (unsigned i = del, n = length + del; i < n; ++i, ++addr) vec[15 - i] = dmem[(addr ^ 3) & 0xFFF];
 }
 
-template <unsigned LogSize>
-void StoreSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+template <unsigned LogSize> void StoreSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     constexpr unsigned size = 1u << LogSize;
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * static_cast<int32_t>(size))) & 0xFFF;
     const uint8_t* vec = VBytes(r, w);
@@ -773,12 +724,10 @@ void StoreSmall(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
             return;
         }
     }
-    for (unsigned i = del, n = size + del; i < n; ++i, ++addr)
-        dmem[(addr ^ 3) & 0xFFF] = vec[15 - (i & 0xF)];
+    for (unsigned i = del, n = size + del; i < n; ++i, ++addr) dmem[(addr ^ 3) & 0xFFF] = vec[15 - (i & 0xF)];
 }
 
-void LQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
@@ -792,12 +741,10 @@ void LQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
     }
     const unsigned toBoundary = ((addr + 0x10) & ~0xFu) - addr;
     const unsigned length = toBoundary < 16 - del ? toBoundary : 16 - del;
-    for (unsigned i = del, n = length + del; i < n; ++i, ++addr)
-        vec[15 - i] = dmem[addr ^ 3];
+    for (unsigned i = del, n = length + del; i < n; ++i, ++addr) vec[15 - i] = dmem[addr ^ 3];
 }
 
-void SQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     const uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
@@ -809,26 +756,21 @@ void SQV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
         return;
     }
     const unsigned length = ((addr + 0x10) & ~0xFu) - addr;
-    for (unsigned i = del; i < length + del; ++i, ++addr)
-        dmem[(addr ^ 3) & 0xFFF] = vec[15 - (i & 0xF)];
+    for (unsigned i = del; i < length + del; ++i, ++addr) dmem[(addr ^ 3) & 0xFFF] = vec[15 - (i & 0xF)];
 }
-
 
 // ---- the remaining loads ---------------------------------------------------------------------
 inline uint8_t DmemByte(const uint8_t* dmem, uint32_t addr) { return dmem[(addr ^ 3) & 0xFFF]; }
 
-void LRV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LRV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     uint8_t* vec = VBytes(r, w);
     const uint8_t offset = static_cast<uint8_t>((0x10 - (addr & 0xF)) + Del(w));
     addr &= 0xFF0;
-    for (unsigned i = offset; i < 16; ++i, ++addr)
-        vec[15 - i] = DmemByte(dmem, addr);
+    for (unsigned i = offset; i < 16; ++i, ++addr) vec[15 - i] = DmemByte(dmem, addr);
 }
 
-void LHV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LHV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16);
     const uint32_t off = (addr & 7) - Del(w);
     addr &= ~7u;
@@ -837,8 +779,7 @@ void LHV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
         vec[7 - i] = static_cast<int16_t>(static_cast<int16_t>(DmemByte(dmem, addr + ((off + (i << 1)) & 0xF))) << 7);
 }
 
-void LFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16);
     const unsigned del = Del(w);
     const uint8_t length = static_cast<uint8_t>(8 + del < 16 ? 8 + del : 16);
@@ -846,17 +787,16 @@ void LFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
     addr &= ~7u;
     int16_t temp16[8] = {};
     for (unsigned i = 0; i < 4; ++i) {
-        temp16[i]     = static_cast<int16_t>(static_cast<int16_t>(DmemByte(dmem, addr + ((off + (i << 2)) & 0xF))) << 7);
-        temp16[i + 4] = static_cast<int16_t>(static_cast<int16_t>(DmemByte(dmem, addr + ((off + (i << 2) + 8) & 0xF))) << 7);
+        temp16[i] = static_cast<int16_t>(static_cast<int16_t>(DmemByte(dmem, addr + ((off + (i << 2)) & 0xF))) << 7);
+        temp16[i + 4] =
+            static_cast<int16_t>(static_cast<int16_t>(DmemByte(dmem, addr + ((off + (i << 2) + 8) & 0xF))) << 7);
     }
     const int8_t* temp = reinterpret_cast<const int8_t*>(temp16);
     int8_t* vec = static_cast<int8_t*>(r->m_Vect[(w >> 16) & 31].Data());
-    for (unsigned i = del; i < length; ++i)
-        vec[15 - i] = temp[i ^ 1];
+    for (unsigned i = del; i < length; ++i) vec[15 - i] = temp[i ^ 1];
 }
 
-void LTV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void LTV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16);
     const uint32_t start = addr & ~7u;
     const uint32_t end = start + 0x10;
@@ -873,82 +813,78 @@ void LTV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
     }
 }
 
-void LWV(CRSPRegisters*, uint8_t*, uint32_t) {}   // not implemented on real hardware either
+void LWV(CRSPRegisters*, uint8_t*, uint32_t) {} // not implemented on real hardware either
 
 // ---- the remaining stores ---------------------------------------------------------------------
 inline void PutByte(uint8_t* dmem, uint32_t addr, uint8_t v) { dmem[(addr ^ 3) & 0xFFF] = v; }
 
-void SRV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SRV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     const uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
     const uint8_t length = addr & 0xF;
     const uint8_t offset = (0x10 - length) & 0xF;
     addr &= 0xFF0;
-    for (unsigned i = del, n = length + del; i < n; ++i, ++addr)
-        PutByte(dmem, addr, vec[15 - ((i + offset) & 0xF)]);
+    for (unsigned i = del, n = length + del; i < n; ++i, ++addr) PutByte(dmem, addr, vec[15 - ((i + offset) & 0xF)]);
 }
 
-void SPV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SPV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 8)) & 0xFFF;
     const uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
     for (unsigned i = del, n = 8 + del; i < n; ++i, ++addr) {
-        if ((i & 0xF) < 8)
-            PutByte(dmem, addr, vec[15 - ((i & 0xF) << 1)]);
+        if ((i & 0xF) < 8) PutByte(dmem, addr, vec[15 - ((i & 0xF) << 1)]);
         else
-            PutByte(dmem, addr, static_cast<uint8_t>((vec[15 - ((i & 7) << 1)] << 1) + (vec[14 - ((i & 7) << 1)] >> 7)));
+            PutByte(dmem, addr,
+                    static_cast<uint8_t>((vec[15 - ((i & 7) << 1)] << 1) + (vec[14 - ((i & 7) << 1)] >> 7)));
     }
 }
 
-void SUV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SUV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 8)) & 0xFFF;
     const uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
     for (unsigned count = del; count < 8 + del; ++count, ++addr) {
         if ((count & 0xF) < 8)
-            PutByte(dmem, addr, static_cast<uint8_t>((vec[15 - ((count & 7) << 1)] << 1) + (vec[14 - ((count & 7) << 1)] >> 7)));
-        else
-            PutByte(dmem, addr, vec[15 - ((count & 7) << 1)]);
+            PutByte(dmem, addr,
+                    static_cast<uint8_t>((vec[15 - ((count & 7) << 1)] << 1) + (vec[14 - ((count & 7) << 1)] >> 7)));
+        else PutByte(dmem, addr, vec[15 - ((count & 7) << 1)]);
     }
 }
 
-void SHV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SHV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16);
     const uint8_t* vec = VBytes(r, w);
     const unsigned del = Del(w);
     const uint8_t offset = addr & 7;
     addr &= ~7u;
     for (uint32_t i = 0; i < 16; i += 2) {
-        const uint8_t value = static_cast<uint8_t>((vec[15 - ((del + i) & 15)] << 1) | (vec[15 - ((del + i + 1) & 15)] >> 7));
+        const uint8_t value =
+            static_cast<uint8_t>((vec[15 - ((del + i) & 15)] << 1) | (vec[15 - ((del + i + 1) & 15)] >> 7));
         PutByte(dmem, addr + ((offset + i) & 15), value);
     }
 }
 
-void SFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     const uint16_t* vec = static_cast<const uint16_t*>(r->m_Vect[(w >> 16) & 31].Data());
     const uint8_t offset = addr & 7;
     addr &= 0xFF8;
     auto write4 = [&](unsigned e0, unsigned e1, unsigned e2, unsigned e3) {
-        PutByte(dmem, addr + offset,                  (vec[e0] >> 7) & 0xFF);
-        PutByte(dmem, addr + ((offset + 4) & 0xF),    (vec[e1] >> 7) & 0xFF);
-        PutByte(dmem, addr + ((offset + 8) & 0xF),    (vec[e2] >> 7) & 0xFF);
-        PutByte(dmem, addr + ((offset + 12) & 0xF),   (vec[e3] >> 7) & 0xFF);
+        PutByte(dmem, addr + offset, (vec[e0] >> 7) & 0xFF);
+        PutByte(dmem, addr + ((offset + 4) & 0xF), (vec[e1] >> 7) & 0xFF);
+        PutByte(dmem, addr + ((offset + 8) & 0xF), (vec[e2] >> 7) & 0xFF);
+        PutByte(dmem, addr + ((offset + 12) & 0xF), (vec[e3] >> 7) & 0xFF);
     };
     switch (Del(w)) {
-    case 0: case 15: write4(7, 6, 5, 4); break;
-    case 1:          write4(1, 0, 3, 2); break;
-    case 4:          write4(6, 5, 4, 7); break;
-    case 5:          write4(0, 3, 2, 1); break;
-    case 8:          write4(3, 2, 1, 0); break;
-    case 11:         write4(4, 7, 6, 5); break;
-    case 12:         write4(2, 1, 0, 3); break;
+    case 0:
+    case 15: write4(7, 6, 5, 4); break;
+    case 1:  write4(1, 0, 3, 2); break;
+    case 4:  write4(6, 5, 4, 7); break;
+    case 5:  write4(0, 3, 2, 1); break;
+    case 8:  write4(3, 2, 1, 0); break;
+    case 11: write4(4, 7, 6, 5); break;
+    case 12: write4(2, 1, 0, 3); break;
     default:
         PutByte(dmem, addr + offset, 0);
         PutByte(dmem, addr + ((offset + 4) & 0xF), 0);
@@ -958,8 +894,7 @@ void SFV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
     }
 }
 
-void STV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void STV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16);
     const unsigned del = Del(w);
     const uint8_t element = static_cast<uint8_t>(16 - (del & ~1u));
@@ -968,13 +903,12 @@ void STV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
     addr &= ~7u;
     for (uint32_t i = 0; i < 16; i += 2) {
         const int8_t* vec = static_cast<const int8_t*>(r->m_Vect[vtBase + (i >> 1)].Data());
-        PutByte(dmem, addr + ((offset + i) & 15),     static_cast<uint8_t>(vec[15 - ((element + i) & 15)]));
+        PutByte(dmem, addr + ((offset + i) & 15), static_cast<uint8_t>(vec[15 - ((element + i) & 15)]));
         PutByte(dmem, addr + ((offset + i + 1) & 15), static_cast<uint8_t>(vec[15 - ((element + i + 1) & 15)]));
     }
 }
 
-void SWV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
-{
+void SWV(CRSPRegisters* r, uint8_t* dmem, uint32_t w) {
     uint32_t addr = (BaseValue(r, w) + static_cast<uint32_t>(VOffset(w) * 16)) & 0xFFF;
     const int8_t* vec = static_cast<const int8_t*>(r->m_Vect[(w >> 16) & 31].Data());
     const unsigned del = Del(w);
@@ -985,8 +919,7 @@ void SWV(CRSPRegisters* r, uint8_t* dmem, uint32_t w)
 }
 
 // ---- the last computations (rarely used; scalar, matching the interpreter) -------------------
-void VRND(CRSPRegisters* r, uint32_t w, bool positive)
-{
+void VRND(CRSPRegisters* r, uint32_t w, bool positive) {
     const Op o(w);
     const V8s T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -994,8 +927,8 @@ void VRND(CRSPRegisters* r, uint32_t w, bool positive)
     for (unsigned el = 0; el < 8; ++el) {
         int32_t value = T[el];
         if (o.vs & 1) value <<= 16;
-        int64_t accum = (static_cast<int64_t>(a.H[el]) << 32) | (static_cast<int64_t>(static_cast<uint16_t>(a.M[el])) << 16)
-                      | static_cast<uint16_t>(a.L[el]);
+        int64_t accum = (static_cast<int64_t>(a.H[el]) << 32) |
+                        (static_cast<int64_t>(static_cast<uint16_t>(a.M[el])) << 16) | static_cast<uint16_t>(a.L[el]);
         accum = (accum << 16) >> 16;
         if (positive ? accum >= 0 : accum < 0) accum = Clip48(static_cast<uint64_t>(accum + value));
         a.L[el] = static_cast<int16_t>(accum);
@@ -1009,8 +942,7 @@ void VRND(CRSPRegisters* r, uint32_t w, bool positive)
 void VRNDP(CRSPRegisters* r, uint8_t*, uint32_t w) { VRND(r, w, true); }
 void VRNDN(CRSPRegisters* r, uint8_t*, uint32_t w) { VRND(r, w, false); }
 
-void VMULQ(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMULQ(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     const V8s S = Vs(r, o), T = Vt(r, o);
     Acc a = LoadAcc(r);
@@ -1027,17 +959,15 @@ void VMULQ(CRSPRegisters* r, uint8_t*, uint32_t w)
     SetVd(r, o, Ld(result));
 }
 
-void VMACQ(CRSPRegisters* r, uint8_t*, uint32_t w)
-{
+void VMACQ(CRSPRegisters* r, uint8_t*, uint32_t w) {
     const Op o(w);
     Acc a = LoadAcc(r);
     uint16_t result[8];
     for (unsigned el = 0; el < 8; ++el) {
-        int32_t accum = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(a.H[el])) << 16) | static_cast<uint16_t>(a.M[el]));
-        if (accum < -0x20 && ((accum & 0x20) == 0))
-            accum += 0x20;
-        else if (accum > 0x20 && (accum & 0x20) == 0)
-            accum -= 0x20;
+        int32_t accum = static_cast<int32_t>((static_cast<uint32_t>(static_cast<uint16_t>(a.H[el])) << 16) |
+                                             static_cast<uint16_t>(a.M[el]));
+        if (accum < -0x20 && ((accum & 0x20) == 0)) accum += 0x20;
+        else if (accum > 0x20 && (accum & 0x20) == 0) accum -= 0x20;
         result[el] = static_cast<uint16_t>(Nova64::RSP::Clamp16(accum >> 1) & 0xFFF0);
         a.H[el] = static_cast<int16_t>(accum >> 16);
         a.M[el] = static_cast<int16_t>(accum);
@@ -1051,47 +981,97 @@ void VNOP(CRSPRegisters*, uint8_t*, uint32_t) {}
 // ---- lookup ------------------------------------------------------------------------------
 struct Tables {
     KernelFn vector[64] = {};
-    KernelFn scalar[32] = {};   // MFC2 CFC2 MTC2 CTC2, indexed by the rs field
-    KernelFn load[32]   = {};
-    KernelFn store[32]  = {};
-    Tables()
-    {
-        vector[0]  = VMULF;   vector[4]  = VMUDL;   vector[5]  = VMUDM;   vector[6]  = VMUDN;
-        vector[7]  = VMUDH;   vector[8]  = VMACF;   vector[12] = VMADL;   vector[13] = VMADM;
-        vector[14] = VMADN;   vector[15] = VMADH;   vector[16] = VADD;    vector[17] = VSUB;
-        vector[20] = VADDC;   vector[21] = VSUBC;   vector[29] = VSAW;
-        vector[32] = VLT;     vector[33] = VEQ;     vector[34] = VNE;     vector[35] = VGE;
+    KernelFn scalar[32] = {}; // MFC2 CFC2 MTC2 CTC2, indexed by the rs field
+    KernelFn load[32] = {};
+    KernelFn store[32] = {};
+    Tables() {
+        vector[0] = VMULF;
+        vector[4] = VMUDL;
+        vector[5] = VMUDM;
+        vector[6] = VMUDN;
+        vector[7] = VMUDH;
+        vector[8] = VMACF;
+        vector[12] = VMADL;
+        vector[13] = VMADM;
+        vector[14] = VMADN;
+        vector[15] = VMADH;
+        vector[16] = VADD;
+        vector[17] = VSUB;
+        vector[20] = VADDC;
+        vector[21] = VSUBC;
+        vector[29] = VSAW;
+        vector[32] = VLT;
+        vector[33] = VEQ;
+        vector[34] = VNE;
+        vector[35] = VGE;
         vector[39] = VMRG;
-        vector[2]  = VRNDP;   vector[3]  = VMULQ;   vector[10] = VRNDN;   vector[11] = VMACQ;
-        vector[55] = VNOP;    vector[63] = VNOP;
-        vector[1]  = VMULU;   vector[9]  = VMACU;   vector[19] = VABS;
-        vector[36] = VCL;     vector[37] = VCH;     vector[38] = VCR;
-        vector[48] = VRCP;    vector[49] = VRCPL;   vector[50] = VRCPH;   vector[51] = VMOV;
-        vector[52] = VRSQ;    vector[53] = VRSQL;   vector[54] = VRSQH;
-        scalar[0] = MFC2;     scalar[2] = CFC2;     scalar[4] = MTC2;     scalar[6] = CTC2;
-        vector[40] = Logic<0>; vector[41] = Logic<1>; vector[42] = Logic<2>;
-        vector[43] = Logic<3>; vector[44] = Logic<4>; vector[45] = Logic<5>;
+        vector[2] = VRNDP;
+        vector[3] = VMULQ;
+        vector[10] = VRNDN;
+        vector[11] = VMACQ;
+        vector[55] = VNOP;
+        vector[63] = VNOP;
+        vector[1] = VMULU;
+        vector[9] = VMACU;
+        vector[19] = VABS;
+        vector[36] = VCL;
+        vector[37] = VCH;
+        vector[38] = VCR;
+        vector[48] = VRCP;
+        vector[49] = VRCPL;
+        vector[50] = VRCPH;
+        vector[51] = VMOV;
+        vector[52] = VRSQ;
+        vector[53] = VRSQL;
+        vector[54] = VRSQH;
+        scalar[0] = MFC2;
+        scalar[2] = CFC2;
+        scalar[4] = MTC2;
+        scalar[6] = CTC2;
+        vector[40] = Logic<0>;
+        vector[41] = Logic<1>;
+        vector[42] = Logic<2>;
+        vector[43] = Logic<3>;
+        vector[44] = Logic<4>;
+        vector[45] = Logic<5>;
 
-        load[0] = LoadSmall<0>;   load[1] = LoadSmall<1>;   load[2] = LoadSmall<2>;   load[3] = LoadSmall<3>;
-        load[4] = LQV;   load[5] = LRV;   load[6] = LPV;   load[7] = LUV;
-        load[8] = LHV;   load[9] = LFV;   load[10] = LWV;  load[11] = LTV;
-        store[0] = StoreSmall<0>; store[1] = StoreSmall<1>; store[2] = StoreSmall<2>; store[3] = StoreSmall<3>;
-        store[4] = SQV;   store[5] = SRV;   store[6] = SPV;   store[7] = SUV;
-        store[8] = SHV;   store[9] = SFV;   store[10] = SWV;  store[11] = STV;
+        load[0] = LoadSmall<0>;
+        load[1] = LoadSmall<1>;
+        load[2] = LoadSmall<2>;
+        load[3] = LoadSmall<3>;
+        load[4] = LQV;
+        load[5] = LRV;
+        load[6] = LPV;
+        load[7] = LUV;
+        load[8] = LHV;
+        load[9] = LFV;
+        load[10] = LWV;
+        load[11] = LTV;
+        store[0] = StoreSmall<0>;
+        store[1] = StoreSmall<1>;
+        store[2] = StoreSmall<2>;
+        store[3] = StoreSmall<3>;
+        store[4] = SQV;
+        store[5] = SRV;
+        store[6] = SPV;
+        store[7] = SUV;
+        store[8] = SHV;
+        store[9] = SFV;
+        store[10] = SWV;
+        store[11] = STV;
     }
 };
 
 } // namespace
 
-KernelFn FindKernel(uint32_t word)
-{
+KernelFn FindKernel(uint32_t word) {
     static const Tables tables;
     switch (word >> 26) {
     case 0x12:                                         // COP2: vector computation has bit 25 set
         return (word & (1u << 25)) ? tables.vector[word & 63] : tables.scalar[(word >> 21) & 31];
-    case 0x32:  return tables.load[(word >> 11) & 31];   // LWC2
-    case 0x3A:  return tables.store[(word >> 11) & 31];  // SWC2
-    default:    return nullptr;
+    case 0x32: return tables.load[(word >> 11) & 31];  // LWC2
+    case 0x3A: return tables.store[(word >> 11) & 31]; // SWC2
+    default:   return nullptr;
     }
 }
 

@@ -7,18 +7,17 @@
 #include <mutex>
 #include "../../common/file.hpp"
 
-class CEeprom
-{
+class CEeprom {
 public:
     CEeprom(void);
     CEeprom(bool ReadOnly);
     ~CEeprom();
 
-    void EepromCommand(uint8_t * Command);
+    void EepromCommand(uint8_t* Command);
 
 private:
-    CEeprom(const CEeprom &);
-    CEeprom & operator=(const CEeprom &);
+    CEeprom(const CEeprom&);
+    CEeprom& operator=(const CEeprom&);
 
     void HandleStatusCommand(uint8_t* Command);
     void HandleReadCommand(uint8_t* Command);
@@ -26,14 +25,14 @@ private:
     void HandleRTCStatusCommand(uint8_t* Command);
     void HandleRTCReadCommand(uint8_t* Command);
     void HandleRTCWriteCommand(uint8_t* Command);
-    void ProcessingError(uint8_t * Command);
+    void ProcessingError(uint8_t* Command);
     void LoadEeprom();
-    void ReadFrom(uint8_t * Buffer, int32_t line);
-    void WriteTo(uint8_t * Buffer, int32_t line);
+    void ReadFrom(uint8_t* Buffer, int32_t line);
+    void WriteTo(uint8_t* Buffer, int32_t line);
 
     uint8_t m_EEPROM[0x800];
     bool m_ReadOnly;
-    bool m_Is16K;  // true = 16K EEPROM (2048 bytes), false = 4K (512 bytes)
+    bool m_Is16K; // true = 16K EEPROM (2048 bytes), false = 4K (512 bytes)
     FileSystem::File m_File;
     mutable std::mutex m_FileMutex;
 };

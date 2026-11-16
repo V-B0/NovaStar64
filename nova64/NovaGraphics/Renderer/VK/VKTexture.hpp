@@ -22,7 +22,9 @@
 #include "VKMemory.hpp"
 #include "../Renderer.hpp"
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 /// Translate engine TextureFormat → VkFormat.
 /// Returns VK_FORMAT_UNDEFINED for unsupported formats (logged).
@@ -39,21 +41,19 @@ public:
 
     // ITexture
     void Upload(const void* data, size_t sizeBytes, uint32_t mipLevel) override;
-    void UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                          const void* data, size_t sizeBytes, uint32_t mipLevel) override;
+    void UploadSubRegion(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const void* data, size_t sizeBytes,
+                         uint32_t mipLevel) override;
     void GenerateMipmaps() override;
     void SetSampler(const SamplerDesc& desc) override;
-    uint32_t      GetWidth()  const override { return m_w; }
-    uint32_t      GetHeight() const override { return m_h; }
+    uint32_t GetWidth() const override { return m_w; }
+    uint32_t GetHeight() const override { return m_h; }
     TextureFormat GetFormat() const override { return m_format; }
-    uint64_t      GetNativeHandle() const override {
-        return reinterpret_cast<uint64_t>(m_image);
-    }
+    uint64_t GetNativeHandle() const override { return reinterpret_cast<uint64_t>(m_image); }
 
     // VK-side accessors
-    VkImage     GetImage()   const { return m_image; }
-    VkImageView GetView()    const { return m_view; }
-    VkSampler   GetSampler() const { return m_sampler; }
+    VkImage GetImage() const { return m_image; }
+    VkImageView GetView() const { return m_view; }
+    VkSampler GetSampler() const { return m_sampler; }
     VkImageLayout GetLayout() const { return m_layout; }
 
     /// Samplers are shared between textures with the same settings (a game has a few
@@ -65,17 +65,19 @@ private:
     void CreateDefaultSampler();
 
     const VKContext* m_ctx;
-    uint32_t      m_w = 0;
-    uint32_t      m_h = 0;
-    uint32_t      m_mipLevels = 1;
+    uint32_t m_w = 0;
+    uint32_t m_h = 0;
+    uint32_t m_mipLevels = 1;
     TextureFormat m_format = TextureFormat::RGBA8;
-    VkFormat      m_vkFormat = VK_FORMAT_UNDEFINED;
+    VkFormat m_vkFormat = VK_FORMAT_UNDEFINED;
 
-    VkImage        m_image   = VK_NULL_HANDLE;
-    VkDeviceMemory m_memory  = VK_NULL_HANDLE;
-    VkImageView    m_view    = VK_NULL_HANDLE;
-    VkSampler      m_sampler = VK_NULL_HANDLE;   // shared, owned by the sampler cache
-    VkImageLayout  m_layout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImage m_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_memory = VK_NULL_HANDLE;
+    VkImageView m_view = VK_NULL_HANDLE;
+    VkSampler m_sampler = VK_NULL_HANDLE; // shared, owned by the sampler cache
+    VkImageLayout m_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

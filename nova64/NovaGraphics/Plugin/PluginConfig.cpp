@@ -16,24 +16,22 @@
 
 namespace Nova64::Video {
 
-void PluginConfig::LoadDefaults() {
-    *this = PluginConfig{};
-}
+void PluginConfig::LoadDefaults() { *this = PluginConfig{}; }
 
 void PluginConfig::Clamp() {
-    windowWidth        = std::max(320, std::min(windowWidth, 7680));
-    windowHeight       = std::max(240, std::min(windowHeight, 4320));
-    internalResScale   = std::max(1, std::min(internalResScale, 8));
-    backendType        = std::max(0, std::min(backendType, 2));
+    windowWidth = std::max(320, std::min(windowWidth, 7680));
+    windowHeight = std::max(240, std::min(windowHeight, 4320));
+    internalResScale = std::max(1, std::min(internalResScale, 8));
+    backendType = std::max(0, std::min(backendType, 2));
     textureCacheSizeMB = std::max(16, std::min(textureCacheSizeMB, 2048));
-    gamma              = std::max(0.5f, std::min(gamma, 3.0f));
-    bloomIntensity     = std::max(0.0f, std::min(bloomIntensity, 2.0f));
-    sharpenStrength    = std::max(0.0f, std::min(sharpenStrength, 1.0f));
-    lodBias            = std::max(-4.0f, std::min(lodBias, 4.0f));
-    stretchFactor      = std::max(0.5f, std::min(stretchFactor, 2.0f));
-    osdScale           = std::max(0.5f, std::min(osdScale, 3.0f));
-    targetFPS          = std::max(0, std::min(targetFPS, 240));
-    threadCount        = std::max(0, std::min(threadCount, 16));
+    gamma = std::max(0.5f, std::min(gamma, 3.0f));
+    bloomIntensity = std::max(0.0f, std::min(bloomIntensity, 2.0f));
+    sharpenStrength = std::max(0.0f, std::min(sharpenStrength, 1.0f));
+    lodBias = std::max(-4.0f, std::min(lodBias, 4.0f));
+    stretchFactor = std::max(0.5f, std::min(stretchFactor, 2.0f));
+    osdScale = std::max(0.5f, std::min(osdScale, 3.0f));
+    targetFPS = std::max(0, std::min(targetFPS, 240));
+    threadCount = std::max(0, std::min(threadCount, 16));
 }
 
 bool PluginConfig::Validate() const {
@@ -50,50 +48,134 @@ bool PluginConfig::Validate() const {
 bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
     try {
         // Resolution
-        if (key == "windowWidth")        { windowWidth = std::stoi(val); return true; }
-        if (key == "windowHeight")       { windowHeight = std::stoi(val); return true; }
-        if (key == "internalResScale")   { internalResScale = std::stoi(val); return true; }
-        if (key == "fullscreen")         { fullscreen = (val == "1" || val == "true"); return true; }
-        if (key == "fullscreenMonitor")  { fullscreenMonitor = std::stoi(val); return true; }
-        if (key == "vsync")              { vsync = (val == "1" || val == "true"); return true; }
-        if (key == "targetFPS")          { targetFPS = std::stoi(val); return true; }
+        if (key == "windowWidth") {
+            windowWidth = std::stoi(val);
+            return true;
+        }
+        if (key == "windowHeight") {
+            windowHeight = std::stoi(val);
+            return true;
+        }
+        if (key == "internalResScale") {
+            internalResScale = std::stoi(val);
+            return true;
+        }
+        if (key == "fullscreen") {
+            fullscreen = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "fullscreenMonitor") {
+            fullscreenMonitor = std::stoi(val);
+            return true;
+        }
+        if (key == "vsync") {
+            vsync = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "targetFPS") {
+            targetFPS = std::stoi(val);
+            return true;
+        }
 
         // Backend
-        if (key == "backendType")        { backendType = std::stoi(val); return true; }
+        if (key == "backendType") {
+            backendType = std::stoi(val);
+            return true;
+        }
 
         // AA
-        if (key == "antiAliasing")       { antiAliasing = static_cast<AAMode>(std::stoi(val)); return true; }
+        if (key == "antiAliasing") {
+            antiAliasing = static_cast<AAMode>(std::stoi(val));
+            return true;
+        }
 
         // Filtering
-        if (key == "texFilter")          { texFilter = static_cast<TextureFilterMode>(std::stoi(val)); return true; }
-        if (key == "enableMipmaps")      { enableMipmaps = (val == "1" || val == "true"); return true; }
-        if (key == "lodBias")            { lodBias = std::stof(val); return true; }
+        if (key == "texFilter") {
+            texFilter = static_cast<TextureFilterMode>(std::stoi(val));
+            return true;
+        }
+        if (key == "enableMipmaps") {
+            enableMipmaps = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "lodBias") {
+            lodBias = std::stof(val);
+            return true;
+        }
 
         // HiRes
-        if (key == "hiResTexEnabled")    { hiResTexEnabled = (val == "1" || val == "true"); return true; }
-        if (key == "hiResFormat")        { hiResFormat = static_cast<HiResFormat>(std::stoi(val)); return true; }
-        if (key == "hiResTexPath")       { hiResTexPath = val; return true; }
+        if (key == "hiResTexEnabled") {
+            hiResTexEnabled = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "hiResFormat") {
+            hiResFormat = static_cast<HiResFormat>(std::stoi(val));
+            return true;
+        }
+        if (key == "hiResTexPath") {
+            hiResTexPath = val;
+            return true;
+        }
 
         // Texture cache
-        if (key == "textureCacheSizeMB") { textureCacheSizeMB = std::stoi(val); return true; }
-        if (key == "textureDump")        { textureDump = (val == "1" || val == "true"); return true; }
-        if (key == "textureDumpPath")    { textureDumpPath = val; return true; }
+        if (key == "textureCacheSizeMB") {
+            textureCacheSizeMB = std::stoi(val);
+            return true;
+        }
+        if (key == "textureDump") {
+            textureDump = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "textureDumpPath") {
+            textureDumpPath = val;
+            return true;
+        }
 
         // Framebuffer
-        if (key == "fbEmulation")        { fbEmulation = (val == "1" || val == "true"); return true; }
-        if (key == "fbReadAccess")       { fbReadAccess = (val == "1" || val == "true"); return true; }
-        if (key == "fbWriteAccess")      { fbWriteAccess = (val == "1" || val == "true"); return true; }
-        if (key == "depthCopy")          { depthCopy = (val == "1" || val == "true"); return true; }
-        if (key == "nativeResFB")        { nativeResFB = (val == "1" || val == "true"); return true; }
-        if (key == "fbReadbackInterval") { fbReadbackInterval = std::max(1, std::stoi(val)); return true; }
+        if (key == "fbEmulation") {
+            fbEmulation = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "fbReadAccess") {
+            fbReadAccess = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "fbWriteAccess") {
+            fbWriteAccess = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "depthCopy") {
+            depthCopy = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "nativeResFB") {
+            nativeResFB = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "fbReadbackInterval") {
+            fbReadbackInterval = std::max(1, std::stoi(val));
+            return true;
+        }
 
         // Depth
-        if (key == "depthCompare")       { depthCompare = (val == "1" || val == "true"); return true; }
-        if (key == "n64DepthCompare")    { n64DepthCompare = (val == "1" || val == "true"); return true; }
+        if (key == "depthCompare") {
+            depthCompare = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "n64DepthCompare") {
+            n64DepthCompare = (val == "1" || val == "true");
+            return true;
+        }
 
         // Aspect
-        if (key == "aspectRatio")        { aspectRatio = static_cast<AspectRatio>(std::stoi(val)); return true; }
-        if (key == "stretchFactor")      { stretchFactor = std::stof(val); return true; }
+        if (key == "aspectRatio") {
+            aspectRatio = static_cast<AspectRatio>(std::stoi(val));
+            return true;
+        }
+        if (key == "stretchFactor") {
+            stretchFactor = std::stof(val);
+            return true;
+        }
 
         // Emulation level (MLE pivot)
         if (key == "renderingMode") {
@@ -105,44 +187,116 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
         }
 
         // Compute ray tracing (MoltenVK hybrid: shadows/lighting/reflections).
-        if (key == "rayTracing")         { rayTracing = (val == "1" || val == "true"); return true; }
+        if (key == "rayTracing") {
+            rayTracing = (val == "1" || val == "true");
+            return true;
+        }
 
         // Post
-        if (key == "postFilter")         { postFilter = static_cast<PostFilter>(std::stoi(val)); return true; }
-        if (key == "gamma")              { gamma = std::stof(val); return true; }
-        if (key == "bloomIntensity")     { bloomIntensity = std::stof(val); return true; }
-        if (key == "sharpenStrength")    { sharpenStrength = std::stof(val); return true; }
+        if (key == "postFilter") {
+            postFilter = static_cast<PostFilter>(std::stoi(val));
+            return true;
+        }
+        if (key == "gamma") {
+            gamma = std::stof(val);
+            return true;
+        }
+        if (key == "bloomIntensity") {
+            bloomIntensity = std::stof(val);
+            return true;
+        }
+        if (key == "sharpenStrength") {
+            sharpenStrength = std::stof(val);
+            return true;
+        }
 
         // Dithering
-        if (key == "ditheringEnabled")   { ditheringEnabled = (val == "1" || val == "true"); return true; }
-        if (key == "ditheringPattern")   { ditheringPattern = std::stoi(val); return true; }
+        if (key == "ditheringEnabled") {
+            ditheringEnabled = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "ditheringPattern") {
+            ditheringPattern = std::stoi(val);
+            return true;
+        }
 
         // Fog
-        if (key == "fogEnabled")         { fogEnabled = (val == "1" || val == "true"); return true; }
-        if (key == "fogMode")            { fogMode = std::stoi(val); return true; }
+        if (key == "fogEnabled") {
+            fogEnabled = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "fogMode") {
+            fogMode = std::stoi(val);
+            return true;
+        }
 
         // Performance
-        if (key == "multiThreading")     { multiThreading = (val == "1" || val == "true"); return true; }
-        if (key == "asyncTextureLoading"){ asyncTextureLoading = (val == "1" || val == "true"); return true; }
-        if (key == "threadCount")        { threadCount = std::stoi(val); return true; }
-        if (key == "batchDrawCalls")     { batchDrawCalls = (val == "1" || val == "true"); return true; }
-        if (key == "skipUnchangedFrames"){ skipUnchangedFrames = (val == "1" || val == "true"); return true; }
+        if (key == "multiThreading") {
+            multiThreading = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "asyncTextureLoading") {
+            asyncTextureLoading = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "threadCount") {
+            threadCount = std::stoi(val);
+            return true;
+        }
+        if (key == "batchDrawCalls") {
+            batchDrawCalls = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "skipUnchangedFrames") {
+            skipUnchangedFrames = (val == "1" || val == "true");
+            return true;
+        }
 
         // Overlay
-        if (key == "showFPS")            { showFPS = (val == "1" || val == "true"); return true; }
-        if (key == "showDebugInfo")      { showDebugInfo = (val == "1" || val == "true"); return true; }
-        if (key == "showVRAM")           { showVRAM = (val == "1" || val == "true"); return true; }
-        if (key == "wireframe")          { wireframe = (val == "1" || val == "true"); return true; }
-        if (key == "debugOverlayPanels") { debugOverlayPanels = std::stoi(val); return true; }
+        if (key == "showFPS") {
+            showFPS = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "showDebugInfo") {
+            showDebugInfo = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "showVRAM") {
+            showVRAM = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "wireframe") {
+            wireframe = (val == "1" || val == "true");
+            return true;
+        }
+        if (key == "debugOverlayPanels") {
+            debugOverlayPanels = std::stoi(val);
+            return true;
+        }
 
         // OSD
-        if (key == "osdColor")           { osdColor = static_cast<uint32_t>(std::stoul(val, nullptr, 16)); return true; }
-        if (key == "osdScale")           { osdScale = std::stof(val); return true; }
-        if (key == "osdPosition")        { osdPosition = std::stoi(val); return true; }
+        if (key == "osdColor") {
+            osdColor = static_cast<uint32_t>(std::stoul(val, nullptr, 16));
+            return true;
+        }
+        if (key == "osdScale") {
+            osdScale = std::stof(val);
+            return true;
+        }
+        if (key == "osdPosition") {
+            osdPosition = std::stoi(val);
+            return true;
+        }
 
         // Screenshot
-        if (key == "screenshotPath")     { screenshotPath = val; return true; }
-        if (key == "screenshotFormat")   { screenshotFormat = std::stoi(val); return true; }
+        if (key == "screenshotPath") {
+            screenshotPath = val;
+            return true;
+        }
+        if (key == "screenshotFormat") {
+            screenshotFormat = std::stoi(val);
+            return true;
+        }
 
     } catch (...) {
         return false;
@@ -151,17 +305,17 @@ bool PluginConfig::SetValue(const std::string& key, const std::string& val) {
 }
 
 std::string PluginConfig::GetValue(const std::string& key) const {
-    if (key == "windowWidth")        return std::to_string(windowWidth);
-    if (key == "windowHeight")       return std::to_string(windowHeight);
-    if (key == "internalResScale")   return std::to_string(internalResScale);
-    if (key == "fullscreen")         return fullscreen ? "1" : "0";
-    if (key == "vsync")              return vsync ? "1" : "0";
-    if (key == "backendType")        return std::to_string(backendType);
-    if (key == "antiAliasing")       return std::to_string(static_cast<int>(antiAliasing));
-    if (key == "texFilter")          return std::to_string(static_cast<int>(texFilter));
-    if (key == "gamma")              return std::to_string(gamma);
-    if (key == "fbEmulation")        return fbEmulation ? "1" : "0";
-    if (key == "showFPS")            return showFPS ? "1" : "0";
+    if (key == "windowWidth") return std::to_string(windowWidth);
+    if (key == "windowHeight") return std::to_string(windowHeight);
+    if (key == "internalResScale") return std::to_string(internalResScale);
+    if (key == "fullscreen") return fullscreen ? "1" : "0";
+    if (key == "vsync") return vsync ? "1" : "0";
+    if (key == "backendType") return std::to_string(backendType);
+    if (key == "antiAliasing") return std::to_string(static_cast<int>(antiAliasing));
+    if (key == "texFilter") return std::to_string(static_cast<int>(texFilter));
+    if (key == "gamma") return std::to_string(gamma);
+    if (key == "fbEmulation") return fbEmulation ? "1" : "0";
+    if (key == "showFPS") return showFPS ? "1" : "0";
     // ... other getters follow same pattern
     return "";
 }

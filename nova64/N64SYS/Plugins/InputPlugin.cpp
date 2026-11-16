@@ -32,11 +32,9 @@ namespace Plugins {
 
 class DefaultInputPlugin final : public InputPlugin {
 public:
-    DefaultInputPlugin()
-    {
+    DefaultInputPlugin() {
         // Initialize all controllers as disconnected
-        for (auto& state : m_Controllers)
-        {
+        for (auto& state : m_Controllers) {
             std::memset(&state, 0, sizeof(state));
             state.Connected = false;
             state.Pak = ControllerState::PakType::None;
@@ -48,8 +46,7 @@ public:
     ~DefaultInputPlugin() override = default;
 
     // PluginBase interface
-    PluginInfo GetPluginInfo() const override
-    {
+    PluginInfo GetPluginInfo() const override {
         PluginInfo info;
         info.Type = PluginType::Input;
         info.Version = 0x0102;
@@ -63,25 +60,21 @@ public:
         return info;
     }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         m_Initialized = true;
         Log::info("DefaultInputPlugin: Initialized");
         return true;
     }
 
-    void Shutdown() override
-    {
+    void Shutdown() override {
         m_Initialized = false;
         m_System = nullptr;
         Log::info("DefaultInputPlugin: Shutdown");
     }
 
-    void Reset(bool /*coldReset*/) override
-    {
-        for (auto& state : m_Controllers)
-        {
+    void Reset(bool /*coldReset*/) override {
+        for (auto& state : m_Controllers) {
             state.AnalogX = 0;
             state.AnalogY = 0;
             state.ButtonA = false;
@@ -115,14 +108,12 @@ public:
 
     uint32_t GetControllerCount() const override { return 4; }
 
-    bool IsControllerPresent(uint32_t controller) const override
-    {
+    bool IsControllerPresent(uint32_t controller) const override {
         if (controller >= 4) return false;
         return m_Controllers[controller].Connected;
     }
 
-    ControllerState GetControllerState(uint32_t controller) override
-    {
+    ControllerState GetControllerState(uint32_t controller) override {
         if (controller >= 4) return {};
         return m_Controllers[controller];
     }
@@ -131,25 +122,18 @@ public:
 
     void ProcessPIFCommand() override {}
 
-    bool ReadController(uint32_t /*controller*/, uint8_t* /*command*/) override
-    {
-        return false;
-    }
+    bool ReadController(uint32_t /*controller*/, uint8_t* /*command*/) override { return false; }
 
     void GetRawControllerData(uint32_t /*controller*/, uint8_t* /*data*/) override {}
     void SetControllerData(uint32_t /*controller*/, const uint8_t* /*data*/) override {}
 
-    bool ReadPak(uint32_t /*controller*/, uint16_t /*address*/,
-                 uint8_t* data, uint32_t length) override
-    {
-        if (data && length > 0)
-            std::memset(data, 0, length);
+    bool ReadPak(uint32_t /*controller*/, uint16_t /*address*/, uint8_t* data, uint32_t length) override {
+        if (data && length > 0) std::memset(data, 0, length);
         return false;
     }
 
-    bool WritePak(uint32_t /*controller*/, uint16_t /*address*/,
-                  const uint8_t* /*data*/, uint32_t /*length*/) override
-    {
+    bool WritePak(uint32_t /*controller*/, uint16_t /*address*/, const uint8_t* /*data*/,
+                  uint32_t /*length*/) override {
         return false;
     }
 
@@ -176,10 +160,10 @@ private:
 #endif
 
 // Present flags
-constexpr int32_t PRESENT_NONE   = 0;
+constexpr int32_t PRESENT_NONE = 0;
 
 // Plugin type flags
-constexpr int32_t PLUGIN_NONE       = 1;
+constexpr int32_t PLUGIN_NONE = 1;
 
 struct CONTROL {
     int32_t Present;
@@ -188,10 +172,10 @@ struct CONTROL {
 };
 
 struct CONTROL_INFO_DLL {
-    void*     hWnd;
-    void*     hinst;
-    int32_t   Reserved;
-    CONTROL   Controls[4];
+    void* hWnd;
+    void* hinst;
+    int32_t Reserved;
+    CONTROL Controls[4];
 };
 
 struct BUTTONS {
@@ -200,14 +184,11 @@ struct BUTTONS {
 
 class DynLibInputPlugin final : public InputPlugin {
 public:
-    explicit DynLibInputPlugin(const std::string& path)
-        : m_LibPath(path)
-    {
+    explicit DynLibInputPlugin(const std::string& path) : m_LibPath(path) {
         std::memset(m_PluginControllers, 0, sizeof(m_PluginControllers));
     }
 
-    ~DynLibInputPlugin() override
-    {
+    ~DynLibInputPlugin() override {
         Shutdown();
         UnloadDLL();
     }
@@ -215,8 +196,7 @@ public:
     // PluginBase interface
     PluginInfo GetPluginInfo() const override { return m_Info; }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         if (!LoadDLL()) return false;
         if (!LoadFunctions()) return false;
@@ -225,12 +205,9 @@ public:
         return true;
     }
 
-    void Shutdown() override
-    {
-        if (m_Initialized && m_fnRomClosed)
-            m_fnRomClosed();
-        if (m_fnCloseDLL)
-            m_fnCloseDLL();
+    void Shutdown() override {
+        if (m_Initialized && m_fnRomClosed) m_fnRomClosed();
+        if (m_fnCloseDLL) m_fnCloseDLL();
         m_Initialized = false;
     }
 
@@ -238,8 +215,7 @@ public:
     void Pause() override {}
     void Resume() override {}
     bool IsInitialized() const override { return m_Initialized; }
-    void ShowConfigDialog(void* /*hwndParent*/) override
-    {
+    void ShowConfigDialog(void* /*hwndParent*/) override {
         if (m_fnDllConfig) m_fnDllConfig(nullptr);
     }
 
@@ -252,59 +228,52 @@ public:
 
     uint32_t GetControllerCount() const override { return 4; }
 
-    bool IsControllerPresent(uint32_t controller) const override
-    {
+    bool IsControllerPresent(uint32_t controller) const override {
         if (controller >= 4) return false;
         return m_PluginControllers[controller].Present != PRESENT_NONE;
     }
 
-    ControllerState GetControllerState(uint32_t controller) override
-    {
+    ControllerState GetControllerState(uint32_t controller) override {
         ControllerState state{};
         if (controller >= 4) return state;
 
         state.Connected = (m_PluginControllers[controller].Present != PRESENT_NONE);
 
-        if (state.Connected && m_fnGetKeys)
-        {
+        if (state.Connected && m_fnGetKeys) {
             BUTTONS buttons{};
             m_fnGetKeys(static_cast<int32_t>(controller), &buttons);
 
             // Decode N64 button bitmask
-            state.ButtonA     = (buttons.Value & (1 << 31)) != 0;
-            state.ButtonB     = (buttons.Value & (1 << 30)) != 0;
-            state.TriggerZ    = (buttons.Value & (1 << 29)) != 0;
+            state.ButtonA = (buttons.Value & (1 << 31)) != 0;
+            state.ButtonB = (buttons.Value & (1 << 30)) != 0;
+            state.TriggerZ = (buttons.Value & (1 << 29)) != 0;
             state.ButtonStart = (buttons.Value & (1 << 28)) != 0;
-            state.DPadUp      = (buttons.Value & (1 << 27)) != 0;
-            state.DPadDown    = (buttons.Value & (1 << 26)) != 0;
-            state.DPadLeft    = (buttons.Value & (1 << 25)) != 0;
-            state.DPadRight   = (buttons.Value & (1 << 24)) != 0;
-            state.TriggerL    = (buttons.Value & (1 << 21)) != 0;
-            state.TriggerR    = (buttons.Value & (1 << 20)) != 0;
-            state.CButtonUp   = (buttons.Value & (1 << 19)) != 0;
+            state.DPadUp = (buttons.Value & (1 << 27)) != 0;
+            state.DPadDown = (buttons.Value & (1 << 26)) != 0;
+            state.DPadLeft = (buttons.Value & (1 << 25)) != 0;
+            state.DPadRight = (buttons.Value & (1 << 24)) != 0;
+            state.TriggerL = (buttons.Value & (1 << 21)) != 0;
+            state.TriggerR = (buttons.Value & (1 << 20)) != 0;
+            state.CButtonUp = (buttons.Value & (1 << 19)) != 0;
             state.CButtonDown = (buttons.Value & (1 << 18)) != 0;
             state.CButtonLeft = (buttons.Value & (1 << 17)) != 0;
-            state.CButtonRight= (buttons.Value & (1 << 16)) != 0;
-            state.AnalogX     = static_cast<int8_t>((buttons.Value >> 8) & 0xFF);
-            state.AnalogY     = static_cast<int8_t>(buttons.Value & 0xFF);
+            state.CButtonRight = (buttons.Value & (1 << 16)) != 0;
+            state.AnalogX = static_cast<int8_t>((buttons.Value >> 8) & 0xFF);
+            state.AnalogY = static_cast<int8_t>(buttons.Value & 0xFF);
         }
 
         return state;
     }
 
-    void UpdateControllers() override
-    {
+    void UpdateControllers() override {
         // GetKeys is called per-controller in GetControllerState
-        if (m_fnReadController)
-            m_fnReadController(-1, nullptr);
+        if (m_fnReadController) m_fnReadController(-1, nullptr);
     }
 
     void ProcessPIFCommand() override {}
 
-    bool ReadController(uint32_t controller, uint8_t* command) override
-    {
-        if (m_fnReadController && controller < 4)
-        {
+    bool ReadController(uint32_t controller, uint8_t* command) override {
+        if (m_fnReadController && controller < 4) {
             m_fnReadController(static_cast<int32_t>(controller), command);
             return true;
         }
@@ -314,51 +283,45 @@ public:
     void GetRawControllerData(uint32_t /*controller*/, uint8_t* /*data*/) override {}
     void SetControllerData(uint32_t /*controller*/, const uint8_t* /*data*/) override {}
 
-    bool ReadPak(uint32_t /*controller*/, uint16_t /*address*/,
-                 uint8_t* /*data*/, uint32_t /*length*/) override
-    {
+    bool ReadPak(uint32_t /*controller*/, uint16_t /*address*/, uint8_t* /*data*/, uint32_t /*length*/) override {
         return false;
     }
 
-    bool WritePak(uint32_t /*controller*/, uint16_t /*address*/,
-                  const uint8_t* /*data*/, uint32_t /*length*/) override
-    {
+    bool WritePak(uint32_t /*controller*/, uint16_t /*address*/, const uint8_t* /*data*/,
+                  uint32_t /*length*/) override {
         return false;
     }
 
-    void SetRumble(uint32_t controller, uint8_t strength) override
-    {
-        if (m_fnRumbleCommand && controller < 4)
-        {
+    void SetRumble(uint32_t controller, uint8_t strength) override {
+        if (m_fnRumbleCommand && controller < 4) {
             // Rumble plugin command: send rumble on/off
-            m_fnRumbleCommand(static_cast<int32_t>(controller),
-                              strength > 0 ? 1 : 0);
+            m_fnRumbleCommand(static_cast<int32_t>(controller), strength > 0 ? 1 : 0);
         }
     }
 
-    void ConfigureController(uint32_t /*controller*/, void* /*hwndParent*/) override
-    {
+    void ConfigureController(uint32_t /*controller*/, void* /*hwndParent*/) override {
         if (m_fnDllConfig) m_fnDllConfig(nullptr);
     }
 
 private:
-    bool LoadDLL()
-    {
-        try
-        {
+    bool LoadDLL() {
+        try {
             m_Lib.Load(m_LibPath);
-        }
-        catch (const std::exception& e)
-        {
+        } catch (const std::exception& e) {
             Log::errorf("DynLibInputPlugin: Failed to load %s: %s", m_LibPath.c_str(), e.what());
             return false;
         }
 
         using GetDllInfoFunc = void(CALL*)(void*);
         auto getDllInfo = m_Lib.GetSymbol<GetDllInfoFunc>("GetDllInfo");
-        if (getDllInfo)
-        {
-            struct { uint16_t Version; uint16_t Type; char Name[100]; int NormalMemory; int MemoryBswaped; } dllInfo{};
+        if (getDllInfo) {
+            struct {
+                uint16_t Version;
+                uint16_t Type;
+                char Name[100];
+                int NormalMemory;
+                int MemoryBswaped;
+            } dllInfo{};
             getDllInfo(&dllInfo);
             m_Info.Type = PluginType::Input;
             m_Info.Version = dllInfo.Version;
@@ -367,32 +330,29 @@ private:
         return true;
     }
 
-    bool LoadFunctions()
-    {
+    bool LoadFunctions() {
         if (!m_Lib.IsLoaded()) return false;
 
-        m_fnGetKeys           = m_Lib.GetSymbol<void(CALL*)(int32_t, BUTTONS*)>("GetKeys");
+        m_fnGetKeys = m_Lib.GetSymbol<void(CALL*)(int32_t, BUTTONS*)>("GetKeys");
         m_fnControllerCommand = m_Lib.GetSymbol<void(CALL*)(int32_t, uint8_t*)>("ControllerCommand");
-        m_fnReadController    = m_Lib.GetSymbol<void(CALL*)(int32_t, uint8_t*)>("ReadController");
-        m_fnRumbleCommand     = m_Lib.GetSymbol<void(CALL*)(int32_t, int32_t)>("RumbleCommand");
-        m_fnWMKeyDown         = m_Lib.GetSymbol<void(CALL*)(uint32_t, int32_t)>("WM_KeyDown");
-        m_fnWMKeyUp           = m_Lib.GetSymbol<void(CALL*)(uint32_t, int32_t)>("WM_KeyUp");
-        m_fnRomClosed         = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
-        m_fnCloseDLL          = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
-        m_fnDllConfig         = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
+        m_fnReadController = m_Lib.GetSymbol<void(CALL*)(int32_t, uint8_t*)>("ReadController");
+        m_fnRumbleCommand = m_Lib.GetSymbol<void(CALL*)(int32_t, int32_t)>("RumbleCommand");
+        m_fnWMKeyDown = m_Lib.GetSymbol<void(CALL*)(uint32_t, int32_t)>("WM_KeyDown");
+        m_fnWMKeyUp = m_Lib.GetSymbol<void(CALL*)(uint32_t, int32_t)>("WM_KeyUp");
+        m_fnRomClosed = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
+        m_fnCloseDLL = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
+        m_fnDllConfig = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
 
         // GetKeys is the minimum requirement
         // (InitiateControllers is handled in Initiate)
         return true;
     }
 
-    bool Initiate()
-    {
+    bool Initiate() {
         // Try InitiateControllers v1.2 (pointer arg)
         using InitFunc_1_2 = void(CALL*)(CONTROL_INFO_DLL*);
         auto initiate = m_Lib.GetSymbol<InitFunc_1_2>("InitiateControllers");
-        if (!initiate)
-        {
+        if (!initiate) {
             Log::error("DynLibInputPlugin: Missing InitiateControllers");
             return false;
         }
@@ -402,8 +362,7 @@ private:
         info.hinst = nullptr;
         info.Reserved = 1;
 
-        for (int i = 0; i < 4; i++)
-        {
+        for (int i = 0; i < 4; i++) {
             info.Controls[i].Present = PRESENT_NONE;
             info.Controls[i].RawData = 0;
             info.Controls[i].Plugin = PLUGIN_NONE;
@@ -417,8 +376,7 @@ private:
         return true;
     }
 
-    void UnloadDLL()
-    {
+    void UnloadDLL() {
         m_fnGetKeys = nullptr;
         m_fnControllerCommand = nullptr;
         m_fnReadController = nullptr;
@@ -453,13 +411,9 @@ private:
 // Factory functions
 // ============================================================================
 
-std::unique_ptr<InputPlugin> CreateDefaultInputPlugin()
-{
-    return std::make_unique<DefaultInputPlugin>();
-}
+std::unique_ptr<InputPlugin> CreateDefaultInputPlugin() { return std::make_unique<DefaultInputPlugin>(); }
 
-std::unique_ptr<InputPlugin> CreateInputPluginFromDLL(const std::string& path)
-{
+std::unique_ptr<InputPlugin> CreateInputPluginFromDLL(const std::string& path) {
     return std::make_unique<DynLibInputPlugin>(path);
 }
 

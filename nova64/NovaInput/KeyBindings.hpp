@@ -14,11 +14,24 @@
 namespace NovaInput {
 
 enum class N64Input : uint8_t {
-    A, B, Z, Start,
-    DPadUp, DPadDown, DPadLeft, DPadRight,
-    L, R,
-    CUp, CDown, CLeft, CRight,
-    StickUp, StickDown, StickLeft, StickRight,
+    A,
+    B,
+    Z,
+    Start,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+    L,
+    R,
+    CUp,
+    CDown,
+    CLeft,
+    CRight,
+    StickUp,
+    StickDown,
+    StickLeft,
+    StickRight,
     Count
 };
 
@@ -28,12 +41,12 @@ constexpr const char* kKeyBindingsPath = "settings/keybindings.ini";
 
 /// SDL scancodes; 0 means unbound.
 struct KeyBinding {
-    int primary   = 0;
+    int primary = 0;
     int alternate = 0;
 };
 
-const char* InputLabel(N64Input input);   ///< e.g. "A Button"
-const char* InputIniKey(N64Input input);  ///< e.g. "A", the key in settings files
+const char* InputLabel(N64Input input);  ///< e.g. "A Button"
+const char* InputIniKey(N64Input input); ///< e.g. "A", the key in settings files
 
 struct KeyBindings {
     std::array<KeyBinding, kN64InputCount> keys;
@@ -41,7 +54,7 @@ struct KeyBindings {
     KeyBindings() { ResetToDefaults(); }
     void ResetToDefaults();
 
-    KeyBinding&       operator[](N64Input i)       { return keys[static_cast<size_t>(i)]; }
+    KeyBinding& operator[](N64Input i) { return keys[static_cast<size_t>(i)]; }
     const KeyBinding& operator[](N64Input i) const { return keys[static_cast<size_t>(i)]; }
 
     /// Keeps the default for any entry that is missing or malformed.

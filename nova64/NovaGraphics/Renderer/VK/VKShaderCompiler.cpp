@@ -11,11 +11,11 @@
 #include <cstring>
 #include <cstdio>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
-VKShaderCompiler::VKShaderCompiler(IRenderer* renderer)
-    : m_renderer(renderer)
-{}
+VKShaderCompiler::VKShaderCompiler(IRenderer* renderer) : m_renderer(renderer) {}
 
 VKShaderCompiler::~VKShaderCompiler() { Shutdown(); }
 
@@ -35,45 +35,38 @@ void VKShaderCompiler::Shutdown() {
 
 // ─── Compile ─────────────────────────────────────────────────────────────────
 
-Shader::CompiledShader VKShaderCompiler::Compile(
-    const Shader::CombinerKey& key,
-    const std::string& vertSrc,
-    const std::string& fragSrc)
-{
+Shader::CompiledShader VKShaderCompiler::Compile(const Shader::CombinerKey& key, const std::string& vertSrc,
+                                                 const std::string& fragSrc) {
     Shader::CompiledShader result;
-    result.key      = key;
+    result.key = key;
     result.features = key.features;
 
     // CreateShaderProgram() returns VKShaderProgramImpl inside VKBackend.
     auto impl = m_renderer->CreateShaderProgram();
     if (!impl || !impl->Compile(vertSrc, fragSrc)) {
         m_lastError = impl ? impl->GetInfoLog() : "CreateShaderProgram failed";
-        Logger::Warn("VKShaderCompiler: compile failed feat=0x{:llX}: {}",
-                     (unsigned long long)key.features, m_lastError);
+        Logger::Warn("VKShaderCompiler: compile failed feat=0x{:llX}: {}", (unsigned long long)key.features,
+                     m_lastError);
         result.valid = false;
         return result;
     }
     // Store features/mux for diagnostic logging in VKBackend.
     static_cast<VKShaderProgramImpl*>(impl.get())->debugFeatures = key.features;
-    static_cast<VKShaderProgramImpl*>(impl.get())->debugMux      = key.mux;
+    static_cast<VKShaderProgramImpl*>(impl.get())->debugMux = key.mux;
 
     // Use the (truncated) pointer value as the opaque handle.  ShaderHandle is
     // 32-bit, so go through uintptr_t and truncate explicitly (a direct
     // pointer->uint32_t reinterpret_cast is ill-formed on 64-bit hosts).
-    Shader::ShaderHandle h =
-        static_cast<Shader::ShaderHandle>(reinterpret_cast<uintptr_t>(impl.get()));
+    Shader::ShaderHandle h = static_cast<Shader::ShaderHandle>(reinterpret_cast<uintptr_t>(impl.get()));
     result.handle = h;
-    result.valid  = true;
+    result.valid = true;
     m_programs[h] = std::move(impl);
     return result;
 }
 
-Shader::CompiledShader VKShaderCompiler::CompileWithGeometry(
-    const Shader::CombinerKey& key,
-    const std::string& vertSrc,
-    const std::string& fragSrc,
-    const std::string& /*geomSrc*/)
-{
+Shader::CompiledShader VKShaderCompiler::CompileWithGeometry(const Shader::CombinerKey& key, const std::string& vertSrc,
+                                                             const std::string& fragSrc,
+                                                             const std::string& /*geomSrc*/) {
     // Geometry shaders on Vulkan require extra pipeline/extension support;
     // fall back to vertex+fragment only for now.
     return Compile(key, vertSrc, fragSrc);
@@ -83,7 +76,7 @@ void VKShaderCompiler::DeleteShader(Shader::CompiledShader& shader) {
     if (shader.handle) {
         m_programs.erase(shader.handle);
         shader.handle = 0;
-        shader.valid  = false;
+        shader.valid = false;
     }
 }
 
@@ -100,78 +93,78 @@ void VKShaderCompiler::BindShader(const Shader::CompiledShader& shader) {
 
 // ─── GetUniformLocation ──────────────────────────────────────────────────────
 
-int VKShaderCompiler::GetUniformLocation(Shader::ShaderHandle /*program*/,
-                                         const char* name)
-{
+int VKShaderCompiler::GetUniformLocation(Shader::ShaderHandle /*program*/, const char* name) {
     // Return the byte offset inside the N64 UBO (std140 layout).
     // Texture-unit uniforms (uTexture0, uTexture1, …) return -1 because
     // Vulkan binds textures via descriptor sets, not glUniform1i.
     using namespace N64UBOOff;
 
-    struct Entry { const char* name; int offset; };
+    struct Entry {
+        const char* name;
+        int offset;
+    };
     static const Entry kTable[] = {
-        { "uMVPMatrix",           uMVPMatrix           },
-        { "uModelView",           uModelView           },
-        { "uProjection",          uProjection          },
-        { "uPrimColor",           uPrimColor           },
-        { "uEnvColor",            uEnvColor            },
-        { "uFogColor",            uFogColor            },
-        { "uBlendColor",          uBlendColor          },
-        { "uFillColor",           uFillColor           },
-        { "uCenterColor",         uCenterColor         },
-        { "uScaleColor",          uScaleColor          },
-        { "uConvertK",            uConvertK            },
-        { "uTexClamp0",           uTexClamp0           },
-        { "uTexClamp1",           uTexClamp1           },
-        { "uTexCoordBounds0",     uTexCoordBounds0     },
-        { "uTexCoordBounds1",     uTexCoordBounds1     },
-        { "uKeyWidth",            uKeyWidth            },
-        { "uMinLod",              uMinLod              },
-        { "uTexScale0",           uTexScale0           },
-        { "uTexScale1",           uTexScale1           },
-        { "uTexOffset0",          uTexOffset0          },
-        { "uTexOffset1",          uTexOffset1          },
-        { "uTexMask0",            uTexMask0            },
-        { "uTexMask1",            uTexMask1            },
-        { "uTexSize0",            uTexSize0            },
-        { "uTexSize1",            uTexSize1            },
-        { "uGPUScale0",           uGPUScale0           },
-        { "uGPUScale1",           uGPUScale1           },
-        { "uScreenSize",          uScreenSize          },
-        { "uInvScreenSize",       uInvScreenSize       },
-        { "uScreenScale",         uScreenScale         },
-        { "uResolutionScale",     uResolutionScale     },
-        { "uPrimLOD",             uPrimLOD             },
-        { "uPrimLODFrac",         uPrimLODFrac         },
-        { "uK4",                  uK4                  },
-        { "uK5",                  uK5                  },
-        { "uAlphaRef",            uAlphaRef            },
-        { "uFogMultiplier",       uFogMultiplier       },
-        { "uFogOffset",           uFogOffset           },
-        { "uPrimDepth",           uPrimDepth           },
-        { "uDepthScale",          uDepthScale          },
-        { "uDepthOffset",         uDepthOffset         },
-        { "uPrimDeltaZ",          uPrimDeltaZ          },
-        { "uFrameCount",          uFrameCount          },
-        { "uZMode",               uZMode               },
-        { "uUseTexCoordBounds",   uUseTexCoordBounds   },
-        { "uTexturePersp",        uTexturePersp        },
-        { "uFbMonochrome0",       uFbMonochrome0       },
-        { "uFbMonochrome1",       uFbMonochrome1       },
-        { "uFbFixedAlpha0",       uFbFixedAlpha0       },
-        { "uFbFixedAlpha1",       uFbFixedAlpha1       },
-        { "uFogUsage",            uFogUsage            },
-        { "uScreenSpaceTriangle", uScreenSpaceTriangle },
-        { "uTextureDetail",       uTextureDetail       },
-        { "uMaxTile",             uMaxTile             },
-        { "uDebugOutput",         uDebugOutput         },
-        { "uTexCvgAlpha",         uTexCvgAlpha         },
-        { "uTexHiRes",            uTexHiRes            },
+        {"uMVPMatrix", uMVPMatrix},
+        {"uModelView", uModelView},
+        {"uProjection", uProjection},
+        {"uPrimColor", uPrimColor},
+        {"uEnvColor", uEnvColor},
+        {"uFogColor", uFogColor},
+        {"uBlendColor", uBlendColor},
+        {"uFillColor", uFillColor},
+        {"uCenterColor", uCenterColor},
+        {"uScaleColor", uScaleColor},
+        {"uConvertK", uConvertK},
+        {"uTexClamp0", uTexClamp0},
+        {"uTexClamp1", uTexClamp1},
+        {"uTexCoordBounds0", uTexCoordBounds0},
+        {"uTexCoordBounds1", uTexCoordBounds1},
+        {"uKeyWidth", uKeyWidth},
+        {"uMinLod", uMinLod},
+        {"uTexScale0", uTexScale0},
+        {"uTexScale1", uTexScale1},
+        {"uTexOffset0", uTexOffset0},
+        {"uTexOffset1", uTexOffset1},
+        {"uTexMask0", uTexMask0},
+        {"uTexMask1", uTexMask1},
+        {"uTexSize0", uTexSize0},
+        {"uTexSize1", uTexSize1},
+        {"uGPUScale0", uGPUScale0},
+        {"uGPUScale1", uGPUScale1},
+        {"uScreenSize", uScreenSize},
+        {"uInvScreenSize", uInvScreenSize},
+        {"uScreenScale", uScreenScale},
+        {"uResolutionScale", uResolutionScale},
+        {"uPrimLOD", uPrimLOD},
+        {"uPrimLODFrac", uPrimLODFrac},
+        {"uK4", uK4},
+        {"uK5", uK5},
+        {"uAlphaRef", uAlphaRef},
+        {"uFogMultiplier", uFogMultiplier},
+        {"uFogOffset", uFogOffset},
+        {"uPrimDepth", uPrimDepth},
+        {"uDepthScale", uDepthScale},
+        {"uDepthOffset", uDepthOffset},
+        {"uPrimDeltaZ", uPrimDeltaZ},
+        {"uFrameCount", uFrameCount},
+        {"uZMode", uZMode},
+        {"uUseTexCoordBounds", uUseTexCoordBounds},
+        {"uTexturePersp", uTexturePersp},
+        {"uFbMonochrome0", uFbMonochrome0},
+        {"uFbMonochrome1", uFbMonochrome1},
+        {"uFbFixedAlpha0", uFbFixedAlpha0},
+        {"uFbFixedAlpha1", uFbFixedAlpha1},
+        {"uFogUsage", uFogUsage},
+        {"uScreenSpaceTriangle", uScreenSpaceTriangle},
+        {"uTextureDetail", uTextureDetail},
+        {"uMaxTile", uMaxTile},
+        {"uDebugOutput", uDebugOutput},
+        {"uTexCvgAlpha", uTexCvgAlpha},
+        {"uTexHiRes", uTexHiRes},
     };
 
     for (const auto& e : kTable) {
-        if (std::strcmp(e.name, name) == 0)
-            return e.offset;
+        if (std::strcmp(e.name, name) == 0) return e.offset;
     }
     return -1; // unknown (includes texture unit uniforms)
 }
@@ -225,4 +218,6 @@ void VKShaderCompiler::SetUniformMatrix4fv(int loc, const float* m) {
     if (p) std::memcpy(p, m, 64);
 }
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

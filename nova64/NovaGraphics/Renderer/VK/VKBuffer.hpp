@@ -15,7 +15,9 @@
 #include "VKMemory.hpp"
 #include "../Renderer.hpp"
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 // Global current-UBO slot table. Mirrors the OpenGL-ish "BindSlot" pattern:
 // IUniformBuffer::BindSlot(slot) writes the buffer here; VulkanRenderer reads
@@ -24,36 +26,30 @@ namespace Nova64 { namespace Video { namespace VK {
 constexpr uint32_t kVKMaxUBOSlots = 8;
 
 struct VKUBOSlot {
-    VkBuffer     buffer = VK_NULL_HANDLE;
-    VkDeviceSize size   = 0;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize size = 0;
 };
 
 inline VKUBOSlot g_boundUBOs[kVKMaxUBOSlots] = {};
 
 /// Common storage for any GPU buffer. Not exposed to clients directly.
 struct VKBufferStorage {
-    VkBuffer       buffer = VK_NULL_HANDLE;
+    VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkDeviceSize   size   = 0;
-    void*          mapped = nullptr; // non-null only for HOST_VISIBLE buffers
+    VkDeviceSize size = 0;
+    void* mapped = nullptr; // non-null only for HOST_VISIBLE buffers
 };
 
 /// Allocate `size` bytes with `usage` and `props`. On success populates `out`.
 /// Maps the memory if HOST_VISIBLE is set in `props`.
-bool CreateBufferStorage(const VKContext& ctx,
-                         VkDeviceSize size,
-                         VkBufferUsageFlags usage,
-                         VkMemoryPropertyFlags props,
+bool CreateBufferStorage(const VKContext& ctx, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props,
                          VKBufferStorage& out);
 
 void DestroyBufferStorage(const VKContext& ctx, VKBufferStorage& s);
 
 /// Copy `data` into a DEVICE_LOCAL buffer via a staging buffer.
 /// `dstOffset` is bytes into `dst.buffer`.
-bool UploadDeviceLocal(const VKContext& ctx,
-                       VKBufferStorage& dst,
-                       VkDeviceSize dstOffset,
-                       const void* data,
+bool UploadDeviceLocal(const VKContext& ctx, VKBufferStorage& dst, VkDeviceSize dstOffset, const void* data,
                        VkDeviceSize size);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,15 +61,16 @@ public:
 
     void Upload(const void* data, size_t sizeBytes) override;
     void Update(const void* data, size_t offset, size_t sizeBytes) override;
-    size_t      GetSize()  const override { return m_size; }
+    size_t GetSize() const override { return m_size; }
     BufferUsage GetUsage() const override { return m_usage; }
 
     VkBuffer GetVk() const { return m_storage.buffer; }
+
 private:
     const VKContext* m_ctx;
-    VKBufferStorage  m_storage{};
-    size_t           m_size;
-    BufferUsage      m_usage;
+    VKBufferStorage m_storage{};
+    size_t m_size;
+    BufferUsage m_usage;
 };
 
 class VKIndexBufferImpl final : public IIndexBuffer {
@@ -83,17 +80,18 @@ public:
 
     void Upload(const void* data, size_t sizeBytes, IndexType type) override;
     void Update(const void* data, size_t offset, size_t sizeBytes) override;
-    size_t    GetCount()     const override { return m_count; }
+    size_t GetCount() const override { return m_count; }
     IndexType GetIndexType() const override { return m_indexType; }
 
     VkBuffer GetVk() const { return m_storage.buffer; }
+
 private:
     const VKContext* m_ctx;
-    VKBufferStorage  m_storage{};
-    [[maybe_unused]] size_t           m_size;
-    size_t           m_count = 0;
-    IndexType        m_indexType = IndexType::UInt16;
-    BufferUsage      m_usage;
+    VKBufferStorage m_storage{};
+    [[maybe_unused]] size_t m_size;
+    size_t m_count = 0;
+    IndexType m_indexType = IndexType::UInt16;
+    BufferUsage m_usage;
 };
 
 class VKUniformBufferImpl final : public IUniformBuffer {
@@ -106,18 +104,21 @@ public:
     void BindSlot(uint32_t slot) override {
         m_slot = slot;
         if (slot < kVKMaxUBOSlots) {
-            g_boundUBOs[slot] = { m_storage.buffer, m_size };
+            g_boundUBOs[slot] = {m_storage.buffer, m_size};
         }
     }
     size_t GetSize() const override { return m_size; }
 
-    VkBuffer GetVk()   const { return m_storage.buffer; }
+    VkBuffer GetVk() const { return m_storage.buffer; }
     uint32_t GetSlot() const { return m_slot; }
+
 private:
     const VKContext* m_ctx;
-    VKBufferStorage  m_storage{};
-    size_t           m_size;
-    uint32_t         m_slot = 0;
+    VKBufferStorage m_storage{};
+    size_t m_size;
+    uint32_t m_slot = 0;
 };
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

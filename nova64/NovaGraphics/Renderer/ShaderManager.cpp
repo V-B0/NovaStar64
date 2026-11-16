@@ -14,20 +14,17 @@
 #include <sstream>
 #include <cstring>
 
-namespace Nova64 { namespace Video { namespace Shader {
+namespace Nova64 {
+namespace Video {
+namespace Shader {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHADER CACHE IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-ShaderCache::ShaderCache()
-    : m_maxShaders(4096)
-    , m_currentFrame(0)
-{}
+ShaderCache::ShaderCache() : m_maxShaders(4096), m_currentFrame(0) {}
 
-ShaderCache::~ShaderCache() {
-    Shutdown();
-}
+ShaderCache::~ShaderCache() { Shutdown(); }
 
 void ShaderCache::Initialize(uint32_t maxShaders) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -40,8 +37,7 @@ void ShaderCache::Initialize(uint32_t maxShaders) {
 void ShaderCache::Shutdown() {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (m_deleteCallback) {
-        for (auto& [k, entry] : m_cache)
-            m_deleteCallback(entry.shader);
+        for (auto& [k, entry] : m_cache) m_deleteCallback(entry.shader);
     }
     m_cache.clear();
     m_stats = ShaderCacheStats();
@@ -50,8 +46,7 @@ void ShaderCache::Shutdown() {
 void ShaderCache::Clear() {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (m_deleteCallback) {
-        for (auto& [k, entry] : m_cache)
-            m_deleteCallback(entry.shader);
+        for (auto& [k, entry] : m_cache) m_deleteCallback(entry.shader);
     }
     m_cache.clear();
     m_stats.currentCacheSize = 0;
@@ -84,8 +79,7 @@ void ShaderCache::Insert(const CombinerKey& key, CompiledShader&& shader) {
                 oldest = it;
             }
         }
-        if (m_deleteCallback)
-            m_deleteCallback(oldest->second.shader);
+        if (m_deleteCallback) m_deleteCallback(oldest->second.shader);
         m_cache.erase(oldest);
         m_stats.evictions++;
     }
@@ -104,8 +98,7 @@ bool ShaderCache::Remove(const CombinerKey& key) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     auto it = m_cache.find(key);
     if (it != m_cache.end()) {
-        if (m_deleteCallback)
-            m_deleteCallback(it->second.shader);
+        if (m_deleteCallback) m_deleteCallback(it->second.shader);
         m_cache.erase(it);
         m_stats.currentCacheSize = static_cast<uint32_t>(m_cache.size());
         return true;
@@ -124,8 +117,7 @@ void ShaderCache::EvictLRU(int count) {
                 oldest = it;
             }
         }
-        if (m_deleteCallback)
-            m_deleteCallback(oldest->second.shader);
+        if (m_deleteCallback) m_deleteCallback(oldest->second.shader);
         m_cache.erase(oldest);
         m_stats.evictions++;
     }
@@ -133,7 +125,7 @@ void ShaderCache::EvictLRU(int count) {
 }
 
 // Binary format: [MAGIC][VERSION][COUNT][ [KEY][VERT_LEN][VERT_SRC][FRAG_LEN][FRAG_SRC] ... ]
-static const uint32_t CACHE_MAGIC   = 0x4E565343; // 'NVSC'
+static const uint32_t CACHE_MAGIC = 0x4E565343; // 'NVSC'
 static const uint32_t CACHE_VERSION = 19;
 
 bool ShaderCache::SaveToDisk(const std::string& path) const {
@@ -180,8 +172,7 @@ bool ShaderCache::LoadFromDisk(const std::string& path) {
     file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     file.read(reinterpret_cast<char*>(&version), sizeof(version));
 
-    if (magic != CACHE_MAGIC || version != CACHE_VERSION)
-        return false;
+    if (magic != CACHE_MAGIC || version != CACHE_VERSION) return false;
 
     uint32_t count;
     file.read(reinterpret_cast<char*>(&count), sizeof(count));
@@ -207,8 +198,7 @@ bool ShaderCache::LoadFromDisk(const std::string& path) {
         file.read(&fragSource[0], fragLen);
 
         // Don't overwrite valid (binary-loaded) entries with invalid source
-        if (m_cache.find(key) != m_cache.end())
-            continue;
+        if (m_cache.find(key) != m_cache.end()) continue;
 
         // Store source for later recompilation
         CacheEntry entry;
@@ -250,8 +240,7 @@ bool ShaderCache::SaveBinaryCache(const std::string& path) const {
     file.write(reinterpret_cast<const char*>(&count), sizeof(count));
 
     for (const auto& [key, entry] : m_cache) {
-        if (!entry.shader.valid || entry.shader.handle == INVALID_SHADER)
-            continue;
+        if (!entry.shader.valid || entry.shader.handle == INVALID_SHADER) continue;
 
         GLuint prog = static_cast<GLuint>(entry.shader.handle);
 
@@ -290,8 +279,7 @@ bool ShaderCache::LoadBinaryCache(const std::string& path) {
     file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     file.read(reinterpret_cast<char*>(&version), sizeof(version));
 
-    if (magic != 0x4E565342 || version != 1)
-        return false;
+    if (magic != 0x4E565342 || version != 1) return false;
 
     uint32_t count = 0;
     file.read(reinterpret_cast<char*>(&count), sizeof(count));
@@ -315,8 +303,7 @@ bool ShaderCache::LoadBinaryCache(const std::string& path) {
         if (!file.good()) break;
 
         // If already in cache (source-compiled takes priority), skip
-        if (m_cache.find(key) != m_cache.end())
-            continue;
+        if (m_cache.find(key) != m_cache.end()) continue;
 
         // Create program from binary
         GLuint prog = glCreateProgram();
@@ -332,16 +319,16 @@ bool ShaderCache::LoadBinaryCache(const std::string& path) {
 
         // Build a minimal CompiledShader — uniforms will be resolved by ShaderManager
         CompiledShader shader;
-        shader.handle   = static_cast<ShaderHandle>(prog);
-        shader.key      = key;
+        shader.handle = static_cast<ShaderHandle>(prog);
+        shader.key = key;
         shader.features = features;
-        shader.valid    = true;
+        shader.valid = true;
 
         CacheEntry entry;
-        entry.shader          = std::move(shader);
+        entry.shader = std::move(shader);
         entry.lastAccessFrame = 0;
-        entry.accessCount     = 0;
-        m_cache[key]          = std::move(entry);
+        entry.accessCount = 0;
+        m_cache[key] = std::move(entry);
         ++loaded;
     }
 
@@ -359,15 +346,9 @@ void ShaderCache::ForEachEntry(std::function<void(const CombinerKey&, CompiledSh
 // SHADER MANAGER IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-ShaderManager::ShaderManager()
-    : m_currentShader(nullptr)
-    , m_api(BackendAPI::OpenGL)
-    , m_initialized(false)
-{}
+ShaderManager::ShaderManager() : m_currentShader(nullptr), m_api(BackendAPI::OpenGL), m_initialized(false) {}
 
-ShaderManager::~ShaderManager() {
-    Shutdown();
-}
+ShaderManager::~ShaderManager() { Shutdown(); }
 
 bool ShaderManager::Initialize(BackendAPI api) {
     m_api = api;
@@ -376,10 +357,10 @@ bool ShaderManager::Initialize(BackendAPI api) {
     m_generator = std::make_unique<ShaderGenerator>();
     ShaderLanguage lang = ShaderLanguage::GLSL_460;
     switch (api) {
-        case BackendAPI::OpenGL:  lang = ShaderLanguage::GLSL_460; break;
-        case BackendAPI::Vulkan:  lang = ShaderLanguage::SPIRV;    break;
-        case BackendAPI::D3D11:   lang = ShaderLanguage::HLSL_SM5; break;
-        default: break;
+    case BackendAPI::OpenGL: lang = ShaderLanguage::GLSL_460; break;
+    case BackendAPI::Vulkan: lang = ShaderLanguage::SPIRV; break;
+    case BackendAPI::D3D11:  lang = ShaderLanguage::HLSL_SM5; break;
+    default:                 break;
     }
     m_generator->Initialize(lang);
 
@@ -425,17 +406,13 @@ void ShaderManager::BindShader(const CompiledShader* shader) {
 void ShaderManager::SetMatrixUniforms(const float* mvp, const float* modelView) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (mvp && u.mvpMatrix >= 0)
-        m_compiler->SetUniformMatrix4fv(u.mvpMatrix, mvp);
-    if (modelView && u.modelView >= 0)
-        m_compiler->SetUniformMatrix4fv(u.modelView, modelView);
+    if (mvp && u.mvpMatrix >= 0) m_compiler->SetUniformMatrix4fv(u.mvpMatrix, mvp);
+    if (modelView && u.modelView >= 0) m_compiler->SetUniformMatrix4fv(u.modelView, modelView);
 }
 
-void ShaderManager::SetColorUniforms(const float* primColor, const float* envColor,
-                                      const float* fogColor, const float* blendColor,
-                                      float primLODFrac, float primLODMin,
-                                      float centerR, float centerG, float centerB,
-                                      float scaleR, float scaleG, float scaleB) {
+void ShaderManager::SetColorUniforms(const float* primColor, const float* envColor, const float* fogColor,
+                                     const float* blendColor, float primLODFrac, float primLODMin, float centerR,
+                                     float centerG, float centerB, float scaleR, float scaleG, float scaleB) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
     if (primColor && u.primColor >= 0)
@@ -446,36 +423,30 @@ void ShaderManager::SetColorUniforms(const float* primColor, const float* envCol
         m_compiler->SetUniform4f(u.fogColor, fogColor[0], fogColor[1], fogColor[2], fogColor[3]);
     if (blendColor && u.blendColor >= 0)
         m_compiler->SetUniform4f(u.blendColor, blendColor[0], blendColor[1], blendColor[2], blendColor[3]);
-    if (u.primLOD >= 0)
-        m_compiler->SetUniform1f(u.primLOD, primLODMin);
-    if (u.primLODFrac >= 0)
-        m_compiler->SetUniform1f(u.primLODFrac, primLODFrac);
+    if (u.primLOD >= 0) m_compiler->SetUniform1f(u.primLOD, primLODMin);
+    if (u.primLODFrac >= 0) m_compiler->SetUniform1f(u.primLODFrac, primLODFrac);
     // Chroma key center/scale — wired from RDP state
-    if (u.centerColor >= 0)
-        m_compiler->SetUniform3f(u.centerColor, centerR, centerG, centerB);
-    if (u.scaleColor >= 0)
-        m_compiler->SetUniform3f(u.scaleColor, scaleR, scaleG, scaleB);
+    if (u.centerColor >= 0) m_compiler->SetUniform3f(u.centerColor, centerR, centerG, centerB);
+    if (u.scaleColor >= 0) m_compiler->SetUniform3f(u.scaleColor, scaleR, scaleG, scaleB);
 }
 
 void ShaderManager::SetFillColor(float r, float g, float b, float a) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.fillColor >= 0)
-        m_compiler->SetUniform4f(u.fillColor, r, g, b, a);
+    if (u.fillColor >= 0) m_compiler->SetUniform4f(u.fillColor, r, g, b, a);
 }
 
-void ShaderManager::SetTextureUniforms(int tex0Unit, int tex1Unit,
-                                        const float* scale0, const float* scale1,
-                                        const float* size0, const float* size1,
-                                        const float* gpuScale0, const float* gpuScale1) {
+void ShaderManager::SetTextureUniforms(int tex0Unit, int tex1Unit, const float* scale0, const float* scale1,
+                                       const float* size0, const float* size1, const float* gpuScale0,
+                                       const float* gpuScale1) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
     if (u.texture0 >= 0) m_compiler->SetUniform1i(u.texture0, tex0Unit);
     if (u.texture1 >= 0) m_compiler->SetUniform1i(u.texture1, tex1Unit);
     if (scale0 && u.texScale0 >= 0) m_compiler->SetUniform2f(u.texScale0, scale0[0], scale0[1]);
     if (scale1 && u.texScale1 >= 0) m_compiler->SetUniform2f(u.texScale1, scale1[0], scale1[1]);
-    if (size0  && u.texSize0  >= 0) m_compiler->SetUniform2f(u.texSize0,  size0[0],  size0[1]);
-    if (size1  && u.texSize1  >= 0) m_compiler->SetUniform2f(u.texSize1,  size1[0],  size1[1]);
+    if (size0 && u.texSize0 >= 0) m_compiler->SetUniform2f(u.texSize0, size0[0], size0[1]);
+    if (size1 && u.texSize1 >= 0) m_compiler->SetUniform2f(u.texSize1, size1[0], size1[1]);
     if (gpuScale0 && u.gpuScale0 >= 0) m_compiler->SetUniform2f(u.gpuScale0, gpuScale0[0], gpuScale0[1]);
     if (gpuScale1 && u.gpuScale1 >= 0) m_compiler->SetUniform2f(u.gpuScale1, gpuScale1[0], gpuScale1[1]);
 }
@@ -487,37 +458,34 @@ void ShaderManager::SetGPUScale(const float* gpuScale0, const float* gpuScale1) 
     if (gpuScale1 && u.gpuScale1 >= 0) m_compiler->SetUniform2f(u.gpuScale1, gpuScale1[0], gpuScale1[1]);
 }
 
-void ShaderManager::SetTextureTileParams(const float* offset0, const float* offset1,
-                                          const float* clamp0, const float* clamp1,
-                                          const float* mask0, const float* mask1) {
+void ShaderManager::SetTextureTileParams(const float* offset0, const float* offset1, const float* clamp0,
+                                         const float* clamp1, const float* mask0, const float* mask1) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
     if (offset0 && u.texOffset0 >= 0) m_compiler->SetUniform2f(u.texOffset0, offset0[0], offset0[1]);
     if (offset1 && u.texOffset1 >= 0) m_compiler->SetUniform2f(u.texOffset1, offset1[0], offset1[1]);
-    if (clamp0  && u.texClamp0  >= 0) m_compiler->SetUniform4f(u.texClamp0, clamp0[0], clamp0[1], clamp0[2], clamp0[3]);
-    if (clamp1  && u.texClamp1  >= 0) m_compiler->SetUniform4f(u.texClamp1, clamp1[0], clamp1[1], clamp1[2], clamp1[3]);
-    if (mask0   && u.texMask0   >= 0) m_compiler->SetUniform2f(u.texMask0, mask0[0], mask0[1]);
-    if (mask1   && u.texMask1   >= 0) m_compiler->SetUniform2f(u.texMask1, mask1[0], mask1[1]);
+    if (clamp0 && u.texClamp0 >= 0) m_compiler->SetUniform4f(u.texClamp0, clamp0[0], clamp0[1], clamp0[2], clamp0[3]);
+    if (clamp1 && u.texClamp1 >= 0) m_compiler->SetUniform4f(u.texClamp1, clamp1[0], clamp1[1], clamp1[2], clamp1[3]);
+    if (mask0 && u.texMask0 >= 0) m_compiler->SetUniform2f(u.texMask0, mask0[0], mask0[1]);
+    if (mask1 && u.texMask1 >= 0) m_compiler->SetUniform2f(u.texMask1, mask1[0], mask1[1]);
 }
 
 void ShaderManager::SetAlphaRef(float ref) {
     if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.alphaRef >= 0)
-        m_compiler->SetUniform1f(m_currentShader->uniforms.alphaRef, ref);
+    if (m_currentShader->uniforms.alphaRef >= 0) m_compiler->SetUniform1f(m_currentShader->uniforms.alphaRef, ref);
 }
 
 void ShaderManager::SetFogParams(float multiplier, float offset) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
     if (u.fogMultiplier >= 0) m_compiler->SetUniform1f(u.fogMultiplier, multiplier);
-    if (u.fogOffset >= 0)     m_compiler->SetUniform1f(u.fogOffset, offset);
+    if (u.fogOffset >= 0) m_compiler->SetUniform1f(u.fogOffset, offset);
 }
 
 void ShaderManager::SetTexCoordBounds(bool enabled, const float* bounds0, const float* bounds1) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.useTexCoordBounds >= 0)
-        m_compiler->SetUniform1i(u.useTexCoordBounds, enabled ? 1 : 0);
+    if (u.useTexCoordBounds >= 0) m_compiler->SetUniform1i(u.useTexCoordBounds, enabled ? 1 : 0);
     if (enabled && bounds0 && u.texCoordBounds0 >= 0)
         m_compiler->SetUniform4f(u.texCoordBounds0, bounds0[0], bounds0[1], bounds0[2], bounds0[3]);
     if (enabled && bounds1 && u.texCoordBounds1 >= 0)
@@ -527,15 +495,15 @@ void ShaderManager::SetTexCoordBounds(bool enabled, const float* bounds0, const 
 void ShaderManager::SetDepthParams(float scale, float offset, float primDepth) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.depthScale  >= 0) m_compiler->SetUniform1f(u.depthScale, scale);
+    if (u.depthScale >= 0) m_compiler->SetUniform1f(u.depthScale, scale);
     if (u.depthOffset >= 0) m_compiler->SetUniform1f(u.depthOffset, offset);
-    if (u.primDepth   >= 0) m_compiler->SetUniform1f(u.primDepth, primDepth);
+    if (u.primDepth >= 0) m_compiler->SetUniform1f(u.primDepth, primDepth);
 }
 
 void ShaderManager::SetN64DepthMode(int zMode, float primDeltaZ) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.zMode      >= 0) m_compiler->SetUniform1i(u.zMode, zMode);
+    if (u.zMode >= 0) m_compiler->SetUniform1i(u.zMode, zMode);
     if (u.primDeltaZ >= 0) m_compiler->SetUniform1f(u.primDeltaZ, primDeltaZ);
 }
 
@@ -544,19 +512,16 @@ void ShaderManager::SetConvertK(const int16_t convertK[6]) {
     const auto& u = m_currentShader->uniforms;
     // K0-K3 packed into vec4 for YUV→RGB conversion (9-bit signed → float)
     if (u.convertK >= 0)
-        m_compiler->SetUniform4f(u.convertK,
-            convertK[0] / 256.0f, convertK[1] / 256.0f,
-            convertK[2] / 256.0f, convertK[3] / 256.0f);
-    if (u.k4 >= 0)
-        m_compiler->SetUniform1f(u.k4, convertK[4] / 255.0f);
-    if (u.k5 >= 0)
-        m_compiler->SetUniform1f(u.k5, convertK[5] / 255.0f);
+        m_compiler->SetUniform4f(u.convertK, convertK[0] / 256.0f, convertK[1] / 256.0f, convertK[2] / 256.0f,
+                                 convertK[3] / 256.0f);
+    if (u.k4 >= 0) m_compiler->SetUniform1f(u.k4, convertK[4] / 255.0f);
+    if (u.k5 >= 0) m_compiler->SetUniform1f(u.k5, convertK[5] / 255.0f);
 }
 
 void ShaderManager::SetScreenSize(float width, float height) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.screenSize >= 0)    m_compiler->SetUniform2f(u.screenSize, width, height);
+    if (u.screenSize >= 0) m_compiler->SetUniform2f(u.screenSize, width, height);
     if (u.invScreenSize >= 0) m_compiler->SetUniform2f(u.invScreenSize, 1.0f / width, 1.0f / height);
 }
 
@@ -595,25 +560,20 @@ void ShaderManager::SetScreenScale(float scaleX, float scaleY) {
 
 void ShaderManager::SetKeyWidth(float r, float g, float b) {
     if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.keyWidth >= 0)
-        m_compiler->SetUniform3f(m_currentShader->uniforms.keyWidth, r, g, b);
+    if (m_currentShader->uniforms.keyWidth >= 0) m_compiler->SetUniform3f(m_currentShader->uniforms.keyWidth, r, g, b);
 }
 
 void ShaderManager::SetLODParams(float minLod, int maxTile, int textureDetail) {
     if (!m_currentShader || !m_compiler) return;
     const auto& u = m_currentShader->uniforms;
-    if (u.minLod >= 0)
-        m_compiler->SetUniform1f(u.minLod, minLod);
-    if (u.maxTile >= 0)
-        m_compiler->SetUniform1i(u.maxTile, maxTile);
-    if (u.textureDetail >= 0)
-        m_compiler->SetUniform1i(u.textureDetail, textureDetail);
+    if (u.minLod >= 0) m_compiler->SetUniform1f(u.minLod, minLod);
+    if (u.maxTile >= 0) m_compiler->SetUniform1i(u.maxTile, maxTile);
+    if (u.textureDetail >= 0) m_compiler->SetUniform1i(u.textureDetail, textureDetail);
 }
 
 void ShaderManager::SetFogUsage(int fogUsage) {
     if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.fogUsage >= 0)
-        m_compiler->SetUniform1i(m_currentShader->uniforms.fogUsage, fogUsage);
+    if (m_currentShader->uniforms.fogUsage >= 0) m_compiler->SetUniform1i(m_currentShader->uniforms.fogUsage, fogUsage);
 }
 
 void ShaderManager::SetScreenSpaceTriangle(int screenSpace) {
@@ -630,14 +590,12 @@ void ShaderManager::SetDebugOutput(int mode) {
 
 void ShaderManager::SetTexCvgAlpha(int v) {
     if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.texCvgAlpha >= 0)
-        m_compiler->SetUniform1i(m_currentShader->uniforms.texCvgAlpha, v);
+    if (m_currentShader->uniforms.texCvgAlpha >= 0) m_compiler->SetUniform1i(m_currentShader->uniforms.texCvgAlpha, v);
 }
 
 void ShaderManager::SetTexHiRes(int bits) {
     if (!m_currentShader || !m_compiler) return;
-    if (m_currentShader->uniforms.texHiRes >= 0)
-        m_compiler->SetUniform1i(m_currentShader->uniforms.texHiRes, bits);
+    if (m_currentShader->uniforms.texHiRes >= 0) m_compiler->SetUniform1i(m_currentShader->uniforms.texHiRes, bits);
 }
 
 const CompiledShader* ShaderManager::GetDepthOnlyShader() {
@@ -659,8 +617,7 @@ const CompiledShader* ShaderManager::GetDepthOnlyShader() {
 
 const CompiledShader* ShaderManager::GetPostProcessShader(uint64_t features) {
     auto it = m_postProcessShaders.find(features);
-    if (it != m_postProcessShaders.end() && it->second->valid)
-        return it->second.get();
+    if (it != m_postProcessShaders.end() && it->second->valid) return it->second.get();
     if (!m_compiler || !m_generator) return nullptr;
 
     std::string vertSrc = m_generator->GeneratePostProcessVertex();
@@ -692,9 +649,7 @@ const CompiledShader* ShaderManager::GetUIShader() {
     return nullptr;
 }
 
-void ShaderManager::ClearCache() {
-    m_cache.Clear();
-}
+void ShaderManager::ClearCache() { m_cache.Clear(); }
 
 bool ShaderManager::SaveCache(const std::string& path) {
     bool srcOk = m_cache.SaveToDisk(path);
@@ -732,9 +687,7 @@ bool ShaderManager::LoadCache(const std::string& path) {
     return m_cache.GetStats().currentCacheSize > 0;
 }
 
-const ShaderCacheStats& ShaderManager::GetStats() const {
-    return m_cache.GetStats();
-}
+const ShaderCacheStats& ShaderManager::GetStats() const { return m_cache.GetStats(); }
 
 void ShaderManager::ResetStats() {
     // Stats are part of cache; clearing them requires cache re-init
@@ -756,8 +709,7 @@ std::string ShaderManager::DumpShaderSource(const CombinerKey& key) const {
 }
 
 const CompiledShader* ShaderManager::GetFallbackShader() {
-    if (m_fallbackShader && m_fallbackShader->valid)
-        return m_fallbackShader.get();
+    if (m_fallbackShader && m_fallbackShader->valid) return m_fallbackShader.get();
     if (!m_compiler) return nullptr;
 
     static const char* fallbackVS = R"(
@@ -821,8 +773,8 @@ const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {
     }
 
     auto endTime = std::chrono::high_resolution_clock::now();
-    compiled.compileTimeMs = static_cast<uint32_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
+    compiled.compileTimeMs =
+        static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
 
     // Diagnostic: log each new shader compilation (WARN so it shows in release logs).
     NOVA_WARN(::Nova64::Video::LogSubsystem::Core,
@@ -855,82 +807,84 @@ void ShaderManager::QueryUniformLocations(CompiledShader& shader) {
     auto Q = [&](const char* name) { return m_compiler->GetUniformLocation(shader.handle, name); };
 
     // Matrices
-    u.mvpMatrix       = Q("uMVPMatrix");
-    u.modelView       = Q("uModelView");
-    u.projection      = Q("uProjection");
+    u.mvpMatrix = Q("uMVPMatrix");
+    u.modelView = Q("uModelView");
+    u.projection = Q("uProjection");
 
     // Textures
-    u.texture0        = Q("uTexture0");
-    u.texture1        = Q("uTexture1");
-    u.tlut0           = Q("uTLUT0");
-    u.tlut1           = Q("uTLUT1");
-    u.depthTexture    = Q("uDepthTexture");
-    u.noiseTexture    = Q("uNoiseTexture");
-    u.ditherTexture   = Q("uDitherTexture");
-    u.fbTexture       = Q("uFBTexture");
+    u.texture0 = Q("uTexture0");
+    u.texture1 = Q("uTexture1");
+    u.tlut0 = Q("uTLUT0");
+    u.tlut1 = Q("uTLUT1");
+    u.depthTexture = Q("uDepthTexture");
+    u.noiseTexture = Q("uNoiseTexture");
+    u.ditherTexture = Q("uDitherTexture");
+    u.fbTexture = Q("uFBTexture");
 
     // Colors
-    u.primColor       = Q("uPrimColor");
-    u.envColor        = Q("uEnvColor");
-    u.fogColor        = Q("uFogColor");
-    u.blendColor      = Q("uBlendColor");
-    u.fillColor       = Q("uFillColor");
-    u.centerColor     = Q("uCenterColor");
-    u.scaleColor      = Q("uScaleColor");
-    u.primLOD         = Q("uPrimLOD");
-    u.primLODFrac     = Q("uPrimLODFrac");
-    u.k4              = Q("uK4");
-    u.k5              = Q("uK5");
-    u.convertK        = Q("uConvertK");
+    u.primColor = Q("uPrimColor");
+    u.envColor = Q("uEnvColor");
+    u.fogColor = Q("uFogColor");
+    u.blendColor = Q("uBlendColor");
+    u.fillColor = Q("uFillColor");
+    u.centerColor = Q("uCenterColor");
+    u.scaleColor = Q("uScaleColor");
+    u.primLOD = Q("uPrimLOD");
+    u.primLODFrac = Q("uPrimLODFrac");
+    u.k4 = Q("uK4");
+    u.k5 = Q("uK5");
+    u.convertK = Q("uConvertK");
 
     // Texture state
-    u.texScale0       = Q("uTexScale0");
-    u.texScale1       = Q("uTexScale1");
-    u.texOffset0      = Q("uTexOffset0");
-    u.texOffset1      = Q("uTexOffset1");
-    u.texClamp0       = Q("uTexClamp0");
-    u.texClamp1       = Q("uTexClamp1");
-    u.texMask0        = Q("uTexMask0");
-    u.texMask1        = Q("uTexMask1");
-    u.texSize0        = Q("uTexSize0");
-    u.texSize1        = Q("uTexSize1");
-    u.gpuScale0       = Q("uGPUScale0");
-    u.gpuScale1       = Q("uGPUScale1");
+    u.texScale0 = Q("uTexScale0");
+    u.texScale1 = Q("uTexScale1");
+    u.texOffset0 = Q("uTexOffset0");
+    u.texOffset1 = Q("uTexOffset1");
+    u.texClamp0 = Q("uTexClamp0");
+    u.texClamp1 = Q("uTexClamp1");
+    u.texMask0 = Q("uTexMask0");
+    u.texMask1 = Q("uTexMask1");
+    u.texSize0 = Q("uTexSize0");
+    u.texSize1 = Q("uTexSize1");
+    u.gpuScale0 = Q("uGPUScale0");
+    u.gpuScale1 = Q("uGPUScale1");
 
     // Other
-    u.alphaRef        = Q("uAlphaRef");
-    u.fogMultiplier   = Q("uFogMultiplier");
-    u.fogOffset       = Q("uFogOffset");
-    u.depthScale      = Q("uDepthScale");
-    u.depthOffset     = Q("uDepthOffset");
-    u.primDepth       = Q("uPrimDepth");
-    u.zImageTex       = Q("uZImageTex");
-    u.deltaZImageTex  = Q("uDeltaZImageTex");
-    u.zLutTex         = Q("uZLUT");
-    u.zMode           = Q("uZMode");
-    u.primDeltaZ      = Q("uPrimDeltaZ");
+    u.alphaRef = Q("uAlphaRef");
+    u.fogMultiplier = Q("uFogMultiplier");
+    u.fogOffset = Q("uFogOffset");
+    u.depthScale = Q("uDepthScale");
+    u.depthOffset = Q("uDepthOffset");
+    u.primDepth = Q("uPrimDepth");
+    u.zImageTex = Q("uZImageTex");
+    u.deltaZImageTex = Q("uDeltaZImageTex");
+    u.zLutTex = Q("uZLUT");
+    u.zMode = Q("uZMode");
+    u.primDeltaZ = Q("uPrimDeltaZ");
     u.texCoordBounds0 = Q("uTexCoordBounds0");
     u.texCoordBounds1 = Q("uTexCoordBounds1");
     u.useTexCoordBounds = Q("uUseTexCoordBounds");
-    u.texturePersp    = Q("uTexturePersp");
-    u.fbMonochrome0   = Q("uFbMonochrome0");
-    u.fbMonochrome1   = Q("uFbMonochrome1");
-    u.fbFixedAlpha0   = Q("uFbFixedAlpha0");
-    u.fbFixedAlpha1   = Q("uFbFixedAlpha1");
-    u.screenScale     = Q("uScreenScale");
-    u.keyWidth        = Q("uKeyWidth");
-    u.minLod          = Q("uMinLod");
-    u.maxTile         = Q("uMaxTile");
-    u.textureDetail   = Q("uTextureDetail");
-    u.fogUsage        = Q("uFogUsage");
+    u.texturePersp = Q("uTexturePersp");
+    u.fbMonochrome0 = Q("uFbMonochrome0");
+    u.fbMonochrome1 = Q("uFbMonochrome1");
+    u.fbFixedAlpha0 = Q("uFbFixedAlpha0");
+    u.fbFixedAlpha1 = Q("uFbFixedAlpha1");
+    u.screenScale = Q("uScreenScale");
+    u.keyWidth = Q("uKeyWidth");
+    u.minLod = Q("uMinLod");
+    u.maxTile = Q("uMaxTile");
+    u.textureDetail = Q("uTextureDetail");
+    u.fogUsage = Q("uFogUsage");
     u.screenSpaceTriangle = Q("uScreenSpaceTriangle");
-    u.screenSize      = Q("uScreenSize");
-    u.invScreenSize   = Q("uInvScreenSize");
-    u.frameCount      = Q("uFrameCount");
+    u.screenSize = Q("uScreenSize");
+    u.invScreenSize = Q("uInvScreenSize");
+    u.frameCount = Q("uFrameCount");
     u.resolutionScale = Q("uResolutionScale");
-    u.debugOutput     = Q("uDebugOutput");
-    u.texCvgAlpha     = Q("uTexCvgAlpha");
-    u.texHiRes        = Q("uTexHiRes");
+    u.debugOutput = Q("uDebugOutput");
+    u.texCvgAlpha = Q("uTexCvgAlpha");
+    u.texHiRes = Q("uTexHiRes");
 }
 
-}}} // namespace Nova64::Video::Shader
+} // namespace Shader
+} // namespace Video
+} // namespace Nova64

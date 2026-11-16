@@ -12,16 +12,18 @@
 #include "VKCommon.hpp"
 #include <atomic>
 
-namespace Nova64 { namespace Video { namespace VK {
+namespace Nova64 {
+namespace Video {
+namespace VK {
 
 /// Bundle of handles every resource needs. Owned by VulkanRenderer; passed by
 /// pointer to each resource. Stable for the lifetime of the renderer.
 struct VKContext {
-    VkPhysicalDevice physical      = VK_NULL_HANDLE;
-    VkDevice         device        = VK_NULL_HANDLE;
-    VkQueue          transferQueue = VK_NULL_HANDLE; // = graphics queue
-    VkCommandPool    transientPool = VK_NULL_HANDLE; // for one-shot uploads
-    VkPipelineCache  pipelineCache = VK_NULL_HANDLE; // shared cache (optional)
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    VkQueue transferQueue = VK_NULL_HANDLE;         // = graphics queue
+    VkCommandPool transientPool = VK_NULL_HANDLE;   // for one-shot uploads
+    VkPipelineCache pipelineCache = VK_NULL_HANDLE; // shared cache (optional)
 
     /// Set to true when vkAcquireNextImageKHR / vkQueueSubmit /
     /// vkQueuePresentKHR returns VK_ERROR_DEVICE_LOST.  All GPU operations
@@ -33,8 +35,8 @@ struct VKContext {
 
     /// Reset all handles and status flags to their default null values.
     void Reset() {
-        physical      = VK_NULL_HANDLE;
-        device        = VK_NULL_HANDLE;
+        physical = VK_NULL_HANDLE;
+        device = VK_NULL_HANDLE;
         transferQueue = VK_NULL_HANDLE;
         transientPool = VK_NULL_HANDLE;
         pipelineCache = VK_NULL_HANDLE;
@@ -44,9 +46,7 @@ struct VKContext {
 
 /// Find a memory type matching `typeBits` (from VkMemoryRequirements) and `props`.
 /// Returns UINT32_MAX on failure (logged).
-uint32_t FindMemoryType(VkPhysicalDevice physical,
-                        uint32_t typeBits,
-                        VkMemoryPropertyFlags props);
+uint32_t FindMemoryType(VkPhysicalDevice physical, uint32_t typeBits, VkMemoryPropertyFlags props);
 
 /// Allocate a one-shot primary command buffer from `pool` and begin recording
 /// with ONE_TIME_SUBMIT. Returns VK_NULL_HANDLE on failure.
@@ -57,4 +57,6 @@ VkCommandBuffer BeginOneShot(VkDevice device, VkCommandPool pool);
 /// On VK_ERROR_DEVICE_LOST, `ctx.deviceLost` is set to true.
 void EndOneShotAndWait(const VKContext& ctx, VkCommandBuffer cmd);
 
-}}} // namespace Nova64::Video::VK
+} // namespace VK
+} // namespace Video
+} // namespace Nova64

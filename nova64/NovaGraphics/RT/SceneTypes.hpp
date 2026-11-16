@@ -22,10 +22,10 @@ namespace Nova64::Video::RT {
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct SceneVertex {
-    float worldPos[3];   // Object-space position × ModelView matrix
-    float normal[3];     // Eye-space normal (normalised)
-    float uv[2];         // Texture coordinates (raw S10.5 converted to float)
-    float color[4];      // Vertex color / shade (RGBA 0-1)
+    float worldPos[3]; // Object-space position × ModelView matrix
+    float normal[3];   // Eye-space normal (normalised)
+    float uv[2];       // Texture coordinates (raw S10.5 converted to float)
+    float color[4];    // Vertex color / shade (RGBA 0-1)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,11 +34,11 @@ struct SceneVertex {
 
 /// One light as the game set it, in EYE space (the space the RT scene lives in).
 struct SceneLight {
-    bool  valid = false;
-    bool  point = false;
-    float vec[3]   = {0, 0, 0};   ///< directional: unit vector TOWARD the light; point: position
-    float color[3] = {1, 1, 1};   ///< 0..1
-    float la = 0.0f, qa = 0.0f;   ///< point light: the RSP's linear/quadratic attenuation bytes
+    bool valid = false;
+    bool point = false;
+    float vec[3] = {0, 0, 0};   ///< directional: unit vector TOWARD the light; point: position
+    float color[3] = {1, 1, 1}; ///< 0..1
+    float la = 0.0f, qa = 0.0f; ///< point light: the RSP's linear/quadratic attenuation bytes
 };
 
 /// What lights a triangle: the game's main directional light and, when it has
@@ -57,12 +57,12 @@ struct SceneLighting {
 struct SceneTriangle {
     SceneVertex v[3];
 
-    uint64_t materialHash;      // Hash of RDP combine mode + tile CRCs (from combineMode)
-    uint32_t geometryMode;      // N64 geometry mode flags at submission time
-    uint32_t otherModeH;        // RDP otherMode high word (for RT material decisions)
-    uint32_t otherModeL;        // RDP otherMode low word
-    bool     isTranslucent;     // Blended translucent surface (water/glass)
-    bool     isCutout;          // Texture-alpha cutout (billboards/sprites)
+    uint64_t materialHash; // Hash of RDP combine mode + tile CRCs (from combineMode)
+    uint32_t geometryMode; // N64 geometry mode flags at submission time
+    uint32_t otherModeH;   // RDP otherMode high word (for RT material decisions)
+    uint32_t otherModeL;   // RDP otherMode low word
+    bool isTranslucent;    // Blended translucent surface (water/glass)
+    bool isCutout;         // Texture-alpha cutout (billboards/sprites)
     // True when the RDP color combiner's FINAL cycle multiplicatively
     // references SHADE (the per-vertex interpolated color — from dynamic
     // RSP lighting or raw vertex colors, whichever the DL supplied) in
@@ -73,12 +73,12 @@ struct SceneTriangle {
     // output, so dividing by it would apply a meaningless correction.
     // Computed from materialHash (the raw combine mode) + otherModeH's
     // cycle-type bits — see GBIHandler::ComputeUsesShadeInFinalColor.
-    bool     usesShadeInFinalColor;
+    bool usesShadeInFinalColor;
 
     // Indices into the frame's light table (RTSceneManager::Lights()); 0xFF = none.
     // Stamped by the scene manager from the lighting current at submission time.
-    uint8_t  sunLight   = 0xFF;
-    uint8_t  localLight = 0xFF;
+    uint8_t sunLight = 0xFF;
+    uint8_t localLight = 0xFF;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

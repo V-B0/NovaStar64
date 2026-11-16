@@ -9,7 +9,7 @@ void RDPProcessor::HandleTriangle(const uint32_t* words, int wordCount) {
 }
 
 void RDPProcessor::HandleTextureRect(const uint32_t* words) {
-    if (m_hacks.skipTexRect) return;  // WinBack: grey rectangle fix
+    if (m_hacks.skipTexRect) return; // WinBack: grey rectangle fix
     DecodedRectangle rect;
     m_decoder.DecodeTextureRect(words, rect);
 
@@ -24,11 +24,9 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
     MM_RDP_TRACE("TexRect rect=({:.2f},{:.2f})-({:.2f},{:.2f}) dsDx={:.4f} dtDy={:.4f} "
                  "cycle={} otherL=0x{:08X} otherH=0x{:08X} combine=0x{:016X} "
                  "scissor=({},{})-({},{}) wsScale={:.3f} tile={}",
-                 rect.x0, rect.y0, rect.x1, rect.y1, rect.dsDx, rect.dtDy,
-                 cycleType, m_state.rdp.otherModeL, m_state.rdp.otherModeH,
-                 m_state.rdp.combineModeRaw,
-                 m_state.rdp.scissor.xh >> 2, m_state.rdp.scissor.yh >> 2,
-                 m_state.rdp.scissor.xl >> 2, m_state.rdp.scissor.yl >> 2,
+                 rect.x0, rect.y0, rect.x1, rect.y1, rect.dsDx, rect.dtDy, cycleType, m_state.rdp.otherModeL,
+                 m_state.rdp.otherModeH, m_state.rdp.combineModeRaw, m_state.rdp.scissor.xh >> 2,
+                 m_state.rdp.scissor.yh >> 2, m_state.rdp.scissor.xl >> 2, m_state.rdp.scissor.yl >> 2,
                  m_state.rdp.geometry.widescreenScale, rect.tileIndex);
     if (cycleType == 2) {
         // COPY mode (GLideN64 model): dsDx is in 4-texels-per-clock units →
@@ -42,7 +40,7 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
         rect.x1 += 1.0f;
         rect.y1 += 1.0f;
     } else if (rect.y1 - rect.y0 < 1.0f) {
-        rect.y1 = std::ceil(rect.y1);  // Sub-pixel height fixup
+        rect.y1 = std::ceil(rect.y1); // Sub-pixel height fixup
     }
 
     // Widescreen: skip letterbox bars and scale non-fullscreen rects inward.
@@ -57,8 +55,7 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
         bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
 
         // Skip letterbox bars: full-width, thin (<25% height), touching top/bottom edge.
-        if (isFullWidth && rectH < screenH * 0.25f &&
-            (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
+        if (isFullWidth && rectH < screenH * 0.25f && (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
             return;
         }
 
@@ -88,7 +85,7 @@ void RDPProcessor::HandleTextureRect(const uint32_t* words) {
 }
 
 void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
-    if (m_hacks.skipTexRect) return;  // WinBack: grey rectangle fix
+    if (m_hacks.skipTexRect) return; // WinBack: grey rectangle fix
     DecodedRectangle rect;
     m_decoder.DecodeTextureRectFlip(words, rect);
 
@@ -107,7 +104,7 @@ void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
         rect.x1 += 1.0f;
         rect.y1 += 1.0f;
     } else if (rect.y1 - rect.y0 < 1.0f) {
-        rect.y1 = std::ceil(rect.y1);  // Sub-pixel height fixup
+        rect.y1 = std::ceil(rect.y1); // Sub-pixel height fixup
     }
 
     // Widescreen: skip letterbox bars and scale non-fullscreen rects inward.
@@ -121,8 +118,7 @@ void RDPProcessor::HandleTextureRectFlip(const uint32_t* words) {
         float rectH = rect.y1 - rect.y0;
         bool isFullWidth = (rect.x0 <= 1.0f && rect.x1 >= ciWidth - 1.0f);
 
-        if (isFullWidth && rectH < screenH * 0.25f &&
-            (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
+        if (isFullWidth && rectH < screenH * 0.25f && (rect.y0 <= 1.0f || rect.y1 >= screenH - 1.0f)) {
             return;
         }
 
@@ -150,17 +146,12 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     float x0, y0, x1, y1;
     m_decoder.DecodeFillRect(words, x0, y0, x1, y1);
 
-    bool sameColorDepth = (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
-                           m_state.rdp.colorImage.address != 0);
-    MM_RDP_TRACE("FillRect raw=0x{:08X} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) color=0x{:06X} z=0x{:06X} sameColorDepth={} colorSize={} cycle={}",
-                 m_state.rdp.fillColorRaw,
-                 x0,
-                 y0,
-                 x1,
-                 y1,
-                 m_state.rdp.colorImage.address & 0x7FFFFF,
-                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
-                 sameColorDepth,
+    bool sameColorDepth =
+        (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address && m_state.rdp.colorImage.address != 0);
+    MM_RDP_TRACE("FillRect raw=0x{:08X} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) color=0x{:06X} z=0x{:06X} "
+                 "sameColorDepth={} colorSize={} cycle={}",
+                 m_state.rdp.fillColorRaw, x0, y0, x1, y1, m_state.rdp.colorImage.address & 0x7FFFFF,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF, sameColorDepth,
                  static_cast<int>(m_state.rdp.colorImage.size),
                  static_cast<int>((m_state.rdp.otherModeH >> 20) & 0x03));
 
@@ -172,10 +163,8 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
     // be intercepted here.
     constexpr uint32_t kN64DepthClearFillColor = 0xFFFCFFFCu;
     if (m_state.rdp.colorImage.address == m_state.rdp.zbufferImage.address &&
-        m_state.rdp.colorImage.size == ImageSize::Bpp16 &&
-        m_state.rdp.fillColorRaw == kN64DepthClearFillColor) {
-        MM_RDP_TRACE("DepthClearIntercept raw=0x{:08X} addr=0x{:06X}",
-                     m_state.rdp.fillColorRaw,
+        m_state.rdp.colorImage.size == ImageSize::Bpp16 && m_state.rdp.fillColorRaw == kN64DepthClearFillColor) {
+        MM_RDP_TRACE("DepthClearIntercept raw=0x{:08X} addr=0x{:06X}", m_state.rdp.fillColorRaw,
                      m_state.rdp.colorImage.address & 0x7FFFFF);
         FlushBatch();
         if (g_fbManager.IsGL() && g_fbManager.GetCurrentColor()) {
@@ -198,9 +187,8 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
 
     // Re-decode fill color at draw time using the CURRENT color image size
     // (in case it changed since SetFillColor was called).
-    DecodeFillColor(m_state.rdp.fillColorRaw, m_state.rdp.colorImage.size,
-                    m_state.rdp.fillColor.r, m_state.rdp.fillColor.g,
-                    m_state.rdp.fillColor.b, m_state.rdp.fillColor.a);
+    DecodeFillColor(m_state.rdp.fillColorRaw, m_state.rdp.colorImage.size, m_state.rdp.fillColor.r,
+                    m_state.rdp.fillColor.g, m_state.rdp.fillColor.b, m_state.rdp.fillColor.a);
 
     // In FILL mode (cycleType=3), the N64 RDP uses inclusive right/bottom edges.
     // OpenGL rasterization uses exclusive right/bottom (top-left fill rule).
@@ -235,7 +223,7 @@ void RDPProcessor::HandleFillRect(const uint32_t* words) {
         bool touchesBottom = (y1 >= screenH - 1.0f);
 
         if (isFullWidth && isThin && (touchesTop || touchesBottom)) {
-            return;  // Skip letterbox bar
+            return; // Skip letterbox bar
         }
 
         // Expand fullscreen FillRects to cover the full Y range
@@ -261,13 +249,11 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
         static uint32_t s_triLog = 0;
         if (s_triLog < 15) {
             ++s_triLog;
-            Log::infof("[RDPTRI#%u] lr=%d yh=%.2f ym=%.2f yl=%.2f xh=%.2f xm=%.2f xl=%.2f dxh=%.3f dxm=%.3f dxl=%.3f shade=%d tex=%d z=%d",
-                       s_triLog,
-                       (int)tri.edge.leftMajor,
-                       tri.edge.yh, tri.edge.ym, tri.edge.yl,
-                       tri.edge.xh, tri.edge.xm, tri.edge.xl,
-                       tri.edge.dxhDy, tri.edge.dxmDy, tri.edge.dxlDy,
-                       (int)tri.hasShade, (int)tri.hasTexture, (int)tri.hasDepth);
+            Log::infof("[RDPTRI#%u] lr=%d yh=%.2f ym=%.2f yl=%.2f xh=%.2f xm=%.2f xl=%.2f dxh=%.3f dxm=%.3f dxl=%.3f "
+                       "shade=%d tex=%d z=%d",
+                       s_triLog, (int)tri.edge.leftMajor, tri.edge.yh, tri.edge.ym, tri.edge.yl, tri.edge.xh,
+                       tri.edge.xm, tri.edge.xl, tri.edge.dxhDy, tri.edge.dxmDy, tri.edge.dxlDy, (int)tri.hasShade,
+                       (int)tri.hasTexture, (int)tri.hasDepth);
         }
     }
 
@@ -286,11 +272,11 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     call.fogColor = m_state.rdp.fogColor;
     call.blendColor = m_state.rdp.blendColor;
     call.primLODFrac = m_state.rdp.primLODFrac;
-    call.primLODMin  = m_state.rdp.primLODMin;
-    call.primDepth   = m_state.rdp.primDepth;
-    call.primDeltaZ  = m_state.rdp.primDeltaZ;
-    call.fogUsage    = m_state.rdp.geometry.fogUsage;
-    
+    call.primLODMin = m_state.rdp.primLODMin;
+    call.primDepth = m_state.rdp.primDepth;
+    call.primDeltaZ = m_state.rdp.primDeltaZ;
+    call.fogUsage = m_state.rdp.geometry.fogUsage;
+
     // N64 RDP triangles are defined by a major edge and two minor edges.
     // They are split at the middle Y coordinate (ym).
     double yh = tri.edge.yh;
@@ -322,8 +308,8 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
                 static bool s_zLogged = false;
                 if (!s_zLogged) {
                     s_zLogged = true;
-                    Log::infof("[RAWZ] rawZ=%.6f baseZ=%.6f dzDe=%.8f dzDx=%.8f",
-                               rawZ, (float)tri.depth.z, (float)tri.depth.dzDe, (float)tri.depth.dzDx);
+                    Log::infof("[RAWZ] rawZ=%.6f baseZ=%.6f dzDe=%.8f dzDx=%.8f", rawZ, (float)tri.depth.z,
+                               (float)tri.depth.dzDe, (float)tri.depth.dzDx);
                 }
             }
             v.z = std::clamp(rawZ / 32767.0f, 0.0f, 1.0f);
@@ -363,7 +349,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
 
     // Calculate mid-point on major edge
     double x_major_mid = xh + dxhdy * (ym - yh);
-    
+
     // Triangle 1 (Top half: yh to ym)
     // Vertices: (xh, yh), (xm, yh), (xl, ym), (x_major_mid, ym)
     RenderBatch::Vertex vt0, vt1, vt2, vt3;
@@ -407,7 +393,7 @@ void RDPProcessor::DrawTriangle(const DecodedTriangle& tri) {
     if (hasBot) {
         double x_minor_bot = xl + dxldy * (yl - ym);
         double x_major_bot = xh + dxhdy * (yl - yh);
-        
+
         RenderBatch::Vertex vb0, vb1, vb2, vb3;
         fillVertex(vb0, xl, ym);
         fillVertex(vb1, x_major_mid, ym);
@@ -481,19 +467,19 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         } else {
             float z_screen = tv.position[2] * invW * geo.viewport.scaleZ + geo.viewport.transZ;
             float absScaleZ = std::abs(geo.viewport.scaleZ);
-            v.z = (absScaleZ > 0.0001f)
-                ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ)
-                : 0.0f;
+            v.z = (absScaleZ > 0.0001f) ? (z_screen - geo.viewport.transZ + absScaleZ) / (2.0f * absScaleZ) : 0.0f;
         }
-        v.z = std::max(0.0f, std::min(1.0f, v.z));  // clamp: extrapolated/clipped verts may stray outside
+        v.z = std::max(0.0f, std::min(1.0f, v.z)); // clamp: extrapolated/clipped verts may stray outside
         // Bias away from exactly 1.0 so far-plane geometry passes GL_LESS.
         // Without this, vertices at the maximum viewport Z normalize to
         // exactly 1.0, which equals the depth-clear value and fails the
         // strict less-than test, making far-plane surfaces invisible.
         if (v.z >= 1.0f) v.z = 0.99999f;
-        v.w = 1.0f;  // ortho maps screen coords -> NDC; clip W already divided out
-        v.r = tv.color[0]; v.g = tv.color[1];
-        v.b = tv.color[2]; v.a = tv.color[3];
+        v.w = 1.0f; // ortho maps screen coords -> NDC; clip W already divided out
+        v.r = tv.color[0];
+        v.g = tv.color[1];
+        v.b = tv.color[2];
+        v.a = tv.color[3];
         // Apply gSPTexture scale at draw time so the correct scale is used
         // even if gSPTexture is issued after gSPVertex.
         float scaleS = geo.texture.enabled ? geo.texture.GetScaleSFloat() : 1.0f;
@@ -509,11 +495,13 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         bool textPersp = (m_state.rdp.otherModeH & OTHERMODE_TEXTPERSP) != 0;
         float tcW = textPersp ? invW : 1.0f;
         float affineHalf = textPersp ? 1.0f : 0.5f;
-        v.s  = tv.texCoord[0]  * scaleS * tcW * affineHalf; v.t  = tv.texCoord[1]  * scaleT * tcW * affineHalf;
-        v.s1 = tv.texCoord1[0] * scaleS * tcW * affineHalf; v.t1 = tv.texCoord1[1] * scaleT * tcW * affineHalf;
+        v.s = tv.texCoord[0] * scaleS * tcW * affineHalf;
+        v.t = tv.texCoord[1] * scaleT * tcW * affineHalf;
+        v.s1 = tv.texCoord1[0] * scaleS * tcW * affineHalf;
+        v.t1 = tv.texCoord1[1] * scaleT * tcW * affineHalf;
         v.perspW = tcW;
         v.fogFactor = tv.fogFactor;
-        v.clipFlags = tv.clipFlags;  // Copy clip flags for frustum culling
+        v.clipFlags = tv.clipFlags; // Copy clip flags for frustum culling
         return v;
     };
 
@@ -531,10 +519,10 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
     call.fogColor = m_state.rdp.fogColor;
     call.blendColor = m_state.rdp.blendColor;
     call.primLODFrac = m_state.rdp.primLODFrac;
-    call.primLODMin  = m_state.rdp.primLODMin;
-    call.primDepth   = m_state.rdp.primDepth;
-    call.primDeltaZ  = m_state.rdp.primDeltaZ;
-    call.fogUsage    = m_state.rdp.geometry.fogUsage;
+    call.primLODMin = m_state.rdp.primLODMin;
+    call.primDepth = m_state.rdp.primDepth;
+    call.primDeltaZ = m_state.rdp.primDeltaZ;
+    call.fogUsage = m_state.rdp.geometry.fogUsage;
 
     m_batch.vertices.push_back(makeVert(v0));
     m_batch.vertices.push_back(makeVert(v1));
@@ -550,8 +538,10 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
         float pb = m_state.rdp.primColor.b / 255.0f;
         float pa = m_state.rdp.primColor.a / 255.0f;
         for (int i = 0; i < 3; i++) {
-            verts[base + i].r = pr; verts[base + i].g = pg;
-            verts[base + i].b = pb; verts[base + i].a = pa;
+            verts[base + i].r = pr;
+            verts[base + i].g = pg;
+            verts[base + i].b = pb;
+            verts[base + i].a = pa;
         }
     }
     // Flat shading: when G_SHADING_SMOOTH is not set, use provoking vertex
@@ -559,10 +549,14 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
     else if (!(geo.geometryMode & 0x00200000)) { // G_SHADING_SMOOTH
         auto& verts = m_batch.vertices;
         size_t base = verts.size() - 3;
-        verts[base + 1].r = verts[base].r; verts[base + 1].g = verts[base].g;
-        verts[base + 1].b = verts[base].b; verts[base + 1].a = verts[base].a;
-        verts[base + 2].r = verts[base].r; verts[base + 2].g = verts[base].g;
-        verts[base + 2].b = verts[base].b; verts[base + 2].a = verts[base].a;
+        verts[base + 1].r = verts[base].r;
+        verts[base + 1].g = verts[base].g;
+        verts[base + 1].b = verts[base].b;
+        verts[base + 1].a = verts[base].a;
+        verts[base + 2].r = verts[base].r;
+        verts[base + 2].g = verts[base].g;
+        verts[base + 2].b = verts[base].b;
+        verts[base + 2].a = verts[base].a;
     }
 
     call.vertexCount = 3;
@@ -574,8 +568,7 @@ void RDPProcessor::DrawTriangle(int v0, int v1, int v2, const GeometryState& geo
 }
 
 void RDPProcessor::DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderBatch::Vertex& rv1,
-                                   const RenderBatch::Vertex& rv2, uint32_t geometryMode,
-                                   uint8_t tileIndex) {
+                                   const RenderBatch::Vertex& rv2, uint32_t geometryMode, uint8_t tileIndex) {
     if (m_batch.IsFull()) FlushBatch();
 
     DrawCall call;
@@ -592,10 +585,10 @@ void RDPProcessor::DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderB
     call.fogColor = m_state.rdp.fogColor;
     call.blendColor = m_state.rdp.blendColor;
     call.primLODFrac = m_state.rdp.primLODFrac;
-    call.primLODMin  = m_state.rdp.primLODMin;
-    call.primDepth   = m_state.rdp.primDepth;
-    call.primDeltaZ  = m_state.rdp.primDeltaZ;
-    call.fogUsage    = m_state.rdp.geometry.fogUsage;
+    call.primLODMin = m_state.rdp.primLODMin;
+    call.primDepth = m_state.rdp.primDepth;
+    call.primDeltaZ = m_state.rdp.primDeltaZ;
+    call.fogUsage = m_state.rdp.geometry.fogUsage;
 
     m_batch.vertices.push_back(rv0);
     m_batch.vertices.push_back(rv1);
@@ -610,18 +603,24 @@ void RDPProcessor::DrawTriangleRaw(const RenderBatch::Vertex& rv0, const RenderB
         float pb = m_state.rdp.primColor.b / 255.0f;
         float pa = m_state.rdp.primColor.a / 255.0f;
         for (int i = 0; i < 3; i++) {
-            verts[base + i].r = pr; verts[base + i].g = pg;
-            verts[base + i].b = pb; verts[base + i].a = pa;
+            verts[base + i].r = pr;
+            verts[base + i].g = pg;
+            verts[base + i].b = pb;
+            verts[base + i].a = pa;
         }
     }
     // Flat shading for clipped triangles: provoking vertex color is rv0
     else if (!(geometryMode & 0x00200000)) { // G_SHADING_SMOOTH
         auto& verts = m_batch.vertices;
         size_t base = verts.size() - 3;
-        verts[base + 1].r = verts[base].r; verts[base + 1].g = verts[base].g;
-        verts[base + 1].b = verts[base].b; verts[base + 1].a = verts[base].a;
-        verts[base + 2].r = verts[base].r; verts[base + 2].g = verts[base].g;
-        verts[base + 2].b = verts[base].b; verts[base + 2].a = verts[base].a;
+        verts[base + 1].r = verts[base].r;
+        verts[base + 1].g = verts[base].g;
+        verts[base + 1].b = verts[base].b;
+        verts[base + 1].a = verts[base].a;
+        verts[base + 2].r = verts[base].r;
+        verts[base + 2].g = verts[base].g;
+        verts[base + 2].b = verts[base].b;
+        verts[base + 2].a = verts[base].a;
     }
 
     call.vertexCount = 3;
@@ -641,22 +640,20 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     // readback (texturedRectDepthBufferCopy).
     bool shadowMapRect = false;
     {
-        uint32_t texAddr  = m_state.rdp.textureImage.address & 0x7FFFFF;
-        uint32_t zbAddr   = m_state.rdp.zbufferImage.address & 0x7FFFFF;
-        uint8_t  texSize  = static_cast<uint8_t>(m_state.rdp.textureImage.size);
-        uint32_t fbWidth  = m_state.rdp.colorImage.width;
+        uint32_t texAddr = m_state.rdp.textureImage.address & 0x7FFFFF;
+        uint32_t zbAddr = m_state.rdp.zbufferImage.address & 0x7FFFFF;
+        uint8_t texSize = static_cast<uint8_t>(m_state.rdp.textureImage.size);
+        uint32_t fbWidth = m_state.rdp.colorImage.width;
 
         // Depth buffer range: conservative upper bound (width � width � 1.5).
-        uint32_t zbRange  = fbWidth * fbWidth * 3 / 2;
+        uint32_t zbRange = fbWidth * fbWidth * 3 / 2;
 
-        const bool readsDepthBuffer = texSize == 2 && zbAddr != 0 &&
-                                      texAddr >= zbAddr && texAddr < zbAddr + zbRange;
+        const bool readsDepthBuffer = texSize == 2 && zbAddr != 0 && texAddr >= zbAddr && texAddr < zbAddr + zbRange;
         // Only the games GLideN64 applies these to (see m_hacks). Other games
         // put ordinary pictures there: Majora's Mask stores its pause backdrop
         // at the depth buffer's address, and treating those strips as a
         // shadow map replaced the picture with a depth-fog overlay.
-        if (readsDepthBuffer && m_hacks.texRectDepthBufferCopy &&
-            rect.y0 == 0.0f && rect.y1 <= 1.0f) {
+        if (readsDepthBuffer && m_hacks.texRectDepthBufferCopy && rect.y0 == 0.0f && rect.y1 <= 1.0f) {
             // texturedRectDepthBufferCopy: a 1-row copy of depth data from
             // TMEM back to RDRAM. The GPU has nothing to render.
             return;
@@ -704,33 +701,22 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         tileForRect.th = savedTh;
     }
 
-    MM_RDP_TRACE("TextureRect tile={} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) st=({:.2f},{:.2f}) dsdx={:.4f} dtdy={:.4f} tex0=0x{:06X} tex1=0x{:06X} hash0=0x{:016X} hash1=0x{:016X} color=0x{:06X} z=0x{:06X} shadow={}",
-                 rect.tileIndex,
-                 rect.x0,
-                 rect.y0,
-                 rect.x1,
-                 rect.y1,
-                 rect.s,
-                 rect.t,
-                 rect.dsDx,
-                 rect.dtDy,
-                 call.textureImageAddr & 0x7FFFFF,
-                 call.textureImageAddr1 & 0x7FFFFF,
-                 call.textureHash0,
-                 call.textureHash1,
-                 m_state.rdp.colorImage.address & 0x7FFFFF,
-                 m_state.rdp.zbufferImage.address & 0x7FFFFF,
-                 shadowMapRect);
+    MM_RDP_TRACE("TextureRect tile={} rect=({:.2f},{:.2f})-({:.2f},{:.2f}) st=({:.2f},{:.2f}) dsdx={:.4f} dtdy={:.4f} "
+                 "tex0=0x{:06X} tex1=0x{:06X} hash0=0x{:016X} hash1=0x{:016X} color=0x{:06X} z=0x{:06X} shadow={}",
+                 rect.tileIndex, rect.x0, rect.y0, rect.x1, rect.y1, rect.s, rect.t, rect.dsDx, rect.dtDy,
+                 call.textureImageAddr & 0x7FFFFF, call.textureImageAddr1 & 0x7FFFFF, call.textureHash0,
+                 call.textureHash1, m_state.rdp.colorImage.address & 0x7FFFFF,
+                 m_state.rdp.zbufferImage.address & 0x7FFFFF, shadowMapRect);
 
     call.primColor = m_state.rdp.primColor;
     call.envColor = m_state.rdp.envColor;
     call.fogColor = m_state.rdp.fogColor;
     call.blendColor = m_state.rdp.blendColor;
     call.primLODFrac = m_state.rdp.primLODFrac;
-    call.primLODMin  = m_state.rdp.primLODMin;
-    call.primDepth   = m_state.rdp.primDepth;
-    call.primDeltaZ  = m_state.rdp.primDeltaZ;
-    call.fogUsage    = m_state.rdp.geometry.fogUsage;
+    call.primLODMin = m_state.rdp.primLODMin;
+    call.primDepth = m_state.rdp.primDepth;
+    call.primDeltaZ = m_state.rdp.primDeltaZ;
+    call.fogUsage = m_state.rdp.geometry.fogUsage;
     call.isShadowMap = shadowMapRect;
 
     // Snapshot TLUT from TMEM palette region for shadow map draws.
@@ -743,11 +729,11 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
             call.shadowTLUT[i] = tmem[0x800 + i * 8];
         }
     }
-    
+
     // Generate 4 vertices (two triangles) for the rectangle
     float width = rect.x1 - rect.x0;
     float height = rect.y1 - rect.y0;
-    
+
     float s0 = rect.s;
     float t0 = rect.t;
 
@@ -756,35 +742,36 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     // incorrectly. Force s to 0. (GLideN64 ref: gDP.cpp gDPTextureRectangle)
     if (s0 == 512.0f) {
         auto& tile = m_state.rdp.tiles[rect.tileIndex];
-        if (m_state.rdp.colorImage.width + (tile.sl >> 2) < 512)
-            s0 = 0.0f;
+        if (m_state.rdp.colorImage.width + (tile.sl >> 2) < 512) s0 = 0.0f;
     }
     float s1, t1;
-    
+
     if (rect.flipped) {
-        s1 = s0 + rect.dtDy * height;  // Flipped: S changes with Y
-        t1 = t0 + rect.dsDx * width;   // T changes with X
+        s1 = s0 + rect.dtDy * height; // Flipped: S changes with Y
+        t1 = t0 + rect.dsDx * width;  // T changes with X
     } else {
         s1 = s0 + rect.dsDx * width;
         t1 = t0 + rect.dtDy * height;
     }
-    
+
     // Normalize to screen space [-1, 1]
     // The renderer will handle the actual viewport transformation
     RenderBatch::Vertex v[4];
-    
+
     // Top-left (shade color = 0 for TextureRect, matching GLideN64 uRectColor)
-    v[0] = { rect.x0, rect.y0, 0, 1, s0, t0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    v[0] = {rect.x0, rect.y0, 0, 1, s0, t0, 0, 0, 0, 0, 0, 0, 0, 0};
     // Top-right
-    v[1] = { rect.x1, rect.y0, 0, 1, s1, t0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    v[1] = {rect.x1, rect.y0, 0, 1, s1, t0, 0, 0, 0, 0, 0, 0, 0, 0};
     // Bottom-left
-    v[2] = { rect.x0, rect.y1, 0, 1, s0, t1, 0, 0, 0, 0, 0, 0, 0, 0 };
+    v[2] = {rect.x0, rect.y1, 0, 1, s0, t1, 0, 0, 0, 0, 0, 0, 0, 0};
     // Bottom-right
-    v[3] = { rect.x1, rect.y1, 0, 1, s1, t1, 0, 0, 0, 0, 0, 0, 0, 0 };
-    
+    v[3] = {rect.x1, rect.y1, 0, 1, s1, t1, 0, 0, 0, 0, 0, 0, 0, 0};
+
     if (rect.flipped) {
-        v[1].s = s0;         v[1].t = t1;
-        v[2].s = s1;         v[2].t = t0;
+        v[1].s = s0;
+        v[1].t = t1;
+        v[2].s = s1;
+        v[2].t = t0;
     }
 
     // N64 TextureRect: both tiles use the same S/T coordinates.
@@ -837,12 +824,12 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
         call.texCoordBounds1[3] = maxT;
         call.useTexCoordBounds = true;
     }
-    
+
     // Compute clip flags (texture rects in screen space: w=1, so no clipping expected)
     for (int i = 0; i < 4; i++) {
-        v[i].clipFlags = 0;  // Screen-space rects: always inside frustum
+        v[i].clipFlags = 0; // Screen-space rects: always inside frustum
     }
-    
+
     // Two triangles: (0, 1, 2), (1, 3, 2)
     m_batch.vertices.push_back(v[0]);
     m_batch.vertices.push_back(v[1]);
@@ -851,9 +838,9 @@ void RDPProcessor::DrawTextureRect(const DecodedRectangle& rect) {
     m_batch.vertices.push_back(v[3]);
     m_batch.vertices.push_back(v[2]);
     call.vertexCount = 6;
-    
+
     m_batch.AppendDrawCall(call);
-    
+
     m_stats.rectsDrawn++;
     m_stats.frameRects++;
     m_state.rdp.rectCount++;
@@ -873,7 +860,7 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
     call.otherModeH = rdpOtherModeH;
     call.otherModeL = rdpOtherModeL;
     call.geometryMode = 0;
-    call.textureHash0 = 0;   // Fill rects never use textures
+    call.textureHash0 = 0; // Fill rects never use textures
     call.textureHash1 = 0;
     call.textureImageAddr = 0;
     call.textureImageAddr1 = 0;
@@ -884,10 +871,10 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
     call.fogColor = m_state.rdp.fogColor;
     call.blendColor = m_state.rdp.blendColor;
     call.primLODFrac = m_state.rdp.primLODFrac;
-    call.primLODMin  = m_state.rdp.primLODMin;
-    call.primDepth   = m_state.rdp.primDepth;
-    call.primDeltaZ  = m_state.rdp.primDeltaZ;
-    call.fogUsage    = m_state.rdp.geometry.fogUsage;
+    call.primLODMin = m_state.rdp.primLODMin;
+    call.primDepth = m_state.rdp.primDepth;
+    call.primDeltaZ = m_state.rdp.primDeltaZ;
+    call.fogUsage = m_state.rdp.geometry.fogUsage;
 
     float fr, fg, fb, fa;
     if (rdpCycleType == 3) {
@@ -910,20 +897,20 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
         fb = 0.0f;
         fa = 0.0f;
     }
-    
+
     // Two triangles for the fill rectangle
     RenderBatch::Vertex v[4] = {
-        { x0, y0, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0 },
-        { x1, y0, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0 },
-        { x0, y1, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0 },
-        { x1, y1, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0 },
+        {x0, y0, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0},
+        {x1, y0, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0},
+        {x0, y1, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0},
+        {x1, y1, 0, 1, 0, 0, fr, fg, fb, fa, 0, 0, 0, 0},
     };
-    
+
     // Compute clip flags (fill rects in screen space: w=1, so no clipping expected)
     for (int i = 0; i < 4; i++) {
-        v[i].clipFlags = 0;  // Screen-space rects: always inside frustum
+        v[i].clipFlags = 0; // Screen-space rects: always inside frustum
     }
-    
+
     m_batch.vertices.push_back(v[0]);
     m_batch.vertices.push_back(v[1]);
     m_batch.vertices.push_back(v[2]);
@@ -931,9 +918,9 @@ void RDPProcessor::DrawFillRect(float x0, float y0, float x1, float y1) {
     m_batch.vertices.push_back(v[3]);
     m_batch.vertices.push_back(v[2]);
     call.vertexCount = 6;
-    
+
     m_batch.AppendDrawCall(call);
-    
+
     m_stats.fillRectsDrawn++;
 }
 
@@ -962,7 +949,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     // Last resort: current textureImage address
     if (addr0 == 0) addr0 = m_state.rdp.textureImage.address;
     if (addr1 == 0) addr1 = m_state.rdp.textureImage.address;
-    call.textureImageAddr  = addr0;
+    call.textureImageAddr = addr0;
     call.textureImageAddr1 = addr1;
 
     // Resolve the FB-snapshot ring slot NOW, at enqueue time, while the ring
@@ -1045,10 +1032,8 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     // When tile1 was cloned from tile0 (LOD active, level==0, triangle),
     // there is no independent second texture.  Clear textureHash1 so
     // SF_TEXTURE_1 is not set; the shader defaults texel1 = texel0.
-    if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD)
-        call.textureHash1 = 0;
-    else
-        call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1, call.textureImageAddr1) : 0;
+    if (level == 0 && call.type == DrawCall::Type::Triangle && textureLOD) call.textureHash1 = 0;
+    else call.textureHash1 = (cycleType == 1) ? computeHash(call.tileDesc1, call.textureImageAddr1) : 0;
 
     // Copy scrolling when tile1 was cloned from tile0, use tile0's scroll values
     call.scrollS0 = m_state.rdp.scrollS[tileIndex & 7];
@@ -1089,8 +1074,7 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     uint8_t snapTlutType = static_cast<uint8_t>((call.otherModeH >> 14) & 0x3);
     if (call.textureHash0 != 0) {
         Tex::TextureKey key0 = BuildTextureKey(call.tileDesc0, call.textureImageAddr, snapTlutType,
-                                                call.mipLevelCount > 0 ? call.mipTiles : nullptr,
-                                                call.mipLevelCount);
+                                               call.mipLevelCount > 0 ? call.mipTiles : nullptr, call.mipLevelCount);
         call.snapshotCrc0 = key0.crc;
         call.snapHiRes0 = {key0.hiresTexCrc, key0.hiresPalCrc, key0.hiresWidth, key0.hiresHeight};
         if (m_textureCache && key0.width > 0 && key0.height > 0) {
@@ -1099,12 +1083,12 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
                 for (int mi = 0; mi < call.mipLevelCount; mi++) {
                     const auto& mt = call.mipTiles[mi];
                     mipInfo[mi].tmemAddr = mt.tmemAddr;
-                    mipInfo[mi].line     = mt.line;
-                    mipInfo[mi].width    = static_cast<uint16_t>(std::max(1, mt.GetWidth()));
-                    mipInfo[mi].height   = static_cast<uint16_t>(std::max(1, mt.GetHeight()));
-                    mipInfo[mi].format   = mt.format;
-                    mipInfo[mi].size     = mt.size;
-                    mipInfo[mi].palette  = mt.palette;
+                    mipInfo[mi].line = mt.line;
+                    mipInfo[mi].width = static_cast<uint16_t>(std::max(1, mt.GetWidth()));
+                    mipInfo[mi].height = static_cast<uint16_t>(std::max(1, mt.GetHeight()));
+                    mipInfo[mi].format = mt.format;
+                    mipInfo[mi].size = mt.size;
+                    mipInfo[mi].palette = mt.palette;
                 }
                 m_textureCache->GetTexture(key0, m_rdram, m_state.rdp.tmem.data, mipInfo, call.mipLevelCount);
             } else {
@@ -1121,13 +1105,9 @@ void RDPProcessor::PopulateTextureInfo(DrawCall& call, int tileIndex) {
     }
 
     FORENSIC_TRACE("ENQUEUE type={} fmt={} size={} pal={} addr=0x{:06X} crc0=0x{:016X} crc1=0x{:016X}",
-                   static_cast<int>(call.type),
-                   static_cast<int>(call.tileDesc0.format),
-                   static_cast<int>(call.tileDesc0.size),
-                   static_cast<int>(call.tileDesc0.palette),
-                   call.textureImageAddr,
-                   call.snapshotCrc0,
-                   call.snapshotCrc1);
+                   static_cast<int>(call.type), static_cast<int>(call.tileDesc0.format),
+                   static_cast<int>(call.tileDesc0.size), static_cast<int>(call.tileDesc0.palette),
+                   call.textureImageAddr, call.snapshotCrc0, call.snapshotCrc1);
 }
 
 namespace {
@@ -1135,9 +1115,7 @@ namespace {
 // Helpers for finding the row stride of a LoadBlock texture, from the DXT it was loaded
 // with. They come from Rice Video's texture code, by way of GLideN64's Textures.cpp,
 // since packs are checksummed with the strides they produce.
-uint32_t CalculateDXT(uint32_t txl2words) {
-    return txl2words == 0 ? 1 : (2048 + txl2words - 1) / txl2words;
-}
+uint32_t CalculateDXT(uint32_t txl2words) { return txl2words == 0 ? 1 : (2048 + txl2words - 1) / txl2words; }
 
 uint32_t Txl2Words(uint32_t width, uint32_t size) {
     static const uint32_t kSizeBytes[4] = {0, 1, 2, 4};
@@ -1181,7 +1159,7 @@ Tex::HiResId RDPProcessor::ComputeHiResIdFor(const TileDescriptor& tile, const T
         const int maskH = tile.maskT == 0 ? tileH : (1 << tile.maskT);
         const bool clampS = (tile.clampS & 2) != 0;
         const bool clampT = (tile.clampT & 2) != 0;
-        width  = (clampS && tileW <= 256) ? std::min(maskW, tileW) : maskW;
+        width = (clampS && tileW <= 256) ? std::min(maskW, tileW) : maskW;
         height = ((clampT && tileH <= 256) || maskH > 256) ? std::min(maskH, tileH) : maskH;
         if (tile.size == 3) {
             bytesPerRow = tile.line << 4;
@@ -1200,21 +1178,18 @@ Tex::HiResId RDPProcessor::ComputeHiResIdFor(const TileDescriptor& tile, const T
     const uint8_t* palette = nullptr;
     if (tile.size < 2 && (tlutType != 0 || tile.format == 2)) {
         palette = rdp.texFilterPalette + 8;
-        if (tile.size == 0) palette += static_cast<size_t>(tile.palette) << 5;   // 16 entries of 2 bytes each
+        if (tile.size == 0) palette += static_cast<size_t>(tile.palette) << 5; // 16 entries of 2 bytes each
     }
 
-    *outWidth  = static_cast<uint16_t>(std::clamp(width, 0, 0xFFFF));
+    *outWidth = static_cast<uint16_t>(std::clamp(width, 0, 0xFFFF));
     *outHeight = static_cast<uint16_t>(std::clamp(height, 0, 0xFFFF));
-    return Tex::ComputeHiResId(m_rdram, m_rdramSize, address & static_cast<uint32_t>(m_rdramSize - 1),
-                               width, height, tile.format, tile.size, bytesPerRow, palette);
+    return Tex::ComputeHiResId(m_rdram, m_rdramSize, address & static_cast<uint32_t>(m_rdramSize - 1), width, height,
+                               tile.format, tile.size, bytesPerRow, palette);
 }
 
-Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
-                                               uint32_t textureImageAddr,
-                                               uint8_t tlutType,
-                                               const TileDescriptor* mipTiles,
-                                               int mipCount,
-                                               uint64_t overrideCrc) const {
+Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile, uint32_t textureImageAddr, uint8_t tlutType,
+                                              const TileDescriptor* mipTiles, int mipCount,
+                                              uint64_t overrideCrc) const {
     Tex::TextureKey key{};
     key.address = textureImageAddr;
     key.palette = tile.palette;
@@ -1227,22 +1202,22 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
     int clampW = 0, clampH = 0;
     const int cycType = static_cast<int>((m_state.rdp.otherModeH >> 20) & 0x03);
     CalcTileSize(tile, tlutType, calcW, calcH, &li, cycType, &clampW, &clampH);
-    key.width   = static_cast<uint16_t>(calcW);
-    key.height  = static_cast<uint16_t>(calcH);
+    key.width = static_cast<uint16_t>(calcW);
+    key.height = static_cast<uint16_t>(calcH);
     // Only meaningful when strictly smaller than the sampled extent; otherwise
     // leave 0 so DecodeTexture skips the edge-replication pass entirely.
-    key.clampWidth  = (clampW > 0 && clampW < calcW) ? static_cast<uint16_t>(clampW) : 0;
+    key.clampWidth = (clampW > 0 && clampW < calcW) ? static_cast<uint16_t>(clampW) : 0;
     key.clampHeight = (clampH > 0 && clampH < calcH) ? static_cast<uint16_t>(clampH) : 0;
-    key.format  = static_cast<Tex::N64TexFormat>(tile.format);
-    key.size    = static_cast<Tex::N64TexSize>(tile.size);
-    key.cms     = tile.clampS;
-    key.cmt     = tile.clampT;
-    key.maskS   = tile.maskS;
-    key.maskT   = tile.maskT;
-    key.shiftS  = tile.shiftS;
-    key.shiftT  = tile.shiftT;
-    key.line    = tile.line;
-    key.tmemOffset = tile.tmemAddr;  // TMEM base word address for this tile's data
+    key.format = static_cast<Tex::N64TexFormat>(tile.format);
+    key.size = static_cast<Tex::N64TexSize>(tile.size);
+    key.cms = tile.clampS;
+    key.cmt = tile.clampT;
+    key.maskS = tile.maskS;
+    key.maskT = tile.maskT;
+    key.shiftS = tile.shiftS;
+    key.shiftT = tile.shiftT;
+    key.line = tile.line;
+    key.tmemOffset = tile.tmemAddr; // TMEM base word address for this tile's data
     key.tlutType = tlutType;
 
     // Compute CRC over the relevant TMEM region for content-change detection.
@@ -1261,66 +1236,65 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         key.crc = overrideCrc;
     } else {
 
-    uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
-    // When the render tile has line=0 (common for TextureRect item/sprite draws,
-    // where stride is irrelevant to the hardware), GetBytesPerRow() returns 0 and
-    // tmemSize would be 0 → crc=0 for all such tiles.  If multiple items share the
-    // same SetTextureImage address (loaded via different tl offsets into a texture
-    // table), they'd all hash to the same cache key and show the first item's texture.
-    // Fix: when line=0, derive the row stride from width and bits-per-pixel so that
-    // the CRC covers the actual texel data in TMEM.
-    uint32_t bytesPerRow = static_cast<uint32_t>(tile.GetBytesPerRow());
-    if (bytesPerRow == 0 && key.width > 0) {
-        // bitsPerPixel = 4 << size  (4/8/16/32 for size 0/1/2/3)
-        uint32_t bitsPerPixel = 4u << (static_cast<uint32_t>(tile.size) & 3u);
-        bytesPerRow = (static_cast<uint32_t>(key.width) * bitsPerPixel + 7u) / 8u;
-        bytesPerRow = (bytesPerRow + 7u) & ~7u;  // round up to 8-byte TMEM word
-    }
-    uint32_t tmemSize = bytesPerRow * static_cast<uint32_t>(key.height);
-    // RGBA32: data is stored in two 2KB TMEM banks (RG in bank 0, BA in bank 1).
-    // CRC each bank separately and combine, rather than doubling the range
-    // (which can overshoot TMEM and produce crc=0 for all RGBA32 textures).
-    bool isRGBA32 = (key.format == Tex::N64TexFormat::RGBA && key.size == Tex::N64TexSize::Bits32);
-    // CI textures: index data lives in the lower 2KB of TMEM (upper 2KB is palette).
-    // Also clamp whenever any TLUT mode is active (CI-as-IA palette mode etc.,
-    // RT64 v3+ behavior) so the data CRC never bleeds into palette bytes.
-    bool tlutActive = (key.format == Tex::N64TexFormat::CI) || (tlutType != 0);
-    uint32_t tmemLimit = tlutActive ? TMEM_PALETTE_BASE : (isRGBA32 ? 2048u : TMEM_SIZE);
-    if (tmemByteAddr < tmemLimit && tmemByteAddr + tmemSize > tmemLimit) {
-        tmemSize = tmemLimit - tmemByteAddr;
-    }
-    if (tmemSize > 0 && tmemByteAddr + tmemSize <= TMEM_SIZE) {
-        key.crc = FNV1a_64(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
-        if (isRGBA32) {
-            // CRC bank 1 (offset +2048) and mix into the hash
-            uint32_t bank1Addr = tmemByteAddr + 2048;
-            if (bank1Addr + tmemSize <= TMEM_SIZE) {
-                uint64_t bank1Crc = FNV1a_64(m_state.rdp.tmem.data + bank1Addr, tmemSize);
-                key.crc ^= bank1Crc * 0x9e3779b97f4a7c15ULL;
+        uint32_t tmemByteAddr = tile.GetTMEMByteAddr();
+        // When the render tile has line=0 (common for TextureRect item/sprite draws,
+        // where stride is irrelevant to the hardware), GetBytesPerRow() returns 0 and
+        // tmemSize would be 0 → crc=0 for all such tiles.  If multiple items share the
+        // same SetTextureImage address (loaded via different tl offsets into a texture
+        // table), they'd all hash to the same cache key and show the first item's texture.
+        // Fix: when line=0, derive the row stride from width and bits-per-pixel so that
+        // the CRC covers the actual texel data in TMEM.
+        uint32_t bytesPerRow = static_cast<uint32_t>(tile.GetBytesPerRow());
+        if (bytesPerRow == 0 && key.width > 0) {
+            // bitsPerPixel = 4 << size  (4/8/16/32 for size 0/1/2/3)
+            uint32_t bitsPerPixel = 4u << (static_cast<uint32_t>(tile.size) & 3u);
+            bytesPerRow = (static_cast<uint32_t>(key.width) * bitsPerPixel + 7u) / 8u;
+            bytesPerRow = (bytesPerRow + 7u) & ~7u; // round up to 8-byte TMEM word
+        }
+        uint32_t tmemSize = bytesPerRow * static_cast<uint32_t>(key.height);
+        // RGBA32: data is stored in two 2KB TMEM banks (RG in bank 0, BA in bank 1).
+        // CRC each bank separately and combine, rather than doubling the range
+        // (which can overshoot TMEM and produce crc=0 for all RGBA32 textures).
+        bool isRGBA32 = (key.format == Tex::N64TexFormat::RGBA && key.size == Tex::N64TexSize::Bits32);
+        // CI textures: index data lives in the lower 2KB of TMEM (upper 2KB is palette).
+        // Also clamp whenever any TLUT mode is active (CI-as-IA palette mode etc.,
+        // RT64 v3+ behavior) so the data CRC never bleeds into palette bytes.
+        bool tlutActive = (key.format == Tex::N64TexFormat::CI) || (tlutType != 0);
+        uint32_t tmemLimit = tlutActive ? TMEM_PALETTE_BASE : (isRGBA32 ? 2048u : TMEM_SIZE);
+        if (tmemByteAddr < tmemLimit && tmemByteAddr + tmemSize > tmemLimit) {
+            tmemSize = tmemLimit - tmemByteAddr;
+        }
+        if (tmemSize > 0 && tmemByteAddr + tmemSize <= TMEM_SIZE) {
+            key.crc = FNV1a_64(m_state.rdp.tmem.data + tmemByteAddr, tmemSize);
+            if (isRGBA32) {
+                // CRC bank 1 (offset +2048) and mix into the hash
+                uint32_t bank1Addr = tmemByteAddr + 2048;
+                if (bank1Addr + tmemSize <= TMEM_SIZE) {
+                    uint64_t bank1Crc = FNV1a_64(m_state.rdp.tmem.data + bank1Addr, tmemSize);
+                    key.crc ^= bank1Crc * 0x9e3779b97f4a7c15ULL;
+                }
             }
-        }
-    } else {
-        key.crc = 0;
-    }
-
-    // For CI (Color Indexed) textures or when TLUT mode is active, palette
-    // lookup makes the decoded pixels depend on the TLUT contents in the upper
-    // half of TMEM.  Mix the palette region CRC into the texture CRC so a
-    // palette change triggers a cache miss.
-    if (overrideCrc == 0 && (key.format == Tex::N64TexFormat::CI || tlutType != 0)) {
-        uint64_t palCrc = 0;
-        if (key.size == Tex::N64TexSize::Bits4) {
-            // CI4: 16 entries starting at TMEM_PALETTE_BASE + palette*0x80, each 8 bytes apart
-            uint32_t palBase = TMEM_PALETTE_BASE + static_cast<uint32_t>(tile.palette) * 0x80;
-            if (palBase + 16 * 8 <= TMEM_SIZE)
-                palCrc = FNV1a_64(m_state.rdp.tmem.data + palBase, 16 * 8);
         } else {
-            // CI8: 256 entries starting at TMEM_PALETTE_BASE, each 8 bytes apart (full upper TMEM)
-            if (TMEM_PALETTE_BASE + 256 * 8 <= TMEM_SIZE)
-                palCrc = FNV1a_64(m_state.rdp.tmem.data + TMEM_PALETTE_BASE, 256 * 8);
+            key.crc = 0;
         }
-        key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
-    }
+
+        // For CI (Color Indexed) textures or when TLUT mode is active, palette
+        // lookup makes the decoded pixels depend on the TLUT contents in the upper
+        // half of TMEM.  Mix the palette region CRC into the texture CRC so a
+        // palette change triggers a cache miss.
+        if (overrideCrc == 0 && (key.format == Tex::N64TexFormat::CI || tlutType != 0)) {
+            uint64_t palCrc = 0;
+            if (key.size == Tex::N64TexSize::Bits4) {
+                // CI4: 16 entries starting at TMEM_PALETTE_BASE + palette*0x80, each 8 bytes apart
+                uint32_t palBase = TMEM_PALETTE_BASE + static_cast<uint32_t>(tile.palette) * 0x80;
+                if (palBase + 16 * 8 <= TMEM_SIZE) palCrc = FNV1a_64(m_state.rdp.tmem.data + palBase, 16 * 8);
+            } else {
+                // CI8: 256 entries starting at TMEM_PALETTE_BASE, each 8 bytes apart (full upper TMEM)
+                if (TMEM_PALETTE_BASE + 256 * 8 <= TMEM_SIZE)
+                    palCrc = FNV1a_64(m_state.rdp.tmem.data + TMEM_PALETTE_BASE, 256 * 8);
+            }
+            key.crc ^= palCrc * 0x9e3779b97f4a7c15ULL;
+        }
     } // end else (overrideCrc == 0)
 
     if (m_hiResHashing && mipCount == 0 && overrideCrc == 0) {
@@ -1331,11 +1305,15 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         const uint32_t slot = tile.tmemAddr & 0x1FF;
         mix(m_state.rdp.tmemSourceAddress[slot]);
         mix((static_cast<uint64_t>(key.width) << 16) | key.height);
-        mix((static_cast<uint64_t>(tile.format) << 8) | tile.size | (static_cast<uint64_t>(tile.palette) << 16) | (static_cast<uint64_t>(tlutType) << 24));
+        mix((static_cast<uint64_t>(tile.format) << 8) | tile.size | (static_cast<uint64_t>(tile.palette) << 16) |
+            (static_cast<uint64_t>(tlutType) << 24));
         mix((static_cast<uint64_t>(m_state.rdp.tmemLoadType[slot]) << 32) | m_state.rdp.tmemLoadDxt[slot]);
-        mix((static_cast<uint64_t>(m_state.rdp.tmemLoadWidth[slot]) << 32) | (static_cast<uint64_t>(m_state.rdp.tmemLoadHeight[slot]) << 16) | m_state.rdp.tmemLoadTexWidth[slot]);
-        mix((static_cast<uint64_t>(tile.line) << 32) | ((static_cast<uint32_t>(tile.sl) << 8) ^ static_cast<uint32_t>(tile.sh)));
-        mix((static_cast<uint64_t>(tile.maskS) << 24) | (static_cast<uint64_t>(tile.maskT) << 16) | (static_cast<uint64_t>(tile.clampS) << 8) | tile.clampT);
+        mix((static_cast<uint64_t>(m_state.rdp.tmemLoadWidth[slot]) << 32) |
+            (static_cast<uint64_t>(m_state.rdp.tmemLoadHeight[slot]) << 16) | m_state.rdp.tmemLoadTexWidth[slot]);
+        mix((static_cast<uint64_t>(tile.line) << 32) |
+            ((static_cast<uint32_t>(tile.sl) << 8) ^ static_cast<uint32_t>(tile.sh)));
+        mix((static_cast<uint64_t>(tile.maskS) << 24) | (static_cast<uint64_t>(tile.maskT) << 16) |
+            (static_cast<uint64_t>(tile.clampS) << 8) | tile.clampT);
 
         auto memo = m_hiResIdMemo.find(memoKey);
         if (memo == m_hiResIdMemo.end()) {
@@ -1346,29 +1324,20 @@ Tex::TextureKey RDPProcessor::BuildTextureKey(const TileDescriptor& tile,
         }
         key.hiresTexCrc = memo->second.id.texCrc;
         key.hiresPalCrc = memo->second.id.palCrc;
-        key.hiresWidth  = memo->second.width;
+        key.hiresWidth = memo->second.width;
         key.hiresHeight = memo->second.height;
     }
 
     if (TraceMMRdpEnabled()) {
-        bool interestingTexture = key.format == Tex::N64TexFormat::CI ||
-                                  tlutType != 0 ||
-                                  g_fbManager.FindByAddress(key.address) != nullptr ||
-                                  ((key.address & 0x7FFFFF) == (m_state.rdp.zbufferImage.address & 0x7FFFFF) && key.address != 0);
+        bool interestingTexture =
+            key.format == Tex::N64TexFormat::CI || tlutType != 0 || g_fbManager.FindByAddress(key.address) != nullptr ||
+            ((key.address & 0x7FFFFF) == (m_state.rdp.zbufferImage.address & 0x7FFFFF) && key.address != 0);
         if (interestingTexture) {
-            MM_RDP_TRACE("BuildTextureKey addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} line={} tmem={} crc=0x{:016X} color=0x{:06X} z=0x{:06X}",
-                         key.address & 0x7FFFFF,
-                         static_cast<int>(key.format),
-                         static_cast<int>(key.size),
-                         key.width,
-                         key.height,
-                         key.palette,
-                         key.tlutType,
-                         key.line,
-                         key.tmemOffset,
-                         key.crc,
-                         m_state.rdp.colorImage.address & 0x7FFFFF,
-                         m_state.rdp.zbufferImage.address & 0x7FFFFF);
+            MM_RDP_TRACE("BuildTextureKey addr=0x{:06X} fmt={} size={} w={} h={} pal={} tlut={} line={} tmem={} "
+                         "crc=0x{:016X} color=0x{:06X} z=0x{:06X}",
+                         key.address & 0x7FFFFF, static_cast<int>(key.format), static_cast<int>(key.size), key.width,
+                         key.height, key.palette, key.tlutType, key.line, key.tmemOffset, key.crc,
+                         m_state.rdp.colorImage.address & 0x7FFFFF, m_state.rdp.zbufferImage.address & 0x7FFFFF);
         }
     }
 

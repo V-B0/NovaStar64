@@ -6,7 +6,7 @@
 #include "FramebufferManager.hpp"
 #include <cstdio>
 #include "../Common/Logger.hpp"
-#include "../Renderer/Renderer.hpp"   
+#include "../Renderer/Renderer.hpp"
 #include "../../common/log.hpp"
 
 #include <glad/gl.h>
@@ -23,9 +23,7 @@ FramebufferManager g_fbManager;
 //  Lifecycle
 // ═══════════════════════════════════════════════════════════════
 
-FramebufferManager::~FramebufferManager() {
-    Shutdown();
-}
+FramebufferManager::~FramebufferManager() { Shutdown(); }
 
 bool FramebufferManager::Init(uint32_t resolutionScale) {
     if (m_initialized) return true;
@@ -34,29 +32,27 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
     Reset();
 
     if (m_isGL) {
-    // Create fullscreen blit resources
-    // Fullscreen triangle (covers NDC [-1,1])
-    static const float blitVerts[] = {
-        // pos (x,y)    texcoord (u,v)
-        -1.0f, -1.0f,   0.0f, 0.0f,
-         3.0f, -1.0f,   2.0f, 0.0f,
-        -1.0f,  3.0f,   0.0f, 2.0f,
-    };
+        // Create fullscreen blit resources
+        // Fullscreen triangle (covers NDC [-1,1])
+        static const float blitVerts[] = {
+            // pos (x,y)    texcoord (u,v)
+            -1.0f, -1.0f, 0.0f, 0.0f, 3.0f, -1.0f, 2.0f, 0.0f, -1.0f, 3.0f, 0.0f, 2.0f,
+        };
 
-    glCreateVertexArrays(1, &m_blitVAO);
-    glCreateBuffers(1, &m_blitVBO);
-    glNamedBufferStorage(m_blitVBO, sizeof(blitVerts), blitVerts, 0);
+        glCreateVertexArrays(1, &m_blitVAO);
+        glCreateBuffers(1, &m_blitVBO);
+        glNamedBufferStorage(m_blitVBO, sizeof(blitVerts), blitVerts, 0);
 
-    glVertexArrayVertexBuffer(m_blitVAO, 0, m_blitVBO, 0, 4 * sizeof(float));
-    glEnableVertexArrayAttrib(m_blitVAO, 0);
-    glEnableVertexArrayAttrib(m_blitVAO, 1);
-    glVertexArrayAttribFormat(m_blitVAO, 0, 2, GL_FLOAT, GL_FALSE, 0);
-    glVertexArrayAttribFormat(m_blitVAO, 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float));
-    glVertexArrayAttribBinding(m_blitVAO, 0, 0);
-    glVertexArrayAttribBinding(m_blitVAO, 1, 0);
+        glVertexArrayVertexBuffer(m_blitVAO, 0, m_blitVBO, 0, 4 * sizeof(float));
+        glEnableVertexArrayAttrib(m_blitVAO, 0);
+        glEnableVertexArrayAttrib(m_blitVAO, 1);
+        glVertexArrayAttribFormat(m_blitVAO, 0, 2, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribFormat(m_blitVAO, 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float));
+        glVertexArrayAttribBinding(m_blitVAO, 0, 0);
+        glVertexArrayAttribBinding(m_blitVAO, 1, 0);
 
-    // Blit shader program
-    const char* blitVS = R"(
+        // Blit shader program
+        const char* blitVS = R"(
         #version 460 core
         layout(location=0) in vec2 aPos;
         layout(location=1) in vec2 aTexCoord;
@@ -66,7 +62,7 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
             vTexCoord = aTexCoord;
         }
     )";
-    const char* blitFS = R"(
+        const char* blitFS = R"(
         #version 460 core
         in vec2 vTexCoord;
         out vec4 FragColor;
@@ -76,31 +72,31 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
         }
     )";
 
-    auto compileShader = [](GLenum type, const char* src) -> GLuint {
-        GLuint s = glCreateShader(type);
-        glShaderSource(s, 1, &src, nullptr);
-        glCompileShader(s);
-        GLint ok = 0;
-        glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-        if (!ok) {
-            char log[512];
-            glGetShaderInfoLog(s, 512, nullptr, log);
-            NOVA_LOG_ERROR("Blit shader compile: {}", log);
-        }
-        return s;
-    };
+        auto compileShader = [](GLenum type, const char* src) -> GLuint {
+            GLuint s = glCreateShader(type);
+            glShaderSource(s, 1, &src, nullptr);
+            glCompileShader(s);
+            GLint ok = 0;
+            glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+            if (!ok) {
+                char log[512];
+                glGetShaderInfoLog(s, 512, nullptr, log);
+                NOVA_LOG_ERROR("Blit shader compile: {}", log);
+            }
+            return s;
+        };
 
-    GLuint vs = compileShader(GL_VERTEX_SHADER, blitVS);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, blitFS);
-    m_blitProgram = glCreateProgram();
-    glAttachShader(m_blitProgram, vs);
-    glAttachShader(m_blitProgram, fs);
-    glLinkProgram(m_blitProgram);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+        GLuint vs = compileShader(GL_VERTEX_SHADER, blitVS);
+        GLuint fs = compileShader(GL_FRAGMENT_SHADER, blitFS);
+        m_blitProgram = glCreateProgram();
+        glAttachShader(m_blitProgram, vs);
+        glAttachShader(m_blitProgram, fs);
+        glLinkProgram(m_blitProgram);
+        glDeleteShader(vs);
+        glDeleteShader(fs);
 
-    // VI filter shader (AA + divot + dither removal + interlace)
-    const char* viFilterFS = R"(
+        // VI filter shader (AA + divot + dither removal + interlace)
+        const char* viFilterFS = R"(
         #version 460 core
         in vec2 vTexCoord;
         out vec4 FragColor;
@@ -164,17 +160,17 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
         }
     )";
 
-    GLuint viFS = compileShader(GL_FRAGMENT_SHADER, viFilterFS);
-    m_viFilterProgram = glCreateProgram();
-    vs = compileShader(GL_VERTEX_SHADER, blitVS);
-    glAttachShader(m_viFilterProgram, vs);
-    glAttachShader(m_viFilterProgram, viFS);
-    glLinkProgram(m_viFilterProgram);
-    glDeleteShader(vs);
-    glDeleteShader(viFS);
+        GLuint viFS = compileShader(GL_FRAGMENT_SHADER, viFilterFS);
+        m_viFilterProgram = glCreateProgram();
+        vs = compileShader(GL_VERTEX_SHADER, blitVS);
+        glAttachShader(m_viFilterProgram, vs);
+        glAttachShader(m_viFilterProgram, viFS);
+        glLinkProgram(m_viFilterProgram);
+        glDeleteShader(vs);
+        glDeleteShader(viFS);
 
-    // Gamma correction shader
-    const char* gammaFS = R"(
+        // Gamma correction shader
+        const char* gammaFS = R"(
         #version 460 core
         in vec2 vTexCoord;
         out vec4 FragColor;
@@ -187,15 +183,15 @@ bool FramebufferManager::Init(uint32_t resolutionScale) {
         }
     )";
 
-    vs = compileShader(GL_VERTEX_SHADER, blitVS);
-    GLuint gFS = compileShader(GL_FRAGMENT_SHADER, gammaFS);
-    m_gammaProgram = glCreateProgram();
-    glAttachShader(m_gammaProgram, vs);
-    glAttachShader(m_gammaProgram, gFS);
-    glLinkProgram(m_gammaProgram);
-    glDeleteShader(vs);
-    glDeleteShader(gFS);
-    } 
+        vs = compileShader(GL_VERTEX_SHADER, blitVS);
+        GLuint gFS = compileShader(GL_FRAGMENT_SHADER, gammaFS);
+        m_gammaProgram = glCreateProgram();
+        glAttachShader(m_gammaProgram, vs);
+        glAttachShader(m_gammaProgram, gFS);
+        glLinkProgram(m_gammaProgram);
+        glDeleteShader(vs);
+        glDeleteShader(gFS);
+    }
 
     m_initialized = true;
     NOVA_LOG_INFO("FramebufferManager initialized (scale={}x)", m_resScale);
@@ -211,27 +207,76 @@ void FramebufferManager::Shutdown() {
     m_fbCount = 0;
 
     if (m_isGL) {
-    if (m_pboFence) { glDeleteSync(static_cast<GLsync>(m_pboFence)); m_pboFence = nullptr; }
-    if (m_pbo) { glDeleteBuffers(1, &m_pbo); m_pbo = 0; }
-    if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
-    if (m_readbackTex) { glDeleteTextures(1, &m_readbackTex); m_readbackTex = 0; }
-    m_readbackW = 0; m_readbackH = 0;
-    if (m_blitProgram) { glDeleteProgram(m_blitProgram); m_blitProgram = 0; }
-    if (m_viFilterProgram) { glDeleteProgram(m_viFilterProgram); m_viFilterProgram = 0; }
-    if (m_gammaProgram) { glDeleteProgram(m_gammaProgram); m_gammaProgram = 0; }
-    if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
-    if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
-    m_tmpWidth = 0; m_tmpHeight = 0;
-    if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
-    if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
-    m_copyColorW = 0; m_copyColorH = 0;
-    if (m_copyDepthFBO) { glDeleteFramebuffers(1, &m_copyDepthFBO); m_copyDepthFBO = 0; }
-    if (m_copyDepthTex) { glDeleteTextures(1, &m_copyDepthTex); m_copyDepthTex = 0; }
-    m_copyDepthW = 0; m_copyDepthH = 0;
-    m_pboSize = 0;
-    if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
-    if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
-    } 
+        if (m_pboFence) {
+            glDeleteSync(static_cast<GLsync>(m_pboFence));
+            m_pboFence = nullptr;
+        }
+        if (m_pbo) {
+            glDeleteBuffers(1, &m_pbo);
+            m_pbo = 0;
+        }
+        if (m_readbackFBO) {
+            glDeleteFramebuffers(1, &m_readbackFBO);
+            m_readbackFBO = 0;
+        }
+        if (m_readbackTex) {
+            glDeleteTextures(1, &m_readbackTex);
+            m_readbackTex = 0;
+        }
+        m_readbackW = 0;
+        m_readbackH = 0;
+        if (m_blitProgram) {
+            glDeleteProgram(m_blitProgram);
+            m_blitProgram = 0;
+        }
+        if (m_viFilterProgram) {
+            glDeleteProgram(m_viFilterProgram);
+            m_viFilterProgram = 0;
+        }
+        if (m_gammaProgram) {
+            glDeleteProgram(m_gammaProgram);
+            m_gammaProgram = 0;
+        }
+        if (m_tmpFBO) {
+            glDeleteFramebuffers(1, &m_tmpFBO);
+            m_tmpFBO = 0;
+        }
+        if (m_tmpTex) {
+            glDeleteTextures(1, &m_tmpTex);
+            m_tmpTex = 0;
+        }
+        m_tmpWidth = 0;
+        m_tmpHeight = 0;
+        if (m_copyColorFBO) {
+            glDeleteFramebuffers(1, &m_copyColorFBO);
+            m_copyColorFBO = 0;
+        }
+        if (m_copyColorTex) {
+            glDeleteTextures(1, &m_copyColorTex);
+            m_copyColorTex = 0;
+        }
+        m_copyColorW = 0;
+        m_copyColorH = 0;
+        if (m_copyDepthFBO) {
+            glDeleteFramebuffers(1, &m_copyDepthFBO);
+            m_copyDepthFBO = 0;
+        }
+        if (m_copyDepthTex) {
+            glDeleteTextures(1, &m_copyDepthTex);
+            m_copyDepthTex = 0;
+        }
+        m_copyDepthW = 0;
+        m_copyDepthH = 0;
+        m_pboSize = 0;
+        if (m_blitVAO) {
+            glDeleteVertexArrays(1, &m_blitVAO);
+            m_blitVAO = 0;
+        }
+        if (m_blitVBO) {
+            glDeleteBuffers(1, &m_blitVBO);
+            m_blitVBO = 0;
+        }
+    }
 
     m_currentColor = nullptr;
     m_currentDepth = nullptr;
@@ -256,9 +301,9 @@ void FramebufferManager::Reset() {
 // ═══════════════════════════════════════════════════════════════
 
 void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
-    fb.scaledWidth  = fb.width * m_resScale;
+    fb.scaledWidth = fb.width * m_resScale;
     fb.scaledHeight = fb.height * m_resScale;
-    fb.msaaSamples  = m_msaaSamples;
+    fb.msaaSamples = m_msaaSamples;
     if (!m_isGL) return;
 
     {
@@ -270,7 +315,6 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         if (gpuIsIntel) glFlush();
     }
 
-    
     for (int i = 0; i < 8; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -285,13 +329,12 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         GLsizei samples = static_cast<GLsizei>(m_msaaSamples);
 
         glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, &fb.colorTex);
-        glTextureStorage2DMultisample(fb.colorTex, samples, GL_RGBA8,
-                                      fb.scaledWidth, fb.scaledHeight, GL_TRUE);
+        glTextureStorage2DMultisample(fb.colorTex, samples, GL_RGBA8, fb.scaledWidth, fb.scaledHeight, GL_TRUE);
         glNamedFramebufferTexture(fb.fbo, GL_COLOR_ATTACHMENT0, fb.colorTex, 0);
 
         glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, &fb.depthTex);
-        glTextureStorage2DMultisample(fb.depthTex, samples, GL_DEPTH32F_STENCIL8,
-                                      fb.scaledWidth, fb.scaledHeight, GL_TRUE);
+        glTextureStorage2DMultisample(fb.depthTex, samples, GL_DEPTH32F_STENCIL8, fb.scaledWidth, fb.scaledHeight,
+                                      GL_TRUE);
         glNamedFramebufferTexture(fb.fbo, GL_DEPTH_STENCIL_ATTACHMENT, fb.depthTex, 0);
 
         // Create a non-MSAA resolved texture + FBO for FB-as-texture sampling
@@ -320,7 +363,6 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
         glNamedFramebufferTexture(fb.fbo, GL_DEPTH_STENCIL_ATTACHMENT, fb.depthTex, 0);
     }
 
-    
     glCreateTextures(GL_TEXTURE_2D, 1, &fb.coverageTex);
     glTextureStorage2D(fb.coverageTex, 1, GL_R8UI, fb.scaledWidth, fb.scaledHeight);
     glTextureParameteri(fb.coverageTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -329,23 +371,20 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
     const GLuint zeroCvg = 0;
     glClearTexImage(fb.coverageTex, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zeroCvg);
 
-    
-    fb.colorImageHandle    = static_cast<uint64_t>(fb.colorTex);
+    fb.colorImageHandle = static_cast<uint64_t>(fb.colorTex);
     fb.coverageImageHandle = static_cast<uint64_t>(fb.coverageTex);
 
-    
     GLenum status = glCheckNamedFramebufferStatus(fb.fbo, GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        NOVA_LOG_ERROR("FBO incomplete (status=0x{:X}) for addr 0x{:08X} {}x{}",
-                       status, fb.desc.address, fb.scaledWidth, fb.scaledHeight);
+        NOVA_LOG_ERROR("FBO incomplete (status=0x{:X}) for addr 0x{:08X} {}x{}", status, fb.desc.address,
+                       fb.scaledWidth, fb.scaledHeight);
     } else {
-        
+
         const GLfloat depthOne = 1.0f;
-        const GLint   stencilZero = 0;
+        const GLint stencilZero = 0;
         glClearNamedFramebufferfi(fb.fbo, GL_DEPTH_STENCIL, 0, depthOne, stencilZero);
 
-        
-        const GLfloat blackZeroAlpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        const GLfloat blackZeroAlpha[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         glClearNamedFramebufferfv(fb.fbo, GL_COLOR, 0, blackZeroAlpha);
     }
 
@@ -353,18 +392,45 @@ void FramebufferManager::CreateGPUFramebuffer(GPUFramebuffer& fb) {
 }
 
 void FramebufferManager::DestroyGPUFramebuffer(GPUFramebuffer& fb) {
-  
+
     if (m_pboFB == &fb) m_pboFB = nullptr;
     if (!m_isGL) return;
-    if (fb.resolvedFbo) { glDeleteFramebuffers(1, &fb.resolvedFbo); fb.resolvedFbo = 0; }
-    if (fb.resolvedTex) { glDeleteTextures(1, &fb.resolvedTex);     fb.resolvedTex = 0; }
-    if (fb.snapshotTex) { glDeleteTextures(1, &fb.snapshotTex);     fb.snapshotTex = 0; }
-    if (fb.snapshotCvgTex) { glDeleteTextures(1, &fb.snapshotCvgTex); fb.snapshotCvgTex = 0; }
-    if (fb.presentationTex) { glDeleteTextures(1, &fb.presentationTex); fb.presentationTex = 0; }
-    if (fb.coverageTex) { glDeleteTextures(1, &fb.coverageTex); fb.coverageTex = 0; }
-    if (fb.fbo)      { glDeleteFramebuffers(1, &fb.fbo);      fb.fbo      = 0; }
-    if (fb.colorTex) { glDeleteTextures(1,    &fb.colorTex);  fb.colorTex = 0; }
-    if (fb.depthTex) { glDeleteTextures(1,    &fb.depthTex);  fb.depthTex = 0; }
+    if (fb.resolvedFbo) {
+        glDeleteFramebuffers(1, &fb.resolvedFbo);
+        fb.resolvedFbo = 0;
+    }
+    if (fb.resolvedTex) {
+        glDeleteTextures(1, &fb.resolvedTex);
+        fb.resolvedTex = 0;
+    }
+    if (fb.snapshotTex) {
+        glDeleteTextures(1, &fb.snapshotTex);
+        fb.snapshotTex = 0;
+    }
+    if (fb.snapshotCvgTex) {
+        glDeleteTextures(1, &fb.snapshotCvgTex);
+        fb.snapshotCvgTex = 0;
+    }
+    if (fb.presentationTex) {
+        glDeleteTextures(1, &fb.presentationTex);
+        fb.presentationTex = 0;
+    }
+    if (fb.coverageTex) {
+        glDeleteTextures(1, &fb.coverageTex);
+        fb.coverageTex = 0;
+    }
+    if (fb.fbo) {
+        glDeleteFramebuffers(1, &fb.fbo);
+        fb.fbo = 0;
+    }
+    if (fb.colorTex) {
+        glDeleteTextures(1, &fb.colorTex);
+        fb.colorTex = 0;
+    }
+    if (fb.depthTex) {
+        glDeleteTextures(1, &fb.depthTex);
+        fb.depthTex = 0;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -376,17 +442,15 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
 
     if (fb->msaaSamples > 1) {
         if (fb->resolvedFbo != 0) {
-            glBlitNamedFramebuffer(fb->fbo, fb->resolvedFbo,
-                                   0, 0, (GLint)fb->scaledWidth, (GLint)fb->scaledHeight,
-                                   0, 0, (GLint)fb->scaledWidth, (GLint)fb->scaledHeight,
-                                   GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBlitNamedFramebuffer(fb->fbo, fb->resolvedFbo, 0, 0, (GLint)fb->scaledWidth, (GLint)fb->scaledHeight, 0,
+                                   0, (GLint)fb->scaledWidth, (GLint)fb->scaledHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             return fb->resolvedTex;
         }
-        return 0; 
+        return 0;
     }
 
     if (isSelfTexture) {
-       
+
         if (fb->snapshotTex == 0) {
             glCreateTextures(GL_TEXTURE_2D, 1, &fb->snapshotTex);
             glTextureStorage2D(fb->snapshotTex, 1, GL_RGBA8, fb->scaledWidth, fb->scaledHeight);
@@ -395,8 +459,7 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
             glTextureParameteri(fb->snapshotTex, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTextureParameteri(fb->snapshotTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
-        glCopyImageSubData(fb->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                           fb->snapshotTex, GL_TEXTURE_2D, 0, 0, 0, 0,
+        glCopyImageSubData(fb->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0, fb->snapshotTex, GL_TEXTURE_2D, 0, 0, 0, 0,
                            (GLsizei)fb->scaledWidth, (GLsizei)fb->scaledHeight, 1);
 
         // Also snapshot coverage for MLE blender reads
@@ -407,9 +470,8 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
                 glTextureParameteri(fb->snapshotCvgTex, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
                 glTextureParameteri(fb->snapshotCvgTex, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             }
-            glCopyImageSubData(fb->coverageTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                               fb->snapshotCvgTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                               (GLsizei)fb->scaledWidth, (GLsizei)fb->scaledHeight, 1);
+            glCopyImageSubData(fb->coverageTex, GL_TEXTURE_2D, 0, 0, 0, 0, fb->snapshotCvgTex, GL_TEXTURE_2D, 0, 0, 0,
+                               0, (GLsizei)fb->scaledWidth, (GLsizei)fb->scaledHeight, 1);
         }
         return fb->snapshotTex;
     }
@@ -419,8 +481,7 @@ uint32_t FramebufferManager::GetSampleableTexture(GPUFramebuffer* fb, bool isSel
 
 void FramebufferManager::SnapshotForPresentation() {
     if (!m_isGL) return;
-    if (!m_currentColor || m_currentColor->fbo == 0 || m_currentColor->colorTex == 0)
-        return;
+    if (!m_currentColor || m_currentColor->fbo == 0 || m_currentColor->colorTex == 0) return;
 
     uint32_t w = m_currentColor->scaledWidth;
     uint32_t h = m_currentColor->scaledHeight;
@@ -436,25 +497,22 @@ void FramebufferManager::SnapshotForPresentation() {
         glTextureParameteri(m_currentColor->presentationTex, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-   
-    glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT |
-                    GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     // GPU-side copy — no CPU round-trip, no pipeline stall
-    glCopyImageSubData(m_currentColor->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       m_currentColor->presentationTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       static_cast<GLsizei>(w), static_cast<GLsizei>(h), 1);
+    glCopyImageSubData(m_currentColor->colorTex, GL_TEXTURE_2D, 0, 0, 0, 0, m_currentColor->presentationTex,
+                       GL_TEXTURE_2D, 0, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 1);
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  Framebuffer Tracking
 // ═══════════════════════════════════════════════════════════════
 
-void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
-                                          [[maybe_unused]] uint32_t format, uint32_t size) {
+void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width, [[maybe_unused]] uint32_t format,
+                                         uint32_t size) {
     FramebufferDesc desc;
-    desc.address = address & 0x7FFFFF;  // Mask to RDRAM range
-    desc.width   = width;
+    desc.address = address & 0x7FFFFF; // Mask to RDRAM range
+    desc.width = width;
 
     uint32_t height = 240;
     if (m_scissorHeight > 0) {
@@ -462,14 +520,13 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     } else {
         // Look up prior height for this address
         for (uint32_t i = 0; i < m_fbCount; ++i) {
-            if (m_framebuffers[i].desc.address == desc.address &&
-                m_framebuffers[i].desc.type == FBType::Color) {
+            if (m_framebuffers[i].desc.address == desc.address && m_framebuffers[i].desc.type == FBType::Color) {
                 height = m_framebuffers[i].desc.height;
                 break;
             }
         }
     }
-    desc.height  = height;
+    desc.height = height;
     // `size` is the RAW RDP size ENCODING (0=4bpp,1=8bpp,2=16bpp,3=32bpp,
     // see ImageSize in N64Types.hpp), not bytes-per-pixel -- the caller
     // (RDPProcessor_State.cpp's HandleSetColorImage) passes
@@ -483,11 +540,11 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
     // bytes-per-pixel first. RGBA16 games (the overwhelming majority) were
     // unaffected since encoding 2 happens to equal 2 bytes.
     uint32_t bytesPerPixel = static_cast<uint32_t>(GetBitsPerPixel(static_cast<ImageSize>(size & 3))) / 8;
-    if (bytesPerPixel == 0) bytesPerPixel = 2;  // 4bpp isn't a valid color-image size; default safely
-    desc.format  = (bytesPerPixel == 4) ? FBFormat::RGBA32 : FBFormat::RGBA16;
-    desc.size    = bytesPerPixel;
-    desc.stride  = width * bytesPerPixel;
-    desc.type    = FBType::Color;
+    if (bytesPerPixel == 0) bytesPerPixel = 2; // 4bpp isn't a valid color-image size; default safely
+    desc.format = (bytesPerPixel == 4) ? FBFormat::RGBA32 : FBFormat::RGBA16;
+    desc.size = bytesPerPixel;
+    desc.stride = width * bytesPerPixel;
+    desc.type = FBType::Color;
 
     GPUFramebuffer* fb = FindOrCreate(desc);
     if (fb) {
@@ -500,9 +557,7 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         }
 
         const uint32_t viOrigin = m_viConfig.origin & 0x7FFFFF;
-        if (fb->lastColorClearedFrame < m_frameCounter &&
-            !fb->gpuModified &&
-            fb->fbo != 0 &&
+        if (fb->lastColorClearedFrame < m_frameCounter && !fb->gpuModified && fb->fbo != 0 &&
             fb->desc.address != viOrigin) {
             if (m_isGL) {
                 glDisable(GL_SCISSOR_TEST);
@@ -514,15 +569,13 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
         }
 
         if (m_depthClearPending) {
-            if (m_isGL && fb->fbo != 0)
-                glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
+            if (m_isGL && fb->fbo != 0) glClearNamedFramebufferfi(fb->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
             m_depthClearPending = false;
         }
 
         if (m_isGL && fb->coverageTex) {
             const GLuint zero = 0;
-            glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER,
-                            GL_UNSIGNED_BYTE, &zero);
+            glClearTexImage(fb->coverageTex, 0, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zero);
         }
     }
 }
@@ -530,12 +583,12 @@ void FramebufferManager::OnSetColorImage(uint32_t address, uint32_t width,
 void FramebufferManager::OnSetDepthImage(uint32_t address) {
     FramebufferDesc desc;
     desc.address = address & 0x7FFFFF;
-    desc.width   = m_currentColor ? m_currentColor->width : 320;
-    desc.height  = m_currentColor ? m_currentColor->height : 240;
-    desc.format  = FBFormat::RGBA16;  // N64 depth is 16-bit
-    desc.size    = 2;
-    desc.stride  = desc.width * 2;
-    desc.type    = FBType::Depth;
+    desc.width = m_currentColor ? m_currentColor->width : 320;
+    desc.height = m_currentColor ? m_currentColor->height : 240;
+    desc.format = FBFormat::RGBA16; // N64 depth is 16-bit
+    desc.size = 2;
+    desc.stride = desc.width * 2;
+    desc.type = FBType::Depth;
 
     GPUFramebuffer* fb = FindOrCreate(desc);
     if (fb) {
@@ -543,10 +596,8 @@ void FramebufferManager::OnSetDepthImage(uint32_t address) {
         fb->lastUsedFrame = m_frameCounter;
     }
 
-   
     m_depthClearPending = true;
 
-  
     if (m_isGL && m_currentColor && m_currentColor->fbo != 0) {
         glClearNamedFramebufferfi(m_currentColor->fbo, GL_DEPTH_STENCIL, 0, 1.0f, 0);
     }
@@ -561,15 +612,10 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
         }
     }
 
-   
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         auto& fb = m_framebuffers[i];
-        if (fb.desc.address == desc.address &&
-            fb.desc.type    == desc.type    &&
-            fb.desc.width   == desc.width   &&
-            fb.desc.format  == desc.format  &&
-            fb.desc.height  >= desc.height)
-        {
+        if (fb.desc.address == desc.address && fb.desc.type == desc.type && fb.desc.width == desc.width &&
+            fb.desc.format == desc.format && fb.desc.height >= desc.height) {
             m_stats.framebuffersReused++;
             return &fb;
         }
@@ -577,15 +623,14 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
 
     // Search by overlapping address (reuse slot with updated desc)
     for (uint32_t i = 0; i < m_fbCount; ++i) {
-        if (m_framebuffers[i].desc.address == desc.address &&
-            m_framebuffers[i].desc.type == desc.type) {
+        if (m_framebuffers[i].desc.address == desc.address && m_framebuffers[i].desc.type == desc.type) {
             // Same address, different format/size — recreate.
             // Migrate the presentation snapshot so it survives the rebuild.
             // Migrate the presentation and snapshot textures so they survive the rebuild.
             GLuint savedPresentation = m_framebuffers[i].presentationTex;
-            GLuint savedSnapshot     = m_framebuffers[i].snapshotTex;
+            GLuint savedSnapshot = m_framebuffers[i].snapshotTex;
             m_framebuffers[i].presentationTex = 0; // prevent DestroyGPU from deleting it
-            m_framebuffers[i].snapshotTex     = 0;
+            m_framebuffers[i].snapshotTex = 0;
             uint32_t oldScaledW = m_framebuffers[i].scaledWidth;
             uint32_t oldScaledH = m_framebuffers[i].scaledHeight;
             DestroyGPUFramebuffer(m_framebuffers[i]);
@@ -596,13 +641,12 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
             // Only reuse saved textures if dimensions haven't changed;
             // otherwise delete the stale ones to avoid size mismatch in
             // glCopyImageSubData during SnapshotForPresentation.
-            if (m_framebuffers[i].scaledWidth == oldScaledW &&
-                m_framebuffers[i].scaledHeight == oldScaledH) {
+            if (m_framebuffers[i].scaledWidth == oldScaledW && m_framebuffers[i].scaledHeight == oldScaledH) {
                 m_framebuffers[i].presentationTex = savedPresentation;
-                m_framebuffers[i].snapshotTex     = savedSnapshot;
+                m_framebuffers[i].snapshotTex = savedSnapshot;
             } else {
                 if (savedPresentation) glDeleteTextures(1, &savedPresentation);
-                if (savedSnapshot)     glDeleteTextures(1, &savedSnapshot);
+                if (savedSnapshot) glDeleteTextures(1, &savedSnapshot);
             }
             return &m_framebuffers[i];
         }
@@ -618,14 +662,14 @@ GPUFramebuffer* FramebufferManager::FindOrCreate(const FramebufferDesc& desc) {
     }
 
     auto& fb = m_framebuffers[m_fbCount++];
-    fb.desc   = desc;
-    fb.width  = desc.width;
+    fb.desc = desc;
+    fb.width = desc.width;
     fb.height = desc.height;
     fb.lastUsedFrame = m_frameCounter;
     CreateGPUFramebuffer(fb);
 
-    NOVA_LOG_DEBUG("Created FB addr=0x{:08X} {}x{} fmt={}",
-                   desc.address, desc.width, desc.height, static_cast<int>(desc.format));
+    NOVA_LOG_DEBUG("Created FB addr=0x{:08X} {}x{} fmt={}", desc.address, desc.width, desc.height,
+                   static_cast<int>(desc.format));
     return &fb;
 }
 
@@ -634,10 +678,8 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType prefe
     GPUFramebuffer* firstHit = nullptr;
     for (uint32_t i = 0; i < m_fbCount; ++i) {
         if (m_framebuffers[i].desc.address == address) {
-            if (m_framebuffers[i].desc.type == preferType)
-                return &m_framebuffers[i];
-            if (!firstHit)
-                firstHit = &m_framebuffers[i];
+            if (m_framebuffers[i].desc.type == preferType) return &m_framebuffers[i];
+            if (!firstHit) firstHit = &m_framebuffers[i];
         }
     }
     if (firstHit) return firstHit;
@@ -648,10 +690,8 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType prefe
         if (address > fb.desc.address && address < fb.desc.EndAddress()) {
             uint32_t offset = address - fb.desc.address;
             if (fb.desc.stride > 0 && (offset % fb.desc.stride) == 0) {
-                if (!bestAny || fb.lastUsedFrame > bestAny->lastUsedFrame)
-                    bestAny = &fb;
-                if (fb.desc.type == preferType &&
-                    (!bestOfType || fb.lastUsedFrame > bestOfType->lastUsedFrame))
+                if (!bestAny || fb.lastUsedFrame > bestAny->lastUsedFrame) bestAny = &fb;
+                if (fb.desc.type == preferType && (!bestOfType || fb.lastUsedFrame > bestOfType->lastUsedFrame))
                     bestOfType = &fb;
             }
         }
@@ -666,10 +706,10 @@ GPUFramebuffer* FramebufferManager::FindByAddress(uint32_t address, FBType prefe
 static uint64_t FootprintFingerprint(const FramebufferDesc& d, const uint8_t* rdram, size_t rdramSize) {
     constexpr uint32_t kMaxSamples = 1024;
     const uint64_t begin = d.address & ~3u;
-    const uint64_t end   = std::min<uint64_t>(d.EndAddress(), rdramSize);
+    const uint64_t end = std::min<uint64_t>(d.EndAddress(), rdramSize);
     if (end <= begin + 3) return 0;
     const uint64_t words = (end - begin) / 4;
-    const uint64_t step  = std::max<uint64_t>(1, words / kMaxSamples);
+    const uint64_t step = std::max<uint64_t>(1, words / kMaxSamples);
     uint64_t hash = 1469598103934665603ull;
     for (uint64_t w = 0; w < words; w += step) {
         uint32_t v;
@@ -682,7 +722,7 @@ static uint64_t FootprintFingerprint(const FramebufferDesc& d, const uint8_t* rd
 void FramebufferManager::RecordRdramFingerprint(GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize) {
     if (!fb || !rdram) return;
     fb->rdramFingerprint = FootprintFingerprint(fb->desc, rdram, rdramSize);
-    fb->hasFingerprint   = true;
+    fb->hasFingerprint = true;
 }
 
 bool FramebufferManager::RdramUnchanged(const GPUFramebuffer* fb, const uint8_t* rdram, size_t rdramSize) const {
@@ -703,14 +743,11 @@ GPUFramebuffer* FramebufferManager::FindContaining(uint32_t address) {
 
 void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
     static constexpr uint64_t kStaleFrameThreshold = 600;
-    auto isStale = [&](const GPUFramebuffer& fb) {
-        return currentFrame - fb.lastUsedFrame >= kStaleFrameThreshold;
-    };
+    auto isStale = [&](const GPUFramebuffer& fb) { return currentFrame - fb.lastUsedFrame >= kStaleFrameThreshold; };
     auto hasFreshSibling = [&](const GPUFramebuffer& fb) {
         for (uint32_t j = 0; j < m_fbCount; ++j) {
             const auto& other = m_framebuffers[j];
-            if (&other != &fb && other.desc.address == fb.desc.address && !isStale(other))
-                return true;
+            if (&other != &fb && other.desc.address == fb.desc.address && !isStale(other)) return true;
         }
         return false;
     };
@@ -732,8 +769,7 @@ void FramebufferManager::EvictOldFramebuffers(uint64_t currentFrame) {
 //  GPU ↔ CPU Sync
 // ═══════════════════════════════════════════════════════════════
 
-bool FramebufferManager::CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram,
-                                          IRenderer* renderer) {
+bool FramebufferManager::CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdram, IRenderer* renderer) {
     if (!fb || !rdram || !renderer || m_isGL) return false;
 
     const uint32_t addr = fb->desc.address;
@@ -745,9 +781,7 @@ bool FramebufferManager::CopyToGPUVulkan(GPUFramebuffer* fb, const uint8_t* rdra
     // Guard the RDRAM read: desc dimensions come from game state, so a bogus
     // width/height must not walk off the end of the 8 MB map.
     const uint32_t bytesPerPixel = (fb->desc.format == FBFormat::RGBA32) ? 4u : 2u;
-    if (static_cast<uint64_t>(addr) +
-        static_cast<uint64_t>(pixelCount) * bytesPerPixel > 0x800000ull)
-        return false;
+    if (static_cast<uint64_t>(addr) + static_cast<uint64_t>(pixelCount) * bytesPerPixel > 0x800000ull) return false;
 
     std::vector<uint32_t> rgba8(pixelCount);
     if (fb->desc.format == FBFormat::RGBA16) {
@@ -787,8 +821,14 @@ void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
     } else {
         // Reuse cached temp texture/FBO at native res (avoid per-frame GPU alloc on Intel)
         if (m_copyColorW != w || m_copyColorH != h) {
-            if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
-            if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
+            if (m_copyColorFBO) {
+                glDeleteFramebuffers(1, &m_copyColorFBO);
+                m_copyColorFBO = 0;
+            }
+            if (m_copyColorTex) {
+                glDeleteTextures(1, &m_copyColorTex);
+                m_copyColorTex = 0;
+            }
         }
         if (!m_copyColorFBO) {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_copyColorTex);
@@ -800,9 +840,7 @@ void FramebufferManager::CopyToGPU(GPUFramebuffer* fb, const uint8_t* rdram) {
         }
 
         glTextureSubImage2D(m_copyColorTex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
-        glBlitNamedFramebuffer(m_copyColorFBO, fb->fbo,
-                               0, 0, w, h,
-                               0, 0, fb->scaledWidth, fb->scaledHeight,
+        glBlitNamedFramebuffer(m_copyColorFBO, fb->fbo, 0, 0, w, h, 0, 0, fb->scaledWidth, fb->scaledHeight,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
     }
 
@@ -823,13 +861,18 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     if (m_resScale == 1 && fb->msaaSamples <= 1) {
         // Non-MSAA, native resolution: read directly (no VI filter —
         // VI filter is display-only and must not be baked into RDRAM data).
-        glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                          static_cast<GLsizei>(rgba8.size()), rgba8.data());
+        glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLsizei>(rgba8.size()), rgba8.data());
     } else {
         // MSAA resolve + optional downscale via blit — reuse cached temp FBO/tex
         if (m_copyColorW != w || m_copyColorH != h) {
-            if (m_copyColorFBO) { glDeleteFramebuffers(1, &m_copyColorFBO); m_copyColorFBO = 0; }
-            if (m_copyColorTex) { glDeleteTextures(1, &m_copyColorTex); m_copyColorTex = 0; }
+            if (m_copyColorFBO) {
+                glDeleteFramebuffers(1, &m_copyColorFBO);
+                m_copyColorFBO = 0;
+            }
+            if (m_copyColorTex) {
+                glDeleteTextures(1, &m_copyColorTex);
+                m_copyColorTex = 0;
+            }
         }
         if (!m_copyColorFBO) {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_copyColorTex);
@@ -840,13 +883,11 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
             m_copyColorH = h;
         }
 
-        glBlitNamedFramebuffer(fb->fbo, m_copyColorFBO,
-                               0, 0, fb->scaledWidth, fb->scaledHeight,
-                               0, 0, w, h,
+        glBlitNamedFramebuffer(fb->fbo, m_copyColorFBO, 0, 0, fb->scaledWidth, fb->scaledHeight, 0, 0, w, h,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
         // Read resolved pixels directly — no VI filter (display-only effect).
-        glGetTextureImage(m_copyColorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                          static_cast<GLsizei>(rgba8.size()), rgba8.data());
+        glGetTextureImage(m_copyColorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLsizei>(rgba8.size()),
+                          rgba8.data());
     }
 
     // Convert back to N64 format
@@ -856,8 +897,7 @@ void FramebufferManager::CopyFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
         if (m_fbHacks.paperMarioBlueBoost) {
             for (uint32_t i = 0; i < pixelCount; ++i) {
                 uint8_t& b = rgba8[i * 4 + 2];
-                if (b >= 0x01 && b <= 0xFB)
-                    b += 4;
+                if (b >= 0x01 && b <= 0xFB) b += 4;
             }
         }
         uint16_t* dst = reinterpret_cast<uint16_t*>(rdram + addr);
@@ -894,13 +934,18 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
 
     if (m_resScale == 1) {
         glGetTextureImage(fb->depthTex, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
-                          static_cast<GLsizei>(pixelCount * sizeof(float)),
-                          depthFloat.data());
+                          static_cast<GLsizei>(pixelCount * sizeof(float)), depthFloat.data());
     } else {
         // Downsample depth to native resolution — reuse cached temp FBO/tex
         if (m_copyDepthW != w || m_copyDepthH != h) {
-            if (m_copyDepthFBO) { glDeleteFramebuffers(1, &m_copyDepthFBO); m_copyDepthFBO = 0; }
-            if (m_copyDepthTex) { glDeleteTextures(1, &m_copyDepthTex); m_copyDepthTex = 0; }
+            if (m_copyDepthFBO) {
+                glDeleteFramebuffers(1, &m_copyDepthFBO);
+                m_copyDepthFBO = 0;
+            }
+            if (m_copyDepthTex) {
+                glDeleteTextures(1, &m_copyDepthTex);
+                m_copyDepthTex = 0;
+            }
         }
         if (!m_copyDepthFBO) {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_copyDepthTex);
@@ -911,13 +956,10 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
             m_copyDepthH = h;
         }
 
-        glBlitNamedFramebuffer(fb->fbo, m_copyDepthFBO,
-                               0, 0, fb->scaledWidth, fb->scaledHeight,
-                               0, 0, w, h,
+        glBlitNamedFramebuffer(fb->fbo, m_copyDepthFBO, 0, 0, fb->scaledWidth, fb->scaledHeight, 0, 0, w, h,
                                GL_DEPTH_BUFFER_BIT, GL_NEAREST);
         glGetTextureImage(m_copyDepthTex, 0, GL_DEPTH_COMPONENT, GL_FLOAT,
-                          static_cast<GLsizei>(pixelCount * sizeof(float)),
-                          depthFloat.data());
+                          static_cast<GLsizei>(pixelCount * sizeof(float)), depthFloat.data());
     }
 
     // Convert float depth to N64 compressed Z format and write to RDRAM
@@ -929,12 +971,12 @@ void FramebufferManager::CopyDepthFromGPU(GPUFramebuffer* fb, uint8_t* rdram) {
     {
         uint32_t depthEnd = depthAddr + pixelCount * 2;
         if (depthAddr <= 0x35CCFF && depthEnd > 0x35CC00) {
-            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x35CC00",
-                       depthAddr, pixelCount * 2, w, h);
+            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x35CC00", depthAddr,
+                       pixelCount * 2, w, h);
         }
         if (depthAddr <= 0x1CAACF && depthEnd > 0x1CAA00) {
-            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x1CAA00",
-                       depthAddr, pixelCount * 2, w, h);
+            Log::infof("[DEPTHTRACE] CopyDepthFromGPU addr=%06X size=%u w=%u h=%u covers 0x1CAA00", depthAddr,
+                       pixelCount * 2, w, h);
         }
     }
 
@@ -977,13 +1019,18 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
     glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbo);
 
     if (m_resScale == 1 && fb->msaaSamples <= 1) {
-        glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                          static_cast<GLsizei>(byteSize), nullptr);
+        glGetTextureImage(fb->colorTex, 0, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLsizei>(byteSize), nullptr);
     } else {
         // Downsample to native res — reuse cached readback FBO
         if (m_readbackW != w || m_readbackH != h) {
-            if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
-            if (m_readbackTex) { glDeleteTextures(1, &m_readbackTex); m_readbackTex = 0; }
+            if (m_readbackFBO) {
+                glDeleteFramebuffers(1, &m_readbackFBO);
+                m_readbackFBO = 0;
+            }
+            if (m_readbackTex) {
+                glDeleteTextures(1, &m_readbackTex);
+                m_readbackTex = 0;
+            }
         }
         if (!m_readbackFBO) {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_readbackTex);
@@ -993,12 +1040,9 @@ void FramebufferManager::BeginAsyncReadback(GPUFramebuffer* fb) {
             m_readbackW = w;
             m_readbackH = h;
         }
-        glBlitNamedFramebuffer(fb->fbo, m_readbackFBO,
-                               0, 0, fb->scaledWidth, fb->scaledHeight,
-                               0, 0, w, h,
+        glBlitNamedFramebuffer(fb->fbo, m_readbackFBO, 0, 0, fb->scaledWidth, fb->scaledHeight, 0, 0, w, h,
                                GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        glGetTextureImage(m_readbackTex, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                          static_cast<GLsizei>(byteSize), nullptr);
+        glGetTextureImage(m_readbackTex, 0, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLsizei>(byteSize), nullptr);
     }
 
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
@@ -1068,10 +1112,8 @@ bool FramebufferManager::FinishAsyncReadback(uint8_t* rdram) {
 //  Tile Copy (RDP COPY_MODE region transfer)
 // ═══════════════════════════════════════════════════════════════
 
-void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst,
-                                   int32_t srcX, int32_t srcY,
-                                   int32_t dstX, int32_t dstY,
-                                   int32_t w, int32_t h) {
+void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst, int32_t srcX, int32_t srcY, int32_t dstX,
+                                  int32_t dstY, int32_t w, int32_t h) {
     if (!src || !dst || w <= 0 || h <= 0 || !m_isGL) return;
 
     // Scale coordinates
@@ -1082,10 +1124,8 @@ void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst,
     int32_t sw = w * static_cast<int32_t>(m_resScale);
     int32_t sh = h * static_cast<int32_t>(m_resScale);
 
-    glBlitNamedFramebuffer(src->fbo, dst->fbo,
-                           sx, sy, sx + sw, sy + sh,
-                           dx, dy, dx + sw, dy + sh,
-                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitNamedFramebuffer(src->fbo, dst->fbo, sx, sy, sx + sw, sy + sh, dx, dy, dx + sw, dy + sh, GL_COLOR_BUFFER_BIT,
+                           GL_NEAREST);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1094,7 +1134,7 @@ void FramebufferManager::TileCopy(GPUFramebuffer* src, GPUFramebuffer* dst,
 
 bool FramebufferManager::IsRDRAMDirty(uint32_t address, uint32_t size) const {
     uint32_t startPage = address / kPageSize;
-    uint32_t endPage   = (address + size + kPageSize - 1) / kPageSize;
+    uint32_t endPage = (address + size + kPageSize - 1) / kPageSize;
     endPage = std::min(endPage, kPageCount);
 
     for (uint32_t p = startPage; p < endPage; ++p) {
@@ -1105,7 +1145,7 @@ bool FramebufferManager::IsRDRAMDirty(uint32_t address, uint32_t size) const {
 
 void FramebufferManager::MarkRDRAMDirty(uint32_t address, uint32_t size) {
     uint32_t startPage = address / kPageSize;
-    uint32_t endPage   = (address + size + kPageSize - 1) / kPageSize;
+    uint32_t endPage = (address + size + kPageSize - 1) / kPageSize;
     endPage = std::min(endPage, kPageCount);
 
     for (uint32_t p = startPage; p < endPage; ++p) {
@@ -1115,7 +1155,7 @@ void FramebufferManager::MarkRDRAMDirty(uint32_t address, uint32_t size) {
 
 void FramebufferManager::ClearRDRAMDirty(uint32_t address, uint32_t size) {
     uint32_t startPage = address / kPageSize;
-    uint32_t endPage   = (address + size + kPageSize - 1) / kPageSize;
+    uint32_t endPage = (address + size + kPageSize - 1) / kPageSize;
     endPage = std::min(endPage, kPageCount);
 
     for (uint32_t p = startPage; p < endPage; ++p) {
@@ -1130,12 +1170,10 @@ void FramebufferManager::ClearRDRAMDirty(uint32_t address, uint32_t size) {
 void FramebufferManager::UpdateVI(const VIConfig& config) {
     // Detect VI geometry change — if width or height changed, existing
     // framebuffers at the display address may need to be recreated.
-    if (m_viConfig.width != 0 &&
-        (m_viConfig.width != config.width || m_viConfig.height != config.height)) {
+    if (m_viConfig.width != 0 && (m_viConfig.width != config.width || m_viConfig.height != config.height)) {
 
         GPUFramebuffer* displayFB = FindByAddress(config.origin);
-        if (displayFB &&
-            (displayFB->width != config.width || displayFB->height != config.height)) {
+        if (displayFB && (displayFB->width != config.width || displayFB->height != config.height)) {
             // Destroy the stale FBO so FindOrCreate rebuilds it at the new size.
             // Migrate presentation snapshot so it survives the rebuild.
             GLuint savedPresentation = displayFB->presentationTex;
@@ -1143,16 +1181,14 @@ void FramebufferManager::UpdateVI(const VIConfig& config) {
             DestroyGPUFramebuffer(*displayFB);
             *displayFB = {};
             displayFB->presentationTex = savedPresentation;
-            NOVA_LOG(LogLevel::Info, LogSubsystem::Core,
-                     "VI geometry changed {}x{} → {}x{}, invalidated display FBO",
-                     m_viConfig.width, m_viConfig.height,
-                     config.width, config.height);
+            NOVA_LOG(LogLevel::Info, LogSubsystem::Core, "VI geometry changed {}x{} → {}x{}, invalidated display FBO",
+                     m_viConfig.width, m_viConfig.height, config.width, config.height);
         }
     }
 
     m_viConfig = config;
     m_frameCounter++;
-    m_depthCopiedThisFrame = false;  // Reset PD depth-once-per-frame flag
+    m_depthCopiedThisFrame = false; // Reset PD depth-once-per-frame flag
     m_stats.viUpdates++;
 
     // Register the VI display buffer as a known framebuffer so that
@@ -1164,26 +1200,23 @@ void FramebufferManager::UpdateVI(const VIConfig& config) {
         if (!viFB) {
             FramebufferDesc desc;
             desc.address = config.origin & 0x7FFFFF;
-            desc.width   = config.width;
-            desc.height  = config.height > 0 ? config.height : 240;
-            desc.format  = FBFormat::RGBA16;
-            desc.size    = 2;
-            desc.stride  = config.width * 2;
-            desc.type    = FBType::Color;
+            desc.width = config.width;
+            desc.height = config.height > 0 ? config.height : 240;
+            desc.format = FBFormat::RGBA16;
+            desc.size = 2;
+            desc.stride = config.width * 2;
+            desc.type = FBType::Color;
             viFB = FindOrCreate(desc);
             if (viFB) {
                 viFB->lastUsedFrame = m_frameCounter;
                 // Upload RDRAM content to populate the GPU texture
-                if (m_rdram)
-                    CopyToGPU(viFB, m_rdram);
+                if (m_rdram) CopyToGPU(viFB, m_rdram);
             }
         }
     }
 }
 
-GPUFramebuffer* FramebufferManager::GetDisplayFramebuffer() {
-    return FindByAddress(m_viConfig.origin);
-}
+GPUFramebuffer* FramebufferManager::GetDisplayFramebuffer() { return FindByAddress(m_viConfig.origin); }
 
 void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeight, bool skipVIFilter) {
     if (!m_isGL) return;
@@ -1204,8 +1237,7 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
 
     m_stats.blitsToScreen++;
 
-    if (m_viConfig.gammaCorrect && m_gammaProgram)
-        ApplyGammaCorrection(displayFB, 2.0f);
+    if (m_viConfig.gammaCorrect && m_gammaProgram) ApplyGammaCorrection(displayFB, 2.0f);
 
     // Apply VI divot/AA/dedither filter if enabled (N64 VI_STATUS bits)
     // Skip for HLE-rendered content — the 3D pipeline already produces smooth output;
@@ -1216,7 +1248,7 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     // Bind default framebuffer (screen)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, screenWidth, screenHeight);
-    glDisable(GL_SCISSOR_TEST);  // FlushBatch leaves scissor enabled with a game scissor rect
+    glDisable(GL_SCISSOR_TEST); // FlushBatch leaves scissor enabled with a game scissor rect
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -1225,7 +1257,10 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     uint32_t vpW = screenWidth, vpH = screenHeight;
 
     if (m_outputAspect <= 0.0f || screenHeight == 0) {
-        vpX = 0; vpY = 0; vpW = screenWidth; vpH = screenHeight;
+        vpX = 0;
+        vpY = 0;
+        vpW = screenWidth;
+        vpH = screenHeight;
     } else {
         // Box to the output shape, not the framebuffer's pixel ratio: the N64
         // shows every framebuffer at 4:3 (PAL games draw 320x288, and a
@@ -1250,8 +1285,7 @@ void FramebufferManager::BlitToScreen(uint32_t screenWidth, uint32_t screenHeigh
     glUseProgram(m_blitProgram);
     // Overscan crop is hardcoded in the blit fragment shader (5 native pixels per edge)
 
-    GLuint blitTex = (displayFB->presentationTex != 0)
-                          ? displayFB->presentationTex : displayFB->colorTex;
+    GLuint blitTex = (displayFB->presentationTex != 0) ? displayFB->presentationTex : displayFB->colorTex;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, blitTex);
     // Bilinear filtering for smooth presentation scaling.
@@ -1274,8 +1308,14 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
 
     // Reuse cached temp FBO/texture (avoid per-frame GPU alloc on Intel)
     if (m_tmpWidth != fb->scaledWidth || m_tmpHeight != fb->scaledHeight) {
-        if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
-        if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
+        if (m_tmpFBO) {
+            glDeleteFramebuffers(1, &m_tmpFBO);
+            m_tmpFBO = 0;
+        }
+        if (m_tmpTex) {
+            glDeleteTextures(1, &m_tmpTex);
+            m_tmpTex = 0;
+        }
     }
     if (!m_tmpFBO) {
         glCreateTextures(GL_TEXTURE_2D, 1, &m_tmpTex);
@@ -1294,26 +1334,20 @@ void FramebufferManager::ApplyVIFilter(GPUFramebuffer* fb) {
     // Apply to the texture that will actually be displayed (same logic as gamma).
     GLuint targetTex = (fb->presentationTex != 0) ? fb->presentationTex : fb->colorTex;
     glBindTexture(GL_TEXTURE_2D, targetTex);
-    glUniform2f(glGetUniformLocation(m_viFilterProgram, "uPixelSize"),
-                1.0f / fb->scaledWidth, 1.0f / fb->scaledHeight);
+    glUniform2f(glGetUniformLocation(m_viFilterProgram, "uPixelSize"), 1.0f / fb->scaledWidth, 1.0f / fb->scaledHeight);
     glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableAA"), 1);
-    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDivot"),
-                m_viConfig.divot ? 1 : 0);
-    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDedither"),
-                m_viConfig.dedither ? 1 : 0);
+    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDivot"), m_viConfig.divot ? 1 : 0);
+    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uEnableDedither"), m_viConfig.dedither ? 1 : 0);
     // Interlace simulation: tell the shader which field is active
-    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uInterlaced"),
-                m_viConfig.interlaced ? 1 : 0);
-    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uField"),
-                static_cast<int>(m_viConfig.field));
+    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uInterlaced"), m_viConfig.interlaced ? 1 : 0);
+    glUniform1i(glGetUniformLocation(m_viFilterProgram, "uField"), static_cast<int>(m_viConfig.field));
 
     glBindVertexArray(m_blitVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // Copy result back
-    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       fb->scaledWidth, fb->scaledHeight, 1);
+    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0, targetTex, GL_TEXTURE_2D, 0, 0, 0, 0, fb->scaledWidth,
+                       fb->scaledHeight, 1);
 
     // Restore the current N64 FBO so subsequent rendering goes to the right target.
     GPUFramebuffer* curFB = GetCurrentColor();
@@ -1336,8 +1370,14 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
 
     // Reuse cached temp FBO/texture (avoid per-frame GPU alloc on Intel)
     if (m_tmpWidth != fb->scaledWidth || m_tmpHeight != fb->scaledHeight) {
-        if (m_tmpFBO) { glDeleteFramebuffers(1, &m_tmpFBO); m_tmpFBO = 0; }
-        if (m_tmpTex) { glDeleteTextures(1, &m_tmpTex); m_tmpTex = 0; }
+        if (m_tmpFBO) {
+            glDeleteFramebuffers(1, &m_tmpFBO);
+            m_tmpFBO = 0;
+        }
+        if (m_tmpTex) {
+            glDeleteTextures(1, &m_tmpTex);
+            m_tmpTex = 0;
+        }
     }
     if (!m_tmpFBO) {
         glCreateTextures(GL_TEXTURE_2D, 1, &m_tmpTex);
@@ -1359,9 +1399,8 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
     glBindVertexArray(m_blitVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       targetTex, GL_TEXTURE_2D, 0, 0, 0, 0,
-                       fb->scaledWidth, fb->scaledHeight, 1);
+    glCopyImageSubData(m_tmpTex, GL_TEXTURE_2D, 0, 0, 0, 0, targetTex, GL_TEXTURE_2D, 0, 0, 0, 0, fb->scaledWidth,
+                       fb->scaledHeight, 1);
 
     // Restore the current N64 FBO so subsequent rendering goes to the right target.
     GPUFramebuffer* curFB2 = GetCurrentColor();
@@ -1378,8 +1417,7 @@ void FramebufferManager::ApplyGammaCorrection(GPUFramebuffer* fb, float gamma) {
 //  Format Conversion
 // ═══════════════════════════════════════════════════════════════
 
-void FramebufferManager::ConvertRGBA16ToRGBA8(const uint16_t* src, uint8_t* dst,
-                                               uint32_t pixelCount) {
+void FramebufferManager::ConvertRGBA16ToRGBA8(const uint16_t* src, uint8_t* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
     for (uint32_t i = 0; i < pixelCount; ++i) {
         // N64 RGBA16: RRRRR GGGGG BBBBB A (5-5-5-1)
@@ -1388,32 +1426,30 @@ void FramebufferManager::ConvertRGBA16ToRGBA8(const uint16_t* src, uint8_t* dst,
         // SH/PI-stored halfword already yields the correct numeric pixel value.
         uint16_t pixel = src[i ^ 1];
         uint8_t r5 = (pixel >> 11) & 0x1F;
-        uint8_t g5 = (pixel >> 6)  & 0x1F;
-        uint8_t b5 = (pixel >> 1)  & 0x1F;
+        uint8_t g5 = (pixel >> 6) & 0x1F;
+        uint8_t b5 = (pixel >> 1) & 0x1F;
         uint8_t a1 = pixel & 1;
 
-        dst[i * 4 + 0] = (r5 << 3) | (r5 >> 2);  // 5→8 bit expansion
+        dst[i * 4 + 0] = (r5 << 3) | (r5 >> 2); // 5→8 bit expansion
         dst[i * 4 + 1] = (g5 << 3) | (g5 >> 2);
         dst[i * 4 + 2] = (b5 << 3) | (b5 >> 2);
         dst[i * 4 + 3] = a1 ? 0xFF : 0x00;
     }
 }
 
-void FramebufferManager::ConvertRGBA32ToRGBA8(const uint32_t* src, uint8_t* dst,
-                                               uint32_t pixelCount) {
+void FramebufferManager::ConvertRGBA32ToRGBA8(const uint32_t* src, uint8_t* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
     for (uint32_t i = 0; i < pixelCount; ++i) {
         // N64 RGBA32 is big-endian RRGGBBAA
         uint32_t pixel = src[i];
-        dst[i * 4 + 0] = (pixel >> 24) & 0xFF;  // R
-        dst[i * 4 + 1] = (pixel >> 16) & 0xFF;  // G
-        dst[i * 4 + 2] = (pixel >>  8) & 0xFF;  // B
-        dst[i * 4 + 3] = pixel & 0xFF;           // A
+        dst[i * 4 + 0] = (pixel >> 24) & 0xFF; // R
+        dst[i * 4 + 1] = (pixel >> 16) & 0xFF; // G
+        dst[i * 4 + 2] = (pixel >> 8) & 0xFF;  // B
+        dst[i * 4 + 3] = pixel & 0xFF;         // A
     }
 }
 
-void FramebufferManager::ConvertRGBA8ToRGBA16(const uint8_t* src, uint16_t* dst,
-                                               uint32_t pixelCount) {
+void FramebufferManager::ConvertRGBA8ToRGBA16(const uint8_t* src, uint16_t* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
     for (uint32_t i = 0; i < pixelCount; ++i) {
         uint8_t r = src[i * 4 + 0];
@@ -1422,37 +1458,32 @@ void FramebufferManager::ConvertRGBA8ToRGBA16(const uint8_t* src, uint16_t* dst,
         uint8_t a = src[i * 4 + 3];
 
         uint16_t pixel = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | (a >> 7);
-        dst[i ^ 1] = pixel;  // XOR 1 for correct halfword position within 32-bit word
+        dst[i ^ 1] = pixel; // XOR 1 for correct halfword position within 32-bit word
     }
 }
 
-void FramebufferManager::ConvertRGBA8ToRGBA32(const uint8_t* src, uint32_t* dst,
-                                               uint32_t pixelCount) {
+void FramebufferManager::ConvertRGBA8ToRGBA32(const uint8_t* src, uint32_t* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
     for (uint32_t i = 0; i < pixelCount; ++i) {
-        dst[i] = (static_cast<uint32_t>(src[i * 4 + 0]) << 24) |
-                 (static_cast<uint32_t>(src[i * 4 + 1]) << 16) |
-                 (static_cast<uint32_t>(src[i * 4 + 2]) <<  8) |
-                 static_cast<uint32_t>(src[i * 4 + 3]);
+        dst[i] = (static_cast<uint32_t>(src[i * 4 + 0]) << 24) | (static_cast<uint32_t>(src[i * 4 + 1]) << 16) |
+                 (static_cast<uint32_t>(src[i * 4 + 2]) << 8) | static_cast<uint32_t>(src[i * 4 + 3]);
     }
 }
 
-void FramebufferManager::ConvertDepthN64ToFloat(const uint16_t* src, float* dst,
-                                                 uint32_t pixelCount) {
+void FramebufferManager::ConvertDepthN64ToFloat(const uint16_t* src, float* dst, uint32_t pixelCount) {
     m_stats.formatConversions++;
     // N64 depth: 14-bit integer (bits 15:2) + 2-bit dz (bits 1:0)
     // Range: 0x0000 = near, 0x3FFF = far
-    constexpr float kInvMaxDepth = 1.0f / 16383.0f;  // 14-bit max
+    constexpr float kInvMaxDepth = 1.0f / 16383.0f; // 14-bit max
 
     for (uint32_t i = 0; i < pixelCount; ++i) {
-        uint16_t raw = src[i ^ 1];  // XOR 1 for correct halfword within 32-bit word
-        uint16_t depthInt = raw >> 2;  // Extract 14-bit depth
+        uint16_t raw = src[i ^ 1];    // XOR 1 for correct halfword within 32-bit word
+        uint16_t depthInt = raw >> 2; // Extract 14-bit depth
         dst[i] = static_cast<float>(depthInt) * kInvMaxDepth;
     }
 }
 
-void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst,
-                                                 uint32_t pixelCount, uint32_t width) {
+void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst, uint32_t pixelCount, uint32_t width) {
     m_stats.formatConversions++;
     // N64 dz field encodes the local depth derivative magnitude for coverage AA.
     // We compute it from the 4-connected neighbors (horizontal + vertical diff).
@@ -1463,21 +1494,21 @@ void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst,
 
         // Compute depth derivative from neighbours (finite differences)
         float dzf = 0.0f;
-        if (i > 0)                    dzf  = std::abs(src[i] - src[i - 1]);
-        if (i + 1 < pixelCount)       dzf  = std::max(dzf, std::abs(src[i + 1] - src[i]));
+        if (i > 0) dzf = std::abs(src[i] - src[i - 1]);
+        if (i + 1 < pixelCount) dzf = std::max(dzf, std::abs(src[i + 1] - src[i]));
         if (width > 0) {
-            if (i >= width)            dzf  = std::max(dzf, std::abs(src[i] - src[i - width]));
-            if (i + width < pixelCount)dzf  = std::max(dzf, std::abs(src[i + width] - src[i]));
+            if (i >= width) dzf = std::max(dzf, std::abs(src[i] - src[i - width]));
+            if (i + width < pixelCount) dzf = std::max(dzf, std::abs(src[i + width] - src[i]));
         }
 
         uint8_t dz;
-        if      (dzf < (1.0f / 16384.0f))  dz = 0;
-        else if (dzf < (4.0f / 16384.0f))  dz = 1;
+        if (dzf < (1.0f / 16384.0f)) dz = 0;
+        else if (dzf < (4.0f / 16384.0f)) dz = 1;
         else if (dzf < (64.0f / 16384.0f)) dz = 2;
-        else                               dz = 3;
+        else dz = 3;
 
         uint16_t raw = (depthInt << 2) | dz;
-        dst[i ^ 1] = raw;  // XOR 1 for correct halfword within 32-bit word
+        dst[i ^ 1] = raw; // XOR 1 for correct halfword within 32-bit word
     }
 }
 
@@ -1488,26 +1519,21 @@ void FramebufferManager::ConvertDepthFloatToN64(const float* src, uint16_t* dst,
 void FramebufferManager::CopyFramebuffer(GPUFramebuffer* src, GPUFramebuffer* dst) {
     if (!src || !dst) return;
 
-    glBlitNamedFramebuffer(src->fbo, dst->fbo,
-                           0, 0, src->scaledWidth, src->scaledHeight,
-                           0, 0, dst->scaledWidth, dst->scaledHeight,
-                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBlitNamedFramebuffer(src->fbo, dst->fbo, 0, 0, src->scaledWidth, src->scaledHeight, 0, 0, dst->scaledWidth,
+                           dst->scaledHeight, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 }
 
-void FramebufferManager::FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y,
-                                     int32_t w, int32_t h, uint32_t color) {
+void FramebufferManager::FillRegion(GPUFramebuffer* fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color) {
     if (!fb) return;
 
-    float clearColor[4] = {
-        ((color >> 24) & 0xFF) / 255.0f,
-        ((color >> 16) & 0xFF) / 255.0f,
-        ((color >>  8) & 0xFF) / 255.0f,
-        (color & 0xFF) / 255.0f
-    };
+    float clearColor[4] = {((color >> 24) & 0xFF) / 255.0f, ((color >> 16) & 0xFF) / 255.0f,
+                           ((color >> 8) & 0xFF) / 255.0f, (color & 0xFF) / 255.0f};
 
     // Scale coordinates
-    x *= m_resScale; y *= m_resScale;
-    w *= m_resScale; h *= m_resScale;
+    x *= m_resScale;
+    y *= m_resScale;
+    w *= m_resScale;
+    h *= m_resScale;
 
     glBindFramebuffer(GL_FRAMEBUFFER, fb->fbo);
     glEnable(GL_SCISSOR_TEST);
@@ -1520,17 +1546,13 @@ void FramebufferManager::ResolveMSAA(GPUFramebuffer* msaaFB, GPUFramebuffer* res
     if (!msaaFB || !resolved) return;
 
     // Resolve color
-    glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo,
-                           0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight,
-                           0, 0, resolved->scaledWidth, resolved->scaledHeight,
-                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo, 0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight, 0, 0,
+                           resolved->scaledWidth, resolved->scaledHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
     // Resolve depth (must be separate blit with GL_NEAREST)
     if (msaaFB->depthTex && resolved->depthTex) {
-        glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo,
-                               0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight,
-                               0, 0, resolved->scaledWidth, resolved->scaledHeight,
-                               GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBlitNamedFramebuffer(msaaFB->fbo, resolved->fbo, 0, 0, msaaFB->scaledWidth, msaaFB->scaledHeight, 0, 0,
+                               resolved->scaledWidth, resolved->scaledHeight, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
     }
 }
 

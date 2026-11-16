@@ -17,7 +17,7 @@ namespace Nova64 {
 
 /// A small picture of the screen, RGBA with the top row first.
 struct StateThumbnail {
-    int width  = 0;
+    int width = 0;
     int height = 0;
     std::vector<uint8_t> rgba;
 };
@@ -30,9 +30,9 @@ using RomHeader = std::array<uint8_t, 0x40>;
 /// FlashRAM contents) and Controller Paks are left out on purpose: going back
 /// in time shouldn't undo a save the player made.
 struct MachineSnapshot {
-    uint64_t frame = 0;              ///< video field count when it was taken
-    std::vector<uint8_t> core;       ///< CPU, timers, TLB and hardware registers
-    std::vector<uint8_t> plugins;    ///< graphics and audio plugin state
+    uint64_t frame = 0;           ///< video field count when it was taken
+    std::vector<uint8_t> core;    ///< CPU, timers, TLB and hardware registers
+    std::vector<uint8_t> plugins; ///< graphics and audio plugin state
     uint32_t rdramSize = 0;
     /// RDRAM in 4 KB pages. Pages that didn't change since the previous
     /// snapshot are shared with it, which keeps a rewind history small.
@@ -56,10 +56,8 @@ size_t SnapshotMemoryUse(const MachineSnapshot& snapshot, const MachineSnapshot*
 /// The loaded ROM's header, which ties a state file to its game.
 bool GetRomHeader(const CN64System& system, RomHeader& out);
 
-bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot,
-                    const RomHeader& rom, std::string* error);
-bool ReadStateFile(const std::string& path, const RomHeader& rom,
-                   MachineSnapshot& out, std::string* error);
+bool WriteStateFile(const std::string& path, const MachineSnapshot& snapshot, const RomHeader& rom, std::string* error);
+bool ReadStateFile(const std::string& path, const RomHeader& rom, MachineSnapshot& out, std::string* error);
 
 /// Reads only the time and thumbnail of a state file, for showing a slot.
 bool ReadStateFileSummary(const std::string& path, std::time_t& savedAt,

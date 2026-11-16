@@ -34,8 +34,7 @@ public:
     ~DefaultGFXPlugin() override = default;
 
     // PluginBase interface
-    PluginInfo GetPluginInfo() const override
-    {
+    PluginInfo GetPluginInfo() const override {
         PluginInfo info;
         info.Type = PluginType::Graphics;
         info.Version = 0x0104;
@@ -49,25 +48,20 @@ public:
         return info;
     }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         m_Initialized = true;
         Log::info("DefaultGFXPlugin: Initialized");
         return true;
     }
 
-    void Shutdown() override
-    {
+    void Shutdown() override {
         m_Initialized = false;
         m_System = nullptr;
         Log::info("DefaultGFXPlugin: Shutdown");
     }
 
-    void Reset(bool /*coldReset*/) override
-    {
-        Log::info("DefaultGFXPlugin: Reset");
-    }
+    void Reset(bool /*coldReset*/) override { Log::info("DefaultGFXPlugin: Reset"); }
 
     void Pause() override {}
     void Resume() override {}
@@ -79,10 +73,7 @@ public:
     bool LoadState(const uint8_t* /*data*/, size_t /*size*/) override { return true; }
 
     // GFXPlugin interface
-    bool InitializeDisplay(void* /*hwnd*/, const RenderSettings& /*settings*/) override
-    {
-        return true;
-    }
+    bool InitializeDisplay(void* /*hwnd*/, const RenderSettings& /*settings*/) override { return true; }
 
     void ResizeDisplay(uint32_t /*width*/, uint32_t /*height*/) override {}
 
@@ -93,8 +84,7 @@ public:
     void UpdateScreen() override {}
     void SwapBuffers() override {}
 
-    FrameBufferInfo GetFrameBufferInfo() const override
-    {
+    FrameBufferInfo GetFrameBufferInfo() const override {
         FrameBufferInfo info{};
         info.ColorBuffer = nullptr;
         info.DepthBuffer = nullptr;
@@ -104,13 +94,16 @@ public:
         return info;
     }
 
-    void ReadFrameBuffer(uint8_t* /*dest*/, uint32_t /*addr*/,
-                         uint32_t /*width*/, uint32_t /*height*/, uint32_t /*size*/) override {}
-    void WriteFrameBuffer(const uint8_t* /*src*/, uint32_t /*addr*/,
-                          uint32_t /*width*/, uint32_t /*height*/, uint32_t /*size*/) override {}
+    void ReadFrameBuffer(uint8_t* /*dest*/, uint32_t /*addr*/, uint32_t /*width*/, uint32_t /*height*/,
+                         uint32_t /*size*/) override {}
+    void WriteFrameBuffer(const uint8_t* /*src*/, uint32_t /*addr*/, uint32_t /*width*/, uint32_t /*height*/,
+                          uint32_t /*size*/) override {}
 
     bool IsFrameReady() const override { return false; }
-    void GetStatistics(float& fps, float& vis) const override { fps = 0.0f; vis = 0.0f; }
+    void GetStatistics(float& fps, float& vis) const override {
+        fps = 0.0f;
+        vis = 0.0f;
+    }
     bool CaptureScreenshot(const std::string& /*filename*/) override { return false; }
 
 private:
@@ -126,9 +119,9 @@ private:
  * This matches the N64 plugin specification v1.3/1.4.
  */
 struct GFX_INFO {
-    void*    hWnd;
-    void*    hStatusBar;
-    int32_t  MemoryBswaped;
+    void* hWnd;
+    void* hStatusBar;
+    int32_t MemoryBswaped;
 
     uint8_t* HEADER;
     uint8_t* RDRAM;
@@ -178,13 +171,9 @@ static void CALL DummyCheckInterrupts() {}
  */
 class DynLibGFXPlugin final : public GFXPlugin {
 public:
-    explicit DynLibGFXPlugin(const std::string& path)
-        : m_LibPath(path)
-    {
-    }
+    explicit DynLibGFXPlugin(const std::string& path) : m_LibPath(path) {}
 
-    ~DynLibGFXPlugin() override
-    {
+    ~DynLibGFXPlugin() override {
         Shutdown();
         UnloadDLL();
     }
@@ -192,8 +181,7 @@ public:
     // PluginBase interface
     PluginInfo GetPluginInfo() const override { return m_Info; }
 
-    bool Initialize(CN64System* system) override
-    {
+    bool Initialize(CN64System* system) override {
         m_System = system;
         if (!LoadDLL()) return false;
         if (!LoadFunctions()) return false;
@@ -202,29 +190,24 @@ public:
         return true;
     }
 
-    void Shutdown() override
-    {
-        if (m_Initialized && m_fnRomClosed)
-        {
+    void Shutdown() override {
+        if (m_Initialized && m_fnRomClosed) {
             m_fnRomClosed();
         }
-        if (m_fnCloseDLL)
-        {
+        if (m_fnCloseDLL) {
             m_fnCloseDLL();
         }
         m_Initialized = false;
     }
 
-    void Reset(bool /*coldReset*/) override
-    {
+    void Reset(bool /*coldReset*/) override {
         if (m_fnSoftReset) m_fnSoftReset();
     }
 
     void Pause() override {}
     void Resume() override {}
     bool IsInitialized() const override { return m_Initialized; }
-    void ShowConfigDialog(void* /*hwndParent*/) override
-    {
+    void ShowConfigDialog(void* /*hwndParent*/) override {
         if (m_fnDllConfig) m_fnDllConfig(nullptr);
     }
 
@@ -232,55 +215,47 @@ public:
     bool LoadState(const uint8_t* /*data*/, size_t /*size*/) override { return true; }
 
     // GFXPlugin interface
-    bool InitializeDisplay(void* /*hwnd*/, const RenderSettings& /*settings*/) override
-    {
-        return m_Initialized;
-    }
+    bool InitializeDisplay(void* /*hwnd*/, const RenderSettings& /*settings*/) override { return m_Initialized; }
 
-    void ResizeDisplay(uint32_t /*width*/, uint32_t /*height*/) override
-    {
+    void ResizeDisplay(uint32_t /*width*/, uint32_t /*height*/) override {
         if (m_fnMoveScreen) m_fnMoveScreen(0, 0);
     }
 
-    void ProcessDList(uint32_t /*start*/, uint32_t /*end*/) override
-    {
+    void ProcessDList(uint32_t /*start*/, uint32_t /*end*/) override {
         if (m_fnProcessDList) m_fnProcessDList();
     }
 
-    void ProcessRDPCommand(uint64_t /*cmd*/) override
-    {
+    void ProcessRDPCommand(uint64_t /*cmd*/) override {
         if (m_fnProcessRDPList) m_fnProcessRDPList();
     }
 
     void UpdateRDPStatus() override {}
 
-    void UpdateScreen() override
-    {
+    void UpdateScreen() override {
         if (m_fnUpdateScreen) m_fnUpdateScreen();
     }
 
-    void SwapBuffers() override
-    {
+    void SwapBuffers() override {
         if (m_fnChangeWindow) m_fnChangeWindow();
     }
 
-    FrameBufferInfo GetFrameBufferInfo() const override
-    {
+    FrameBufferInfo GetFrameBufferInfo() const override {
         FrameBufferInfo info{};
         return info;
     }
 
-    void ReadFrameBuffer(uint8_t* /*dest*/, uint32_t /*addr*/,
-                         uint32_t /*width*/, uint32_t /*height*/, uint32_t /*size*/) override {}
-    void WriteFrameBuffer(const uint8_t* /*src*/, uint32_t /*addr*/,
-                          uint32_t /*width*/, uint32_t /*height*/, uint32_t /*size*/) override {}
+    void ReadFrameBuffer(uint8_t* /*dest*/, uint32_t /*addr*/, uint32_t /*width*/, uint32_t /*height*/,
+                         uint32_t /*size*/) override {}
+    void WriteFrameBuffer(const uint8_t* /*src*/, uint32_t /*addr*/, uint32_t /*width*/, uint32_t /*height*/,
+                          uint32_t /*size*/) override {}
 
     bool IsFrameReady() const override { return true; }
-    void GetStatistics(float& fps, float& vis) const override { fps = 0; vis = 0; }
-    bool CaptureScreenshot(const std::string& /*filename*/) override
-    {
-        if (m_fnCaptureScreen)
-        {
+    void GetStatistics(float& fps, float& vis) const override {
+        fps = 0;
+        vis = 0;
+    }
+    bool CaptureScreenshot(const std::string& /*filename*/) override {
+        if (m_fnCaptureScreen) {
             // Standard plugin CaptureScreen takes char*
             return true;
         }
@@ -288,14 +263,10 @@ public:
     }
 
 private:
-    bool LoadDLL()
-    {
-        try
-        {
+    bool LoadDLL() {
+        try {
             m_Lib.Load(m_LibPath);
-        }
-        catch (const std::exception& e)
-        {
+        } catch (const std::exception& e) {
             Log::errorf("DynLibGFXPlugin: Failed to load %s: %s", m_LibPath.c_str(), e.what());
             return false;
         }
@@ -303,9 +274,14 @@ private:
         // Query plugin info
         using GetDllInfoFunc = void(CALL*)(void*);
         auto getDllInfo = m_Lib.GetSymbol<GetDllInfoFunc>("GetDllInfo");
-        if (getDllInfo)
-        {
-            struct { uint16_t Version; uint16_t Type; char Name[100]; int NormalMemory; int MemoryBswaped; } dllInfo{};
+        if (getDllInfo) {
+            struct {
+                uint16_t Version;
+                uint16_t Type;
+                char Name[100];
+                int NormalMemory;
+                int MemoryBswaped;
+            } dllInfo{};
             getDllInfo(&dllInfo);
             m_Info.Type = PluginType::Graphics;
             m_Info.Version = dllInfo.Version;
@@ -314,39 +290,35 @@ private:
         return true;
     }
 
-    bool LoadFunctions()
-    {
+    bool LoadFunctions() {
         if (!m_Lib.IsLoaded()) return false;
 
-        m_fnChangeWindow   = m_Lib.GetSymbol<void(CALL*)()>("ChangeWindow");
-        m_fnDrawScreen      = m_Lib.GetSymbol<void(CALL*)()>("DrawScreen");
-        m_fnMoveScreen      = m_Lib.GetSymbol<void(CALL*)(int, int)>("MoveScreen");
-        m_fnProcessDList    = m_Lib.GetSymbol<void(CALL*)()>("ProcessDList");
-        m_fnProcessRDPList  = m_Lib.GetSymbol<void(CALL*)()>("ProcessRDPList");
-        m_fnUpdateScreen    = m_Lib.GetSymbol<void(CALL*)()>("UpdateScreen");
-        m_fnShowCFB         = m_Lib.GetSymbol<void(CALL*)()>("ShowCFB");
+        m_fnChangeWindow = m_Lib.GetSymbol<void(CALL*)()>("ChangeWindow");
+        m_fnDrawScreen = m_Lib.GetSymbol<void(CALL*)()>("DrawScreen");
+        m_fnMoveScreen = m_Lib.GetSymbol<void(CALL*)(int, int)>("MoveScreen");
+        m_fnProcessDList = m_Lib.GetSymbol<void(CALL*)()>("ProcessDList");
+        m_fnProcessRDPList = m_Lib.GetSymbol<void(CALL*)()>("ProcessRDPList");
+        m_fnUpdateScreen = m_Lib.GetSymbol<void(CALL*)()>("UpdateScreen");
+        m_fnShowCFB = m_Lib.GetSymbol<void(CALL*)()>("ShowCFB");
         m_fnViStatusChanged = m_Lib.GetSymbol<void(CALL*)()>("ViStatusChanged");
-        m_fnViWidthChanged  = m_Lib.GetSymbol<void(CALL*)()>("ViWidthChanged");
-        m_fnSoftReset       = m_Lib.GetSymbol<void(CALL*)()>("SoftReset");
-        m_fnCaptureScreen   = m_Lib.GetSymbol<void(CALL*)(const char*)>("CaptureScreen");
-        m_fnRomClosed       = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
-        m_fnCloseDLL        = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
-        m_fnDllConfig       = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
+        m_fnViWidthChanged = m_Lib.GetSymbol<void(CALL*)()>("ViWidthChanged");
+        m_fnSoftReset = m_Lib.GetSymbol<void(CALL*)()>("SoftReset");
+        m_fnCaptureScreen = m_Lib.GetSymbol<void(CALL*)(const char*)>("CaptureScreen");
+        m_fnRomClosed = m_Lib.GetSymbol<void(CALL*)()>("RomClosed");
+        m_fnCloseDLL = m_Lib.GetSymbol<void(CALL*)()>("CloseDLL");
+        m_fnDllConfig = m_Lib.GetSymbol<void(CALL*)(void*)>("DllConfig");
 
-        if (!m_fnChangeWindow || !m_fnProcessDList || !m_fnUpdateScreen)
-        {
+        if (!m_fnChangeWindow || !m_fnProcessDList || !m_fnUpdateScreen) {
             Log::error("DynLibGFXPlugin: Missing required functions");
             return false;
         }
         return true;
     }
 
-    bool Initiate()
-    {
+    bool Initiate() {
         using InitiateGFXFunc = int32_t(CALL*)(GFX_INFO);
         auto initiateGFX = m_Lib.GetSymbol<InitiateGFXFunc>("InitiateGFX");
-        if (!initiateGFX)
-        {
+        if (!initiateGFX) {
             Log::error("DynLibGFXPlugin: Missing InitiateGFX");
             return false;
         }
@@ -355,13 +327,11 @@ private:
         info.MemoryBswaped = 1;
         info.CheckInterrupts = DummyCheckInterrupts;
 
-        if (m_System)
-        {
+        if (m_System) {
             auto* regs = m_System->GetRegisters();
             auto* mem = m_System->GetMemory();
 
-            if (regs && mem)
-            {
+            if (regs && mem) {
                 info.RDRAM = mem->Rdram();
                 info.DMEM = mem->Dmem();
                 info.IMEM = mem->Imem();
@@ -369,36 +339,34 @@ private:
                 info.MI__INTR_REG = &regs->m_GfxIntrReg;
 
                 // DPC registers (indices 0-7 in m_Display_ControlReg)
-                info.DPC__START_REG    = &regs->m_Display_ControlReg[0];
-                info.DPC__END_REG      = &regs->m_Display_ControlReg[1];
-                info.DPC__CURRENT_REG  = &regs->m_Display_ControlReg[2];
-                info.DPC__STATUS_REG   = &regs->m_Display_ControlReg[3];
-                info.DPC__CLOCK_REG    = &regs->m_Display_ControlReg[4];
-                info.DPC__BUFBUSY_REG  = &regs->m_Display_ControlReg[5];
+                info.DPC__START_REG = &regs->m_Display_ControlReg[0];
+                info.DPC__END_REG = &regs->m_Display_ControlReg[1];
+                info.DPC__CURRENT_REG = &regs->m_Display_ControlReg[2];
+                info.DPC__STATUS_REG = &regs->m_Display_ControlReg[3];
+                info.DPC__CLOCK_REG = &regs->m_Display_ControlReg[4];
+                info.DPC__BUFBUSY_REG = &regs->m_Display_ControlReg[5];
                 info.DPC__PIPEBUSY_REG = &regs->m_Display_ControlReg[6];
-                info.DPC__TMEM_REG     = &regs->m_Display_ControlReg[7];
+                info.DPC__TMEM_REG = &regs->m_Display_ControlReg[7];
 
                 // VI registers (indices 0-13 in m_Video_Interface)
-                info.VI__STATUS_REG         = &regs->m_Video_Interface[0];
-                info.VI__ORIGIN_REG         = &regs->m_Video_Interface[1];
-                info.VI__WIDTH_REG          = &regs->m_Video_Interface[2];
-                info.VI__INTR_REG           = &regs->m_Video_Interface[3];
+                info.VI__STATUS_REG = &regs->m_Video_Interface[0];
+                info.VI__ORIGIN_REG = &regs->m_Video_Interface[1];
+                info.VI__WIDTH_REG = &regs->m_Video_Interface[2];
+                info.VI__INTR_REG = &regs->m_Video_Interface[3];
                 info.VI__V_CURRENT_LINE_REG = &regs->m_Video_Interface[4];
-                info.VI__TIMING_REG         = &regs->m_Video_Interface[6];
-                info.VI__V_SYNC_REG         = &regs->m_Video_Interface[7];
-                info.VI__H_SYNC_REG         = &regs->m_Video_Interface[8];
-                info.VI__LEAP_REG           = &regs->m_Video_Interface[9];
-                info.VI__H_START_REG        = &regs->m_Video_Interface[11];
-                info.VI__V_START_REG        = &regs->m_Video_Interface[13];
-                info.VI__V_BURST_REG        = &regs->m_Video_Interface[5]; // BURST at index 5
-                info.VI__X_SCALE_REG        = &regs->m_Video_Interface[10]; // placeholder
-                info.VI__Y_SCALE_REG        = &regs->m_Video_Interface[12]; // placeholder
+                info.VI__TIMING_REG = &regs->m_Video_Interface[6];
+                info.VI__V_SYNC_REG = &regs->m_Video_Interface[7];
+                info.VI__H_SYNC_REG = &regs->m_Video_Interface[8];
+                info.VI__LEAP_REG = &regs->m_Video_Interface[9];
+                info.VI__H_START_REG = &regs->m_Video_Interface[11];
+                info.VI__V_START_REG = &regs->m_Video_Interface[13];
+                info.VI__V_BURST_REG = &regs->m_Video_Interface[5];  // BURST at index 5
+                info.VI__X_SCALE_REG = &regs->m_Video_Interface[10]; // placeholder
+                info.VI__Y_SCALE_REG = &regs->m_Video_Interface[12]; // placeholder
             }
-        }
-        else
-        {
+        } else {
             // Pre-init with dummy values (for config dialog)
-            static uint8_t  dummyMem[100]{};
+            static uint8_t dummyMem[100]{};
             static uint32_t dummyReg = 0;
             info.HEADER = dummyMem;
             info.RDRAM = dummyMem;
@@ -432,8 +400,7 @@ private:
         return initiateGFX(info) != 0;
     }
 
-    void UnloadDLL()
-    {
+    void UnloadDLL() {
         m_fnChangeWindow = nullptr;
         m_fnDrawScreen = nullptr;
         m_fnMoveScreen = nullptr;
@@ -478,13 +445,9 @@ private:
 // Factory function
 // ============================================================================
 
-std::unique_ptr<GFXPlugin> CreateDefaultGFXPlugin()
-{
-    return std::make_unique<DefaultGFXPlugin>();
-}
+std::unique_ptr<GFXPlugin> CreateDefaultGFXPlugin() { return std::make_unique<DefaultGFXPlugin>(); }
 
-std::unique_ptr<GFXPlugin> CreateGFXPluginFromDLL(const std::string& path)
-{
+std::unique_ptr<GFXPlugin> CreateGFXPluginFromDLL(const std::string& path) {
     auto plugin = std::make_unique<DynLibGFXPlugin>(path);
     return plugin;
 }
