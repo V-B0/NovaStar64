@@ -1,11 +1,8 @@
 /**
  * @file GLBackend.cpp
- * @brief OpenGL 4.6 Backend.
+ * @brief OpenGL 4.6 backend resources: buffers, textures, shader programs, render targets and pipelines.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - OpenGL 4.6 Backend Implementation
-// Full GL4.6 Core Profile + DSA rendering backend
-// Part 1: Resource implementations (buffers, textures, shaders)
 
 #include "GLBackend.hpp"
 #include "../Common/Logger.hpp"
@@ -17,7 +14,7 @@
 
 namespace Nova64 {
 namespace Video {
-// Forward declaration — defined in RendererFactory.cpp
+// Defined in RendererFactory.cpp.
 uint32_t GetVertexAttribComponentCount(VertexAttribType type);
 } // namespace Video
 } // namespace Nova64
@@ -26,9 +23,7 @@ namespace Nova64 {
 namespace Video {
 namespace GL {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL TEXTURE POOL IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL TEXTURE POOL IMPLEMENTATION ---
 
 GLTexturePool& GLTexturePool::Instance() {
     static GLTexturePool s_instance;
@@ -64,9 +59,7 @@ void GLTexturePool::Shutdown() {
     m_totalPooled = 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL USAGE TRANSLATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL USAGE TRANSLATION ---
 
 [[maybe_unused]] static GLenum TranslateBufferUsage(BufferUsage usage) {
     switch (usage) {
@@ -77,9 +70,7 @@ void GLTexturePool::Shutdown() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL VERTEX BUFFER IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL VERTEX BUFFER IMPLEMENTATION ---
 
 GLVertexBuffer::GLVertexBuffer(size_t sizeBytes, BufferUsage usage) : m_size(sizeBytes), m_usage(usage) {
     glCreateBuffers(1, &m_handle);
@@ -99,7 +90,7 @@ GLVertexBuffer::~GLVertexBuffer() {
 void GLVertexBuffer::Upload(const void* data, size_t sizeBytes) {
     if (!data || sizeBytes == 0) return;
     if (sizeBytes > m_size) {
-        // Reallocate
+        // Immutable storage cannot be resized, so recreate the buffer.
         glDeleteBuffers(1, &m_handle);
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
@@ -117,9 +108,7 @@ void GLVertexBuffer::Update(const void* data, size_t offset, size_t sizeBytes) {
     glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(sizeBytes), data);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL INDEX BUFFER IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL INDEX BUFFER IMPLEMENTATION ---
 
 GLIndexBuffer::GLIndexBuffer(size_t sizeBytes, BufferUsage usage) : m_size(sizeBytes), m_usage(usage) {
     glCreateBuffers(1, &m_handle);
@@ -143,7 +132,7 @@ void GLIndexBuffer::Upload(const void* data, size_t sizeBytes, IndexType type) {
 
     if (!data || sizeBytes == 0) return;
     if (sizeBytes > m_size) {
-        // Reallocate — immutable storage requires recreating the buffer
+        // Immutable storage cannot be resized, so recreate the buffer.
         glDeleteBuffers(1, &m_handle);
         m_size = sizeBytes;
         glCreateBuffers(1, &m_handle);
@@ -160,9 +149,7 @@ void GLIndexBuffer::Update(const void* data, size_t offset, size_t sizeBytes) {
     glNamedBufferSubData(m_handle, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(sizeBytes), data);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL UNIFORM BUFFER IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL UNIFORM BUFFER IMPLEMENTATION ---
 
 GLUniformBuffer::GLUniformBuffer(size_t sizeBytes) : m_size(sizeBytes) {
     glCreateBuffers(1, &m_handle);
@@ -186,15 +173,13 @@ void GLUniformBuffer::Update(const void* data, size_t offset, size_t sizeBytes) 
 
 void GLUniformBuffer::BindSlot(uint32_t slot) { glBindBufferBase(GL_UNIFORM_BUFFER, slot, m_handle); }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL TEXTURE IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL TEXTURE IMPLEMENTATION ---
 
 GLTexture::GLTexture(const TextureDesc& desc) : m_desc(desc) {
     // Direct state access throughout: creating, uploading to or configuring a
-    // texture never changes what is bound to the active texture unit. The old
-    // glBindTexture calls did, so a texture created or uploaded while a draw
-    // was being set up (a cache miss on texture 1) replaced texture 0.
+    // texture must not change what is bound to the active texture unit.
+    // glBindTexture would, so a texture created or uploaded while a draw was
+    // being set up (a cache miss on texture 1) would replace texture 0.
     m_desc.mipLevels = std::max(1u, desc.mipLevels);
     m_handle = GLTexturePool::Instance().Acquire(m_desc.width, m_desc.height, m_desc.format, m_desc.mipLevels);
     if (!m_handle) {
@@ -215,7 +200,6 @@ GLTexture::GLTexture(const TextureDesc& desc) : m_desc(desc) {
     if (GLAD_GL_VERSION_4_6 || GLAD_GL_ARB_texture_filter_anisotropic || GLAD_GL_EXT_texture_filter_anisotropic)
         glTextureParameterf(m_handle, GL_TEXTURE_MAX_ANISOTROPY, 1.0f);
 
-    // Set debug label if available
     if (desc.debugName && desc.debugName[0]) {
         glObjectLabel(GL_TEXTURE, m_handle, -1, desc.debugName);
     }
@@ -266,9 +250,7 @@ void GLTexture::SetSampler(const SamplerDesc& desc) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL SHADER PROGRAM IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL SHADER PROGRAM IMPLEMENTATION ---
 
 GLShaderProgram::GLShaderProgram() { m_program = glCreateProgram(); }
 
@@ -340,7 +322,6 @@ bool GLShaderProgram::Compile(const std::string& vertexSrc, const std::string& f
         }
     }
 
-    // Detach and delete shader objects
     glDetachShader(m_program, vs);
     glDetachShader(m_program, fs);
     if (gs) glDetachShader(m_program, gs);
@@ -415,9 +396,7 @@ void GLShaderProgram::SetMat4(const char* name, const float* data) {
     glProgramUniformMatrix4fv(m_program, GetUniformLocation(name), 1, GL_FALSE, data);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL RENDER TARGET IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL RENDER TARGET IMPLEMENTATION ---
 
 GLRenderTarget::GLRenderTarget(const RenderTargetDesc& desc) : m_desc(desc) {
     glCreateFramebuffers(1, &m_fbo);
@@ -434,7 +413,6 @@ GLRenderTarget::~GLRenderTarget() {
 }
 
 void GLRenderTarget::CreateAttachments() {
-    // Color attachment
     TextureDesc colorDesc;
     colorDesc.width = m_desc.width;
     colorDesc.height = m_desc.height;
@@ -444,7 +422,6 @@ void GLRenderTarget::CreateAttachments() {
 
     glNamedFramebufferTexture(m_fbo, GL_COLOR_ATTACHMENT0, m_colorTex->GetHandle(), 0);
 
-    // Depth attachment
     if (m_desc.hasDepth) {
         TextureDesc depthDesc;
         depthDesc.width = m_desc.width;
@@ -458,10 +435,9 @@ void GLRenderTarget::CreateAttachments() {
         glNamedFramebufferTexture(m_fbo, attachment, m_depthTex->GetHandle(), 0);
     }
 
-    // Verify completeness
     GLenum status = glCheckNamedFramebufferStatus(m_fbo, GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        // Log error
+        // Incompleteness is not reported.
     }
 }
 
@@ -510,14 +486,11 @@ void GLRenderTarget::Resize(uint32_t width, uint32_t height) {
     CreateAttachments();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL PIPELINE IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL PIPELINE IMPLEMENTATION ---
 
 GLPipeline::GLPipeline(const PipelineDesc& desc) : m_desc(desc) {
     glCreateVertexArrays(1, &m_vao);
 
-    // Configure vertex attributes from layout
     for (const auto& attrib : desc.vertexLayout.attribs) {
         glEnableVertexArrayAttrib(m_vao, attrib.location);
         GLenum baseType = TranslateVertexAttribBaseType(attrib.type);

@@ -1,5 +1,6 @@
 /**
  * @file VKPipeline.cpp
+ * @brief Vulkan graphics and compute pipeline creation and the standard descriptor set layout.
  */
 // SPDX-License-Identifier: MIT
 #include "VKPipeline.hpp"
@@ -165,7 +166,7 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
         return false;
     }
 
-    // ── Shader stages ───────────────────────────────────────
+    // --- Shader stages ---
     std::array<VkPipelineShaderStageCreateInfo, 3> stages{};
     uint32_t stageCount = 0;
     {
@@ -190,7 +191,7 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
         s.pName = "main";
     }
 
-    // ── Vertex input ────────────────────────────────────────
+    // --- Vertex input ---
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
     binding.stride = desc.vertexLayout.stride;
@@ -212,16 +213,16 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
     vi.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
     vi.pVertexAttributeDescriptions = attrs.data();
 
-    // ── Input assembly ──────────────────────────────────────
+    // --- Input assembly ---
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = ToVkTopology(desc.primitiveType);
 
-    // ── Viewport / scissor (dynamic) ────────────────────────
+    // --- Viewport / scissor (dynamic) ---
     VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
     vp.viewportCount = 1;
     vp.scissorCount = 1;
 
-    // ── Rasterizer ──────────────────────────────────────────
+    // --- Rasterizer ---
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rs.polygonMode = ToVkPolygonMode(desc.rasterizer.polygonMode);
     rs.cullMode = ToVkCullMode(desc.rasterizer.cullMode);
@@ -229,25 +230,26 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
                                                                               : VK_FRONT_FACE_CLOCKWISE;
     rs.lineWidth = 1.0f;
     rs.depthClampEnable = desc.rasterizer.depthClipEnabled ? VK_FALSE : VK_TRUE;
-    // ALWAYS TRUE: depth-bias VALUES are dynamic (VK_DYNAMIC_STATE_DEPTH_BIAS,
-    // set per draw by SetRasterizerState) but the ENABLE is baked into the
-    // pipeline. Deriving it from the creation-time bias (typically 0) made
-    // every dynamic vkCmdSetDepthBias a silent no-op — ZMODE_DECAL surfaces
-    // (door stars, ground decals) never got their offset and Z-fought their
-    // base surface in every game. Non-decal draws set bias (0,0) dynamically.
+    // Depth bias is always enabled: the bias values are dynamic
+    // (VK_DYNAMIC_STATE_DEPTH_BIAS, set per draw by SetRasterizerState) but the
+    // enable is baked into the pipeline. Deriving it from the creation-time bias
+    // (typically 0) would make every dynamic vkCmdSetDepthBias a silent no-op, so
+    // ZMODE_DECAL surfaces (door stars, ground decals) would get no offset and
+    // Z-fight their base surface in every game. Non-decal draws set the bias to
+    // (0,0) dynamically.
     rs.depthBiasEnable = VK_TRUE;
     rs.depthBiasConstantFactor = desc.rasterizer.depthBias;
     rs.depthBiasSlopeFactor = desc.rasterizer.depthBiasSlope;
 
-    // ── Multisample ─────────────────────────────────────────
+    // --- Multisample ---
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    // ── Depth/stencil ───────────────────────────────────────
+    // --- Depth/stencil ---
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    // depthTestEnable/depthWriteEnable/depthCompareOp are dynamic states on
-    // Intel Iris Xe (see dynamic array below).  The static values here are
-    // conservative defaults that are overridden by per-draw vkCmdSet* calls.
+    // depthTestEnable/depthWriteEnable/depthCompareOp are dynamic states (see
+    // the dynamic array below). The static values here are conservative
+    // defaults that per-draw vkCmdSet* calls override.
     ds.depthTestEnable = VK_TRUE;
     ds.depthWriteEnable = VK_TRUE;
     ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
@@ -261,7 +263,7 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
     ds.front.reference = desc.depthStencil.stencilRef;
     ds.back = ds.front;
 
-    // ── Color blend ─────────────────────────────────────────
+    // --- Color blend ---
     VkPipelineColorBlendAttachmentState cba{};
     cba.blendEnable = desc.blend.enabled ? VK_TRUE : VK_FALSE;
     cba.srcColorBlendFactor = ToVkBlendFactor(desc.blend.srcColor);
@@ -277,14 +279,14 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
     cb.pAttachments = &cba;
     std::memcpy(cb.blendConstants, desc.blend.blendColor, sizeof(float) * 4);
 
-    // ── Dynamic state ───────────────────────────────────────
-    // depth-test/write/compare are made dynamic so that ISA warmup draws can
-    // disable depth testing (forcing the fragment shader to execute for all
-    // rasterised pixels) while reusing the same VkPipeline as production draws.
-    // This prevents Intel Iris Xe from compiling a "depth-early-exit" ISA
-    // variant during warmup (where depth test fails → fragment shader skipped)
-    // and then needing to compile the "full-fragment" ISA variant on the first
-    // Clock Town draw, which would cause a 2 s+ GPU stall and trigger TDR.
+    // --- Dynamic state ---
+    // Depth test/write/compare are dynamic so ISA warmup draws can disable depth
+    // testing (forcing the fragment shader to run for every rasterised pixel)
+    // while reusing the same VkPipeline as production draws. Otherwise Intel
+    // Iris Xe compiles a "depth-early-exit" ISA variant during warmup (the depth
+    // test fails, so the fragment shader is skipped) and must then compile the
+    // "full-fragment" variant on the first Clock Town draw, a 2 s+ GPU stall
+    // that triggers a TDR.
     std::array<VkDynamicState, 7> dyn = {
         VK_DYNAMIC_STATE_VIEWPORT,
         VK_DYNAMIC_STATE_SCISSOR,
@@ -298,7 +300,7 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
     dy.dynamicStateCount = static_cast<uint32_t>(dyn.size());
     dy.pDynamicStates = dyn.data();
 
-    // ── Pipeline layout (1 descriptor set: UBO + 4 sampled images) ──
+    // --- Pipeline layout (one descriptor set: UBO + sampled images) ---
     VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     li.setLayoutCount = setLayout ? 1u : 0u;
     li.pSetLayouts = setLayout ? &setLayout : nullptr;
@@ -307,12 +309,12 @@ bool VKPipelineImpl::Build(const VKContext& ctx, const PipelineDesc& desc, VkRen
         return false;
     }
 
-    // ── Graphics pipeline ───────────────────────────────────
+    // --- Graphics pipeline ---
     VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    // DISABLE_OPTIMIZATION removed: Intel Iris Xe may do background ISA
-    // recompilation when this bit is set, triggering a GPU flush at ~t=26s
-    // that causes a 2s non-responsiveness period and TDR.  Without the bit
-    // Intel compiles a single optimised ISA upfront; no background recompile.
+    // VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT is deliberately not set: Intel
+    // Iris Xe may recompile the ISA in the background when it is set, triggering
+    // a GPU flush at ~t=26s that causes a 2 s non-responsiveness period and TDR.
+    // Without the bit Intel compiles a single optimised ISA upfront.
     gpi.flags = 0;
     gpi.stageCount = stageCount;
     gpi.pStages = stages.data();

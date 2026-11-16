@@ -1,19 +1,11 @@
 ﻿/**
  * @file VKBackend.cpp
- * @brief Vulkan IRenderer implementation — full geometry, textures and pipeline.
+ * @brief Vulkan 1.2 IRenderer implementation: geometry (Draw/DrawArrays/DrawIndexed), textures, dynamically built
+ *        pipelines, the compute-based ray tracer (VKComputeRaytracer; MoltenVK has no hardware RT), per-N64-buffer
+ *        persistent canvases for framebuffer isolation and framebuffer-as-texture reads, GPU<->RDRAM sync
+ *        (CopyFramebufferToRDRAM / UploadPixelsToCanvas) and VI gamma correction.
  */
 // SPDX-License-Identifier: MIT
-//
-// Full Vulkan 1.2 IRenderer implementation: real geometry (Draw/DrawArrays/
-// DrawIndexed), textures, dynamically-built pipelines, the compute-based ray
-// tracer (VKComputeRaytracer, MoltenVK has no hardware RT), per-N64-buffer
-// persistent canvases for framebuffer isolation and framebuffer-as-texture
-// reads, GPU<->RDRAM sync (CopyFramebufferToRDRAM / UploadPixelsToCanvas),
-// and VI gamma correction. IsVulkanAvailable() performs a real probe
-// (volkInitialize + vkEnumerateInstanceVersion) rather than a hardcoded
-// answer. See the class-level comments throughout this file for how each
-// subsystem works; there are no remaining stubbed/no-op entry points in the
-// IRenderer interface (checked against Renderer.hpp's virtuals).
 
 #include "VKBackend.hpp"
 #include "VKCommon.hpp"
@@ -70,10 +62,10 @@ static bool ForensicEnabled() {
     return enabled;
 }
 
-//  DynPipelineKey — shader + blend factors + depth state
-//  Used to cache VkPipelines that differ only in blend/depth mode.
-//  blendColor (the dynamic blend constant) is NOT included — it is set via
-//  vkCmdSetBlendConstants every draw so it doesn't affect the pipeline.
+// DynPipelineKey: shader + blend state, used to cache VkPipelines that differ
+// only in blend mode. blendColor (the dynamic blend constant) is not part of the
+// key: it is set via vkCmdSetBlendConstants every draw, so it doesn't affect the
+// pipeline.
 struct DynPipelineKey {
     void* shaderPtr = nullptr;
     uint8_t blendEnabled = 0;
@@ -84,7 +76,7 @@ struct DynPipelineKey {
     uint8_t dstAlpha = 0;
     uint8_t alphaOp = 0;
     uint8_t colorWriteMask = 0x0F;
-    // depthTestEnable, depthWriteEnable, depthFunc are NOT part of the key:
+    // depthTestEnable, depthWriteEnable, depthFunc are not part of the key:
     // they are set dynamically per-draw via vkCmdSetDepthTestEnable /
     // vkCmdSetDepthWriteEnable / vkCmdSetDepthCompareOp (VK 1.3 core).
     // Pipelines that differ only in depth state share one VkPipeline object;
@@ -106,7 +98,7 @@ struct DynPipelineKeyHash {
     }
 };
 
-// --- IsVulkanAvailable — real probe via volk ---
+// --- IsVulkanAvailable (probes the loader via volk) ---
 
 bool IsVulkanAvailable() {
     static int cached = -1; // -1 unknown, 0 no, 1 yes
@@ -117,7 +109,7 @@ bool IsVulkanAvailable() {
         return false;
     }
     if (!vkEnumerateInstanceVersion) {
-        // Vulkan 1.0 loader only — we require 1.1+ for vkEnumerateInstanceVersion.
+        // Vulkan 1.0 loader only; 1.1+ is required for vkEnumerateInstanceVersion.
         cached = 0;
         return false;
     }
@@ -130,12 +122,9 @@ bool IsVulkanAvailable() {
     return cached == 1;
 }
 
-// --- Stub resources (Stage 2+ will replace these with real implementations) ---
+// --- Internal helpers ---
 
 namespace {
-
-// Vertex/Index/Uniform buffers and Texture: see VKBuffer/VKTexture.
-// Shaders and Pipelines: see VKShader/VKPipeline. No stubs remain locally.
 
 constexpr uint32_t kFramesInFlight = 2;
 
@@ -203,7 +192,7 @@ public:
     }
     ~VulkanRenderer() override { Shutdown(); }
 
-    // ─── Lifecycle ────────────────────────────────────────────
+    // --- Lifecycle ---
     // With no window handle the renderer works offscreen: no surface or
     // swapchain, and every presented frame is read back into g_framePixels.
     // That is how a game is drawn inside the launcher, which also works where a
@@ -218,7 +207,7 @@ public:
             return false;
         }
 
-        // ── instance extensions required by SDL ─────────────
+        // --- instance extensions required by SDL ---
         std::vector<const char*> extNames;
         if (m_offscreen) {
             // VK_KHR_swapchain, which the device still enables, depends on it.
@@ -237,37 +226,37 @@ public:
             }
         }
 
-        // Validation layers add significant CPU/GPU overhead that can trigger Intel
-        // TDR (Timeout Detection & Recovery) during shader compilation bursts on
-        // Iris Xe hardware.  Keep them off by default in all builds; re-enable
-        // manually when diagnosing Vulkan API errors.
+        // Validation layers add significant CPU/GPU overhead that can trigger an
+        // Intel TDR (Timeout Detection & Recovery) during shader compilation
+        // bursts on Iris Xe hardware. They stay off in all builds; enable them
+        // manually to diagnose Vulkan API errors.
         const bool wantValidation = false;
         if (!m_instance.Create(extNames, wantValidation)) {
             Logger::Error("VulkanRenderer: instance creation failed");
             return false;
         }
 
-        // ── surface (requires instance) ─────────────────────
+        // --- surface (requires instance) ---
         if (!m_offscreen && !SDL_Vulkan_CreateSurface(m_sdlWindow, m_instance.Get(), &m_surface)) {
             Logger::Error("VulkanRenderer: SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
             Cleanup();
             return false;
         }
 
-        // ── physical device ─────────────────────────────────
+        // --- physical device ---
         uint32_t gfxFam = 0, presFam = 0;
         if (!m_instance.PickPhysicalDevice(m_surface, gfxFam, presFam)) {
             Cleanup();
             return false;
         }
 
-        // ── logical device ──────────────────────────────────
+        // --- logical device ---
         if (!m_device.Create(m_instance.GetPhysical(), gfxFam, presFam)) {
             Cleanup();
             return false;
         }
 
-        // ── swapchain ───────────────────────────────────────
+        // --- swapchain ---
         const bool haveTargets = m_offscreen ? m_swapchain.CreateOffscreen(m_instance.GetPhysical(), m_device.Get(),
                                                                            m_width, m_height, kFramesInFlight)
                                              : m_swapchain.Create(m_instance.GetPhysical(), m_device.Get(), m_surface,
@@ -277,13 +266,13 @@ public:
             return false;
         }
 
-        // ── per-frame command pool + sync ───────────────────
+        // --- per-frame command pool + sync ---
         if (!CreateFrameResources()) {
             Cleanup();
             return false;
         }
 
-        // ── transient pool for one-shot uploads (Stage 2) ───
+        // --- transient pool for one-shot uploads ---
         {
             VkCommandPoolCreateInfo tpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
             tpci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -338,7 +327,7 @@ public:
         }
         m_ctx.pipelineCache = m_pipelineCache;
 
-        // ── standard descriptor set layout + per-frame pools (Stage 4) ─
+        // --- standard descriptor set layout + per-frame pools ---
         m_setLayout = CreateStandardSetLayout(m_device.Get());
         if (!m_setLayout) {
             Cleanup();
@@ -349,7 +338,7 @@ public:
             return false;
         }
 
-        // Update caps with real device info
+        // Fill the caps from the physical device.
         const auto& props = m_instance.GetProps();
         m_caps.deviceName = props.deviceName;
         m_caps.driverVersion = std::to_string(props.driverVersion);
@@ -531,7 +520,7 @@ public:
                 VkExtent2D ext = m_swapchain.GetExtent();
                 LoadCanvasToSwapchain(f.cmd, *c, swapImg, VK_IMAGE_LAYOUT_UNDEFINED);
                 BeginPassLoad();
-                // Depth must NOT carry across frames — clear it inside the pass.
+                // Depth must not carry across frames; clear it inside the pass.
                 {
                     VkClearAttachment ca{};
                     ca.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -566,11 +555,11 @@ public:
     }
 
     // N64 SetColorImage handler notification: the game switched its render
-    // target buffer.  Save the swapchain (holding the OLD buffer's content)
-    // into the old canvas, load the NEW buffer's canvas, and resume the
-    // pass — full per-buffer isolation on a single swapchain image.
-    // Outside a frame (command buffer closed) just latch the new address;
-    // the next BeginFrame restores the right canvas.
+    // target buffer. Save the swapchain (holding the old buffer's content) into
+    // the old canvas, load the new buffer's canvas and resume the pass, which
+    // gives full per-buffer isolation on a single swapchain image. Outside a
+    // frame (command buffer closed) just latch the new address; the next
+    // BeginFrame restores the right canvas.
     void SetActiveCanvas(uint32_t n64Addr) override {
         n64Addr &= 0x7FFFFF;
         if (n64Addr == m_activeCanvasAddr) return;
@@ -590,28 +579,25 @@ public:
 
         VkImage swapImg = m_swapchain.GetImage(m_currentImage);
         CanvasSlot* oldC = EnsureCanvas(m_activeCanvasAddr);
-        // Only persist the outgoing buffer if something was actually DRAWN to
-        // it while it was active. A buffer that was merely bound must keep the
+        // Persist the outgoing buffer only if something was actually drawn to it
+        // while it was active; a buffer that was merely bound must keep the
         // content it already had.
         //
-        // Without this, MM's every-frame Z-clear (it briefly switches the color
-        // image to the Z-buffer address 0x383AC0, issues a fill, and switches
-        // straight back -- visible as a switch pair per frame in CANVAS_DBG)
-        // destroyed the pause-menu world snapshot stored in that address's
-        // canvas: on switching TO it we intentionally skip LoadCanvasToSwapchain
-        // when the canvas is invalid (keeping stale pixels rather than flashing
-        // black, see below), so the swapchain still held the LIVE menu frame --
-        // and this save then wrote that live frame into canvas[0x383AC0] and
-        // marked it valid. The pause background consequently animated along with
-        // the page-turn instead of showing the frozen world snapshot. (Resizing
-        // the window "fixed" the bouncing precisely because swapchain recreation
-        // drops all canvases, breaking the feedback loop -- a long-standing
-        // clue in this investigation that only makes sense with this mechanism.)
-        // NOTE: the save only RUNS when m_activeCanvasDirty is set, not just
-        // when oldC exists -- a canvas object can persist from a previous frame
-        // while this activation drew nothing to it, in which case the save is
-        // correctly skipped and the canvas keeps its LAST real content (not
-        // garbage).
+        // MM's every-frame Z-clear switches the color image to the Z-buffer
+        // address 0x383AC0, issues a fill and switches straight back (a switch
+        // pair per frame). Without this guard the save destroyed the pause-menu
+        // world snapshot stored in that address's canvas: switching to an invalid
+        // canvas deliberately skips LoadCanvasToSwapchain (stale pixels are kept
+        // rather than flashing black, see below), so the swapchain still held the
+        // live menu frame, and the save wrote that live frame into
+        // canvas[0x383AC0] and marked it valid. The pause background then animated
+        // along with the page-turn instead of showing the frozen world snapshot.
+        // (Resizing the window hid the problem, because swapchain recreation drops
+        // all canvases.)
+        // The save runs only when m_activeCanvasDirty is set, not whenever oldC
+        // exists: a canvas object can persist from a previous frame while this
+        // activation drew nothing to it, in which case the save is correctly
+        // skipped and the canvas keeps its last real content.
         if (swapImg && oldC && m_activeCanvasDirty) {
             SaveSwapchainToCanvas(f.cmd, swapImg, *oldC);
         }
@@ -628,9 +614,8 @@ public:
         if (wasActive) BeginPassLoad();
     }
 
-    // VI origin update from the video plugin: which N64 buffer is display-
-    // ready. EndFrame presents this buffer's canvas instead of the one still
-    // being drawn.
+    // VI origin update from the video plugin: which N64 buffer is display-ready.
+    // EndFrame presents this buffer's canvas instead of the one still being drawn.
     void SetOutputAspect(float aspect) override { m_outputAspect = aspect; }
     void SetPresentOrigin(uint32_t n64Addr) override { m_presentOriginAddr = n64Addr & 0x7FFFFF; }
 
@@ -688,33 +673,31 @@ public:
         }
         m_rtComposePending = false;
 
-        // Persist the frame's rendering into the ACTIVE buffer's canvas, then
-        // put the DISPLAY-READY buffer's canvas (VI origin) on the swapchain
-        // for presentation. The game flips VI origin only to buffers it has
-        // finished drawing, so the presented image is always a complete
-        // frame — never the half-drawn buffer the DL is still working on.
-        // The swapchain image is still application-owned here — reading it
-        // pre-present is legal, unlike reading an already-presented image.
-        // Guard on m_currentRT: if the frame ended inside a custom render
-        // target pass, the swapchain image is not in PRESENT_SRC layout.
+        // Persist the frame's rendering into the active buffer's canvas, then put
+        // the display-ready buffer's canvas (VI origin) on the swapchain for
+        // presentation. The game flips VI origin only to buffers it has finished
+        // drawing, so the presented image is always a complete frame, never the
+        // half-drawn buffer the display list is still working on. The swapchain
+        // image is still application-owned here, so reading it before present is
+        // legal (unlike reading an already-presented image).
+        // Guard on m_currentRT: if the frame ended inside a custom render target
+        // pass, the swapchain image is not in PRESENT_SRC layout.
         if (m_frameOnSwapchain && m_currentRT == nullptr && m_canvasPreserve) {
             VkImage swapImg = m_swapchain.GetImage(m_currentImage);
             VkExtent2D ext = m_swapchain.GetExtent();
             CanvasSlot* active = EnsureCanvas(m_activeCanvasAddr);
             if (swapImg && active && !m_activeCanvasDirty && ext.width == m_canvasW && ext.height == m_canvasH) {
-                // Nothing was drawn this frame, so the swapchain still holds
-                // whatever BeginFrame loaded: the ACTIVE buffer's canvas, i.e.
-                // the buffer the game last drew into, not the one the VI is
-                // scanning out. Usually they are the same, but not when the
-                // game leaves the RDP idle for a long stretch after a draw
-                // that used a scratch buffer. OOT/MM's pause-menu opening does
-                // exactly that: its last graphics task renders an 8-bit
-                // coverage pass into the old framebuffer's memory, then the
-                // CPU spends seconds in a software anti-alias filter without
-                // submitting another task -- and the screen went white
-                // (the coverage image) for the whole stretch instead of
-                // holding the frozen frame. Present the display-ready buffer,
-                // as the VI would.
+                // Nothing was drawn this frame, so the swapchain still holds whatever
+                // BeginFrame loaded: the active buffer's canvas, i.e. the buffer the
+                // game last drew into, not the one the VI is scanning out. Usually
+                // they are the same, but not when the game leaves the RDP idle for a
+                // long stretch after a draw that used a scratch buffer. OoT/MM's
+                // pause-menu opening does exactly that: its last graphics task
+                // renders an 8-bit coverage pass into the old framebuffer's memory,
+                // then the CPU spends seconds in a software anti-alias filter without
+                // submitting another task, and the screen would show the coverage
+                // image (white) for the whole stretch instead of holding the frozen
+                // frame. Present the display-ready buffer, as the VI would.
                 CanvasSlot* presentC = FindCanvasForOrigin(m_presentOriginAddr);
                 if (presentC && presentC != active && presentC->valid) {
                     LoadCanvasToSwapchain(f.cmd, *presentC, swapImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -729,18 +712,17 @@ public:
             }
         }
 
-        // Box the picture to the N64's shape with black bars, as the GL path
-        // does in BlitToScreen. Rendering fills the whole swapchain, so without
-        // this a 4:3 game was stretched to the window's shape (a third too wide
-        // in a 16:9 window). Offscreen frames go to the launcher, which boxes
-        // them itself.
+        // Box the picture to the N64's shape with black bars, as the GL path does
+        // in BlitToScreen. Rendering fills the whole swapchain, so without this a
+        // 4:3 game would be stretched to the window's shape (a third too wide in a
+        // 16:9 window). Offscreen frames go to the launcher, which boxes them itself.
         if (!m_offscreen && m_frameOnSwapchain && m_currentRT == nullptr && m_outputAspect > 0.0f)
             LetterboxSwapchain(f.cmd);
 
         m_frameRecording = false;
         vkEndCommandBuffer(f.cmd);
 
-        // VK draw call diagnostic: log per-frame GPU draw count (first 120 frames, then every 60).
+        // Diagnostic: log the per-frame GPU draw count (first 120 frames, then every 60th).
         {
             static uint32_t s_vkFrame = 0;
             ++s_vkFrame;
@@ -750,7 +732,7 @@ public:
             }
         }
 
-        // 4. Submit
+        // Submit
         // TRANSFER is included because the canvas copy-forward in BeginFrame
         // writes the acquired image at the transfer stage — the acquire
         // semaphore must gate that write, not just color-attachment output.
@@ -816,8 +798,8 @@ public:
                 hit = true;
                 break;
             }
-        // "every" mode: presents are sparse in HLE, so capture on the FIRST
-        // present at-or-after each threshold rather than requiring an exact
+        // "every" mode: presents are sparse in HLE, so capture on the first
+        // present at or after each threshold rather than requiring an exact
         // modulo match (which would almost never coincide with a present).
         if (s_every > 0 && n >= s_everyStart) {
             if (s_nextThreshold < 0) s_nextThreshold = s_everyStart;
@@ -978,15 +960,13 @@ public:
         if (m_gammaBuilt) return m_gammaPipeline != VK_NULL_HANDLE;
         m_gammaBuilt = true;
 
-        // In-place sqrt() on an rgba8 storage image. N64 Programming Manual
-        // §5.3: recovering the pre-gamma value from a gamma-corrected one is
-        // "square and shift down by 8 each color component" — i.e. in
-        // normalized [0,1] terms, undo = x². The forward hardware op the VI
-        // actually applies is therefore the inverse of squaring: sqrt(x).
-        // (Matches FramebufferManager's existing, correct GL implementation:
-        // pow(c, 1.0/uGamma) with uGamma=2.0 — this is the same curve, just
-        // with the exponent spelled out instead of computed from a variable
-        // gamma value that in practice is always 2.0 for this bit.)
+        // In-place sqrt() on an rgba8 storage image. N64 Programming Manual §5.3:
+        // recovering the pre-gamma value from a gamma-corrected one is "square and
+        // shift down by 8 each color component", i.e. undo = x^2 in normalized
+        // [0,1] terms. The forward operation the VI applies is therefore the
+        // inverse of squaring: sqrt(x). This is the same curve as
+        // FramebufferManager's GL implementation, pow(c, 1.0/uGamma) with
+        // uGamma = 2.0, a value that is always 2.0 for this bit.
         static const char* kGammaSrc = R"GLSL(
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -1069,19 +1049,18 @@ void main() {
         return true;
     }
 
-    // Applies the sqrt() gamma curve to the just-rendered swapchain image,
-    // in place, right before it's presented. Gated on the SAME VIConfig the
-    // GL backend already reads (g_fbManager.GetVIConfig().gammaCorrect,
-    // populated from the live VI_STATUS register in VideoPlugin.cpp) — a
-    // no-op unless the game itself actually enabled gamma correction.
+    // Applies the sqrt() gamma curve to the just-rendered swapchain image, in
+    // place, right before it is presented. Gated on the same VIConfig the GL
+    // backend reads (g_fbManager.GetVIConfig().gammaCorrect, populated from the
+    // live VI_STATUS register in VideoPlugin.cpp), so it is a no-op unless the
+    // game itself enabled gamma correction.
     //
     // Swapchain images aren't created with STORAGE_BIT usage (and adding it
     // isn't universally safe across present-engine/driver combinations), so
-    // this blits into a private rgba8 storage-capable temp image (format
-    // conversion happens for free in the blit — same trick the RT compute
-    // pipeline already uses to read the swapchain, VKComputeRaytracer.cpp's
-    // "copy the textured raster (swapchain) into the private raster image"),
-    // runs the shader in place there, then blits back.
+    // this blits into a private rgba8 storage-capable temp image (the blit
+    // converts the format for free, as the RT compute pipeline does when it
+    // copies the swapchain into its private raster image), runs the shader in
+    // place there, then blits back.
     void ApplyGammaIfNeeded() {
         if (!g_fbManager.GetVIConfig().gammaCorrect) return;
         if (!BuildGammaPass()) return;
@@ -1251,7 +1230,7 @@ void main() {
         m_currentFrame = (m_currentFrame + 1) % kFramesInFlight;
     }
 
-    // ─── Resource Creation (Stage 2: real buffers + textures) ─
+    // --- Resource Creation ---
     std::unique_ptr<IVertexBuffer> CreateVertexBuffer(size_t s, BufferUsage u) override {
         return std::make_unique<VKVertexBufferImpl>(&m_ctx, s, u);
     }
@@ -1279,13 +1258,13 @@ void main() {
                 Logger::Error("VulkanRenderer: compute pipeline build failed");
             }
         } else if (sh && sh->VS() && sh->FS()) {
-            // Shader already available — build immediately.
+            // The shader is already available: build immediately.
             if (!p->Build(m_ctx, d, m_swapchain.GetRenderPass(), m_setLayout)) {
                 Logger::Error("VulkanRenderer: pipeline build failed");
             }
         } else {
-            // No shader yet (GL-style deferred binding).  Store the desc so
-            // BindShader can build the real VkPipeline on first use.
+            // No shader yet (GL-style deferred binding). Store the desc so
+            // BindShader can build the VkPipeline on first use.
             m_deferredDesc = d;
             m_deferredRenderPass = m_swapchain.GetRenderPass();
             m_hasDeferredDesc = true;
@@ -1293,7 +1272,7 @@ void main() {
         return p;
     }
 
-    // ─── State Management ─────────────────────────────────
+    // --- State Management ---
     void SetViewport(const RenderViewport& v) override {
         // Remembered so a pass restarted mid-frame (after a blit or a
         // readback ends it) gets the game's viewport back instead of the
@@ -1302,15 +1281,15 @@ void main() {
         m_haveViewport = true;
         if (!m_passActive) return;
         VkExtent2D ext = m_swapchain.GetExtent();
-        // Remember FBO size so SetScissor can undo the OpenGL Y-flip
+        // Remember the FBO size so SetScissor can undo the OpenGL Y-flip.
         m_vpFBOW = (v.width > 0.0f) ? v.width : static_cast<float>(ext.width);
         m_vpFBOH = (v.height > 0.0f) ? v.height : static_cast<float>(ext.height);
         float scaleX = static_cast<float>(ext.width) / m_vpFBOW;
         float scaleY = static_cast<float>(ext.height) / m_vpFBOH;
-        // Map N64 FBO viewport to full swapchain with Vulkan Y-flip (negative height).
-        // This fixes two bugs at once:
-        //   1. Tiny rendering: game calls SetViewport(0,0,320,240) which we scale to swapchain.
-        //   2. Upside-down: negative height makes NDC Y=+1 map to pixel row 0 (top), matching OpenGL.
+        // Map the N64 FBO viewport to the full swapchain with a Vulkan Y-flip
+        // (negative height):
+        //   1. A game calling SetViewport(0,0,320,240) is scaled up to the swapchain.
+        //   2. A negative height makes NDC Y=+1 map to pixel row 0 (top), matching OpenGL.
         float scaledW = v.width * scaleX;
         float scaledH = v.height * scaleY;
         VkViewport vp{};
@@ -1366,16 +1345,16 @@ void main() {
         }
     }
     void SetBlendColor(float r, float g, float b, float a) override {
-        // Blend constants only. This used to double as the swapchain clear
-        // color, so a frame that started without canvas content was cleared to
-        // whatever N64 blend color the last draw set instead of black.
+        // Blend constants only. They must not double as the swapchain clear color,
+        // or a frame that starts without canvas content would be cleared to the
+        // last draw's N64 blend color instead of black.
         const float c[4] = {r, g, b, a};
         if (m_passActive) {
             vkCmdSetBlendConstants(m_frames[m_currentFrame].cmd, c);
         }
     }
 
-    // ─── Binding ──────────────────────────────────────────────
+    // --- Binding ---
     void BindVertexBuffer(IVertexBuffer* vb, const VertexLayout&) override {
         m_curVB = vb ? static_cast<VKVertexBufferImpl*>(vb)->GetVk() : VK_NULL_HANDLE;
     }
@@ -1430,7 +1409,7 @@ void main() {
         }
     }
 
-    // ─── Image RW / draw / compute / readback (Stage 5+) ─────
+    // --- Image RW / draw / compute / readback ---
     void BindImageForRW(uint32_t unit, uint64_t handle, ImageBindFormat fmt) override {
         // Store the binding; applied lazily when descriptor sets are written
         // for compute pipelines that use storage images.
@@ -1460,7 +1439,7 @@ void main() {
     void Draw(const DrawCommand& cmd) override {
         if (cmd.indexed) {
             // The index type belongs to the bound index buffer; forcing 16-bit
-            // here misread 32-bit buffers.
+            // here would misread 32-bit buffers.
             const IndexType type = (m_curIndexType == VK_INDEX_TYPE_UINT32) ? IndexType::UInt32 : IndexType::UInt16;
             DrawIndexed(cmd.primitive, cmd.indexCount, type, cmd.indexOffset);
         } else {
@@ -1541,7 +1520,7 @@ void main() {
         if (!m_initialized) return;
         if (!scene || scene->GetTriangleCount() == 0 || w == 0 || h == 0) return;
 
-        // ── Hardware RT path (Vulkan KHR ray tracing pipeline) ──────────────
+        // --- Hardware RT path (Vulkan KHR ray tracing pipeline) ---
         if (m_device.SupportsRayTracing()) {
             PerFrame& f = m_frames[m_currentFrame];
             if (!scene->BuildAS(m_ctx, f.cmd)) {
@@ -1555,7 +1534,7 @@ void main() {
             return;
         }
 
-        // ── Compute RT path (MoltenVK: no hardware AS / RT pipeline) ────────
+        // --- Compute RT path (MoltenVK: no hardware AS / RT pipeline) ---
         // CPU-only here: build the BVH and prepare the UBO. The GPU dispatch +
         // hybrid composite happen in EndFrame (so RT reads the finished raster).
         if (!scene->HasCamera()) return; // need the world perspective
@@ -1588,9 +1567,9 @@ void main() {
         }
         if (m_rtBVH.Empty()) return;
 
-        // Scene-size gate, effectively OFF by default (user wants RT on menus
-        // too). Kept env-tunable as an escape hatch for games whose menus
-        // misbehave: NOVA64_RT_MIN_TRIS / NOVA64_RT_MIN_DIAG.
+        // Scene-size gate: effectively off by default so RT also runs on menus.
+        // Env-tunable (NOVA64_RT_MIN_TRIS / NOVA64_RT_MIN_DIAG) as an escape hatch
+        // for games whose menus misbehave.
         static const uint32_t s_rtMinTris = []() {
             const char* v = std::getenv("NOVA64_RT_MIN_TRIS");
             return (v && v[0]) ? static_cast<uint32_t>(std::atoi(v)) : 32u;
@@ -1629,10 +1608,10 @@ void main() {
         }
         // Lights: the per-object light table (each triangle carries the index of the
         // light it was drawn with) plus, in lightDir, the frame's dominant sun for
-        // triangles drawn unlit. Sun colour is WHITE: N64 light colours are
-        // per-object MATERIAL colours (SM64 bakes object tints into them), and
-        // averaging or applying them tinted the whole scene. Scene colour belongs
-        // to the albedo. Point lights keep their colour -- that IS their look.
+        // triangles drawn unlit. The sun colour is white: N64 light colours are
+        // per-object material colours (SM64 bakes object tints into them), and
+        // averaging or applying them would tint the whole scene. Scene colour
+        // belongs to the albedo. Point lights keep their colour, which is their look.
         {
             // lightDir.w = the sun's angular size (tangent), RT64's pointRadius
             // analogue for a directional light: the trace shader jitters shadow
@@ -1688,9 +1667,9 @@ void main() {
         // (RTComputeShaders.hpp, historyTrust): history only carries over where the
         // same surface still covers the pixel, so it converges when the picture is
         // still and resets the instant something moves. The cap is the longest
-        // history in frames (NOVA64_RT_HISTORY, 1 = off). This replaces the old
-        // approach of switching accumulation off altogether, which kept shadows
-        // from lagging but left them noisy and flickering in motion.
+        // history in frames (NOVA64_RT_HISTORY, 1 = off). Switching accumulation
+        // off altogether would keep shadows from lagging but leave them noisy and
+        // flickering in motion.
         static const float s_rtHistory = std::clamp(envf("NOVA64_RT_HISTORY", 24.0f), 1.0f, 60.0f);
         m_rtUBO.extra[0] = s_rtHistory / 64.0f;
         m_rtUBO.extra[1] = s_rtExpose;
@@ -1700,8 +1679,8 @@ void main() {
         static const float s_rtAoRays = std::clamp(envf("NOVA64_RT_AO_RAYS", 4.0f), 1.0f, 16.0f);
         m_rtUBO.extra[2] = s_rtShadowRays;
         m_rtUBO.extra[3] = s_rtAoRays;
-        // Reflections ON by default, material-gated to metal (env-mapped) and
-        // water (translucent up-facing) in the trace shader. NOVA64_RT_REFL=0
+        // Reflections are on by default, material-gated to metal (env-mapped)
+        // and water (translucent up-facing) in the trace shader. NOVA64_RT_REFL=0
         // disables them.
         static const bool s_rtRefl = []() {
             const char* v = std::getenv("NOVA64_RT_REFL");
@@ -1822,9 +1801,9 @@ void main() {
         if (wasActive) ResumePass();
     }
 
-    // GPU-side blit: copy the current swapchain image into dst using vkCmdCopyImage
-    // recorded directly into the in-flight command buffer.  No CPU readback, no
-    // staging buffer, no synchronous submit, no m_skipPresent side-effect.
+    // GPU-side snapshot: blits the current swapchain image into dst, recorded
+    // directly into the in-flight command buffer. No CPU readback, staging buffer
+    // or synchronous submit, and no m_skipPresent side effect.
     void BlitToTexture(ITexture* dst) override {
         if (!dst || !m_initialized) return;
         PerFrame& f = m_frames[m_currentFrame];
@@ -1849,7 +1828,7 @@ void main() {
                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-        // UNDEFINED as oldLayout = "discard previous contents" - valid per spec,
+        // UNDEFINED as oldLayout discards the previous contents, which is valid per spec.
         TransitionImage(f.cmd, dstImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
                         VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1879,46 +1858,35 @@ void main() {
                         VK_ACCESS_TRANSFER_READ_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
-        // Resume the render pass - inventory draws continue in the same cmd buffer.
-        // EndFrame will submit everything normally (m_skipPresent is NOT set).
+        // Resume the render pass so later draws (e.g. the inventory) continue in
+        // the same command buffer. EndFrame submits everything normally
+        // (m_skipPresent is not set).
         if (wasActive) ResumePass();
     }
 
-    // GPU-side snapshot without clearing: copy the swapchain into dst, then
-    // restart the render pass with LOAD_OP_LOAD to preserve existing content.
-    // Use this when a mid-frame SetColorImage switches away from a rendered FB
-    // and we want to keep drawing on top of it afterwards.
     void InvalidateCanvas() override {
         // The call site (VideoPlugin.cpp, VI_TYPE==0 / screen-blank handling)
-        // documents the intent as dropping the FRAME-CARRY canvas so a blank
-        // doesn't resurrect the previous frame's content on the next
-        // BeginFrame -- i.e. only whatever's about to be shown again next
-        // frame (the currently-active buffer). This previously invalidated
-        // EVERY canvas in the map instead, unconditionally -- including
-        // completely unrelated scratch buffers with no connection to what's
-        // being blanked. MM/OoT's pause-menu world-snapshot buffer (written
-        // once at menu-open, then read back as a texture on every background
-        // recomposite -- e.g. page turns -- without ever becoming the active
-        // render target again) was exactly such a buffer: any VI blank during
-        // the menu-open or page-turn transition animation (fades are a
-        // textbook use of VI_TYPE==0) permanently zeroed its valid flag, and
-        // since only SaveSwapchainToCanvas (which only runs for the ACTIVE
-        // target) ever sets valid=true again, it never recovered. Confirmed
-        // via a live capture: the background read correctly for exactly two
-        // frames, then failed on every following frame with no recovery --
-        // a one-time event, not a gradual staleness/eviction pattern.
+        // intends to drop the frame-carry canvas so a blank doesn't resurrect the
+        // previous frame's content on the next BeginFrame: only the currently
+        // active buffer, which is what would be shown again. Invalidating every
+        // canvas would also hit unrelated scratch buffers. MM/OoT's pause-menu
+        // world-snapshot buffer (written once at menu-open, then read back as a
+        // texture on every background recomposite, e.g. page turns, without ever
+        // becoming the active render target again) is such a buffer: any VI blank
+        // during the menu-open or page-turn transition (fades are a textbook use
+        // of VI_TYPE==0) would zero its valid flag for good, because only
+        // SaveSwapchainToCanvas (which runs only for the active target) ever sets
+        // valid=true again. In a live capture the background read correctly for
+        // exactly two frames and then failed on every following frame.
         auto it = m_canvases.find(m_activeCanvasAddr);
         if (it != m_canvases.end()) it->second.valid = false;
     }
 
-    // Sample a specific N64 buffer's persistent canvas as a texture. See the
-    // rationale on IRenderer::BlitCanvasToTexture -- this is our equivalent of
-    // GLideN64's always-available per-FrameBuffer color texture.
-    // CPU->GPU framebuffer upload: the direction that never existed on this
-    // backend (see IRenderer::UploadPixelsToCanvas). Stages RGBA8 pixels into a
-    // temporary N64-resolution image, then blits (scaling) into the persistent
-    // canvas for that buffer address, leaving it in the canonical TRANSFER_SRC
-    // resting layout so the normal present/save/load paths pick it up unchanged.
+    // CPU->GPU framebuffer upload (see IRenderer::UploadPixelsToCanvas). Stages
+    // RGBA8 pixels into a temporary N64-resolution image, then blits (scaling)
+    // into the persistent canvas for that buffer address, leaving it in the
+    // canonical TRANSFER_SRC resting layout so the normal present/save/load paths
+    // pick it up unchanged.
     bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h, const uint32_t* pixels) override {
         if (!m_initialized || !m_canvasPreserve || !pixels || w == 0 || h == 0) return false;
         if (!m_frameRecording || m_skipPresent || m_ctx.deviceLost.load(std::memory_order_relaxed)) return false;
@@ -2018,22 +1986,25 @@ void main() {
         return true;
     }
 
+    // Samples a specific N64 buffer's persistent canvas as a texture. See the
+    // rationale on IRenderer::BlitCanvasToTexture; this is the equivalent of
+    // GLideN64's always-available per-FrameBuffer color texture.
     bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) override {
         if (!dst || !m_initialized || !m_canvasPreserve) return false;
         const uint32_t addr = n64Addr & 0x7FFFFF;
 
-        // Only use an ALREADY-SAVED canvas. Do not EnsureCanvas() here: creating
-        // one on demand would hand back an uninitialised image (garbage), and
-        // the currently-active buffer's freshest content lives in the swapchain,
-        // not its canvas -- callers should keep using the snapshot path for that.
+        // Use only an already-saved canvas. Do not EnsureCanvas() here: creating
+        // one on demand would hand back an uninitialised image (garbage), and the
+        // currently-active buffer's freshest content lives in the swapchain, not
+        // its canvas; callers should keep using the snapshot path for that.
         //
-        // Match by CONTAINMENT, not exact key (via FindCanvasForOrigin: exact,
-        // else nearest canvas at or below the address within 1 MB). Canvases are
-        // keyed by the SetColorImage address, but the FramebufferManager
-        // registers entries at related-but-different addresses -- most commonly
+        // Match by containment, not exact key (via FindCanvasForOrigin: exact,
+        // else the nearest canvas at or below the address within 1 MB). Canvases
+        // are keyed by the SetColorImage address, but the FramebufferManager
+        // registers entries at related, different addresses, most commonly
         // base+0x280, since the VI origin sits a few rows into the buffer. An
-        // exact-key lookup missed those every time (measured: blit attempted 40x,
-        // succeeded 0x, all for 0x000280 while the canvas was keyed 0x000000).
+        // exact-key lookup missed those every time (measured: 40 blit attempts,
+        // 0 successes, all for 0x000280 while the canvas was keyed 0x000000).
         CanvasSlot* c = FindCanvasForOrigin(addr);
         if (!c || !c->valid || !c->img) return false;
 
@@ -2058,9 +2029,9 @@ void main() {
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-        // Blit (not Copy): canvases carry the swapchain's format (typically
-        // BGRA8) while snapshot textures are RGBA8 -- Blit converts, Copy
-        // would require format compatibility.
+        // Blit rather than copy: canvases carry the swapchain's format (typically
+        // BGRA8) while snapshot textures are RGBA8. A blit converts; a copy would
+        // require format compatibility.
         VkImageBlit region{};
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.dstSubresource = region.srcSubresource;
@@ -2080,6 +2051,10 @@ void main() {
         return true;
     }
 
+    // GPU-side snapshot without clearing: copies the swapchain into dst, then
+    // restarts the render pass with LOAD_OP_LOAD to preserve existing content.
+    // Use this when a mid-frame SetColorImage switches away from a rendered FB
+    // and drawing should continue on top of it afterwards.
     void SnapshotToTexture(ITexture* dst) override {
         if (!dst || !m_initialized) return;
         PerFrame& f = m_frames[m_currentFrame];
@@ -2122,13 +2097,13 @@ void main() {
                         VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-        // Restore swapchain to PRESENT_SRC_KHR -- required by the load render
-        // pass (initialLayout = PRESENT_SRC_KHR).
+        // Restore the swapchain to PRESENT_SRC_KHR, which the load render pass
+        // requires (initialLayout = PRESENT_SRC_KHR).
         TransitionImage(f.cmd, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                         VK_ACCESS_TRANSFER_READ_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 
-        // Resume rendering without clearing -- keeps previously drawn content.
+        // Resume rendering without clearing, which keeps the content drawn so far.
         if (wasActive) BeginPassLoad();
     }
 
@@ -2137,25 +2112,24 @@ void main() {
         if (!m_initialized || !rdram || fbW == 0 || fbH == 0 || m_skipPresent) {
             return;
         }
-        // ── Per-address readback budget (was: ONE readback per whole frame) ──
-        // The old guard was a single global `m_midFrameReadbackDone` bool, so
-        // the FIRST GPU->RDRAM copy in a frame consumed the only allowance and
-        // every later one silently no-oped. OoT/MM already perform an unrelated
-        // CfB/AA-resolve copy-back read every single frame, so by the time the
-        // pause menu issued its ~20 LoadTile strip reads there was no allowance
-        // left -- the strips read never-written RDRAM (black panel). This is the
-        // same starvation shape as the gpuModified/needsInventorySnapshot flags,
-        // but a hard structural cap that no flag fix could route around.
+        // --- Per-address readback budget ---
+        // A single per-frame readback allowance (one global bool,
+        // m_midFrameReadbackDone) is not enough: the first GPU->RDRAM copy in a
+        // frame would consume it and every later one would silently do nothing.
+        // OoT/MM already perform an unrelated CfB/AA-resolve copy-back read every
+        // frame, so by the time the pause menu issues its ~20 LoadTile strip
+        // reads no allowance would be left, and the strips would read
+        // never-written RDRAM (a black panel). That is a hard structural cap that
+        // no gpuModified/needsInventorySnapshot flag fix can route around.
         //
-        // Two changes make lifting it both correct and cheap:
-        //  1. Dedup by ADDRESS. One copy writes the buffer's ENTIRE image, so
-        //     all 20 strips of one buffer are served by a single copy; repeats
-        //     for the same address are genuinely redundant and still skipped.
+        // Two things make lifting the cap both correct and cheap:
+        //  1. Dedup by address. One copy writes the buffer's entire image, so all
+        //     20 strips of one buffer are served by a single copy; repeats for the
+        //     same address are redundant and still skipped.
         //  2. Chain the semaphore (see the submit below). The readback waits on
-        //     f.imageAvailable and signals f.midFrameDone; a binary semaphore
-        //     can only satisfy one wait, which is the real reason the cap
-        //     existed. Later readbacks in the same frame must instead wait on
-        //     f.midFrameDone -- exactly the substitution EndFrame already makes.
+        //     f.imageAvailable and signals f.midFrameDone; a binary semaphore can
+        //     only satisfy one wait, so later readbacks in the same frame wait on
+        //     f.midFrameDone instead, the substitution EndFrame already makes.
         const uint32_t reqAddr = fbAddress & 0x7FFFFF;
         for (uint32_t i = 0; i < m_frameReadbackCount; ++i) {
             if (m_frameReadbackAddrs[i] == reqAddr) return;
@@ -2171,27 +2145,27 @@ void main() {
             m_passActive = false;
         }
 
-        // Choose the SOURCE image by the requested N64 buffer address, not the
-        // swapchain unconditionally. The swapchain only ever holds the CURRENTLY
-        // ACTIVE canvas; a different N64 buffer's content lives in its own saved
-        // canvas image (see m_canvases / SetActiveCanvas). MM's pause menu draws
-        // its blurred world snapshot into one buffer (e.g. 0x383AC0), then
-        // switches the active buffer to the UI/display buffer BEFORE issuing the
-        // LoadTile mosaic that reads the snapshot back. Reading the swapchain at
-        // that point copies the UI buffer (black in the item-grid region) into
-        // RDRAM instead of the world snapshot -- the asymmetric black pause-menu
-        // panel bug. When the requested address is a valid, non-active saved
-        // canvas, read THAT canvas image (already in TRANSFER_SRC_OPTIMAL after
-        // SaveSwapchainToCanvas, so no layout transition is needed for it).
-        // reqAddr computed above (readback budget check).
+        // Choose the source image by the requested N64 buffer address, not the
+        // swapchain unconditionally. The swapchain only holds the currently active
+        // canvas; a different N64 buffer's content lives in its own saved canvas
+        // image (see m_canvases / SetActiveCanvas). MM's pause menu draws its
+        // blurred world snapshot into one buffer (e.g. 0x383AC0), then switches the
+        // active buffer to the UI/display buffer before issuing the LoadTile
+        // mosaic that reads the snapshot back. Reading the swapchain at that point
+        // would copy the UI buffer (black in the item-grid region) into RDRAM
+        // instead of the world snapshot, giving the asymmetric black pause-menu
+        // panel. When the requested address is a valid, non-active saved canvas,
+        // read that canvas image (already in TRANSFER_SRC_OPTIMAL after
+        // SaveSwapchainToCanvas, so it needs no layout transition).
+        // reqAddr is computed above (readback budget check).
         VkImage srcImage = VK_NULL_HANDLE;
         bool srcIsCanvas = false;
         const bool wantActive = (reqAddr == m_activeCanvasAddr) || !m_canvasPreserve;
         if (!wantActive) {
-            // Match by CONTAINMENT, not exact key: canvases are keyed by the
+            // Match by containment, not exact key: canvases are keyed by the
             // SetColorImage address while the FramebufferManager registers
-            // entries at related addresses (commonly base+0x280 — the VI origin
-            // sits a few rows into the buffer). An exact find() missed those.
+            // entries at related addresses (commonly base+0x280, since the VI
+            // origin sits a few rows into the buffer). An exact find() would miss those.
             CanvasSlot* c = FindCanvasForOrigin(reqAddr);
             if (c && c->valid && c->img) {
                 srcImage = c->img; // already resting in TRANSFER_SRC_OPTIMAL
@@ -2201,15 +2175,15 @@ void main() {
             srcImage = m_swapchain.GetImage(m_currentImage);
         }
         if (!srcImage) {
-            // Deliberately DO NOT fall back to the swapchain for a non-active
-            // buffer. The swapchain holds the CURRENTLY RENDERING frame, so
-            // substituting it writes live content into a different buffer's
-            // RDRAM. For MM's pause menu that means the frozen world snapshot
-            // gets overwritten with the in-progress menu frame every time the
-            // budget allows a copy -- the background then animates along with
-            // the page-turn instead of standing still. Copying nothing leaves
-            // the previous (correct) contents intact, which is strictly better
-            // than copying knowingly-wrong pixels.
+            // Deliberately do not fall back to the swapchain for a non-active
+            // buffer. The swapchain holds the frame currently being rendered, so
+            // substituting it would write live content into a different buffer's
+            // RDRAM. For MM's pause menu that means the frozen world snapshot would
+            // be overwritten with the in-progress menu frame every time the budget
+            // allows a copy, and the background would animate along with the
+            // page-turn instead of standing still. Copying nothing leaves the
+            // previous (correct) contents intact, which is strictly better than
+            // copying known-wrong pixels.
             if (wasActive) BeginPassLoad();
             return;
         }
@@ -2306,9 +2280,9 @@ void main() {
 
         const uint8_t* pixels = static_cast<const uint8_t*>(staging.mapped);
         const uint32_t pixelCount = fbW * fbH;
-        // Nearest source pixel for each N64 pixel. An integer step
-        // (extent / fb) dropped the right quarter of an 854-wide canvas
-        // (854 / 320 = 2), so the game read back a cropped frame.
+        // Nearest source pixel for each N64 pixel. An integer step (extent / fb)
+        // would drop the right quarter of an 854-wide canvas (854 / 320 = 2), so the
+        // game would read back a cropped frame.
         auto sourceX = [&](uint32_t fx) {
             return std::min<uint32_t>(static_cast<uint32_t>((uint64_t{fx} * extent.width + extent.width / 2) / fbW),
                                       extent.width - 1);
@@ -2371,9 +2345,9 @@ void main() {
         if (wasActive) BeginPassLoad();
     }
 
-    // ─── Debug ────────────────────────────────────────────────
-    // VK_EXT_debug_utils is enabled with validation; functions are loaded by
-    // volk (null when extension absent — guard).
+    // --- Debug ---
+    // VK_EXT_debug_utils is enabled with validation; volk loads the functions
+    // (null when the extension is absent, hence the guard).
     void PushDebugGroup(const char* name) override {
         if (!m_passActive && !m_initialized) return;
         if (!vkCmdBeginDebugUtilsLabelEXT) return;
@@ -2392,19 +2366,19 @@ void main() {
         vkCmdInsertDebugUtilsLabelEXT(m_frames[m_currentFrame].cmd, &lbl);
     }
 
-    // ─── Queries ──────────────────────────────────────────────
+    // --- Queries ---
     BackendType GetBackendType() const override { return BackendType::Vulkan; }
     const RendererCaps& GetCapabilities() const override { return m_caps; }
     const RendererStats& GetStats() const override { return m_stats; }
     void ResetStats() override { m_stats.Reset(); }
 
-    // ─── Vulkan UBO helper ─────────────────────────────────────
+    // --- Vulkan UBO helper ---
     void* GetMappedUBOPtr() override {
         auto& s = m_scratchUBO[m_currentFrame];
         return s.mapped ? s.mapped : nullptr;
     }
 
-    // ─── Window ───────────────────────────────────────────────
+    // --- Window ---
     void OnResize(uint32_t width, uint32_t height) override {
         if (width == m_width && height == m_height) return;
         m_width = width;
@@ -2500,7 +2474,7 @@ private:
 
     void Cleanup() {
         if (m_device.Get()) m_device.WaitIdle();
-        // Destroy Stage-4 owned objects first (they reference the device).
+        // Destroy the objects that reference the device first.
         if (m_device.Get()) {
             m_rtPipeline.reset(); // destroy RT pipeline before device
             m_computeRT.reset();
@@ -2595,11 +2569,11 @@ private:
 
     void RecreateSwapchain() {
         if (m_width == 0 || m_height == 0) return;
-        // Drain all in-flight frames before destroying the old swapchain.
-        // Without this, in-flight command buffers can still reference the old
-        // swapchain images / VkRenderPass after Recreate() destroys them, which
-        // manifests as crashes or validation errors on scene<->menu transitions
-        // (where SetColorImage format changes can trigger a recreate mid-stream).
+        // Drain all in-flight frames before destroying the old swapchain:
+        // in-flight command buffers can still reference the old swapchain images
+        // / VkRenderPass after Recreate() destroys them, which shows up as crashes
+        // or validation errors on scene<->menu transitions (where a SetColorImage
+        // format change can trigger a recreate mid-stream).
         vkDeviceWaitIdle(m_device.Get());
         m_completedSerial = m_frameSerial;
         // Extent/format may change — drop the persistent canvas; EnsureCanvas
@@ -2607,22 +2581,20 @@ private:
         DestroyCanvas();
         m_swapchain.Recreate(m_instance.GetPhysical(), m_device.Get(), m_surface, m_device.GetGraphicsFamily(),
                              m_device.GetPresentFamily(), m_width, m_height, /*vsync=*/true);
-        // The swapchain recreated a new VkRenderPass handle.  Update
-        // m_deferredRenderPass so new dynamic pipelines are built against
-        // the live render pass rather than the now-destroyed old handle.
-        // Also flush m_dynPipelines so any in-flight pipelines referencing
-        // the old render pass are discarded (they remain Vulkan-compatible
-        // due to render-pass compatibility rules, but rebuilding is cleaner).
+        // The swapchain recreated its VkRenderPass handle. Update
+        // m_deferredRenderPass so new dynamic pipelines are built against the
+        // live render pass rather than the destroyed old handle.
         if (m_hasDeferredDesc) {
             m_deferredRenderPass = m_swapchain.GetRenderPass();
-            // Do NOT clear m_dynPipelines here: once a VkPipeline is created the
-            // VkRenderPass handle it was built against no longer needs to live — the
-            // compiled pipeline object is self-contained.  New and old render passes
-            // are render-pass-compatible (same attachment formats / sample counts),
-            // so all existing pipelines continue to work after swapchain recreation.
-            // Clearing them forces every pipeline to be re-created and re-ISA-compiled
-            // on first use, which can trigger multiple simultaneous GPU ISA compiles
-            // (non-preemptable on Intel Iris Xe) and cause a Windows TDR crash.
+            // Do not clear m_dynPipelines here: once a VkPipeline is created, the
+            // VkRenderPass it was built against no longer needs to live, because
+            // the compiled pipeline object is self-contained. Old and new render
+            // passes are render-pass-compatible (same attachment formats / sample
+            // counts), so all existing pipelines keep working after swapchain
+            // recreation. Clearing them would force every pipeline to be re-created
+            // and re-ISA-compiled on first use, which can trigger several
+            // simultaneous GPU ISA compiles (non-preemptable on Intel Iris Xe) and
+            // cause a Windows TDR crash.
         }
     }
 
@@ -2643,7 +2615,7 @@ private:
         vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &b);
     }
 
-    // ── Stage 4: descriptor pools, default UBO + white texture, PrepareDraw ──
+    // --- Descriptor pools, default UBO + white texture, PrepareDraw ---
     bool CreateDescriptorPools() {
         std::array<VkDescriptorPoolSize, 2> sizes{};
         sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -2691,7 +2663,7 @@ private:
             }
         }
 
-        // 1Ă—1 white default texture (used for any unbound texture slot so the
+        // 1x1 white default texture (used for any unbound texture slot so the
         // standard descriptor set always has a complete set of valid images).
         TextureDesc td{};
         td.width = 1;
@@ -2723,7 +2695,7 @@ private:
             key.dstAlpha = static_cast<uint8_t>(m_pendingBlend.dstAlpha);
             key.alphaOp = static_cast<uint8_t>(m_pendingBlend.alphaOp);
             key.colorWriteMask = static_cast<uint8_t>(m_colorWriteMask & 0x0F);
-            // depth test/write/compare are NOT part of the key; they are
+            // depth test/write/compare are not part of the key; they are
             // emitted dynamically per draw via vkCmdSetDepthTestEnable etc.
 
             auto it = m_dynPipelines.find(key);
@@ -2744,9 +2716,9 @@ private:
                 }
                 it = m_dynPipelines.emplace(key, std::move(dp)).first;
                 // Persist the pipeline cache to disk immediately after each new
-                // pipeline is compiled.  Doing this eagerly (not just at Cleanup)
-                // ensures the cache is available even if the GPU TDRs later in the
-                // same session, so subsequent runs reuse the compiled shaders.
+                // pipeline is compiled. Doing this eagerly (not just at Cleanup)
+                // keeps the cache available even if the GPU TDRs later in the same
+                // session, so subsequent runs reuse the compiled shaders.
                 if (m_pipelineCache) {
                     size_t cacheSize = 0;
                     if (vkGetPipelineCacheData(m_device.Get(), m_pipelineCache, &cacheSize, nullptr) == VK_SUCCESS &&
@@ -2754,8 +2726,8 @@ private:
                         std::vector<uint8_t> cacheData(cacheSize);
                         if (vkGetPipelineCacheData(m_device.Get(), m_pipelineCache, &cacheSize, cacheData.data()) ==
                             VK_SUCCESS) {
-                            // Ensure ShaderCache/ exists - silent ofstream open failure
-                            // would otherwise mean the cache never persists across runs.
+                            // Make sure ShaderCache/ exists: otherwise the ofstream open
+                            // fails silently and the cache never persists across runs.
                             std::error_code ec;
                             std::filesystem::create_directories("ShaderCache", ec);
                             std::ofstream f("ShaderCache/vk_pipeline_cache.bin", std::ios::binary | std::ios::trunc);
@@ -2806,7 +2778,7 @@ private:
         if (!ds) {
             return false;
         }
-        // Emit dynamic depth state only when it changes — avoids expensive
+        // Emit dynamic depth state only when it changes, which avoids expensive
         // per-draw pipeline state flushes on Intel Iris Xe.
         const bool depthTestOn = m_pendingDepth.depthTestEnabled;
         const bool depthWriteOn = m_pendingDepth.depthWriteEnabled;
@@ -2856,7 +2828,7 @@ private:
         VkResult r = vkAllocateDescriptorSets(m_device.Get(), &ai, &ds);
         if (r != VK_SUCCESS) {
             if (r == VK_ERROR_OUT_OF_POOL_MEMORY) {
-                // Pool exhausted for this frame — degrade gracefully (skip draw).
+                // Pool exhausted for this frame: degrade gracefully by skipping the draw.
                 // Increase kMaxDescSetsPerFrame if this fires frequently.
                 static uint32_t s_poolExhaustedCount = 0;
                 if ((++s_poolExhaustedCount & 0x3FF) == 1) { // log 1st, then every 1024th
@@ -2875,9 +2847,9 @@ private:
         uint32_t ringSize = kMaxSetsPerFrame * alignedSlot;
         uint32_t dynOffset = m_uboRingOffset[m_currentFrame];
         if (dynOffset + alignedSlot > ringSize) {
-            // Ring and pool should exhaust simultaneously (both = kMaxSetsPerFrame).
-            // If we somehow reach here, skip the draw rather than wrapping and
-            // corrupting UBO data for in-flight descriptor sets.
+            // The ring and the pool should exhaust simultaneously (both are
+            // kMaxSetsPerFrame). If this is reached anyway, skip the draw rather
+            // than wrap and corrupt UBO data for in-flight descriptor sets.
             static uint32_t s_ringOverflowCount = 0;
             if ((++s_ringOverflowCount & 0xFF) == 1) {
                 Logger::Warn("VulkanRenderer: UBO ring overflow ({} so far) — skipping draw to avoid corruption",
@@ -2925,7 +2897,7 @@ private:
         return ds;
     }
 
-    // ── Persistent canvas helpers (see member docs at m_canvases) ────────
+    // --- Persistent canvas helpers (see member docs at m_canvases) ---
     struct CanvasSlot {
         VkImage img = VK_NULL_HANDLE;
         VkDeviceMemory mem = VK_NULL_HANDLE;
@@ -2943,10 +2915,6 @@ private:
         m_canvasW = m_canvasH = 0;
     }
 
-    // Get or lazily create the canvas for an N64 buffer address. Returns
-    // nullptr on allocation failure or before the swapchain exists. All
-    // canvases share the swapchain's dimensions; a resize drops them all
-    // (DestroyCanvas is called from RecreateSwapchain).
     // Free upload temporaries whose frame slot has cycled all the way around
     // (so the GPU is guaranteed done with them). Called from BeginFrame.
     void DrainPendingUploads() {
@@ -2962,6 +2930,10 @@ private:
         }
     }
 
+    // Gets or lazily creates the canvas for an N64 buffer address. Returns
+    // nullptr on allocation failure or before the swapchain exists. All canvases
+    // share the swapchain's dimensions; a resize drops them all (DestroyCanvas is
+    // called from RecreateSwapchain).
     CanvasSlot* EnsureCanvas(uint32_t addr) {
         VkExtent2D ext = m_swapchain.GetExtent();
         if (ext.width == 0 || ext.height == 0) return nullptr;
@@ -3027,21 +2999,20 @@ private:
     // (scanline offsets, interlace fields), so fall back to the nearest
     // canvas that starts at or below the origin within a 1 MB window.
     //
-    // Touches lastUse on a hit: EnsureCanvas only bumps lastUse when a
-    // canvas becomes the ACTIVE RENDER TARGET, never when it's merely read
-    // back as a texture (the only thing that happens here). A canvas that's
-    // written once and then repeatedly re-read as a texture -- e.g. MM/OoT's
-    // pause-menu world-snapshot scratch buffer, redrawn into the visible
-    // frame every time the background needs recompositing but never
-    // rewritten -- would otherwise look permanently stale to the LRU and get
-    // evicted by kMaxCanvases (6) as soon as any other buffer address needed
-    // a 7th slot (MM's routine per-frame Z-buffer-reuse trick alone touches
-    // 2 extra addresses on top of the double-buffer, so this wasn't rare).
-    // Once evicted, every later read fell through to raw, never-synced
-    // RDRAM -- the pause background rendering correctly for its first two
-    // frames, then permanently breaking (confirmed via a live capture: reads
-    // succeeded via the snapshot ring for frames 914/916, then failed for
-    // every frame from 917 onward with no further successes).
+    // Touches lastUse on a hit: EnsureCanvas only bumps lastUse when a canvas
+    // becomes the active render target, never when it is merely read back as a
+    // texture (the only thing that happens here). A canvas that is written once
+    // and then repeatedly re-read as a texture (e.g. MM/OoT's pause-menu
+    // world-snapshot scratch buffer, redrawn into the visible frame whenever the
+    // background needs recompositing but never rewritten) would otherwise look
+    // permanently stale to the LRU and be evicted by kMaxCanvases as soon as
+    // enough other buffer addresses were in use (MM's routine per-frame
+    // Z-buffer-reuse trick alone touches 2 extra addresses on top of the double
+    // buffer, so this is not rare). Once evicted, every later read falls through
+    // to raw, never-synced RDRAM: the pause background renders correctly for its
+    // first two frames, then breaks for good (confirmed via a live capture: reads
+    // succeeded via the snapshot ring for frames 914/916, then failed for every
+    // frame from 917 onward).
     CanvasSlot* FindCanvasForOrigin(uint32_t origin) {
         auto it = m_canvases.find(origin);
         if (it != m_canvases.end()) {
@@ -3061,7 +3032,7 @@ private:
     }
 
     // Record a full-extent blit between two canvas/swapchain images.
-    // Layout handling is caller's responsibility via the transition helpers.
+    // Layout handling is the caller's responsibility, via the transition helpers.
     void BlitFull(VkCommandBuffer cmd, VkImage src, VkImage dst) {
         VkImageBlit region{};
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -3072,20 +3043,18 @@ private:
                        &region, VK_FILTER_NEAREST);
     }
 
-    // Save the current swapchain content into a canvas (swapchain must be in
-    // PRESENT_SRC — i.e. outside a render pass). Leaves canvas TRANSFER_SRC,
-    // swapchain back in PRESENT_SRC.
+    // Saves the current swapchain content into a canvas (the swapchain must be in
+    // PRESENT_SRC, i.e. outside a render pass). Leaves the canvas in TRANSFER_SRC
+    // and the swapchain back in PRESENT_SRC.
     void SaveSwapchainToCanvas(VkCommandBuffer cmd, VkImage swapImg, CanvasSlot& c) {
         TransitionImage(cmd, swapImg, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-        // Canvases rest in TRANSFER_SRC_OPTIMAL after a successful save (see
-        // the class comment on m_canvases) and only sit in UNDEFINED before
-        // their first-ever write. Unconditionally claiming UNDEFINED here --
-        // as this code did previously -- lies to the driver about a
-        // once-valid canvas's real layout, matching the c.valid-conditional
-        // pattern the sibling CPU-upload path (EnsureCanvas write-back,
-        // ~line 1624) already uses correctly for the identical situation.
+        // Canvases rest in TRANSFER_SRC_OPTIMAL after a successful save (see the
+        // class comment on m_canvases) and are in UNDEFINED only before their
+        // first-ever write. Claiming UNDEFINED unconditionally would misreport a
+        // once-valid canvas's real layout to the driver, so the old layout depends
+        // on c.valid, as in the CPU-upload path (UploadPixelsToCanvas).
         TransitionImage(cmd, c.img, c.valid ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.valid ? VK_ACCESS_TRANSFER_READ_BIT : 0,
                         VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -3099,10 +3068,6 @@ private:
         c.valid = true;
     }
 
-    // Load a canvas into the swapchain image (canvas must be TRANSFER_SRC —
-    // it always is after SaveSwapchainToCanvas). Swapchain may be in any
-    // layout (UNDEFINED discard is fine — full overwrite); leaves it
-    // PRESENT_SRC so the LOAD render pass can begin.
     // Copies the finished swapchain image aside, clears the swapchain to black
     // and scales the copy into a centred box of shape m_outputAspect.
     // Expects and leaves the swapchain image in PRESENT_SRC_KHR.
@@ -3210,6 +3175,10 @@ private:
         m_presentScratchFormat = VK_FORMAT_UNDEFINED;
     }
 
+    // Loads a canvas into the swapchain image. The canvas must be in TRANSFER_SRC
+    // (it always is after SaveSwapchainToCanvas). The swapchain may be in any
+    // layout (an UNDEFINED discard is fine, since it is fully overwritten) and is
+    // left in PRESENT_SRC so the LOAD render pass can begin.
     void LoadCanvasToSwapchain(VkCommandBuffer cmd, CanvasSlot& c, VkImage swapImg, VkImageLayout swapOldLayout) {
         TransitionImage(cmd, swapImg, swapOldLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         swapOldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0,
@@ -3224,14 +3193,10 @@ private:
                         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     }
 
-    // Begin a render pass on either the swapchain (rt==nullptr) or a custom
-    // render target. Sets default full-extent dynamic viewport+scissor.
-    // Restart the swapchain render pass with LOAD_OP_LOAD (preserve content).
-    // Called by SnapshotToTexture after the GPU copy.
     // Reopens a pass that was closed mid-frame (for a compute dispatch or a
     // readback) without clearing what was drawn so far. BeginPass's clearing
-    // swapchain pass is only right at the start of a frame; using it here wiped
-    // the frame in progress.
+    // swapchain pass is only right at the start of a frame; using it here would
+    // wipe the frame in progress.
     void ResumePass() {
         if (m_currentRT) { // custom targets always use LOAD_OP_LOAD
             BeginPass(m_currentRT);
@@ -3258,6 +3223,8 @@ private:
         if (m_haveScissor) SetScissor(m_lastScissor);
     }
 
+    // Restarts the swapchain render pass with LOAD_OP_LOAD (preserves content),
+    // e.g. in SnapshotToTexture after the GPU copy.
     void BeginPassLoad() {
         PerFrame& f = m_frames[m_currentFrame];
         VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -3271,6 +3238,8 @@ private:
         m_currentRT = nullptr;
     }
 
+    // Begins a render pass on either the swapchain (rt == nullptr) or a custom
+    // render target. Sets default full-extent dynamic viewport + scissor.
     void BeginPass(VKRenderTargetImpl* rt) {
         PerFrame& f = m_frames[m_currentFrame];
         VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -3289,9 +3258,9 @@ private:
             clears[1].depthStencil.stencil = rt->GetClearStencil();
             rpbi.renderPass = rt->GetRenderPass();
             rpbi.framebuffer = rt->GetFramebuffer();
-            // The custom RT pass uses LOAD_OP_LOAD so we don't actually clear
-            // here unless the caller explicitly emits Clear* + a follow-up
-            // ClearAttachments. (Future: respect a per-target "needsClear".)
+            // The custom RT pass uses LOAD_OP_LOAD, so nothing is cleared here
+            // unless the caller explicitly emits Clear* + a follow-up
+            // ClearAttachments.
             rpbi.clearValueCount = 0;
             rpbi.pClearValues = nullptr;
             (void)clears;
@@ -3407,28 +3376,27 @@ private:
     uint64_t m_frameSerial = 0;
     uint64_t m_completedSerial = 0;
     uint64_t m_slotSerial[kFramesInFlight] = {};
-    // Has anything been DRAWN to the currently-active canvas since it became
+    // Has anything been drawn to the currently-active canvas since it became
     // active? Gates SaveSwapchainToCanvas so merely binding a buffer cannot
     // overwrite its stored content with the live frame.
     bool m_activeCanvasDirty = false;
     bool m_midFrameReadbackDone = false;
     // GPU->RDRAM readbacks already performed this frame, keyed by N64 buffer
-    // address. Replaces a single global "one readback per frame" bool that
-    // starved MM's pause-menu strip reads (see CopyFramebufferToRDRAM).
+    // address. A single global "one readback per frame" bool would starve MM's
+    // pause-menu strip reads (see CopyFramebufferToRDRAM).
     static constexpr uint32_t kMaxFrameReadbacks = 4;
     uint32_t m_frameReadbackAddrs[kMaxFrameReadbacks] = {};
     uint32_t m_frameReadbackCount = 0;
     bool m_initialized = false;
     bool m_passActive = false;
 
-    // Stage 4: descriptor management + per-draw state cache
-    // kMaxSetsPerFrame MUST equal kMaxDescSetsPerFrame.
-    // The UBO ring holds kMaxSetsPerFrame * alignedSlot bytes.  If the ring
-    // limit is smaller than the pool limit, the ring wraps mid-frame and
-    // overwrites UBO slots still referenced by in-flight descriptor sets —
-    // causing data corruption and a visually frozen frame.  Keeping them equal
-    // ensures the pool exhausts at the same draw as the ring would wrap, so
-    // excess draws are simply skipped (no corruption).
+    // Descriptor management + per-draw state cache.
+    // kMaxSetsPerFrame must equal kMaxDescSetsPerFrame. The UBO ring holds
+    // kMaxSetsPerFrame * alignedSlot bytes. If the ring limit were smaller than
+    // the pool limit, the ring would wrap mid-frame and overwrite UBO slots still
+    // referenced by in-flight descriptor sets, causing data corruption and a
+    // visually frozen frame. Keeping them equal makes the pool exhaust at the same
+    // draw as the ring would wrap, so excess draws are simply skipped.
     static constexpr uint32_t kMaxSetsPerFrame = 262144;     // UBO ring slots — must equal kMaxDescSetsPerFrame
     static constexpr uint32_t kMaxDescSetsPerFrame = 262144; // descriptor pool capacity per frame
     static constexpr VkDeviceSize kScratchUBOSize = 624;     // exact N64 UBO size (aligned to 768 at runtime)
@@ -3445,8 +3413,8 @@ private:
     VKPipelineImpl* m_curDynPipeline = nullptr; // resolved dyn pipeline
     VKShaderProgramImpl* m_curShader = nullptr;
     VKRenderTargetImpl* m_currentRT = nullptr;
-    // Cached last-emitted dynamic depth state so we only call vkCmdSetDepth*
-    // when state actually changes.  Initialized to -1 to force emission on first draw.
+    // Last-emitted dynamic depth state, so vkCmdSetDepth* is only called when the
+    // state changes. Initialized to -1 to force emission on the first draw.
     int m_lastDepthTest = -1;
     int m_lastDepthWrite = -1;
     int m_lastDepthFunc = -1;
@@ -3464,43 +3432,43 @@ private:
     float m_vpFBOW = 320.0f;
     float m_vpFBOH = 240.0f;
 
-    // ── Persistent per-N64-buffer canvases ──────────────────────────────
-    // The swapchain rotates between 2-3 images; without carry-over, each
-    // presented image only contains the draw calls recorded since ITS OWN
-    // BeginFrame — a fraction of the game's draw stream that starts at an
-    // arbitrary point mid-display-list.  Games that render across VI
-    // boundaries or alternate between multiple color buffers (double/triple
-    // buffering — e.g. Majora's Mask file select) presented as a shattered
-    // interleave of partial frames with black (clear-color) holes where the
-    // current slice hadn't drawn yet.  GL never had this bug because its
-    // per-FB FBOs persist and BlitToScreen presents completed content.
+    // --- Persistent per-N64-buffer canvases ---
+    // The swapchain rotates between 2-3 images; without carry-over, each presented
+    // image only contains the draw calls recorded since its own BeginFrame, a
+    // fraction of the game's draw stream that starts at an arbitrary point
+    // mid-display-list. Games that render across VI boundaries or alternate between
+    // multiple color buffers (double/triple buffering, e.g. Majora's Mask file
+    // select) would present as a shattered interleave of partial frames, with black
+    // (clear-color) holes where the current slice hadn't drawn yet. GL doesn't have
+    // this problem because its per-FB FBOs persist and BlitToScreen presents
+    // completed content.
     //
-    // Fix: keep one persistent canvas image PER N64 COLOR BUFFER (keyed by
-    // the SetColorImage RDRAM address).  Draws accumulate on the canvas of
-    // the buffer they target; SetColorImage swaps canvases mid-frame; at
-    // present time the canvas belonging to the VI origin register (the
-    // buffer the game says is display-ready) is shown — never the buffer
-    // still being drawn.  This is real double-buffer isolation at swapchain
-    // resolution, and it also keeps Z-buffer clear fills (SetColorImage to
-    // the depth address) off the visible output entirely.
-    // Was 6 -- too tight. MM/OoT's pause menu alone needs 6 DISTINCT addresses
-    // live simultaneously just from routine per-frame mechanics: the 2 double-
-    // buffer targets (e.g. 0x000500/0x7DA800), 2 addresses from the every-frame
-    // Z-buffer-reuse-as-color-target trick (0x383AC0 and 0x3A92C0 -- the start
-    // and end of the same depth-buffer-sized scratch region, used for two
-    // different purposes), the boot-time 0x000000 placeholder, and the pause-
-    // menu's own world-snapshot scratch buffer (e.g. 0x784600) -- which is
-    // written ONCE at menu-open but then read back as a texture repeatedly
-    // (every background recomposite, e.g. on page turns) without ever
-    // becoming the active render target again. At exactly 6, that snapshot
-    // buffer was the very next eviction candidate: any 7th distinct address
-    // (trivially reached by normal gameplay) evicted it via LRU, and every
-    // later read of it permanently fell through to raw, never-synced RDRAM --
-    // confirmed via a live capture where the read succeeded for the pause
-    // background's first two frames, then failed for every frame after with
-    // no further recovery. Each canvas is one swapchain-sized image (e.g.
-    // ~20MB at 3440x1440 BGRA8), so even a generous cap here is a trivial
-    // memory cost against the eviction-thrash risk.
+    // So one persistent canvas image is kept per N64 color buffer (keyed by the
+    // SetColorImage RDRAM address). Draws accumulate on the canvas of the buffer
+    // they target; SetColorImage swaps canvases mid-frame; at present time the
+    // canvas belonging to the VI origin register (the buffer the game says is
+    // display-ready) is shown, never the buffer still being drawn. This gives real
+    // double-buffer isolation at swapchain resolution, and it also keeps Z-buffer
+    // clear fills (SetColorImage to the depth address) off the visible output
+    // entirely.
+    //
+    // The cap below must cover every address live at once. MM/OoT's pause menu
+    // alone needs 6 distinct addresses simultaneously from routine per-frame
+    // mechanics: the 2 double-buffer targets (e.g. 0x000500/0x7DA800), 2 addresses
+    // from the every-frame Z-buffer-reuse-as-color-target trick (0x383AC0 and
+    // 0x3A92C0, the start and end of the same depth-buffer-sized scratch region,
+    // used for two different purposes), the boot-time 0x000000 placeholder, and the
+    // pause menu's own world-snapshot scratch buffer (e.g. 0x784600), which is
+    // written once at menu-open but then read back as a texture repeatedly (every
+    // background recomposite, e.g. on page turns) without ever becoming the active
+    // render target again. With a cap of exactly 6, that snapshot buffer was the
+    // next eviction candidate: any 7th distinct address (trivially reached by
+    // normal gameplay) evicted it via LRU, and every later read of it fell through
+    // to raw, never-synced RDRAM (confirmed via a live capture where the read
+    // succeeded for the pause background's first two frames, then failed for every
+    // frame after). Each canvas is one swapchain-sized image (e.g. ~20MB at
+    // 3440x1440 BGRA8), so a generous cap is a trivial memory cost against the
+    // eviction-thrash risk.
     static constexpr size_t kMaxCanvases = 16;
     std::unordered_map<uint32_t, CanvasSlot> m_canvases; // key: N64 fb address
     uint32_t m_activeCanvasAddr = 0;                     // buffer the game is drawing into
@@ -3528,8 +3496,8 @@ private:
     VkColorComponentFlags m_colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-    // Lazy shader pipeline cache: pipelines are keyed by (shader, blend, depth)
-    // so that each unique draw-state combination gets its own VkPipeline.
+    // Lazy shader pipeline cache: pipelines are keyed by (shader, blend) (see
+    // DynPipelineKey), so each unique combination gets its own VkPipeline.
     bool m_hasDeferredDesc = false;
     PipelineDesc m_deferredDesc;
     VkRenderPass m_deferredRenderPass = VK_NULL_HANDLE;
@@ -3544,10 +3512,10 @@ private:
     RendererCaps m_caps{};
     RendererStats m_stats{};
 
-    // ── RT (optional, activated when device supports RT extensions) ──────
+    // --- RT (optional, activated when device supports RT extensions) ---
     std::unique_ptr<VKRTPipeline> m_rtPipeline;
 
-    // ── Compute ray tracer (MoltenVK / no-hardware-RT fallback) ─────────
+    // --- Compute ray tracer (MoltenVK / no-hardware-RT fallback) ---
     std::unique_ptr<VKComputeRaytracer> m_computeRT;
     RT::RTBVH m_rtBVH;
     // Deferred hybrid composite: BVH/UBO are prepared mid-display-list, but the
@@ -3556,16 +3524,15 @@ private:
     bool m_rtComposePending = false;
     RTUBOData m_rtUBO{};
 
-    // ── VI gamma correction ──────────────────────────────────────────────
-    // Real N64 VI hardware, when VI_STATUS's gamma-enable bit is set,
-    // brightens the output with a sqrt() curve (N64 Programming Manual
-    // §5.3: undoing it is "square and shift down by 8 each color
-    // component" — i.e. the forward op is the inverse of squaring). This
-    // was already implemented correctly for GL (FramebufferManager's
-    // uGamma=2.0 shader does pow(c,1/2.0)=sqrt(c)) but never had a Vulkan
-    // counterpart, so it silently never ran on this platform despite every
-    // test ROM (SM64/OOT/MM) enabling it. Built lazily on first use, exactly
-    // like m_computeRT above.
+    // --- VI gamma correction ---
+    // Real N64 VI hardware, when VI_STATUS's gamma-enable bit is set, brightens
+    // the output with a sqrt() curve (N64 Programming Manual §5.3: undoing it is
+    // "square and shift down by 8 each color component", i.e. the forward op is
+    // the inverse of squaring). GL does the same in FramebufferManager (its
+    // uGamma=2.0 shader computes pow(c, 1/2.0) = sqrt(c)); this is the Vulkan
+    // counterpart. Every test ROM (SM64/OoT/MM) enables the bit, so without this
+    // pass gamma would silently never apply on this backend. Built lazily on
+    // first use, like m_computeRT above.
     bool m_gammaBuilt = false;
     VkShaderModule m_gammaShaderMod = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_gammaDSLayout = VK_NULL_HANDLE;

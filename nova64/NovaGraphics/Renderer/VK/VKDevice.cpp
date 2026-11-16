@@ -1,5 +1,6 @@
 /**
  * @file VKDevice.cpp
+ * @brief Vulkan logical device creation: queues, extensions and the feature chain.
  */
 // SPDX-License-Identifier: MIT
 #include "VKDevice.hpp"
@@ -17,7 +18,7 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
     m_graphicsFamily = graphicsFamily;
     m_presentFamily = presentFamily;
 
-    // ── unique queue create infos ──────────────────────────
+    // --- unique queue create infos ---
     std::set<uint32_t> uniqueFamilies = {graphicsFamily, presentFamily};
     std::vector<VkDeviceQueueCreateInfo> qcis;
     qcis.reserve(uniqueFamilies.size());
@@ -30,7 +31,7 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
         qcis.push_back(qci);
     }
 
-    // ── enumerate available extensions ─────────────────────
+    // --- enumerate available extensions ---
     uint32_t extCount = 0;
     vkEnumerateDeviceExtensionProperties(physical, nullptr, &extCount, nullptr);
     std::vector<VkExtensionProperties> availExts(extCount);
@@ -41,7 +42,7 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
         return false;
     };
 
-    // ── enabled extensions ─────────────────────────────────
+    // --- enabled extensions ---
     std::vector<const char*> deviceExts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     // RT extension quartet — all four must be present together.
@@ -60,14 +61,14 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
         Logger::Info("VKDevice: RT extensions not available — hardware raytracing DISABLED");
     }
 
-    // ── feature chain ──────────────────────────────────────
-    // Base VkPhysicalDeviceFeatures2 always used so we can append pNext nodes.
+    // --- feature chain ---
+    // A base VkPhysicalDeviceFeatures2 is always used so pNext nodes can be appended.
     VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 
-    // VK_EXT_extended_dynamic_state: enables dynamic depth-test/write/compare
-    // so that ISA warmup draws can force depth-test-off (guaranteeing the full
+    // VK_EXT_extended_dynamic_state enables dynamic depth-test/write/compare, so
+    // ISA warmup draws can force depth-test-off. That guarantees the full
     // fragment shader path is compiled rather than only the early-depth-exit
-    // variant), eliminating the Clock Town TDR on Intel Iris Xe.
+    // variant, which avoids the Clock Town TDR on Intel Iris Xe.
     VkPhysicalDeviceExtendedDynamicStateFeaturesEXT edsFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
     bool hasEDS = hasExt(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
@@ -96,7 +97,7 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
         features2.pNext = &rtpFeatures;
         vkGetPhysicalDeviceFeatures2(physical, &features2);
 
-        // Enforce minimum requirements.  Disable RT if core features are absent.
+        // Disable RT if any of its core features is absent.
         if (!bdaFeatures.bufferDeviceAddress || !asFeatures.accelerationStructure || !rtpFeatures.rayTracingPipeline) {
             Logger::Info("VKDevice: RT feature flags missing — hardware raytracing DISABLED");
             m_supportsRayTracing = false;
@@ -114,7 +115,7 @@ bool VKDevice::Create(VkPhysicalDevice physical, uint32_t graphicsFamily, uint32
     dci.pQueueCreateInfos = qcis.data();
     dci.enabledExtensionCount = static_cast<uint32_t>(deviceExts.size());
     dci.ppEnabledExtensionNames = deviceExts.data();
-    // pEnabledFeatures must be NULL when pNext chain contains features2
+    // pEnabledFeatures must be NULL when the pNext chain contains features2.
     dci.pEnabledFeatures = nullptr;
 
     VK_CHECK(vkCreateDevice(physical, &dci, nullptr, &m_device));

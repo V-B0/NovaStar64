@@ -1,16 +1,15 @@
 /**
  * @file VKPipeline.hpp
- * @brief Real Vulkan IPipeline — VkPipelineLayout + VkPipeline (graphics).
+ * @brief Vulkan IPipeline: VkPipelineLayout + VkPipeline (graphics or compute).
  *
- * Stage 3 scope:
- *   * Builds a graphics pipeline matching the engine PipelineDesc:
- *     - vertex layout from PipelineDesc::vertexLayout
- *     - blend / depth-stencil / rasterizer from PipelineDesc
- *     - primitive topology
- *     - dynamic viewport + scissor (set at draw time)
- *     - default render pass = the swapchain's render pass passed at create
- *   * Pipeline layout currently has zero descriptor sets (Stage 4 will add
- *     a UBO + sampled image set). Push constants are not used.
+ * The graphics pipeline matches the engine PipelineDesc:
+ *   * vertex layout from PipelineDesc::vertexLayout
+ *   * blend / depth-stencil / rasterizer from PipelineDesc
+ *   * primitive topology
+ *   * dynamic viewport + scissor (set at draw time)
+ *   * render pass = the swapchain's render pass passed at creation
+ * The pipeline layout holds the standard descriptor set from
+ * CreateStandardSetLayout (a UBO plus sampled images). Push constants are not used.
  */
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -24,12 +23,12 @@ namespace Video {
 namespace VK {
 
 // Engine-wide fixed descriptor set layout (set 0):
-//   binding 0  : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER          (vertex+fragment)
-//   binding 1-4: VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER  (fragment)
+//   binding 0   : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC (vertex+fragment)
+//   binding 1-11: VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER (fragment)
 constexpr uint32_t kVKMaxTexturesPerDraw = 11; // UBO=binding0, textures at 1..11
 
-/// Lazily build (per-device) the shared descriptor set layout. Owned by caller
-/// (VulkanRenderer); destroyed via vkDestroyDescriptorSetLayout.
+/// Creates the shared descriptor set layout. Owned by the caller (VulkanRenderer),
+/// which destroys it with vkDestroyDescriptorSetLayout.
 VkDescriptorSetLayout CreateStandardSetLayout(VkDevice device);
 
 class VKPipelineImpl final : public IPipeline {

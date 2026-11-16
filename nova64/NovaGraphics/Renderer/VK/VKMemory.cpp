@@ -1,5 +1,6 @@
 /**
  * @file VKMemory.cpp
+ * @brief Memory type lookup and one-shot command buffer helpers.
  */
 // SPDX-License-Identifier: MIT
 #include "VKMemory.hpp"

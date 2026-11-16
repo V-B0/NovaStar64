@@ -2,8 +2,6 @@
  * @file GLShaderProgram.cpp
  * @brief OpenGL Shader Program.
  */
-// NovaGraphics — OpenGL Shader Program Implementation
-// Compilation, linking, reflection, uniform management, hot-reload.
 
 #include "GLShaderProgram.hpp"
 
@@ -18,9 +16,7 @@
 
 namespace Nova64::Video::GL {
 
-// ═══════════════════════════════════════════════════════════════
-//  Stage Helpers
-// ═══════════════════════════════════════════════════════════════
+// --- Stage Helpers ---
 
 uint32_t ShaderStageToGL(ShaderStage stage) {
     switch (stage) {
@@ -46,9 +42,7 @@ const char* ShaderStageName(ShaderStage stage) {
     return "Unknown";
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GLShader
-// ═══════════════════════════════════════════════════════════════
+// --- GLShader ---
 
 GLShader::~GLShader() { Destroy(); }
 
@@ -152,9 +146,7 @@ void GLShader::SetLabel(const std::string& label) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GLProgram
-// ═══════════════════════════════════════════════════════════════
+// --- GLProgram ---
 
 GLProgram::~GLProgram() { Destroy(); }
 
@@ -338,9 +330,7 @@ void GLProgram::BuildUniformCache() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Reflection
-// ═══════════════════════════════════════════════════════════════
+// --- Reflection ---
 
 void GLProgram::Reflect() {
     m_reflection = ProgramReflection{};
@@ -483,9 +473,7 @@ void GLProgram::Reflect() {
     glGetProgramiv(m_handle, GL_COMPUTE_WORK_GROUP_SIZE, reinterpret_cast<GLint*>(m_reflection.computeWorkGroupSize));
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Uniform Queries
-// ═══════════════════════════════════════════════════════════════
+// --- Uniform Queries ---
 
 int32_t GLProgram::GetUniformLocation(const std::string& name) const {
     auto it = m_uniformCache.find(name);
@@ -516,9 +504,7 @@ int32_t GLProgram::GetAttribLocation(const std::string& name) const {
     return glGetAttribLocation(m_handle, name.c_str());
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Uniform Setters (by location)
-// ═══════════════════════════════════════════════════════════════
+// --- Uniform Setters (by location) ---
 
 void GLProgram::SetFloat(int32_t loc, float v) const {
     if (loc >= 0) glProgramUniform1f(m_handle, loc, v);
@@ -584,9 +570,7 @@ void GLProgram::SetIntArray(int32_t loc, const int32_t* v, int count) const {
     if (loc >= 0 && v) glProgramUniform1iv(m_handle, loc, count, v);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Uniform Setters (by name — convenience wrappers)
-// ═══════════════════════════════════════════════════════════════
+// --- Uniform Setters (by name — convenience wrappers) ---
 
 void GLProgram::SetFloat(const std::string& name, float v) const { SetFloat(GetUniformLocation(name), v); }
 
@@ -608,9 +592,7 @@ void GLProgram::SetMat4(const std::string& name, const float* m, bool transpose)
     SetMat4(GetUniformLocation(name), m, transpose);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Block Binding
-// ═══════════════════════════════════════════════════════════════
+// --- Block Binding ---
 
 void GLProgram::BindUniformBlock(uint32_t blockIndex, uint32_t bindingPoint) const {
     if (m_handle) glUniformBlockBinding(m_handle, blockIndex, bindingPoint);
@@ -630,9 +612,7 @@ void GLProgram::BindSSBO(const std::string& name, uint32_t bindingPoint) const {
     if (idx >= 0) BindSSBO(static_cast<uint32_t>(idx), bindingPoint);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Compute Dispatch
-// ═══════════════════════════════════════════════════════════════
+// --- Compute Dispatch ---
 
 void GLProgram::Dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) const {
     Use();
@@ -655,9 +635,7 @@ void GLProgram::DispatchForSize(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ) 
 
 void GLProgram::MemoryBarrier(uint32_t barriers) const { glMemoryBarrier(barriers); }
 
-// ═══════════════════════════════════════════════════════════════
-//  Binary Cache
-// ═══════════════════════════════════════════════════════════════
+// --- Binary Cache ---
 
 bool GLProgram::GetBinary(std::vector<uint8_t>& outData, uint32_t& outFormat) const {
     if (!m_handle) return false;
@@ -692,9 +670,7 @@ bool GLProgram::LoadBinary(const std::vector<uint8_t>& data, uint32_t format) {
     return true;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Label
-// ═══════════════════════════════════════════════════════════════
+// --- Label ---
 
 void GLProgram::SetLabel(const std::string& label) {
     if (m_handle) {
@@ -702,9 +678,7 @@ void GLProgram::SetLabel(const std::string& label) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Debug Dump
-// ═══════════════════════════════════════════════════════════════
+// --- Debug Dump ---
 
 std::string GLProgram::DumpUniforms() const {
     std::ostringstream ss;
@@ -742,9 +716,7 @@ std::string GLProgram::DumpBlocks() const {
     return ss.str();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  GLProgramPipeline
-// ═══════════════════════════════════════════════════════════════
+// --- GLProgramPipeline ---
 
 GLProgramPipeline::~GLProgramPipeline() { Destroy(); }
 
@@ -810,9 +782,7 @@ void GLProgramPipeline::SetLabel(const std::string& label) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  ShaderIncludeManager
-// ═══════════════════════════════════════════════════════════════
+// --- ShaderIncludeManager ---
 
 void ShaderIncludeManager::RegisterInclude(const std::string& path, const std::string& source) {
     m_includes[path] = source;
@@ -870,9 +840,7 @@ std::string ShaderIncludeManager::ResolveIncludes(const std::string& src, int de
     return result.str();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  ShaderPreprocessor
-// ═══════════════════════════════════════════════════════════════
+// --- ShaderPreprocessor ---
 
 void ShaderPreprocessor::SetVersion(int version, const std::string& profile) {
     m_version = version;
@@ -907,12 +875,11 @@ void ShaderPreprocessor::ClearDefines() { m_defines.clear(); }
 std::string ShaderPreprocessor::Process(const std::string& source) const {
     std::ostringstream result;
 
-    // Find existing #version directive
     std::istringstream input(source);
     std::string line;
     bool hasVersion = false;
 
-    // First pass: check if #version exists
+    // First pass: look for an existing #version directive.
     while (std::getline(input, line)) {
         if (line.find("#version") != std::string::npos) {
             hasVersion = true;
@@ -920,7 +887,6 @@ std::string ShaderPreprocessor::Process(const std::string& source) const {
         }
     }
 
-    // Reset stream
     input.clear();
     input.str(source);
 
@@ -983,9 +949,7 @@ void ShaderPreprocessor::SetBackendDefines(bool bindless, bool dsa, bool multiDr
     else RemoveDefine("USE_MULTI_DRAW_INDIRECT");
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  ShaderHotReloader
-// ═══════════════════════════════════════════════════════════════
+// --- ShaderHotReloader ---
 
 void ShaderHotReloader::AddWatch(const std::string& path, ShaderStage stage) {
     ShaderFileEntry entry;
@@ -1035,7 +999,6 @@ bool ShaderHotReloader::ReloadShader(GLShader& shader, const std::string& path) 
         }
     }
 
-    // Read file
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return false;
 

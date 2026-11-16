@@ -33,7 +33,7 @@ void VKShaderCompiler::Shutdown() {
     GlslangFinalizeProcess();
 }
 
-// ─── Compile ─────────────────────────────────────────────────────────────────
+// --- Compile ---
 
 Shader::CompiledShader VKShaderCompiler::Compile(const Shader::CombinerKey& key, const std::string& vertSrc,
                                                  const std::string& fragSrc) {
@@ -67,8 +67,8 @@ Shader::CompiledShader VKShaderCompiler::Compile(const Shader::CombinerKey& key,
 Shader::CompiledShader VKShaderCompiler::CompileWithGeometry(const Shader::CombinerKey& key, const std::string& vertSrc,
                                                              const std::string& fragSrc,
                                                              const std::string& /*geomSrc*/) {
-    // Geometry shaders on Vulkan require extra pipeline/extension support;
-    // fall back to vertex+fragment only for now.
+    // Geometry shaders on Vulkan need extra pipeline/extension support, so the
+    // geometry source is ignored and only vertex+fragment are compiled.
     return Compile(key, vertSrc, fragSrc);
 }
 
@@ -80,7 +80,7 @@ void VKShaderCompiler::DeleteShader(Shader::CompiledShader& shader) {
     }
 }
 
-// ─── BindShader ──────────────────────────────────────────────────────────────
+// --- BindShader ---
 
 void VKShaderCompiler::BindShader(const Shader::CompiledShader& shader) {
     if (!shader.valid || !shader.handle) return;
@@ -91,7 +91,7 @@ void VKShaderCompiler::BindShader(const Shader::CompiledShader& shader) {
     m_renderer->BindShader(it->second.get());
 }
 
-// ─── GetUniformLocation ──────────────────────────────────────────────────────
+// --- GetUniformLocation ---
 
 int VKShaderCompiler::GetUniformLocation(Shader::ShaderHandle /*program*/, const char* name) {
     // Return the byte offset inside the N64 UBO (std140 layout).
@@ -169,7 +169,7 @@ int VKShaderCompiler::GetUniformLocation(Shader::ShaderHandle /*program*/, const
     return -1; // unknown (includes texture unit uniforms)
 }
 
-// ─── UBOPtr helper ───────────────────────────────────────────────────────────
+// --- UBOPtr helper ---
 
 uint8_t* VKShaderCompiler::UBOPtr(int offset) {
     if (offset < 0 || static_cast<size_t>(offset) >= kN64UBOSize) return nullptr;
@@ -178,7 +178,7 @@ uint8_t* VKShaderCompiler::UBOPtr(int offset) {
     return static_cast<uint8_t*>(base) + offset;
 }
 
-// ─── Uniform setters ─────────────────────────────────────────────────────────
+// --- Uniform setters ---
 
 void VKShaderCompiler::SetUniform1i(int loc, int v) {
     uint8_t* p = UBOPtr(loc);

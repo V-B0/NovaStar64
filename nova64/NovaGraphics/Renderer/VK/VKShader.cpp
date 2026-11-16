@@ -1,5 +1,6 @@
 /**
  * @file VKShader.cpp
+ * @brief GLSL to SPIR-V compilation via glslang and the Vulkan shader program implementation.
  */
 // SPDX-License-Identifier: MIT
 #include "VKShader.hpp"
@@ -67,7 +68,7 @@ std::vector<uint32_t> CompileGLSLtoSPIRV(ShaderStage stage, const std::string& s
 
     const char* src = source.c_str();
     shader.setStrings(&src, 1);
-    // RT stages require Vulkan 1.2 / SPIR-V 1.4 minimum
+    // RT stages require Vulkan 1.2 / SPIR-V 1.4 at minimum.
     const bool isRT =
         (stage == ShaderStage::RayGen || stage == ShaderStage::RayMiss || stage == ShaderStage::RayClosestHit);
     const auto vkTarget = isRT ? glslang::EShTargetVulkan_1_2 : glslang::EShTargetVulkan_1_1;
@@ -95,7 +96,7 @@ std::vector<uint32_t> CompileGLSLtoSPIRV(ShaderStage stage, const std::string& s
 
     std::vector<uint32_t> spirv;
     glslang::SpvOptions opts{};
-    opts.disableOptimizer = true; // ENABLE_OPT=OFF in CMake — keep consistent
+    opts.disableOptimizer = true; // glslang is built with ENABLE_OPT=OFF in CMake; match it
     opts.validate = false;
     glslang::GlslangToSpv(*program.getIntermediate(lang), spirv, &opts);
     if (spirv.empty()) {
@@ -103,7 +104,6 @@ std::vector<uint32_t> CompileGLSLtoSPIRV(ShaderStage stage, const std::string& s
     }
     return spirv;
 }
-
 
 VKShaderProgramImpl::VKShaderProgramImpl(const VKContext* ctx) : m_ctx(ctx) { GlslangInitProcess(); }
 

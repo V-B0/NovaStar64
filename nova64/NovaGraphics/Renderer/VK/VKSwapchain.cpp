@@ -1,5 +1,6 @@
 /**
  * @file VKSwapchain.cpp
+ * @brief Vulkan swapchain (or offscreen image set): images, views, depth buffer, render passes and framebuffers.
  */
 // SPDX-License-Identifier: MIT
 #include "VKSwapchain.hpp"
@@ -87,9 +88,9 @@ bool VKSwapchain::Create(VkPhysicalDevice physical, VkDevice device, VkSurfaceKH
     sci.imageColorSpace = fmt.colorSpace;
     sci.imageExtent = m_extent;
     sci.imageArrayLayers = 1;
-    // TRANSFER_DST so we can vkCmdClearColorImage in Stage 1.
-    // TRANSFER_SRC so we can vkCmdCopyImage FROM the swapchain (BlitToTexture / ReadPixels).
-    // COLOR_ATTACHMENT will be added in later stages.
+    // TRANSFER_DST for vkCmdClearColorImage, TRANSFER_SRC for vkCmdCopyImage
+    // from the swapchain (BlitToTexture / ReadPixels), COLOR_ATTACHMENT for the
+    // render pass.
     sci.imageUsage =
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
@@ -115,7 +116,7 @@ bool VKSwapchain::Create(VkPhysicalDevice physical, VkDevice device, VkSurfaceKH
     m_images.resize(actualCount);
     vkGetSwapchainImagesKHR(device, m_swapchain, &actualCount, m_images.data());
 
-    // Create image views (used by Stage 2+ render passes; harmless to make now).
+    // Image views for the framebuffers.
     m_imageViews.resize(actualCount);
     for (uint32_t i = 0; i < actualCount; ++i) {
         VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -337,9 +338,9 @@ bool VKSwapchain::CreateRenderPass(VkDevice device) {
     attachments[1].format = m_depthFormat;
     attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    // STORE (not DONT_CARE): the RT composite samples this depth buffer after
-    // the pass for billboard suppression; on tile-based GPUs (Apple) DONT_CARE
-    // really discards the contents.
+    // STORE rather than DONT_CARE: the RT composite samples this depth buffer
+    // after the pass for billboard suppression, and on tile-based GPUs (Apple)
+    // DONT_CARE really discards the contents.
     attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -381,9 +382,9 @@ bool VKSwapchain::CreateRenderPass(VkDevice device) {
 }
 
 bool VKSwapchain::CreateRenderPassLoad(VkDevice device) {
-    // Same as CreateRenderPass but LOAD_OP_LOAD for color and depth — preserves
-    // existing swapchain content.  Used when resuming the render pass after a
-    // mid-frame GPU snapshot (SnapshotToTexture) without clearing the screen.
+    // Same as CreateRenderPass but with LOAD_OP_LOAD for color and depth, which
+    // preserves the existing swapchain content. Used to resume the render pass
+    // after a mid-frame GPU snapshot (SnapshotToTexture) without clearing the screen.
     VkAttachmentDescription attachments[2]{};
 
     attachments[0].format = m_format;
@@ -398,7 +399,7 @@ bool VKSwapchain::CreateRenderPassLoad(VkDevice device) {
     attachments[1].format = m_depthFormat;
     attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE; // see above
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE; // same reason as in CreateRenderPass
     attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;

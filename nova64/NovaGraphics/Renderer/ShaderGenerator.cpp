@@ -1,10 +1,8 @@
 /**
  * @file ShaderGenerator.cpp
- * @brief Shader Generator.
+ * @brief Generates GLSL, HLSL and SPIR-V-bound GLSL source for N64 combiner, blender and post-process shaders.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Shader Generator Implementation
-// Generates GLSL/HLSL/SPIRV shader source code for N64 combiner configurations
 
 #include "ShaderManager.hpp"
 #include <sstream>
@@ -14,9 +12,7 @@ namespace Nova64 {
 namespace Video {
 namespace Shader {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONSTRUCTION / DESTRUCTION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- CONSTRUCTION / DESTRUCTION ---
 
 ShaderGenerator::ShaderGenerator() : m_language(ShaderLanguage::GLSL_460) {}
 
@@ -25,12 +21,10 @@ ShaderGenerator::~ShaderGenerator() = default;
 void ShaderGenerator::Initialize(ShaderLanguage language) { m_language = language; }
 
 void ShaderGenerator::Shutdown() {
-    // Nothing to clean up currently
+    // Holds no resources.
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPER: VERSION DIRECTIVE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- HELPER: VERSION DIRECTIVE ---
 
 std::string ShaderGenerator::GetVersionDirective() const {
     switch (m_language) {
@@ -67,9 +61,7 @@ std::string ShaderGenerator::GetHLSLCompatPreamble() const {
            "\n";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPER: COMMON UNIFORMS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- HELPER: COMMON UNIFORMS ---
 
 std::string ShaderGenerator::GetCommonUniforms() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
@@ -134,7 +126,7 @@ std::string ShaderGenerator::GetCommonUniforms() const {
                "    float4 uTexCoordBounds1;\n"
                "};\n";
     }
-    // ── Vulkan / SPIR-V path: all uniforms packed in a single UBO ────────
+    // --- Vulkan / SPIR-V path: all uniforms packed in a single UBO ---
     // std140 layout; all 16-byte aligned. vec2 pairs packed into vec4.
     // #define aliases expose the original uniform names to shader body code.
     if (m_language == ShaderLanguage::SPIRV) {
@@ -340,9 +332,7 @@ std::string ShaderGenerator::GetTextureUniformsVK() const {
            "layout(set=0, binding=11) uniform sampler2D uZLUT;\n";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPER: INPUTS / OUTPUTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- HELPER: INPUTS / OUTPUTS ---
 
 std::string ShaderGenerator::GetVertexInputs() const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
@@ -371,11 +361,11 @@ std::string ShaderGenerator::GetVertexOutputs() const {
                "    float4 position  : SV_Position;\n"
                "    float4 vColor    : COLOR;\n"
                "    noperspective float4 vColorNP : COLOR1;\n"
-               // vTexCoord0/1 and vClipW are already pre-divided by clip W in the
-               // vertex stage (so the fragment can recover screen-space tc via
-               // tc / vClipW).  They MUST be noperspective — otherwise the
-               // rasterizer divides them by W a second time, producing the
-               // close-up texel-marching artefact on near geometry.
+               // vTexCoord0/1 and vClipW are already divided by clip W in the vertex
+               // stage (the fragment recovers screen-space tc via tc / vClipW). They
+               // must be noperspective: otherwise the rasterizer divides them by W a
+               // second time, causing the close-up texel-marching artefact on near
+               // geometry.
                "    noperspective float2 vTexCoord0: TEXCOORD0;\n"
                "    noperspective float2 vTexCoord1: TEXCOORD1;\n"
                "    float  vFog      : FOG;\n"
@@ -454,12 +444,10 @@ std::string ShaderGenerator::GetFragmentOutputs(uint64_t features) const {
     return s;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// N64 COLOR COMBINER + BLENDER CODE GENERATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- N64 COLOR COMBINER + BLENDER CODE GENERATION ---
 
 std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t features) const {
-    // ── N64 Color Combiner: (A - B) * C + D  (RGB and Alpha) ──
+    // --- N64 Color Combiner: (A - B) * C + D  (RGB and Alpha) ---
     // The 64-bit mux word encodes input selectors for both cycles.
 
     // Input expression tables (adapted to ShaderGenerator naming)
@@ -491,13 +479,13 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
 
     std::ostringstream ss;
 
-    // texel1 / noise defaults (texel0 is declared at the top of main())
+    // texel1 and noise defaults (texel0 is declared at the top of main()).
     if (!(features & SF_TEXTURE_1)) ss << "    vec4 texel1 = texel0;\n";
     if (!(features & SF_NOISE_ENABLE)) ss << "    float noise = 0.0;\n";
 
-    // N64 hardware clears the combiner pipeline to 0x80 (=0.5) before
-    // cycle 0.  In 2-cycle mode, any COMBINED reference in cycle 0 thus
-    // reads 0.5; in 1-cycle mode GLideN64 forces COMBINED to zero.
+    // N64 hardware clears the combiner pipeline to 0x80 (=0.5) before cycle 0,
+    // so in 2-cycle mode any COMBINED reference in cycle 0 reads 0.5. In
+    // 1-cycle mode GLideN64 forces COMBINED to zero.
     if (features & SF_2CYCLE) ss << "    vec4 combined = vec4(0.5);\n";
     else ss << "    vec4 combined = vec4(0.0);\n";
 
@@ -535,15 +523,13 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
         }
 
         // N64 2-cycle texel pipeline corrections:
-        // Cycle 0: When only one texture is active, TEXEL1 hasn't been
-        //          fetched yet and reads as TEXEL0.  When two textures
-        //          are active (SF_TEXTURE_1), TEXEL1 IS valid tile-1 data
-        //          and must NOT be remapped.
-        // Cycle 1: pipeline shift swaps TEXEL0↔TEXEL1 (always).
+        // Cycle 0: with only one texture active, TEXEL1 has not been fetched yet
+        //          and reads as TEXEL0. With two textures (SF_TEXTURE_1), TEXEL1
+        //          is valid tile-1 data and must not be remapped.
+        // Cycle 1: the pipeline shift always swaps TEXEL0 and TEXEL1.
         if (features & SF_2CYCLE) {
             bool hasTex1 = (features & SF_TEXTURE_1) != 0;
-            // Swap helper for 4-bit RGB A/B and 3-bit D/alpha indices
-            // where index 1=texel0, 2=texel1
+            // Swap helper for the 4-bit RGB A/B and 3-bit D/alpha indices (1 = texel0, 2 = texel1).
             auto swapTex = [cycle, hasTex1](int idx) -> int {
                 if (cycle == 0) {
                     if (!hasTex1 && idx == 2) return 1;
@@ -597,12 +583,12 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
             emitCycle(0); // Cycle 0 intermediate (unclamped)
 
             // N64 sign extension: the combiner intermediate is a signed 9-bit
-            // value.  Apply only when cycle 1 references COMBINED (index 0).
-            // The C component (multiplier) wraps in [-1,1) and the
-            // A/B/D components wrap in [-0.5,1.5).
+            // value. Applied only when cycle 1 references COMBINED (index 0).
+            // The C component (multiplier) wraps in [-1,1) and the A/B/D
+            // components wrap in [-0.5,1.5).
             // See GLideN64 ShaderSignExtendColorC / ShaderSignExtendColorABD.
             {
-                // Extract cycle 1 raw mux indices
+                // Raw cycle 1 mux indices.
                 int c1_aRGB = (hi >> 5) & 0xF;
                 int c1_bRGB = (lo >> 24) & 0xF;
                 int c1_cRGB = hi & 0x1F;
@@ -612,32 +598,32 @@ std::string ShaderGenerator::GenerateCombinerCode(uint64_t mux, uint64_t feature
                 int c1_cA = (lo >> 18) & 0x7;
                 int c1_dA = lo & 0x7;
 
-                // RGB: check if COMBINED (0) is used in C vs A/B/D
+                // RGB: is COMBINED (0) used in C or in A/B/D?
                 bool rgbUsesC = (c1_cRGB == 0);
                 bool rgbUsesABD = (c1_dRGB == 0) || ((c1_aRGB == 0 || c1_bRGB == 0) && c1_cRGB != 31);
                 if (rgbUsesC) ss << "    combined.rgb = mod(combined.rgb - (-1.01), 2.02) + (-1.01);\n";
                 else if (rgbUsesABD) ss << "    combined.rgb = mod(combined.rgb - (-0.51), 2.02) + (-0.51);\n";
 
-                // Alpha: check if COMBINED (0) is used in C vs A/B/D
+                // Alpha: is COMBINED (0) used in C or in A/B/D?
                 bool alphaUsesC = (c1_cA == 0);
                 bool alphaUsesABD = (c1_dA == 0) || ((c1_aA == 0 || c1_bA == 0) && c1_cA != 7);
                 if (alphaUsesC) ss << "    combined.a = mod(combined.a - (-1.01), 2.02) + (-1.01);\n";
                 else if (alphaUsesABD) ss << "    combined.a = mod(combined.a - (-0.51), 2.02) + (-0.51);\n";
             }
 
-            // Save cycle 0 alpha for alpha test (GLideN64 tests alpha1 after cycle 0)
+            // Cycle 0 alpha feeds the alpha test (GLideN64 tests alpha1 after cycle 0).
             ss << "    float c0Alpha = combined.a;\n";
 
-            emitCycle(1); // Cycle 1 (unclamped — we WRAP-then-clamp below)
+            emitCycle(1); // Unclamped: wrapped, then clamped, below
 
             // CVG×Alpha threshold after cycle 1 (GLideN64: alpha2 < 0.125)
             if (features & SF_ALPHA_CVG) ss << "    if (combined.a < 0.125) discard;\n";
         } else {
-            // In 1-cycle mode N64 hardware uses cycle 1 fields, not cycle 0.
-            // COMBINED inputs read as zero (already handled by combined init).
-            emitCycle(1); // Unclamped — we WRAP-then-clamp below
+            // In 1-cycle mode N64 hardware uses the cycle 1 fields, not cycle 0.
+            // COMBINED inputs read as zero (see the combined initialisation above).
+            emitCycle(1); // Unclamped: wrapped, then clamped, below
 
-            // In 1-cycle mode, c0Alpha is just the single-cycle alpha
+            // The single cycle's alpha is the one the alpha test sees.
             ss << "    float c0Alpha = combined.a;\n";
 
             // CVG×Alpha threshold (GLideN64: alpha1 < 0.125)
@@ -659,14 +645,13 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     // A alpha source table:   0=combined.a, 1=fogColor.a, 2=shadeAlpha, 3=0.0
     // B alpha source table:   0=(1-A), 1=memColor.a, 2=1.0, 3=0.0
     //
-    // Cycle 1 selectors: bits [30:31]=P1 [26:27]=A1 [22:23]=M1 [18:19]=B1
-    // Cycle 2 selectors: bits [28:29]=P2 [24:25]=A2 [20:21]=M2 [16:17]=B2
+    // Cycle 1 selectors: bits [31:30]=P1 [27:26]=A1 [23:22]=M1 [19:18]=B1
+    // Cycle 2 selectors: bits [29:28]=P2 [25:24]=A2 [21:20]=M2 [17:16]=B2
     if (blenderBits == 0) return "";
 
     // Copy mode and fill mode bypass the blender entirely on real N64 hardware.
     if (features & (SF_COPY_MODE | SF_FILL_RECT)) return "";
 
-    // Extract all cycle selectors
     int p1 = (blenderBits >> 30) & 0x3;
     int a1 = (blenderBits >> 26) & 0x3;
     int m1 = (blenderBits >> 22) & 0x3;
@@ -678,33 +663,31 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
 
     bool is2Cycle = (features & SF_2CYCLE) != 0;
     bool forceBlend = (features & SF_FORCE_BLEND) != 0;
-    // Non-MLE path has no framebuffer read (memColor = 0).  Forcing the
-    // blend formula when FORCE_BL is actually 0 produces P*A/(A+B) instead
-    // of plain P, darkening geometry whose combined alpha < 1.  Let the
-    // real FORCE_BL flag decide; MLE already does per-pixel bypass via
+    // The non-MLE path has no framebuffer read (memColor = 0). Forcing the
+    // blend formula when FORCE_BL is actually 0 would produce P*A/(A+B) instead
+    // of plain P, darkening geometry whose combined alpha < 1, so the real
+    // FORCE_BL flag decides; the MLE path already bypasses per pixel via
     // coverage < 1.0.
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  MLE BLENDER: Full shader-based read-modify-write via imageLoad/Store
-    //  Uses fragment shader interlock for correct ordering.
-    // ══════════════════════════════════════════════════════════════════════
+    // --- MLE blender: shader-based read-modify-write via imageLoad/imageStore ---
+    // Fragment shader interlock keeps overlapping fragments ordered.
     if (features & SF_MLE_BLENDER) {
         std::ostringstream ss;
         ss << "\n    // ─── MLE Blender: imageLoad/imageStore read-modify-write ───\n";
         ss << "    {\n";
         ss << "        ivec2 blendCoord = ivec2(gl_FragCoord.xy);\n";
 
-        // The depth-compare code opens the interlock and leaves it open for
-        // the MLE blender to close ONLY when both SF_DEPTH_COMPARE and
-        // SF_N64_DEPTH_COMPARE are set.  Otherwise we must open it ourselves.
+        // The depth-compare code opens the interlock and leaves it open for the
+        // MLE blender to close only when both SF_DEPTH_COMPARE and
+        // SF_N64_DEPTH_COMPARE are set. Otherwise the blender opens it itself.
         bool depthWillInterlock = (features & SF_N64_DEPTH_COMPARE) && (features & SF_DEPTH_COMPARE);
         bool needOwnInterlock = !depthWillInterlock;
         if (needOwnInterlock) ss << "        BEGIN_INTERLOCK();\n";
 
-        // When combined with N64 depth compare, the depth code sets
-        // n64DepthPassed = false on depth failure.  Skip the blender body
-        // for failed pixels but still close the interlock at the top level
-        // (Intel Iris Xe rejects endInvocationInterlockARB inside flow control).
+        // With N64 depth compare, the depth code sets n64DepthPassed = false on
+        // depth failure. The blender body is skipped for failed pixels, but the
+        // interlock is still closed at the top level (Intel Iris Xe rejects
+        // endInvocationInterlockARB inside flow control).
         if (depthWillInterlock) ss << "        if (n64DepthPassed) {\n";
 
         ss << "        vec4 memColor = IMG_LOAD_F4(uColorImage, blendCoord);\n";
@@ -741,11 +724,11 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         default: ss << "        float bB = 0.0;\n"; break;
         }
 
-        // Per-pixel blender bypass: on real N64, when FORCE_BL is clear,
-        // pixels with full coverage (cvg>=7) skip the blend and write P.
-        // Only partially-covered edge pixels actually blend.
-        // When AA_EN (SF_COVERAGE_ENABLE) is set, forceBlend is always true
-        // at compile time so the runtime check is skipped.
+        // Per-pixel blender bypass: on a real N64, when FORCE_BL is clear, pixels
+        // with full coverage (cvg >= 7) skip the blend and write P; only
+        // partially covered edge pixels blend. With AA_EN (SF_COVERAGE_ENABLE)
+        // set, forceBlend is always true at compile time, so the runtime check
+        // is skipped.
         if (!is2Cycle) {
             if (forceBlend) {
                 ss << "        combined.rgb = clamp((bP * bA + bM * bB) / max(bA + bB, 0.001), 0.0, 1.0);\n";
@@ -800,33 +783,27 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         ss << "        IMG_STORE_F4(uColorImage, blendCoord, vec4(combined.rgb, combined.a));\n";
         ss << "        IMG_STORE_U(uCoverageImage, blendCoord, uint(final_cvg));\n";
 
-        // Close the depth-guarded block if active
+        // Close the depth-guarded block, if open.
         if (depthWillInterlock) ss << "        } // end if (n64DepthPassed)\n";
 
-        // Always close the interlock region at the top level — either we
-        // opened it ourselves or the depth-compare code opened it and left
-        // it for us to close.  Keeping END_INTERLOCK out of flow control
-        // is required for Intel Iris Xe compatibility.
+        // Always close the interlock region at the top level, whether the blender
+        // or the depth-compare code opened it. END_INTERLOCK must stay out of
+        // flow control for Intel Iris Xe.
         ss << "        END_INTERLOCK();\n";
 
-        // Discard depth-failed fragments AFTER ending the interlock
+        // Depth-failed fragments are discarded only after the interlock ends.
         if (depthWillInterlock) ss << "        if (!n64DepthPassed) discard;\n";
 
         ss << "    }\n";
         return ss.str();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  When memColor is needed but no FB read is available, we still run
-    //  the blender with memColor = vec4(0).  Skipping the blender entirely
-    //  caused some surfaces (e.g. OoT title logo) to become invisible
-    //  because the GL hardware blend mode didn't match the N64 intent.
-    //  GLideN64 likewise keeps the blender code and treats memColor as 0.
-    // ══════════════════════════════════════════════════════════════════════
-
-    // ══════════════════════════════════════════════════════════════════════
-    //  HLE BLENDER: Legacy dual-source / GL hardware blend path
-    // ══════════════════════════════════════════════════════════════════════
+    // --- HLE BLENDER: Legacy dual-source / GL hardware blend path ---
+    // When memColor is needed but no framebuffer read is available, the blender
+    // still runs with memColor = vec4(0). Skipping it entirely made some
+    // surfaces (e.g. the OoT title logo) invisible, because the GL hardware
+    // blend mode did not match the N64's intent. GLideN64 likewise keeps the
+    // blender code and treats memColor as 0.
     bool dualSource = (features & SF_DUAL_SOURCE_BLEND) != 0;
 
     std::ostringstream preamble;
@@ -837,9 +814,8 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         preamble << "    memColor = texture(uFBTexture, fbUV);\n";
     }
 
-    // P/M color sources (N64 hardware order)
-    // In cycle 2, source 0 is the OUTPUT of cycle 1 (not the combiner output).
-    // We use "blenderOut.rgb" for this after cycle 1 runs.
+    // P/M color sources (N64 hardware order). In cycle 2, source 0 is the output
+    // of cycle 1 (blenderOut.rgb), not the combiner output.
     auto pmColorSel = [](int s, bool isCycle2) -> const char* {
         switch (s) {
         case 0:  return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
@@ -850,7 +826,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         }
     };
 
-    // For dual-source: memColor is handled by HW blend, so P/M source 1 → vec3(0)
+    // Dual-source: the hardware blend supplies memColor, so P/M source 1 becomes vec3(0).
     auto pmColorSelDS = [](int s, bool isCycle2) -> const char* {
         switch (s) {
         case 0:  return isCycle2 ? "blenderOut.rgb" : "combined.rgb";
@@ -861,7 +837,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         }
     };
 
-    // A alpha sources — cycle 2 source 0 uses cycle 1 output alpha
+    // A alpha sources; cycle 2 source 0 is cycle 1's output alpha.
     auto aAlphaSel = [](int s, bool isCycle2) -> const char* {
         switch (s) {
         case 0:  return isCycle2 ? "blenderOut.a" : "combined.a";
@@ -872,15 +848,12 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         }
     };
 
-    // is2Cycle and forceBlend already declared above (shared with MLE path)
-
     std::ostringstream ss;
     ss << preamble.str();
 
-    // ── Helper lambda: emit the final-cycle dual-source split ────────────
-    // Computes srcContrib (non-memColor terms) → combined.rgb,
-    //          dstFactor  (memColor weight)     → fragColor1.
-    // Hardware blend does: fragColor * 1 + dst * fragColor1.
+    // Final-cycle dual-source split: srcContrib (the non-memColor terms) goes to
+    // combined.rgb and dstFactor (the memColor weight) to fragColor1. The
+    // hardware blend then computes fragColor * 1 + dst * fragColor1.
     auto emitFinalCycleDS = [&](int p, int m, int b, bool isCycle2) {
         bool p_is_mem = (p == 1);
         bool m_is_mem = (m == 1);
@@ -894,27 +867,23 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
             ss << "        combined.rgb = clamp(srcContrib, 0.0, 1.0);\n";
             ss << "        fragColor1 = vec4(clamp(dstFactor, 0.0, 1.0));\n";
         } else {
-            // !forceBlend: full-coverage pixels bypass the blend formula on
-            // real N64 hardware and output P directly -- but P is still
-            // whichever source the selector points to (CC/Mem/Blend/Fog),
-            // NOT necessarily the raw combiner result. This branch used to
-            // leave combined.rgb untouched (== the combiner's own output),
-            // which only happens to be correct when P selects CC (0). Any
-            // draw with P=Blend/Fog (a common pattern for blender-driven
-            // fog/glow effects, e.g. P=Fog,M=Mem,B=1-A with FORCE_BL clear
-            // -- the usual case for opaque terrain) would silently render
-            // the pre-blend combiner color instead of the actual selected
-            // P color on every fully-covered pixel. The MLE blender's own
-            // equivalent branch (`combined.rgb = clamp(bP, ...)`, a few
-            // lines above) already gets this right -- match it here since
-            // this dual-source path is the one that actually runs today
-            // (MLE_BLENDER never activates on Vulkan; see nova64-graphics-
-            // audit-pass1 pass 16).  P=memColor (bP==vec3(0) via
-            // pmColorSelDS) is excluded from dual-source by hardware blend
-            // instead, matching the forceBlend branch's p_is_mem handling.
+            // !forceBlend: full-coverage pixels bypass the blend formula on real
+            // N64 hardware and output P directly. P is whichever source the
+            // selector points to (CC/Mem/Blend/Fog), not necessarily the raw
+            // combiner result, so combined.rgb must be set to it. Leaving the
+            // combiner output is only correct when P selects CC (0): a draw with
+            // P=Blend/Fog (blender-driven fog/glow effects, e.g. P=Fog,M=Mem,B=1-A
+            // with FORCE_BL clear, the usual case for opaque terrain) would
+            // otherwise render the pre-blend combiner color on every fully covered
+            // pixel. The MLE blender's equivalent branch
+            // (`combined.rgb = clamp(bP, ...)`) does the same. This dual-source
+            // path is the one that runs on Vulkan, where MLE_BLENDER never
+            // activates. P=memColor (bP == vec3(0) via pmColorSelDS) is excluded
+            // from dual-source by the hardware blend, matching the forceBlend
+            // branch's p_is_mem handling.
             if (p_is_mem) {
-                // P=memColor: output the existing framebuffer content
-                // unchanged (out = dst). combined.rgb contributes nothing.
+                // P=memColor: the existing framebuffer content passes through
+                // unchanged (out = dst); combined.rgb contributes nothing.
                 ss << "        combined.rgb = vec3(0.0);\n";
                 ss << "        fragColor1 = vec4(1.0);\n";
             } else {
@@ -924,7 +893,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         }
     };
 
-    // ── Helper lambda: emit the final-cycle original (non-dual-source) ───
+    // Final-cycle blend without dual-source output.
     auto emitFinalCycleOrig = [&]() {
         if (forceBlend) {
             ss << "        float denom = max(bA + bB, 0.001);\n";
@@ -934,11 +903,11 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         }
     };
 
-    // ── Cycle 1 blender ──────────────────────────────────────────────────
+    // --- Cycle 1 blender ---
     ss << "\n    // Blender cycle 1: out = (P * A + M * B) / (A + B)\n";
     ss << "    {\n";
     if (dualSource && !is2Cycle) {
-        // 1-cycle mode with dual-source: use DS color selectors for P/M
+        // 1-cycle mode with dual-source: use the DS color selectors for P/M.
         ss << "        vec3 bP = " << pmColorSelDS(p1, false) << ";\n";
     } else {
         ss << "        vec3 bP = " << pmColorSel(p1, false) << ";\n";
@@ -954,7 +923,7 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     switch (b1) {
     case 0: ss << "        float bB = 1.0 - bA;\n"; break;
     case 1:
-        // For dual-source final cycle, approximate memColor.a as 1.0
+        // The dual-source final cycle approximates memColor.a as 1.0.
         if (dualSource && !is2Cycle) ss << "        float bB = 1.0; // memColor.a approx for dual-source\n";
         else ss << "        float bB = memColor.a;\n";
         break;
@@ -963,13 +932,13 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
     }
 
     if (!is2Cycle) {
-        // 1-cycle mode: cycle 1 is the only (and final) cycle.
+        // 1-cycle mode: cycle 1 is the only, and final, cycle.
         if (dualSource) emitFinalCycleDS(p1, m1, b1, false);
         else emitFinalCycleOrig();
         ss << "    }\n";
     } else {
-        // 2-cycle mode: cycle 1 always runs the full formula (intermediate).
-        // Intermediate cycle: out = (P * A + M * B) / (A + B)
+        // 2-cycle mode: cycle 1 is an intermediate cycle and always runs the full
+        // formula: out = (P * A + M * B) / (A + B)
         ss << "        float denom = max(bA + bB, 0.001);\n";
         ss << "        combined.rgb = clamp((bP * bA + bM * bB) / denom, 0.0, 1.0);\n";
         ss << "    }\n";
@@ -997,13 +966,12 @@ std::string ShaderGenerator::GenerateBlenderCode(uint32_t blenderBits, uint32_t 
         case 2:  ss << "        float bB = 1.0;\n"; break;
         default: ss << "        float bB = 0.0;\n"; break;
         }
-        // Cycle 2 is the final cycle.
         if (dualSource) emitFinalCycleDS(p2, m2, b2, true);
         else emitFinalCycleOrig();
         ss << "    }\n";
     }
 
-    // ── CVG_DEST logic (N64 Coverage Wrap/Clamp) ─────────────────────────
+    // --- CVG_DEST logic (N64 Coverage Wrap/Clamp) ---
     ss << "\n    // CVG_DEST logic (N64 Coverage Wrap/Clamp)\n";
     ss << "    {\n";
     ss << "        int cur_cvg = int(round(coverage * 7.0));\n";
@@ -1031,16 +999,15 @@ std::string ShaderGenerator::GenerateAlphaTestCode(uint64_t features) const {
     // N64 hardware: alpha compare tests cycle 0's alpha output (before cycle 1
     // in 2-cycle mode).  c0Alpha is set by GenerateCombinerCode.
     std::string code = "    {\n";
-    // Determine alpha compare threshold
+    // Alpha compare threshold: a noise value in dither mode, else the reference.
     if (features & SF_ALPHA_NOISE_DITHER) {
         code += "        float alphaTestValue = noise;\n";
     } else {
         code += "        float alphaTestValue = uAlphaRef;\n";
     }
-    // Determine alpha source value (GLideN64 ShaderAlphaTest):
-    // When alphaCvgSel is set and cvgXAlpha is NOT set, the alpha compare
-    // uses a fixed value of 0.125 (average of 1-out-of-8 coverage samples)
-    // instead of the actual combiner alpha.
+    // Alpha source value (GLideN64 ShaderAlphaTest): when alphaCvgSel is set and
+    // cvgXAlpha is not, the compare uses a fixed 0.125 (one of eight coverage
+    // samples) instead of the combiner alpha.
     if ((features & SF_ALPHA_CVG_SEL) && !(features & SF_ALPHA_CVG)) {
         code += "        float alphaValue = 0.125;\n";
     } else {
@@ -1053,14 +1020,14 @@ std::string ShaderGenerator::GenerateAlphaTestCode(uint64_t features) const {
 
 std::string ShaderGenerator::GenerateFogCode(uint64_t features) const {
     if (!(features & SF_FOG)) return "";
-    // GLideN64 ShaderLegacyBlender: fog is applied by mixing fragColor with
-    // uFogColor using the per-vertex fog factor stored in vShadeColor.a
-    // (which equals vFog — set in vertex shader when uFogUsage == 1, or
-    // pre-set by RSP fog computation in shade alpha).
+    // GLideN64 ShaderLegacyBlender: fog mixes fragColor with uFogColor using the
+    // per-vertex fog factor in vShadeColor.a (which equals vFog: set in the
+    // vertex shader when uFogUsage == 1, or already present in shade alpha from
+    // the RSP fog computation).
     //
-    // uFogUsage: 0=standard fog, 1=F3DAM fog→shadeAlpha, 2=F3DAM fog→shadeRGB
-    // When uFogUsage==2, fog was baked into shade RGB; no post-process needed.
-    // For modes 0 and 1, use vShadeColor.a (= vFog = RSP fog factor).
+    // uFogUsage: 0=standard fog, 1=F3DAM fog->shadeAlpha, 2=F3DAM fog->shadeRGB
+    // With uFogUsage == 2 the fog is baked into shade RGB and needs no pass here.
+    // Modes 0 and 1 use vShadeColor.a (= vFog = RSP fog factor).
     return "    if (uFogUsage == 0 || uFogUsage == 1) {\n"
            "        float fogFactor = clamp(vFog, 0.0, 1.0);\n"
            "        fragColor.rgb = mix(fragColor.rgb, uFogColor.rgb, fogFactor);\n"
@@ -1069,8 +1036,8 @@ std::string ShaderGenerator::GenerateFogCode(uint64_t features) const {
 
 std::string ShaderGenerator::GenerateNoiseCode(uint64_t features) const {
     if (!(features & SF_NOISE_ENABLE)) return "";
-    // Hash-based pseudorandom noise (GLideN64 approach).
-    // Uses screen coords + per-frame seed — no texture lookup needed.
+    // Hash-based pseudorandom noise (GLideN64 approach): screen coords plus a
+    // per-frame seed, so no texture lookup is needed.
     return "    float noise;\n"
            "    {\n"
            "        vec2 noiseCoord = floor(gl_FragCoord.xy / uScreenScale);\n"
@@ -1086,37 +1053,35 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
     const std::string texFilterMode =
         (features & SF_TEXTURE_3POINT) ? "2" : ((features & SF_TEXTURE_BILINEAR) ? "1" : "0");
     if (features & SF_TEXTURE_0) {
-        // Perspective-correct texture coordinates: divide by vClipW (1/W)
-        // to recover screen-space texels.  The vertex setup pre-multiplied
-        // texcoords by 1/W when texturePersp is ON, or left them as-is
-        // (with perspW=1) when OFF — either way this division is correct.
+        // Perspective-correct texture coordinates: divide by vClipW (1/W) to
+        // recover screen-space texels. The vertex setup pre-multiplied texcoords
+        // by 1/W when texturePersp is on, or left them as they were (with
+        // perspW = 1) when it is off; either way this division is correct.
         code += "    vec2 tc0 = (vClipW > 1e-6) ? vTexCoord0 / vClipW : vTexCoord0;\n";
         code += "    if (uUseTexCoordBounds != 0)\n";
         code += "        tc0 = clamp(tc0, uTexCoordBounds0.xy, uTexCoordBounds0.zw);\n";
-        // Compute tile-space texel coordinate, then WRAP to [-1024,1024]
-        // range to prevent overflow — matches GLideN64's WRAP() macro.
+        // Tile-space texel coordinate, wrapped to [-1024,1024] to prevent
+        // overflow (matches GLideN64's WRAP() macro).
         code += "    vec2 tileCoord0 = tc0 * uTexScale0 - uTexOffset0;\n";
         code += "    tileCoord0 = tileCoord0 - floor(tileCoord0 / 2048.0) * 2048.0;\n";
         code += "    tileCoord0 = mix(tileCoord0, tileCoord0 - 2048.0, greaterThan(tileCoord0, vec2(1024.0)));\n";
         code += "    vec2 uv0 = tileCoord0 / max(uTexSize0, vec2(1.0));\n";
-        // Apply N64 clamp/wrap/mirror using tile settings.
-        // N64 hardware order: CLAMP first, then MIRROR, then WRAP.
-        // This matches GLideN64's clampWrapMirror() function.
+        // N64 clamp/wrap/mirror from the tile settings. N64 hardware order is
+        // CLAMP, then MIRROR, then WRAP, as in GLideN64's clampWrapMirror().
         // uTexClamp0 = (clampS, clampT, mirrorS, mirrorT)
-        // uTexMask0 = (maskS, maskT)  — number of mask bits (0 = no mask)
+        // uTexMask0 = (maskS, maskT): number of mask bits (0 = no mask)
         code += "    {\n";
         code += "      vec2 maskBits0 = uTexMask0;\n";
         code += "      vec2 maskSize0 = pow(vec2(2.0), maskBits0);\n";
-        // Step 1: CLAMP — clamp UV to tile boundary.
-        // UV is in tile-normalized [0,1] space; GPU texture scale is applied
-        // at sample time.  Use 1.0 (full tile) as the upper bound, matching
-        // GLideN64's tileWidth/texWidth approach.  For mirror+mask, extend
-        // the range to 2.0 to cover the full mirror period.
-        // Clamp bound sits HALF A TEXEL INSIDE the edge: clamping to exactly
-        // 1.0 (one-past-the-last-texel) and then applying the mask wrap below
-        // aliased the clamped edge back to texel 0 (mod(size, size) == 0) —
-        // over-wide billboards (SM64 trees span 2x their texture and rely on
-        // clamp) showed a wrapped copy instead of the transparent edge.
+        // Step 1: CLAMP the UV to the tile boundary. UV is in tile-normalized
+        // [0,1] space (the GPU texture scale is applied at sample time), so the
+        // upper bound is 1.0 (a full tile), as in GLideN64's tileWidth/texWidth
+        // approach; for mirror+mask it extends to 2.0 to cover the full mirror
+        // period. The bound sits half a texel inside the edge: clamping to
+        // exactly 1.0 (one past the last texel) and then applying the mask wrap
+        // below aliases the clamped edge back to texel 0 (mod(size, size) == 0),
+        // so over-wide billboards (SM64 trees span 2x their texture and rely on
+        // clamp) would show a wrapped copy instead of the transparent edge.
         code += "      vec2 inset0 = 0.5 / max(uTexSize0, vec2(1.0));\n";
         code += "      float clampHi0x = ((uTexClamp0.z > 0.0 && maskBits0.x > 0.0) ? 2.0 : 1.0) - inset0.x;\n";
         code += "      float clampHi0y = ((uTexClamp0.w > 0.0 && maskBits0.y > 0.0) ? 2.0 : 1.0) - inset0.y;\n";
@@ -1145,13 +1110,12 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
         code += "      }\n";
         code += "    }\n";
         if (features & SF_TEXTURE_LOD) {
-            // ── Mipmap tile ladder: compute LOD then sample with explicit level ──
+            // --- Mipmap tile ladder: compute LOD then sample with explicit level ---
             code += "    {\n";
-            // tc0 is already in texels, so its screen-space derivative is the
-            // LOD directly (GLideN64: dFdx(vLodTexCoord) * uScreenScale;
-            // angrylion's tclod uses the unshifted s/t). Multiplying by the
-            // texture size first picked mip levels far too coarse, smearing
-            // every LOD texture.
+            // tc0 is already in texels, so its screen-space derivative is the LOD
+            // directly (GLideN64: dFdx(vLodTexCoord) * uScreenScale; angrylion's
+            // tclod uses the unshifted s/t). Multiplying by the texture size first
+            // would pick mip levels far too coarse, smearing every LOD texture.
             code += "        vec2 dSDX = dFdx(tc0) * uScreenScale;\n";
             code += "        vec2 dSDY = dFdy(tc0) * uScreenScale;\n";
             code += "        float lodMag = max(max(abs(dSDX.x), abs(dSDX.y)), max(abs(dSDY.x), abs(dSDY.y)));\n";
@@ -1170,10 +1134,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "    int sample_tile = (uTextureDetail == 2 && lod_tile >= 0) ? lod_tile + 1 : lod_tile;\n";
             code += "    vec4 texel0 = textureLod(uTexture0, uv0 * uGPUScale0, float(min(sample_tile, uMaxTile)));\n";
         } else {
-            // Texel addressing and filtering done here rather than by the
-            // sampler, so both renderers match: see GenerateN64TexelReadCode.
-            // A texture-pack picture is sampled at the fragment's own position rather than at
-            // the centres of the N64 texels it stands in for (see n64ReadHiRes).
+            // Texel addressing and filtering happen in the shader rather than in
+            // the sampler, so both renderers match (see GenerateN64TexelReadCode).
+            // A texture-pack picture is sampled at the fragment's own position
+            // rather than at the centres of the N64 texels it stands in for (see
+            // n64ReadHiRes).
             code += "    vec4 texel0;\n";
             code += "    if ((uTexHiRes & 1) != 0) texel0 = n64ReadHiRes(uTexture0, tileCoord0, uTexSize0, uTexClamp0, "
                     "uTexMask0);\n";
@@ -1181,11 +1146,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
                     "uGPUScale0, " +
                     texFilterMode + ");\n";
         }
-        // FB monochrome/fixedAlpha for tile 0 — when texture comes from a framebuffer
+        // Monochrome / fixed alpha for tile 0, used when the texture comes from a framebuffer.
         code += "    if (uFbMonochrome0 == 1) texel0 = vec4(texel0.r);\n";
         code += "    else if (uFbMonochrome0 == 2) texel0.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel0.rgb));\n";
         code += "    if (uFbFixedAlpha0 == 1) texel0.a = 0.825;\n";
-        // Chroma key alpha: replace texel0.a with key match value
+        // Chroma key: texel0.a becomes the key match value.
         if (features & SF_CHROMA_KEY) {
             // N64 chroma key: per-channel distance check against center/width/scale.
             // key_ch = clamp(width - |texel - center| * scale, 0, 1)
@@ -1204,11 +1169,11 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
     }
     if (features & SF_TEXTURE_1) {
         if (features & SF_TEXTURE_LOD) {
-            // ── LOD mode: texel1 from next mip level of same texture ──
+            // --- LOD mode: texel1 from next mip level of same texture ---
             code +=
                 "    vec4 texel1 = textureLod(uTexture0, uv0 * uGPUScale0, float(min(sample_tile + 1, uMaxTile)));\n";
         } else {
-            // ── Non-LOD: texel1 from separate texture unit 1 ──
+            // --- Non-LOD: texel1 from separate texture unit 1 ---
             code += "    vec2 tc1 = (vClipW > 1e-6) ? vTexCoord1 / vClipW : vTexCoord1;\n";
             code += "    if (uUseTexCoordBounds != 0)\n";
             code += "        tc1 = clamp(tc1, uTexCoordBounds1.xy, uTexCoordBounds1.zw);\n";
@@ -1253,7 +1218,7 @@ std::string ShaderGenerator::GenerateTextureSampleCode(uint64_t features) const 
             code += "    else texel1 = n64ReadTexture(uTexture1, tileCoord1, uTexSize1, uTexClamp1, uTexMask1, "
                     "uGPUScale1, " +
                     texFilterMode + ");\n";
-            // FB monochrome/fixedAlpha for tile 1
+            // Monochrome / fixed alpha for tile 1.
             code += "    if (uFbMonochrome1 == 1) texel1 = vec4(texel1.r);\n";
             code +=
                 "    else if (uFbMonochrome1 == 2) texel1.rgb = vec3(dot(vec3(0.2126, 0.7152, 0.0722), texel1.rgb));\n";
@@ -1300,20 +1265,15 @@ vec4 n64Filter3Point(sampler2D tex, vec2 uv, vec2 texSize, vec2 gpuScale) {
 )";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DEPTH RENDER: When colorImage == depthImage, the combiner output (fragColor.r)
-// is a depth value.  Write it to the Z-image and set gl_FragDepth so the GL
-// depth buffer also receives the value.
-// ═══════════════════════════════════════════════════════════════════════════════
-
 std::string ShaderGenerator::GenerateN64TexelReadCode() const {
     // How the RDP addresses texels, as GLideN64's accurate texture engine and
     // angrylion-rdp do it: in texel units, clamp to the tile (SH - SL), then
     // mirror or wrap by the mask, separately for every texel the filter reads,
     // and filter with texel centres on whole coordinates. Sampling after the
-    // wrap with the GPU sampler instead put seams at every wrap and mirror
-    // edge, used the sampler's filter rather than the draw's (Vulkan keeps one
-    // sampler per texture), and shifted filtered textures by half a texel.
+    // wrap with the GPU sampler instead would put seams at every wrap and
+    // mirror edge, use the sampler's filter rather than the draw's (Vulkan
+    // keeps one sampler per texture), and shift filtered textures by half a
+    // texel.
     // uTexClamp: xy = tile width/height when that axis clamps (0 = no clamp),
     // zw = mirror flags. Wraps avoid mod(), which is fmod() in the HLSL dialect.
     return R"(
@@ -1399,6 +1359,9 @@ vec4 n64ReadHiRes(sampler2D tex, vec2 tileCoord, vec2 size, vec4 clampMirror, ve
 )";
 }
 
+// When colorImage == depthImage, the combiner output (fragColor.r) is a depth
+// value. It is written to the Z-image and to gl_FragDepth so the GL depth buffer
+// receives it too.
 std::string ShaderGenerator::GenerateDepthRenderCode(uint64_t features) const {
     if (!(features & SF_DEPTH_RENDER)) return "";
 
@@ -1426,7 +1389,7 @@ std::string ShaderGenerator::GenerateDepthRenderCode(uint64_t features) const {
             code += "        END_INTERLOCK();\n";
             code += "        if (!depthRenderPass) discard;\n";
         } else {
-            // No compare — just store unconditionally
+            // No compare: store unconditionally.
             code += "        IMG_STORE_F(uZImageImg, zCoord, depthRenderZ);\n";
             code += "        IMG_STORE_F(uDeltaZImageImg, zCoord, 0.0);\n";
             code += "        END_INTERLOCK();\n";
@@ -1507,7 +1470,7 @@ std::string ShaderGenerator::GenerateDepthCompareCode(uint64_t features) const {
         return code;
     }
 
-    // Fallback: simple depth texture compare (used when Z-image textures aren't bound)
+    // Fallback: simple depth texture compare, used when the Z-image textures aren't bound.
     return "    float depthRef = texture(uDepthTexture, gl_FragCoord.xy * uInvScreenSize).r;\n"
            "    if (gl_FragCoord.z > depthRef) discard;\n";
 }
@@ -1523,7 +1486,7 @@ std::string ShaderGenerator::GeneratePrimDepthCode(uint64_t features) const {
 }
 
 std::string ShaderGenerator::GenerateCoverageCode(uint64_t features) const {
-    // Fill/copy modes don't use coverage — return full coverage immediately.
+    // Fill and copy modes don't use coverage.
     if (features & (SF_COPY_MODE | SF_FILL_RECT)) {
         return "    // Fill/copy: full coverage, no alpha modification\n"
                "    float coverage = 1.0;\n";
@@ -1560,21 +1523,20 @@ std::string ShaderGenerator::GenerateCoverageCode(uint64_t features) const {
         code += "    float cov = 1.0;\n";
     }
     if (hasCvgAlpha) {
-        // CVG_X_ALPHA: multiply coverage by the ORIGINAL combiner alpha.
-        // Must happen BEFORE alpha is replaced by ALPHA_CVG_SEL.
-        // See GLideN64: uCvgXAlpha → cvg *= clampedColor.a (original alpha)
+        // CVG_X_ALPHA: multiply coverage by the original combiner alpha. This
+        // must happen before ALPHA_CVG_SEL replaces the alpha.
+        // See GLideN64: uCvgXAlpha -> cvg *= clampedColor.a (original alpha)
         code += "    cov *= combined.a;\n";
         code += "    if (cov < 0.125) discard;\n";
     }
     if (hasAlphaSel) {
-        // ALPHA_CVG_SEL: replace combiner alpha with (modified) coverage.
-        // Happens AFTER CVG_X_ALPHA multiply.
-        // See GLideN64: uAlphaCvgSel → clampedColor.a = cvg
+        // ALPHA_CVG_SEL: replace combiner alpha with the (modified) coverage,
+        // after the CVG_X_ALPHA multiply.
+        // See GLideN64: uAlphaCvgSel -> clampedColor.a = cvg
         code += "    combined.a = cov;\n";
     } else if (hasCvgAlpha) {
-        // When CVG_X_ALPHA is set but ALPHA_CVG_SEL is not, leave
-        // combined.a unchanged — the coverage multiply only affects
-        // the 'cov' value used for edge AA, not the blender alpha.
+        // CVG_X_ALPHA without ALPHA_CVG_SEL leaves combined.a unchanged: the
+        // coverage multiply only affects 'cov' (edge AA), not the blender alpha.
     }
     if (hasClrOnCvg) {
         code += "    if (cov < 0.125) { combined = uFillColor; combined.a = 1.0; }\n";
@@ -1585,8 +1547,8 @@ std::string ShaderGenerator::GenerateCoverageCode(uint64_t features) const {
 
 std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t otherModeH) const {
     if (!(features & (SF_DITHER_ENABLE | SF_ALPHA_DITHER))) return "";
-    // N64 hardware dithers the combiner output (8-bit → 5-bit) BEFORE the blender.
-    // Operates on 'combined' so it must be emitted before GenerateBlenderCode.
+    // N64 hardware dithers the combiner output (8-bit to 5-bit) before the blender.
+    // This operates on 'combined', so it must be emitted before GenerateBlenderCode.
     // There are two 4×4 matrices: MagicSquare and Bayer.
     // Color dither mode (otherModeH bits 6-7): 0=MagicSquare, 1=Bayer, 2=Noise, 3=None
     // Alpha dither mode (otherModeH bits 4-5): 0=pattern, 1=~pattern, 2=Noise, 3=None
@@ -1597,13 +1559,13 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
 
     std::string code = "    {\n";
 
-    // Emit the two 4×4 matrices if any structured pattern is needed
+    // The two 4x4 matrices are needed only for the structured patterns.
     bool needMatrices = ((features & SF_DITHER_ENABLE) && colorDitherMode <= 1) ||
                         ((features & SF_ALPHA_DITHER) && alphaDitherMode <= 1);
     if (needMatrices) {
-        // Use flat const arrays + scalar index instead of mat4×vec4 dot product.
-        // The mat4/vec4 dynamic-index pattern crashes Intel Iris Xe (driver
-        // Build 32.0.101.7080) inside glLinkProgram — a known driver bug.
+        // Flat const arrays with a scalar index instead of a mat4 x vec4 dot
+        // product: the mat4/vec4 dynamic-index pattern crashes Intel Iris Xe
+        // (driver build 32.0.101.7080) inside glLinkProgram.
         code += "        const float bayerLUT[16] = float[16](\n"
                 "            0.0, 0.5, 0.125, 0.625,\n"
                 "            0.5, 0.0, 0.625, 0.125,\n"
@@ -1638,7 +1600,7 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
             code += "          combined.rgb = clamp(combined.rgb + ditherRGB, 0.0, 1.0);\n";
             code += "          combined.rgb = round(combined.rgb * 31.0) / 31.0; }\n";
             break;
-        default: break; // 3=None — shouldn't reach here
+        default: break; // 3=None; not expected to reach here
         }
         if (colorDitherMode <= 1) {
             // Structured pattern: uniform threshold for all 3 channels
@@ -1650,7 +1612,7 @@ std::string ShaderGenerator::GenerateDitherCode(uint64_t features, uint32_t othe
 
     // --- Alpha dither ---
     if (features & SF_ALPHA_DITHER) {
-        // Alpha dither pattern depends on both alpha and color dither modes.
+        // The alpha dither pattern depends on both the alpha and the color dither modes.
         // Mode 0: same family as color (MagicSquare if color=0|2, Bayer if color=1|3)
         // Mode 1: complement     (Bayer    if color=0|2, MagicSquare if color=1|3)
         // Mode 2: noise
@@ -1700,12 +1662,10 @@ std::string ShaderGenerator::GenerateGammaCorrectionCode() const {
     return "    fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2));\n";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// YUV TEXTURE CONVERSION
+// --- YUV texture conversion ---
 // N64 games (FMV sequences in e.g. Banjo-Kazooie, Conker, Pokémon Stadium)
 // use YUV422 textures. The RDP converts Y'CbCr to RGB using ITU-R BT.601.
 // uConvertK = (K0, K1, K2, K3) from hardware registers.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 std::string ShaderGenerator::GenerateYUVConversionCode(uint64_t features) const {
     if (!(features & SF_TEXTURE_YUV)) return "";
@@ -1726,46 +1686,38 @@ std::string ShaderGenerator::GenerateYUVConversionCode(uint64_t features) const 
            "    }\n";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// LOD / MIPMAP CALCULATION
+// --- LOD / mipmap calculation ---
 // The N64 RDP computes level-of-detail from screen-space texcoord gradients.
-// In 2-cycle mode, texel0 = base mip, texel1 = next mip, and LOD fraction
-// is used in the combiner — slot 13 (LOD_FRACTION).
-// ═══════════════════════════════════════════════════════════════════════════════
+// In 2-cycle mode, texel0 = base mip, texel1 = next mip, and the LOD fraction
+// feeds the combiner as slot 13 (LOD_FRACTION).
 
 std::string ShaderGenerator::GenerateLODCode(uint64_t features) const {
-    // LOD computation is now integrated into GenerateTextureSampleCode()
-    // which computes lod_tile and lodFrac before sampling textures so that
-    // textureLod() can select the correct mipmap level.
+    // Nothing to emit: GenerateTextureSampleCode() computes lod_tile and
+    // lodFrac before sampling, so that textureLod() selects the mipmap level.
     (void)features;
     return "";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DETAIL / SHARPEN TEXTURE
-// Detail: Multiply base texture by a repeating detail texture at higher freq.
-// Sharpen: Extrapolate the mipmap blending past 1.0 to sharpen transitions.
+// --- Detail / sharpen texture ---
+// Detail: multiplies the base texture by a repeating detail texture at a higher frequency.
+// Sharpen: extrapolates the mipmap blending past 1.0 to sharpen transitions.
 // Used heavily in Zelda OoT (terrain), GoldenEye, Star Fox 64.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 std::string ShaderGenerator::GenerateDetailSharpenCode(uint64_t features) const {
-    // N64 detail/sharpen modes only modify the LOD fraction and tile selection,
-    // both of which are already handled in the LOD computation code above.
-    // The combiner naturally blends texel0/texel1 using the adjusted lodFrac.
-    // No additional texel modification is needed here.
+    // Nothing to emit: detail/sharpen only modify the LOD fraction and tile
+    // selection, which the LOD computation in GenerateTextureSampleCode()
+    // already handles. The combiner blends texel0/texel1 using the adjusted lodFrac.
     (void)features;
     return "";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: FULL SHADER GENERATION FOR A COMBINER KEY
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: FULL SHADER GENERATION FOR A COMBINER KEY ---
 
 ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     ShaderTemplate tmpl;
     uint64_t f = key.features;
 
-    // ── defines ──────────────────────────────────────────────────────────
+    // --- defines ---
     tmpl.AddDefineIf(f & SF_TEXTURE_0, "HAS_TEXTURE0");
     tmpl.AddDefineIf(f & SF_TEXTURE_1, "HAS_TEXTURE1");
     tmpl.AddDefineIf(f & SF_ALPHA_TEST, "ALPHA_TEST");
@@ -1775,7 +1727,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     tmpl.AddDefineIf(f & SF_DITHER_ENABLE, "USE_DITHER");
 
     if (m_language == ShaderLanguage::HLSL_SM5) {
-        // ── HLSL Vertex ──────────────────────────────────────────────────
+        // --- HLSL Vertex ---
         tmpl.vertexHeader = GetVertexInputs() + GetVertexOutputs() + GetCommonUniforms();
         tmpl.vertexBody =
             "VSOutput main(VSInput input) {\n"
@@ -1796,7 +1748,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
             "    return output;\n"
             "}\n";
 
-        // ── HLSL Fragment ────────────────────────────────────────────────
+        // --- HLSL Fragment ---
         std::string fragHeader;
         fragHeader += GetHLSLCompatPreamble();
         fragHeader += GetFragmentInputs();
@@ -1849,7 +1801,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         frag += "    float4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
         frag += GenerateCombinerCode(key.mux, f);
         frag += GenerateAlphaTestCode(f); // N64: alpha compare before blender
-        frag += GenerateCoverageCode(f);  // Coverage modifies alpha AFTER test
+        frag += GenerateCoverageCode(f);  // Coverage modifies alpha after the test
         // Texture-alpha coverage: for RGBA16 sprites the A bit masks per-pixel visibility.
         // When uTexCvgAlpha is set, discard transparent texture pixels so that
         // background pixels (A=0 in RGBA16) don't overdraw the framebuffer.
@@ -1884,19 +1836,19 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
         return tmpl;
     }
 
-    // ── GLSL path (OpenGL 4.6 or Vulkan/SPIRV) ──────────────────────────
+    // --- GLSL path (OpenGL 4.6 or Vulkan/SPIRV) ---
     const bool isVK = (m_language == ShaderLanguage::SPIRV);
 
-    // ── vertex header ────────────────────────────────────────────────────
+    // --- vertex header ---
     tmpl.vertexHeader = GetVersionDirective() + GetVertexInputs() + GetVertexOutputs() + GetCommonUniforms();
 
-    // ── vertex body ──────────────────────────────────────────────────────
+    // --- vertex body ---
     tmpl.vertexBody = "void main() {\n"
                       "    gl_Position = uMVPMatrix * aPosition;\n" +
                       std::string(isVK ?
                                        // Vulkan NDC fixup: remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
                                       // Y-flip is handled by the negative-height viewport (VK_KHR_maintenance1),
-                                      // so no shader Y-flip is needed here — adding one would double-flip the image.
+                                      // so no shader Y-flip is needed; adding one would double-flip the image.
                                       "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n"
                                        : "") +
                       "    vDepth      = gl_Position.z / gl_Position.w;\n"
@@ -1913,11 +1865,11 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
                       "    vColorNP    = vColor;\n"
                       "}\n";
 
-    // ── fragment header ──────────────────────────────────────────────────
+    // --- fragment header ---
     tmpl.fragmentHeader = GetVersionDirective();
-    // Fragment shader interlock: required for correct N64 depth compare
-    // (imageLoad/imageStore on the Z-image) to prevent race conditions
-    // between overlapping fragments from the same draw call.
+    // Fragment shader interlock: the N64 depth compare (imageLoad/imageStore on
+    // the Z-image) needs it to avoid races between overlapping fragments of the
+    // same draw call.
     bool needsInterlock = (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) != 0;
     if (needsInterlock && !isVK) {
         tmpl.fragmentHeader += "#extension GL_ARB_fragment_shader_interlock : enable\n"
@@ -1926,7 +1878,6 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     tmpl.fragmentHeader += GetFragmentInputs() + GetFragmentOutputs(f) + GetCommonUniforms() +
                            (isVK ? GetTextureUniformsVK() : GetTextureUniforms());
     if (!isVK) {
-        // OpenGL image load/store bindings
         if (f & SF_N64_DEPTH_COMPARE) {
             tmpl.fragmentHeader += "layout(binding = 0, r32f) uniform restrict image2D uZImageImg;\n"
                                    "layout(binding = 1, r32f) uniform restrict image2D uDeltaZImageImg;\n";
@@ -1936,10 +1887,9 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
                                    "layout(binding = 3, r8ui) uniform restrict uimage2D uCoverageImage;\n";
         }
     } else {
-        // Vulkan: image load/store not yet wired — emit dummy declarations
-        // so that shaders requiring them fail to compile and fall back to the
-        // flat-color fallback shader (rather than crashing).
-        // (Deep feature parity will be addressed in a later pass.)
+        // Vulkan: image load/store is not wired up. The images stay undeclared,
+        // so shaders that use them fail to compile and ShaderManager falls back
+        // to the flat-color fallback shader instead of crashing.
         (void)0;
     }
     if (f & (SF_N64_DEPTH_COMPARE | SF_MLE_BLENDER)) {
@@ -1947,7 +1897,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
             tmpl.fragmentHeader += "#define BEGIN_INTERLOCK() beginInvocationInterlockARB()\n"
                                    "#define END_INTERLOCK() endInvocationInterlockARB()\n";
         } else {
-            // No interlock: Intel Iris Xe workaround OR Vulkan path.
+            // No interlock on the Vulkan path, or as the Intel Iris Xe workaround.
             tmpl.fragmentHeader += "#define BEGIN_INTERLOCK()\n"
                                    "#define END_INTERLOCK()\n";
         }
@@ -1961,10 +1911,10 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     if (f & SF_TEXTURE_3POINT) tmpl.fragmentHeader += GenerateN64TexFilterCode();
     if (f & (SF_TEXTURE_0 | SF_TEXTURE_1)) tmpl.fragmentHeader += GenerateN64TexelReadCode();
 
-    // ── fragment body ────────────────────────────────────────────────────
+    // --- fragment body ---
     std::string frag;
     frag += "void main() {\n";
-    // Declare texel0 default before GenerateDetailSharpenCode which may use it
+    // texel0 needs a default before GenerateDetailSharpenCode, which may use it.
     if (!(f & SF_TEXTURE_0)) frag += "    vec4 texel0 = vec4(0.0, 0.0, 0.0, 1.0);\n";
     if (f & SF_DUAL_SOURCE_BLEND) frag += "    fragColor1 = vec4(0.0);\n";
     frag += "    int lod_tile = 0;\n";
@@ -1979,13 +1929,13 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     frag += GenerateCombinerCode(key.mux, f);
     frag += GenerateAlphaTestCode(f);              // N64: alpha compare on RAW combiner output
     frag += GenerateDitherCode(f, key.otherModeH); // N64: dither combiner output before coverage
-    frag += GenerateCoverageCode(f);               // CVG_X_ALPHA uses post-dither alpha
+    frag += GenerateCoverageCode(f);               // CVG_X_ALPHA uses the post-dither alpha
     std::string blenderCode1 = GenerateBlenderCode(key.blenderBits, key.otherModeL, f);
 
-    // When MLE blender + N64 depth compare are both active, the depth
-    // compare opens the interlock and sets n64DepthPassed; the blender
-    // reads the flag, conditionally blends, and closes the interlock.
-    // Depth compare must therefore be emitted BEFORE the blender.
+    // When the MLE blender and N64 depth compare are both active, the depth
+    // compare opens the interlock and sets n64DepthPassed; the blender reads
+    // the flag, blends conditionally and closes the interlock. The depth compare
+    // must therefore be emitted before the blender.
     bool mleDepthInterlock1 =
         (f & SF_MLE_BLENDER) && (f & SF_N64_DEPTH_COMPARE) && (f & SF_DEPTH_COMPARE) && !(f & SF_DEPTH_RENDER);
     if (mleDepthInterlock1) {
@@ -2025,9 +1975,7 @@ ShaderTemplate ShaderGenerator::GenerateShader(const CombinerKey& key) const {
     return tmpl;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: VERTEX SHADER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: VERTEX SHADER ---
 
 std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
     if (m_language == ShaderLanguage::HLSL_SM5) {
@@ -2063,8 +2011,8 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
     src += "void main() {\n"
            "    gl_Position = uMVPMatrix * aPosition;\n";
     if (isVKvs) {
-        // Remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range.
-        // Y-flip is handled by the negative-height viewport — no shader flip needed.
+        // Remap Z from OpenGL [-1,1] to Vulkan [0,1] clip range. The
+        // negative-height viewport handles the Y flip, so the shader needs none.
         src += "    gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;\n";
     }
     src += "    vDepth      = gl_Position.z / gl_Position.w;\n"
@@ -2083,12 +2031,10 @@ std::string ShaderGenerator::GenerateVertexShader(uint64_t /*features*/) const {
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: FRAGMENT SHADER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: FRAGMENT SHADER ---
 
 std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) const {
-    // ── Shadow map: specialised depth → TLUT → fog-color overlay ─────
+    // --- Shadow map: specialised depth -> TLUT -> fog-color overlay ---
     if (key.features & SF_SHADOW_MAP) {
         return GenerateShadowMapShader();
     }
@@ -2169,8 +2115,8 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     }
     std::string src;
     src += GetVersionDirective();
-    // Intel Iris Xe workaround: skip interlock for depth compare only.
-    // Only enable when MLE blender needs it.
+    // Intel Iris Xe workaround: the interlock is enabled only when the MLE
+    // blender needs it, not for depth compare alone.
     bool needsInterlockFS = (key.features & SF_MLE_BLENDER) != 0;
     if (needsInterlockFS) {
         src += "#extension GL_ARB_fragment_shader_interlock : enable\n"
@@ -2206,7 +2152,7 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     if (key.features & SF_TEXTURE_3POINT) src += GenerateN64TexFilterCode();
     if (key.features & (SF_TEXTURE_0 | SF_TEXTURE_1)) src += GenerateN64TexelReadCode();
     src += "void main() {\n";
-    // Declare texel0 default before GenerateDetailSharpenCode which may use it
+    // texel0 needs a default before GenerateDetailSharpenCode, which may use it.
     if (!(key.features & SF_TEXTURE_0)) src += "    vec4 texel0 = vec4(0.0, 0.0, 0.0, 1.0);\n";
     if (key.features & SF_DUAL_SOURCE_BLEND) src += "    fragColor1 = vec4(0.0);\n";
     src += "    int lod_tile = 0;\n";
@@ -2219,15 +2165,15 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     src += GenerateNoiseCode(key.features);
     src += "    vec4 shadeColor = uScreenSpaceTriangle == 0 ? vColor : vColorNP;\n";
     src += GenerateCombinerCode(key.mux, key.features);
-    src += GenerateAlphaTestCode(key.features);              // N64: alpha compare on RAW combiner output
-    src += GenerateCoverageCode(key.features);               // Coverage modifies alpha AFTER test
+    src += GenerateAlphaTestCode(key.features);              // N64: alpha compare on the raw combiner output
+    src += GenerateCoverageCode(key.features);               // Coverage modifies alpha after the test
     src += GenerateDitherCode(key.features, key.otherModeH); // N64: dither before blender
     std::string blenderCode3 = GenerateBlenderCode(key.blenderBits, key.otherModeL, key.features);
 
-    // When MLE blender + N64 depth compare are both active, the depth
-    // compare opens the interlock and sets n64DepthPassed; the blender
-    // reads the flag, conditionally blends, and closes the interlock.
-    // Depth compare must therefore be emitted BEFORE the blender.
+    // When the MLE blender and N64 depth compare are both active, the depth
+    // compare opens the interlock and sets n64DepthPassed; the blender reads
+    // the flag, blends conditionally and closes the interlock. The depth compare
+    // must therefore be emitted before the blender.
     bool mleDepthInterlock = (key.features & SF_MLE_BLENDER) && (key.features & SF_N64_DEPTH_COMPARE) &&
                              (key.features & SF_DEPTH_COMPARE) && !(key.features & SF_DEPTH_RENDER);
     if (mleDepthInterlock) {
@@ -2252,11 +2198,9 @@ std::string ShaderGenerator::GenerateFragmentShader(const CombinerKey& key) cons
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADOW MAP FRAGMENT SHADER
-// Reads the GL depth buffer, converts via ZLUT to N64 Z16, looks up a palette
-// (TLUT) from TMEM to produce a fog-coloured shadow overlay.
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- Shadow map fragment shader ---
+// Maps the GL depth buffer value to a 0..255 index into a palette (TLUT) loaded
+// from TMEM, and outputs the fog color with that alpha as a shadow overlay.
 
 std::string ShaderGenerator::GenerateShadowMapShader() const {
     std::string src;
@@ -2282,7 +2226,6 @@ std::string ShaderGenerator::GenerateShadowMapShader() const {
                "}\n";
         return src;
     }
-    // GLSL path (OpenGL 4.6)
     src += GetVersionDirective();
     src += GetFragmentInputs();
     src += "out vec4 fragColor;\n";
@@ -2301,9 +2244,7 @@ std::string ShaderGenerator::GenerateShadowMapShader() const {
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: GEOMETRY SHADER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: GEOMETRY SHADER ---
 
 std::string ShaderGenerator::GenerateGeometryShader(uint64_t features) const {
     if (!(features & SF_DEBUG_WIREFRAME)) return "";
@@ -2325,9 +2266,7 @@ std::string ShaderGenerator::GenerateGeometryShader(uint64_t features) const {
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: DEPTH-ONLY SHADERS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: DEPTH-ONLY SHADERS ---
 
 std::string ShaderGenerator::GenerateDepthOnlyVertex() const {
     std::string src;
@@ -2351,9 +2290,7 @@ std::string ShaderGenerator::GenerateDepthOnlyFragment() const {
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: POST-PROCESS SHADERS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: POST-PROCESS SHADERS ---
 
 std::string ShaderGenerator::GeneratePostProcessVertex() const {
     std::string src;
@@ -2414,9 +2351,7 @@ std::string ShaderGenerator::GeneratePostProcessFragment(uint64_t features) cons
     return src;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC: UI OVERLAY SHADERS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PUBLIC: UI OVERLAY SHADERS ---
 
 std::string ShaderGenerator::GenerateUIVertex() const {
     std::string src;

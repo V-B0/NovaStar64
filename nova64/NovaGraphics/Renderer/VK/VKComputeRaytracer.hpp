@@ -1,22 +1,22 @@
 /**
  * @file VKComputeRaytracer.hpp
- * @brief Two-pass compute-shader ray tracer for MoltenVK / Apple Silicon.
+ * @brief Three-pass compute-shader ray tracer for MoltenVK / Apple Silicon.
  *
  * MoltenVK does not expose VK_KHR_ray_tracing_pipeline, so this traces a
  * CPU-built BVH (RTBVH) in plain Vulkan compute (see RTComputeShaders.hpp).
  *
- * Pass 1 (trace, HALF res):   primary ray + soft-shadow rays + stochastic AO,
- *                             written to intermediate images (lit/occ/G-buffer).
- * Pass 2 (denoise, HALF res): bilateral blur + RT64-style temporal accumulation
- *                             of the shadow/AO term (history image).
- * Pass 3 (composite, FULL res): joint bilateral upsample of the RT term +
- *                             directional wrap diffuse, over the full-res raster.
+ * Pass 1 (trace, half res):     primary ray + soft-shadow rays + stochastic AO,
+ *                               written to intermediate images (lit/occ/G-buffer).
+ * Pass 2 (denoise, half res):   bilateral blur + RT64-style temporal accumulation
+ *                               of the shadow/AO term (history image).
+ * Pass 3 (composite, full res): joint bilateral upsample of the RT term +
+ *                               directional wrap diffuse, over the full-res raster.
  * Half-res tracing is the performance core: ¼ of the BVH rays and filter taps.
  *
- * Self-contained: owns descriptor set layouts, both pipelines, descriptor pool,
- * and PER-FRAME-IN-FLIGHT copies of all buffers/images (so the CPU never
- * overwrites a buffer the GPU is still reading). The caller composites onto the
- * swapchain via RenderHybrid().
+ * Self-contained: owns the descriptor set layouts, the three pipelines, the
+ * descriptor pool, and per-frame-in-flight copies of all buffers/images (so the
+ * CPU never overwrites a buffer the GPU is still reading). The caller composites
+ * onto the swapchain via RenderHybrid().
  */
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -67,7 +67,7 @@ public:
     // Must match VKBackend's kFramesInFlight.
     static constexpr uint32_t kFrames = 2;
 
-    /// One-time setup: compile both compute shaders, create both pipelines,
+    /// One-time setup: compile the three compute shaders, create their pipelines,
     /// descriptor layouts/pool and per-frame descriptor sets/UBOs.
     bool Build(const VKContext& ctx);
 
@@ -77,9 +77,10 @@ public:
     /// Hybrid composite for frame `frameIdx`, recorded entirely into `cmd`:
     ///   1. copy the swapchain (textured raster, in PRESENT_SRC) into a private
     ///      copy the compute shaders can read,
-    ///   2. dispatch pass 1 (trace) writing litColor/occ/G-buffer,
-    ///   3. dispatch pass 2 (denoise+composite) writing the output image,
-    ///   4. blit the output back onto the swapchain.
+    ///   2. dispatch pass 1 (trace) writing lit/occ/G-buffer,
+    ///   3. dispatch pass 2 (denoise) updating the temporal history,
+    ///   4. dispatch pass 3 (composite) writing the output image,
+    ///   5. blit the output back onto the swapchain.
     /// The swapchain is left in PRESENT_SRC_KHR. No-op (false) if not built or
     /// the BVH is empty. `w`/`h` must equal the swapchain extent.
     /// `depthImg`/`depthFormat`: the raster's depth attachment (already in
@@ -109,15 +110,15 @@ private:
         VKBufferStorage triBuf{};
         VkDeviceSize nodeCap = 0;
         VkDeviceSize triCap = 0;
-        Img out{};                // FULL res: final composite (blit to swapchain)
-        Img ras{};                // FULL res: copy of the raster render
-        Img lit{};                // HALF res: additive reflection extras
-        Img shd{};                // HALF res: baked vertex shade + lit flag
-        Img occ{};                // HALF res: r=shadow g=ao b=reflMix a=hit
-        Img gbuf{};               // HALF res: rgb=smooth normal, a=depth (rgba16f)
-        Img hist{};               // HALF res: temporal accum (r=shadow,g=ao,a=len/64)
-        Img gi{};                 // HALF res: raw one-bounce irradiance
-        Img giHist{};             // HALF res: accumulated irradiance
+        Img out{};                // Full res: final composite (blit to swapchain)
+        Img ras{};                // Full res: copy of the raster render
+        Img lit{};                // Half res: additive reflection extras
+        Img shd{};                // Half res: baked vertex shade + lit flag
+        Img occ{};                // Half res: r=shadow g=ao b=reflMix a=hit
+        Img gbuf{};               // Half res: rgb=smooth normal, a=depth (rgba16f)
+        Img hist{};               // Half res: temporal accum (r=shadow,g=ao,a=len/64)
+        Img gi{};                 // Half res: raw one-bounce irradiance
+        Img giHist{};             // Half res: accumulated irradiance
         uint32_t w = 0, h = 0;
         float diag = 0.0f;        // scene diagonal of the frame these images hold
         bool outInGeneral = false;

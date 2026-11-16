@@ -25,7 +25,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
 
     GlslangInitProcess();
 
-    // ── 1. Compile shaders ─────────────────────────────────────────────────
+    // --- 1. Compile shaders ---
     auto rgenSpv = CompileGLSLtoSPIRV(ShaderStage::RayGen, rgenSrc, "n64rt.rgen");
     auto rmissSpv = CompileGLSLtoSPIRV(ShaderStage::RayMiss, rmissSrc, "n64rt.rmiss");
     auto rchitSpv = CompileGLSLtoSPIRV(ShaderStage::RayClosestHit, rchitSrc, "n64rt.rchit");
@@ -36,7 +36,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
         return false;
     }
 
-    // ── 2. Create VkShaderModules ──────────────────────────────────────────
+    // --- 2. Create VkShaderModules ---
     auto makeModule = [&](const std::vector<uint32_t>& spv) -> VkShaderModule {
         VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
         ci.codeSize = spv.size() * sizeof(uint32_t);
@@ -61,7 +61,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
         return false;
     }
 
-    // ── 3. Create descriptor set layout ───────────────────────────────────
+    // --- 3. Create descriptor set layout ---
     // Binding 0: acceleration structure (TLAS)
     // Binding 1: storage image (output)
     std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -82,7 +82,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
         goto cleanup;
     }
 
-    // ── 4. Pipeline layout ─────────────────────────────────────────────────
+    // --- 4. Pipeline layout ---
     {
         VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pli.setLayoutCount = 1;
@@ -93,7 +93,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
         }
     }
 
-    // ── 5. Shader groups ───────────────────────────────────────────────────
+    // --- 5. Shader groups ---
     // Group 0: RAYGEN
     // Group 1: MISS
     // Group 2: HIT (closesthit)
@@ -146,14 +146,14 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
             goto cleanup;
         }
 
-        // ── 6. Build SBT ─────────────────────────────────────────────────
+        // --- 6. Build SBT ---
         if (!BuildSBT(ctx, static_cast<uint32_t>(groups.size()))) {
             Logger::Error("VKRTPipeline: SBT build failed");
             goto cleanup;
         }
     }
 
-    // ── 7. Descriptor pool + set ───────────────────────────────────────────
+    // --- 7. Descriptor pool + set ---
     {
         std::array<VkDescriptorPoolSize, 2> ps{};
         ps[0].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
@@ -178,7 +178,7 @@ bool VKRTPipeline::Build(const VKContext& ctx, const char* rgenSrc, const char* 
         }
     }
 
-    // Clean up shader modules (not needed after pipeline creation).
+    // The shader modules are not needed once the pipeline exists.
     vkDestroyShaderModule(ctx.device, rgenMod, nullptr);
     vkDestroyShaderModule(ctx.device, rmissMod, nullptr);
     vkDestroyShaderModule(ctx.device, rchitMod, nullptr);
@@ -226,7 +226,7 @@ bool VKRTPipeline::BuildSBT(const VKContext& ctx, uint32_t groupCount) {
         std::memcpy(sbtData.data() + g * stride, handles.data() + g * handleSize, handleSize);
     }
 
-    // Upload to a host-visible buffer (SBT must be host-visible per spec).
+    // Upload through a host-visible, host-coherent buffer.
     if (!CreateBufferStorage(ctx, sbtSize,
                              VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_sbt)) {
@@ -273,7 +273,7 @@ void VKRTPipeline::Dispatch(VkCommandBuffer cmd, void* tlas, void* outputView, u
     auto tlasHandle = static_cast<VkAccelerationStructureKHR>(tlas);
     auto outputViewVK = static_cast<VkImageView>(outputView);
 
-    // Update descriptor set if inputs changed.
+    // Rewrite the descriptor set only if the inputs changed.
     if (tlasHandle != m_boundTlas || outputViewVK != m_boundView) {
         m_boundTlas = tlasHandle;
         m_boundView = outputViewVK;

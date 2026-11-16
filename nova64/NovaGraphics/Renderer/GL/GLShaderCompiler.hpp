@@ -2,8 +2,6 @@
  * @file GLShaderCompiler.hpp
  * @brief OpenGL implementation of IShaderCompiler.
  */
-// NovaGraphics — OpenGL implementation of IShaderCompiler
-// Delegates to GLShader / GLProgram for actual GL compilation.
 
 #pragma once
 
@@ -50,7 +48,7 @@ public:
 private:
     std::string m_lastError;
 
-    // Store GLProgram objects keyed by their GL handle so we can manage lifetimes
+    // Owns the linked programs, keyed by GL handle.
     std::unordered_map<uint32_t, std::unique_ptr<GLProgram>> m_programs;
 
     [[maybe_unused]] Shader::ShaderHandle m_nextHandle = 1;

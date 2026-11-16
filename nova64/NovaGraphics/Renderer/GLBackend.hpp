@@ -1,10 +1,8 @@
 /**
  * @file GLBackend.hpp
- * @brief OpenGL 4.6 Backend.
+ * @brief OpenGL 4.6 core-profile backend (IRenderer implementation using direct state access).
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - OpenGL 4.6 Backend
-// Complete GL4.6 Core Profile + DSA rendering backend implementation
 
 #pragma once
 
@@ -25,9 +23,7 @@ namespace Nova64 {
 namespace Video {
 namespace GL {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL TEXTURE POOL — recycles GL texture handles to avoid driver heap growth
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL TEXTURE POOL — recycles GL texture handles to avoid driver heap growth ---
 
 class GLTexturePool {
 public:
@@ -54,9 +50,7 @@ private:
     size_t m_totalPooled = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL FORMAT TRANSLATION UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL FORMAT TRANSLATION UTILITIES ---
 
 struct GLFormatInfo {
     GLenum internalFormat;
@@ -209,9 +203,7 @@ inline GLenum TranslateVertexAttribBaseType(VertexAttribType type) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL VERTEX BUFFER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL VERTEX BUFFER ---
 
 class GLVertexBuffer : public IVertexBuffer {
 public:
@@ -230,9 +222,7 @@ private:
     BufferUsage m_usage;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL INDEX BUFFER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL INDEX BUFFER ---
 
 class GLIndexBuffer : public IIndexBuffer {
 public:
@@ -253,9 +243,7 @@ private:
     BufferUsage m_usage;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL UNIFORM BUFFER
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL UNIFORM BUFFER ---
 
 class GLUniformBuffer : public IUniformBuffer {
 public:
@@ -273,9 +261,7 @@ private:
     size_t m_size = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL TEXTURE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL TEXTURE ---
 
 class GLTexture : public ITexture {
 public:
@@ -299,9 +285,7 @@ private:
     TextureDesc m_desc;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL SHADER PROGRAM
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL SHADER PROGRAM ---
 
 class GLShaderProgram : public IShaderProgram {
 public:
@@ -333,9 +317,7 @@ private:
     mutable std::unordered_map<std::string, GLint> m_uniformCache;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL RENDER TARGET (Framebuffer Object)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL RENDER TARGET (Framebuffer Object) ---
 
 class GLRenderTarget : public IRenderTarget {
 public:
@@ -365,9 +347,7 @@ private:
     std::unique_ptr<GLTexture> m_depthTex;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL PIPELINE (VAO + State combination)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL PIPELINE (VAO + State combination) ---
 
 class GLPipeline : public IPipeline {
 public:
@@ -384,23 +364,21 @@ private:
     PipelineDesc m_desc;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  GL RENDERER — MAIN BACKEND
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- GL RENDERER — MAIN BACKEND ---
 
 class GLRenderer : public IRenderer {
 public:
     GLRenderer();
     ~GLRenderer() override;
 
-    // ─── Lifecycle ─────────────────────────────────────────────
+    // --- Lifecycle ---
     bool Initialize(void* windowHandle, uint32_t width, uint32_t height) override;
     void Shutdown() override;
     void BeginFrame() override;
     void EndFrame() override;
     void Present() override;
 
-    // ─── Resource Creation ─────────────────────────────────────
+    // --- Resource Creation ---
     std::unique_ptr<IVertexBuffer> CreateVertexBuffer(size_t sizeBytes, BufferUsage usage) override;
     std::unique_ptr<IIndexBuffer> CreateIndexBuffer(size_t sizeBytes, BufferUsage usage) override;
     std::unique_ptr<IUniformBuffer> CreateUniformBuffer(size_t sizeBytes) override;
@@ -409,7 +387,7 @@ public:
     std::unique_ptr<IRenderTarget> CreateRenderTarget(const RenderTargetDesc& desc) override;
     std::unique_ptr<IPipeline> CreatePipeline(const PipelineDesc& desc) override;
 
-    // ─── State Management ──────────────────────────────────────
+    // --- State Management ---
     void SetViewport(const RenderViewport& vp) override;
     void SetScissor(const RenderScissorRect& rect) override;
     void SetBlendState(const BlendState& state) override;
@@ -417,7 +395,7 @@ public:
     void SetRasterizerState(const RasterizerState& state) override;
     void SetBlendColor(float r, float g, float b, float a) override;
 
-    // ─── Binding ───────────────────────────────────────────────
+    // --- Binding ---
     void BindVertexBuffer(IVertexBuffer* vb, const VertexLayout& layout) override;
     void BindIndexBuffer(IIndexBuffer* ib) override;
     void BindTexture(uint32_t unit, ITexture* tex) override;
@@ -431,29 +409,29 @@ public:
     void RestoreRasterizerColorOutput() override;
     void ImageMemoryBarrier() override;
 
-    // ─── Drawing ───────────────────────────────────────────────
+    // --- Drawing ---
     void Draw(const DrawCommand& cmd) override;
     void DrawArrays(PrimitiveType prim, uint32_t first, uint32_t count) override;
     void DrawIndexed(PrimitiveType prim, uint32_t indexCount, IndexType type, uint32_t offset) override;
 
-    // ─── Compute ───────────────────────────────────────────────
+    // --- Compute ---
     void DispatchCompute(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) override;
 
-    // ─── Readback ──────────────────────────────────────────────
+    // --- Readback ---
     void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h, TextureFormat format, void* outData) override;
 
-    // ─── Debug ─────────────────────────────────────────────────
+    // --- Debug ---
     void PushDebugGroup(const char* name) override;
     void PopDebugGroup() override;
     void InsertDebugMarker(const char* name) override;
 
-    // ─── Queries ───────────────────────────────────────────────
+    // --- Queries ---
     BackendType GetBackendType() const override { return BackendType::OpenGL46; }
     const RendererCaps& GetCapabilities() const override { return m_caps; }
     const RendererStats& GetStats() const override { return m_stats; }
     void ResetStats() override { m_stats.Reset(); }
 
-    // ─── Window ────────────────────────────────────────────────
+    // --- Window ---
     void OnResize(uint32_t width, uint32_t height) override;
     uint32_t GetWidth() const override { return m_width; }
     uint32_t GetHeight() const override { return m_height; }
@@ -468,7 +446,7 @@ private:
     RendererCaps m_caps;
     RendererStats m_stats;
 
-    // Current state tracking
+    // Objects currently bound, as tracked by this renderer.
     GLuint m_boundVAO = 0;
     GLuint m_boundProgram = 0;
     GLuint m_boundFBO = 0;
@@ -479,9 +457,7 @@ private:
     bool m_initialized = false;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  FACTORY FUNCTION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- FACTORY FUNCTION ---
 
 std::unique_ptr<IRenderer> CreateOpenGLRenderer();
 bool IsOpenGL46Available();

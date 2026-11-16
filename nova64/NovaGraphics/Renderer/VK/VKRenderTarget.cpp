@@ -1,5 +1,6 @@
 /**
  * @file VKRenderTarget.cpp
+ * @brief Vulkan render target: attachments, render pass, framebuffer and initial layout transitions.
  */
 // SPDX-License-Identifier: MIT
 #include "VKRenderTarget.hpp"

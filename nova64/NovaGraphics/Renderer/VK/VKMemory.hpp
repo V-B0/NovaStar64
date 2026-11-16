@@ -2,9 +2,9 @@
  * @file VKMemory.hpp
  * @brief Lightweight helpers for memory-type lookup and one-shot command buffers.
  *
- * Stage 2 uses a per-resource VkDeviceMemory allocation (no sub-allocator).
- * This is suboptimal in steady state but trivially correct, dependency-free,
- * and easy to replace with VMA later.
+ * Every resource gets its own VkDeviceMemory allocation (no sub-allocator).
+ * This is suboptimal in steady state but simple, dependency-free and easy to
+ * replace with VMA.
  */
 // SPDX-License-Identifier: MIT
 #pragma once

@@ -1,5 +1,6 @@
 /**
  * @file VKBuffer.cpp
+ * @brief Vulkan buffer storage helpers and the vertex, index and uniform buffer implementations.
  */
 // SPDX-License-Identifier: MIT
 #include "VKBuffer.hpp"

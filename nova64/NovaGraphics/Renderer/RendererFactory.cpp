@@ -1,13 +1,10 @@
 /**
  * @file RendererFactory.cpp
- * @brief Renderer Factory & Utilities.
+ * @brief Backend selection and renderer creation, plus format and N64 blend/depth translation helpers.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Renderer Factory & Utilities
-// Backend-agnostic renderer creation and utility functions
 
 #include "Renderer.hpp"
-// Software/SoftwareRenderer.hpp removed — dead code
 #include "../Common/Logger.hpp"
 
 #include <cstring>
@@ -20,9 +17,7 @@
 namespace Nova64 {
 namespace Video {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  BACKEND NAME TABLE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BACKEND NAME TABLE ---
 
 static const char* const kBackendNames[] = {"None", "OpenGL 4.6", "Software", "Vulkan 1.1"};
 
@@ -32,9 +27,7 @@ const char* GetBackendName(BackendType type) {
     return kBackendNames[idx];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  BACKEND DETECTION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BACKEND DETECTION ---
 
 namespace GL {
 bool IsOpenGL46Available();
@@ -49,9 +42,7 @@ BackendType DetectBestBackend() {
     return BackendType::OpenGL46;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDERER FACTORY
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDERER FACTORY ---
 
 namespace GL {
 std::unique_ptr<IRenderer> CreateOpenGLRenderer();
@@ -66,15 +57,13 @@ std::unique_ptr<IRenderer> CreateRenderer(BackendType type) {
 
     case BackendType::Vulkan: return VK::CreateVulkanRenderer();
 
-    case BackendType::Software: return nullptr; // Software renderer removed
+    case BackendType::Software: return nullptr; // No software renderer exists
 
     default: return nullptr;
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  VERTEX LAYOUT UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- VERTEX LAYOUT UTILITIES ---
 
 uint32_t GetVertexAttribSize(VertexAttribType type) {
     switch (type) {
@@ -112,9 +101,7 @@ uint32_t GetVertexAttribComponentCount(VertexAttribType type) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE FORMAT UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE FORMAT UTILITIES ---
 
 uint32_t GetTexelSizeBytes(TextureFormat format) {
     switch (format) {
@@ -150,14 +137,11 @@ bool IsN64Format(TextureFormat format) {
            format == TextureFormat::CI8;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  BLEND STATE HELPERS (for N64 RDP blender modes)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- BLEND STATE HELPERS (for N64 RDP blender modes) ---
 
 BlendState TranslateN64BlendMode(uint32_t blenderBits, uint32_t otherModeBits) {
     BlendState state;
 
-    // Check if blending is enabled
     // N64 otherMode low bits: cycle type and blender settings
     bool forceBlend = (otherModeBits & 0x4000) != 0; // FORCE_BL bit
 
@@ -204,7 +188,7 @@ BlendState TranslateN64BlendMode(uint32_t blenderBits, uint32_t otherModeBits) {
         state.srcColor = BlendFactor::SrcAlpha;
         state.dstColor = BlendFactor::One;
     }
-    // Default fallback
+    // Any other combination: plain alpha blend
     else {
         state.srcColor = BlendFactor::SrcAlpha;
         state.dstColor = BlendFactor::OneMinusSrcAlpha;
@@ -215,9 +199,7 @@ BlendState TranslateN64BlendMode(uint32_t blenderBits, uint32_t otherModeBits) {
     return state;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  DEPTH STATE HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DEPTH STATE HELPERS ---
 
 DepthStencilState TranslateN64DepthMode(uint32_t otherModeBits) {
     DepthStencilState state;

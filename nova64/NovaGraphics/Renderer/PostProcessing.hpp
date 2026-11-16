@@ -1,12 +1,8 @@
 /**
  * @file PostProcessing.hpp
- * @brief Post-Processing Pipeline.
+ * @brief Post-processing effects (gamma, FXAA, bloom, CRT, sharpen and others) and the pipeline that chains them
+ *        on the final resolved framebuffer.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Post-Processing Pipeline
-// Gamma correction, FXAA, bloom, CRT filter, sharpening.
-// All post effects operate on the final resolved framebuffer.
-// ══════════════════════════════════════════════════════════════════════════════
 
 #pragma once
 
@@ -382,9 +378,7 @@ private:
     int m_height = 0;
 };
 
-// ══════════════════════════════════════════════════════════════
-//  PostProcessingPipeline
-// ══════════════════════════════════════════════════════════════
+// --- PostProcessingPipeline ---
 
 class PostProcessingPipeline {
 public:
@@ -395,20 +389,20 @@ public:
     void Shutdown();
     void Resize(int width, int height);
 
-    // Apply all enabled effects in order
-    // inputTex: GL texture with the rendered scene
-    // outputFBO: 0 for default framebuffer, or target FBO
+    // Applies all enabled effects in order.
+    // inputTex: GL texture with the rendered scene.
+    // outputFBO: 0 for the default framebuffer, or the target FBO.
     void Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height);
 
-    // ── Effect management ──────────────────────────────────
+    // --- Effect management ---
     void AddEffect(std::unique_ptr<PostEffect> effect);
     void RemoveEffect(PostEffectType type);
     PostEffect* GetEffect(PostEffectType type);
     void SetEffectEnabled(PostEffectType type, bool enabled);
     void ClearEffects();
 
-    // ── Quick setup ────────────────────────────────────────
-    void SetupDefaultChain();  // Gamma + FXAA
+    // --- Quick setup ---
+    void SetupDefaultChain();  // Empty chain: no effects
     void SetupRetroChain();    // CRT + Gamma
     void SetupEnhancedChain(); // Bloom + Sharpen + Gamma + FXAA
 
@@ -421,7 +415,7 @@ private:
 
     std::vector<std::unique_ptr<PostEffect>> m_effects;
 
-    // Ping-pong framebuffers for multi-pass
+    // Ping-pong framebuffers for chaining passes.
     uint32_t m_pingFBO = 0;
     uint32_t m_pingTex = 0;
     uint32_t m_pongFBO = 0;

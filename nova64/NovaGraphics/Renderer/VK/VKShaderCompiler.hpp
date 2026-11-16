@@ -19,7 +19,7 @@ namespace Nova64 {
 namespace Video {
 namespace VK {
 
-// ─── Fixed byte offsets of every uniform inside the N64 UBO ──────────────────
+// --- Fixed byte offsets of every uniform inside the N64 UBO ---
 // Must match the std140 layout declared in ShaderGenerator::GetCommonUniforms()
 // for ShaderLanguage::SPIRV.
 //
@@ -118,7 +118,6 @@ constexpr int uTexCvgAlpha = 612; // uIntBits3.y: when 1, multiply combined.a by
 constexpr int uTexHiRes = 616;    // uIntBits3.z: bit 0 = texture 0, bit 1 = texture 1 is a texture-pack picture
 } // namespace N64UBOOff
 
-
 class VKShaderCompiler final : public Shader::IShaderCompiler {
 public:
     explicit VKShaderCompiler(IRenderer* renderer);
@@ -136,8 +135,7 @@ public:
 
     void DeleteShader(Shader::CompiledShader& shader) override;
 
-    // BindShader: call renderer->BindShader with the stored VKShaderProgramImpl
-    // and refresh the UBO write pointer for the current frame.
+    // Binds the stored VKShaderProgramImpl on the renderer.
     void BindShader(const Shader::CompiledShader& shader) override;
 
     std::string GetLastError() const override { return m_lastError; }

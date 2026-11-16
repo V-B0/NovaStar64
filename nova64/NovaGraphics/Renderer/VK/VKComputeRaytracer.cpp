@@ -1,10 +1,11 @@
 /**
  * @file VKComputeRaytracer.cpp
- * @brief Two-pass compute BVH ray tracer implementation (MoltenVK-compatible).
+ * @brief Three-pass compute BVH ray tracer implementation (MoltenVK-compatible).
  *
  * Hybrid: reads the textured raster render, traces shadows/AO/reflections into
- * intermediate images (pass 1), edge-aware-denoises and composites (pass 2),
- * blits the result back to the swapchain.
+ * intermediate images (pass 1), edge-aware-denoises with temporal accumulation
+ * (pass 2), composites at full resolution (pass 3) and blits the result back to
+ * the swapchain.
  */
 // SPDX-License-Identifier: MIT
 #include "VKComputeRaytracer.hpp"
@@ -86,7 +87,7 @@ void FullBlit(VkCommandBuffer cmd, VkImage src, VkImageLayout srcL, VkImage dst,
 bool VKComputeRaytracer::Build(const VKContext& ctx) {
     if (Ready()) return true;
 
-    // ── Compile the three compute shaders ────────────────────────────────────
+    // --- Compile the three compute shaders ---
     GlslangInitProcess();
     std::vector<uint32_t> traceSpv = CompileGLSLtoSPIRV(ShaderStage::Compute, RT::kRTTraceSrc, "rt_trace");
     std::vector<uint32_t> denoiseSpv = CompileGLSLtoSPIRV(ShaderStage::Compute, RT::kRTDenoiseSrc, "rt_denoise");
@@ -120,13 +121,9 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
         return false;
     }
 
-    // ── Descriptor set layouts ───────────────────────────────────────────────
-    // Pass 1 (trace, half):     0 UBO, 1 nodes SSBO, 2 tris SSBO,
-    //                           3 lit(w), 4 occ(w), 5 gbuf(w).
-    // Pass 2 (denoise, half):   0 UBO, 1 occ(r), 2 gbuf(r),
-    //                           3 prevHist(r), 4 prevGbuf(r), 5 hist(w).
-    // Pass 3 (composite, full): 0 UBO, 1 ras(r), 2 lit(r), 3 occ(r),
-    //                           4 hist(r), 5 gbuf(r), 6 out(w).
+    // --- Descriptor set layouts ---
+    // One set per pass (trace, denoise, composite); the comments name what each
+    // binding holds, and binding 0 is always the UBO.
     auto makeLayout = [&](const std::vector<VkDescriptorType>& types) -> VkDescriptorSetLayout {
         std::vector<VkDescriptorSetLayoutBinding> bind(types.size());
         for (uint32_t i = 0; i < types.size(); ++i) {
@@ -184,7 +181,7 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
         return false;
     }
 
-    // ── Pipeline layouts + pipelines ─────────────────────────────────────────
+    // --- Pipeline layouts + pipelines ---
     auto makePipeline = [&](VkDescriptorSetLayout dsl, VkShaderModule mod, VkPipelineLayout& layoutOut) -> VkPipeline {
         VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pli.setLayoutCount = 1;
@@ -211,9 +208,9 @@ bool VKComputeRaytracer::Build(const VKContext& ctx) {
         return false;
     }
 
-    // ── Descriptor pool + per-frame sets/UBOs ────────────────────────────────
+    // --- Descriptor pool + per-frame sets/UBOs ---
     // Per frame: trace(1 UBO, 2 SSBO, 7 img) + denoise(1 UBO, 8 img)
-    //          + composite(1 UBO, 8 img) = 3 UBO, 2 SSBO, 23 images.
+    //          + composite(1 UBO, 8 img, 1 sampler) = 3 UBO, 2 SSBO, 23 images, 1 sampler.
     std::array<VkDescriptorPoolSize, 4> ps{{
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 * kFrames},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * kFrames},
@@ -343,7 +340,7 @@ bool VKComputeRaytracer::EnsureImages(const VKContext& ctx, FrameRes& fr, uint32
     DestroyImg(ctx, fr.gi);
     DestroyImg(ctx, fr.giHist);
 
-    // RT intermediates run at HALF resolution (¼ of the rays/filter taps);
+    // RT intermediates run at half resolution (¼ of the rays/filter taps);
     // out/ras stay full so the game's raster image is never downscaled.
     const uint32_t rw = (w + 1) / 2;
     const uint32_t rh = (h + 1) / 2;
@@ -427,8 +424,8 @@ void VKComputeRaytracer::WriteDescriptors(const VKContext& ctx, FrameRes& fr, co
     W(fr.traceSet, 7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &gi);
     W(fr.traceSet, 8, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &pHist);
     W(fr.traceSet, 9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &pGbuf);
-    // Pass 2 (denoise, half res). 3/4/7 reference the OTHER frame-in-flight's
-    // hist/gbuf/giHist — that ping-pong is the temporal history storage.
+    // Pass 2 (denoise, half res). Bindings 3/4/7 reference the other
+    // frame-in-flight's hist/gbuf/giHist; that ping-pong is the temporal history storage.
     W(fr.denoiseSet, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, &ubo, nullptr);
     W(fr.denoiseSet, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &occ);
     W(fr.denoiseSet, 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &gbuf);
@@ -464,7 +461,7 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     const VkDeviceSize nodeBytes = static_cast<VkDeviceSize>(bvh.Nodes().size()) * sizeof(RT::GpuBVHNode);
     const VkDeviceSize triBytes = static_cast<VkDeviceSize>(bvh.Triangles().size()) * sizeof(RT::GpuRTTri);
     if (!EnsureBuffers(ctx, fr, nodeBytes, triBytes)) return false;
-    // Both frames' images must exist (the denoise pass reads the OTHER frame's
+    // Both frames' images must exist (the denoise pass reads the other frame's
     // hist/gbuf as temporal history) and stay the same size.
     if (!EnsureImages(ctx, fr, w, h)) return false;
     if (!EnsureImages(ctx, prev, w, h)) return false;
@@ -550,7 +547,7 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
     // 2) raster -> GENERAL (compute read); pass-1 outputs -> GENERAL (write).
     //    lit/occ/gbuf are transient (fully rewritten each frame), so UNDEFINED
     //    old layout (contents discarded) is correct. srcStage must be COMPUTE:
-    //    the PREVIOUS frame's denoise pass reads this frame's gbuf as temporal
+    //    the previous frame's denoise pass reads this frame's gbuf as temporal
     //    history, and the discard write must wait for that read (WAR).
     ImgBarrier(cmd, fr.ras.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -569,7 +566,7 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
 
-    // 3) Pass 1 — trace (HALF resolution: ¼ of the BVH rays).
+    // 3) Pass 1 — trace (half resolution: ¼ of the BVH rays).
     const uint32_t rw = (w + 1) / 2;
     const uint32_t rh = (h + 1) / 2;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_tracePipeline);
@@ -610,7 +607,7 @@ bool VKComputeRaytracer::RenderHybrid(const VKContext& ctx, VkCommandBuffer cmd,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
 
-    // 5c) Pass 3 — composite (FULL res): upsample RT term over the raster.
+    // 5c) Pass 3 — composite (full res): upsample RT term over the raster.
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compositePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_compositePipeLayout, 0, 1, &fr.compositeSet, 0,
                             nullptr);

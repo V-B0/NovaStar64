@@ -1,10 +1,9 @@
 /**
  * @file ShaderManager.hpp
- * @brief Shader Management System.
+ * @brief Shader management: combiner keys and feature flags, the compiled-shader cache, the backend compiler
+ *        interface, the shader source generator and the ShaderManager that ties them together.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Shader Management System
-// Manages shader compilation, caching, and uber-shader specialization
 
 #pragma once
 
@@ -22,7 +21,7 @@ namespace Nova64 {
 namespace Video {
 namespace Shader {
 
-// ─── Shader Types ────────────────────────────────────────────────────────────
+// --- Shader Types ---
 enum class ShaderType : uint8_t {
     Vertex = 0,
     Fragment = 1,
@@ -43,7 +42,7 @@ enum class ShaderLanguage : uint8_t {
 
 enum class BackendAPI : uint8_t { OpenGL = 0, Vulkan = 1, D3D11 = 2, Count = 3 };
 
-// ─── Shader Feature Flags ────────────────────────────────────────────────────
+// --- Shader Feature Flags ---
 // These control which code paths are compiled into the uber-shader
 enum ShaderFeature : uint64_t {
     SF_NONE = 0,
@@ -93,7 +92,7 @@ enum ShaderFeature : uint64_t {
     // Special
     SF_NOISE_ENABLE = (1ULL << 30),
     SF_COVERAGE_ENABLE = (1ULL << 31),
-    SF_FRAMEBUFFER_READ = (1ULL << 32), // For blend  modes that read FB
+    SF_FRAMEBUFFER_READ = (1ULL << 32), // For blend modes that read FB
     SF_COLOR_ON_COVERAGE = (1ULL << 33),
 
     // Post-processing
@@ -127,7 +126,7 @@ enum ShaderFeature : uint64_t {
     SF_DEBUG_UV_VIS = (1ULL << 63),
 };
 
-// ─── Combiner Key (uniquely identifies a combiner configuration) ─────────────
+// --- Combiner Key (uniquely identifies a combiner configuration) ---
 struct CombinerKey {
     uint64_t mux;         // N64 combine mode (64-bit mux value)
     uint32_t blenderBits; // Blender mode bits
@@ -152,7 +151,7 @@ struct CombinerKeyHasher {
     }
 };
 
-// ─── Shader Uniform Locations ────────────────────────────────────────────────
+// --- Shader Uniform Locations ---
 struct ShaderUniforms {
     // Matrices
     int mvpMatrix = -1;
@@ -267,11 +266,11 @@ struct ShaderUniforms {
     void Reset() { *this = ShaderUniforms(); }
 };
 
-// ─── Shader Program Handle ──────────────────────────────────────────────────
+// --- Shader Program Handle ---
 using ShaderHandle = uint32_t;
 static constexpr ShaderHandle INVALID_SHADER = 0;
 
-// ─── Compiled Shader Info ────────────────────────────────────────────────────
+// --- Compiled Shader Info ---
 struct CompiledShader {
     ShaderHandle handle;
     CombinerKey key;
@@ -290,7 +289,7 @@ struct CompiledShader {
         valid(false) {}
 };
 
-// ─── Shader Source Code Templates ────────────────────────────────────────────
+// --- Shader Source Code Templates ---
 struct ShaderTemplate {
     std::string vertexHeader;
     std::string vertexBody;
@@ -309,9 +308,7 @@ struct ShaderTemplate {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER CACHE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER CACHE ---
 
 struct ShaderCacheStats {
     uint32_t totalCompiled;
@@ -345,13 +342,11 @@ public:
     // Look up a compiled shader by key. Returns nullptr if not found.
     const CompiledShader* Find(const CombinerKey& key) const;
 
-    // Insert a newly compiled shader into the cache
     void Insert(const CombinerKey& key, CompiledShader&& shader);
 
-    // Remove a specific shader
     bool Remove(const CombinerKey& key);
 
-    // Evict least recently used shaders to free space
+    // Evicts the least recently used shaders.
     void EvictLRU(int count = 1);
 
     // Persistence: save/load shader cache to/from disk
@@ -383,9 +378,7 @@ private:
     DeleteCallback m_deleteCallback;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER COMPILER (Abstract Interface)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER COMPILER (Abstract Interface) ---
 
 class IShaderCompiler {
 public:
@@ -394,28 +387,22 @@ public:
     virtual bool Initialize(BackendAPI api) = 0;
     virtual void Shutdown() = 0;
 
-    // Compile a shader from source
+    // On failure the returned shader has valid == false; see GetLastError().
     virtual CompiledShader Compile(const CombinerKey& key, const std::string& vertexSource,
                                    const std::string& fragmentSource) = 0;
 
-    // Compile with geometry shader
     virtual CompiledShader CompileWithGeometry(const CombinerKey& key, const std::string& vertexSource,
                                                const std::string& fragmentSource,
                                                const std::string& geometrySource) = 0;
 
-    // Delete a compiled shader (free GPU resources)
     virtual void DeleteShader(CompiledShader& shader) = 0;
 
-    // Bind a shader for use
     virtual void BindShader(const CompiledShader& shader) = 0;
 
-    // Get last compilation error
     virtual std::string GetLastError() const = 0;
 
-    // Query uniform location
     virtual int GetUniformLocation(ShaderHandle program, const char* name) = 0;
 
-    // Set uniform values
     virtual void SetUniform1i(int location, int value) = 0;
     virtual void SetUniform1f(int location, float value) = 0;
     virtual void SetUniform2f(int location, float x, float y) = 0;
@@ -423,16 +410,12 @@ public:
     virtual void SetUniform4f(int location, float r, float g, float b, float a) = 0;
     virtual void SetUniformMatrix4fv(int location, const float* matrix) = 0;
 
-    // Get backend API
     virtual BackendAPI GetAPI() const = 0;
 
-    // Get shader language for this backend
     virtual ShaderLanguage GetLanguage() const = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER GENERATOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER GENERATOR ---
 
 class ShaderGenerator {
 public:
@@ -442,27 +425,24 @@ public:
     void Initialize(ShaderLanguage language);
     void Shutdown();
 
-    // Generate shader source for a given combiner configuration
     ShaderTemplate GenerateShader(const CombinerKey& key) const;
 
-    // Generate vertex shader
     std::string GenerateVertexShader(uint64_t features) const;
 
-    // Generate fragment shader (the complex one with combiner logic)
+    // The fragment shader carries the combiner logic.
     std::string GenerateFragmentShader(const CombinerKey& key) const;
 
-    // Generate geometry shader (for wireframe debug, or point sprite expansion)
+    // For wireframe debug or point sprite expansion.
     std::string GenerateGeometryShader(uint64_t features) const;
 
-    // Generate depth-only shader (for shadow/depth pass)
+    // For the shadow/depth pass.
     std::string GenerateDepthOnlyVertex() const;
     std::string GenerateDepthOnlyFragment() const;
 
-    // Generate fullscreen post-process shader
     std::string GeneratePostProcessVertex() const;
     std::string GeneratePostProcessFragment(uint64_t features) const;
 
-    // Generate UI overlay shader (for debug rendering)
+    // For debug rendering overlays.
     std::string GenerateUIVertex() const;
     std::string GenerateUIFragment() const;
 
@@ -504,9 +484,7 @@ private:
     std::string GenerateShadowMapShader() const;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER MANAGER (Top-level orchestrator)
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER MANAGER (Top-level orchestrator) ---
 
 class ShaderManager {
 public:
@@ -563,14 +541,11 @@ public:
     bool SaveCache(const std::string& path);
     bool LoadCache(const std::string& path);
 
-    // Stats
     const ShaderCacheStats& GetStats() const;
     void ResetStats();
 
-    // Debug
     std::string DumpShaderSource(const CombinerKey& key) const;
 
-    // Frame management
     void OnFrameBegin();
     void OnFrameEnd();
 
@@ -597,7 +572,6 @@ private:
     std::unique_ptr<CompiledShader> m_fallbackShader;
     std::unordered_map<uint64_t, std::unique_ptr<CompiledShader>> m_postProcessShaders;
 
-    // Compile and cache a shader
     const CompiledShader* CompileAndCache(const CombinerKey& key);
     const CompiledShader* GetFallbackShader();
     void QueryUniformLocations(CompiledShader& shader);

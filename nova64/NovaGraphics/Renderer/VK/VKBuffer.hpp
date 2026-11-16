@@ -1,6 +1,6 @@
 /**
  * @file VKBuffer.hpp
- * @brief Real Vulkan-backed IVertexBuffer / IIndexBuffer / IUniformBuffer.
+ * @brief Vulkan-backed IVertexBuffer / IIndexBuffer / IUniformBuffer.
  *
  * Allocation strategy:
  *   * `BufferUsage::Static`  → DEVICE_LOCAL; uploads via a staging buffer
@@ -51,7 +51,6 @@ void DestroyBufferStorage(const VKContext& ctx, VKBufferStorage& s);
 /// `dstOffset` is bytes into `dst.buffer`.
 bool UploadDeviceLocal(const VKContext& ctx, VKBufferStorage& dst, VkDeviceSize dstOffset, const void* data,
                        VkDeviceSize size);
-
 
 class VKVertexBufferImpl final : public IVertexBuffer {
 public:

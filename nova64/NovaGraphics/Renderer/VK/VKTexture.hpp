@@ -1,12 +1,11 @@
 /**
  * @file VKTexture.hpp
- * @brief Real Vulkan-backed ITexture (VkImage + VkDeviceMemory + view + sampler).
+ * @brief Vulkan-backed ITexture (VkImage + VkDeviceMemory + view + sampler).
  *
- * Stage 2 supports 2D textures only; arrays/cubemaps and depth render-targets
- * are deferred until Stage 4 (real render targets). Mip generation uses
- * vkCmdBlitImage on the linear-filter path (caller's responsibility to verify
- * the chosen format supports linear-blit on the device — almost always true
- * for RGBA8).
+ * Only 2D textures are supported (no arrays or cubemaps). Mip generation uses
+ * vkCmdBlitImage on the linear-filter path (the caller must verify that the
+ * chosen format supports linear blit on the device; almost always true for
+ * RGBA8).
  *
  * N64 native formats (I8, IA16, CI4, CI8) have no direct Vulkan equivalent.
  * They are mapped to:

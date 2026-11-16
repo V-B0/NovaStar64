@@ -2,8 +2,7 @@
  * @file GLShaderProgram.hpp
  * @brief OpenGL Shader Program Management.
  */
-// NovaGraphics — OpenGL Shader Program Management
-// Wraps GL shader compilation, linking, uniform management, pipeline objects.
+
 #pragma once
 
 #include <cstdint>
@@ -15,19 +14,14 @@
 
 namespace Nova64::Video::GL {
 
-// ═══════════════════════════════════════════════════════════════
-//  Shader Stage
-// ═══════════════════════════════════════════════════════════════
+// --- Shader Stage ---
 
 enum class ShaderStage : uint8_t { Vertex, Fragment, Geometry, TessControl, TessEval, Compute };
 
-// Get GL enum for stage
 uint32_t ShaderStageToGL(ShaderStage stage);
 const char* ShaderStageName(ShaderStage stage);
 
-// ═══════════════════════════════════════════════════════════════
-//  Shader Object — individual compiled shader
-// ═══════════════════════════════════════════════════════════════
+// --- Shader Object — individual compiled shader ---
 
 class GLShader {
 public:
@@ -58,9 +52,7 @@ private:
     std::string m_source;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Uniform Info
-// ═══════════════════════════════════════════════════════════════
+// --- Uniform Info ---
 
 enum class UniformType : uint8_t {
     Float,
@@ -103,9 +95,7 @@ struct UniformInfo {
     int32_t blockIndex = -1; // owning UBO index (-1 = default)
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Uniform Block Info
-// ═══════════════════════════════════════════════════════════════
+// --- Uniform Block Info ---
 
 struct UniformBlockInfo {
     std::string name;
@@ -115,9 +105,7 @@ struct UniformBlockInfo {
     std::vector<UniformInfo> members;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Attribute Info
-// ═══════════════════════════════════════════════════════════════
+// --- Attribute Info ---
 
 struct AttributeInfo {
     std::string name;
@@ -126,9 +114,7 @@ struct AttributeInfo {
     int32_t size = 1;  // array size
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Shader Storage Block Info
-// ═══════════════════════════════════════════════════════════════
+// --- Shader Storage Block Info ---
 
 struct SSBOInfo {
     std::string name;
@@ -138,9 +124,7 @@ struct SSBOInfo {
     bool isArray = false;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Program Reflection
-// ═══════════════════════════════════════════════════════════════
+// --- Program Reflection ---
 
 struct ProgramReflection {
     std::vector<UniformInfo> uniforms;
@@ -150,9 +134,7 @@ struct ProgramReflection {
     uint32_t computeWorkGroupSize[3] = {0, 0, 0};
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  GLProgram — linked shader program
-// ═══════════════════════════════════════════════════════════════
+// --- GLProgram — linked shader program ---
 
 class GLProgram {
 public:
@@ -187,7 +169,6 @@ public:
     bool IsValid() const { return m_handle != 0; }
     const std::string& GetInfoLog() const { return m_infoLog; }
 
-    // Reflection
     const ProgramReflection& GetReflection() const { return m_reflection; }
     void Reflect();
 
@@ -240,10 +221,8 @@ public:
     bool GetBinary(std::vector<uint8_t>& outData, uint32_t& outFormat) const;
     bool LoadBinary(const std::vector<uint8_t>& data, uint32_t format);
 
-    // Label
     void SetLabel(const std::string& label);
 
-    // Debug dump
     std::string DumpUniforms() const;
     std::string DumpAttributes() const;
     std::string DumpBlocks() const;
@@ -259,9 +238,7 @@ private:
     mutable std::unordered_map<std::string, int32_t> m_uniformCache;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Separable Pipeline (GL_ARB_separate_shader_objects)
-// ═══════════════════════════════════════════════════════════════
+// --- Separable Pipeline (GL_ARB_separate_shader_objects) ---
 
 class GLProgramPipeline {
 public:
@@ -294,9 +271,7 @@ private:
     uint32_t m_handle = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Shader Include Manager (GL_ARB_shading_language_include)
-// ═══════════════════════════════════════════════════════════════
+// --- Shader Include Manager (GL_ARB_shading_language_include) ---
 
 class ShaderIncludeManager {
 public:
@@ -306,7 +281,7 @@ public:
     bool HasInclude(const std::string& path) const;
     const std::string& GetInclude(const std::string& path) const;
 
-    // Preprocess #include directives manually (for non-ARB systems)
+    // Expands #include directives from the registered sources in software, without GL_ARB_shading_language_include.
     std::string PreprocessIncludes(const std::string& source, int maxDepth = 16) const;
 
 private:
@@ -315,9 +290,7 @@ private:
     std::string ResolveIncludes(const std::string& src, int depth, int maxDepth) const;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Shader Preprocessor — #define injection & version management
-// ═══════════════════════════════════════════════════════════════
+// --- Shader Preprocessor — #define injection & version management ---
 
 class ShaderPreprocessor {
 public:
@@ -343,9 +316,7 @@ private:
     const ShaderIncludeManager* m_includes = nullptr;
 };
 
-// ═══════════════════════════════════════════════════════════════
-//  Hot-Reload Watcher
-// ═══════════════════════════════════════════════════════════════
+// --- Hot-Reload Watcher ---
 
 struct ShaderFileEntry {
     std::string path;
@@ -360,10 +331,10 @@ public:
     void ClearAll();
     void SetEnabled(bool enabled) { m_enabled = enabled; }
 
-    // Returns list of paths that changed since last check
+    // Returns the paths that changed since the last check.
     std::vector<std::string> CheckForChanges();
 
-    // Reload a shader file and recompile
+    // Reloads the file and recompiles the shader.
     bool ReloadShader(GLShader& shader, const std::string& path);
 
 private:

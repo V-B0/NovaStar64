@@ -1,12 +1,11 @@
 /**
  * @file VKShader.hpp
- * @brief Real Vulkan IShaderProgram — GLSL → SPIR-V via glslang, then VkShaderModule.
+ * @brief Vulkan IShaderProgram: GLSL to SPIR-V via glslang, then VkShaderModule.
  *
- * Stage 3 scope:
- *   * Compile vertex/fragment/compute GLSL strings to SPIR-V at runtime.
- *   * Create VkShaderModule per stage.
- *   * Uniform setters are stored client-side in a small map; they're applied
- *     by the pipeline through a default UBO in Stage 4 (currently no-op).
+ *   * Compiles vertex/fragment/compute GLSL strings to SPIR-V at runtime.
+ *   * Creates a VkShaderModule per stage.
+ *   * Uniform setters are stored client-side in a small map that nothing
+ *     consumes, so they are effectively no-ops.
  */
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -78,7 +77,7 @@ private:
     VkShaderModule m_gs = VK_NULL_HANDLE;
     VkShaderModule m_cs = VK_NULL_HANDLE;
     std::string m_log;
-    // Cheap CPU-side uniform store (consumed by pipeline UBO in Stage 4).
+    // CPU-side uniform store; see the note in the file header.
     std::unordered_map<std::string, std::vector<float>> m_uniforms;
 };
 

@@ -27,14 +27,12 @@ static VkDeviceAddress GetASDeviceAddress(VkDevice device, VkAccelerationStructu
     return vkGetAccelerationStructureDeviceAddressKHR(device, &info);
 }
 
-/// Allocate a VKBufferStorage suitable for an acceleration structure.
 static bool AllocASBuffer(const VKContext& ctx, VkDeviceSize size, VKBufferStorage& out) {
     return CreateBufferStorage(
         ctx, size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out);
 }
 
-/// Allocate a scratch buffer for AS builds.
 static bool AllocScratchBuffer(const VKContext& ctx, VkDeviceSize size, VKBufferStorage& out) {
     return CreateBufferStorage(ctx, size,
                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -47,10 +45,10 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
                    const uint32_t* indices, uint32_t indexCount) {
     if (!ctx.device || !vertices || vertexCount == 0) return false;
 
-    Destroy(); // clean up any previous state
+    Destroy();
     m_device = ctx.device;
 
-    // ── 1. Upload vertex data to device-local buffer ─────────────────────
+    // --- 1. Upload vertex data to device-local buffer ---
     const VkDeviceSize vertSize = vertexCount * 3 * sizeof(float);
     if (!CreateBufferStorage(ctx, vertSize,
                              VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -64,7 +62,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
         return false;
     }
 
-    // ── 2. Optionally upload index data ──────────────────────────────────
+    // --- 2. Optionally upload index data ---
     const bool hasIndices = (indices && indexCount > 0);
     if (hasIndices) {
         const VkDeviceSize idxSize = indexCount * sizeof(uint32_t);
@@ -81,7 +79,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
         }
     }
 
-    // ── 3. Describe geometry ─────────────────────────────────────────────
+    // --- 3. Describe geometry ---
     VkAccelerationStructureGeometryKHR geom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
     geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
     geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
@@ -100,7 +98,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
         tri.indexType = VK_INDEX_TYPE_NONE_KHR;
     }
 
-    // ── 4. Get build sizes ────────────────────────────────────────────────
+    // --- 4. Get build sizes ---
     const uint32_t primitiveCount = hasIndices ? (indexCount / 3) : (vertexCount / 3);
     VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
@@ -114,7 +112,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
     vkGetAccelerationStructureBuildSizesKHR(ctx.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
                                             &primitiveCount, &sizeInfo);
 
-    // ── 5. Allocate backing + scratch ─────────────────────────────────────
+    // --- 5. Allocate backing + scratch ---
     if (!AllocASBuffer(ctx, sizeInfo.accelerationStructureSize, m_backing)) {
         Logger::Error("VKBlas: failed to allocate AS backing buffer");
         return false;
@@ -124,7 +122,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
         return false;
     }
 
-    // ── 6. Create AS handle ───────────────────────────────────────────────
+    // --- 6. Create AS handle ---
     VkAccelerationStructureCreateInfoKHR asCI{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR};
     asCI.buffer = m_backing.buffer;
     asCI.size = sizeInfo.accelerationStructureSize;
@@ -135,7 +133,7 @@ bool VKBlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const float* verti
     }
     m_deviceAddress = GetASDeviceAddress(ctx.device, m_as);
 
-    // ── 7. Record build into cmd ──────────────────────────────────────────
+    // --- 7. Record build into cmd ---
     buildInfo.dstAccelerationStructure = m_as;
     buildInfo.scratchData.deviceAddress = GetBufferDeviceAddress(ctx.device, m_scratch.buffer);
 
@@ -163,7 +161,7 @@ void VKBlas::Destroy() {
         vkDestroyAccelerationStructureKHR(m_device, m_as, nullptr);
         m_as = VK_NULL_HANDLE;
     }
-    // We can't call DestroyBufferStorage without a VKContext. Use raw vk calls.
+    // DestroyBufferStorage needs a VKContext, which isn't available here, so use raw vk calls.
     auto destroyBuf = [&](VKBufferStorage& s) {
         if (s.buffer) {
             vkDestroyBuffer(m_device, s.buffer, nullptr);
@@ -190,7 +188,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
     Destroy();
     m_device = ctx.device;
 
-    // ── 1. Convert TlasInstance -> VkAccelerationStructureInstanceKHR ────
+    // --- 1. Convert TlasInstance -> VkAccelerationStructureInstanceKHR ---
     std::vector<VkAccelerationStructureInstanceKHR> vkInst;
     vkInst.reserve(instances.size());
     for (const auto& ti : instances) {
@@ -207,7 +205,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
     }
     const VkDeviceSize instSize = vkInst.size() * sizeof(VkAccelerationStructureInstanceKHR);
 
-    // ── 2. Upload instance buffer ─────────────────────────────────────────
+    // --- 2. Upload instance buffer ---
     if (!CreateBufferStorage(ctx, instSize,
                              VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -220,7 +218,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
         return false;
     }
 
-    // ── 3. Describe geometry ──────────────────────────────────────────────
+    // --- 3. Describe geometry ---
     VkAccelerationStructureGeometryKHR geom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
     geom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
     geom.geometry.instances = VkAccelerationStructureGeometryInstancesDataKHR{
@@ -228,7 +226,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
     geom.geometry.instances.arrayOfPointers = VK_FALSE;
     geom.geometry.instances.data.deviceAddress = GetBufferDeviceAddress(ctx.device, m_instanceBuf.buffer);
 
-    // ── 4. Get build sizes ────────────────────────────────────────────────
+    // --- 4. Get build sizes ---
     const uint32_t instanceCount = static_cast<uint32_t>(vkInst.size());
     VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
@@ -242,7 +240,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
     vkGetAccelerationStructureBuildSizesKHR(ctx.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
                                             &instanceCount, &sizeInfo);
 
-    // ── 5. Allocate backing + scratch ──────────────────────────────────────
+    // --- 5. Allocate backing + scratch ---
     if (!AllocASBuffer(ctx, sizeInfo.accelerationStructureSize, m_backing)) {
         Logger::Error("VKTlas: failed to allocate AS backing buffer");
         return false;
@@ -252,7 +250,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
         return false;
     }
 
-    // ── 6. Create AS handle ────────────────────────────────────────────────
+    // --- 6. Create AS handle ---
     VkAccelerationStructureCreateInfoKHR asCI{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR};
     asCI.buffer = m_backing.buffer;
     asCI.size = sizeInfo.accelerationStructureSize;
@@ -263,7 +261,7 @@ bool VKTlas::Build(const VKContext& ctx, VkCommandBuffer cmd, const std::vector<
     }
     m_deviceAddress = GetASDeviceAddress(ctx.device, m_as);
 
-    // ── 7. Record build ────────────────────────────────────────────────────
+    // --- 7. Record build ---
     buildInfo.dstAccelerationStructure = m_as;
     buildInfo.scratchData.deviceAddress = GetBufferDeviceAddress(ctx.device, m_scratch.buffer);
 

@@ -1,9 +1,8 @@
 /**
  * @file ShaderManager.cpp
- * @brief Shader Manager.
+ * @brief ShaderCache (source and GL program-binary persistence) and ShaderManager implementation.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Shader Manager Implementation
 
 #include "ShaderManager.hpp"
 #include "../Common/Logger.hpp"
@@ -18,9 +17,7 @@ namespace Nova64 {
 namespace Video {
 namespace Shader {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER CACHE IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER CACHE IMPLEMENTATION ---
 
 ShaderCache::ShaderCache() : m_maxShaders(4096), m_currentFrame(0) {}
 
@@ -68,9 +65,8 @@ const CompiledShader* ShaderCache::Find(const CombinerKey& key) const {
 void ShaderCache::Insert(const CombinerKey& key, CompiledShader&& shader) {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-    // Evict if at capacity
+    // At capacity: evict the entry with the oldest access.
     if (m_cache.size() >= m_maxShaders) {
-        // Find the entry with oldest access
         auto oldest = m_cache.begin();
         uint64_t oldestFrame = UINT64_MAX;
         for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
@@ -141,19 +137,16 @@ bool ShaderCache::SaveToDisk(const std::string& path) const {
     file.write(reinterpret_cast<const char*>(&count), sizeof(count));
 
     for (auto& [key, entry] : m_cache) {
-        // Write key
         file.write(reinterpret_cast<const char*>(&key.mux), sizeof(key.mux));
         file.write(reinterpret_cast<const char*>(&key.blenderBits), sizeof(key.blenderBits));
         file.write(reinterpret_cast<const char*>(&key.otherModeH), sizeof(key.otherModeH));
         file.write(reinterpret_cast<const char*>(&key.otherModeL), sizeof(key.otherModeL));
         file.write(reinterpret_cast<const char*>(&key.features), sizeof(key.features));
 
-        // Write vertex source
         uint32_t vertLen = static_cast<uint32_t>(entry.shader.vertexSource.size());
         file.write(reinterpret_cast<const char*>(&vertLen), sizeof(vertLen));
         file.write(entry.shader.vertexSource.c_str(), vertLen);
 
-        // Write fragment source
         uint32_t fragLen = static_cast<uint32_t>(entry.shader.fragmentSource.size());
         file.write(reinterpret_cast<const char*>(&fragLen), sizeof(fragLen));
         file.write(entry.shader.fragmentSource.c_str(), fragLen);
@@ -197,7 +190,7 @@ bool ShaderCache::LoadFromDisk(const std::string& path) {
         fragSource.resize(fragLen);
         file.read(&fragSource[0], fragLen);
 
-        // Don't overwrite valid (binary-loaded) entries with invalid source
+        // Keep valid (binary-loaded) entries instead of overwriting them with source-only ones.
         if (m_cache.find(key) != m_cache.end()) continue;
 
         // Store source for later recompilation
@@ -219,7 +212,7 @@ bool ShaderCache::LoadFromDisk(const std::string& path) {
 bool ShaderCache::SaveBinaryCache(const std::string& path) const {
     // Binary cache saves GL program binaries for fast reload via GL_ARB_get_program_binary.
     // File format: magic(4) + version(4) + count(4) + entries[]
-    // Each entry: CombinerKey(24) + features(8) + binaryFormat(4) + binaryLen(4) + data(len)
+    // Each entry: CombinerKey(32) + features(8) + binaryFormat(4) + binaryLen(4) + data(len)
     std::shared_lock<std::shared_mutex> lock(m_mutex);
 
     GLint numFormats = 0;
@@ -234,7 +227,7 @@ bool ShaderCache::SaveBinaryCache(const std::string& path) const {
     file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
     file.write(reinterpret_cast<const char*>(&version), sizeof(version));
 
-    // Placeholder for count — we'll seek back and fill it in
+    // The entry count is unknown until the loop ends; write a placeholder and patch it afterwards.
     const auto countPos = file.tellp();
     uint32_t count = 0;
     file.write(reinterpret_cast<const char*>(&count), sizeof(count));
@@ -252,7 +245,7 @@ bool ShaderCache::SaveBinaryCache(const std::string& path) const {
         GLenum binaryFormat = 0;
         glGetProgramBinary(prog, binaryLength, nullptr, &binaryFormat, binary.data());
 
-        // Write CombinerKey (POD, 24 bytes)
+        // CombinerKey is plain data (32 bytes with padding) and is written raw.
         file.write(reinterpret_cast<const char*>(&key), sizeof(CombinerKey));
         file.write(reinterpret_cast<const char*>(&entry.shader.features), sizeof(uint64_t));
         file.write(reinterpret_cast<const char*>(&binaryFormat), sizeof(binaryFormat));
@@ -262,7 +255,6 @@ bool ShaderCache::SaveBinaryCache(const std::string& path) const {
         ++count;
     }
 
-    // Patch the count
     file.seekp(countPos);
     file.write(reinterpret_cast<const char*>(&count), sizeof(count));
 
@@ -302,17 +294,16 @@ bool ShaderCache::LoadBinaryCache(const std::string& path) {
         file.read(reinterpret_cast<char*>(binary.data()), len);
         if (!file.good()) break;
 
-        // If already in cache (source-compiled takes priority), skip
+        // A source-compiled entry already in the cache takes priority.
         if (m_cache.find(key) != m_cache.end()) continue;
 
-        // Create program from binary
         GLuint prog = glCreateProgram();
         glProgramBinary(prog, binaryFormat, binary.data(), static_cast<GLsizei>(len));
 
         GLint linkStatus = GL_FALSE;
         glGetProgramiv(prog, GL_LINK_STATUS, &linkStatus);
         if (linkStatus != GL_TRUE) {
-            // Binary is stale (driver update, GPU change, etc.)
+            // Stale binary (driver update, GPU change, etc.).
             glDeleteProgram(prog);
             continue;
         }
@@ -342,9 +333,7 @@ void ShaderCache::ForEachEntry(std::function<void(const CombinerKey&, CompiledSh
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SHADER MANAGER IMPLEMENTATION
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SHADER MANAGER IMPLEMENTATION ---
 
 ShaderManager::ShaderManager() : m_currentShader(nullptr), m_api(BackendAPI::OpenGL), m_initialized(false) {}
 
@@ -364,8 +353,7 @@ bool ShaderManager::Initialize(BackendAPI api) {
     }
     m_generator->Initialize(lang);
 
-    // Compiler is created by the backend-specific factory
-    // For now it remains null until SetCompiler() is called
+    // The compiler stays null until the backend calls SetCompiler().
     m_initialized = true;
     return true;
 }
@@ -385,13 +373,11 @@ void ShaderManager::Shutdown() {
 const CompiledShader* ShaderManager::GetShader(const CombinerKey& key) {
     if (!m_initialized) return nullptr;
 
-    // Try cache first
     const CompiledShader* cached = m_cache.Find(key);
     if (cached && cached->valid) {
         return cached;
     }
 
-    // Compile and cache
     return CompileAndCache(key);
 }
 
@@ -425,7 +411,7 @@ void ShaderManager::SetColorUniforms(const float* primColor, const float* envCol
         m_compiler->SetUniform4f(u.blendColor, blendColor[0], blendColor[1], blendColor[2], blendColor[3]);
     if (u.primLOD >= 0) m_compiler->SetUniform1f(u.primLOD, primLODMin);
     if (u.primLODFrac >= 0) m_compiler->SetUniform1f(u.primLODFrac, primLODFrac);
-    // Chroma key center/scale — wired from RDP state
+    // Chroma key center/scale
     if (u.centerColor >= 0) m_compiler->SetUniform3f(u.centerColor, centerR, centerG, centerB);
     if (u.scaleColor >= 0) m_compiler->SetUniform3f(u.scaleColor, scaleR, scaleG, scaleB);
 }
@@ -653,8 +639,8 @@ void ShaderManager::ClearCache() { m_cache.Clear(); }
 
 bool ShaderManager::SaveCache(const std::string& path) {
     bool srcOk = m_cache.SaveToDisk(path);
-    // Binary cache uses GL_ARB_get_program_binary — only valid on OpenGL path.
-    // Calling glGetIntegerv without an active GL context (Vulkan) causes a crash.
+    // The binary cache uses GL_ARB_get_program_binary, so it is OpenGL-only:
+    // calling glGetIntegerv without an active GL context (Vulkan) crashes.
     bool binOk = false;
     if (m_api == BackendAPI::OpenGL) {
         std::string binPath = path + ".bin";
@@ -664,8 +650,8 @@ bool ShaderManager::SaveCache(const std::string& path) {
 }
 
 bool ShaderManager::LoadCache(const std::string& path) {
-    // 1. Try binary cache first — pre-compiled GPU programs load in microseconds
-    // Binary cache uses glProgramBinary — only available on OpenGL.
+    // 1. Binary cache first: pre-compiled GPU programs load in microseconds.
+    //    It uses glProgramBinary, so it is OpenGL-only.
     if (m_api == BackendAPI::OpenGL) {
         std::string binPath = path + ".bin";
         m_cache.LoadBinaryCache(binPath);
@@ -690,7 +676,7 @@ bool ShaderManager::LoadCache(const std::string& path) {
 const ShaderCacheStats& ShaderManager::GetStats() const { return m_cache.GetStats(); }
 
 void ShaderManager::ResetStats() {
-    // Stats are part of cache; clearing them requires cache re-init
+    // Not supported: the stats live in the cache and can only be cleared by re-initialising it.
 }
 
 std::string ShaderManager::DumpShaderSource(const CombinerKey& key) const {
@@ -735,7 +721,7 @@ void main() { FragColor = vec4(1.0, 0.0, 1.0, 1.0); }
 }
 
 void ShaderManager::OnFrameBegin() {
-    // Could precompile predicted shaders here
+    // No per-frame work.
 }
 
 void ShaderManager::OnFrameEnd() {
@@ -776,7 +762,7 @@ const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {
     compiled.compileTimeMs =
         static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
 
-    // Diagnostic: log each new shader compilation (WARN so it shows in release logs).
+    // Logged at WARN so each new shader compilation shows up in release logs.
     NOVA_WARN(::Nova64::Video::LogSubsystem::Core,
               "ShaderManager: compiled shader features={:#018x} mux={:#018x} "
               "fragLen={} cpuMs={}",
@@ -788,7 +774,6 @@ const CompiledShader* ShaderManager::CompileAndCache(const CombinerKey& key) {
         compiled.vertexSource = std::move(vertSrc);
         compiled.fragmentSource = std::move(fragSrc);
 
-        // Query uniform locations
         QueryUniformLocations(compiled);
 
         m_cache.Insert(key, std::move(compiled));

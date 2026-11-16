@@ -1,10 +1,8 @@
 /**
  * @file Renderer.hpp
- * @brief Renderer Abstraction Layer.
+ * @brief Backend-agnostic rendering interface (IRenderer and its resource types) implemented by each graphics backend.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics - Renderer Abstraction Layer
-// Backend-agnostic rendering interface that all backends implement
 
 #pragma once
 
@@ -22,9 +20,7 @@
 namespace Nova64 {
 namespace Video {
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  FORWARD DECLARATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- FORWARD DECLARATIONS ---
 
 class IRenderer;
 class IRenderTarget;
@@ -38,14 +34,12 @@ namespace RT {
 class RTSceneManager;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ENUMERATIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- ENUMERATIONS ---
 
 enum class BackendType : uint8_t {
     None = 0,
     OpenGL46, // OpenGL 4.6 Core Profile + DSA
-    Software, // Software fallback (debug only)
+    Software, // Reserved: no software renderer exists (CreateRenderer returns nullptr)
     Vulkan,   // Vulkan 1.2+
     Count
 };
@@ -133,9 +127,7 @@ enum class BufferUsage : uint8_t {
 
 enum class IndexType : uint8_t { UInt16 = 0, UInt32 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  VERTEX FORMAT
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- VERTEX FORMAT ---
 
 enum class VertexAttribType : uint8_t {
     Float1 = 0,
@@ -165,7 +157,7 @@ struct VertexLayout {
 
     static VertexLayout CreateN64() {
         VertexLayout layout;
-        // Must match GPUVertex in RDPProcessor.cpp (not RenderBatch::Vertex):
+        // Must match GPUVertex in RDPProcessor_Batch.cpp (not RenderBatch::Vertex):
         //   float x, y, z, w;     // offset  0  (16 bytes) - position
         //   float r, g, b, a;     // offset 16  (16 bytes) - color
         //   float s0, t0;         // offset 32  ( 8 bytes) - texcoord0
@@ -175,19 +167,14 @@ struct VertexLayout {
         //   float baryS, baryT;   // offset 56  ( 8 bytes) - barycentric for coverage AA
         //                         // total = 64 bytes
         layout.stride = 64;
-        // position: location 0, float4
         layout.attribs.push_back({0, VertexAttribType::Float4, 0, false});
-        // color: location 1, float4
         layout.attribs.push_back({1, VertexAttribType::Float4, 16, false});
-        // texCoord0: location 2, float2
         layout.attribs.push_back({2, VertexAttribType::Float2, 32, false});
-        // texCoord1: location 3, float2
         layout.attribs.push_back({3, VertexAttribType::Float2, 40, false});
-        // fog: location 4, float1
         layout.attribs.push_back({4, VertexAttribType::Float1, 48, false});
-        // perspW (1/clip_W): location 5, float1 — for perspective-correct texture interpolation
+        // perspW (1/clip_W) for perspective-correct texture interpolation
         layout.attribs.push_back({5, VertexAttribType::Float1, 52, false});
-        // baryCoord: location 6, float2 — barycentric coords for sub-pixel coverage AA
+        // baryCoord: barycentric coordinates for sub-pixel coverage AA
         layout.attribs.push_back({6, VertexAttribType::Float2, 56, false});
         return layout;
     }
@@ -202,9 +189,7 @@ struct VertexLayout {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDER STATE DESCRIPTORS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDER STATE DESCRIPTORS ---
 
 struct BlendState {
     bool enabled = false;
@@ -305,9 +290,7 @@ struct RenderScissorRect {
     int32_t width = 0, height = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  SAMPLER DESCRIPTOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- SAMPLER DESCRIPTOR ---
 
 struct SamplerDesc {
     SamplerFilter minFilter = SamplerFilter::Linear;
@@ -320,9 +303,7 @@ struct SamplerDesc {
     bool useN64_3Point = false;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  TEXTURE DESCRIPTOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- TEXTURE DESCRIPTOR ---
 
 struct TextureDesc {
     uint32_t width = 0;
@@ -335,9 +316,7 @@ struct TextureDesc {
     const char* debugName = nullptr;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDER TARGET DESCRIPTOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDER TARGET DESCRIPTOR ---
 
 struct RenderTargetDesc {
     uint32_t width = 0;
@@ -349,9 +328,7 @@ struct RenderTargetDesc {
     const char* debugName = nullptr;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  PIPELINE DESCRIPTOR
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- PIPELINE DESCRIPTOR ---
 
 struct PipelineDesc {
     IShaderProgram* shader = nullptr;
@@ -365,9 +342,7 @@ struct PipelineDesc {
     const char* debugName = nullptr;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ABSTRACT RESOURCE INTERFACES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- ABSTRACT RESOURCE INTERFACES ---
 
 class IVertexBuffer {
 public:
@@ -455,9 +430,7 @@ public:
     virtual uint64_t GetNativeHandle() const = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  DRAW COMMAND
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- DRAW COMMAND ---
 
 struct DrawCommand {
     PrimitiveType primitive = PrimitiveType::Triangles;
@@ -469,9 +442,7 @@ struct DrawCommand {
     bool indexed = false;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDERER STATISTICS
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDERER STATISTICS ---
 
 struct RendererStats {
     uint64_t drawCalls = 0;
@@ -493,9 +464,7 @@ struct RendererStats {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDERER CAPABILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDERER CAPABILITIES ---
 
 struct RendererCaps {
     BackendType backend = BackendType::None;
@@ -534,15 +503,13 @@ struct RendererCaps {
     uint32_t maxRayRecursionDepth = 0;
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  MAIN RENDERER INTERFACE
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- MAIN RENDERER INTERFACE ---
 
 class IRenderer {
 public:
     virtual ~IRenderer() = default;
 
-    // ─── Lifecycle ─────────────────────────────────────────────
+    // --- Lifecycle ---
     virtual bool Initialize(void* windowHandle, uint32_t width, uint32_t height) = 0;
     virtual void Shutdown() = 0;
     virtual void BeginFrame() = 0;
@@ -564,7 +531,7 @@ public:
     /// destroying GPU objects at shutdown.
     virtual void WaitIdle() {}
 
-    // ─── Resource Creation ─────────────────────────────────────
+    // --- Resource Creation ---
     virtual std::unique_ptr<IVertexBuffer> CreateVertexBuffer(size_t sizeBytes, BufferUsage usage) = 0;
     virtual std::unique_ptr<IIndexBuffer> CreateIndexBuffer(size_t sizeBytes, BufferUsage usage) = 0;
     virtual std::unique_ptr<IUniformBuffer> CreateUniformBuffer(size_t sizeBytes) = 0;
@@ -573,7 +540,7 @@ public:
     virtual std::unique_ptr<IRenderTarget> CreateRenderTarget(const RenderTargetDesc& desc) = 0;
     virtual std::unique_ptr<IPipeline> CreatePipeline(const PipelineDesc& desc) = 0;
 
-    // ─── State Management ──────────────────────────────────────
+    // --- State Management ---
     virtual void SetViewport(const RenderViewport& vp) = 0;
     virtual void SetScissor(const RenderScissorRect& rect) = 0;
     virtual void SetBlendState(const BlendState& state) = 0;
@@ -581,7 +548,7 @@ public:
     virtual void SetRasterizerState(const RasterizerState& state) = 0;
     virtual void SetBlendColor(float r, float g, float b, float a) = 0;
 
-    // ─── Binding ───────────────────────────────────────────────
+    // --- Binding ---
     virtual void BindVertexBuffer(IVertexBuffer* vb, const VertexLayout& layout) = 0;
     virtual void BindIndexBuffer(IIndexBuffer* ib) = 0;
     virtual void BindTexture(uint32_t unit, ITexture* tex) = 0;
@@ -589,7 +556,7 @@ public:
     virtual void BindPipeline(IPipeline* pipeline) = 0;
     virtual void BindRenderTarget(IRenderTarget* rt) = 0; // nullptr = default backbuffer
 
-    // ─── Image Load/Store (MLE blender, N64 Z-image) ──────────
+    // --- Image Load/Store (MLE blender, N64 Z-image) ---
     /// Bind a native texture for pixel-shader read-write (imageLoad/imageStore on GL,
     /// RasterizerOrderedTexture on D3D11.3).
     /// @param unit   Image unit (0=Z, 1=deltaZ, 2=colorImage, 3=coverage)
@@ -612,15 +579,15 @@ public:
     /// Issue an image-access memory barrier (GL: glMemoryBarrier, D3D: no-op with ROV).
     virtual void ImageMemoryBarrier() = 0;
 
-    // ─── Drawing ───────────────────────────────────────────────
+    // --- Drawing ---
     virtual void Draw(const DrawCommand& cmd) = 0;
     virtual void DrawArrays(PrimitiveType prim, uint32_t first, uint32_t count) = 0;
     virtual void DrawIndexed(PrimitiveType prim, uint32_t indexCount, IndexType type, uint32_t offset) = 0;
 
-    // ─── Compute ───────────────────────────────────────────────
+    // --- Compute ---
     virtual void DispatchCompute(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ) = 0;
 
-    // ─── Ray Tracing ───────────────────────────────────────────
+    // --- Ray Tracing ---
     /// Dispatch hardware ray tracing pass.  Default no-op for non-RT backends.
     /// tlas:        backend-native TLAS handle (VkAccelerationStructureKHR)
     /// outputImage: backend-native image handle for ray output (VkImageView)
@@ -639,12 +606,12 @@ public:
         (void)h;
     }
 
-    // ─── Readback ──────────────────────────────────────────────
+    // --- Readback ---
     virtual void ReadPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h, TextureFormat format, void* outData) = 0;
 
-    // GPU-side copy of the current swapchain frame into dst texture.
-    // Records vkCmdCopyImage into the in-flight command buffer; no CPU sync,
-    // no m_skipPresent side-effect. Default no-op for non-Vulkan backends.
+    /// GPU-side copy of the current swapchain frame into dst texture. Records
+    /// vkCmdCopyImage into the in-flight command buffer: no CPU sync and no
+    /// m_skipPresent side effect. Default no-op for non-Vulkan backends.
     virtual void BlitToTexture(ITexture* dst) { (void)dst; }
     /// Drop the persistent frame-carry canvases (Vulkan backends): the next
     /// frame starts from a cleared image instead of the accumulated screen
@@ -659,7 +626,7 @@ public:
     /// real buffer isolation on the single swapchain image. GL no-op (FBOs).
     virtual void SetActiveCanvas(uint32_t n64Addr) { (void)n64Addr; }
     /// Tell the backend which N64 buffer address the VI is displaying (the
-    /// display-ready buffer). Vulkan presents THAT buffer's canvas rather
+    /// display-ready buffer). Vulkan presents that buffer's canvas rather
     /// than the one still being drawn. GL no-op.
     virtual void SetPresentOrigin(uint32_t n64Addr) { (void)n64Addr; }
     /// Width / height of the picture in the window: 4:3 for the N64's video
@@ -670,41 +637,39 @@ public:
     /// Like BlitToTexture but restarts the render pass with LOAD_OP_LOAD instead
     /// of LOAD_OP_CLEAR, preserving existing swapchain content.
     virtual void SnapshotToTexture(ITexture* dst) { (void)dst; }
-    /// GPU-side copy of the PERSISTENT CANVAS for a specific N64 buffer address
-    /// into dst, so that buffer can be sampled as a texture even when it is not
-    /// the currently-active render target.
+    /// GPU-side copy of the persistent canvas for an N64 buffer address into
+    /// dst, so that buffer can be sampled as a texture even when it is not the
+    /// active render target. Returns false when no valid canvas exists for that
+    /// address.
     ///
-    /// This is the direct analogue of GLideN64's per-FrameBuffer `m_pTexture`:
-    /// there, EVERY tracked framebuffer permanently owns a sampleable color
-    /// texture, so a framebuffer-as-texture read (MM's pause-menu background,
-    /// lens of truth, minimaps...) can always bind the real rendered content.
-    /// On this Vulkan backend `FramebufferManager::GetSampleableTexture()`
-    /// returns 0 unconditionally (there are no per-N64-FB GL textures), so the
-    /// only sources were the swapchain-snapshot ring slots, which are captured
-    /// at a few specific EVENTS (SetColorImage switch-away, LoadBlock). Any
-    /// read whose source buffer was not snapshotted at exactly the right moment
-    /// fell through to decoding raw RDRAM -- which for a GPU-rendered buffer
-    /// holds stale/uniform garbage, the black inventory panel.
-    /// The per-address canvases already maintained for buffer isolation ARE the
-    /// persistent per-FB images we were missing; this exposes them as a texture
-    /// source. Returns false when no valid canvas exists for that address.
+    /// This is the analogue of GLideN64's per-FrameBuffer `m_pTexture`: every
+    /// tracked framebuffer owns a sampleable color texture, so a
+    /// framebuffer-as-texture read (MM's pause-menu background, lens of truth,
+    /// minimaps) always binds the real rendered content. On Vulkan
+    /// `FramebufferManager::GetSampleableTexture()` returns 0 (there are no
+    /// per-N64-FB GL textures) and the swapchain-snapshot ring slots are
+    /// captured only at specific events (SetColorImage switch-away, LoadBlock).
+    /// A read whose source buffer was not snapshotted at the right moment would
+    /// fall through to decoding raw RDRAM, which holds stale or uniform data for
+    /// a GPU-rendered buffer (a black inventory panel). The per-address canvases
+    /// kept for buffer isolation serve as the persistent per-FB images, and this
+    /// exposes them as a texture source.
     virtual bool BlitCanvasToTexture(uint32_t n64Addr, ITexture* dst) {
         (void)n64Addr;
         (void)dst;
         return false;
     }
-    /// Upload CPU-side RGBA8 pixels into the persistent canvas for an N64 buffer
+    /// Uploads CPU-side RGBA8 pixels into the persistent canvas for an N64 buffer
     /// address, scaling from N64 resolution up to canvas resolution.
     ///
-    /// This is the CPU->GPU direction of framebuffer emulation — GLideN64's
-    /// `RDRAMtoColorBuffer` / `config.frameBufferEmulation.copyFromRDRAM`.
-    /// `FramebufferManager::CopyToGPU` implements it for GL but opens with
-    /// `if (!m_isGL) return;`, so on Vulkan the whole feature was absent: a
-    /// frame the game composes with the CPU in RDRAM (FMV//movie playback,
-    /// CPU-composited screens, any buffer the VI points at that the RDP never
-    /// rendered) had no GPU content and displayed as nothing.
-    /// `pixels` is tightly packed RGBA8, `w*h` entries. Returns false if the
-    /// backend has no canvas machinery.
+    /// This is the CPU->GPU direction of framebuffer emulation (GLideN64's
+    /// `RDRAMtoColorBuffer` / `config.frameBufferEmulation.copyFromRDRAM`).
+    /// `FramebufferManager::CopyToGPU` covers GL only; Vulkan goes through this
+    /// hook via `CopyToGPUVulkan`. Without it, a frame the game composes with the
+    /// CPU in RDRAM (FMV playback, CPU-composited screens, any buffer the VI
+    /// points at that the RDP never rendered) has no GPU content and displays as
+    /// nothing. `pixels` is tightly packed RGBA8, `w*h` entries. Returns false if
+    /// the backend has no canvas machinery.
     virtual bool UploadPixelsToCanvas(uint32_t n64Addr, uint32_t w, uint32_t h, const uint32_t* pixels) {
         (void)n64Addr;
         (void)w;
@@ -720,40 +685,36 @@ public:
         (void)rdram;
     }
 
-    // ─── Debug ─────────────────────────────────────────────────
+    // --- Debug ---
     virtual void PushDebugGroup(const char* name) = 0;
     virtual void PopDebugGroup() = 0;
     virtual void InsertDebugMarker(const char* name) = 0;
 
-    // ─── Queries ───────────────────────────────────────────────
+    // --- Queries ---
     virtual BackendType GetBackendType() const = 0;
     virtual const RendererCaps& GetCapabilities() const = 0;
     virtual const RendererStats& GetStats() const = 0;
     virtual void ResetStats() = 0;
 
-    // ─── Window ────────────────────────────────────────────────
+    // --- Window ---
     virtual void OnResize(uint32_t width, uint32_t height) = 0;
     virtual uint32_t GetWidth() const = 0;
     virtual uint32_t GetHeight() const = 0;
 
-    // ─── Vulkan UBO helper ─────────────────────────────────────
+    // --- Vulkan UBO helper ---
     /// Return a pointer to the persistently-mapped scratch UBO for the current
     /// frame so that a Vulkan-aware shader compiler can write uniform data into
     /// it directly. Default returns nullptr (non-Vulkan backends).
     virtual void* GetMappedUBOPtr() { return nullptr; }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  RENDERER FACTORY
-// ═══════════════════════════════════════════════════════════════════════════════
+// --- RENDERER FACTORY ---
 
-/// Create a renderer of the specified backend type
 std::unique_ptr<IRenderer> CreateRenderer(BackendType type);
 
 /// Auto-detect the best available backend
 BackendType DetectBestBackend();
 
-/// Get human-readable name for a backend
 const char* GetBackendName(BackendType type);
 
 } // namespace Video

@@ -1,5 +1,6 @@
 /**
  * @file VKInstance.cpp
+ * @brief Vulkan instance creation (validation layer, debug messenger) and physical device selection.
  */
 // SPDX-License-Identifier: MIT
 #include "VKInstance.hpp"
@@ -44,7 +45,7 @@ bool HasExtension(const char* name, const std::vector<VkExtensionProperties>& ex
 } // namespace
 
 bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bool enableValidation) {
-    // ── volk loader ─────────────────────────────────────────
+    // --- volk loader ---
     if (!m_volkInitialized) {
         VkResult r = volkInitialize();
         if (r != VK_SUCCESS) {
@@ -56,7 +57,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
         m_volkInitialized = true;
     }
 
-    // Probe API version (volk has vkEnumerateInstanceVersion already loaded)
+    // volk has already loaded vkEnumerateInstanceVersion, so the loader's API version can be probed.
     uint32_t apiVersion = VK_API_VERSION_1_0;
     if (vkEnumerateInstanceVersion) {
         VK_CHECK(vkEnumerateInstanceVersion(&apiVersion));
@@ -64,7 +65,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
     Logger::Info("VKInstance: loader API version {}.{}.{}", VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion),
                  VK_VERSION_PATCH(apiVersion));
 
-    // ── available layers / extensions ──────────────────────
+    // --- available layers / extensions ---
     uint32_t layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     std::vector<VkLayerProperties> availLayers(layerCount);
@@ -75,7 +76,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
     std::vector<VkExtensionProperties> availExts(extCount);
     if (extCount) vkEnumerateInstanceExtensionProperties(nullptr, &extCount, availExts.data());
 
-    // ── enabled layers ─────────────────────────────────────
+    // --- enabled layers ---
     std::vector<const char*> enabledLayers;
     if (enableValidation && HasLayer("VK_LAYER_KHRONOS_validation", availLayers)) {
         enabledLayers.push_back("VK_LAYER_KHRONOS_validation");
@@ -83,7 +84,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
         Logger::Info("VKInstance: validation layer enabled");
     }
 
-    // ── enabled extensions ─────────────────────────────────
+    // --- enabled extensions ---
     std::vector<const char*> enabledExts = requiredInstanceExts;
     if (m_validationEnabled && HasExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, availExts)) {
         enabledExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -91,7 +92,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
         m_validationEnabled = false; // can't actually attach messenger
     }
 
-    // ── instance create ────────────────────────────────────
+    // --- instance create ---
     VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     appInfo.pApplicationName = "NovaGraphics";
     appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
@@ -109,7 +110,7 @@ bool VKInstance::Create(const std::vector<const char*>& requiredInstanceExts, bo
     VK_CHECK(vkCreateInstance(&ici, nullptr, &m_instance));
     volkLoadInstance(m_instance);
 
-    // ── debug messenger ────────────────────────────────────
+    // --- debug messenger ---
     if (m_validationEnabled && vkCreateDebugUtilsMessengerEXT) {
         VkDebugUtilsMessengerCreateInfoEXT dmci{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
         dmci.messageSeverity =

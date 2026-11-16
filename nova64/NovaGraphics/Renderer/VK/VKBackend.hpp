@@ -1,13 +1,9 @@
 /**
  * @file VKBackend.hpp
- * @brief Vulkan 1.2 Backend.
+ * @brief Vulkan 1.2 backend: IRenderer implementation with swapchain, render pass, per-frame descriptor pools,
+ *        dynamic pipeline cache, UBO-backed uniforms, combined image samplers (11 texture units) and SPIR-V shaders.
  */
 // SPDX-License-Identifier: MIT
-// NovaGraphics — Vulkan 1.2 Backend
-//
-// Full Vulkan IRenderer implementation with swapchain, render pass,
-// per-frame descriptor pools, dynamic pipeline cache, UBO-backed uniforms,
-// combined image samplers (11 texture units), and SPIR-V shader compilation.
 
 #pragma once
 
@@ -20,8 +16,8 @@ namespace Video {
 namespace VK {
 
 /// Returns true if a usable Vulkan 1.2+ loader and physical device are
-/// present on the system. Performs a real probe (volkInitialize +
-/// vkEnumerateInstanceVersion) — see VKBackend.cpp for the implementation.
+/// present on the system. Probes the loader (volkInitialize +
+/// vkEnumerateInstanceVersion); see VKBackend.cpp.
 bool IsVulkanAvailable();
 
 /// Create a Vulkan IRenderer instance. Even when Vulkan is unavailable

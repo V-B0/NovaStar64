@@ -2,8 +2,6 @@
  * @file GLShaderCompiler.cpp
  * @brief OpenGL implementation of IShaderCompiler.
  */
-// NovaGraphics — OpenGL implementation of IShaderCompiler
-// Uses GLShader / GLProgram (which wrap glCreateShader / glCreateProgram).
 
 #include "GLShaderCompiler.hpp"
 
@@ -24,12 +22,11 @@ bool GLShaderCompiler::Initialize(Shader::BackendAPI api) {
 }
 
 void GLShaderCompiler::Shutdown() {
-    // GLProgram destructors will call glDeleteProgram
-    m_programs.clear();
+    m_programs.clear(); // GLProgram destructors call glDeleteProgram
     m_boundProgram = Shader::INVALID_SHADER;
 }
 
-// ─── Compile vertex + fragment ───────────────────────────────────────────────
+// --- Compile vertex + fragment ---
 
 Shader::CompiledShader GLShaderCompiler::Compile(const Shader::CombinerKey& key, const std::string& vertexSource,
                                                  const std::string& fragmentSource) {
@@ -41,7 +38,6 @@ Shader::CompiledShader GLShaderCompiler::Compile(const Shader::CombinerKey& key,
     if (!prog->BuildFromSource(vertexSource, fragmentSource)) {
         m_lastError = prog->GetInfoLog();
         result.valid = false;
-        // Always log compile failures
         std::fprintf(stderr, "[SHADER-FAIL] feat=0x%llX link-log: %s\n", (unsigned long long)key.features,
                      prog->GetInfoLog().c_str());
         return result;
@@ -99,7 +95,7 @@ Shader::CompiledShader GLShaderCompiler::CompileWithGeometry(const Shader::Combi
     return result;
 }
 
-// ─── Shader lifecycle ────────────────────────────────────────────────────────
+// --- Shader lifecycle ---
 
 void GLShaderCompiler::DeleteShader(Shader::CompiledShader& shader) {
     if (shader.handle == Shader::INVALID_SHADER) return;
@@ -123,7 +119,7 @@ void GLShaderCompiler::BindShader(const Shader::CompiledShader& shader) {
     m_boundProgram = shader.handle;
 }
 
-// ─── Uniform queries ─────────────────────────────────────────────────────────
+// --- Uniform queries ---
 
 int GLShaderCompiler::GetUniformLocation(Shader::ShaderHandle program, const char* name) {
     return glGetUniformLocation(static_cast<GLuint>(program), name);

@@ -1,5 +1,6 @@
 /**
  * @file VKTexture.cpp
+ * @brief Vulkan texture creation, uploads, mip generation, format mapping and the shared sampler cache.
  */
 // SPDX-License-Identifier: MIT
 #include <map>

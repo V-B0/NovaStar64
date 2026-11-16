@@ -1,10 +1,7 @@
 /**
  * @file PostProcessing.cpp
- * @brief Post-Processing Pipeline.
+ * @brief Post-processing effect implementations (GLSL passes) and the pipeline that chains them.
  */
-// ══════════════════════════════════════════════════════════════════════════════
-// NovaGraphics — Post-Processing Pipeline Implementation
-// ══════════════════════════════════════════════════════════════════════════════
 
 #include "PostProcessing.hpp"
 #include "../Common/Logger.hpp"
@@ -14,9 +11,7 @@
 
 namespace Nova64::Video {
 
-// ═══════════════════════════════════════════════════════════════
-//  Full-screen quad helper
-// ═══════════════════════════════════════════════════════════════
+// --- Full-screen quad helper ---
 
 static const float kQuadVerts[] = {
     // pos (x,y)   texcoord (u,v)
@@ -27,11 +22,9 @@ static void CreateFullscreenQuad(uint32_t& vao, uint32_t& vbo) {
     glCreateVertexArrays(1, &vao);
     glCreateBuffers(1, &vbo);
     glNamedBufferStorage(vbo, sizeof(kQuadVerts), kQuadVerts, 0);
-    // pos
     glVertexArrayAttribFormat(vao, 0, 2, GL_FLOAT, GL_FALSE, 0);
     glVertexArrayAttribBinding(vao, 0, 0);
     glEnableVertexArrayAttrib(vao, 0);
-    // uv
     glVertexArrayAttribFormat(vao, 1, 2, GL_FLOAT, GL_FALSE, 8);
     glVertexArrayAttribBinding(vao, 1, 0);
     glEnableVertexArrayAttrib(vao, 1);
@@ -94,9 +87,7 @@ static uint32_t CompileShaderProgram(const char* vertSrc, const char* fragSrc) {
     return prog;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Vertex shader (shared)
-// ═══════════════════════════════════════════════════════════════
+// --- Vertex shader (shared) ---
 
 static const char* kPostVS = R"(
 #version 460 core
@@ -109,9 +100,7 @@ void main() {
 }
 )";
 
-// ═══════════════════════════════════════════════════════════════
-//  Gamma Correction
-// ═══════════════════════════════════════════════════════════════
+// --- Gamma Correction ---
 
 static const char* kGammaFS = R"(
 #version 460 core
@@ -171,9 +160,7 @@ void GammaEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  FXAA
-// ═══════════════════════════════════════════════════════════════
+// --- FXAA ---
 
 static const char* kFXAAFS = R"(
 #version 460 core
@@ -304,9 +291,7 @@ void FXAAEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int hei
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Bloom (multi-pass downsample/upsample)
-// ═══════════════════════════════════════════════════════════════
+// --- Bloom (multi-pass downsample/upsample) ---
 
 static const char* kBloomThresholdFS = R"(
 #version 460 core
@@ -464,7 +449,7 @@ void BloomEffect::Resize(int width, int height) {
 void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) {
     if (m_mips.empty()) return;
 
-    // Save GL state we're about to modify
+    // Save the GL state modified below; restored at the end.
     GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
     GLboolean prevBlend = glIsEnabled(GL_BLEND);
     GLint prevBlendSrc, prevBlendDst;
@@ -518,7 +503,6 @@ void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     glBindTextureUnit(1, m_mips[0].tex);
     DrawFullscreenQuad(m_vao);
 
-    // Restore previous GL state
     if (prevDepthTest) glEnable(GL_DEPTH_TEST);
     else glDisable(GL_DEPTH_TEST);
     if (prevBlend) glEnable(GL_BLEND);
@@ -526,9 +510,7 @@ void BloomEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int he
     glBlendFunc(prevBlendSrc, prevBlendDst);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  CRT Filter
-// ═══════════════════════════════════════════════════════════════
+// --- CRT Filter ---
 
 static const char* kCRTFS = R"(
 #version 460 core
@@ -610,9 +592,7 @@ void CRTEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int heig
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Sharpen (CAS-style)
-// ═══════════════════════════════════════════════════════════════
+// --- Sharpen (CAS-style) ---
 
 static const char* kSharpenFS = R"(
 #version 460 core
@@ -667,9 +647,7 @@ void SharpenEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int 
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Chromatic Aberration
-// ═══════════════════════════════════════════════════════════════
+// --- Chromatic Aberration ---
 
 static const char* kChromaFS = R"(
 #version 460 core
@@ -720,9 +698,7 @@ void ChromaticAberrationEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Film Grain
-// ═══════════════════════════════════════════════════════════════
+// --- Film Grain ---
 
 static const char* kFilmGrainFS = R"(
 #version 460 core
@@ -781,9 +757,7 @@ void FilmGrainEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, in
     m_frameCount++;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Dithering (Bayer 8x8 ordered dither)
-// ═══════════════════════════════════════════════════════════════
+// --- Dithering (Bayer 8x8 ordered dither) ---
 
 static const char* kDitheringFS = R"(
 #version 460 core
@@ -842,9 +816,7 @@ void DitheringEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, in
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Color Grading
-// ═══════════════════════════════════════════════════════════════
+// --- Color Grading ---
 
 static const char* kColorGradingFS = R"(
 #version 460 core
@@ -935,9 +907,7 @@ void ColorGradingEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width,
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Depth of Field (disk blur weighted by depth)
-// ═══════════════════════════════════════════════════════════════
+// --- Depth of Field (disk blur weighted by depth) ---
 
 static const char* kDofFS = R"(
 #version 460 core
@@ -1006,9 +976,7 @@ void DepthOfFieldEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width,
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Motion Blur (frame accumulation)
-// ═══════════════════════════════════════════════════════════════
+// --- Motion Blur (frame accumulation) ---
 
 static const char* kMotionBlurFS = R"(
 #version 460 core
@@ -1036,7 +1004,6 @@ bool MotionBlurEffect::Init(int width, int height) {
     m_width = width;
     m_height = height;
 
-    // Create previous frame texture
     glCreateTextures(GL_TEXTURE_2D, 1, &m_prevTex);
     glTextureStorage2D(m_prevTex, 1, GL_RGBA16F, width, height);
     glTextureParameteri(m_prevTex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1080,13 +1047,11 @@ void MotionBlurEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, i
     glBindTextureUnit(1, m_prevTex);
     DrawFullscreenQuad(m_vao);
 
-    // Copy current to previous for next frame
+    // The current frame becomes the previous frame for the next call.
     glCopyImageSubData(inputTex, GL_TEXTURE_2D, 0, 0, 0, 0, m_prevTex, GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  Vignette
-// ═══════════════════════════════════════════════════════════════
+// --- Vignette ---
 
 static const char* kVignetteFS = R"(
 #version 460 core
@@ -1134,9 +1099,7 @@ void VignetteEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  SMAA (edge-detect + neighborhood blend)
-// ═══════════════════════════════════════════════════════════════
+// --- SMAA (edge-detect + neighborhood blend) ---
 
 static const char* kSMAAEdgeFS = R"(
 #version 460 core
@@ -1279,9 +1242,7 @@ void SMAAEffect::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int hei
     DrawFullscreenQuad(m_vao);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PostProcessingPipeline
-// ═══════════════════════════════════════════════════════════════
+// --- PostProcessingPipeline ---
 
 PostProcessingPipeline::PostProcessingPipeline() = default;
 PostProcessingPipeline::~PostProcessingPipeline() { Shutdown(); }
@@ -1310,7 +1271,6 @@ void PostProcessingPipeline::Resize(int width, int height) {
 }
 
 bool PostProcessingPipeline::CreateIntermediateBuffers(int width, int height) {
-    // Ping
     glCreateTextures(GL_TEXTURE_2D, 1, &m_pingTex);
     glTextureStorage2D(m_pingTex, 1, GL_RGBA16F, width, height);
     glTextureParameteri(m_pingTex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1318,7 +1278,6 @@ bool PostProcessingPipeline::CreateIntermediateBuffers(int width, int height) {
     glCreateFramebuffers(1, &m_pingFBO);
     glNamedFramebufferTexture(m_pingFBO, GL_COLOR_ATTACHMENT0, m_pingTex, 0);
 
-    // Pong
     glCreateTextures(GL_TEXTURE_2D, 1, &m_pongTex);
     glTextureStorage2D(m_pongTex, 1, GL_RGBA16F, width, height);
     glTextureParameteri(m_pongTex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1351,7 +1310,6 @@ void PostProcessingPipeline::DestroyIntermediateBuffers() {
 void PostProcessingPipeline::Apply(uint32_t inputTex, uint32_t outputFBO, int width, int height) {
     if (m_effects.empty()) return;
 
-    // Count enabled effects
     int enabledCount = 0;
     for (const auto& e : m_effects) {
         if (e->IsEnabled()) enabledCount++;
@@ -1413,8 +1371,8 @@ bool PostProcessingPipeline::HasEnabledEffects() const {
 
 void PostProcessingPipeline::SetupDefaultChain() {
     ClearEffects();
-    // No effects by default — FXAA adds significant per-frame GPU overhead
-    // on integrated GPUs (Intel Iris Xe). Enable via config if desired.
+    // No effects by default: FXAA adds significant per-frame GPU overhead on
+    // integrated GPUs (Intel Iris Xe).
 }
 
 void PostProcessingPipeline::SetupRetroChain() {

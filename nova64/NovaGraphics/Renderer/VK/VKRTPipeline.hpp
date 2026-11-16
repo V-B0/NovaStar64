@@ -73,7 +73,7 @@ private:
     VkStridedDeviceAddressRegionKHR m_hitRegion{};
     VkStridedDeviceAddressRegionKHR m_callRegion{};
 
-    // Cached writes for UpdateDescriptors (called each Dispatch).
+    // Last descriptor inputs; Dispatch rewrites the descriptor set only when they change.
     VkAccelerationStructureKHR m_boundTlas = VK_NULL_HANDLE;
     VkImageView m_boundView = VK_NULL_HANDLE;
     [[maybe_unused]] VkSampler m_dummySampler = VK_NULL_HANDLE;

@@ -1,11 +1,11 @@
 /**
  * @file VKRenderTarget.hpp
- * @brief Real Vulkan IRenderTarget — own VkImage(s) + VkRenderPass + VkFramebuffer.
+ * @brief Vulkan IRenderTarget: own VkImage(s) + VkRenderPass + VkFramebuffer.
  *
- * Stage 5: a render target owns a color VKTextureImpl (sampleable) and an
- * optional depth VKTextureImpl, plus a private VkRenderPass + VkFramebuffer
- * sized to the target. VulkanRenderer::BindRenderTarget switches the active
- * render pass between this target and the swapchain's pass.
+ * A render target owns a color VKTextureImpl (sampleable) and an optional depth
+ * VKTextureImpl, plus a private VkRenderPass + VkFramebuffer sized to the
+ * target. VulkanRenderer::BindRenderTarget switches the active render pass
+ * between this target and the swapchain's pass.
  */
 // SPDX-License-Identifier: MIT
 #pragma once
