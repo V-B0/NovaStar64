@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=NovaStar64
+GenericName=Nintendo 64 emulator
+Comment=Play Nintendo 64 games
+Exec=nova64 %f
+Icon=novastar64
+Terminal=false
+Categories=Game;Emulator;
+Keywords=N64;Nintendo 64;emulator;

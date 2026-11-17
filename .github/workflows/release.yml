@@ -1,7 +1,7 @@
 name: Release builds
 
-# Builds the installers: a .dmg for macOS and a setup wizard plus a portable .zip for
-# Windows. It runs when a version tag is pushed (git tag v1.0.0 && git push origin v1.0.0)
+# Builds the installers: a .dmg for macOS, a setup wizard plus a portable .zip for
+# Windows, and an AppImage for Linux. It runs when a version tag is pushed (git tag v1.0.0 && git push origin v1.0.0)
 # or when you press "Run workflow" on the Actions tab. It never runs on ordinary
 # pushes. A tag also creates a DRAFT release with the files attached; nothing is
 # published until you press the button on GitHub.
@@ -79,7 +79,7 @@ jobs:
           $stage = "dist\NovaStar64-$v-Windows-portable"
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item nova64\build\RelWithDebInfo\nova64.exe, nova64\build\RelWithDebInfo\portable.txt $stage
-          Copy-Item LICENSE, README.md $stage
+          Copy-Item LICENSE, README.md, THIRD_PARTY_NOTICES.md $stage
           Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
           Remove-Item -Recurse $stage
       - name: Write the checksums
@@ -98,13 +98,41 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04        # the code needs GCC 13 (std::format); 24.04 is the oldest runner that has it
+    continue-on-error: true      # the Linux build is not verified yet; the release does not wait for it
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install the build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git curl \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libasound2-dev libpulse-dev libgl1-mesa-dev
+      - name: Build the AppImage
+        run: ./nova64/scripts/package-linux.sh
+      - name: The program starts
+        run: ./nova64/build-package-linux/nova64 --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaStar64-Linux
+          path: |
+            dist/*.AppImage
+            dist/*.sha256
+          if-no-files-found: error
+
   release:
-    if: github.ref_type == 'tag'
-    needs: [macos, windows]
+    # The release needs the macOS and Windows files. The Linux file is added when that build worked.
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.macos.result == 'success' && needs.windows.result == 'success' }}
+    needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4   # for the release notes
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -113,5 +141,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Hand-written notes if docs/release-notes/<version>.md exists, otherwise the list of changes GitHub makes
+          notes=(--generate-notes)
+          if [ -f "docs/release-notes/$version.md" ]; then notes=(--notes-file "docs/release-notes/$version.md"); fi
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-            --draft --title "NovaStar64 ${GITHUB_REF_NAME#v}" --generate-notes
+            --draft --title "NovaStar64 $version" "${notes[@]}"
