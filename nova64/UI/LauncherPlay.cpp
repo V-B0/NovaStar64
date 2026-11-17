@@ -71,11 +71,11 @@ void DrawThumbnail(ThumbnailTextures& textures, const std::shared_ptr<const Nova
     if (uint32_t texture = textures.Get(thumbnail)) {
         draw->AddImageRounded(static_cast<ImTextureID>(texture), pos, end, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE,
                               kRounding);
-        draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.14f)), kRounding);
+        draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFEADB, 0.14f)), kRounding);
         return;
     }
-    draw->AddRectFilled(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.06f)), kRounding);
-    draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.10f)), kRounding);
+    draw->AddRectFilled(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFEADB, 0.06f)), kRounding);
+    draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFEADB, 0.10f)), kRounding);
     if (emptyLabel && *emptyLabel) {
         const ImVec2 text = kit::Measure(kit::GetFonts().label, emptyLabel);
         kit::PutText(draw, kit::GetFonts().label,
@@ -146,7 +146,12 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     m_running = m_launch;
     Nova64::Video::PluginConfig gfx = m_gfx;
     int saveChip = 0;
-    setup.Apply(SettingsModel{&m_running, &gfx, &saveChip});
+    int accessory[4];
+    for (int p = 0; p < 4; ++p) accessory[p] = static_cast<int>(m_padSettings.accessory[static_cast<size_t>(p)]);
+    setup.Apply(SettingsModel{&m_running, &gfx, &saveChip, accessory});
+    for (int p = 0; p < 4; ++p)
+        NovaInput::Gamepads::Instance().SetAccessoryOverride(
+            p, setup.Has("accessory" + std::to_string(p + 1)) ? accessory[p] : -1);
     Nova64::StateService::Instance().SetRewindEnabled(m_running.rewind);
     CN64System::s_SaveChipOverride = saveChip == 1   ? N64Types::SaveChipType::Sram
                                      : saveChip == 2 ? N64Types::SaveChipType::FlashRam
@@ -206,6 +211,7 @@ void NovaLauncher::StopEmbedded() {
     // Back to the global options once the game's own setup is no longer in use.
     Nova64::Video::g_configPath.clear();
     CN64System::s_SaveChipOverride = N64Types::SaveChipType::Auto;
+    for (int p = 0; p < 4; ++p) NovaInput::Gamepads::Instance().SetAccessoryOverride(p, -1);
     std::error_code removeEc;
     fs::remove(detail::kRunningGraphicsPath, removeEc);
     m_running = m_launch;
@@ -469,7 +475,7 @@ void NovaLauncher::RenderPauseMenu() {
     if (!m_showPauseMenu) return;
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display, IM_COL32(4, 3, 16, 175));
+    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display, IM_COL32(10, 5, 4, 180));
 
     // Fixed width, height fitted to the contents, centred below the top bar.
     const float top = detail::kGameBarHeight;

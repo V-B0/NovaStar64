@@ -151,12 +151,12 @@ void ApplyTheme() {
     c[ImGuiCol_TitleBgCollapsed] = color::kRaised;
     c[ImGuiCol_MenuBarBg] = clear;
     c[ImGuiCol_ScrollbarBg] = clear;
-    c[ImGuiCol_ScrollbarGrab] = Rgb(0xFFFFFF, 0.18f);
-    c[ImGuiCol_ScrollbarGrabHovered] = Rgb(0xFFFFFF, 0.30f);
-    c[ImGuiCol_ScrollbarGrabActive] = Rgb(0xFFFFFF, 0.42f);
+    c[ImGuiCol_ScrollbarGrab] = Rgb(0xFFEADB, 0.18f);
+    c[ImGuiCol_ScrollbarGrabHovered] = Rgb(0xFFEADB, 0.30f);
+    c[ImGuiCol_ScrollbarGrabActive] = Rgb(0xFFEADB, 0.42f);
     c[ImGuiCol_CheckMark] = color::kAccentHover;
     c[ImGuiCol_SliderGrab] = color::kAccentHover;
-    c[ImGuiCol_SliderGrabActive] = Rgb(0x9A90FF);
+    c[ImGuiCol_SliderGrabActive] = color::kAccentText;
     c[ImGuiCol_Button] = color::kRaised;
     c[ImGuiCol_ButtonHovered] = color::kHover;
     c[ImGuiCol_ButtonActive] = color::kHairline;
@@ -166,25 +166,25 @@ void ApplyTheme() {
     c[ImGuiCol_Separator] = color::kHairline;
     c[ImGuiCol_SeparatorHovered] = color::kAccentHover;
     c[ImGuiCol_SeparatorActive] = color::kAccentHover;
-    c[ImGuiCol_ResizeGrip] = Rgb(0xFFFFFF, 0.12f);
+    c[ImGuiCol_ResizeGrip] = Rgb(0xFFEADB, 0.12f);
     c[ImGuiCol_ResizeGripHovered] = color::kAccentHover;
     c[ImGuiCol_ResizeGripActive] = color::kAccentPressed;
     c[ImGuiCol_Tab] = clear;
-    c[ImGuiCol_TabHovered] = Rgb(0x5B4DE3, 0.40f);
-    c[ImGuiCol_TabActive] = Rgb(0x5B4DE3, 0.55f);
+    c[ImGuiCol_TabHovered] = Rgb(0xE8702E, 0.40f);
+    c[ImGuiCol_TabActive] = Rgb(0xE8702E, 0.55f);
     c[ImGuiCol_TabUnfocused] = clear;
-    c[ImGuiCol_TabUnfocusedActive] = Rgb(0x5B4DE3, 0.40f);
+    c[ImGuiCol_TabUnfocusedActive] = Rgb(0xE8702E, 0.40f);
     c[ImGuiCol_TabSelectedOverline] = color::kAccentHover;
     c[ImGuiCol_TabDimmedSelectedOverline] = color::kAccentHover;
-    c[ImGuiCol_TableHeaderBg] = Rgb(0xFFFFFF, 0.08f);
-    c[ImGuiCol_TableBorderStrong] = Rgb(0xFFFFFF, 0.12f);
-    c[ImGuiCol_TableBorderLight] = Rgb(0xFFFFFF, 0.06f);
+    c[ImGuiCol_TableHeaderBg] = Rgb(0xFFEADB, 0.08f);
+    c[ImGuiCol_TableBorderStrong] = Rgb(0xFFEADB, 0.12f);
+    c[ImGuiCol_TableBorderLight] = Rgb(0xFFEADB, 0.06f);
     c[ImGuiCol_TableRowBg] = clear;
-    c[ImGuiCol_TableRowBgAlt] = Rgb(0xFFFFFF, 0.025f);
-    c[ImGuiCol_TextSelectedBg] = Rgb(0x5B4DE3, 0.45f);
+    c[ImGuiCol_TableRowBgAlt] = Rgb(0xFFEADB, 0.025f);
+    c[ImGuiCol_TextSelectedBg] = Rgb(0xE8702E, 0.45f);
     c[ImGuiCol_NavCursor] = color::kAccentHover;
     c[ImGuiCol_DragDropTarget] = color::kAccentHover;
-    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x03030A, 0.65f);
+    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x080403, 0.7f);
 
     style.WindowRounding = 0.0f;
     style.ChildRounding = radius::kCard;
@@ -442,21 +442,21 @@ ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
                           : color::kAccent,
                 ImVec4(0, 0, 0, 0), color::kOnAccent, false};
     case ButtonStyle::Ghost:
-        return {held      ? Rgb(0xFFFFFF, 0.14f)
-                : hovered ? Rgb(0xFFFFFF, 0.08f)
+        return {held      ? Rgb(0xFFEADB, 0.14f)
+                : hovered ? Rgb(0xFFEADB, 0.08f)
                           : ImVec4(0, 0, 0, 0),
                 ImVec4(0, 0, 0, 0), hovered ? color::kText : color::kTextMuted, false};
     case ButtonStyle::Danger:
         return {held      ? WithAlpha(color::kDanger, 0.32f)
                 : hovered ? WithAlpha(color::kDanger, 0.22f)
                           : WithAlpha(color::kDanger, 0.10f),
-                WithAlpha(color::kDanger, hovered ? 0.8f : 0.5f), hovered ? Rgb(0xFFD6DB) : color::kDanger, false};
+                WithAlpha(color::kDanger, hovered ? 0.8f : 0.5f), hovered ? Rgb(0xFFD9DC) : color::kDanger, false};
     case ButtonStyle::Secondary:
     default:
-        return {held      ? Rgb(0xFFFFFF, 0.17f)
-                : hovered ? Rgb(0xFFFFFF, 0.12f)
-                          : Rgb(0xFFFFFF, 0.07f),
-                Rgb(0xFFFFFF, hovered ? 0.20f : 0.12f), color::kText, false};
+        return {held      ? Rgb(0xFFEADB, 0.17f)
+                : hovered ? Rgb(0xFFEADB, 0.12f)
+                          : Rgb(0xFFEADB, 0.07f),
+                Rgb(0xFFEADB, hovered ? 0.20f : 0.12f), color::kText, false};
     }
 }
 
@@ -572,7 +572,7 @@ bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip,
     ImVec4 fg = hovered ? color::kText : color::kTextMuted;
     if (hovered) {
         draw->AddRectFilled(min, max,
-                            Col(isClose ? (held ? Rgb(0xA82317) : Rgb(0xD13438)) : Rgb(0xFFFFFF, held ? 0.16f : 0.10f)),
+                            Col(isClose ? (held ? Rgb(0xA82317) : Rgb(0xD13438)) : Rgb(0xFFEADB, held ? 0.16f : 0.10f)),
                             8.0f);
         if (isClose) fg = color::kOnAccent;
     }
@@ -602,14 +602,14 @@ bool Toggle(const char* id, bool* value) {
     storage->SetFloat(key, t);
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    const ImVec4 off = Rgb(0xFFFFFF, hovered ? 0.18f : 0.12f);
+    const ImVec4 off = Rgb(0xFFEADB, hovered ? 0.18f : 0.12f);
     const ImVec4 on = hovered ? color::kAccentHover : color::kAccent;
     const ImVec4 track(off.x + (on.x - off.x) * t, off.y + (on.y - off.y) * t, off.z + (on.z - off.z) * t,
                        off.w + (on.w - off.w) * t);
     draw->AddRectFilled(min, max, Col(track), kSize.y * 0.5f);
     const float radius = kSize.y * 0.5f - 3.0f;
     const float x = min.x + kSize.y * 0.5f + (kSize.x - kSize.y) * t;
-    draw->AddCircleFilled(ImVec2(x, min.y + kSize.y * 0.5f), radius, Col(color::kOnAccent));
+    draw->AddCircleFilled(ImVec2(x, min.y + kSize.y * 0.5f), radius, Col(color::kKnob));
     FocusRing(draw, min, max, kSize.y * 0.5f);
     return changed;
 }
@@ -629,7 +629,7 @@ bool Segmented(const char* id, const char* const* labels, int count, int* index,
     ImGui::PushID(id);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(min, ImVec2(min.x + total, min.y + kHeight), Col(Rgb(0xFFFFFF, 0.07f)), 10.0f);
+    draw->AddRectFilled(min, ImVec2(min.x + total, min.y + kHeight), Col(Rgb(0xFFEADB, 0.07f)), 10.0f);
     bool changed = false;
     for (int i = 0; i < count; ++i) {
         ImGui::SetCursorScreenPos(ImVec2(min.x + kPad + segment * static_cast<float>(i), min.y + kPad));
@@ -643,7 +643,7 @@ bool Segmented(const char* id, const char* const* labels, int count, int* index,
         ImGui::PopID();
         const bool selected = (*index == i);
         if (selected) draw->AddRectFilled(a, b, Col(color::kAccent), 8.0f);
-        else if (hovered) draw->AddRectFilled(a, b, Col(Rgb(0xFFFFFF, 0.08f)), 8.0f);
+        else if (hovered) draw->AddRectFilled(a, b, Col(Rgb(0xFFEADB, 0.08f)), 8.0f);
         FocusRing(draw, a, b, 8.0f);
         const ImVec2 text = Measure(g_fonts.label, labels[i]);
         PutText(draw, g_fonts.label,
@@ -682,7 +682,7 @@ bool Slider(const char* id, int* value, int min, int max, const char* format, fl
     const float knobX = left + (right - left) * t;
     draw->AddRectFilled(ImVec2(left, midY - 2.0f), ImVec2(right, midY + 2.0f), Col(color::kHover), 2.0f);
     draw->AddRectFilled(ImVec2(left, midY - 2.0f), ImVec2(knobX, midY + 2.0f), Col(color::kAccent), 2.0f);
-    draw->AddCircleFilled(ImVec2(knobX, midY), hovered ? 9.0f : 8.0f, Col(color::kOnAccent));
+    draw->AddCircleFilled(ImVec2(knobX, midY), hovered ? 9.0f : 8.0f, Col(color::kKnob));
     if (ImGui::IsItemFocused() && ImGui::GetIO().NavVisible)
         draw->AddCircle(ImVec2(knobX, midY), 12.0f, Col(color::kAccentHover), 0, 2.0f);
 
@@ -727,7 +727,7 @@ bool TabStrip(const char* id, const char* const* labels, int count, int* index) 
     }
     const float total = ImGui::GetContentRegionAvail().x;
     draw->AddLine(ImVec2(origin.x, origin.y + kHeight - 0.5f), ImVec2(origin.x + total, origin.y + kHeight - 0.5f),
-                  Col(Rgb(0xFFFFFF, 0.08f)));
+                  Col(Rgb(0xFFEADB, 0.08f)));
     ImGui::SetCursorScreenPos(origin);
     ImGui::Dummy(ImVec2(total, kHeight));
     ImGui::PopID();
@@ -748,6 +748,8 @@ struct RowState {
 RowState g_row;
 
 } // namespace
+
+void RowsReset() { g_firstRow = true; }
 
 void InfoRow(const char* key, const char* value) {
     constexpr float kHeight = 40.0f;
@@ -817,7 +819,7 @@ ImVec2 BeginRow(const char* title, const char* help, float controlWidth, float c
     ImDrawList* draw = ImGui::GetWindowDrawList();
     if (!g_firstRow)
         draw->AddLine(ImVec2(min.x + kRowPadX, min.y), ImVec2(min.x + width - kRowPadX, min.y),
-                      Col(Rgb(0xFFFFFF, 0.07f)));
+                      Col(Rgb(0xFFEADB, 0.07f)));
     g_firstRow = false;
 
     const float top = min.y + (*rowHeight - textBlock) * 0.5f;
@@ -919,8 +921,8 @@ void Keycap(const char* text) {
     const ImVec2 max(min.x + size.x, min.y + size.y);
     ImGui::Dummy(size);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(min, max, Col(Rgb(0xFFFFFF, 0.09f)), 8.0f);
-    draw->AddRect(min, max, Col(Rgb(0xFFFFFF, 0.22f)), 8.0f, 0, 1.0f);
+    draw->AddRectFilled(min, max, Col(Rgb(0xFFEADB, 0.09f)), 8.0f);
+    draw->AddRect(min, max, Col(Rgb(0xFFEADB, 0.22f)), 8.0f, 0, 1.0f);
     PutText(draw, g_fonts.label,
             ImVec2(std::round(min.x + (size.x - textSize.x) * 0.5f), std::round(min.y + (size.y - textSize.y) * 0.5f)),
             Col(color::kText), text);
@@ -951,10 +953,10 @@ void ControllerHint(const char* glyph, const char* label) {
     ImGui::Dummy(ImVec2(circle + 8.0f + labelSize.x, circle));
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const ImVec2 mid(min.x + circle * 0.5f, min.y + circle * 0.5f);
-    draw->AddCircle(mid, circle * 0.5f - 1.0f, Col(Rgb(0xFFFFFF, 0.65f)), 0, 1.6f);
+    draw->AddCircle(mid, circle * 0.5f - 1.0f, Col(Rgb(0xFFEADB, 0.65f)), 0, 1.6f);
     const ImVec2 glyphSize = Measure(g_fonts.small, glyph);
     PutText(draw, g_fonts.small, ImVec2(std::round(mid.x - glyphSize.x * 0.5f), std::round(mid.y - glyphSize.y * 0.5f)),
-            Col(Rgb(0xFFFFFF, 0.85f)), glyph);
+            Col(Rgb(0xFFEADB, 0.85f)), glyph);
     PutText(draw, g_fonts.small, ImVec2(min.x + circle + 8.0f, std::round(mid.y - labelSize.y * 0.5f)),
             Col(color::kTextMuted), label);
 }
@@ -1014,7 +1016,7 @@ std::string Initials(const std::string& title) {
 }
 
 ImU32 PlaceholderColor(const std::string& title) {
-    static const unsigned kColors[] = {0x5B4DE3, 0x2F6FDB, 0x1F9E8E, 0xC2456B, 0xC98A2B, 0x6A3FB5};
+    static const unsigned kColors[] = {0xD8622A, 0xB8402B, 0xC9352F, 0xB87A1D, 0x9C4A32, 0xD4506A};
     unsigned hash = 2166136261u;
     for (unsigned char ch : title) hash = (hash ^ ch) * 16777619u;
     const unsigned rgb = kColors[hash % (sizeof(kColors) / sizeof(kColors[0]))];

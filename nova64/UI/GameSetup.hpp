@@ -24,7 +24,8 @@ struct LaunchOptions;
 struct SettingsModel {
     LaunchOptions* launch = nullptr;
     Nova64::Video::PluginConfig* gfx = nullptr;
-    int* saveChip = nullptr; ///< 0 = detect from the game, 1 = SRAM, 2 = FlashRAM
+    int* saveChip = nullptr;  ///< 0 = detect from the game, 1 = SRAM, 2 = FlashRAM
+    int* accessory = nullptr; ///< four values, one per player: 0 = automatic, 1 = nothing, 2 = Rumble Pak
 };
 
 enum class OptionKind { Toggle, Choice, Slider };

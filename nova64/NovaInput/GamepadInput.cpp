@@ -496,11 +496,18 @@ bool Gamepads::HasRumblePak(int player) {
     if (player < 0 || player >= kMaxPlayers) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     RefreshSettingsLocked();
-    switch (m_settings.accessory[player]) {
+    const int forced = m_accessoryOverride[static_cast<size_t>(player)];
+    switch (forced >= 0 ? static_cast<Accessory>(forced) : m_settings.accessory[player]) {
     case Accessory::None:      return false;
     case Accessory::RumblePak: return true;
     default:                   return m_pads[player].controller && m_pads[player].canRumble;
     }
+}
+
+void Gamepads::SetAccessoryOverride(int player, int accessory) {
+    if (player < 0 || player >= kMaxPlayers) return;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_accessoryOverride[static_cast<size_t>(player)] = (accessory >= 0 && accessory <= 2) ? accessory : -1;
 }
 
 void Gamepads::SetRumble(int player, bool on) {

@@ -101,8 +101,8 @@ Correctness and robustness
 ## 4. Launcher and in-game UI
 
 - [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
-- [x] A modern console-style look: opaque cards on a neutral ramp with one hairline and one lightness step per layer,
-      one accent colour, two corner radii, a 4-point spacing scale, Inter for text and Phosphor for icons (both
+- [x] A modern console-style look in the warm orange of the app icon: opaque cards on a neutral ramp with one hairline
+      and one lightness step per layer, one accent colour, two corner radii, a 4-point spacing scale, Inter for text and Phosphor for icons (both
       compiled in, licences kept), set at the display's pixel density so it is sharp on a Retina or scaled display
 - [x] Research behind the look (emulator front-ends, design-system settings rows, spacing scales, contrast, ImGui
       navigation): text and captions measured against WCAG 2.2 (muted text 7:1, dim text 4.5:1 on every surface)
@@ -118,12 +118,15 @@ Correctness and robustness
 - [x] Settings as rows: title and help on the left, control on the right, grouped in cards, a Reset button on a
       row that differs from its default, an Experimental badge, Restore defaults per page, one table of options
       (`UI/GameSetup.*`) behind both the Settings page and the Simulator
-- [x] Simulator rebuilt: a per-game setup (settings/games/<rom>.ini) that overrides speed, CPU core, RSP engine,
-      rewind, graphics driver, resolution, widescreen, textures, accuracy and the save chip; a schematic of
-      cartridge, console, display and controllers; the ROM header (region, 50 or 60 Hz, format, checksums); and a
-      check that explains what will not work. The old node-wiring toy and its library are gone
-- [ ] The Simulator offers per-game controller accessories, 4 MB or 8 MB RAM and a TV standard only if the core gains
-      them (it has 8 MB and the region from the ROM; the Controller Pak is not implemented)
+- [x] Simulator as a workbench (Packet Tracer style): drag a console, TV, controllers, Rumble Paks and the cartridge
+      onto a canvas and cable them; link lights; a check that says in words what is missing; Realtime and Simulation
+      modes (the power-on sequence, event by event, with an envelope travelling the cables); Play is blocked while the
+      wiring has an error. Each game has its own bench (`settings/games/<rom>.lab`) and its own setup
+      (`settings/games/<rom>.ini`): speed, CPU core, RSP engine, rewind, driver, resolution, widescreen, textures,
+      accuracy, the save chip and the Rumble Pak per player, applied when the game starts
+- [ ] The workbench offers 4 MB or 8 MB RAM, a TV standard and a Controller Pak only if the core gains them (it has
+      8 MB, takes the region from the ROM, and has no Controller Pak)
+- [ ] Undo and redo, copy and paste, and a minimap on the workbench; keyboard-only wiring (it is mouse-driven now)
 - [ ] Library: sort order, play time, and cover pictures fetched for the user (the code makes no network
       connections, so this needs a decision)
 - [ ] Empty and error states with an actionable message: no games, Vulkan or MoltenVK missing,

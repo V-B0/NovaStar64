@@ -388,7 +388,7 @@ one, add its row.
 | `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
 | `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
 | `NOVA64_AUDIO_DUMP=<file.wav>` | Write everything the game plays to a 16-bit stereo WAV file, for recording footage with its sound (use with a dummy audio driver for a silent capture run) |
-| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`; the simulator also `/cartridge`, `/console`, `/display`, `/controllers`) to a PNG and exit |
+| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`; the simulator also `/simulation` or `/simulation:<step>`) to a PNG and exit |
 | `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |
 | `NOVA64_UI_KEYS=600:Backspace,660:Return` | Press launcher keys on the given launcher frames |
 | `NOVA64_UI_SHOT_AT=580,700` | With `NOVA64_UI_SHOT`, save `<path>_<frame>` on each frame and exit after the last (pass a path without an extension; the files are PNG) |
@@ -401,6 +401,7 @@ one, add its row.
 | `NOVA64_TEXDBG=1` / `NOVA64_FORENSIC=1` | Log texture decodes / texture-cache hits and misses |
 | `NOVA64_NO_MIPMAPS=1` | Disable mipmapping, to isolate texture problems |
 | `NOVA64_DUMP_TEXTURES=1` | Write every texture the game uses to `texture_dump/<game name>/` as a Rice-format picture (same as the setting) |
+| `NOVA64_UI_MOUSE=<frame>:<x>:<y>:<move\|down\|up>,...` | Move the pointer and press or release the left button at the given launcher frames (points, not pixels), to drive the launcher from a script |
 | `NOVA64_UI_SAVE=<frame>:<slot>,...` | With a game started by `NOVA64_UI_ROM`, save a state into slot 0-3 at the given launcher frames, so a screenshot of the pause menu shows pictures in its slots |
 | `NOVA64_UI_OPEN=add` / `edit:<index>` | Open the launcher's Add Game or Edit Game dialog on start, for screenshots |
 | `NOVA64_RT=1` | Enable the experimental ray tracer |
@@ -569,9 +570,10 @@ audio driver the frame numbers a screenshot lands on can shift by one between tw
 
 ## The launcher's look
 
-The launcher is a dark console-style interface: opaque cards on a neutral ramp tinted slightly toward indigo, one
-hairline border and one lightness step per layer instead of shadows or transparency, and one accent colour
-(violet `5B4DE3`) kept for the primary action, the selected row, a switch that is on and the focus ring. Everything
+The launcher is a dark console-style interface in the warm orange of the app icon: opaque cards on a neutral ramp
+tinted slightly toward orange, one hairline border and one lightness step per layer instead of shadows or
+transparency, and one accent colour (orange `E8702E`, with dark text on it) kept for the primary action, the
+selected row, a switch that is on and the focus ring. Everything
 it draws that is not plain Dear ImGui lives in `UI/UiKit.*`, so a page only says what it shows: the palette
 (`kit::color`), the spacing scale (`kit::space`), the two corner radii (`kit::radius`), the widgets (`Button`,
 `NavItem`, `Toggle`, `Segmented`, `Slider`, `TabStrip`, `BeginCard`, `SettingRow`, `Chip`, ...), the icons
@@ -581,8 +583,8 @@ Rules that keep it from looking generated:
 
 - Every gap, margin and padding is a `kit::space` value (4, 8, 12, 16, 24, 32, 48); a gap inside a group is smaller
   than the gap between groups. Page margin is 32, card padding 16 or 24, gap between cards 16.
-- Text colours are `kText`, `kTextMuted` (7:1 on every surface) and `kTextDim` (4.5:1). The accent as text is
-  `kAccentText`. Check any new colour against the surfaces it sits on.
+- Text colours are `kText`, `kTextMuted` (7:1 on every surface) and `kTextDim` (4.5:1 on cards). The accent as text is
+  `kAccentText`; text on an accent fill is `kOnAccent` (dark). Check any new colour against the surfaces it sits on.
 - Two radii only: `radius::kControl` (8) and `radius::kCard` (14). No glow, no gradient on buttons.
 - A custom widget must be reachable from the keyboard and a gamepad: make it with `kit::NavButton` (ImGui skips a
   plain `InvisibleButton`), draw a focus ring when `IsItemFocused() && io.NavVisible`, and make child windows
@@ -601,6 +603,24 @@ The fonts are cut down to the glyphs the launcher uses and compiled into the pro
 `CMakeLists.txt`), so there are no files to ship. To add an icon, add its Phosphor name to `ICONS` in
 `scripts/ui-art/subset-fonts.py` (the script explains where to get the full fonts), add it to `kit::Icon` and
 `IconCodepoint()` in `UI/UiKit.*`, and run the script again. `assets/fonts/README.md` lists the licences.
+
+### The Simulator workbench
+
+The Simulator (`UI/LauncherSimulator.cpp`, model in `UI/SimLab.*`) is a workbench in the manner of a network
+simulator. Each game has its own: a Nintendo 64, a TV, up to four controllers, Rumble Paks and the game's
+cartridge, joined by cables. A cable only fits ports of the same kind (AV, controller, pak, cartridge), a link
+light on each end says whether it works, and `Lab::Check` says in words what is missing. The wiring is saved in
+`settings/games/<rom name>.lab`. What it means for emulation:
+
+- Clicking a device shows the options a game may override (the same table as Settings); a Rumble Pak in a
+  controller sets that player's pak (`accessoryN` in the game's setup, applied through
+  `Gamepads::SetAccessoryOverride`).
+- Play is disabled while the wiring has an error (no cartridge in the console, no TV on the AV output, a device
+  switched off). Playing from the Library ignores the workbench's wiring and uses the setup's options.
+- Simulation mode steps through the power-on sequence (`buildSteps`): each event lights the devices and the cable it
+  touches and sends an envelope along it, and the one that fails says why.
+
+`NOVA64_UI_MOUSE` (see the table below) drives the workbench from a script, which is how it was tested.
 
 ### Options and per-game setups
 

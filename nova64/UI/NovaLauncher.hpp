@@ -19,6 +19,7 @@
 #include "GameSetup.hpp"
 #include "HexEditor.hpp"
 #include "RomInfo.hpp"
+#include "SimLab.hpp"
 
 struct SDL_Window;
 union SDL_Event;
@@ -217,10 +218,11 @@ private:
     int m_padRebindTarget = -1; ///< N64Input index waiting for a controller input, or -1
 
     int m_simGame = -1;         ///< the game shown in the Simulator (index into m_library)
-    int m_simPart = 0;    ///< what the Simulator's inspector shows: 0 cartridge, 1 console, 2 display, 3 controllers
-    int m_simLoaded = -1; ///< the game m_simSetup and m_simRom were read for
-    GameSetup m_simSetup; ///< that game's overrides
-    detail::RomInfo m_simRom; ///< what its ROM header says
+    sim::Lab m_simLab;          ///< the workbench of that game
+    sim::View m_simView;
+    int m_simLoaded = -1;       ///< the game m_simSetup and m_simRom were read for
+    GameSetup m_simSetup;       ///< that game's overrides
+    detail::RomInfo m_simRom;   ///< what its ROM header says
 
     float m_windowOpacity = 0.0f;
     enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState = AnimState::FadeIn;
@@ -275,6 +277,12 @@ private:
     std::string m_autoRom;
     std::vector<std::pair<int, int>> m_autoKeys;  ///< launcher frame, SDL scancode
     std::vector<std::pair<int, int>> m_autoSaves; ///< launcher frame, save slot (0-3)
+    struct AutoMouse {
+        int frame;
+        float x, y;
+        char action; ///< 'm' move, 'd' button down, 'u' button up
+    };
+    std::vector<AutoMouse> m_autoMouse;
     int m_frameCount = 0;
 };
 

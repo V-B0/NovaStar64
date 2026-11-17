@@ -622,15 +622,15 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& ti
             ImVec2(std::round(min.x + (size.x - textSize.x) * 0.5f), std::round(min.y + (size.y - textSize.y) * 0.5f)),
             ImGui::GetColorU32(ImVec4(1, 1, 1, 0.92f)), initials.c_str());
     }
-    draw->AddRect(min, max, ImGui::GetColorU32(Rgb(0xFFFFFF, hovered ? 0.30f : 0.12f)), rounding);
+    draw->AddRect(min, max, ImGui::GetColorU32(Rgb(0xFFEADB, hovered ? 0.30f : 0.12f)), rounding);
 
     if (hovered) {
         // A play button over the middle of the picture
-        draw->AddRectFilled(min, max, IM_COL32(4, 3, 16, 110), rounding);
+        draw->AddRectFilled(min, max, IM_COL32(10, 5, 4, 115), rounding);
         const ImVec2 mid(min.x + size.x * 0.5f, min.y + size.y * 0.5f);
         const float radius = std::clamp(std::min(size.x, size.y) * 0.18f, 18.0f, 30.0f);
         draw->AddCircleFilled(mid, radius, ImGui::GetColorU32(color::kAccent));
-        draw->AddCircle(mid, radius, ImGui::GetColorU32(Rgb(0xFFFFFF, 0.5f)), 0, 1.5f);
+        draw->AddCircle(mid, radius, ImGui::GetColorU32(Rgb(0xFFEADB, 0.5f)), 0, 1.5f);
         DrawIcon(draw, Icon::Play, ImVec2(mid.x + 1.0f, mid.y), std::round(radius * 1.0f),
                  ImGui::GetColorU32(color::kOnAccent));
     }

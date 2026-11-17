@@ -42,6 +42,12 @@ const char* VulkanUnavailable(const SettingsModel& m) {
     return m.gfx->backendType == 1 ? nullptr : "Needs the Vulkan driver.";
 }
 
+template <int Player> int GetAccessory(const SettingsModel& m) { return m.accessory ? m.accessory[Player] : 0; }
+
+template <int Player> void SetAccessory(SettingsModel& m, int v) {
+    if (m.accessory) m.accessory[Player] = v;
+}
+
 std::vector<OptionDef> BuildOptions() {
     std::vector<OptionDef> o;
 
@@ -104,6 +110,26 @@ std::vector<OptionDef> BuildOptions() {
         d.get = [](const SettingsModel& m) { return *m.saveChip; };
         d.set = [](SettingsModel& m, int v) { *m.saveChip = v; };
         o.push_back(d);
+    }
+
+    // The pak in each player's controller. The Simulator sets these from what is plugged into the controllers.
+    {
+        static const char* const kTitles[4] = {"Player 1 pak", "Player 2 pak", "Player 3 pak", "Player 4 pak"};
+        static const char* const kIds[4] = {"accessory1", "accessory2", "accessory3", "accessory4"};
+        int (*const getters[4])(const SettingsModel&) = {GetAccessory<0>, GetAccessory<1>, GetAccessory<2>,
+                                                         GetAccessory<3>};
+        void (*const setters[4])(SettingsModel&, int) = {SetAccessory<0>, SetAccessory<1>, SetAccessory<2>,
+                                                         SetAccessory<3>};
+        for (int p = 0; p < 4; ++p) {
+            OptionDef d{kIds[p],     kTitles[p],    "What is in this controller's pak slot.",
+                        "emulation", "Controllers", OptionKind::Choice};
+            d.choices = {"Automatic", "Nothing", "Rumble Pak"};
+            d.store = Store::None;
+            d.globalSetting = false;
+            d.get = getters[p];
+            d.set = setters[p];
+            o.push_back(d);
+        }
     }
 
     // --- Video ---

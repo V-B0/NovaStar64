@@ -110,6 +110,8 @@ NovaLauncher::NovaLauncher() {
     //       start a game as soon as the window is up
     //   NOVA64_UI_KEYS=600:Backspace,640:Left,700:Return
     //       press keys at the given launcher frames
+    //   NOVA64_UI_MOUSE=100:400:300:move,110:400:300:down,120:500:300:move,130:500:300:up
+    //       move the pointer and press or release the left button at the given launcher frames (x, y in points)
     //   NOVA64_UI_SAVE=300:0,600:1
     //       save a state into a slot (0-3) at the given launcher frames
     //   NOVA64_UI_OPEN=add | edit:<index>
@@ -150,6 +152,19 @@ NovaLauncher::NovaLauncher() {
         }
     }
 
+    if (const char* mouse = std::getenv("NOVA64_UI_MOUSE")) {
+        const std::string list(mouse);
+        for (size_t start = 0; start < list.size();) {
+            size_t comma = list.find(',', start);
+            if (comma == std::string::npos) comma = list.size();
+            int frame = 0;
+            float x = 0, y = 0;
+            char action[16] = {};
+            if (std::sscanf(list.substr(start, comma - start).c_str(), "%d:%f:%f:%15s", &frame, &x, &y, action) == 4)
+                m_autoMouse.push_back({frame, x, y, action[0]});
+            start = comma + 1;
+        }
+    }
     if (const char* saves = std::getenv("NOVA64_UI_SAVE")) {
         const std::string list(saves);
         for (size_t start = 0; start < list.size();) {
@@ -285,6 +300,26 @@ void NovaLauncher::Run() {
             key.key.keysym.scancode = static_cast<SDL_Scancode>(scancode);
             key.key.keysym.sym = SDL_GetKeyFromScancode(key.key.keysym.scancode);
             SDL_PushEvent(&key);
+        }
+        for (const AutoMouse& step : m_autoMouse) {
+            if (step.frame != m_frameCount) continue;
+            SDL_Event motion{};
+            motion.type = SDL_MOUSEMOTION;
+            motion.motion.windowID = SDL_GetWindowID(window);
+            motion.motion.x = static_cast<Sint32>(step.x);
+            motion.motion.y = static_cast<Sint32>(step.y);
+            SDL_PushEvent(&motion);
+            if (step.action == 'd' || step.action == 'u') {
+                SDL_Event button{};
+                button.type = step.action == 'd' ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+                button.button.windowID = SDL_GetWindowID(window);
+                button.button.button = SDL_BUTTON_LEFT;
+                button.button.state = step.action == 'd' ? SDL_PRESSED : SDL_RELEASED;
+                button.button.clicks = 1;
+                button.button.x = static_cast<Sint32>(step.x);
+                button.button.y = static_cast<Sint32>(step.y);
+                SDL_PushEvent(&button);
+            }
         }
         for (const auto& [frame, slot] : m_autoSaves)
             if (frame == m_frameCount && m_emuRunning.load() && slot >= 0 && slot < Nova64::kSaveSlots)
@@ -502,7 +537,7 @@ void NovaLauncher::RenderTitleBar(SDL_Window* window, bool inGame) {
             if (i > 0) {
                 right -= 16.0f;
                 draw->AddLine(ImVec2(origin.x + right, origin.y + height * 0.5f - 9.0f),
-                              ImVec2(origin.x + right, origin.y + height * 0.5f + 9.0f), Col(Rgb(0xFFFFFF, 0.22f)));
+                              ImVec2(origin.x + right, origin.y + height * 0.5f + 9.0f), Col(color::kHairline));
                 right -= 16.0f;
             }
         }
@@ -689,8 +724,8 @@ void NovaLauncher::RenderEmptyHero() {
     const float width = ImGui::GetContentRegionAvail().x;
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const float ringX = origin.x + 90.0f, ringY = origin.y + 112.0f;
-    draw->AddCircleFilled(ImVec2(ringX, ringY), 72.0f, Col(Rgb(0x5B4DE3, 0.22f)));
-    draw->AddCircle(ImVec2(ringX, ringY), 72.0f, Col(Rgb(0x8E82FF, 0.55f)), 0, 2.0f);
+    draw->AddCircleFilled(ImVec2(ringX, ringY), 72.0f, Col(color::kAccentSoft));
+    draw->AddCircle(ImVec2(ringX, ringY), 72.0f, Col(color::kAccentHover), 0, 2.0f);
     DrawIcon(draw, Icon::Games, ImVec2(ringX, ringY), 64.0f, Col(color::kText));
 
     const float textX = origin.x + 210.0f;
@@ -812,7 +847,7 @@ void NovaLauncher::RenderHeroCard(int index) {
     if (shotW > 0.0f) {
         const ImVec2 a(origin.x + innerW - shotW, origin.y), b(a.x + shotW, a.y + contentHeight);
         DrawImageCover(draw, shot->texture, shot->width, shot->height, a, b, 16.0f);
-        draw->AddRect(a, b, Col(Rgb(0xFFFFFF, 0.14f)), 16.0f);
+        draw->AddRect(a, b, Col(color::kHairline), 16.0f);
     }
     EndCard();
 }

@@ -74,10 +74,12 @@ The project is under active development. Expect bugs and rough edges — see
 - **Game controllers for up to four players** through SDL, with an
   N64-shaped analog range, rebindable buttons, per-controller player slots and
   a Rumble Pak. A controller also drives the launcher's menus.
-- **Per-game setups.** The Simulator shows how one game will run (what its ROM
-  header says, the CPU, RSP, display and controllers) and lets that game override
-  speed, CPU core, graphics driver, resolution, accuracy and more, with a check for
-  setups that will not work. Everything else follows Settings.
+- **A workbench for each game.** The Simulator is a Packet Tracer-style bench: drag a
+  Nintendo 64, a TV, controllers, a Rumble Pak and the game's cartridge onto it and join
+  them with cables, with link lights that say what works. Click a device to give that game
+  its own speed, CPU core, graphics driver, resolution, accuracy or save chip, step through
+  the power-on sequence to see what would go wrong, then press Play. Everything you do not
+  change follows Settings.
 - **Built-in tools:** a Lua scripting console and a memory viewer.
 - **Cartridge hardware:** EEPROM, SRAM and FlashRAM saves, Rumble Pak, Transfer
   Pak and partial N64DD support.
@@ -113,11 +115,11 @@ The project is under active development. Expect bugs and rough edges — see
   </tr>
   <tr>
     <td><img src="docs/showcase/launcher-home.png" alt="The launcher's Home page: the game last played with its screenshot, and a row of recent games"></td>
-    <td><img src="docs/showcase/simulator.png" alt="The Simulator: a schematic of the cartridge, console, display and controllers, with this game's own settings below"></td>
+    <td><img src="docs/showcase/simulator.png" alt="The Simulator workbench: a Nintendo 64 wired to a cartridge, a TV and two controllers, one with a Rumble Pak, and the inspector on the right"></td>
   </tr>
   <tr>
     <td align="center"><b>Home</b> — the game you played last, and your recent games</td>
-    <td align="center"><b>Simulator</b> — how one game will run, and what is different about it</td>
+    <td align="center"><b>Simulator</b> — a workbench for one game's hardware, with link lights and a power-on sequence</td>
   </tr>
   <tr>
     <td><img src="docs/showcase/settings-video.png" alt="The Video settings page: each option with a line of help and its control"></td>

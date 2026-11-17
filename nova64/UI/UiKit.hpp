@@ -36,26 +36,28 @@ constexpr ImVec4 Rgb(unsigned hex, float alpha = 1.0f) {
 }
 
 namespace color {
-// A neutral ramp tinted slightly toward the brand hue. Depth comes from one lightness step per layer and a hairline,
+// A neutral ramp tinted slightly toward the icon's orange. Depth comes from one lightness step per layer and a hairline,
 // not from shadows or transparency.
-inline constexpr ImVec4 kBackground = Rgb(0x080718); ///< the window, behind the picture
-inline constexpr ImVec4 kSidebar = Rgb(0x100F22);    ///< bars at the edges of the window
-inline constexpr ImVec4 kCard = Rgb(0x16152C);       ///< a card at rest
-inline constexpr ImVec4 kRaised = Rgb(0x1D1C37);     ///< inputs, menus and dialogs, one step above a card
-inline constexpr ImVec4 kHover = Rgb(0x252442);      ///< a hovered row or button
-inline constexpr ImVec4 kHairline = Rgb(0x2F2E50);   ///< borders and dividers
-inline constexpr ImVec4 kText = Rgb(0xF4F3FB);       ///< 14:1 or better on every surface
-inline constexpr ImVec4 kTextMuted = Rgb(0xB1AFD0);  ///< secondary text, 7:1 or better
-inline constexpr ImVec4 kTextDim = Rgb(0x9290BB);    ///< captions and hints, at least 4.5:1 on every surface
-inline constexpr ImVec4 kAccent = Rgb(0x5B4DE3);     ///< the primary action, the selected row, a switch that is on
-inline constexpr ImVec4 kAccentHover = Rgb(0x6557EA);
-inline constexpr ImVec4 kAccentPressed = Rgb(0x4637C8);
-inline constexpr ImVec4 kAccentSoft = Rgb(0x5B4DE3, 0.20f);
-inline constexpr ImVec4 kAccentText = Rgb(0xA39BFA); ///< the accent as the colour of text or an icon
-inline constexpr ImVec4 kStar = Rgb(0xF6C453);       ///< favourites only
-inline constexpr ImVec4 kDanger = Rgb(0xEB5B6E);
-inline constexpr ImVec4 kSuccess = Rgb(0x4DDC9F);
-inline constexpr ImVec4 kOnAccent = Rgb(0xFFFFFF);
+inline constexpr ImVec4 kBackground = Rgb(0x0F0A09); ///< the window, behind the picture
+inline constexpr ImVec4 kSidebar = Rgb(0x17100E);    ///< bars at the edges of the window
+inline constexpr ImVec4 kCard = Rgb(0x1F1613);       ///< a card at rest
+inline constexpr ImVec4 kRaised = Rgb(0x291C18);     ///< inputs, menus and dialogs, one step above a card
+inline constexpr ImVec4 kHover = Rgb(0x342420);      ///< a hovered row or button
+inline constexpr ImVec4 kHairline = Rgb(0x46322C);   ///< borders and dividers
+inline constexpr ImVec4 kText = Rgb(0xF8EEE8);       ///< 15:1 or better on every surface
+inline constexpr ImVec4 kTextMuted = Rgb(0xC7B2A8);  ///< secondary text, 7:1 or better
+inline constexpr ImVec4 kTextDim =
+    Rgb(0xA89588); ///< captions and hints, at least 4.5:1 on every surface but a pressed row
+inline constexpr ImVec4 kAccent = Rgb(0xE8702E); ///< the primary action, the selected row, a switch that is on
+inline constexpr ImVec4 kAccentHover = Rgb(0xF58A4B);
+inline constexpr ImVec4 kAccentPressed = Rgb(0xC85A1E);
+inline constexpr ImVec4 kAccentSoft = Rgb(0xE8702E, 0.18f);
+inline constexpr ImVec4 kAccentText = Rgb(0xFF9A63); ///< the accent as the colour of text or an icon
+inline constexpr ImVec4 kStar = Rgb(0xFFC247);       ///< favourites and warnings
+inline constexpr ImVec4 kDanger = Rgb(0xFF5A6A);
+inline constexpr ImVec4 kSuccess = Rgb(0x55D68A);
+inline constexpr ImVec4 kOnAccent = Rgb(0x120905); ///< text and icons on an accent fill: dark, 6:1 on the accent
+inline constexpr ImVec4 kKnob = Rgb(0xF8EEE8);     ///< the knob of a switch or slider
 } // namespace color
 
 /// The two corner radii: small controls, and cards and pictures.
@@ -217,6 +219,9 @@ bool TabStrip(const char* id, const char* const* labels, int count, int* index);
 template <class Control>
 bool SettingRow(const char* title, const char* help, float controlWidth, float controlHeight, Control&& control,
                 const char* badge = nullptr);
+
+/// Starts a list of rows outside BeginSettings (the first row gets no divider above it).
+void RowsReset();
 
 /// A compact row of a settings card showing a fact: `key` on the left, `value` on the right.
 void InfoRow(const char* key, const char* value);

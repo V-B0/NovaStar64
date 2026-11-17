@@ -109,6 +109,9 @@ public:
     bool SwapPlayers(int playerA, int playerB);
 
     [[nodiscard]] bool HasRumblePak(int player);
+    /// Forces what is in a player's pak slot for the running game (0 automatic, 1 none, 2 Rumble Pak), or -1 to follow
+    /// the controller settings again.
+    void SetAccessoryOverride(int player, int accessory);
     void SetRumble(int player, bool on);
     void StopRumble();
 
@@ -138,6 +141,7 @@ private:
     uint32_t m_settingsCheckedAt = 0;
     bool m_settingsChecked = false;
     long long m_settingsStamp = -1; ///< file time the settings were read at
+    std::array<int, kMaxPlayers> m_accessoryOverride{-1, -1, -1, -1};
 };
 
 } // namespace NovaInput
