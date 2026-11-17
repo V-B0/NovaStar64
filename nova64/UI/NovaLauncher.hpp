@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <imgui.h>
+
 #include "../N64SYS/SaveState.hpp"
 #include "../NovaGraphics/Plugin/PluginConfig.hpp"
 #include "../NovaInput/GamepadInput.hpp"
@@ -21,7 +23,7 @@ union SDL_Event;
 
 namespace NovaUI {
 
-enum class Tab { Home, Games, Settings, Scripts, HexEditor, Achievements, Simulator };
+enum class Tab { Home, Library, Recent, Favorites, Settings, About, Scripts, HexEditor, Achievements, Simulator };
 
 struct RomMetadata {
     std::string path;
@@ -29,6 +31,9 @@ struct RomMetadata {
     std::string notes;
     std::string
         cover; ///< picture shown on the game's card; a path relative to the data folder ("covers/..."), or empty
+    bool favorite = false;
+    int64_t lastPlayed = 0; ///< seconds since 1970, or 0 if never started from the launcher
+    int plays = 0;
 };
 
 // --- Simulator node system ---
@@ -114,11 +119,18 @@ public:
 
 private:
     // ---- Layout ----
-    void RenderTopNavbar(SDL_Window* window);
+    /// The bar across the top: the brand and status in the launcher, the game's title and hints while playing.
+    void RenderTitleBar(SDL_Window* window, bool inGame);
     void RenderUI(SDL_Window* window);
     void RenderSidebar();
+    void RenderHintBar();
     void RenderHomeTab();
-    void RenderGamesTab();
+    void RenderHeroCard(int index);
+    void RenderEmptyHero();
+    /// The library as a grid of covers: all games, the recently played ones, or the favourites.
+    void RenderLibraryPage(Tab tab);
+    void RenderGameDialogs();
+    void RenderAboutTab();
     void RenderSettingsTab();
     void RenderInputSettingsWidget();
     void RenderControllerSettingsWidget();
@@ -143,6 +155,14 @@ private:
     void AddToLibrary(const std::string& path, const std::string& name, const std::string& notes = {},
                       const std::string& cover = {});
     void OpenRomWithPicker();
+    /// Counts a start of the game: moves it to the top of "Recently Played" and selects it.
+    void RecordPlay(const std::string& path);
+    /// Saves the last frame of the game that was running as the picture shown on its Home card.
+    void SaveGameShot();
+    /// Indices into m_library, most recently played first (only games that were played).
+    std::vector<int> RecentGames() const;
+    int FindGame(const std::string& path) const;
+    void RemoveGame(int index);
 
     // ---- Settings ----
     void LoadSettings();
@@ -203,6 +223,8 @@ private:
     bool m_showAddModal = false;
     bool m_showEditModal = false;
     int m_editingRomIndex = -1;
+    int m_selectedGame = -1;      ///< index into m_library shown on the Home card, or -1 for the most recent one
+    char m_searchBuffer[96] = {}; ///< the filter on the library pages
     char m_editPathBuffer[512] = {};
     char m_editNameBuffer[128] = {};
     char m_editNotesBuffer[1024] = {};
@@ -222,8 +244,9 @@ private:
     /// Forget a cached picture (its file was replaced) or all of them (before the GL context goes).
     void ForgetCoverTexture(const std::string& path);
     void ReleaseCoverTextures();
-    /// Draws a game's cover, or a placeholder, in a box of the given width. Returns true if clicked.
-    bool DrawCover(const std::string& coverPath, const std::string& title, float width);
+    /// Draws a game's cover, or a placeholder, as one item of the given size. Returns true if clicked.
+    bool DrawCover(const std::string& coverPath, const std::string& title, ImVec2 size, bool selected = false,
+                   float rounding = 14.0f);
 
     Nova64::Video::PluginConfig m_gfx;
     LaunchOptions m_launch;
@@ -246,7 +269,7 @@ private:
     std::atomic<bool> m_emuStartFailed{false};
     std::string m_emuRomPath;
     std::string m_emuTitle;
-    uint32_t m_iconTex = 0; ///< the NovaStar icon, drawn in the sidebar and on the Home tab
+    uint32_t m_iconTex = 0; ///< the NovaStar icon, drawn in the title bar
     uint32_t m_gameTex = 0;
     int m_gameTexW = 0;
     int m_gameTexH = 0;
@@ -288,7 +311,8 @@ private:
     std::vector<int> m_shotFrames;
     std::string m_forcedSubTab;
     std::string m_autoRom;
-    std::vector<std::pair<int, int>> m_autoKeys; ///< launcher frame, SDL scancode
+    std::vector<std::pair<int, int>> m_autoKeys;  ///< launcher frame, SDL scancode
+    std::vector<std::pair<int, int>> m_autoSaves; ///< launcher frame, save slot (0-3)
     int m_frameCount = 0;
 };
 

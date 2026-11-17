@@ -28,11 +28,9 @@ namespace NovaUI {
 
 namespace {
 
-constexpr float kNavbarHeight = 40.0f;
-constexpr float kRewindThumbW = 144.0f;
-constexpr float kRewindThumbH = 108.0f;
-constexpr float kRewindBarHeight = 208.0f;
-constexpr ImU32 kAccent = IM_COL32(255, 122, 26, 255); // the accent orange
+constexpr float kRewindThumbW = 160.0f;
+constexpr float kRewindThumbH = 120.0f;
+constexpr float kRewindBarHeight = 256.0f;
 
 bool AnyKeyHeld() {
     int count = 0;
@@ -64,18 +62,24 @@ void DeleteTexture(uint32_t texture) {
 // Draws a thumbnail as one item, or a dim box with `emptyLabel` when there is none.
 void DrawThumbnail(ThumbnailTextures& textures, const std::shared_ptr<const Nova64::StateThumbnail>& thumbnail,
                    ImVec2 size, const char* emptyLabel) {
+    constexpr float kRounding = 10.0f;
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    if (uint32_t texture = textures.Get(thumbnail)) {
-        ImGui::Image(static_cast<ImTextureID>(texture), size);
-        return;
-    }
+    const ImVec2 end(pos.x + size.x, pos.y + size.y);
     ImGui::Dummy(size);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0, 0, 0, 50));
+    if (uint32_t texture = textures.Get(thumbnail)) {
+        draw->AddImageRounded(static_cast<ImTextureID>(texture), pos, end, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE,
+                              kRounding);
+        draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.14f)), kRounding);
+        return;
+    }
+    draw->AddRectFilled(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.06f)), kRounding);
+    draw->AddRect(pos, end, ImGui::GetColorU32(kit::Rgb(0xFFFFFF, 0.10f)), kRounding);
     if (emptyLabel && *emptyLabel) {
-        const ImVec2 text = ImGui::CalcTextSize(emptyLabel);
-        draw->AddText(ImVec2(pos.x + (size.x - text.x) * 0.5f, pos.y + (size.y - text.y) * 0.5f),
-                      ImGui::GetColorU32(ImGuiCol_TextDisabled), emptyLabel);
+        const ImVec2 text = kit::Measure(kit::GetFonts().label, emptyLabel);
+        kit::PutText(draw, kit::GetFonts().label,
+                     ImVec2(pos.x + (size.x - text.x) * 0.5f, pos.y + (size.y - text.y) * 0.5f),
+                     ImGui::GetColorU32(kit::color::kTextDim), emptyLabel);
     }
 }
 
@@ -121,6 +125,7 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     if (path.empty()) return;
 
     m_emuRomPath = detail::CopyIntoRomsFolder(path);
+    RecordPlay(path);
     m_emuTitle = name.empty() ? fs::path(m_emuRomPath).stem().string() : name;
     Nova64::StateService::Instance().BeginSession(m_emuRomPath);
     m_stateRevision = 0;
@@ -170,6 +175,7 @@ void NovaLauncher::LaunchEmulator(const SimNode& node) {
 void NovaLauncher::StopEmbedded() {
     NovaInput::Gamepads::Instance().StopRumble();
     if (m_emuThread.joinable()) {
+        if (m_glContext) SaveGameShot(); // while the last frame is still there
         // A paused game waits inside the CPU loop; un-pause it so it can stop.
         Nova64::Video::g_emuPaused.store(false);
         CN64System::RequestStop();
@@ -423,7 +429,7 @@ void NovaLauncher::RenderGameView() {
     if (!texture) return;
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    const float top = kNavbarHeight;
+    const float top = detail::kGameBarHeight;
     const float height = std::max(1.0f, display.y - top - (m_rewindOpen ? kRewindBarHeight : 0.0f));
     float imgW = display.x;
     float imgH = imgW / aspect;
@@ -441,67 +447,64 @@ void NovaLauncher::RenderPauseMenu() {
     if (!m_showPauseMenu) return;
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display, IM_COL32(0, 0, 0, 170));
+    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), display, IM_COL32(4, 3, 16, 175));
 
     // Fixed width, height fitted to the contents, centred below the top bar.
-    const float pw = std::min(640.0f, display.x - 40.0f);
-    const float maxH = display.y - kNavbarHeight - 40.0f;
-    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, kNavbarHeight + (display.y - kNavbarHeight) * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const float top = detail::kGameBarHeight;
+    const float pw = std::min(700.0f, display.x - 40.0f);
+    const float maxH = display.y - top - 40.0f;
+    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, top + (display.y - top) * 0.5f), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ImVec2(pw, 0.0f), ImVec2(pw, maxH));
-    ImGui::SetNextWindowBgAlpha(0.96f);
     if (m_focusPauseMenu) {
         ImGui::SetNextWindowFocus();
         m_focusPauseMenu = false;
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, kit::Px(1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kit::Px(10.0f), kit::Px(9.0f)));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::Rgb(0x15133A, 0.985f));
+    ImGui::PushStyleColor(ImGuiCol_Border, kit::Rgb(0xFFFFFF, 0.16f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 24.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f, 24.0f));
     ImGui::Begin("##PauseMenu", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(2);
 
-    ImGui::PushFont(kit::GetFonts().heading);
-    ImGui::TextColored(kit::color::kAccent, "Paused");
+    ImGui::PushFont(kit::GetFonts().title);
+    ImGui::TextUnformatted("Paused");
     ImGui::PopFont();
-    kit::Muted("  %s", m_emuTitle.c_str());
-    ImGui::Separator();
-    ImGui::Spacing();
+    kit::Muted("%s", m_emuTitle.c_str());
+    ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
     bool quit = false;
-    if (kit::Button("Resume", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(0.0f, kit::Px(20.0f))))
-        ClosePauseMenu();
+    if (kit::Button("Resume", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(150.0f, 0.0f))) ClosePauseMenu();
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_launch.rewind);
-    if (kit::Button("Rewind", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(0.0f, kit::Px(20.0f))))
-        OpenRewind();
+    if (kit::Button("Rewind", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(150.0f, 0.0f))) OpenRewind();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (kit::Button("Quit game", kit::ButtonStyle::Danger, kit::Icon::Close, ImVec2(0.0f, kit::Px(20.0f)))) quit = true;
+    if (kit::Button("Quit game", kit::ButtonStyle::Danger, kit::Icon::Close, ImVec2(160.0f, 0.0f))) quit = true;
 
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0.0f, 6.0f));
     ImGui::Separator();
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
     RenderSaveSlots();
 
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
     ImGui::Separator();
-    ImGui::Spacing();
-    ImGui::Text("Speed");
-    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Speed");
+    ImGui::SameLine(0.0f, 20.0f);
     if (ImGui::RadioButton("Normal", !m_turboMode)) SetTurbo(false);
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, 20.0f);
     ImGui::BeginDisabled(m_launch.speed == 0);
     if (ImGui::RadioButton("Double (Tab)", m_turboMode)) SetTurbo(true);
     ImGui::EndDisabled();
 
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kViolet);
-    const bool controlsOpen = ImGui::CollapsingHeader("Controls");
-    ImGui::PopStyleColor(2);
-    if (controlsOpen) {
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+    if (ImGui::CollapsingHeader("Controls")) {
         // The binding table is tall; it scrolls inside the menu instead of stretching it.
         ImGui::BeginChild("##Controls", ImVec2(0, std::min(300.0f, maxH * 0.5f)), ImGuiChildFlags_Borders);
         RenderInputSettingsWidget();
@@ -519,11 +522,11 @@ void NovaLauncher::RenderSaveSlots() {
     auto& service = Nova64::StateService::Instance();
     const bool busy = service.RequestPending();
 
-    ImGui::Text("Save states");
-    kit::Muted("%s", busy ? "  working..." : "  kept in the saves folder");
-    ImGui::Spacing();
+    kit::SectionTitle("Save states");
+    kit::Muted("%s", busy ? "Working..." : "Kept in the saves folder.");
+    ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
-    constexpr ImVec2 kThumb(96.0f, 72.0f);
+    constexpr ImVec2 kThumb(112.0f, 84.0f);
     if (ImGui::BeginTable("##SaveSlots", 2, ImGuiTableFlags_SizingStretchSame)) {
         for (int i = 0; i < Nova64::kSaveSlots; ++i) {
             if (i % 2 == 0) ImGui::TableNextRow();
@@ -534,10 +537,12 @@ void NovaLauncher::RenderSaveSlots() {
             DrawThumbnail(m_thumbnails, slot.thumbnail, kThumb, slot.exists ? "" : "Empty");
             ImGui::SameLine();
             ImGui::BeginGroup();
+            ImGui::PushFont(kit::GetFonts().label);
             ImGui::Text("Slot %d", i + 1);
+            ImGui::PopFont();
             kit::Muted("%s", slot.SavedAtText().c_str());
             ImGui::BeginDisabled(busy);
-            if (ImGui::Button("Save", ImVec2(64, 0))) {
+            if (kit::Button("Save", kit::ButtonStyle::Secondary, kit::Icon::None, ImVec2(70.0f, 34.0f))) {
                 if (slot.exists) {
                     m_overwriteSlot = i;
                     m_openOverwrite = true;
@@ -547,7 +552,7 @@ void NovaLauncher::RenderSaveSlots() {
             }
             ImGui::SameLine();
             ImGui::BeginDisabled(!slot.loadable);
-            if (ImGui::Button("Load", ImVec2(64, 0))) {
+            if (kit::Button("Load", kit::ButtonStyle::Secondary, kit::Icon::None, ImVec2(70.0f, 34.0f))) {
                 service.RequestLoad(i);
                 ClosePauseMenu();
             }
@@ -565,14 +570,14 @@ void NovaLauncher::RenderSaveSlots() {
     }
     if (ImGui::BeginPopupModal("Replace save state?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Slot %d already has a save state. Replace it?", m_overwriteSlot + 1);
-        ImGui::Spacing();
-        if (ImGui::Button("Replace", ImVec2(110, 0))) {
+        ImGui::Dummy(ImVec2(0.0f, 6.0f));
+        if (kit::Button("Replace", kit::ButtonStyle::Primary, kit::Icon::None, ImVec2(120.0f, 40.0f))) {
             if (m_overwriteSlot >= 0) service.RequestSave(m_overwriteSlot);
             m_overwriteSlot = -1;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(110, 0))) {
+        if (kit::Button("Cancel", kit::ButtonStyle::Secondary, kit::Icon::None, ImVec2(120.0f, 40.0f))) {
             m_overwriteSlot = -1;
             ImGui::CloseCurrentPopup();
         }
@@ -601,23 +606,31 @@ void NovaLauncher::RenderRewindBar() {
 
     ImGui::SetNextWindowPos(ImVec2(0, display.y - kRewindBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(display.x, kRewindBarHeight), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.94f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::Rgb(0x0B0A24, 0.95f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f, 18.0f));
     ImGui::Begin("##RewindBar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
 
-    ImGui::TextColored(kit::color::kAccent, "Rewind");
+    const float headTop = ImGui::GetCursorPosY();
+    ImGui::PushFont(kit::GetFonts().heading);
+    ImGui::TextUnformatted("Rewind");
+    ImGui::PopFont();
     kit::Muted("Scroll or press Left/Right to pick a moment. Enter plays from there, Esc cancels.");
+    const float headBottom = ImGui::GetCursorPosY();
 
     bool play = false, cancel = false;
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float buttonsWidth = 150.0f + 90.0f + style.ItemSpacing.x;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - buttonsWidth - style.WindowPadding.x));
+    const float buttonsWidth = 180.0f + 120.0f + style.ItemSpacing.x;
+    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - buttonsWidth - 28.0f, headTop));
     ImGui::BeginDisabled(m_rewindSelection >= count);
-    if (ImGui::Button("Play from here", ImVec2(150, 0))) play = true;
+    if (kit::Button("Play from here", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(180.0f, 40.0f))) play = true;
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(90, 0))) cancel = true;
+    if (kit::Button("Cancel", kit::ButtonStyle::Secondary, kit::Icon::None, ImVec2(120.0f, 40.0f))) cancel = true;
+    ImGui::SetCursorPosY(headBottom + 6.0f);
 
     ImGui::BeginChild("##RewindStrip", ImVec2(0, 0), ImGuiChildFlags_None,
                       ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -640,9 +653,10 @@ void NovaLauncher::RenderRewindBar() {
             m_rewindSelection = i;
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) play = true;
         }
-        ImGui::GetWindowDrawList()->AddRect(pos, ImVec2(pos.x + thumbSize.x, pos.y + thumbSize.y),
-                                            selected ? kAccent : IM_COL32(255, 255, 255, 60), 0.0f, 0,
-                                            selected ? 4.0f : 1.0f);
+        if (selected)
+            ImGui::GetWindowDrawList()->AddRect(ImVec2(pos.x - 2.0f, pos.y - 2.0f),
+                                                ImVec2(pos.x + thumbSize.x + 2.0f, pos.y + thumbSize.y + 2.0f),
+                                                ImGui::GetColorU32(kit::color::kAccentHover), 12.0f, 0, 3.0f);
 
         char label[32];
         if (isNow) {

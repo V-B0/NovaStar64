@@ -14,6 +14,12 @@ constexpr const char* kLibraryPath = "settings/library.txt";
 constexpr const char* kLauncherPath = "settings/launcher.ini";
 constexpr const char* kGraphicsPath = "settings/NovaGraphics.ini";
 
+/// Height of the bar above a running game.
+constexpr float kGameBarHeight = 48.0f;
+
+/// Where the screenshot of a game's last session is kept (shots/<name>.png in the data folder).
+std::string ShotPathFor(const std::string& romPath);
+
 /// Native "open file" dialog. Returns "" if cancelled or none is available.
 std::string PickRomFileNative();
 

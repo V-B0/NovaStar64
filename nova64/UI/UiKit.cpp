@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
@@ -19,99 +20,114 @@ namespace NovaUI::kit {
 
 namespace {
 
-// The art: PNG sheets exported from assets/ui/*.aseprite, compiled in by CMake as lists of byte values.
-const unsigned char kIconsPng[] = {
-#include "UiIcons.inc"
+// The fonts and the background picture, compiled in by CMake as lists of byte values (see assets/fonts/ and
+// assets/ui/). Inter is under the SIL Open Font License and Phosphor under the MIT licence.
+const unsigned char kInterRegular[] = {
+#include "InterRegular.inc"
 };
-const unsigned char kFontPng[] = {
-#include "UiFont.inc"
+const unsigned char kInterSemiBold[] = {
+#include "InterSemiBold.inc"
 };
-const unsigned char kFramesPng[] = {
-#include "UiFrames.inc"
+const unsigned char kInterBold[] = {
+#include "InterBold.inc"
 };
-// The names of the icons in the icon sheet, one per line, in sheet order.
-const char kIconNames[] = {
-#include "UiIconNames.inc"
-    0};
+const unsigned char kPhosphorRegular[] = {
+#include "PhosphorRegular.inc"
+};
+const unsigned char kPhosphorFill[] = {
+#include "PhosphorFill.inc"
+};
+const unsigned char kBackgroundJpg[] = {
+#include "Background.inc"
+};
 
-// Sheet layouts (see scripts/ui-art/seed.lua).
-constexpr int kIconCell = 16;
-constexpr int kIconColumns = 8;
-constexpr int kGlyphCell = 8;
-constexpr int kGlyphColumns = 16;
-constexpr int kGlyphWidth = 5;
-constexpr int kGlyphHeight = 7;
-constexpr int kFrameCell = 10;
-constexpr int kFrameCorner = 4;
-constexpr int kDitherX = 0;
-constexpr int kDitherY = 10;
-constexpr int kDitherCell = 4;
-
-struct Sheet {
-    GLuint texture = 0;
+struct Texture {
+    GLuint id = 0;
     int width = 0;
     int height = 0;
-    std::vector<uint8_t> pixels; ///< RGBA, kept so the font can be rebuilt at other sizes
 };
 
-Sheet g_icons, g_font, g_frames;
-std::vector<std::string> g_iconNames;
+Texture g_background;
+Texture g_ramp; ///< 1x64: opaque white at the bottom fading to nothing at the top
 Fonts g_fonts;
-int g_px = 2;
-bool g_fontFilterDone = false;
 
-Sheet LoadSheet(const unsigned char* png, size_t size) {
-    Sheet sheet;
-    int w = 0, h = 0, channels = 0;
-    unsigned char* data = stbi_load_from_memory(png, static_cast<int>(size), &w, &h, &channels, 4);
-    if (!data) return sheet;
-    sheet.width = w;
-    sheet.height = h;
-    sheet.pixels.assign(data, data + static_cast<size_t>(w) * h * 4);
-    stbi_image_free(data);
+struct IconFont {
+    float size;
+    ImFont* font;
+};
+std::vector<IconFont> g_iconsFilled, g_iconsRegular;
 
-    glGenTextures(1, &sheet.texture);
-    glBindTexture(GL_TEXTURE_2D, sheet.texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+Texture MakeTexture(const unsigned char* rgba, int w, int h) {
+    Texture t;
+    t.width = w;
+    t.height = h;
+    glGenTextures(1, &t.id);
+    glBindTexture(GL_TEXTURE_2D, t.id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, sheet.pixels.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     glBindTexture(GL_TEXTURE_2D, 0);
-    return sheet;
+    return t;
 }
 
 // Colour with the current style alpha applied, so disabled widgets fade with everything else.
 ImU32 Col(const ImVec4& c) { return ImGui::GetColorU32(c); }
 
-ImU32 Tint() { return ImGui::GetColorU32(ImVec4(1, 1, 1, 1)); }
-
-bool GlyphPresent(int code) {
-    if (g_font.pixels.empty() || code < 32 || code > 127) return false;
-    const int cell = code - 32;
-    const int cx = (cell % kGlyphColumns) * kGlyphCell, cy = (cell / kGlyphColumns) * kGlyphCell;
-    for (int y = 0; y < kGlyphHeight; ++y)
-        for (int x = 0; x < kGlyphWidth; ++x)
-            if (g_font.pixels[(static_cast<size_t>(cy + y) * g_font.width + cx + x) * 4 + 3] != 0) return true;
-    return false;
+ImVec4 WithAlpha(ImVec4 c, float a) {
+    c.w *= a;
+    return c;
 }
 
-bool GlyphPixel(int code, int x, int y) {
-    const int cell = code - 32;
-    const int cx = (cell % kGlyphColumns) * kGlyphCell, cy = (cell / kGlyphColumns) * kGlyphCell;
-    return g_font.pixels[(static_cast<size_t>(cy + y) * g_font.width + cx + x) * 4 + 3] != 0;
-}
-
-struct PendingGlyph {
-    int rect; ///< ImGui custom rectangle
-    int code; ///< ASCII glyph whose bitmap goes there; 0 for blank
-    int scale;
-};
+float LogicalSize(ImFont* font) { return font->FontSize * ImGui::GetIO().FontGlobalScale; }
 
 } // namespace
 
-int Px() { return g_px; }
+ImVec2 Measure(ImFont* font, const char* text) {
+    if (!font) return ImVec2(0, 0);
+    return font->CalcTextSizeA(LogicalSize(font), FLT_MAX, 0.0f, text);
+}
+
+void PutText(ImDrawList* draw, ImFont* font, ImVec2 pos, ImU32 color, const char* text, const char* end) {
+    if (font) draw->AddText(font, LogicalSize(font), pos, color, text, end);
+}
+
+std::string Ellipsize(ImFont* font, const std::string& text, float maxWidth) {
+    if (Measure(font, text.c_str()).x <= maxWidth) return text;
+    std::string out = text;
+    while (!out.empty()) {
+        // Drop one whole UTF-8 character.
+        size_t cut = out.size() - 1;
+        while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
+        out.resize(cut);
+        while (!out.empty() && out.back() == ' ') out.pop_back();
+        if (Measure(font, (out + "...").c_str()).x <= maxWidth) break;
+    }
+    return out + "...";
+}
+
+std::string ClampLines(ImFont* font, const std::string& text, float width, int maxLines) {
+    if (!font || maxLines < 1) return text;
+    const float scale = ImGui::GetIO().FontGlobalScale;
+    std::string out;
+    const char* p = text.c_str();
+    const char* const end = p + text.size();
+    for (int line = 0; line < maxLines && p < end; ++line) {
+        const char* stop = font->CalcWordWrapPositionA(scale, p, end, width);
+        if (stop <= p) stop = p + 1;
+        std::string piece(p, stop);
+        while (!piece.empty() && piece.back() == ' ') piece.pop_back();
+        p = stop;
+        while (p < end && *p == ' ') ++p;
+        const bool last = (line == maxLines - 1);
+        if (last && p < end) piece = Ellipsize(font, piece + " ...", width);
+        if (line > 0) out += '\n';
+        out += piece;
+    }
+    return out;
+}
 
 // --- Theme ---
 
@@ -121,158 +137,135 @@ void ApplyTheme() {
     const ImVec4 clear(0, 0, 0, 0);
 
     c[ImGuiCol_Text] = color::kText;
-    c[ImGuiCol_TextDisabled] = color::kTextDisabled;
+    c[ImGuiCol_TextDisabled] = color::kTextDim;
     c[ImGuiCol_WindowBg] = color::kBackground;
-    c[ImGuiCol_ChildBg] = color::kPanel;
+    c[ImGuiCol_ChildBg] = clear;
     c[ImGuiCol_PopupBg] = color::kPanel;
-    c[ImGuiCol_Border] = color::kOrange;
+    c[ImGuiCol_Border] = color::kGlassBorder;
     c[ImGuiCol_BorderShadow] = clear;
-    c[ImGuiCol_FrameBg] = color::kInk;
-    c[ImGuiCol_FrameBgHovered] = color::kPanel;
-    c[ImGuiCol_FrameBgActive] = color::kViolet;
+    c[ImGuiCol_FrameBg] = Rgb(0xFFFFFF, 0.07f);
+    c[ImGuiCol_FrameBgHovered] = Rgb(0xFFFFFF, 0.11f);
+    c[ImGuiCol_FrameBgActive] = Rgb(0xFFFFFF, 0.15f);
     c[ImGuiCol_TitleBg] = color::kPanel;
     c[ImGuiCol_TitleBgActive] = color::kPanel;
     c[ImGuiCol_TitleBgCollapsed] = color::kPanel;
-    c[ImGuiCol_MenuBarBg] = color::kBackground;
-    c[ImGuiCol_ScrollbarBg] = color::kInk;
-    c[ImGuiCol_ScrollbarGrab] = color::kViolet;
-    c[ImGuiCol_ScrollbarGrabHovered] = color::kOrange;
-    c[ImGuiCol_ScrollbarGrabActive] = color::kCream;
-    c[ImGuiCol_CheckMark] = color::kCream;
-    c[ImGuiCol_SliderGrab] = color::kOrange;
-    c[ImGuiCol_SliderGrabActive] = color::kCream;
-    c[ImGuiCol_Button] = color::kPanel;
-    c[ImGuiCol_ButtonHovered] = color::kViolet;
-    c[ImGuiCol_ButtonActive] = color::kOrange;
-    c[ImGuiCol_Header] = color::kViolet;
-    c[ImGuiCol_HeaderHovered] = Rgb(0x7567BC);
-    c[ImGuiCol_HeaderActive] = color::kOrange;
-    c[ImGuiCol_Separator] = color::kViolet;
-    c[ImGuiCol_SeparatorHovered] = color::kOrange;
-    c[ImGuiCol_SeparatorActive] = color::kCream;
-    c[ImGuiCol_ResizeGrip] = color::kViolet;
-    c[ImGuiCol_ResizeGripHovered] = color::kOrange;
-    c[ImGuiCol_ResizeGripActive] = color::kCream;
-    c[ImGuiCol_Tab] = color::kPanel;
-    c[ImGuiCol_TabHovered] = Rgb(0x7567BC);
-    c[ImGuiCol_TabActive] = color::kViolet;
-    c[ImGuiCol_TabUnfocused] = color::kPanel;
-    c[ImGuiCol_TabUnfocusedActive] = color::kViolet;
-    c[ImGuiCol_TabSelectedOverline] = color::kOrange;
-    c[ImGuiCol_TabDimmedSelectedOverline] = color::kOrange;
-    c[ImGuiCol_TableHeaderBg] = color::kViolet;
-    c[ImGuiCol_TableBorderStrong] = color::kViolet;
-    c[ImGuiCol_TableBorderLight] = Rgb(0x2A2560);
+    c[ImGuiCol_MenuBarBg] = clear;
+    c[ImGuiCol_ScrollbarBg] = clear;
+    c[ImGuiCol_ScrollbarGrab] = Rgb(0xFFFFFF, 0.18f);
+    c[ImGuiCol_ScrollbarGrabHovered] = Rgb(0xFFFFFF, 0.30f);
+    c[ImGuiCol_ScrollbarGrabActive] = Rgb(0xFFFFFF, 0.42f);
+    c[ImGuiCol_CheckMark] = color::kAccentHover;
+    c[ImGuiCol_SliderGrab] = color::kAccentHover;
+    c[ImGuiCol_SliderGrabActive] = Rgb(0x9A90FF);
+    c[ImGuiCol_Button] = color::kGlass;
+    c[ImGuiCol_ButtonHovered] = color::kGlassHover;
+    c[ImGuiCol_ButtonActive] = Rgb(0xFFFFFF, 0.16f);
+    c[ImGuiCol_Header] = Rgb(0x5B4DE3, 0.35f);
+    c[ImGuiCol_HeaderHovered] = Rgb(0x5B4DE3, 0.50f);
+    c[ImGuiCol_HeaderActive] = Rgb(0x5B4DE3, 0.70f);
+    c[ImGuiCol_Separator] = Rgb(0xFFFFFF, 0.10f);
+    c[ImGuiCol_SeparatorHovered] = color::kAccentHover;
+    c[ImGuiCol_SeparatorActive] = color::kAccentHover;
+    c[ImGuiCol_ResizeGrip] = Rgb(0xFFFFFF, 0.12f);
+    c[ImGuiCol_ResizeGripHovered] = color::kAccentHover;
+    c[ImGuiCol_ResizeGripActive] = color::kAccentPressed;
+    c[ImGuiCol_Tab] = clear;
+    c[ImGuiCol_TabHovered] = Rgb(0x5B4DE3, 0.40f);
+    c[ImGuiCol_TabActive] = Rgb(0x5B4DE3, 0.55f);
+    c[ImGuiCol_TabUnfocused] = clear;
+    c[ImGuiCol_TabUnfocusedActive] = Rgb(0x5B4DE3, 0.40f);
+    c[ImGuiCol_TabSelectedOverline] = color::kAccentHover;
+    c[ImGuiCol_TabDimmedSelectedOverline] = color::kAccentHover;
+    c[ImGuiCol_TableHeaderBg] = Rgb(0xFFFFFF, 0.08f);
+    c[ImGuiCol_TableBorderStrong] = Rgb(0xFFFFFF, 0.12f);
+    c[ImGuiCol_TableBorderLight] = Rgb(0xFFFFFF, 0.06f);
     c[ImGuiCol_TableRowBg] = clear;
-    c[ImGuiCol_TableRowBgAlt] = Rgb(0xF6F0DC, 0.04f);
-    c[ImGuiCol_TextSelectedBg] = Rgb(0xFF7A1A, 0.40f);
-    c[ImGuiCol_NavCursor] = color::kCream;
-    c[ImGuiCol_DragDropTarget] = color::kCream;
-    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x05050F, 0.70f);
+    c[ImGuiCol_TableRowBgAlt] = Rgb(0xFFFFFF, 0.025f);
+    c[ImGuiCol_TextSelectedBg] = Rgb(0x5B4DE3, 0.45f);
+    c[ImGuiCol_NavCursor] = color::kAccentHover;
+    c[ImGuiCol_DragDropTarget] = color::kAccentHover;
+    c[ImGuiCol_ModalWindowDimBg] = Rgb(0x03030A, 0.65f);
 
-    // Square, outlined, and sized in whole art pixels. Antialiasing is off so edges stay hard.
-    const float px = Px(1.0f);
     style.WindowRounding = 0.0f;
-    style.ChildRounding = 0.0f;
-    style.FrameRounding = 0.0f;
-    style.PopupRounding = 0.0f;
-    style.ScrollbarRounding = 0.0f;
-    style.GrabRounding = 0.0f;
-    style.TabRounding = 0.0f;
+    style.ChildRounding = 14.0f;
+    style.FrameRounding = 10.0f;
+    style.PopupRounding = 14.0f;
+    style.ScrollbarRounding = 10.0f;
+    style.GrabRounding = 10.0f;
+    style.TabRounding = 10.0f;
     style.WindowBorderSize = 0.0f;
-    style.ChildBorderSize = px;
-    style.FrameBorderSize = px;
-    style.PopupBorderSize = px;
+    style.ChildBorderSize = 0.0f;
+    style.FrameBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
     style.TabBorderSize = 0.0f;
-    style.WindowPadding = ImVec2(Px(8.0f), Px(7.0f));
-    style.FramePadding = ImVec2(Px(4.0f), Px(3.0f));
-    style.ItemSpacing = ImVec2(Px(5.0f), Px(4.0f));
-    style.ItemInnerSpacing = ImVec2(Px(3.0f), Px(3.0f));
-    style.CellPadding = ImVec2(Px(4.0f), Px(3.0f));
-    style.ScrollbarSize = Px(5.0f);
-    style.GrabMinSize = Px(6.0f);
-    style.IndentSpacing = Px(8.0f);
-    style.SeparatorTextBorderSize = px;
+    style.WindowPadding = ImVec2(18.0f, 16.0f);
+    style.FramePadding = ImVec2(12.0f, 7.0f);
+    style.ItemSpacing = ImVec2(12.0f, 10.0f);
+    style.ItemInnerSpacing = ImVec2(10.0f, 6.0f);
+    style.CellPadding = ImVec2(10.0f, 7.0f);
+    style.ScrollbarSize = 10.0f;
+    style.GrabMinSize = 16.0f;
+    style.IndentSpacing = 20.0f;
+    style.SeparatorTextBorderSize = 1.0f;
     style.DisabledAlpha = 0.45f;
-    style.AntiAliasedLines = false;
-    style.AntiAliasedLinesUseTex = false;
-    style.AntiAliasedFill = false;
 }
 
-// --- Fonts and art ---
+// --- Fonts and pictures ---
 
 void LoadFonts(float pixelScale) {
     ImGuiIO& io = ImGui::GetIO();
     const float dpi = pixelScale >= 1.0f ? pixelScale : 1.0f;
 
-    g_icons = LoadSheet(kIconsPng, sizeof(kIconsPng));
-    g_font = LoadSheet(kFontPng, sizeof(kFontPng));
-    g_frames = LoadSheet(kFramesPng, sizeof(kFramesPng));
-    g_iconNames.clear();
-    for (size_t start = 0, n = std::strlen(kIconNames); start < n;) {
-        const size_t end = std::min(n, std::string(kIconNames).find('\n', start));
-        if (end > start) g_iconNames.emplace_back(kIconNames + start, end - start);
-        start = end + 1;
-    }
-
-    // One font per size. Each glyph is a rectangle in Dear ImGui's atlas; the bitmaps are written into
-    // those rectangles after the atlas is built, scaled up by whole numbers so nothing is smoothed.
-    std::vector<PendingGlyph> pending;
-    auto make = [&](int artScale) -> ImFont* {
-        const int pd = std::max(1, static_cast<int>(std::lround(static_cast<float>(artScale) * dpi)));
+    static const ImWchar kIconRange[] = {0xE000, 0xF8FF, 0};
+    auto add = [&](const unsigned char* data, size_t size, float logical, const ImWchar* ranges = nullptr) {
         ImFontConfig config;
-        config.SizePixels = 9.0f * static_cast<float>(pd); // 7 rows of glyph and 2 of leading
-        config.OversampleH = 1;
+        config.FontDataOwnedByAtlas = false; // the bytes are static
+        config.OversampleH = 2;
         config.OversampleV = 1;
-        ImFont* font = io.Fonts->AddFontDefault(&config);
-        const float advance = 6.0f * static_cast<float>(pd);
-        const ImVec2 offset(0.0f, static_cast<float>(pd)); // centre 7 rows in the 9-row line
-        for (int code = 33; code <= 126; ++code) {
-            int source = code;
-            if (code >= 'a' && code <= 'z') source = code - 32; // the font has capitals only
-            if (!GlyphPresent(source)) continue;
-            const int rect = io.Fonts->AddCustomRectFontGlyph(font, static_cast<ImWchar>(code), kGlyphWidth * pd,
-                                                              kGlyphHeight * pd, advance, offset);
-            pending.push_back({rect, source, pd});
-        }
-        const int space = io.Fonts->AddCustomRectFontGlyph(font, ' ', 1, 1, 4.0f * static_cast<float>(pd), offset);
-        pending.push_back({space, 0, pd});
-        return font;
+        config.GlyphRanges = ranges;
+        return io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(data), static_cast<int>(size), logical * dpi,
+                                              &config);
     };
-    g_fonts.body = make(2);
-    g_fonts.small = g_fonts.body;
-    g_fonts.heading = make(3);
-    g_fonts.display = make(5);
 
-    unsigned char* atlas = nullptr;
-    int atlasWidth = 0, atlasHeight = 0;
-    io.Fonts->GetTexDataAsRGBA32(&atlas, &atlasWidth, &atlasHeight);
-    for (const PendingGlyph& glyph : pending) {
-        const ImFontAtlasCustomRect* rect = io.Fonts->GetCustomRectByIndex(glyph.rect);
-        if (!rect || !atlas) continue;
-        for (int y = 0; y < rect->Height; ++y) {
-            for (int x = 0; x < rect->Width; ++x) {
-                const bool on = glyph.code != 0 && GlyphPixel(glyph.code, x / glyph.scale, y / glyph.scale);
-                auto* out =
-                    reinterpret_cast<uint32_t*>(atlas) + static_cast<size_t>(rect->Y + y) * atlasWidth + rect->X + x;
-                *out = on ? 0xFFFFFFFFu : 0x00FFFFFFu;
-            }
-        }
+    g_fonts.body = add(kInterRegular, sizeof(kInterRegular), 15.0f);
+    g_fonts.small = add(kInterRegular, sizeof(kInterRegular), 13.0f);
+    g_fonts.label = add(kInterSemiBold, sizeof(kInterSemiBold), 15.0f);
+    g_fonts.heading = add(kInterBold, sizeof(kInterBold), 24.0f);
+    g_fonts.title = add(kInterBold, sizeof(kInterBold), 32.0f);
+    g_fonts.display = add(kInterBold, sizeof(kInterBold), 44.0f);
+    g_iconsFilled.clear();
+    g_iconsRegular.clear();
+    for (float size : {16.0f, 20.0f, 24.0f, 32.0f, 48.0f}) {
+        g_iconsFilled.push_back({size, add(kPhosphorFill, sizeof(kPhosphorFill), size, kIconRange)});
+        g_iconsRegular.push_back({size, add(kPhosphorRegular, sizeof(kPhosphorRegular), size, kIconRange)});
     }
 
+    if (!g_fonts.body || !g_fonts.small || !g_fonts.label || !g_fonts.heading || !g_fonts.title || !g_fonts.display) {
+        // Fall back to ImGui's own font for text rather than draw with a null font.
+        io.Fonts->Clear();
+        ImFontConfig fallback;
+        fallback.SizePixels = 15.0f * dpi;
+        ImFont* builtin = io.Fonts->AddFontDefault(&fallback);
+        g_fonts = Fonts{builtin, builtin, builtin, builtin, builtin, builtin};
+        g_iconsFilled.clear();
+        g_iconsRegular.clear();
+    }
     io.FontDefault = g_fonts.body;
     io.FontGlobalScale = 1.0f / dpi;
-}
 
-void OnNewFrame() {
-    if (g_fontFilterDone) return;
-    const ImTextureID id = ImGui::GetIO().Fonts->TexID;
-    if (!id) return;
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(id));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    g_fontFilterDone = true;
+    int w = 0, h = 0, channels = 0;
+    unsigned char* pixels =
+        stbi_load_from_memory(kBackgroundJpg, static_cast<int>(sizeof(kBackgroundJpg)), &w, &h, &channels, 4);
+    if (pixels) {
+        g_background = MakeTexture(pixels, w, h);
+        stbi_image_free(pixels);
+    }
+    unsigned char ramp[64 * 4];
+    for (int i = 0; i < 64; ++i) {
+        ramp[i * 4 + 0] = ramp[i * 4 + 1] = ramp[i * 4 + 2] = 255;
+        ramp[i * 4 + 3] = static_cast<unsigned char>(i * 255 / 63);
+    }
+    g_ramp = MakeTexture(ramp, 1, 64);
 }
 
 const Fonts& GetFonts() { return g_fonts; }
@@ -281,121 +274,148 @@ const Fonts& GetFonts() { return g_fonts; }
 
 namespace {
 
-const char* IconSpriteName(Icon icon) {
+unsigned IconCodepoint(Icon icon) {
     switch (icon) {
-    case Icon::Home:         return "home";
-    case Icon::Games:        return "games";
-    case Icon::Settings:     return "settings";
-    case Icon::Scripts:      return "console";
-    case Icon::Memory:       return "chip";
-    case Icon::Trophy:       return "trophy";
-    case Icon::Simulator:    return "controller";
-    case Icon::Play:         return "play";
-    case Icon::Stop:         return "stop";
-    case Icon::Rewind:       return "rewind";
-    case Icon::Plus:         return "plus";
-    case Icon::Edit:         return "edit";
-    case Icon::Trash:        return "trash";
-    case Icon::Folder:       return "folder";
-    case Icon::Image:        return "camera";
-    case Icon::Search:       return "search";
-    case Icon::Check:        return "check";
-    case Icon::Info:         return "info";
-    case Icon::Warning:      return "warning";
-    case Icon::ChevronRight: return "chevron_right";
-    case Icon::ChevronDown:  return "chevron_down";
-    case Icon::Close:        return "cross";
-    case Icon::Minimize:     return "minimize";
-    case Icon::Maximize:     return "maximize";
-    case Icon::Restore:      return "restore";
+    case Icon::Home:         return 0xE2C2;
+    case Icon::Games:        return 0xE26E;
+    case Icon::Recent:       return 0xE1A0;
+    case Icon::Star:         return 0xE46A;
+    case Icon::Settings:     return 0xE270;
+    case Icon::Info:         return 0xE2CE;
+    case Icon::Play:         return 0xE3D0;
+    case Icon::Stop:         return 0xE46C;
+    case Icon::Pause:        return 0xE39E;
+    case Icon::Rewind:       return 0xE6A8;
+    case Icon::FastForward:  return 0xE6A6;
+    case Icon::Plus:         return 0xE3D4;
+    case Icon::Edit:         return 0xE3B4;
+    case Icon::Trash:        return 0xE4A6;
+    case Icon::Folder:       return 0xE256;
+    case Icon::Image:        return 0xE2CA;
+    case Icon::Search:       return 0xE30C;
+    case Icon::Check:        return 0xE182;
+    case Icon::Warning:      return 0xE4E0;
+    case Icon::ChevronRight: return 0xE13A;
+    case Icon::ChevronDown:  return 0xE136;
+    case Icon::ArrowRight:   return 0xE06C;
+    case Icon::ArrowLeft:    return 0xE058;
+    case Icon::Close:        return 0xE4F6;
+    case Icon::Minimize:     return 0xE32A;
+    case Icon::Maximize:     return 0xE45E;
+    case Icon::Restore:      return 0xE1CA;
+    case Icon::Scripts:      return 0xE1BC;
+    case Icon::Memory:       return 0xE610;
+    case Icon::Trophy:       return 0xE67E;
+    case Icon::Simulator:    return 0xE408;
+    case Icon::Heart:        return 0xE2A8;
+    case Icon::More:         return 0xE1FE;
+    case Icon::Calendar:     return 0xE10A;
+    case Icon::Publisher:    return 0xE102;
+    case Icon::Display:      return 0xE32E;
+    case Icon::Sound:        return 0xE44A;
+    case Icon::Keyboard:     return 0xE2D8;
+    case Icon::Lightning:    return 0xE2DE;
+    case Icon::Tag:          return 0xE478;
+    case Icon::Link:         return 0xE2E2;
+    case Icon::Download:     return 0xE20C;
     case Icon::None:         break;
     }
-    return nullptr;
+    return 0;
 }
 
-int IconCell(Icon icon) {
-    static int cache[64];
-    static bool filled[64] = {};
-    const int key = static_cast<int>(icon);
-    if (key < 0 || key >= 64) return -1;
-    if (!filled[key]) {
-        cache[key] = -1;
-        if (const char* name = IconSpriteName(icon)) {
-            for (size_t i = 0; i < g_iconNames.size(); ++i)
-                if (g_iconNames[i] == name) cache[key] = static_cast<int>(i);
-        }
-        filled[key] = true;
+int Utf8(unsigned cp, char* out) {
+    if (cp < 0x80) {
+        out[0] = static_cast<char>(cp);
+        out[1] = 0;
+        return 1;
     }
-    return cache[key];
+    if (cp < 0x800) {
+        out[0] = static_cast<char>(0xC0 | (cp >> 6));
+        out[1] = static_cast<char>(0x80 | (cp & 0x3F));
+        out[2] = 0;
+        return 2;
+    }
+    out[0] = static_cast<char>(0xE0 | (cp >> 12));
+    out[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    out[2] = static_cast<char>(0x80 | (cp & 0x3F));
+    out[3] = 0;
+    return 3;
 }
 
-float Snap(float v) { return std::round(v); }
+ImFont* IconFontFor(float size, bool filled) {
+    const std::vector<IconFont>& fonts = filled ? g_iconsFilled : g_iconsRegular;
+    ImFont* best = nullptr;
+    float bestDiff = FLT_MAX;
+    for (const IconFont& f : fonts) {
+        const float diff = std::fabs(f.size - size);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = f.font;
+        }
+    }
+    return best;
+}
 
 } // namespace
 
-void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 tint) {
-    if (icon == Icon::None || !g_icons.texture) return;
-    const int cell = IconCell(icon);
-    if (cell < 0) return;
-    const float cx = static_cast<float>((cell % kIconColumns) * kIconCell);
-    const float cy = static_cast<float>((cell / kIconColumns) * kIconCell);
-    const float w = static_cast<float>(g_icons.width), h = static_cast<float>(g_icons.height);
-    const ImVec2 p0(Snap(center.x - size * 0.5f), Snap(center.y - size * 0.5f));
-    draw->AddImage(static_cast<ImTextureID>(g_icons.texture), p0, ImVec2(p0.x + size, p0.y + size),
-                   ImVec2(cx / w, cy / h), ImVec2((cx + kIconCell) / w, (cy + kIconCell) / h), tint);
+void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 color, bool filled) {
+    const unsigned cp = IconCodepoint(icon);
+    ImFont* font = IconFontFor(size, filled);
+    if (!cp || !font) return;
+    char text[8];
+    Utf8(cp, text);
+    const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+    draw->AddText(font, size, ImVec2(std::round(center.x - extent.x * 0.5f), std::round(center.y - extent.y * 0.5f)),
+                  color, text);
 }
 
-// --- Frames ---
+// --- Shapes ---
 
-void DrawFrame(ImDrawList* draw, ImVec2 min, ImVec2 max, Frame frame, ImU32 fill) {
-    const float p = Px(1.0f);
-    const float x0 = Snap(min.x), y0 = Snap(min.y), x1 = Snap(max.x), y1 = Snap(max.y);
-    if (x1 - x0 < p * 2 * kFrameCorner || y1 - y0 < p * 2 * kFrameCorner) {
-        if ((fill >> IM_COL32_A_SHIFT) != 0) draw->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), fill);
-        return;
-    }
-    if ((fill >> IM_COL32_A_SHIFT) != 0) {
-        draw->AddRectFilled(ImVec2(x0 + 2 * p, y0 + p), ImVec2(x1 - 2 * p, y1 - p), fill);
-        draw->AddRectFilled(ImVec2(x0 + p, y0 + 2 * p), ImVec2(x1 - p, y1 - 2 * p), fill);
-    }
-    if (!g_frames.texture) return;
-
-    const float ox = static_cast<float>(static_cast<int>(frame) * kFrameCell);
-    const float sw = static_cast<float>(g_frames.width), sh = static_cast<float>(g_frames.height);
-    const ImTextureID tex = static_cast<ImTextureID>(g_frames.texture);
-    const ImU32 tint = Tint();
-    const float c = kFrameCorner * p;
-    auto piece = [&](float dx0, float dy0, float dx1, float dy1, float ux0, float uy0, float ux1, float uy1) {
-        draw->AddImage(tex, ImVec2(dx0, dy0), ImVec2(dx1, dy1), ImVec2((ox + ux0) / sw, uy0 / sh),
-                       ImVec2((ox + ux1) / sw, uy1 / sh), tint);
-    };
-    const float k = static_cast<float>(kFrameCorner), e = static_cast<float>(kFrameCell - kFrameCorner);
-    const float f = static_cast<float>(kFrameCell);
-    piece(x0, y0, x0 + c, y0 + c, 0, 0, k, k); // corners
-    piece(x1 - c, y0, x1, y0 + c, e, 0, f, k);
-    piece(x0, y1 - c, x0 + c, y1, 0, e, k, f);
-    piece(x1 - c, y1 - c, x1, y1, e, e, f, f);
-    piece(x0 + c, y0, x1 - c, y0 + c, k, 0, e, k); // edges
-    piece(x0 + c, y1 - c, x1 - c, y1, k, e, e, f);
-    piece(x0, y0 + c, x0 + c, y1 - c, 0, k, k, e);
-    piece(x1 - c, y0 + c, x1, y1 - c, e, k, f, e);
+void DrawGradientFill(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 base, float rounding, float shine) {
+    draw->AddRectFilled(min, max, base, rounding);
+    if (!g_ramp.id || shine <= 0.0f) return;
+    // The ramp is opaque at the bottom, so flip it to put the shine at the top.
+    draw->AddImageRounded(static_cast<ImTextureID>(g_ramp.id), min, max, ImVec2(0, 1), ImVec2(1, 0),
+                          ImGui::GetColorU32(ImVec4(1, 1, 1, shine)), rounding);
 }
 
-void DrawDitherBand(ImDrawList* draw, ImVec2 min, ImVec2 max, int rows) {
-    if (!g_frames.texture || rows <= 0) return;
-    const float tile = static_cast<float>(kDitherCell) * Px(1.0f);
-    const float sw = static_cast<float>(g_frames.width), sh = static_cast<float>(g_frames.height);
-    const ImTextureID tex = static_cast<ImTextureID>(g_frames.texture);
-    for (int r = 0; r < rows; ++r) {
-        const int density = std::min(3, r * 4 / rows);
-        const float y = Snap(max.y - static_cast<float>(rows - r) * tile);
-        if (y + tile < min.y) continue;
-        const float u0 = static_cast<float>(kDitherX + density * kDitherCell);
-        const float v0 = static_cast<float>(kDitherY);
-        for (float x = Snap(min.x); x < max.x; x += tile)
-            draw->AddImage(tex, ImVec2(x, y), ImVec2(x + tile, y + tile), ImVec2(u0 / sw, v0 / sh),
-                           ImVec2((u0 + kDitherCell) / sw, (v0 + kDitherCell) / sh), IM_COL32_WHITE);
+void DrawBackground(ImDrawList* draw, ImVec2 min, ImVec2 max) {
+    draw->AddRectFilled(min, max, ImGui::GetColorU32(color::kBackground));
+    if (g_background.id) DrawImageCover(draw, g_background.id, g_background.width, g_background.height, min, max, 0.0f);
+}
+
+void DrawShade(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding, float strength) {
+    if (!g_ramp.id) return;
+    draw->AddImageRounded(static_cast<ImTextureID>(g_ramp.id), min, max, ImVec2(0, 0), ImVec2(1, 1),
+                          ImGui::GetColorU32(ImVec4(0.02f, 0.02f, 0.06f, strength)), rounding);
+}
+
+void DrawImageCover(ImDrawList* draw, unsigned texture, int texWidth, int texHeight, ImVec2 min, ImVec2 max,
+                    float rounding, ImU32 tint) {
+    const float boxW = max.x - min.x, boxH = max.y - min.y;
+    if (boxW <= 0 || boxH <= 0 || texWidth <= 0 || texHeight <= 0) return;
+    const float boxAspect = boxW / boxH, texAspect = static_cast<float>(texWidth) / static_cast<float>(texHeight);
+    ImVec2 uv0(0, 0), uv1(1, 1);
+    if (texAspect > boxAspect) { // the picture is wider: crop the sides
+        const float keep = boxAspect / texAspect;
+        uv0.x = (1 - keep) * 0.5f;
+        uv1.x = uv0.x + keep;
+    } else { // taller: crop the top and bottom
+        const float keep = texAspect / boxAspect;
+        uv0.y = (1 - keep) * 0.5f;
+        uv1.y = uv0.y + keep;
     }
+    draw->AddImageRounded(static_cast<ImTextureID>(texture), min, max, uv0, uv1, tint, rounding);
+}
+
+void DrawSelectionRing(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding) {
+    for (int i = 4; i >= 1; --i) {
+        const float grow = static_cast<float>(i) * 2.5f;
+        draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow),
+                      ImGui::GetColorU32(Rgb(0x7A6BFF, 0.10f)), rounding + grow, 0, 2.5f);
+    }
+    draw->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2), ImGui::GetColorU32(Rgb(0x8E82FF)),
+                  rounding + 2.0f, 0, 3.0f);
 }
 
 // --- Widgets ---
@@ -404,61 +424,66 @@ namespace {
 
 struct ButtonLook {
     ImVec4 fill;
+    ImVec4 border;
     ImVec4 text;
-    Frame frame;
-    bool framed;
+    bool gloss;
 };
 
 ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
     switch (style) {
     case ButtonStyle::Primary:
-        if (held) return {color::kCream, color::kInk, Frame::Orange, true};
-        return {hovered ? color::kCream : color::kOrange, color::kInk, Frame::Cream, true};
+        return {held      ? color::kAccentPressed
+                : hovered ? color::kAccentHover
+                          : color::kAccent,
+                ImVec4(0, 0, 0, 0), color::kOnAccent, true};
     case ButtonStyle::Ghost:
-        if (held) return {color::kOrange, color::kInk, Frame::Orange, false};
-        return {hovered ? color::kViolet : ImVec4(0, 0, 0, 0), color::kCream, Frame::Violet, false};
+        return {held      ? Rgb(0xFFFFFF, 0.14f)
+                : hovered ? Rgb(0xFFFFFF, 0.08f)
+                          : ImVec4(0, 0, 0, 0),
+                ImVec4(0, 0, 0, 0), hovered ? color::kText : color::kTextMuted, false};
     case ButtonStyle::Danger:
-        if (held) return {color::kCream, color::kInk, Frame::Cream, true};
-        if (hovered) return {color::kOrange, color::kInk, Frame::Cream, true};
-        return {color::kInk, color::kOrange, Frame::Orange, true};
+        return {held      ? WithAlpha(color::kDanger, 0.32f)
+                : hovered ? WithAlpha(color::kDanger, 0.22f)
+                          : WithAlpha(color::kDanger, 0.10f),
+                WithAlpha(color::kDanger, hovered ? 0.8f : 0.5f), hovered ? Rgb(0xFFD6DB) : color::kDanger, false};
     case ButtonStyle::Secondary:
     default:
-        if (held) return {color::kOrange, color::kInk, Frame::Cream, true};
-        if (hovered) return {color::kViolet, color::kCream, Frame::Orange, true};
-        return {color::kPanel, color::kCream, Frame::Violet, true};
+        return {held      ? Rgb(0xFFFFFF, 0.17f)
+                : hovered ? Rgb(0xFFFFFF, 0.12f)
+                          : Rgb(0xFFFFFF, 0.07f),
+                Rgb(0xFFFFFF, hovered ? 0.20f : 0.12f), color::kText, false};
     }
 }
 
-void PaintButton(ImDrawList* draw, ImVec2 min, ImVec2 max, const ButtonLook& look) {
-    if (look.framed) {
-        DrawFrame(draw, min, max, look.frame, Col(look.fill));
-    } else if (look.fill.w > 0.0f) {
-        draw->AddRectFilled(min, max, Col(look.fill));
-    }
+constexpr float kButtonHeight = 44.0f;
+constexpr float kButtonRounding = 12.0f;
+
+void Paint(ImDrawList* draw, ImVec2 min, ImVec2 max, const ButtonLook& look, float rounding) {
+    if (look.gloss) DrawGradientFill(draw, min, max, Col(look.fill), rounding);
+    else if (look.fill.w > 0.0f) draw->AddRectFilled(min, max, Col(look.fill), rounding);
+    if (look.border.w > 0.0f) draw->AddRect(min, max, Col(look.border), rounding, 0, 1.0f);
 }
 
-void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max) {
+void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding) {
     const ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible) {
-        const float p = Px(1.0f);
-        draw->AddRect(ImVec2(min.x - p, min.y - p), ImVec2(max.x + p, max.y + p), Col(color::kCream), 0.0f, 0, p);
-    }
+    if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible)
+        draw->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2), Col(color::kAccentHover),
+                      rounding + 2.0f, 0, 2.0f);
 }
 
 } // namespace
 
-bool Button(const char* label, ButtonStyle style, Icon icon, ImVec2 size) {
-    const float p = Px(1.0f);
+bool Button(const char* label, ButtonStyle style, Icon icon, ImVec2 size, bool iconAfterLabel) {
     const char* labelEnd = ImGui::FindRenderedTextEnd(label);
-    const ImVec2 textSize = ImGui::CalcTextSize(label, labelEnd);
-    const float iconSize = icon != Icon::None ? 16.0f * p : 0.0f;
-    const float gap = (icon != Icon::None && textSize.x > 0.0f) ? 3.0f * p : 0.0f;
+    const ImVec2 textSize = Measure(g_fonts.label, std::string(label, labelEnd).c_str());
+    const float iconSize = icon != Icon::None ? 20.0f : 0.0f;
+    const float gap = (icon != Icon::None && textSize.x > 0.0f) ? 10.0f : 0.0f;
     const float contentWidth = iconSize + gap + textSize.x;
 
     float width = size.x;
-    if (width == 0.0f) width = contentWidth + 14.0f * p;
-    else if (width < 0.0f) width = std::max(8.0f * p, ImGui::GetContentRegionAvail().x + width);
-    const float height = size.y > 0.0f ? size.y : 20.0f * p;
+    if (width == 0.0f) width = contentWidth + 40.0f;
+    else if (width < 0.0f) width = std::max(40.0f, ImGui::GetContentRegionAvail().x + width);
+    const float height = size.y > 0.0f ? size.y : kButtonHeight;
 
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + width, min.y + height);
@@ -468,22 +493,26 @@ bool Button(const char* label, ButtonStyle style, Icon icon, ImVec2 size) {
 
     const ButtonLook look = LookFor(style, hovered, held);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    PaintButton(draw, min, max, look);
-    FocusRing(draw, min, max);
+    Paint(draw, min, max, look, kButtonRounding);
+    FocusRing(draw, min, max, kButtonRounding);
 
-    const float midY = min.y + height * 0.5f + (held ? p : 0.0f);
-    float x = Snap(min.x + (width - contentWidth) * 0.5f);
-    if (icon != Icon::None) {
-        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize, Tint());
+    const float midY = min.y + height * 0.5f;
+    float x = std::round(min.x + (width - contentWidth) * 0.5f);
+    if (icon != Icon::None && !iconAfterLabel) {
+        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize, Col(look.text));
         x += iconSize + gap;
     }
-    if (textSize.x > 0.0f) draw->AddText(ImVec2(x, Snap(midY - textSize.y * 0.5f)), Col(look.text), label, labelEnd);
+    if (textSize.x > 0.0f) {
+        PutText(draw, g_fonts.label, ImVec2(x, std::round(midY - textSize.y * 0.5f)), Col(look.text), label, labelEnd);
+        x += textSize.x + gap;
+    }
+    if (icon != Icon::None && iconAfterLabel)
+        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize, Col(look.text));
     return clicked;
 }
 
-bool IconButton(const char* id, Icon icon, ButtonStyle style, const char* tooltip, float size) {
-    const float p = Px(1.0f);
-    const float side = size > 0.0f ? size : 20.0f * p;
+bool IconButton(const char* id, Icon icon, ButtonStyle style, const char* tooltip, float size, bool filled) {
+    const float side = size > 0.0f ? size : kButtonHeight;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + side, min.y + side);
     const bool clicked = ImGui::InvisibleButton(id, ImVec2(side, side));
@@ -492,33 +521,37 @@ bool IconButton(const char* id, Icon icon, ButtonStyle style, const char* toolti
 
     const ButtonLook look = LookFor(style, hovered, held);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    PaintButton(draw, min, max, look);
-    FocusRing(draw, min, max);
-    DrawIcon(draw, icon, ImVec2(min.x + side * 0.5f, min.y + side * 0.5f + (held ? p : 0.0f)), 16.0f * p, Tint());
+    Paint(draw, min, max, look, kButtonRounding);
+    FocusRing(draw, min, max, kButtonRounding);
+    DrawIcon(draw, icon, ImVec2(min.x + side * 0.5f, min.y + side * 0.5f), std::round(side * 0.5f), Col(look.text),
+             filled);
 
     if (tooltip && hovered) ImGui::SetTooltip("%s", tooltip);
     return clicked;
 }
 
-bool NavItem(Icon icon, const char* label, bool selected) {
-    const float p = Px(1.0f);
-    const float height = 22.0f * p;
+bool NavItem(Icon icon, const char* label, bool selected, bool compact) {
+    const float kHeight = compact ? 40.0f : 50.0f;
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 min = ImGui::GetCursorScreenPos();
-    const ImVec2 max(min.x + width, min.y + height);
-    const bool clicked = ImGui::InvisibleButton(label, ImVec2(width, height));
+    const ImVec2 max(min.x + width, min.y + kHeight);
+    const bool clicked = ImGui::InvisibleButton(label, ImVec2(width, kHeight));
     const bool hovered = ImGui::IsItemHovered();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (selected) draw->AddRectFilled(min, max, Col(color::kViolet));
-    else if (hovered) draw->AddRectFilled(min, max, Col(color::kPanel));
-    if (selected) draw->AddRectFilled(min, ImVec2(min.x + 2.0f * p, max.y), Col(color::kOrange));
-    FocusRing(draw, min, max);
+    if (selected) {
+        DrawGradientFill(draw, min, max, Col(color::kAccent), 14.0f, 0.20f);
+        draw->AddRect(min, max, Col(Rgb(0xFFFFFF, 0.30f)), 14.0f, 0, 1.0f);
+    } else if (hovered) {
+        draw->AddRectFilled(min, max, Col(Rgb(0xFFFFFF, 0.07f)), 14.0f);
+    }
+    FocusRing(draw, min, max, 14.0f);
 
-    const float midY = min.y + height * 0.5f;
-    DrawIcon(draw, icon, ImVec2(min.x + 14.0f * p, midY), 16.0f * p, Tint());
-    const ImVec2 textSize = ImGui::CalcTextSize(label);
-    draw->AddText(ImVec2(min.x + 26.0f * p, Snap(midY - textSize.y * 0.5f)), Col(color::kText), label);
+    const ImVec4& fg = selected ? color::kOnAccent : hovered ? color::kText : color::kTextMuted;
+    const float midY = min.y + kHeight * 0.5f;
+    DrawIcon(draw, icon, ImVec2(min.x + 30.0f, midY), compact ? 20.0f : 24.0f, Col(fg));
+    const ImVec2 textSize = Measure(g_fonts.label, label);
+    PutText(draw, g_fonts.label, ImVec2(min.x + 56.0f, std::round(midY - textSize.y * 0.5f)), Col(fg), label);
     return clicked;
 }
 
@@ -530,17 +563,26 @@ bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip,
     const bool held = ImGui::IsItemActive();
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    if (hovered) draw->AddRectFilled(min, max, Col(isClose ? (held ? color::kCream : color::kOrange) : color::kViolet));
-    DrawIcon(draw, icon, ImVec2(min.x + size.x * 0.5f, min.y + size.y * 0.5f), 16.0f * Px(1.0f), Tint());
+    ImVec4 fg = hovered ? color::kText : color::kTextMuted;
+    if (hovered) {
+        draw->AddRectFilled(min, max,
+                            Col(isClose ? (held ? Rgb(0xA82317) : Rgb(0xD13438)) : Rgb(0xFFFFFF, held ? 0.16f : 0.10f)),
+                            8.0f);
+        if (isClose) fg = color::kOnAccent;
+    }
+    DrawIcon(draw, icon, ImVec2(min.x + size.x * 0.5f, min.y + size.y * 0.5f), 16.0f, Col(fg), false);
     if (tooltip && hovered) ImGui::SetTooltip("%s", tooltip);
     return clicked;
 }
 
 namespace {
-std::vector<Frame> g_cardFrames;
-}
+struct CardState {
+    float rounding;
+};
+std::vector<CardState> g_cards;
+} // namespace
 
-bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding, Frame frame) {
+bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding, float rounding) {
     // The panel itself is drawn in EndCard, once the final size is known.
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
@@ -550,7 +592,7 @@ bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding, Fra
     const bool visible = ImGui::BeginChild(id, size, flags, ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
-    g_cardFrames.push_back(frame);
+    g_cards.push_back({rounding});
     return visible;
 }
 
@@ -558,14 +600,17 @@ void EndCard() {
     const ImVec2 pos = ImGui::GetWindowPos();
     const ImVec2 size = ImGui::GetWindowSize();
     ImGui::EndChild();
-    const Frame frame = g_cardFrames.empty() ? Frame::Violet : g_cardFrames.back();
-    if (!g_cardFrames.empty()) g_cardFrames.pop_back();
+    const float rounding = g_cards.empty() ? 18.0f : g_cards.back().rounding;
+    if (!g_cards.empty()) g_cards.pop_back();
     // A child window draws after its parent, so this lands behind the card's contents.
-    DrawFrame(ImGui::GetWindowDrawList(), pos, ImVec2(pos.x + size.x, pos.y + size.y), frame, Col(color::kPanel));
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 max(pos.x + size.x, pos.y + size.y);
+    draw->AddRectFilled(pos, max, Col(color::kGlass), rounding);
+    draw->AddRect(pos, max, Col(color::kGlassBorder), rounding, 0, 1.0f);
 }
 
 void PageTitleText(const char* title, const char* subtitle) {
-    ImGui::PushFont(g_fonts.heading);
+    ImGui::PushFont(g_fonts.title);
     ImGui::TextUnformatted(title);
     ImGui::PopFont();
     if (subtitle && *subtitle) {
@@ -577,32 +622,75 @@ void PageTitleText(const char* title, const char* subtitle) {
 
 void PageTitle(const char* title, const char* subtitle) {
     PageTitleText(title, subtitle);
-    ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
-    const ImVec2 min = ImGui::GetCursorScreenPos();
-    ImGui::GetWindowDrawList()->AddRectFilled(min, ImVec2(min.x + ImGui::GetContentRegionAvail().x, min.y + Px(1.0f)),
-                                              Col(color::kViolet));
-    ImGui::Dummy(ImVec2(0.0f, Px(5.0f)));
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+}
+
+void SectionTitle(const char* text) {
+    ImGui::PushFont(g_fonts.heading);
+    ImGui::TextUnformatted(text);
+    ImGui::PopFont();
 }
 
 void SectionLabel(const char* text) {
     ImGui::PushFont(g_fonts.small);
-    ImGui::PushStyleColor(ImGuiCol_Text, color::kTextMuted);
+    ImGui::PushStyleColor(ImGuiCol_Text, color::kTextDim);
     ImGui::TextUnformatted(text);
     ImGui::PopStyleColor();
     ImGui::PopFont();
 }
 
 void Keycap(const char* text) {
-    const float p = Px(1.0f);
-    const ImVec2 textSize = ImGui::CalcTextSize(text);
-    const ImVec2 size(std::max(textSize.x + 8.0f * p, 13.0f * p), 13.0f * p);
+    const ImVec2 textSize = Measure(g_fonts.label, text);
+    const ImVec2 size(std::max(textSize.x + 22.0f, 34.0f), 30.0f);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + size.x, min.y + size.y);
     ImGui::Dummy(size);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    DrawFrame(draw, min, max, Frame::Orange, Col(color::kInk));
-    draw->AddText(ImVec2(Snap(min.x + (size.x - textSize.x) * 0.5f), Snap(min.y + (size.y - textSize.y) * 0.5f)),
-                  Col(color::kText), text);
+    draw->AddRectFilled(min, max, Col(Rgb(0xFFFFFF, 0.09f)), 8.0f);
+    draw->AddRect(min, max, Col(Rgb(0xFFFFFF, 0.22f)), 8.0f, 0, 1.0f);
+    PutText(draw, g_fonts.label,
+            ImVec2(std::round(min.x + (size.x - textSize.x) * 0.5f), std::round(min.y + (size.y - textSize.y) * 0.5f)),
+            Col(color::kText), text);
+}
+
+void Chip(const char* text, Icon icon, ImU32 iconColor) {
+    const ImVec2 textSize = Measure(g_fonts.small, text);
+    const float iconSize = icon != Icon::None ? 16.0f : 0.0f;
+    const float gap = icon != Icon::None ? 7.0f : 0.0f;
+    const ImVec2 size(textSize.x + iconSize + gap + 2.0f, 24.0f);
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(size);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const float midY = min.y + size.y * 0.5f;
+    float x = min.x;
+    if (icon != Icon::None) {
+        DrawIcon(draw, icon, ImVec2(x + iconSize * 0.5f, midY), iconSize,
+                 iconColor ? iconColor : Col(color::kTextMuted));
+        x += iconSize + gap;
+    }
+    PutText(draw, g_fonts.small, ImVec2(x, std::round(midY - textSize.y * 0.5f)), Col(color::kTextMuted), text);
+}
+
+void ControllerHint(const char* glyph, const char* label) {
+    const ImVec2 labelSize = Measure(g_fonts.small, label);
+    const float circle = 26.0f;
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(circle + 8.0f + labelSize.x, circle));
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 mid(min.x + circle * 0.5f, min.y + circle * 0.5f);
+    draw->AddCircle(mid, circle * 0.5f - 1.0f, Col(Rgb(0xFFFFFF, 0.65f)), 0, 1.6f);
+    const ImVec2 glyphSize = Measure(g_fonts.small, glyph);
+    PutText(draw, g_fonts.small, ImVec2(std::round(mid.x - glyphSize.x * 0.5f), std::round(mid.y - glyphSize.y * 0.5f)),
+            Col(Rgb(0xFFFFFF, 0.85f)), glyph);
+    PutText(draw, g_fonts.small, ImVec2(min.x + circle + 8.0f, std::round(mid.y - labelSize.y * 0.5f)),
+            Col(color::kTextMuted), label);
+}
+
+void FormLabel(const char* label, float labelWidth) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(ImGui::GetCursorStartPos().x + labelWidth);
+    ImGui::SetNextItemWidth(std::min(300.0f, ImGui::GetContentRegionAvail().x));
 }
 
 void HintText(const char* text) {
@@ -653,8 +741,7 @@ std::string Initials(const std::string& title) {
 }
 
 ImU32 PlaceholderColor(const std::string& title) {
-    // Colours from the interface's family but clearly apart from each other, so games are easy to tell apart.
-    static const unsigned kColors[] = {0x4B3BB5, 0x2A6F97, 0xB5541A, 0x1E8A7A, 0x8A3F8F, 0x9A3B5A};
+    static const unsigned kColors[] = {0x5B4DE3, 0x2F6FDB, 0x1F9E8E, 0xC2456B, 0xC98A2B, 0x6A3FB5};
     unsigned hash = 2166136261u;
     for (unsigned char ch : title) hash = (hash ^ ch) * 16777619u;
     const unsigned rgb = kColors[hash % (sizeof(kColors) / sizeof(kColors[0]))];

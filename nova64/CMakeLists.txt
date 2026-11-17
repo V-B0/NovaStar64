@@ -74,14 +74,16 @@ function(nova64_embed_file SOURCE_FILE OUTPUT_NAME)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SOURCE_FILE}")
 endfunction()
 
-# The NovaStar icon (UI/AppIcon.cpp) and the launcher's pixel art (UI/UiKit.cpp): the PNG sheets exported
-# from assets/ui/*.aseprite, and the list of icon names in sheet order.
+# The NovaStar icon (UI/AppIcon.cpp), and what the launcher draws with (UI/UiKit.cpp): the Inter and
+# Phosphor fonts (cut down by scripts/ui-art/subset-fonts.py) and the background picture.
 set(NOVA_ICON_PNG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/Novastar.png")
 nova64_embed_file("${NOVA_ICON_PNG}" NovastarIcon.inc)
-nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/ui_icons.png" UiIcons.inc)
-nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/ui_font.png" UiFont.inc)
-nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/ui_frames.png" UiFrames.inc)
-nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/ui_icons.txt" UiIconNames.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Inter-Regular.ttf" InterRegular.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Inter-SemiBold.ttf" InterSemiBold.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Inter-Bold.ttf" InterBold.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Phosphor.ttf" PhosphorRegular.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/Phosphor-Fill.ttf" PhosphorFill.inc)
+nova64_embed_file("${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/background.jpg" Background.inc)
 
 # Windows: the executable's own icon comes from a resource script.
 if(WIN32)

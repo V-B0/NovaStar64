@@ -388,7 +388,7 @@ one, add its row.
 | `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
 | `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
 | `NOVA64_AUDIO_DUMP=<file.wav>` | Write everything the game plays to a 16-bit stereo WAV file, for recording footage with its sound (use with a dummy audio driver for a silent capture run) |
-| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher tab to a PNG and exit |
+| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`) to a PNG and exit |
 | `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |
 | `NOVA64_UI_KEYS=600:Backspace,660:Return` | Press launcher keys on the given launcher frames |
 | `NOVA64_UI_SHOT_AT=580,700` | With `NOVA64_UI_SHOT`, save `<path>_<frame>` on each frame and exit after the last (pass a path without an extension; the files are PNG) |
@@ -401,6 +401,7 @@ one, add its row.
 | `NOVA64_TEXDBG=1` / `NOVA64_FORENSIC=1` | Log texture decodes / texture-cache hits and misses |
 | `NOVA64_NO_MIPMAPS=1` | Disable mipmapping, to isolate texture problems |
 | `NOVA64_DUMP_TEXTURES=1` | Write every texture the game uses to `texture_dump/<game name>/` as a Rice-format picture (same as the setting) |
+| `NOVA64_UI_SAVE=<frame>:<slot>,...` | With a game started by `NOVA64_UI_ROM`, save a state into slot 0-3 at the given launcher frames, so a screenshot of the pause menu shows pictures in its slots |
 | `NOVA64_UI_OPEN=add` / `edit:<index>` | Open the launcher's Add Game or Edit Game dialog on start, for screenshots |
 | `NOVA64_RT=1` | Enable the experimental ray tracer |
 | `NOVA64_RT_STATS=1` | Log the ray tracer's scene-update time and GPU time every 120 frames |
@@ -566,28 +567,31 @@ When behaviour is meant to change, use the RSP selftest and a frame comparison i
 [Unattended game runs](#unattended-game-runs)). Run the game twice before trusting a difference: with a dummy
 audio driver the frame numbers a screenshot lands on can shift by one between two runs of the same binary.
 
-## The launcher's art
+## The launcher's look
 
-The launcher is drawn in a pixel-art style (the same approach as FluxCore) from five colours, a 5x7 bitmap
-font and 16x16 sprites, scaled by whole numbers and never smoothed. The colours are ink `0B0B1E`, violet
-`4B3BB5`, orange `FF7A1A`, cream `F6F0DC` and teal `3FC5B0`. They are set in two places that must agree:
-`scripts/ui-art/seed.lua` (the art) and `UI/UiKit.hpp` (the interface). The art is made in
-[Aseprite](https://www.aseprite.org/):
+The launcher is a dark, translucent interface in the style of a modern game console: a navy-to-violet background
+picture, glass panels, rounded buttons, and one accent colour (violet `5B4DE3`) for the main action and the
+selected row. Everything it draws that is not plain Dear ImGui lives in `UI/UiKit.*`, so a page only says what it
+shows: the palette (`kit::color`), the widgets (`Button`, `IconButton`, `NavItem`, `BeginCard`, `Chip`, ...), the
+icons (`kit::Icon`) and the text helpers. Change the look there, not in a page.
 
-| File in `nova64/assets/ui/` | What it holds |
+Layout is in logical pixels. The launcher rasterises its fonts at the display's pixel density (`LoadFonts`), so
+text stays sharp on a Retina or scaled Windows display and a number in the code means the same size everywhere.
+
+| What | Where it comes from |
 |---|---|
-| `ui_icons.aseprite` | The icons, 16x16 in an 8-column grid, one named slice each; `ui_icons.txt` lists the names in sheet order |
-| `ui_font.aseprite` | The glyphs, 5x7 in 8x8 cells, 16 columns; a glyph sits at cell number (ASCII code - 32). Lower case uses the capitals |
-| `ui_frames.aseprite` | The 10x10 frames the panels and buttons are cut from (corner 4), and the 4x4 dither tiles |
+| Text | [Inter](https://rsms.me/inter/) (Regular, SemiBold, Bold), SIL Open Font License |
+| Icons | [Phosphor](https://phosphoricons.com/) regular and fill, MIT |
+| Background | `assets/ui/background.jpg`, drawn by `scripts/ui-art/make-background.py` (Pillow and numpy) |
+| Game artwork | The user's own pictures, kept in the data folder's `covers/`; a game without one gets its initials on a colour taken from its title. Screenshots of the last session go to `shots/` |
 
-Edit a `.aseprite` file, then run `nova64/scripts/ui-art/export.sh` (it finds the Aseprite command line, or
-set `ASEPRITE=/path/to/aseprite`) to refresh the PNG sheets next to it. Those PNGs are what CMake embeds, so
-building the program never needs Aseprite. Keep an icon's position in the sheet when you edit it, and add
-new icons at the end with their name in `ui_icons.txt`. `icons.txt` and `font.txt` are only the text
-form the files were first made from, and `scripts/ui-art/seed.lua` rebuilds the `.aseprite` files from them
-(which discards any edits made in Aseprite).
+The fonts are cut down to the glyphs the launcher uses and compiled into the program (`nova64_embed_file` in
+`CMakeLists.txt`), so there are no files to ship. To add an icon, add its Phosphor name to `ICONS` in
+`scripts/ui-art/subset-fonts.py` (the script explains where to get the full fonts), add it to `kit::Icon` and
+`IconCodepoint()` in `UI/UiKit.*`, and run the script again. `assets/fonts/README.md` lists the licences.
 
-The code that draws it is `UI/UiKit.*`. Lay things out in multiples of `kit::Px()` display pixels.
+To look at a page without clicking through the launcher, take a screenshot of it (see `NOVA64_UI_SHOT` and
+`NOVA64_UI_TAB` below); use a throwaway data folder (`NOVA64_HOME`) so no personal paths or games end up in it.
 
 ## Code style
 

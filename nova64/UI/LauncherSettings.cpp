@@ -433,25 +433,26 @@ void NovaLauncher::RenderSettingsTab() {
 
     if (ImGui::BeginTabItem("Emulation", nullptr, forced("emulation"))) {
         ImGui::Spacing();
+        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
         static constexpr int kSpeeds[] = {30, 60, 120, 0};
         static const char* kSpeedLabels[] = {"Half speed", "Full speed", "Double speed", "Unlimited"};
         int speedIndex = 1;
         for (int i = 0; i < 4; ++i)
             if (kSpeeds[i] == m_launch.speed) speedIndex = i;
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::Combo("Speed", &speedIndex, kSpeedLabels, 4)) {
             m_launch.speed = kSpeeds[speedIndex];
             SaveLaunchOptions();
         }
 
         static const char* kCores[] = {"Automatic", "Interpreter", "Dynamic recompiler"};
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::Combo("CPU core", &m_launch.cpuCore, kCores, 3)) SaveLaunchOptions();
         kit::Muted("Automatic uses the recompiler on x86-64 and the interpreter on Apple Silicon, where the recompiler "
                    "is still incomplete.");
 
         static const char* kRsp[] = {"Recompiler (faster)", "Interpreter"};
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::Combo("RSP engine", &m_launch.rspEngine, kRsp, 2)) SaveLaunchOptions();
         kit::Muted("Runs the graphics and audio microcode when it isn't emulated at a higher level\n"
                    "(the LLE rendering mode). Both give identical results; applies to the next game.");
@@ -485,13 +486,15 @@ void NovaLauncher::RenderSettingsTab() {
         }
         Hint(openFailed ? "couldn't open it; the path is on the clipboard"
                         : "settings, games, saves, covers and texture packs");
+        kit::EndCard();
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Video", nullptr, forced("video"))) {
         ImGui::Spacing();
+        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
         static const char* kModes[] = {"In the launcher window", "Fullscreen"};
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::Combo("Play games", &m_launch.displayMode, kModes, 2)) SaveLaunchOptions();
 
         // Graphics driver. OpenGL can't run on macOS: Apple stopped at OpenGL
@@ -515,7 +518,7 @@ void NovaLauncher::RenderSettingsTab() {
             {"OpenGL", 0, kOpenGLAvailable, kOpenGLUnavailable},
         };
         const char* current = (m_gfx.backendType == 1) ? "Vulkan" : "OpenGL";
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::BeginCombo("Graphics driver", current)) {
             for (const auto& d : kDrivers) {
                 const ImGuiSelectableFlags flags = d.available ? 0 : ImGuiSelectableFlags_Disabled;
@@ -530,7 +533,7 @@ void NovaLauncher::RenderSettingsTab() {
         }
         const bool selectedUnavailable = (m_gfx.backendType == 1) ? !kVulkanAvailable : !kOpenGLAvailable;
         if (selectedUnavailable) {
-            ImGui::TextColored(kit::color::kOrange,
+            ImGui::TextColored(kit::color::kStar,
                                "%s isn't available here; games won't start until you pick the other driver.", current);
         }
         {
@@ -545,7 +548,7 @@ void NovaLauncher::RenderSettingsTab() {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::SliderInt("Resolution scale", &m_gfx.internalResScale, 1, 8, "%dx")) SaveGraphicsSettings();
 
         bool widescreen = (m_gfx.aspectRatio == Nova64::Video::AspectRatio::Widescreen16_9);
@@ -573,14 +576,10 @@ void NovaLauncher::RenderSettingsTab() {
         if (ImGui::Checkbox("Show frame rate while playing", &m_launch.showFps)) SaveLaunchOptions();
 
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Header, kit::color::kPanel);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kit::color::kViolet);
-        const bool accuracyOpen = ImGui::CollapsingHeader("Accuracy");
-        ImGui::PopStyleColor(2);
-        if (accuracyOpen) {
+        if (ImGui::CollapsingHeader("Accuracy")) {
             static const char* kEmulation[] = {"High-level (recommended)", "Low-level (experimental)"};
             int emulation = (m_gfx.renderingMode == Nova64::Video::RenderingMode::HLE) ? 0 : 1;
-            ImGui::SetNextItemWidth(220 * 1.4f);
+            ImGui::SetNextItemWidth(320.0f);
             if (ImGui::Combo("Graphics emulation", &emulation, kEmulation, 2)) {
                 m_gfx.renderingMode =
                     (emulation == 0) ? Nova64::Video::RenderingMode::HLE : Nova64::Video::RenderingMode::LLE;
@@ -594,20 +593,24 @@ void NovaLauncher::RenderSettingsTab() {
             Hint("for games that draw the picture on the CPU");
             kit::Muted("Some games turn these two on regardless, because they need them.");
         }
+        kit::EndCard();
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Audio", nullptr, forced("audio"))) {
         ImGui::Spacing();
-        ImGui::SetNextItemWidth(220 * 1.4f);
+        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
+        ImGui::SetNextItemWidth(320.0f);
         if (ImGui::SliderInt("Volume", &m_launch.volume, 0, 100, "%d%%")) SaveLaunchOptions();
         if (ImGui::Checkbox("Mute", &m_launch.muted)) SaveLaunchOptions();
         kit::Muted("Takes effect immediately, including in a game that's running.");
+        kit::EndCard();
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("Controls", nullptr, forced("controls"))) {
         ImGui::Spacing();
+        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
         kit::Muted("Games that are already running pick up changes within a second.");
         ImGui::Spacing();
         ImGui::SeparatorText("Game controllers");
@@ -615,6 +618,7 @@ void NovaLauncher::RenderSettingsTab() {
         ImGui::Spacing();
         ImGui::SeparatorText("Keyboard (player 1)");
         RenderInputSettingsWidget();
+        kit::EndCard();
         ImGui::EndTabItem();
     }
 

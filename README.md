@@ -109,11 +109,11 @@ The project is under active development. Expect bugs and rough edges — see
     <td align="center"><b>Super Mario 64</b> — 4× internal resolution</td>
   </tr>
   <tr>
-    <td><img src="docs/showcase/launcher-games.png" alt="The launcher's Games tab listing three games"></td>
+    <td><img src="docs/showcase/launcher-home.png" alt="The launcher's Home page: the game last played with its screenshot, and a row of recent games"></td>
     <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
   </tr>
   <tr>
-    <td align="center"><b>Game library</b></td>
+    <td align="center"><b>Home</b> — the game you played last, and your recent games</td>
     <td align="center"><b>Controller settings</b></td>
   </tr>
 </table>
@@ -284,7 +284,7 @@ remembered for that specific controller.
 
 ## Configuration
 
-Everything NovaStar64 keeps — `settings/`, `roms/`, `saves/`, `covers/`,
+Everything NovaStar64 keeps — `settings/`, `roms/`, `saves/`, `covers/`, `shots/`,
 `hires_texture/` and the shader cache — lives in one data folder, chosen the same way
 however the program is started, so the same games, save states, cartridge saves and
 settings show up whether you open it from a terminal in any directory or from Finder.
@@ -310,11 +310,12 @@ there.
 | `settings/launcher.ini` | Speed, display mode, CPU core, rewind, volume |
 | `settings/keybindings.ini` | Keyboard bindings |
 | `settings/controllers.ini` | Controller bindings, stick deadzone and range, Rumble Pak per player, preferred player slots |
-| `settings/library.txt` | The game list |
+| `settings/library.txt` | The game list, with each game's favourite mark, when it was last played and how often |
 
 Games added in the launcher are copied into `roms/`. Cartridge saves and save
 states go in `saves/`. A cover picture chosen in the Add Game or Edit dialog (PNG or
-JPEG) is copied into `covers/` and shown on the game's card. These folders are
+JPEG) is copied into `covers/` and shown on the game's card. When a game ends, a screenshot
+of its last frame goes into `shots/` and is shown on the Home page. These folders are
 git-ignored: their contents are never committed.
 
 ### Texture packs
@@ -478,6 +479,8 @@ Each component keeps its own license.
 | [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan on Metal (prebuilt macOS library in `nova64/thirdparty/MoltenVK/`, with its license text) | Apache-2.0 |
 | [glad](https://github.com/Dav1dde/glad) 2.0 | OpenGL loader (generated, `nova64/external/glad/`) | (WTFPL or CC0-1.0) and Apache-2.0; `khrplatform.h` is Khronos MIT-style |
 | [Dear ImGui](https://github.com/ocornut/imgui), [imgui-node-editor](https://github.com/thedmd/imgui-node-editor) | Launcher UI | MIT |
+| [Inter](https://rsms.me/inter/) | Launcher text (cut down to the glyphs used, compiled in; licence in `nova64/assets/fonts/`) | SIL Open Font License 1.1 |
+| [Phosphor Icons](https://phosphoricons.com/) | Launcher icons (cut down to the icons used, compiled in; licence in `nova64/assets/fonts/`) | MIT |
 | [stb](https://github.com/nothings/stb) | Image reading and writing | MIT / public domain |
 | [nlohmann/json](https://github.com/nlohmann/json) | JSON | MIT |
 | [rcheevos](https://github.com/RetroAchievements/rcheevos) | RetroAchievements (not yet wired up) | MIT |

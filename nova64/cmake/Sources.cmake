@@ -192,6 +192,7 @@ set(NOVA64_SOURCES
 
     # UI - launcher and tools
     UI/AppIcon.cpp
+    UI/GameInfo.cpp
     UI/HexEditor.cpp
     UI/LauncherGames.cpp
     UI/LauncherPlay.cpp

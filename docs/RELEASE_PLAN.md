@@ -101,30 +101,32 @@ Correctness and robustness
 ## 4. Launcher and in-game UI
 
 - [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
-- [x] Pixel-art look, the same approach as FluxCore: five clearly different colours (ink, violet, orange, cream,
-      teal), a 5x7 bitmap font and 16x16 sprites, scaled by whole numbers and never smoothed
-- [x] The art drawn in Aseprite: `.aseprite` files in `assets/ui/` are the sources, exported PNG sheets are
-      what the build embeds (the build never needs Aseprite), and a script re-exports them
-- [x] Icons: home, games, settings, scripts, memory, achievements, simulator, play, stop, rewind, add, edit,
-      remove, folder, cover picture, search, check, warning, info, chevrons and the window controls
+- [x] A modern console-style look: dark glass panels over a violet background picture, one accent colour, Inter
+      for text and Phosphor for icons (both compiled in, licences kept), set at the display's pixel density so it is
+      sharp on a Retina or scaled display
+- [x] Icons for every page and action, as a font, so they stay sharp at any size
+- [x] Home with a large card for the game last played (box art, publisher, year, description, play and
+      favourite, and a screenshot of the last session), a Recently Played row, and a hint bar
+- [x] Library, Recent and Favorites pages with search; a game remembers when it was last played and how often,
+      and can be made a favourite
 - [x] Window controls drawn as proper minimise/maximise/close glyphs instead of `_ [] x`
 - [x] Sidebar with an icon per page, a clear selected state and the version at the bottom
 - [x] Button hierarchy: one primary action per screen, quiet secondary buttons, a distinct
       destructive style, with hover, pressed and disabled states
 - [ ] Settings as aligned forms: labels on the left, grouped in cards, helper text in one style
-- [ ] Game library: cover cards with generated artwork when a game has no cover, a play overlay
-      on hover, search, sort, last played and play time, a context menu
-- [ ] Home page: continue-playing row, recent games, quick actions, a drag-and-drop area
+- [ ] Library: sort order, play time, and cover pictures fetched for the user (the code makes no network
+      connections, so this needs a decision)
 - [ ] Empty and error states with an actionable message: no games, Vulkan or MoltenVK missing,
       shader compile failure, unreadable ROM
 - [ ] Notifications for saves, rewinds and errors; keyboard and controller focus clearly visible
 - [ ] Pause menu and rewind strip visual pass; save-state slots with thumbnails
-- [ ] Check the pixel interface on a Retina display and at Windows scale settings (so far it has only been
-      rendered at 1x); add an interface-scale setting (art pixels of 2, 3 or 4 display pixels)
-- [ ] Text contrast of the muted orange on dark brown reviewed, and a high-contrast option
-- [ ] Font-size setting and a high-contrast option
+- [ ] Check the interface on a Retina display and at Windows scale settings (so far it has only been
+      rendered at 1x); add an interface-scale setting
+- [ ] Text contrast of the muted text on the glass panels measured, and a high-contrast option
+- [ ] Font-size setting
 - [ ] First-run welcome: pick a game folder, test the controller
-- [ ] About dialog: version, build, licences, links
+- [x] About page: version, licence, the keys used while playing, what it is made with
+- [ ] A full list of third-party licences reachable from the About page
 - [ ] Before/after screenshots of every page for the README and the video
 
 ## 5. Release engineering

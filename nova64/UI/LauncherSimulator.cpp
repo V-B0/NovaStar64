@@ -171,7 +171,7 @@ void NovaLauncher::RenderSimNode(SimNode& node) {
 
 void NovaLauncher::RenderSimulatorTab() {
     ed::SetCurrentEditor(g_NodeEditor);
-    ImGui::BeginChild("SimWorkspace", ImVec2(0, -64));
+    ImGui::BeginChild("SimWorkspace", ImVec2(0, -112));
     ed::Begin("Simulator");
 
     // Rendering a node can add one (ejecting an Expansion Pak) or erase one
@@ -226,7 +226,7 @@ void NovaLauncher::RenderSimulatorTab() {
     if (ImGui::Button("Cartridge...")) ImGui::OpenPopup("CartridgePicker");
 
     if (ImGui::BeginPopup("CartridgePicker")) {
-        if (m_library.empty()) kit::Muted("Add games in the Games tab first.");
+        if (m_library.empty()) kit::Muted("Add games in the Library first.");
         for (int i = 0; i < static_cast<int>(m_library.size()); ++i) {
             ImGui::PushID(i);
             if (ImGui::Selectable(m_library[i].name.c_str())) SpawnNode(SimNodeKind::Cartridge, i);
