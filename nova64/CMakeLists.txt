@@ -118,16 +118,17 @@ target_include_directories(nova64 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/NovaRSP
     ${CMAKE_CURRENT_SOURCE_DIR}/NovaGraphics
     ${SDL2_INCLUDE_DIRS}
-    ${stb_SOURCE_DIR}
     ${lua_SOURCE_DIR}/src
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
+# A third-party header: its own warnings are not ours to fix.
+target_include_directories(nova64 SYSTEM PRIVATE ${stb_SOURCE_DIR})
 
 find_package(OpenGL REQUIRED)
 target_link_libraries(nova64 PRIVATE
     asmjit softfloat
     ${SDL2_LIBRARIES} OpenGL::GL glad_gl46
-    imgui imgui_node_editor
+    imgui
     nlohmann_json::nlohmann_json rcheevos lua54
     # Vulkan: volk loads the Vulkan library at run time, so there is nothing to link
     # against and no SDK to install. glslang compiles the shaders to SPIR-V at run time.

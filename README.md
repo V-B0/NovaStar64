@@ -74,8 +74,11 @@ The project is under active development. Expect bugs and rough edges — see
 - **Game controllers for up to four players** through SDL, with an
   N64-shaped analog range, rebindable buttons, per-controller player slots and
   a Rumble Pak. A controller also drives the launcher's menus.
-- **Built-in tools:** a Lua scripting console, a memory viewer and a hardware
-  simulator view.
+- **Per-game setups.** The Simulator shows how one game will run (what its ROM
+  header says, the CPU, RSP, display and controllers) and lets that game override
+  speed, CPU core, graphics driver, resolution, accuracy and more, with a check for
+  setups that will not work. Everything else follows Settings.
+- **Built-in tools:** a Lua scripting console and a memory viewer.
 - **Cartridge hardware:** EEPROM, SRAM and FlashRAM saves, Rumble Pak, Transfer
   Pak and partial N64DD support.
 - **NTSC and PAL timing.** The video field rate, real-time frame pacing and the
@@ -110,10 +113,18 @@ The project is under active development. Expect bugs and rough edges — see
   </tr>
   <tr>
     <td><img src="docs/showcase/launcher-home.png" alt="The launcher's Home page: the game last played with its screenshot, and a row of recent games"></td>
-    <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
+    <td><img src="docs/showcase/simulator.png" alt="The Simulator: a schematic of the cartridge, console, display and controllers, with this game's own settings below"></td>
   </tr>
   <tr>
     <td align="center"><b>Home</b> — the game you played last, and your recent games</td>
+    <td align="center"><b>Simulator</b> — how one game will run, and what is different about it</td>
+  </tr>
+  <tr>
+    <td><img src="docs/showcase/settings-video.png" alt="The Video settings page: each option with a line of help and its control"></td>
+    <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Settings</b> — one row per option, saved at once</td>
     <td align="center"><b>Controller settings</b></td>
   </tr>
 </table>
@@ -311,6 +322,7 @@ there.
 | `settings/keybindings.ini` | Keyboard bindings |
 | `settings/controllers.ini` | Controller bindings, stick deadzone and range, Rumble Pak per player, preferred player slots |
 | `settings/library.txt` | The game list, with each game's favourite mark, when it was last played and how often |
+| `settings/games/<rom name>.ini` | The options one game overrides (made in the Simulator); anything not listed follows the global settings |
 
 Games added in the launcher are copied into `roms/`. Cartridge saves and save
 states go in `saves/`. A cover picture chosen in the Add Game or Edit dialog (PNG or
@@ -478,7 +490,7 @@ Each component keeps its own license.
 | [glslang](https://github.com/KhronosGroup/glslang) | GLSL to SPIR-V for the Vulkan backend | BSD-3-Clause and others |
 | [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | Vulkan on Metal (prebuilt macOS library in `nova64/thirdparty/MoltenVK/`, with its license text) | Apache-2.0 |
 | [glad](https://github.com/Dav1dde/glad) 2.0 | OpenGL loader (generated, `nova64/external/glad/`) | (WTFPL or CC0-1.0) and Apache-2.0; `khrplatform.h` is Khronos MIT-style |
-| [Dear ImGui](https://github.com/ocornut/imgui), [imgui-node-editor](https://github.com/thedmd/imgui-node-editor) | Launcher UI | MIT |
+| [Dear ImGui](https://github.com/ocornut/imgui) | Launcher UI | MIT |
 | [Inter](https://rsms.me/inter/) | Launcher text (cut down to the glyphs used, compiled in; licence in `nova64/assets/fonts/`) | SIL Open Font License 1.1 |
 | [Phosphor Icons](https://phosphoricons.com/) | Launcher icons (cut down to the icons used, compiled in; licence in `nova64/assets/fonts/`) | MIT |
 | [stb](https://github.com/nothings/stb) | Image reading and writing | MIT / public domain |

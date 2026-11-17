@@ -33,6 +33,10 @@ extern std::string g_rendererDescription;
 using FrameReadyFn = std::function<void()>;
 extern FrameReadyFn g_frameCallback;
 
+/// Set by the launcher before a game starts: the graphics settings file to read instead of
+/// settings/NovaGraphics.ini, when a game has its own setup. Empty means the default file.
+extern std::string g_configPath;
+
 /// Set by the launcher: the game is drawn inside it, not in a window of its own.
 extern std::atomic<bool> g_embeddedMode;
 /// Set by the launcher: the game is paused. The CPU waits at an instruction

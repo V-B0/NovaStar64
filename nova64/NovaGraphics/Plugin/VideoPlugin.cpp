@@ -114,7 +114,7 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         std::filesystem::create_directories("settings", ec);
         m_config.SaveToFile("settings/NovaGraphics.ini");
     }
-    m_config.LoadFromFile("settings/NovaGraphics.ini");
+    m_config.LoadFromFile(g_configPath.empty() ? "settings/NovaGraphics.ini" : g_configPath);
 
     // --- Propagate renderingMode to the RSP settings ---
     // HLE  : graphics microcode handlers own rendering (default).

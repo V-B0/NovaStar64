@@ -15,6 +15,19 @@
 
 namespace NovaUI::kit {
 
+// --- Spacing ---
+
+/// The spacing scale, in logical pixels. Every gap, margin and padding in the launcher is one of these.
+namespace space {
+inline constexpr float k1 = 4.0f;   ///< inside a control, between a label and what it describes
+inline constexpr float k2 = 8.0f;   ///< between related items, icon to label
+inline constexpr float k3 = 12.0f;  ///< between rows
+inline constexpr float k4 = 16.0f;  ///< card padding, between cards
+inline constexpr float k6 = 24.0f;  ///< between groups of rows
+inline constexpr float k8 = 32.0f;  ///< page margin, between sections
+inline constexpr float k12 = 48.0f; ///< around an empty state
+} // namespace space
+
 // --- Colours ---
 
 /// 0xRRGGBB as an ImGui colour with the given alpha.
@@ -23,23 +36,33 @@ constexpr ImVec4 Rgb(unsigned hex, float alpha = 1.0f) {
 }
 
 namespace color {
-inline constexpr ImVec4 kBackground = Rgb(0x080718);
-inline constexpr ImVec4 kPanel = Rgb(0x15133A, 0.975f); ///< popups and solid panels
-inline constexpr ImVec4 kGlass = Rgb(0xFFFFFF, 0.055f); ///< translucent cards
-inline constexpr ImVec4 kGlassHover = Rgb(0xFFFFFF, 0.10f);
-inline constexpr ImVec4 kGlassBorder = Rgb(0xFFFFFF, 0.10f);
-inline constexpr ImVec4 kText = Rgb(0xF4F3FB);
-inline constexpr ImVec4 kTextMuted = Rgb(0xB1AFD0);
-inline constexpr ImVec4 kTextDim = Rgb(0x7A789F);
-inline constexpr ImVec4 kAccent = Rgb(0x5B4DE3); ///< primary actions and the selected row
-inline constexpr ImVec4 kAccentHover = Rgb(0x7064F2);
+// A neutral ramp tinted slightly toward the brand hue. Depth comes from one lightness step per layer and a hairline,
+// not from shadows or transparency.
+inline constexpr ImVec4 kBackground = Rgb(0x080718); ///< the window, behind the picture
+inline constexpr ImVec4 kSidebar = Rgb(0x100F22);    ///< bars at the edges of the window
+inline constexpr ImVec4 kCard = Rgb(0x16152C);       ///< a card at rest
+inline constexpr ImVec4 kRaised = Rgb(0x1D1C37);     ///< inputs, menus and dialogs, one step above a card
+inline constexpr ImVec4 kHover = Rgb(0x252442);      ///< a hovered row or button
+inline constexpr ImVec4 kHairline = Rgb(0x2F2E50);   ///< borders and dividers
+inline constexpr ImVec4 kText = Rgb(0xF4F3FB);       ///< 14:1 or better on every surface
+inline constexpr ImVec4 kTextMuted = Rgb(0xB1AFD0);  ///< secondary text, 7:1 or better
+inline constexpr ImVec4 kTextDim = Rgb(0x9290BB);    ///< captions and hints, at least 4.5:1 on every surface
+inline constexpr ImVec4 kAccent = Rgb(0x5B4DE3);     ///< the primary action, the selected row, a switch that is on
+inline constexpr ImVec4 kAccentHover = Rgb(0x6557EA);
 inline constexpr ImVec4 kAccentPressed = Rgb(0x4637C8);
-inline constexpr ImVec4 kAccentSoft = Rgb(0x5B4DE3, 0.30f);
-inline constexpr ImVec4 kStar = Rgb(0xF6C453); ///< favourites and ratings
+inline constexpr ImVec4 kAccentSoft = Rgb(0x5B4DE3, 0.20f);
+inline constexpr ImVec4 kAccentText = Rgb(0xA39BFA); ///< the accent as the colour of text or an icon
+inline constexpr ImVec4 kStar = Rgb(0xF6C453);       ///< favourites only
 inline constexpr ImVec4 kDanger = Rgb(0xEB5B6E);
 inline constexpr ImVec4 kSuccess = Rgb(0x4DDC9F);
 inline constexpr ImVec4 kOnAccent = Rgb(0xFFFFFF);
 } // namespace color
+
+/// The two corner radii: small controls, and cards and pictures.
+namespace radius {
+inline constexpr float kControl = 8.0f;
+inline constexpr float kCard = 14.0f;
+} // namespace radius
 
 /// Dear ImGui's colours and metrics set to the launcher's look. Call once after creating the context.
 void ApplyTheme();
@@ -49,6 +72,7 @@ void ApplyTheme();
 struct Fonts {
     ImFont* body = nullptr;    ///< default text, Inter Regular 15
     ImFont* small = nullptr;   ///< captions and hints, Inter Regular 13
+    ImFont* caption = nullptr; ///< section labels in capitals, Inter SemiBold 12
     ImFont* label = nullptr;   ///< buttons and labels, Inter SemiBold 15
     ImFont* heading = nullptr; ///< section titles, Inter Bold 24
     ImFont* title = nullptr;   ///< card and page titles, Inter Bold 32
@@ -147,6 +171,10 @@ void DrawSelectionRing(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding)
 
 // --- Widgets ---
 
+/// An invisible button that keyboard and gamepad navigation can reach (ImGui skips InvisibleButton by default).
+/// ImGui's own focus ring is not drawn; the widget built on it draws its own, see FocusRing in UiKit.cpp.
+bool NavButton(const char* id, ImVec2 size);
+
 enum class ButtonStyle {
     Primary,   ///< the main action of a screen: filled with the accent colour
     Secondary, ///< ordinary actions: translucent with a border
@@ -167,13 +195,48 @@ bool IconButton(const char* id, Icon icon, ButtonStyle style = ButtonStyle::Ghos
 /// `compact` makes it shorter, for the secondary group.
 bool NavItem(Icon icon, const char* label, bool selected, bool compact = false);
 
+/// An on/off switch. Returns true when it was flipped. `id` must be unique in the window.
+bool Toggle(const char* id, bool* value);
+
+/// A row of labelled choices with one selected, for two or three short options. A width of 0 fits the labels.
+/// Returns true when the selection changed.
+bool Segmented(const char* id, const char* const* labels, int count, int* index, float width = 0.0f);
+
+/// A slider with a track, a knob and its value written at the right end. `width` includes the value.
+bool Slider(const char* id, int* value, int min, int max, const char* format, float width);
+
+/// The width `Segmented` takes for these labels when it is given no width.
+float SegmentedWidth(const char* const* labels, int count);
+
+/// Text tabs with an underline under the selected one. Returns true when the selection changed.
+bool TabStrip(const char* id, const char* const* labels, int count, int* index);
+
+/// One row of a settings page: `title` and a line of `help` on the left, and whatever `control` draws on the
+/// right, vertically centred, `controlWidth` wide. `control` returns true when the value changed, which is also
+/// what this returns. Rows inside a card from BeginSettings are separated by hairlines.
+template <class Control>
+bool SettingRow(const char* title, const char* help, float controlWidth, float controlHeight, Control&& control,
+                const char* badge = nullptr);
+
+/// A compact row of a settings card showing a fact: `key` on the left, `value` on the right.
+void InfoRow(const char* key, const char* value);
+
+/// A column no wider than `maxWidth`, left aligned, for pages made of rows: wide windows keep their text and
+/// controls close together. Always call EndColumn.
+void BeginColumn(float maxWidth);
+void EndColumn();
+
+/// A card holding rows. `heading` is shown above it. Always call EndSettings.
+void BeginSettings(const char* id, const char* heading);
+void EndSettings();
+
 /// A title-bar button (minimise, maximise, close). The close button turns red under the pointer.
 bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip, ImVec2 size);
 
 /// A translucent rounded panel. Everything up to EndCard is drawn inside it. `size` of 0 in a
 /// dimension takes the available space; `autoHeight` fits the content instead. Always call EndCard.
 bool BeginCard(const char* id, ImVec2 size = ImVec2(0, 0), bool autoHeight = true,
-               ImVec2 padding = ImVec2(20.0f, 18.0f), float rounding = 18.0f);
+               ImVec2 padding = ImVec2(space::k6, space::k4), float rounding = radius::kCard);
 void EndCard();
 
 /// The title of a page: heading text, an optional muted line under it, then some space.
@@ -214,5 +277,26 @@ std::string Initials(const std::string& title);
 
 /// A colour for a game's placeholder artwork: the same one every time for the same title.
 ImU32 PlaceholderColor(const std::string& title);
+
+namespace rows {
+/// Starts a settings row: draws its text and divider, and returns the top left of the row's control area.
+ImVec2 BeginRow(const char* title, const char* help, float controlWidth, float controlHeight, float* rowHeight,
+                const char* badge);
+/// Moves the cursor below the row.
+void EndRow();
+} // namespace rows
+
+template <class Control>
+bool SettingRow(const char* title, const char* help, float controlWidth, float controlHeight, Control&& control,
+                const char* badge) {
+    float rowHeight = 0.0f;
+    const ImVec2 at = rows::BeginRow(title, help, controlWidth, controlHeight, &rowHeight, badge);
+    ImGui::PushID(title);
+    ImGui::SetCursorScreenPos(at);
+    const bool changed = control();
+    ImGui::PopID();
+    rows::EndRow();
+    return changed;
+}
 
 } // namespace NovaUI::kit

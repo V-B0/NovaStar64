@@ -138,25 +138,6 @@ elseif(TARGET SDL2::SDL2)
 endif()
 message(STATUS "ImGui integrated for debug UI panels")
 
-# ── ImGui Node Editor ──
-FetchContent_Declare(
-    imgui_node_editor
-    GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
-    GIT_TAG        021aa0ea4da13fed864bafb2a92d4c5205076866
-    EXCLUDE_FROM_ALL
-)
-FetchContent_MakeAvailable(imgui_node_editor)
-set(IMGUI_NODE_EDITOR_DIR "${imgui_node_editor_SOURCE_DIR}")
-add_library(imgui_node_editor STATIC
-    "${IMGUI_NODE_EDITOR_DIR}/imgui_node_editor.cpp"
-    "${IMGUI_NODE_EDITOR_DIR}/imgui_node_editor_api.cpp"
-    "${IMGUI_NODE_EDITOR_DIR}/imgui_canvas.cpp"
-    "${IMGUI_NODE_EDITOR_DIR}/crude_json.cpp"
-)
-target_include_directories(imgui_node_editor PUBLIC "${IMGUI_NODE_EDITOR_DIR}")
-target_link_libraries(imgui_node_editor PUBLIC imgui)
-message(STATUS "ImGui Node Editor integrated for Playground UI")
-
 # ── nlohmann/json ──
 FetchContent_Declare(
     nlohmann_json

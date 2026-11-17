@@ -4,7 +4,6 @@
  */
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
-#include "NovaTheme.hpp"
 #include "AppIcon.hpp"
 #include "GameInfo.hpp"
 #include "UiKit.hpp"
@@ -14,7 +13,6 @@
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_impl_sdl2.h>
-#include <imgui_node_editor.h>
 
 #include "../NovaGraphics/Texture/ImageWrite.hpp"
 
@@ -27,7 +25,6 @@
 #include <filesystem>
 #include <vector>
 
-namespace ed = ax::NodeEditor;
 namespace fs = std::filesystem;
 
 #ifndef NOVA64_VERSION
@@ -35,8 +32,6 @@ namespace fs = std::filesystem;
 #endif
 
 namespace NovaUI {
-
-ed::EditorContext* g_NodeEditor = nullptr;
 
 namespace {
 
@@ -59,8 +54,8 @@ GLuint UploadIconTexture() {
 constexpr float kTitleBarHeight = 76.0f;
 constexpr float kSidebarWidth = 248.0f;
 constexpr float kHintBarHeight = 56.0f;
-constexpr float kPagePadding = 14.0f;
-constexpr float kRightMargin = 28.0f;
+constexpr float kPagePadding = kit::space::k4;
+constexpr float kRightMargin = kit::space::k8;
 
 /// How tall the draggable top bar is right now (it is shorter while a game runs).
 std::atomic<int> g_dragHeight{static_cast<int>(kTitleBarHeight)};
@@ -275,13 +270,6 @@ void NovaLauncher::Run() {
     ImGui_ImplSDL2_InitForOpenGL(window, glContext);
     ImGui_ImplOpenGL3_Init("#version 330");
 
-    ed::Config config;
-    config.SettingsFile = capturing ? nullptr : "settings/NodeEditor.json";
-    g_NodeEditor = ed::CreateEditor(&config);
-    ed::SetCurrentEditor(g_NodeEditor);
-    ApplyNodeEditorTheme();
-    ed::SetCurrentEditor(nullptr);
-
     RefreshScriptFiles();
 
     const int lastShotFrame = m_shotFrames.empty() ? 20 : m_shotFrames.back();
@@ -409,8 +397,6 @@ void NovaLauncher::Run() {
 
     StopEmbedded();
 
-    ed::DestroyEditor(g_NodeEditor);
-    g_NodeEditor = nullptr;
     ReleaseCoverTextures();
     if (m_iconTex) {
         const GLuint icon = m_iconTex;
@@ -455,9 +441,9 @@ void NovaLauncher::RenderTitleBar(SDL_Window* window, bool inGame) {
     const float controlsLeft = width - 12.0f - controlWidth * 3.0f;
 
     if (inGame) {
-        draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), Col(Rgb(0x080718, 0.96f)));
+        draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), Col(color::kSidebar));
         draw->AddLine(ImVec2(origin.x, origin.y + height - 1.0f), ImVec2(origin.x + width, origin.y + height - 1.0f),
-                      Col(color::kGlassBorder));
+                      Col(color::kHairline));
     }
 
     // The brand
@@ -531,8 +517,8 @@ void NovaLauncher::RenderTitleBar(SDL_Window* window, bool inGame) {
         const float pillX =
             std::clamp(width * 0.5f - pillW * 0.5f, x + 8.0f, std::max(x + 8.0f, right - pillW - 16.0f));
         const ImVec2 a(origin.x + pillX, origin.y + (height - pillH) * 0.5f), b(a.x + pillW, a.y + pillH);
-        draw->AddRectFilled(a, b, Col(Rgb(0x5B4DE3, 0.42f)), pillH * 0.5f);
-        draw->AddRect(a, b, Col(Rgb(0xFFFFFF, 0.22f)), pillH * 0.5f);
+        draw->AddRectFilled(a, b, Col(color::kRaised), pillH * 0.5f);
+        draw->AddRect(a, b, Col(color::kHairline), pillH * 0.5f);
         PutText(draw, fonts.label, ImVec2(a.x + 18.0f, a.y + (pillH - sz.y) * 0.5f), Col(color::kText), text.c_str());
     }
 
@@ -576,7 +562,7 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::BeginChild("Sidebar", ImVec2(kSidebarWidth - 32.0f, bodyHeight - 6.0f), ImGuiChildFlags_None,
+    ImGui::BeginChild("Sidebar", ImVec2(kSidebarWidth - 32.0f, bodyHeight - 6.0f), ImGuiChildFlags_NavFlattened,
                       ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -590,7 +576,7 @@ void NovaLauncher::RenderUI(SDL_Window* window) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kPagePadding, kPagePadding));
     ImGui::BeginChild("Content",
                       ImVec2(display.x - kSidebarWidth + kPagePadding - (kRightMargin - kPagePadding), bodyHeight),
-                      ImGuiChildFlags_AlwaysUseWindowPadding);
+                      ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_NavFlattened);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     switch (m_activeTab) {
@@ -624,8 +610,6 @@ void NovaLauncher::RenderSidebar() {
         {"Library", Icon::Games, Tab::Library},
         {"Recent", Icon::Recent, Tab::Recent},
         {"Favorites", Icon::Star, Tab::Favorites},
-        {"Settings", Icon::Settings, Tab::Settings},
-        {"About", Icon::Info, Tab::About},
     };
     static constexpr Entry kTools[] = {
         {"Scripts", Icon::Scripts, Tab::Scripts},
@@ -633,18 +617,38 @@ void NovaLauncher::RenderSidebar() {
         {"Trophies", Icon::Trophy, Tab::Achievements},
         {"Simulator", Icon::Simulator, Tab::Simulator},
     };
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 6.0f));
+    static constexpr Entry kBottom[] = {
+        {"Settings", Icon::Settings, Tab::Settings},
+        {"About", Icon::Info, Tab::About},
+    };
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, space::k1));
     for (const auto& e : kMain)
         if (NavItem(e.icon, e.label, m_activeTab == e.tab)) m_activeTab = e.tab;
 
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 14.0f);
+    ImGui::Dummy(ImVec2(0.0f, space::k4));
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + space::k3);
     SectionLabel("TOOLS");
-    ImGui::Dummy(ImVec2(0.0f, 2.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 4.0f));
+    ImGui::Dummy(ImVec2(0.0f, space::k1));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, space::k1));
     for (const auto& e : kTools)
         if (NavItem(e.icon, e.label, m_activeTab == e.tab, true)) m_activeTab = e.tab;
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
+
+    // Settings and About stay at the bottom, under a divider, whatever the height of the window
+    const float rowHeight = 44.0f;
+    const float bottomTop = std::max(ImGui::GetCursorPosY() + space::k4,
+                                     ImGui::GetWindowHeight() - (rowHeight * 2.0f + space::k1) - space::k4);
+    ImGui::SetCursorPosY(bottomTop - space::k2);
+    {
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x + space::k3, at.y),
+                                            ImVec2(at.x + ImGui::GetContentRegionAvail().x - space::k3, at.y),
+                                            Col(color::kHairline));
+    }
+    ImGui::SetCursorPosY(bottomTop);
+    for (const auto& e : kBottom)
+        if (NavItem(e.icon, e.label, m_activeTab == e.tab)) m_activeTab = e.tab;
+    ImGui::PopStyleVar();
 }
 
 void NovaLauncher::RenderHintBar() {
@@ -653,8 +657,8 @@ void NovaLauncher::RenderHintBar() {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float top = display.y - kHintBarHeight;
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(ImVec2(0, top), display, Col(Rgb(0x05040F, 0.55f)));
-    draw->AddLine(ImVec2(0, top), ImVec2(display.x, top), Col(Rgb(0xFFFFFF, 0.07f)));
+    draw->AddRectFilled(ImVec2(0, top), display, Col(color::kSidebar));
+    draw->AddLine(ImVec2(0, top), ImVec2(display.x, top), Col(color::kHairline));
 
     ImGui::SetCursorPos(ImVec2(kSidebarWidth, top + (kHintBarHeight - 26.0f) * 0.5f));
     ControllerHint("A", "Select");
@@ -717,7 +721,7 @@ void NovaLauncher::RenderHeroCard(int index) {
     const CoverTexture* shot = fs::exists(shotPath, ec) ? GetCoverTexture(shotPath) : nullptr;
 
     const float contentHeight = 232.0f;
-    const float padX = 24.0f, padY = 22.0f;
+    const float padX = kit::space::k6, padY = kit::space::k6;
     BeginCard("Hero", ImVec2(0, contentHeight + padY * 2.0f), false, ImVec2(padX, padY), 24.0f);
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const float innerW = ImGui::GetContentRegionAvail().x;
@@ -726,7 +730,7 @@ void NovaLauncher::RenderHeroCard(int index) {
     // Three columns: the box, the text, and a screenshot of the last time it was played
     const float coverW = std::clamp(innerW * 0.30f, 200.0f, 310.0f);
     const float coverH = std::min(contentHeight, std::floor(coverW * 0.75f));
-    const float gap = 28.0f;
+    const float gap = kit::space::k8;
     float shotW = shot ? std::clamp(innerW * 0.30f, 240.0f, 340.0f) : 0.0f;
     if (innerW - coverW - shotW - gap * (shot ? 2.0f : 1.0f) < 300.0f) shotW = 0.0f;
     const float textW = innerW - coverW - gap - (shotW > 0.0f ? shotW + gap : 0.0f);
@@ -750,23 +754,27 @@ void NovaLauncher::RenderHeroCard(int index) {
     char buffer[64];
     if (info) {
         Chip(info->publisher, Icon::Publisher);
-        ImGui::SameLine(0.0f, 18.0f);
+        ImGui::SameLine(0.0f, kit::space::k4);
         std::snprintf(buffer, sizeof(buffer), "%d", info->year);
         Chip(buffer, Icon::Calendar);
-        ImGui::SameLine(0.0f, 18.0f);
+        ImGui::SameLine(0.0f, kit::space::k4);
         Chip(info->status, std::strcmp(info->status, "Playable") == 0 ? Icon::Check : Icon::Info,
              std::strcmp(info->status, "Playable") == 0 ? Col(color::kSuccess) : 0);
     } else {
         Chip(fs::path(rom.path).filename().string().c_str(), Icon::Folder);
     }
     if (rom.plays > 0) {
-        ImGui::SameLine(0.0f, 18.0f);
+        ImGui::SameLine(0.0f, kit::space::k4);
         std::snprintf(buffer, sizeof(buffer), "Played %d time%s", rom.plays, rom.plays == 1 ? "" : "s");
         Chip(buffer, Icon::Recent);
     }
     if (!exists) {
-        ImGui::SameLine(0.0f, 18.0f);
+        ImGui::SameLine(0.0f, kit::space::k4);
         Chip("File not found", Icon::Warning, Col(color::kDanger));
+    }
+    if (fs::exists(GameSetup::PathFor(rom.path), ec)) {
+        ImGui::SameLine(0.0f, kit::space::k4);
+        Chip("Custom setup", Icon::Settings, Col(color::kAccentText));
     }
     ImGui::EndGroup();
     y += 34.0f;
@@ -789,6 +797,7 @@ void NovaLauncher::RenderHeroCard(int index) {
     ImGui::SameLine();
     if (IconButton("##heroMore", Icon::More, ButtonStyle::Secondary, "More")) ImGui::OpenPopup("##heroMenu");
     if (ImGui::BeginPopup("##heroMenu")) {
+        if (ImGui::MenuItem("Setup...")) OpenSimulator(index);
         if (ImGui::MenuItem("Edit details...")) OpenEditDialog(index);
         if (ImGui::MenuItem("Remove from library")) {
             ImGui::EndPopup();
@@ -839,7 +848,7 @@ void NovaLauncher::RenderHomeTab() {
         m_activeTab = playedAny ? Tab::Recent : Tab::Library;
     ImGui::SetCursorPosY(rowTop + 44.0f);
 
-    const float gap = 18.0f;
+    const float gap = kit::space::k4;
     const float avail = ImGui::GetContentRegionAvail().x;
     const int perRow = std::clamp(static_cast<int>((avail + gap) / (168.0f + gap)), 2, 7);
     const float tileW = std::floor((avail - gap * (perRow - 1)) / perRow);

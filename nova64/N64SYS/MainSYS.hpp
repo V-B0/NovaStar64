@@ -85,6 +85,8 @@ public:
     static void RunLoadedImage(uint64_t frameLimit = 0);
     static void CloseSystem(void);
     static bool s_UseInterpreter;
+    /// Forces the cartridge save chip (SRAM or FlashRAM) for the next game; Auto detects it from the game.
+    static N64Types::SaveChipType s_SaveChipOverride;
 
     // Instance method for interactive loop (called from RunLoadedImage)
     void RunInteractiveLoop();

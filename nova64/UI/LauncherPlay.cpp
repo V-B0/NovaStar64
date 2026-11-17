@@ -15,6 +15,7 @@
 #include "../N64SYS/MainSYS.hpp"
 #include "../N64SYS/MIPSY/Vmem.hpp"
 #include "../NovaGraphics/Plugin/FrameCallback.hpp"
+#include "../NovaGraphics/Plugin/PluginConfig.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -139,12 +140,31 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
         m_lua.OnFrame();
     };
 
+    // The global options with this game's own setup applied on top.
+    GameSetup setup;
+    setup.Load(m_emuRomPath);
+    m_running = m_launch;
+    Nova64::Video::PluginConfig gfx = m_gfx;
+    int saveChip = 0;
+    setup.Apply(SettingsModel{&m_running, &gfx, &saveChip});
+    Nova64::StateService::Instance().SetRewindEnabled(m_running.rewind);
+    CN64System::s_SaveChipOverride = saveChip == 1   ? N64Types::SaveChipType::Sram
+                                     : saveChip == 2 ? N64Types::SaveChipType::FlashRam
+                                                     : N64Types::SaveChipType::Auto;
+    // The video plugin reads its settings from a file; a game with graphics overrides gets a file of its own, so
+    // the global one is never touched.
+    if (setup.TouchesGraphics() && gfx.SaveToFile(detail::kRunningGraphicsPath)) {
+        Nova64::Video::g_configPath = detail::kRunningGraphicsPath;
+    } else {
+        Nova64::Video::g_configPath.clear();
+    }
+
     // "Automatic" must restore whatever the platform default was.
     static const bool kDefaultUseInterpreter = CN64System::s_UseInterpreter;
-    CN64System::s_UseInterpreter = (m_launch.cpuCore == 0) ? kDefaultUseInterpreter : (m_launch.cpuCore == 1);
+    CN64System::s_UseInterpreter = (m_running.cpuCore == 0) ? kDefaultUseInterpreter : (m_running.cpuCore == 1);
 
-    Nova64::RSP::CRSPSettings::SetEngine(m_launch.rspEngine == 1 ? Nova64::RSP::RSPEngine::Interpreter
-                                                                 : Nova64::RSP::RSPEngine::Recompiler);
+    Nova64::RSP::CRSPSettings::SetEngine(m_running.rspEngine == 1 ? Nova64::RSP::RSPEngine::Interpreter
+                                                                  : Nova64::RSP::RSPEngine::Recompiler);
 
     CN64System::ClearStopRequest();
     Nova64::Video::g_embeddedMode.store(true);
@@ -154,22 +174,17 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     m_emuStartFailed.store(false);
     m_emuRunning.store(true);
 
-    if (m_launch.displayMode == 1 && m_window && !(SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN)) {
+    if (m_running.displayMode == 1 && m_window && !(SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN)) {
         m_wentFullscreen = SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN_DESKTOP) == 0;
     }
 
     const std::string rom = m_emuRomPath;
-    const int speed = m_launch.speed;
+    const int speed = m_running.speed;
     m_emuThread = std::thread([this, rom, speed]() {
         CN64System::s_TargetFPS = speed;
         if (!CN64System::RunFileImage(rom.c_str(), 0)) m_emuStartFailed.store(true);
         m_emuRunning.store(false);
     });
-}
-
-void NovaLauncher::LaunchEmulator(const SimNode& node) {
-    if (node.cartPath[0] == '\0') return;
-    PlayRom(node.cartPath, node.cartName[0] ? node.cartName : fs::path(node.cartPath).stem().string());
 }
 
 void NovaLauncher::StopEmbedded() {
@@ -188,6 +203,13 @@ void NovaLauncher::StopEmbedded() {
     }
 
     Nova64::StateService::Instance().EndSession();
+    // Back to the global options once the game's own setup is no longer in use.
+    Nova64::Video::g_configPath.clear();
+    CN64System::s_SaveChipOverride = N64Types::SaveChipType::Auto;
+    std::error_code removeEc;
+    fs::remove(detail::kRunningGraphicsPath, removeEc);
+    m_running = m_launch;
+    ApplyLaunchOptions();
     Nova64::Video::g_embeddedMode.store(false);
     Nova64::Video::g_emuPaused.store(false);
     Nova64::Video::g_frameCallback = nullptr;
@@ -277,7 +299,7 @@ bool NovaLauncher::HandleGameKey(int scancode, bool repeat) {
         else OpenPauseMenu();
         return true;
     case SDL_SCANCODE_BACKSPACE:
-        if (m_launch.rewind) OpenRewind();
+        if (m_running.rewind) OpenRewind();
         else ShowStatus("Rewind is turned off in Settings > Emulation.");
         return true;
     case SDL_SCANCODE_TAB:
@@ -460,11 +482,11 @@ void NovaLauncher::RenderPauseMenu() {
         ImGui::SetNextWindowFocus();
         m_focusPauseMenu = false;
     }
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::Rgb(0x15133A, 0.985f));
-    ImGui::PushStyleColor(ImGuiCol_Border, kit::Rgb(0xFFFFFF, 0.16f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 24.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::color::kRaised);
+    ImGui::PushStyleColor(ImGuiCol_Border, kit::color::kHairline);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, kit::radius::kCard);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f, 24.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kit::space::k8, kit::space::k6));
     ImGui::Begin("##PauseMenu", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_AlwaysAutoResize);
@@ -480,7 +502,7 @@ void NovaLauncher::RenderPauseMenu() {
     bool quit = false;
     if (kit::Button("Resume", kit::ButtonStyle::Primary, kit::Icon::Play, ImVec2(150.0f, 0.0f))) ClosePauseMenu();
     ImGui::SameLine();
-    ImGui::BeginDisabled(!m_launch.rewind);
+    ImGui::BeginDisabled(!m_running.rewind);
     if (kit::Button("Rewind", kit::ButtonStyle::Secondary, kit::Icon::Rewind, ImVec2(150.0f, 0.0f))) OpenRewind();
     ImGui::EndDisabled();
     ImGui::SameLine();
@@ -499,14 +521,15 @@ void NovaLauncher::RenderPauseMenu() {
     ImGui::SameLine(0.0f, 20.0f);
     if (ImGui::RadioButton("Normal", !m_turboMode)) SetTurbo(false);
     ImGui::SameLine(0.0f, 20.0f);
-    ImGui::BeginDisabled(m_launch.speed == 0);
+    ImGui::BeginDisabled(m_running.speed == 0);
     if (ImGui::RadioButton("Double (Tab)", m_turboMode)) SetTurbo(true);
     ImGui::EndDisabled();
 
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
     if (ImGui::CollapsingHeader("Controls")) {
         // The binding table is tall; it scrolls inside the menu instead of stretching it.
-        ImGui::BeginChild("##Controls", ImVec2(0, std::min(300.0f, maxH * 0.5f)), ImGuiChildFlags_Borders);
+        ImGui::BeginChild("##Controls", ImVec2(0, std::min(300.0f, maxH * 0.5f)),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
         RenderInputSettingsWidget();
         ImGui::EndChild();
     }
@@ -606,7 +629,7 @@ void NovaLauncher::RenderRewindBar() {
 
     ImGui::SetNextWindowPos(ImVec2(0, display.y - kRewindBarHeight), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(display.x, kRewindBarHeight), ImGuiCond_Always);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::Rgb(0x0B0A24, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, kit::color::kSidebar);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.0f, 18.0f));
     ImGui::Begin("##RewindBar", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
@@ -632,7 +655,7 @@ void NovaLauncher::RenderRewindBar() {
     if (kit::Button("Cancel", kit::ButtonStyle::Secondary, kit::Icon::None, ImVec2(120.0f, 40.0f))) cancel = true;
     ImGui::SetCursorPosY(headBottom + 6.0f);
 
-    ImGui::BeginChild("##RewindStrip", ImVec2(0, 0), ImGuiChildFlags_None,
+    ImGui::BeginChild("##RewindStrip", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
                       ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (count == 0) {
         kit::Muted("No rewind points yet. One is kept every %d seconds of play.",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw the launcher's background: assets/ui/background.jpg. Needs Pillow and numpy.
 
-A deep indigo gradient with soft violet glows, a faint large star (the NovaStar mark) behind the top of
+A deep indigo gradient with a few quiet glows, a faint large star (the NovaStar mark) behind the top of
 the window and a faint gamepad silhouette at the bottom left. Everything is deliberately quiet so that
 text and cover art stay in front.
 """
@@ -17,8 +17,8 @@ rng = np.random.default_rng(64)
 
 def gradient():
     y = np.linspace(0, 1, H)[:, None, None]
-    top = np.array([16, 13, 46], float)
-    bottom = np.array([5, 5, 16], float)
+    top = np.array([17, 16, 40], float)
+    bottom = np.array([8, 7, 24], float)
     return np.broadcast_to(top * (1 - y) + bottom * y, (H, W, 3)).copy()
 
 
@@ -61,10 +61,10 @@ def gamepad(d):
 
 def main():
     img = gradient()
-    img = glow(img, 1650, 120, 900, (70, 52, 170), 0.55)
-    img = glow(img, 250, 700, 800, (40, 30, 120), 0.35)
-    img = glow(img, 1000, 1150, 900, (28, 20, 80), 0.30)
-    for layer, strength, tint in ((shape_layer(star, 6), 0.07, (150, 130, 255)), (shape_layer(gamepad, 3), 0.10, (120, 105, 230))):
+    img = glow(img, 1650, 120, 900, (58, 52, 140), 0.30)
+    img = glow(img, 250, 700, 800, (34, 30, 96), 0.18)
+    img = glow(img, 1000, 1150, 900, (26, 22, 70), 0.16)
+    for layer, strength, tint in ((shape_layer(star, 6), 0.045, (140, 128, 240)), (shape_layer(gamepad, 3), 0.06, (120, 110, 220))):
         img += layer[..., None] * strength * (np.array(tint, float) - img) * 1.6
     yy, xx = np.mgrid[0:H, 0:W]
     vignette = 1 - 0.35 * (((xx - W / 2) / (W / 2)) ** 2 + ((yy - H / 2) / (H / 2)) ** 2) / 2

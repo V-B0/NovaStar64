@@ -135,7 +135,7 @@ void NovaLauncher::SaveGraphicsSettings() {
 
 void NovaLauncher::SetTurbo(bool enabled) {
     m_turboMode = enabled;
-    const int speed = (enabled && m_launch.speed != 0) ? m_launch.speed * 2 : m_launch.speed;
+    const int speed = (enabled && m_running.speed != 0) ? m_running.speed * 2 : m_running.speed;
     CN64System::s_TargetFPS = speed;
     if (g_System) g_System->SetSpeed(speed);
 }
@@ -165,9 +165,9 @@ void NovaLauncher::RenderInputSettingsWidget() {
     const ImVec4 kWarn(0.75f, 0.25f, 0.15f, 1.0f);
 
     if (ImGui::BeginTable("InputTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 154.0f);
         ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120 * 1.4f);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 168.0f);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < kCount; ++i) {
@@ -281,7 +281,7 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     if (ImGui::BeginTable("PadPlayers", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 60 * 1.4f);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 154.0f);
         ImGui::TableSetupColumn("Accessory", ImGuiTableColumnFlags_WidthFixed, 150 * 1.4f);
         ImGui::TableHeadersRow();
         for (int p = 0; p < kMaxPlayers; ++p) {
@@ -382,9 +382,9 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     ImGui::Spacing();
     constexpr int kCount = static_cast<int>(kN64InputCount);
     if (ImGui::BeginTable("PadTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 110 * 1.4f);
+        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 154.0f);
         ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 120 * 1.4f);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 168.0f);
         ImGui::TableHeadersRow();
         for (int i = 0; i < kCount; ++i) {
             const auto input = static_cast<N64Input>(i);
@@ -420,209 +420,231 @@ void NovaLauncher::RenderControllerSettingsWidget() {
     }
 }
 
-void NovaLauncher::RenderSettingsTab() {
-    kit::PageTitle("Settings",
-                   "Changes save immediately. Video and emulation settings apply to the next game you start.");
+namespace {
 
-    const bool forcing = m_frameCount < 3;
-    auto forced = [&](const char* name) {
-        return (forcing && m_forcedSubTab == name) ? ImGuiTabItemFlags_SetSelected : 0;
-    };
+bool UseSegmented(const OptionDef& option) {
+    if (option.kind != OptionKind::Choice || option.choices.size() > 3) return false;
+    for (const char* label : option.choices)
+        if (std::strlen(label) > 12) return false;
+    return true;
+}
 
-    if (!ImGui::BeginTabBar("SettingsTabs")) return;
+/// The default value of every option: a fresh set of launcher options and graphics settings.
+struct Defaults {
+    LaunchOptions launch;
+    Nova64::Video::PluginConfig gfx;
+    int saveChip = 0;
+    Defaults() { gfx.LoadDefaults(); }
+    SettingsModel Model() { return SettingsModel{&launch, &gfx, &saveChip}; }
+};
 
-    if (ImGui::BeginTabItem("Emulation", nullptr, forced("emulation"))) {
-        ImGui::Spacing();
-        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
-        static constexpr int kSpeeds[] = {30, 60, 120, 0};
-        static const char* kSpeedLabels[] = {"Half speed", "Full speed", "Double speed", "Unlimited"};
-        int speedIndex = 1;
-        for (int i = 0; i < 4; ++i)
-            if (kSpeeds[i] == m_launch.speed) speedIndex = i;
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::Combo("Speed", &speedIndex, kSpeedLabels, 4)) {
-            m_launch.speed = kSpeeds[speedIndex];
-            SaveLaunchOptions();
-        }
+} // namespace
 
-        static const char* kCores[] = {"Automatic", "Interpreter", "Dynamic recompiler"};
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::Combo("CPU core", &m_launch.cpuCore, kCores, 3)) SaveLaunchOptions();
-        kit::Muted("Automatic uses the recompiler on x86-64 and the interpreter on Apple Silicon, where the recompiler "
-                   "is still incomplete.");
+namespace detail {
 
-        static const char* kRsp[] = {"Recompiler (faster)", "Interpreter"};
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::Combo("RSP engine", &m_launch.rspEngine, kRsp, 2)) SaveLaunchOptions();
-        kit::Muted("Runs the graphics and audio microcode when it isn't emulated at a higher level\n"
-                   "(the LLE rendering mode). Both give identical results; applies to the next game.");
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        if (ImGui::Checkbox("Rewind", &m_launch.rewind)) SaveLaunchOptions();
-        Hint("keeps a picture every 2 seconds for Backspace; about 1 MB each");
-        if (ImGui::Checkbox("Pause when another application is active", &m_launch.pauseOnFocusLoss))
-            SaveLaunchOptions();
-
-        // Everything NovaStar64 keeps -- settings, games, saves, covers, texture packs
-        // -- is in one folder, which for an installed copy is a hidden one.
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        static const std::filesystem::path dataFolder = std::filesystem::current_path();
-        static char dataFolderText[1024] = {};
-        static bool openFailed = false;
-        if (dataFolderText[0] == '\0')
-            std::snprintf(dataFolderText, sizeof(dataFolderText), "%s", dataFolder.string().c_str());
-        ImGui::TextUnformatted("Data folder");
-        // A read-only box rather than plain text: a long path scrolls instead of being
-        // cut off, and can be selected and copied.
-        ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputText("##dataFolder", dataFolderText, sizeof(dataFolderText), ImGuiInputTextFlags_ReadOnly);
-        if (ImGui::Button("Open data folder")) {
-            openFailed = SDL_OpenURL(FolderUrl(dataFolder).c_str()) != 0;
-            if (openFailed) SDL_SetClipboardText(dataFolder.string().c_str());
-        }
-        Hint(openFailed ? "couldn't open it; the path is on the clipboard"
-                        : "settings, games, saves, covers and texture packs");
-        kit::EndCard();
-        ImGui::EndTabItem();
+float OptionControlWidth(const OptionDef& option) {
+    switch (option.kind) {
+    case OptionKind::Toggle: return 44.0f;
+    case OptionKind::Slider: return 260.0f;
+    case OptionKind::Choice:
+        return UseSegmented(option)
+                   ? kit::SegmentedWidth(option.choices.data(), static_cast<int>(option.choices.size()))
+                   : 260.0f;
     }
+    return 260.0f;
+}
 
-    if (ImGui::BeginTabItem("Video", nullptr, forced("video"))) {
-        ImGui::Spacing();
-        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
-        static const char* kModes[] = {"In the launcher window", "Fullscreen"};
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::Combo("Play games", &m_launch.displayMode, kModes, 2)) SaveLaunchOptions();
+float OptionControlHeight(const OptionDef& option) { return option.kind == OptionKind::Toggle ? 24.0f : 32.0f; }
 
-        // Graphics driver. OpenGL can't run on macOS: Apple stopped at OpenGL
-        // 4.1, and this renderer needs 4.6.
-        static const bool kVulkanAvailable = Nova64::Video::VK::IsVulkanAvailable();
-#ifdef __APPLE__
-        constexpr bool kOpenGLAvailable = false;
-        constexpr const char* kOpenGLUnavailable = "macOS only supports OpenGL up to 4.1; this renderer needs 4.6.";
-#else
-        constexpr bool kOpenGLAvailable = true;
-        constexpr const char* kOpenGLUnavailable = "";
-#endif
-        struct Driver {
-            const char* name;
-            int backend;
-            bool available;
-            const char* why;
-        };
-        const Driver kDrivers[] = {
-            {"Vulkan", 1, kVulkanAvailable, "No Vulkan driver was found."},
-            {"OpenGL", 0, kOpenGLAvailable, kOpenGLUnavailable},
-        };
-        const char* current = (m_gfx.backendType == 1) ? "Vulkan" : "OpenGL";
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::BeginCombo("Graphics driver", current)) {
-            for (const auto& d : kDrivers) {
-                const ImGuiSelectableFlags flags = d.available ? 0 : ImGuiSelectableFlags_Disabled;
-                if (ImGui::Selectable(d.name, m_gfx.backendType == d.backend, flags)) {
-                    m_gfx.backendType = d.backend;
-                    SaveGraphicsSettings();
+} // namespace detail
+
+int OptionDefault(const OptionDef& option) {
+    static Defaults defaults;
+    return option.get(defaults.Model());
+}
+
+namespace detail {
+
+// Draws the control for an option on its own. `value` is read and written in place; `defaultValue` marks the
+// matching entry of a dropdown.
+bool DrawOptionControl(const OptionDef& option, int* value, int defaultValue) {
+    switch (option.kind) {
+    case OptionKind::Toggle: {
+        bool on = *value != 0;
+        if (!kit::Toggle("##value", &on)) return false;
+        *value = on ? 1 : 0;
+        return true;
+    }
+    case OptionKind::Slider:
+        return kit::Slider("##value", value, option.min, option.max, option.format, OptionControlWidth(option));
+    case OptionKind::Choice: {
+        int index = ChoiceIndex(option, *value);
+        if (UseSegmented(option)) {
+            if (!kit::Segmented("##value", option.choices.data(), static_cast<int>(option.choices.size()), &index))
+                return false;
+            *value = ChoiceValue(option, index);
+            return true;
+        }
+        bool changed = false;
+        ImGui::SetNextItemWidth(OptionControlWidth(option));
+        if (ImGui::BeginCombo("##value", option.choices[static_cast<size_t>(index)])) {
+            for (size_t i = 0; i < option.choices.size(); ++i) {
+                const int candidate = ChoiceValue(option, static_cast<int>(i));
+                const char* why = option.choiceUnavailable ? option.choiceUnavailable(candidate) : nullptr;
+                const std::string label =
+                    std::string(option.choices[i]) + (candidate == defaultValue ? "   (default)" : "");
+                if (ImGui::Selectable(label.c_str(), static_cast<int>(i) == index,
+                                      why ? ImGuiSelectableFlags_Disabled : 0)) {
+                    *value = candidate;
+                    changed = true;
                 }
-                if (!d.available && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip("%s", d.why);
+                if (why && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", why);
             }
             ImGui::EndCombo();
         }
-        const bool selectedUnavailable = (m_gfx.backendType == 1) ? !kVulkanAvailable : !kOpenGLAvailable;
-        if (selectedUnavailable) {
-            ImGui::TextColored(kit::color::kStar,
-                               "%s isn't available here; games won't start until you pick the other driver.", current);
-        }
-        {
-            std::string running;
-            {
-                std::lock_guard<std::mutex> lock(Nova64::Video::g_frameMutex);
-                running = Nova64::Video::g_rendererDescription;
-            }
-            if (!running.empty()) kit::Muted("Last game ran on %s.", running.c_str());
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::SliderInt("Resolution scale", &m_gfx.internalResScale, 1, 8, "%dx")) SaveGraphicsSettings();
-
-        bool widescreen = (m_gfx.aspectRatio == Nova64::Video::AspectRatio::Widescreen16_9);
-        if (ImGui::Checkbox("Widescreen (16:9)", &widescreen)) {
-            m_gfx.aspectRatio =
-                widescreen ? Nova64::Video::AspectRatio::Widescreen16_9 : Nova64::Video::AspectRatio::Native4_3;
-            SaveGraphicsSettings();
-        }
-        Hint("widens the camera; some games show gaps at the edges");
-
-        if (ImGui::Checkbox("Mipmapping", &m_gfx.enableMipmaps)) SaveGraphicsSettings();
-        Hint("smoother textures in the distance");
-
-        if (ImGui::Checkbox("Texture packs", &m_gfx.hiResTexEnabled)) SaveGraphicsSettings();
-        Hint("hires_texture/<game name>/, Rice format; takes effect when a game starts");
-
-        if (ImGui::Checkbox("Save game textures for making a pack", &m_gfx.textureDump)) SaveGraphicsSettings();
-        Hint("writes texture_dump/<game name>/; takes effect when a game starts");
-
-        ImGui::BeginDisabled(m_gfx.backendType != 1);
-        if (ImGui::Checkbox("Ray-traced lighting (experimental)", &m_gfx.rayTracing)) SaveGraphicsSettings();
-        ImGui::EndDisabled();
-        Hint("Vulkan with high-level graphics emulation; takes effect when a game starts");
-
-        if (ImGui::Checkbox("Show frame rate while playing", &m_launch.showFps)) SaveLaunchOptions();
-
-        ImGui::Spacing();
-        if (ImGui::CollapsingHeader("Accuracy")) {
-            static const char* kEmulation[] = {"High-level (recommended)", "Low-level (experimental)"};
-            int emulation = (m_gfx.renderingMode == Nova64::Video::RenderingMode::HLE) ? 0 : 1;
-            ImGui::SetNextItemWidth(320.0f);
-            if (ImGui::Combo("Graphics emulation", &emulation, kEmulation, 2)) {
-                m_gfx.renderingMode =
-                    (emulation == 0) ? Nova64::Video::RenderingMode::HLE : Nova64::Video::RenderingMode::LLE;
-                SaveGraphicsSettings();
-            }
-            Hint("low-level runs the real RSP microcode; slower, and still shows seams");
-
-            if (ImGui::Checkbox("Copy frames back to game memory", &m_gfx.fbReadAccess)) SaveGraphicsSettings();
-            Hint("for games that read the screen, such as pause-menu backgrounds");
-            if (ImGui::Checkbox("Show frames the game draws itself", &m_gfx.fbWriteAccess)) SaveGraphicsSettings();
-            Hint("for games that draw the picture on the CPU");
-            kit::Muted("Some games turn these two on regardless, because they need them.");
-        }
-        kit::EndCard();
-        ImGui::EndTabItem();
+        return changed;
     }
-
-    if (ImGui::BeginTabItem("Audio", nullptr, forced("audio"))) {
-        ImGui::Spacing();
-        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
-        ImGui::SetNextItemWidth(320.0f);
-        if (ImGui::SliderInt("Volume", &m_launch.volume, 0, 100, "%d%%")) SaveLaunchOptions();
-        if (ImGui::Checkbox("Mute", &m_launch.muted)) SaveLaunchOptions();
-        kit::Muted("Takes effect immediately, including in a game that's running.");
-        kit::EndCard();
-        ImGui::EndTabItem();
     }
+    return false;
+}
 
-    if (ImGui::BeginTabItem("Controls", nullptr, forced("controls"))) {
-        ImGui::Spacing();
-        kit::BeginCard("##settingsCard", ImVec2(0, 0), true, ImVec2(26.0f, 20.0f));
-        kit::Muted("Games that are already running pick up changes within a second.");
-        ImGui::Spacing();
-        ImGui::SeparatorText("Game controllers");
+} // namespace detail
+
+bool NovaLauncher::RenderOptionRow(const OptionDef& option, const SettingsModel& model) {
+    SettingsModel target = model;
+    const char* blocked = option.unavailable ? option.unavailable(target) : nullptr;
+    const char* warning = option.warning ? option.warning(target) : nullptr;
+    const char* text = blocked ? blocked : warning ? warning : option.help;
+
+    int value = option.get(target);
+    const int defaultValue = OptionDefault(option);
+    bool changed = false;
+    ImGui::BeginDisabled(blocked != nullptr);
+    kit::SettingRow(
+        option.title, text, detail::kResetWidth + detail::OptionControlWidth(option),
+        detail::OptionControlHeight(option),
+        [&] {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            if (value != defaultValue) {
+                ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + (detail::OptionControlHeight(option) - 28.0f) * 0.5f));
+                if (kit::Button("Reset", kit::ButtonStyle::Ghost, kit::Icon::None,
+                                ImVec2(detail::kResetWidth - 8.0f, 28.0f))) {
+                    value = defaultValue;
+                    changed = true;
+                }
+            }
+            ImGui::SetCursorScreenPos(ImVec2(at.x + detail::kResetWidth, at.y));
+            if (detail::DrawOptionControl(option, &value, defaultValue)) changed = true;
+            return changed;
+        },
+        option.experimental ? "Experimental" : nullptr);
+    ImGui::EndDisabled();
+    if (!changed) return false;
+    option.set(target, value);
+    return true;
+}
+
+void NovaLauncher::RenderSettingsTab() {
+    using namespace kit;
+    static const char* const kPages[] = {"Emulation", "Video", "Audio", "Controls"};
+    static const char* const kPageIds[] = {"emulation", "video", "audio", "controls"};
+
+    if (m_frameCount < 3 && !m_forcedSubTab.empty())
+        for (int i = 0; i < 4; ++i)
+            if (m_forcedSubTab == kPageIds[i]) m_settingsPage = i;
+
+    BeginColumn(880.0f);
+    PageTitleText("Settings", "Changes save at once and apply the next time a game starts. Volume, mute, rewind, "
+                              "frame rate and pause apply immediately.");
+    ImGui::Dummy(ImVec2(0.0f, space::k4));
+    TabStrip("##settingsTabs", kPages, 4, &m_settingsPage);
+    ImGui::Dummy(ImVec2(0.0f, space::k6));
+
+    SettingsModel model{&m_launch, &m_gfx, &m_unusedSaveChip};
+    auto persist = [&](const OptionDef& option) {
+        if (option.store == Store::Launcher) SaveLaunchOptions();
+        else if (option.store == Store::Graphics) SaveGraphicsSettings();
+    };
+
+    if (m_settingsPage == 3) {
+        BeginCard("##controllers", ImVec2(0, 0), true, ImVec2(space::k6, space::k4));
+        SectionTitle("Game controllers");
+        ImGui::Dummy(ImVec2(0.0f, space::k2));
         RenderControllerSettingsWidget();
-        ImGui::Spacing();
-        ImGui::SeparatorText("Keyboard (player 1)");
+        EndCard();
+        ImGui::Dummy(ImVec2(0.0f, space::k4));
+        BeginCard("##keyboard", ImVec2(0, 0), true, ImVec2(space::k6, space::k4));
+        SectionTitle("Keyboard (player 1)");
+        ImGui::Dummy(ImVec2(0.0f, space::k2));
         RenderInputSettingsWidget();
-        kit::EndCard();
-        ImGui::EndTabItem();
+        EndCard();
+        EndColumn();
+        return;
     }
 
-    ImGui::EndTabBar();
+    // The options of the page, grouped in the order the table lists them
+    const char* group = nullptr;
+    bool open = false;
+    for (const OptionDef& option : AllOptions()) {
+        if (!option.globalSetting || std::strcmp(option.page, kPageIds[m_settingsPage]) != 0) continue;
+        if (!group || std::strcmp(group, option.group) != 0) {
+            if (open) EndSettings();
+            group = option.group;
+            BeginSettings(option.group, option.group);
+            open = true;
+        }
+        if (RenderOptionRow(option, model)) persist(option);
+    }
+    if (open) EndSettings();
+
+    if (m_settingsPage == 0) {
+        // Everything NovaStar64 keeps lives in one folder.
+        BeginSettings("Data", "Data");
+        static const std::filesystem::path dataFolder = std::filesystem::current_path();
+        static bool openFailed = false;
+        const std::string shown = openFailed ? "Couldn't open it; the path is on the clipboard." : dataFolder.string();
+        if (SettingRow("Data folder", shown.c_str(), 150.0f, 32.0f, [&] {
+                return Button("Open folder", ButtonStyle::Secondary, Icon::Folder, ImVec2(150.0f, 32.0f));
+            })) {
+            openFailed = SDL_OpenURL(FolderUrl(dataFolder).c_str()) != 0;
+            if (openFailed) SDL_SetClipboardText(dataFolder.string().c_str());
+        }
+        EndSettings();
+    }
+    if (m_settingsPage == 1) {
+        std::string running;
+        {
+            std::lock_guard<std::mutex> lock(Nova64::Video::g_frameMutex);
+            running = Nova64::Video::g_rendererDescription;
+        }
+        if (!running.empty()) Muted("Last game ran on %s.", running.c_str());
+    }
+
+    // One button per page puts its options back to their defaults; the controls are not touched.
+    ImGui::Dummy(ImVec2(0.0f, space::k2));
+    if (Button("Restore defaults", ButtonStyle::Ghost, Icon::None, ImVec2(0.0f, 36.0f)))
+        ImGui::OpenPopup("Restore defaults?");
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, radius::kCard);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(space::k6, space::k6));
+    const bool confirming = ImGui::BeginPopupModal("Restore defaults?", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PopStyleVar(2);
+    if (confirming) {
+        ImGui::Text("Every %s setting goes back to its default.", kPages[m_settingsPage]);
+        ImGui::Dummy(ImVec2(0.0f, space::k2));
+        if (Button("Restore", ButtonStyle::Primary, Icon::None, ImVec2(120.0f, 40.0f))) {
+            for (const OptionDef& option : AllOptions()) {
+                if (!option.globalSetting || std::strcmp(option.page, kPageIds[m_settingsPage]) != 0) continue;
+                SettingsModel target = model;
+                option.set(target, OptionDefault(option));
+                persist(option);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (Button("Cancel", ButtonStyle::Secondary, Icon::None, ImVec2(120.0f, 40.0f))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    EndColumn();
 }
 
 } // namespace NovaUI

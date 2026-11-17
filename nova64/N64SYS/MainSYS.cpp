@@ -315,6 +315,11 @@ void CN64System::RunLoadedImage(uint64_t frameLimit) {
                 Log::info("Save chip override: FlashRAM (Majora's Mask)");
             }
         }
+        if (s_SaveChipOverride != N64Types::SaveChipType::Auto) {
+            g_BaseSystem->m_SaveUsing = s_SaveChipOverride;
+            Log::infof("Save chip forced by the game's setup: %s",
+                       s_SaveChipOverride == N64Types::SaveChipType::Sram ? "SRAM" : "FlashRAM");
+        }
 
         // Initialize memory (allocates RDRAM, creates memory maps)
         if (!g_BaseSystem->m_Memory->Initialize()) {
@@ -1430,3 +1435,4 @@ bool CN64System::s_UseInterpreter = false;
 #else
 bool CN64System::s_UseInterpreter = true;
 #endif
+N64Types::SaveChipType CN64System::s_SaveChipOverride = N64Types::SaveChipType::Auto;

@@ -12,6 +12,7 @@ std::atomic<int> g_frameH{480};
 std::mutex g_frameMutex;
 std::atomic<bool> g_frameReady{false};
 std::string g_rendererDescription;
+std::string g_configPath;
 
 FrameReadyFn g_frameCallback{nullptr};
 

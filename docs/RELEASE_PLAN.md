@@ -101,9 +101,11 @@ Correctness and robustness
 ## 4. Launcher and in-game UI
 
 - [x] A UI kit (`UI/UiKit.*`) holding the palette, fonts, icons and widgets, so pages only say what they show
-- [x] A modern console-style look: dark glass panels over a violet background picture, one accent colour, Inter
-      for text and Phosphor for icons (both compiled in, licences kept), set at the display's pixel density so it is
-      sharp on a Retina or scaled display
+- [x] A modern console-style look: opaque cards on a neutral ramp with one hairline and one lightness step per layer,
+      one accent colour, two corner radii, a 4-point spacing scale, Inter for text and Phosphor for icons (both
+      compiled in, licences kept), set at the display's pixel density so it is sharp on a Retina or scaled display
+- [x] Research behind the look (emulator front-ends, design-system settings rows, spacing scales, contrast, ImGui
+      navigation): text and captions measured against WCAG 2.2 (muted text 7:1, dim text 4.5:1 on every surface)
 - [x] Icons for every page and action, as a font, so they stay sharp at any size
 - [x] Home with a large card for the game last played (box art, publisher, year, description, play and
       favourite, and a screenshot of the last session), a Recently Played row, and a hint bar
@@ -113,16 +115,28 @@ Correctness and robustness
 - [x] Sidebar with an icon per page, a clear selected state and the version at the bottom
 - [x] Button hierarchy: one primary action per screen, quiet secondary buttons, a distinct
       destructive style, with hover, pressed and disabled states
-- [ ] Settings as aligned forms: labels on the left, grouped in cards, helper text in one style
+- [x] Settings as rows: title and help on the left, control on the right, grouped in cards, a Reset button on a
+      row that differs from its default, an Experimental badge, Restore defaults per page, one table of options
+      (`UI/GameSetup.*`) behind both the Settings page and the Simulator
+- [x] Simulator rebuilt: a per-game setup (settings/games/<rom>.ini) that overrides speed, CPU core, RSP engine,
+      rewind, graphics driver, resolution, widescreen, textures, accuracy and the save chip; a schematic of
+      cartridge, console, display and controllers; the ROM header (region, 50 or 60 Hz, format, checksums); and a
+      check that explains what will not work. The old node-wiring toy and its library are gone
+- [ ] The Simulator offers per-game controller accessories, 4 MB or 8 MB RAM and a TV standard only if the core gains
+      them (it has 8 MB and the region from the ROM; the Controller Pak is not implemented)
 - [ ] Library: sort order, play time, and cover pictures fetched for the user (the code makes no network
       connections, so this needs a decision)
 - [ ] Empty and error states with an actionable message: no games, Vulkan or MoltenVK missing,
       shader compile failure, unreadable ROM
-- [ ] Notifications for saves, rewinds and errors; keyboard and controller focus clearly visible
-- [ ] Pause menu and rewind strip visual pass; save-state slots with thumbnails
+- [x] Keyboard and controller navigation reaches every widget (custom buttons use `ImGuiButtonFlags_EnableNav`
+      and cards are `NavFlattened`), with a visible 2 px focus ring
+- [ ] Controller navigation checked on a real gamepad: sliders with the D-pad, B to go back, bumpers to change
+      Settings tabs, glyphs that follow the device in use
+- [ ] Notifications for saves, rewinds and errors
+- [x] Pause menu and rewind strip restyled; save-state slots with thumbnails
 - [ ] Check the interface on a Retina display and at Windows scale settings (so far it has only been
       rendered at 1x); add an interface-scale setting
-- [ ] Text contrast of the muted text on the glass panels measured, and a high-contrast option
+- [ ] A high-contrast option
 - [ ] Font-size setting
 - [ ] First-run welcome: pick a game folder, test the controller
 - [x] About page: version, licence, the keys used while playing, what it is made with

@@ -16,7 +16,9 @@
 #include "../NovaInput/GamepadInput.hpp"
 #include "../NovaInput/KeyBindings.hpp"
 #include "../NovaLua/LuaEngine.hpp"
+#include "GameSetup.hpp"
 #include "HexEditor.hpp"
+#include "RomInfo.hpp"
 
 struct SDL_Window;
 union SDL_Event;
@@ -34,46 +36,6 @@ struct RomMetadata {
     bool favorite = false;
     int64_t lastPlayed = 0; ///< seconds since 1970, or 0 if never started from the launcher
     int plays = 0;
-};
-
-// --- Simulator node system ---
-enum class SimNodeKind {
-    N64Console,
-    TV,
-    N64DD,
-    Controller,
-    ExpansionPak,
-    Cartridge,
-    RumblePak,
-    ControllerPak,
-    TransferPak
-};
-
-struct SimNode {
-    int id = 0;
-    SimNodeKind kind = SimNodeKind::N64Console;
-
-    bool showConfig = false;
-    bool isPowered = false;
-
-    // New nodes are placed once, the first time they are drawn in the editor.
-    bool placed = false;
-    float spawnX = 0.0f;
-    float spawnY = 0.0f;
-
-    int ramMB = 4;
-    bool hasExpansionPak = false;
-    bool has64DD = false;
-    char cartName[128] = {};
-    char cartPath[512] = {};
-    char ddCartName[128] = {};
-    char ddCartPath[512] = {};
-};
-
-struct SimLink {
-    int id;
-    int fromPin;
-    int toPin;
 };
 
 /// Launcher options that aren't graphics settings (settings/launcher.ini).
@@ -132,12 +94,13 @@ private:
     void RenderGameDialogs();
     void RenderAboutTab();
     void RenderSettingsTab();
+    /// One option as a row. Returns true when its value changed.
+    bool RenderOptionRow(const OptionDef& option, const SettingsModel& model);
     void RenderInputSettingsWidget();
     void RenderControllerSettingsWidget();
     void RenderScriptsTab();
     void RenderHexEditorTab();
     void RenderAchievementsTab();
-    void RenderSimulatorTab();
     void UpdateWindowAnimations(SDL_Window* window);
 
     // ---- Input ----
@@ -175,7 +138,6 @@ private:
 
     // ---- Playing a game inside the launcher (LauncherPlay.cpp) ----
     void PlayRom(const std::string& path, const std::string& name);
-    void LaunchEmulator(const SimNode& node);
     void StopEmbedded();
     /// Per-frame bookkeeping: a game that ended, a pending resume, new messages.
     void UpdatePlayState();
@@ -203,15 +165,11 @@ private:
     // ---- Tools ----
     void RefreshScriptFiles();
 
-    // ---- Simulator ----
-    void SpawnNode(SimNodeKind kind, int cartIndex = -1);
-    void RenderSimNode(SimNode& node);
-    static const char* NodeIcon(SimNodeKind k);
-    static const char* NodeLabel(SimNodeKind k);
+    // ---- Simulator: one game's setup ----
+    void RenderSimulatorTab();
+    /// Opens the Simulator on a game, to see how it will run and what is different about it.
+    void OpenSimulator(int gameIndex);
     static bool IsN64DDDisk(const std::string& path);
-    static int GetPinId(int nodeId, int pinIndex) { return (nodeId << 4) | pinIndex; }
-    static int GetNodeIdFromPin(int pinId) { return pinId >> 4; }
-    static bool IsInputPin(int pinId) { return (pinId & 0xF) > 0; }
 
     // ---- State ----
     bool m_shouldExit = false;
@@ -225,6 +183,8 @@ private:
     int m_editingRomIndex = -1;
     int m_selectedGame = -1;      ///< index into m_library shown on the Home card, or -1 for the most recent one
     char m_searchBuffer[96] = {}; ///< the filter on the library pages
+    int m_unusedSaveChip = 0;     ///< the settings model needs somewhere to point for the per-game-only save chip
+    int m_settingsPage = 0;       ///< the Settings tab: 0 Emulation, 1 Video, 2 Audio, 3 Controls
     char m_editPathBuffer[512] = {};
     char m_editNameBuffer[128] = {};
     char m_editNotesBuffer[1024] = {};
@@ -250,15 +210,17 @@ private:
 
     Nova64::Video::PluginConfig m_gfx;
     LaunchOptions m_launch;
+    LaunchOptions m_running;    ///< m_launch with the running game's own setup applied
     NovaInput::KeyBindings m_bindings;
     int m_rebindTarget = -1;    ///< N64Input index being changed, or -1
     NovaInput::ControllerSettings m_padSettings;
     int m_padRebindTarget = -1; ///< N64Input index waiting for a controller input, or -1
 
-    int m_nextNodeId = 10;
-    int m_nextLinkId = 100;
-    std::vector<SimNode> m_simNodes;
-    std::vector<SimLink> m_simLinks;
+    int m_simGame = -1;         ///< the game shown in the Simulator (index into m_library)
+    int m_simPart = 0;    ///< what the Simulator's inspector shows: 0 cartridge, 1 console, 2 display, 3 controllers
+    int m_simLoaded = -1; ///< the game m_simSetup and m_simRom were read for
+    GameSetup m_simSetup; ///< that game's overrides
+    detail::RomInfo m_simRom; ///< what its ROM header says
 
     float m_windowOpacity = 0.0f;
     enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState = AnimState::FadeIn;

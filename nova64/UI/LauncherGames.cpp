@@ -171,6 +171,82 @@ bool ReadN64RomHeader(const std::string& path, std::string* internalName) {
     return true;
 }
 
+RomInfo ReadRomInfo(const std::string& path) {
+    RomInfo info;
+    std::error_code ec;
+    info.size = fs::is_regular_file(path, ec) ? static_cast<unsigned long long>(fs::file_size(path, ec)) : 0;
+    std::ifstream f(path, std::ios::binary);
+    unsigned char h[0x40] = {};
+    if (!f.read(reinterpret_cast<char*>(h), sizeof(h))) return info;
+
+    const uint32_t magic = (uint32_t(h[0]) << 24) | (uint32_t(h[1]) << 16) | (uint32_t(h[2]) << 8) | h[3];
+    int swap;
+    if (magic == 0x80371240) {
+        swap = 0;
+        info.format = "z64 (big-endian)";
+    } else if (magic == 0x37804012) {
+        swap = 1;
+        info.format = "v64 (byte-swapped)";
+    } else if (magic == 0x40123780) {
+        swap = 3;
+        info.format = "n64 (little-endian)";
+    } else {
+        return info;
+    }
+    auto at = [&](int offset) { return h[offset ^ swap]; };
+    auto word = [&](int offset) {
+        return (unsigned(at(offset)) << 24) | (unsigned(at(offset + 1)) << 16) | (unsigned(at(offset + 2)) << 8) |
+               at(offset + 3);
+    };
+
+    std::string name;
+    for (int i = 0x20; i < 0x34; ++i) name += (at(i) >= 0x20 && at(i) < 0x7F) ? static_cast<char>(at(i)) : ' ';
+    const auto end = name.find_last_not_of(' ');
+    info.title = end == std::string::npos ? std::string{} : name.substr(0, end + 1);
+    info.gameId = {static_cast<char>(at(0x3C)), static_cast<char>(at(0x3D))};
+    info.crc1 = word(0x10);
+    info.crc2 = word(0x14);
+    info.revision = at(0x3F);
+
+    info.regionCode = static_cast<char>(at(0x3E));
+    switch (info.regionCode) {
+    case 'E': info.region = "USA"; break;
+    case 'J': info.region = "Japan"; break;
+    case 'A': info.region = "Asia"; break;
+    case '7': info.region = "Beta"; break;
+    case 'B': info.region = "Brazil"; break;
+    case 'P':
+    case 'X':
+    case 'Y':
+        info.region = "Europe";
+        info.pal = true;
+        break;
+    case 'D':
+        info.region = "Germany";
+        info.pal = true;
+        break;
+    case 'F':
+        info.region = "France";
+        info.pal = true;
+        break;
+    case 'I':
+        info.region = "Italy";
+        info.pal = true;
+        break;
+    case 'S':
+        info.region = "Spain";
+        info.pal = true;
+        break;
+    case 'U':
+        info.region = "Australia";
+        info.pal = true;
+        break;
+    default: break;
+    }
+    info.valid = true;
+    return info;
+}
+
 // Every game started from the launcher or the command line is kept in roms/.
 std::string CopyIntoRomsFolder(const std::string& romPath) {
     std::error_code ec;
@@ -199,6 +275,13 @@ std::string ShotPathFor(const std::string& romPath) {
 }
 
 } // namespace detail
+
+bool NovaLauncher::IsN64DDDisk(const std::string& path) {
+    std::string ext = fs::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext == ".ndd" || ext == ".d64";
+}
 
 namespace {
 
@@ -354,6 +437,9 @@ void NovaLauncher::RemoveGame(int index) {
     m_library.erase(m_library.begin() + index);
     if (m_selectedGame == index) m_selectedGame = -1;
     else if (m_selectedGame > index) --m_selectedGame;
+    m_simLoaded = -1;
+    if (m_simGame == index) m_simGame = -1;
+    else if (m_simGame > index) --m_simGame;
     SaveLibrary();
 }
 
@@ -518,7 +604,7 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& ti
     using namespace kit;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + size.x, min.y + size.y);
-    const bool clicked = ImGui::InvisibleButton("##cover", size);
+    const bool clicked = kit::NavButton("##cover", size);
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList* draw = ImGui::GetWindowDrawList();
 
@@ -548,7 +634,7 @@ bool NovaLauncher::DrawCover(const std::string& coverPath, const std::string& ti
         DrawIcon(draw, Icon::Play, ImVec2(mid.x + 1.0f, mid.y), std::round(radius * 1.0f),
                  ImGui::GetColorU32(color::kOnAccent));
     }
-    if (selected) DrawSelectionRing(draw, min, max, rounding);
+    if (selected || (ImGui::IsItemFocused() && ImGui::GetIO().NavVisible)) DrawSelectionRing(draw, min, max, rounding);
     return clicked;
 }
 
@@ -611,14 +697,14 @@ void NovaLauncher::RenderLibraryPage(Tab tab) {
     }
 
     int removeIndex = -1;
-    const float gap = 18.0f, pad = 10.0f;
+    const float gap = space::k4, pad = space::k3;
     const float avail = ImGui::GetContentRegionAvail().x;
     const int columns = std::clamp(static_cast<int>((avail + gap) / (212.0f + gap)), 1, 6);
     const float cellW = std::floor((avail - gap * (columns - 1)) / columns);
     const float coverW = cellW - pad * 2.0f;
     const float coverH = std::floor(coverW * 0.75f);
     const float buttonH = 36.0f;
-    const float cellH = pad + coverH + 10.0f + 22.0f + 20.0f + 10.0f + buttonH + pad;
+    const float cellH = pad + coverH + space::k3 + 22.0f + 20.0f + space::k3 + buttonH + pad;
 
     for (size_t n = 0; n < shown.size(); ++n) {
         const int i = shown[n];
@@ -668,6 +754,7 @@ void NovaLauncher::RenderLibraryPage(Tab tab) {
         ImGui::SameLine();
         if (IconButton("##more", Icon::More, ButtonStyle::Ghost, "More", buttonH)) ImGui::OpenPopup("##menu");
         if (ImGui::BeginPopup("##menu")) {
+            if (ImGui::MenuItem("Setup...")) OpenSimulator(i);
             if (ImGui::MenuItem("Edit details...")) OpenEditDialog(i);
             if (ImGui::MenuItem("Remove from library")) removeIndex = i;
             ImGui::EndPopup();
@@ -811,6 +898,7 @@ void NovaLauncher::RenderGameDialogs() {
                     rom.cover = cover;
                 }
                 SaveLibrary();
+                m_simLoaded = -1;
                 m_showEditModal = false;
                 ImGui::CloseCurrentPopup();
             }

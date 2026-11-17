@@ -388,7 +388,7 @@ one, add its row.
 | `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
 | `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
 | `NOVA64_AUDIO_DUMP=<file.wav>` | Write everything the game plays to a 16-bit stereo WAV file, for recording footage with its sound (use with a dummy audio driver for a silent capture run) |
-| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`) to a PNG and exit |
+| `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`; the simulator also `/cartridge`, `/console`, `/display`, `/controllers`) to a PNG and exit |
 | `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |
 | `NOVA64_UI_KEYS=600:Backspace,660:Return` | Press launcher keys on the given launcher frames |
 | `NOVA64_UI_SHOT_AT=580,700` | With `NOVA64_UI_SHOT`, save `<path>_<frame>` on each frame and exit after the last (pass a path without an extension; the files are PNG) |
@@ -569,14 +569,26 @@ audio driver the frame numbers a screenshot lands on can shift by one between tw
 
 ## The launcher's look
 
-The launcher is a dark, translucent interface in the style of a modern game console: a navy-to-violet background
-picture, glass panels, rounded buttons, and one accent colour (violet `5B4DE3`) for the main action and the
-selected row. Everything it draws that is not plain Dear ImGui lives in `UI/UiKit.*`, so a page only says what it
-shows: the palette (`kit::color`), the widgets (`Button`, `IconButton`, `NavItem`, `BeginCard`, `Chip`, ...), the
-icons (`kit::Icon`) and the text helpers. Change the look there, not in a page.
+The launcher is a dark console-style interface: opaque cards on a neutral ramp tinted slightly toward indigo, one
+hairline border and one lightness step per layer instead of shadows or transparency, and one accent colour
+(violet `5B4DE3`) kept for the primary action, the selected row, a switch that is on and the focus ring. Everything
+it draws that is not plain Dear ImGui lives in `UI/UiKit.*`, so a page only says what it shows: the palette
+(`kit::color`), the spacing scale (`kit::space`), the two corner radii (`kit::radius`), the widgets (`Button`,
+`NavItem`, `Toggle`, `Segmented`, `Slider`, `TabStrip`, `BeginCard`, `SettingRow`, `Chip`, ...), the icons
+(`kit::Icon`) and the text helpers. Change the look there, not in a page.
 
-Layout is in logical pixels. The launcher rasterises its fonts at the display's pixel density (`LoadFonts`), so
-text stays sharp on a Retina or scaled Windows display and a number in the code means the same size everywhere.
+Rules that keep it from looking generated:
+
+- Every gap, margin and padding is a `kit::space` value (4, 8, 12, 16, 24, 32, 48); a gap inside a group is smaller
+  than the gap between groups. Page margin is 32, card padding 16 or 24, gap between cards 16.
+- Text colours are `kText`, `kTextMuted` (7:1 on every surface) and `kTextDim` (4.5:1). The accent as text is
+  `kAccentText`. Check any new colour against the surfaces it sits on.
+- Two radii only: `radius::kControl` (8) and `radius::kCard` (14). No glow, no gradient on buttons.
+- A custom widget must be reachable from the keyboard and a gamepad: make it with `kit::NavButton` (ImGui skips a
+  plain `InvisibleButton`), draw a focus ring when `IsItemFocused() && io.NavVisible`, and make child windows
+  `ImGuiChildFlags_NavFlattened` so navigation can cross their borders.
+- Layout is in logical pixels. Fonts are rasterised at the display's pixel density (`LoadFonts`), so text stays
+  sharp on a Retina or scaled display.
 
 | What | Where it comes from |
 |---|---|
@@ -589,6 +601,17 @@ The fonts are cut down to the glyphs the launcher uses and compiled into the pro
 `CMakeLists.txt`), so there are no files to ship. To add an icon, add its Phosphor name to `ICONS` in
 `scripts/ui-art/subset-fonts.py` (the script explains where to get the full fonts), add it to `kit::Icon` and
 `IconCodepoint()` in `UI/UiKit.*`, and run the script again. `assets/fonts/README.md` lists the licences.
+
+### Options and per-game setups
+
+Every option the Settings page shows is one entry in the table in `UI/GameSetup.cpp`: its name, help text, kind of
+control, the settings file it is saved in, whether it applies at once or at the next game, and whether a single game
+may override it. To add an option, add it there; Settings and the Simulator both draw it. A game's overrides are
+`id = value` lines in `settings/games/<rom name>.ini`. When a game starts (`NovaLauncher::PlayRom`) they are
+applied on top of the global options: launcher options in memory, the save chip through
+`CN64System::s_SaveChipOverride`, and graphics options through a file of their own
+(`settings/running-game.ini`, named to the video plugin by `Video::g_configPath`), so the global settings file is
+never rewritten.
 
 To look at a page without clicking through the launcher, take a screenshot of it (see `NOVA64_UI_SHOT` and
 `NOVA64_UI_TAB` below); use a throwaway data folder (`NOVA64_HOME`) so no personal paths or games end up in it.
