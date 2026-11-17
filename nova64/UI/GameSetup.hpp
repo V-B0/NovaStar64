@@ -17,6 +17,17 @@
 
 namespace NovaUI {
 
+/// The interface is laid out for a window of at least this many of its own units.
+constexpr float kMinWindowWidth = 960.0f;
+constexpr float kMinWindowHeight = 600.0f;
+/// The default window, in the same units.
+constexpr float kDefaultWindowWidth = 1280.0f;
+constexpr float kDefaultWindowHeight = 720.0f;
+
+/// The interface scale to use for \p percent on a display: what was asked for, but never more than lets a window of
+/// the smallest size fit on that display. Returns a factor (1 = 100%).
+float FitInterfaceScale(int percent, int displayIndex);
+
 struct LaunchOptions;
 
 /// The values an option reads and writes. The pointers refer to the launcher's own settings for the Settings page,

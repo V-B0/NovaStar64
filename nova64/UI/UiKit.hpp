@@ -4,7 +4,7 @@
  *
  * Everything the launcher draws that is not plain Dear ImGui lives here, so the pages only say what
  * they show and the style can change in one place. Text is Inter, icons are Phosphor (both compiled
- * in, see assets/fonts/), and panels are translucent "glass" over a dark background picture.
+ * in, see assets/fonts/), and panels are opaque cards with a hairline over a dark background picture.
  */
 
 #pragma once
@@ -34,6 +34,9 @@ inline constexpr float k12 = 48.0f; ///< around an empty state
 constexpr ImVec4 Rgb(unsigned hex, float alpha = 1.0f) {
     return ImVec4(((hex >> 16) & 0xFF) / 255.0f, ((hex >> 8) & 0xFF) / 255.0f, (hex & 0xFF) / 255.0f, alpha);
 }
+
+/// An ImGui colour with the current style alpha applied, so a disabled widget fades with everything else.
+ImU32 Col(const ImVec4& color);
 
 namespace color {
 // A neutral ramp tinted slightly toward the icon's orange. Depth comes from one lightness step per layer and a hairline,
@@ -81,9 +84,11 @@ struct Fonts {
     ImFont* display = nullptr; ///< the wordmark, Inter Bold 44
 };
 
-/// Loads the fonts and the pictures (needs the GL context) for a display with the given pixel density (1 on an
-/// ordinary screen, 2 on Retina). Makes the body font the default and sets the global font scale so text lines
-/// up with layout in logical pixels. Call before the first frame.
+/// Loads the fonts and, the first time, the pictures (needs the GL context). `pixelScale` is how many physical pixels
+/// one of the interface's units takes: the display's density (1 on an ordinary screen, 2 on Retina) times the
+/// interface size. Makes the body font the default and sets the global font scale so text lines up with layout.
+/// Call before the first frame, and again between frames when the scale changes (the caller then makes the
+/// backend's font texture again).
 void LoadFonts(float pixelScale);
 
 /// The loaded fonts (all null before LoadFonts).
@@ -113,22 +118,14 @@ enum class Icon {
     Settings,
     Info,
     Play,
-    Stop,
     Pause,
     Rewind,
     FastForward,
     Plus,
-    Edit,
-    Trash,
     Folder,
-    Image,
-    Search,
     Check,
     Warning,
-    ChevronRight,
-    ChevronDown,
     ArrowRight,
-    ArrowLeft,
     Close,
     Minimize,
     Maximize,
@@ -142,11 +139,8 @@ enum class Icon {
     Calendar,
     Publisher,
     Display,
-    Sound,
-    Keyboard,
     Lightning,
     Tag,
-    Link,
     Download,
 };
 
@@ -155,14 +149,11 @@ void DrawIcon(ImDrawList* draw, Icon icon, ImVec2 center, float size, ImU32 colo
 
 // --- Shapes ---
 
-/// A rounded rectangle filled with a soft top-to-bottom shine, for primary buttons and the selected row.
+/// A rounded rectangle filled with a soft top-to-bottom shine; used for the placeholder pictures of games.
 void DrawGradientFill(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 base, float rounding, float shine = 0.22f);
 
 /// The window background: the picture, scaled to cover [min, max].
 void DrawBackground(ImDrawList* draw, ImVec2 min, ImVec2 max);
-
-/// Darkens the lower part of [min, max] so text stays readable over a picture.
-void DrawShade(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding, float strength = 0.75f);
 
 /// A GL texture drawn to fill [min, max], cropped to fit rather than stretched, with rounded corners.
 void DrawImageCover(ImDrawList* draw, unsigned texture, int texWidth, int texHeight, ImVec2 min, ImVec2 max,
@@ -179,7 +170,7 @@ bool NavButton(const char* id, ImVec2 size);
 
 enum class ButtonStyle {
     Primary,   ///< the main action of a screen: filled with the accent colour
-    Secondary, ///< ordinary actions: translucent with a border
+    Secondary, ///< ordinary actions: a little lighter than the card, with a border
     Ghost,     ///< quiet actions and toolbars: no background until hovered
     Danger,    ///< destructive actions: red outline, filled on hover
 };
@@ -235,10 +226,15 @@ void EndColumn();
 void BeginSettings(const char* id, const char* heading);
 void EndSettings();
 
+/// Flags for a modal dialog: sized by its content, and never saved to imgui.ini (its place there is in units of a
+/// size the interface may no longer have). Call CenterNextModal just before it is opened.
+constexpr ImGuiWindowFlags kModalFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+void CenterNextModal();
+
 /// A title-bar button (minimise, maximise, close). The close button turns red under the pointer.
 bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip, ImVec2 size);
 
-/// A translucent rounded panel. Everything up to EndCard is drawn inside it. `size` of 0 in a
+/// An opaque rounded panel with a hairline border. Everything up to EndCard is drawn inside it. `size` of 0 in a
 /// dimension takes the available space; `autoHeight` fits the content instead. Always call EndCard.
 bool BeginCard(const char* id, ImVec2 size = ImVec2(0, 0), bool autoHeight = true,
                ImVec2 padding = ImVec2(space::k6, space::k4), float rounding = radius::kCard);

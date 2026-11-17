@@ -75,6 +75,8 @@ public:
     [[nodiscard]] static bool UserGraphicsHleSet() { return s_UserGraphicsHleSet; }
     [[nodiscard]] static bool UserAudioHleSet() { return s_UserAudioHleSet; }
     [[nodiscard]] static bool UserCPUMethodSet() { return s_UserCPUMethodSet; }
+    /// Forgets a method the previous game asked for, so the next game starts from the default again.
+    static void ClearUserCPUMethod() { s_UserCPUMethodSet = false; }
 
 private:
     static bool s_DebuggingEnabled;

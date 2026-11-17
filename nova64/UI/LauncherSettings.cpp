@@ -4,6 +4,7 @@
  */
 #include "NovaLauncher.hpp"
 #include "UiKit.hpp"
+#include "GameFiles.hpp"
 #include "LauncherInternal.hpp"
 
 #include "../N64SYS/MainSYS.hpp"
@@ -19,6 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 extern CN64System* g_System;
@@ -69,6 +71,8 @@ void LaunchOptions::Load(const std::string& path) {
         else if (key == "rewind") rewind = v != 0;
         else if (key == "pauseWhenInactive") pauseOnFocusLoss = v != 0;
         else if (key == "showFps") showFps = v != 0;
+        else if (key == "rumbleShake") rumbleShake = v;
+        else if (key == "uiScale") uiScale = v;
         else if (key == "volume") volume = v;
         else if (key == "muted") muted = v != 0;
     }
@@ -78,10 +82,12 @@ void LaunchOptions::Load(const std::string& path) {
     if (cpuCore < 0 || cpuCore > 2) cpuCore = 0;
     if (rspEngine < 0 || rspEngine > 1) rspEngine = 0;
     if (volume < 0 || volume > 100) volume = 100;
+    rumbleShake = std::clamp(rumbleShake, 0, 100);
+    if (uiScale != 100 && uiScale != 125 && uiScale != 150 && uiScale != 200) uiScale = 100;
 }
 
-void LaunchOptions::Save(const std::string& path) const {
-    std::ofstream f(path, std::ios::trunc);
+bool LaunchOptions::Save(const std::string& path) const {
+    std::ostringstream f;
     f << "speed = " << speed << "\n"
       << "displayMode = " << displayMode << "\n"
       << "cpuCore = " << cpuCore << "\n"
@@ -89,8 +95,11 @@ void LaunchOptions::Save(const std::string& path) const {
       << "rewind = " << (rewind ? 1 : 0) << "\n"
       << "pauseWhenInactive = " << (pauseOnFocusLoss ? 1 : 0) << "\n"
       << "showFps = " << (showFps ? 1 : 0) << "\n"
+      << "rumbleShake = " << rumbleShake << "\n"
+      << "uiScale = " << uiScale << "\n"
       << "volume = " << volume << "\n"
       << "muted = " << (muted ? 1 : 0) << "\n";
+    return WriteFileAtomically(path, f.str());
 }
 
 // --- Load / save ---
@@ -103,9 +112,7 @@ void NovaLauncher::LoadSettings() {
 }
 
 void NovaLauncher::SaveLaunchOptions() {
-    std::error_code ec;
-    std::filesystem::create_directories("settings", ec);
-    m_launch.Save(detail::kLauncherPath);
+    if (!m_launch.Save(detail::kLauncherPath)) ShowStatus("Couldn't save the settings. Is the data folder writable?");
     ApplyLaunchOptions();
 }
 
@@ -116,8 +123,7 @@ void NovaLauncher::ApplyLaunchOptions() {
 }
 
 void NovaLauncher::SaveGraphicsSettings() {
-    // A running game rewrites this file when it exits, so start from what is on
-    // disk and change only the fields this tab owns.
+    // Start from what is on disk and change only the fields the options own, so anything edited by hand survives.
     Nova64::Video::PluginConfig onDisk;
     onDisk.LoadFromFile(detail::kGraphicsPath);
     onDisk.internalResScale = m_gfx.internalResScale;
@@ -130,7 +136,8 @@ void NovaLauncher::SaveGraphicsSettings() {
     onDisk.renderingMode = m_gfx.renderingMode;
     onDisk.fbReadAccess = m_gfx.fbReadAccess;
     onDisk.fbWriteAccess = m_gfx.fbWriteAccess;
-    onDisk.SaveToFile(detail::kGraphicsPath);
+    if (!onDisk.SaveToFile(detail::kGraphicsPath))
+        ShowStatus("Couldn't save the settings. Is the data folder writable?");
 }
 
 void NovaLauncher::SetTurbo(bool enabled) {
@@ -567,6 +574,11 @@ void NovaLauncher::RenderSettingsTab() {
     };
 
     if (m_settingsPage == 3) {
+        BeginSettings("Rumble", "Rumble");
+        for (const OptionDef& option : AllOptions())
+            if (option.globalSetting && std::strcmp(option.page, "controls") == 0 && RenderOptionRow(option, model))
+                persist(option);
+        EndSettings();
         BeginCard("##controllers", ImVec2(0, 0), true, ImVec2(space::k6, space::k4));
         SectionTitle("Game controllers");
         ImGui::Dummy(ImVec2(0.0f, space::k2));
@@ -626,7 +638,8 @@ void NovaLauncher::RenderSettingsTab() {
         ImGui::OpenPopup("Restore defaults?");
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, radius::kCard);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(space::k6, space::k6));
-    const bool confirming = ImGui::BeginPopupModal("Restore defaults?", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    CenterNextModal();
+    const bool confirming = ImGui::BeginPopupModal("Restore defaults?", nullptr, kModalFlags);
     ImGui::PopStyleVar(2);
     if (confirming) {
         ImGui::Text("Every %s setting goes back to its default.", kPages[m_settingsPage]);

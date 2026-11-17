@@ -5,16 +5,19 @@
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
 #include "AppIcon.hpp"
+#include "GameFiles.hpp"
 #include "GameInfo.hpp"
 #include "UiKit.hpp"
 
 #include <SDL.h>
 #include <glad/gl.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_impl_sdl2.h>
 
 #include "../NovaGraphics/Texture/ImageWrite.hpp"
+#include "../common/log.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -59,6 +62,8 @@ constexpr float kRightMargin = kit::space::k8;
 
 /// How tall the draggable top bar is right now (it is shorter while a game runs).
 std::atomic<int> g_dragHeight{static_cast<int>(kTitleBarHeight)};
+/// The width at the right of the bar that belongs to the window buttons, in window points.
+std::atomic<int> g_dragRightReserve{150};
 
 // The launcher is borderless, so it provides its own drag area (the top bar,
 // clear of the window buttons) and resize edges.
@@ -80,9 +85,30 @@ extern "C" SDL_HitTestResult SDLCALL LauncherHitTest(SDL_Window* win, const SDL_
         if (bottom) return SDL_HITTEST_RESIZE_BOTTOM;
     }
 
-    constexpr int kRightReserve = 150;
-    if (area->y < g_dragHeight.load() && area->x < w - kRightReserve) return SDL_HITTEST_DRAGGABLE;
+    if (area->y < g_dragHeight.load() && area->x < w - g_dragRightReserve.load()) return SDL_HITTEST_DRAGGABLE;
     return SDL_HITTEST_NORMAL;
+}
+
+/// The text-input position the backend hands to the system (for the IME's candidate window) is in the interface's
+/// units; the system wants window points.
+float g_imeScale = 1.0f;
+void (*g_backendSetImeData)(ImGuiContext*, ImGuiViewport*, ImGuiPlatformImeData*) = nullptr;
+void SetImeDataScaled(ImGuiContext* context, ImGuiViewport* viewport, ImGuiPlatformImeData* data) {
+    ImGuiPlatformImeData scaled = *data;
+    scaled.InputPos = ImVec2(data->InputPos.x * g_imeScale, data->InputPos.y * g_imeScale);
+    scaled.InputLineHeight = data->InputLineHeight * g_imeScale;
+    g_backendSetImeData(context, viewport, &scaled);
+}
+
+float FitScale(int percent, SDL_Window* window) {
+    return FitInterfaceScale(percent, window ? SDL_GetWindowDisplayIndex(window) : 0);
+}
+
+/// The usable area of the display a window is on (without the menu bar and the Dock), in window points.
+SDL_Rect UsableBounds(SDL_Window* window) {
+    SDL_Rect usable{0, 0, 0, 0};
+    SDL_GetDisplayUsableBounds(window ? std::max(0, SDL_GetWindowDisplayIndex(window)) : 0, &usable);
+    return usable;
 }
 
 Tab TabFromName(const std::string& name) {
@@ -112,6 +138,8 @@ NovaLauncher::NovaLauncher() {
     //       press keys at the given launcher frames
     //   NOVA64_UI_MOUSE=100:400:300:move,110:400:300:down,120:500:300:move,130:500:300:up
     //       move the pointer and press or release the left button at the given launcher frames (x, y in points)
+    //   NOVA64_UI_RUMBLE=300:120
+    //       make the running game's Rumble Pak run its motor from launcher frame 300 for 120 frames
     //   NOVA64_UI_SAVE=300:0,600:1
     //       save a state into a slot (0-3) at the given launcher frames
     //   NOVA64_UI_OPEN=add | edit:<index>
@@ -165,6 +193,10 @@ NovaLauncher::NovaLauncher() {
             start = comma + 1;
         }
     }
+    if (const char* rumble = std::getenv("NOVA64_UI_RUMBLE")) {
+        int frame = 0, count = 0;
+        if (std::sscanf(rumble, "%d:%d", &frame, &count) == 2) m_autoRumble.emplace_back(frame, count);
+    }
     if (const char* saves = std::getenv("NOVA64_UI_SAVE")) {
         const std::string list(saves);
         for (size_t start = 0; start < list.size();) {
@@ -208,6 +240,7 @@ void NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
     case AnimState::MinimizeOut:
         m_windowOpacity -= kStep * 1.5f;
         if (m_windowOpacity <= 0.0f) {
+            EndShake(window);
             SDL_MinimizeWindow(window);
             m_animState = AnimState::Stable;
             m_windowOpacity = 1.0f;
@@ -216,6 +249,86 @@ void NovaLauncher::UpdateWindowAnimations(SDL_Window* window) {
         break;
     case AnimState::Stable: break;
     }
+}
+
+// --- Rumble ---
+void NovaLauncher::EndShake(SDL_Window* window) {
+    if (m_shaking && window) SDL_SetWindowPosition(window, m_shakeBaseX, m_shakeBaseY);
+    m_shaking = false;
+    m_shakeUntil = 0;
+    m_shakeOffset = ImVec2(0.0f, 0.0f);
+}
+
+void NovaLauncher::UpdateShake(SDL_Window* window) {
+    // How far the window may move at full strength, in points
+    constexpr float kMaxShake = 14.0f;
+    constexpr uint32_t kTailMs = 90;
+
+    const int percent = m_emuRunning.load() ? m_running.rumbleShake : 0;
+    const bool rumbling =
+        percent > 0 && !m_showPauseMenu && !m_rewindOpen && NovaInput::Gamepads::Instance().RumbleCommanded();
+    const uint32_t now = SDL_GetTicks();
+    if (rumbling) m_shakeUntil = now + kTailMs;
+    const bool active = now < m_shakeUntil;
+    const float fade =
+        rumbling
+            ? 1.0f
+            : std::clamp(static_cast<float>(m_shakeUntil - std::min(now, m_shakeUntil)) / static_cast<float>(kTailMs),
+                         0.0f, 1.0f);
+    const float amplitude = static_cast<float>(percent) / 100.0f * kMaxShake * fade;
+
+    // A window that is maximised, full screen or minimised cannot be moved, and neither can one under a window
+    // system that does not let a program place its windows (Wayland): the game picture shakes instead.
+    static const bool windowSystemMoves = [] {
+        const char* driver = SDL_GetCurrentVideoDriver();
+        return !(driver && std::strcmp(driver, "wayland") == 0);
+    }();
+    const bool movable =
+        windowSystemMoves && !(SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP |
+                                                             SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED));
+    int dx = 0, dy = 0;
+    if (active && amplitude > 0.0f) {
+        auto next = [&] {
+            m_shakeSeed = m_shakeSeed * 1664525u + 1013904223u;
+            return static_cast<int>((m_shakeSeed >> 16) % 2001u) - 1000; // -1000..1000
+        };
+        dx = static_cast<int>(std::lround(amplitude * static_cast<float>(next()) / 1000.0f));
+        dy = static_cast<int>(std::lround(amplitude * static_cast<float>(next()) / 1000.0f));
+    }
+
+    if (active && movable && (dx != 0 || dy != 0 || m_shaking)) {
+        int x = 0, y = 0;
+        SDL_GetWindowPosition(window, &x, &y);
+        if (!m_shaking) {
+            m_shaking = true;
+            m_shakeBaseX = x;
+            m_shakeBaseY = y;
+            static bool logged = false; // once is enough: a game rumbles many times
+            if (!logged) Log::infof("Rumble: shaking the window (%d%%)", percent);
+            logged = true;
+        } else if (std::abs(x - m_shakeLastX) > 3 || std::abs(y - m_shakeLastY) > 3) {
+            // Someone moved the window: let go of it and start again from where it is
+            m_shaking = false;
+            m_shakeUntil = 0;
+            m_shakeOffset = ImVec2(0.0f, 0.0f);
+            return;
+        }
+        m_shakeLastX = m_shakeBaseX + dx;
+        m_shakeLastY = m_shakeBaseY + dy;
+        SDL_SetWindowPosition(window, m_shakeLastX, m_shakeLastY);
+    } else if (m_shaking) {
+        // Put the window back where it was, unless someone else has moved it since
+        int x = 0, y = 0;
+        SDL_GetWindowPosition(window, &x, &y);
+        if (movable && std::abs(x - m_shakeLastX) <= 3 && std::abs(y - m_shakeLastY) <= 3)
+            SDL_SetWindowPosition(window, m_shakeBaseX, m_shakeBaseY);
+        m_shaking = false;
+    }
+
+    // A window that cannot move shakes the picture instead
+    m_shakeOffset = (active && !movable)
+                        ? ImVec2(static_cast<float>(dx) / m_appliedScale, static_cast<float>(dy) / m_appliedScale)
+                        : ImVec2(0.0f, 0.0f);
 }
 
 // --- Main loop ---
@@ -227,14 +340,24 @@ void NovaLauncher::Run() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
+    m_appliedScale = FitScale(m_launch.uiScale, nullptr);
+    // The window is 1280x720 of the interface's units, but never larger than the screen has room for
+    const SDL_Rect screen = UsableBounds(nullptr);
+    int startW = static_cast<int>(kDefaultWindowWidth * m_appliedScale);
+    int startH = static_cast<int>(kDefaultWindowHeight * m_appliedScale);
+    if (screen.w > 0 && screen.h > 0) {
+        startW = std::min(startW, screen.w);
+        startH = std::min(startH, screen.h);
+    }
     SDL_Window* window =
-        SDL_CreateWindow("NovaStar64", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
+        SDL_CreateWindow("NovaStar64", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, startW, startH,
                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!window) {
         SDL_Quit();
         return;
     }
-    SDL_SetWindowMinimumSize(window, 960, 600);
+    SDL_SetWindowMinimumSize(window, static_cast<int>(kMinWindowWidth * m_appliedScale),
+                             static_cast<int>(kMinWindowHeight * m_appliedScale));
     SDL_SetWindowHitTest(window, LauncherHitTest, nullptr);
     ApplyAppIcon(window);
 
@@ -279,10 +402,15 @@ void NovaLauncher::Run() {
     int winW = 0, winH = 0, drawW = 0, drawH = 0;
     SDL_GetWindowSize(window, &winW, &winH);
     SDL_GL_GetDrawableSize(window, &drawW, &drawH);
-    const float dpiScale = winW > 0 ? static_cast<float>(drawW) / static_cast<float>(winW) : 1.0f;
-    kit::LoadFonts(dpiScale);
+    float dpiScale = winW > 0 ? static_cast<float>(drawW) / static_cast<float>(winW) : 1.0f;
+    kit::LoadFonts(dpiScale * m_appliedScale);
 
     ImGui_ImplSDL2_InitForOpenGL(window, glContext);
+    {
+        ImGuiPlatformIO& platformIo = ImGui::GetPlatformIO();
+        g_backendSetImeData = platformIo.Platform_SetImeDataFn;
+        if (g_backendSetImeData) platformIo.Platform_SetImeDataFn = SetImeDataScaled;
+    }
     ImGui_ImplOpenGL3_Init("#version 330");
 
     RefreshScriptFiles();
@@ -321,6 +449,10 @@ void NovaLauncher::Run() {
                 SDL_PushEvent(&button);
             }
         }
+        for (const auto& [frame, count] : m_autoRumble) {
+            if (frame == m_frameCount) NovaInput::Gamepads::Instance().SetRumble(0, true);
+            if (frame + count == m_frameCount) NovaInput::Gamepads::Instance().SetRumble(0, false);
+        }
         for (const auto& [frame, slot] : m_autoSaves)
             if (frame == m_frameCount && m_emuRunning.load() && slot >= 0 && slot < Nova64::kSaveSlots)
                 Nova64::StateService::Instance().RequestSave(slot);
@@ -341,7 +473,20 @@ void NovaLauncher::Run() {
             if (event.type == SDL_CONTROLLERBUTTONDOWN && m_emuRunning.load() &&
                 HandleGamePadButton(event.cbutton.button))
                 continue;
-            ImGui_ImplSDL2_ProcessEvent(&event);
+            {
+                // The interface is laid out in its own units, which are m_appliedScale window points each
+                SDL_Event forImGui = event;
+                if (m_appliedScale != 1.0f) {
+                    if (event.type == SDL_MOUSEMOTION) {
+                        forImGui.motion.x = static_cast<Sint32>(static_cast<float>(event.motion.x) / m_appliedScale);
+                        forImGui.motion.y = static_cast<Sint32>(static_cast<float>(event.motion.y) / m_appliedScale);
+                    } else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+                        forImGui.button.x = static_cast<Sint32>(static_cast<float>(event.button.x) / m_appliedScale);
+                        forImGui.button.y = static_cast<Sint32>(static_cast<float>(event.button.y) / m_appliedScale);
+                    }
+                }
+                ImGui_ImplSDL2_ProcessEvent(&forImGui);
+            }
 
             if (event.type == SDL_QUIT) m_shouldExit = true;
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
@@ -358,13 +503,13 @@ void NovaLauncher::Run() {
                 std::string title;
                 if (IsN64DDDisk(dropped) || detail::ReadN64RomHeader(dropped, &title)) {
                     AddToLibrary(dropped, title);
-                    if (!m_emuRunning.load())
-                        PlayRom(dropped, title.empty() ? fs::path(dropped).stem().string() : title);
+                    if (!m_emuRunning.load()) PlayRom(dropped, title.empty() ? FileStem(dropped) : title);
                 }
             }
         }
 
         UpdatePlayState();
+        UpdateShake(window);
         UpdateWindowAnimations(window);
 
         SDL_GL_MakeCurrent(window, glContext);
@@ -373,8 +518,69 @@ void NovaLauncher::Run() {
         const bool padNavigation = (!m_emuRunning.load() || m_showPauseMenu || m_rewindOpen) && m_padRebindTarget < 0;
         if (padNavigation) io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
         else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+        // A change of display or of the interface size means new fonts, made between frames
+        {
+            int winNow = 0, winHeightNow = 0, drawNow = 0, drawHeightNow = 0;
+            SDL_GetWindowSize(window, &winNow, &winHeightNow);
+            SDL_GL_GetDrawableSize(window, &drawNow, &drawHeightNow);
+            const float density = winNow > 0 ? static_cast<float>(drawNow) / static_cast<float>(winNow) : 1.0f;
+            const float scale = FitScale(m_launch.uiScale, window);
+            if (scale != m_appliedScale || density != dpiScale) {
+                const bool scaleChanged = scale != m_appliedScale;
+                m_appliedScale = scale;
+                dpiScale = density;
+                ImGui_ImplOpenGL3_DestroyFontsTexture();
+                kit::LoadFonts(dpiScale * m_appliedScale);
+                ImGui_ImplOpenGL3_CreateFontsTexture();
+                // Only a new interface size changes the window (a move to another display just gets new fonts): it
+                // grows to the new smallest size if it is smaller, and stays on the screen.
+                if (scaleChanged) {
+                    const int minW = static_cast<int>(kMinWindowWidth * m_appliedScale),
+                              minH = static_cast<int>(kMinWindowHeight * m_appliedScale);
+                    SDL_SetWindowMinimumSize(window, minW, minH);
+                    if (!(SDL_GetWindowFlags(window) &
+                          (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP))) {
+                        const SDL_Rect screen = UsableBounds(window);
+                        int w = std::max(winNow, minW), h = std::max(winHeightNow, minH);
+                        if (screen.w > 0 && screen.h > 0) {
+                            w = std::min(w, screen.w);
+                            h = std::min(h, screen.h);
+                        }
+                        if (w != winNow || h != winHeightNow) {
+                            SDL_SetWindowSize(window, w, h);
+                            int x = 0, y = 0;
+                            SDL_GetWindowPosition(window, &x, &y);
+                            if (screen.w > 0 && screen.h > 0)
+                                SDL_SetWindowPosition(
+                                    window, std::clamp(x, screen.x, std::max(screen.x, screen.x + screen.w - w)),
+                                    std::clamp(y, screen.y, std::max(screen.y, screen.y + screen.h - h)));
+                        }
+                    }
+                }
+            }
+        }
         ImGui_ImplOpenGL3_NewFrame();
+        ImVector<ImGuiInputEvent>& inputQueue = ImGui::GetCurrentContext()->InputEventsQueue;
+        const int queuedBeforeNewFrame = inputQueue.Size;
         ImGui_ImplSDL2_NewFrame();
+        if (m_appliedScale != 1.0f) {
+            // Everything is drawn in units of m_appliedScale window points: the display is that much smaller in those
+            // units and each unit is that many pixels.
+            io.DisplaySize = ImVec2(io.DisplaySize.x / m_appliedScale, io.DisplaySize.y / m_appliedScale);
+            // (Set, not multiplied: the backend leaves the value alone while the window is minimised.)
+            io.DisplayFramebufferScale = ImVec2(dpiScale * m_appliedScale, dpiScale * m_appliedScale);
+            // The pointer events the backend queued itself (the position of the pointer while the window has the
+            // focus) are in window points; say where that is in these units too. Events from the window system were
+            // scaled above, before the backend saw them.
+            for (int i = queuedBeforeNewFrame; i < inputQueue.Size; ++i) {
+                ImGuiInputEvent& e = inputQueue[i];
+                if (e.Type != ImGuiInputEventType_MousePos) continue;
+                e.MousePos.PosX /= m_appliedScale;
+                e.MousePos.PosY /= m_appliedScale;
+            }
+        }
+        g_dragRightReserve.store(static_cast<int>(150.0f * m_appliedScale));
+        g_imeScale = m_appliedScale;
         ImGui::NewFrame();
 
         if (m_emuRunning.load()) {
@@ -383,7 +589,7 @@ void NovaLauncher::Run() {
             RenderRewindBar();
             // The top bar needs a window of its own here: drawn outside any
             // window, ImGui puts it in a stray "Debug" window.
-            g_dragHeight.store(static_cast<int>(detail::kGameBarHeight));
+            g_dragHeight.store(static_cast<int>(detail::kGameBarHeight * m_appliedScale));
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, detail::kGameBarHeight));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -400,7 +606,7 @@ void NovaLauncher::Run() {
         ImGui::Render();
         SDL_GL_GetDrawableSize(window, &drawW, &drawH);
         glViewport(0, 0, drawW, drawH);
-        glClearColor(0.031f, 0.027f, 0.094f, 1.0f);
+        glClearColor(kit::color::kBackground.x, kit::color::kBackground.y, kit::color::kBackground.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -460,8 +666,6 @@ const char* BackendName(int type) {
     default: return "Unknown";
     }
 }
-
-ImU32 Col(const ImVec4& c) { return ImGui::GetColorU32(c); }
 
 } // namespace
 
@@ -565,6 +769,7 @@ void NovaLauncher::RenderTitleBar(SDL_Window* window, bool inGame) {
     const bool maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
     if (WindowControl("##max", maximized ? Icon::Restore : Icon::Maximize, false, maximized ? "Restore" : "Maximize",
                       buttonSize)) {
+        EndShake(window); // the window's own position is remembered across this, so it must not be a shaken one
         if (maximized) SDL_RestoreWindow(window);
         else SDL_MaximizeWindow(window);
     }
@@ -575,7 +780,8 @@ void NovaLauncher::RenderTitleBar(SDL_Window* window, bool inGame) {
 void NovaLauncher::RenderUI(SDL_Window* window) {
     using namespace kit;
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    g_dragHeight.store(static_cast<int>(kTitleBarHeight));
+    g_dragHeight.store(static_cast<int>(kTitleBarHeight * m_appliedScale));
+    m_coverLoadsThisFrame = 0;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(display);
@@ -664,10 +870,8 @@ void NovaLauncher::RenderSidebar() {
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + space::k3);
     SectionLabel("TOOLS");
     ImGui::Dummy(ImVec2(0.0f, space::k1));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, space::k1));
     for (const auto& e : kTools)
         if (NavItem(e.icon, e.label, m_activeTab == e.tab, true)) m_activeTab = e.tab;
-    ImGui::PopStyleVar();
 
     // Settings and About stay at the bottom, under a divider, whatever the height of the window
     const float rowHeight = 44.0f;
@@ -744,16 +948,15 @@ void NovaLauncher::RenderEmptyHero() {
     EndCard();
 }
 
-void NovaLauncher::RenderHeroCard(int index) {
+bool NovaLauncher::RenderHeroCard(int index) {
     using namespace kit;
     const Fonts& fonts = GetFonts();
     RomMetadata& rom = m_library[static_cast<size_t>(index)];
     const GameInfo* info = FindGameInfo(rom.name);
 
-    std::error_code ec;
-    const bool exists = fs::exists(rom.path, ec);
+    const bool exists = FileExistsCached(rom.path);
     const std::string shotPath = detail::ShotPathFor(rom.path);
-    const CoverTexture* shot = fs::exists(shotPath, ec) ? GetCoverTexture(shotPath) : nullptr;
+    const CoverTexture* shot = FileExistsCached(shotPath) ? GetCoverTexture(shotPath) : nullptr;
 
     const float contentHeight = 232.0f;
     const float padX = kit::space::k6, padY = kit::space::k6;
@@ -796,7 +999,7 @@ void NovaLauncher::RenderHeroCard(int index) {
         Chip(info->status, std::strcmp(info->status, "Playable") == 0 ? Icon::Check : Icon::Info,
              std::strcmp(info->status, "Playable") == 0 ? Col(color::kSuccess) : 0);
     } else {
-        Chip(fs::path(rom.path).filename().string().c_str(), Icon::Folder);
+        Chip(Ellipsize(fonts.small, FileName(rom.path), 220.0f).c_str(), Icon::Folder);
     }
     if (rom.plays > 0) {
         ImGui::SameLine(0.0f, kit::space::k4);
@@ -807,7 +1010,7 @@ void NovaLauncher::RenderHeroCard(int index) {
         ImGui::SameLine(0.0f, kit::space::k4);
         Chip("File not found", Icon::Warning, Col(color::kDanger));
     }
-    if (fs::exists(GameSetup::PathFor(rom.path), ec)) {
+    if (FileExistsCached(GameSetup::PathFor(rom.path))) {
         ImGui::SameLine(0.0f, kit::space::k4);
         Chip("Custom setup", Icon::Settings, Col(color::kAccentText));
     }
@@ -825,7 +1028,8 @@ void NovaLauncher::RenderHeroCard(int index) {
     if (Button("Play", ButtonStyle::Primary, Icon::Play, ImVec2(150.0f, 0.0f))) PlayRom(rom.path, rom.name);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (Button(rom.favorite ? "Favorited" : "Favorite", ButtonStyle::Secondary, Icon::Heart, ImVec2(0.0f, 0.0f))) {
+    if (Button(rom.favorite ? "Favorited###favorite" : "Favorite###favorite", ButtonStyle::Secondary, Icon::Heart,
+               ImVec2(0.0f, 0.0f))) {
         rom.favorite = !rom.favorite;
         SaveLibrary();
     }
@@ -838,7 +1042,7 @@ void NovaLauncher::RenderHeroCard(int index) {
             ImGui::EndPopup();
             EndCard();
             RemoveGame(index);
-            return;
+            return true; // the page is drawn from indices that no longer exist
         }
         ImGui::EndPopup();
     }
@@ -850,6 +1054,7 @@ void NovaLauncher::RenderHeroCard(int index) {
         draw->AddRect(a, b, Col(color::kHairline), 16.0f);
     }
     EndCard();
+    return false;
 }
 
 void NovaLauncher::RenderHomeTab() {
@@ -866,7 +1071,7 @@ void NovaLauncher::RenderHomeTab() {
         RenderEmptyHero();
         return;
     }
-    RenderHeroCard(hero);
+    if (RenderHeroCard(hero)) return;
 
     // A row of games below it
     ImGui::Dummy(ImVec2(0.0f, 12.0f));

@@ -114,7 +114,10 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
         std::filesystem::create_directories("settings", ec);
         m_config.SaveToFile("settings/NovaGraphics.ini");
     }
-    m_config.LoadFromFile(g_configPath.empty() ? "settings/NovaGraphics.ini" : g_configPath);
+    // A game with its own setup has a settings file of its own; if that cannot be read, the global one is better than
+    // the factory defaults.
+    if (!m_config.LoadFromFile(g_configPath.empty() ? "settings/NovaGraphics.ini" : g_configPath) && !g_configPath.empty())
+        m_config.LoadFromFile("settings/NovaGraphics.ini");
 
     // --- Propagate renderingMode to the RSP settings ---
     // HLE  : graphics microcode handlers own rendering (default).
@@ -129,6 +132,8 @@ bool VideoPlugin::Initialize(const SystemInfo& sysInfo, const PluginCallbacks& c
     {
         const RenderingMode mode = m_config.renderingMode;
         const bool wantGfxHle = (mode == RenderingMode::HLE);
+        // A previous game in this session may have asked for low-level graphics; do not carry that over.
+        if (wantGfxHle) Nova64::RSP::CRSPSettings::ClearUserCPUMethod();
         Nova64::RSP::CRSPSettings::SetGraphicsHle(wantGfxHle);
         Nova64::RSP::CRSPSettings::SetAudioHle(true); // keep audio HLE always
         if (!wantGfxHle) {

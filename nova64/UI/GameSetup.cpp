@@ -1,5 +1,8 @@
 #include "GameSetup.hpp"
+#include "GameFiles.hpp"
 #include "NovaLauncher.hpp"
+
+#include <SDL.h>
 
 #include <algorithm>
 #include <cctype>
@@ -7,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -15,6 +19,15 @@ bool IsVulkanAvailable();
 }
 
 namespace NovaUI {
+
+float FitInterfaceScale(int percent, int displayIndex) {
+    float scale = static_cast<float>(percent) / 100.0f;
+    SDL_Rect usable{};
+    if (SDL_GetDisplayUsableBounds(std::max(0, displayIndex), &usable) == 0 && usable.w > 0 && usable.h > 0)
+        scale = std::min(scale, std::max(1.0f, std::min(static_cast<float>(usable.w) / kMinWindowWidth,
+                                                        static_cast<float>(usable.h) / kMinWindowHeight)));
+    return scale;
+}
 
 namespace {
 
@@ -36,6 +49,14 @@ const char* DriverWarning(const SettingsModel& m) {
     if (!why) return nullptr;
     return m.gfx->backendType == 1 ? "Vulkan isn't available here; games won't start until you pick another driver."
                                    : "OpenGL isn't available here; games won't start until you pick another driver.";
+}
+
+// The interface is laid out for a window of at least 960x600 of its own units, so a size is only offered when that
+// window fits on the screen.
+const char* ScaleUnavailable(int percent) {
+    return FitInterfaceScale(percent, 0) < static_cast<float>(percent) / 100.0f - 0.001f
+               ? "This screen is too small for that size."
+               : nullptr;
 }
 
 const char* VulkanUnavailable(const SettingsModel& m) {
@@ -107,8 +128,10 @@ std::vector<OptionDef> BuildOptions() {
         d.choices = {"Detect from the game", "SRAM", "FlashRAM"};
         d.store = Store::None;
         d.globalSetting = false;
-        d.get = [](const SettingsModel& m) { return *m.saveChip; };
-        d.set = [](SettingsModel& m, int v) { *m.saveChip = v; };
+        d.get = [](const SettingsModel& m) { return m.saveChip ? *m.saveChip : 0; };
+        d.set = [](SettingsModel& m, int v) {
+            if (m.saveChip) *m.saveChip = v;
+        };
         o.push_back(d);
     }
 
@@ -139,6 +162,18 @@ std::vector<OptionDef> BuildOptions() {
         d.choices = {"In the launcher window", "Fullscreen"};
         d.get = [](const SettingsModel& m) { return m.launch->displayMode; };
         d.set = [](SettingsModel& m, int v) { m.launch->displayMode = v; };
+        o.push_back(d);
+    }
+    {
+        OptionDef d{"uiScale", "Interface size", "Scales the text and everything around it together.",
+                    "video",   "Window",         OptionKind::Choice};
+        d.choices = {"Normal (100%)", "Large (125%)", "Larger (150%)", "Largest (200%)"};
+        d.values = {100, 125, 150, 200};
+        d.applies = Applies::Now;
+        d.perGame = false;
+        d.choiceUnavailable = ScaleUnavailable;
+        d.get = [](const SettingsModel& m) { return m.launch->uiScale; };
+        d.set = [](SettingsModel& m, int v) { m.launch->uiScale = v; };
         o.push_back(d);
     }
     {
@@ -258,6 +293,24 @@ std::vector<OptionDef> BuildOptions() {
         o.push_back(d);
     }
 
+    // --- Controls ---
+    {
+        OptionDef d{
+            "rumbleShake",
+            "Shake the window",
+            "How far the window shakes when a game rumbles. Needs a Rumble Pak in the controller; see the Simulator.",
+            "controls",
+            "Rumble",
+            OptionKind::Slider};
+        d.min = 0;
+        d.max = 100;
+        d.format = "%d%%";
+        d.applies = Applies::Now;
+        d.get = [](const SettingsModel& m) { return m.launch->rumbleShake; };
+        d.set = [](SettingsModel& m, int v) { m.launch->rumbleShake = v; };
+        o.push_back(d);
+    }
+
     // --- Audio ---
     {
         OptionDef d{"volume", "Volume", "Takes effect immediately, including in a game that is running.",
@@ -283,11 +336,22 @@ std::vector<OptionDef> BuildOptions() {
     return o;
 }
 
-std::string Stem(const std::string& romPath) {
-    std::string stem;
-    for (unsigned char c : fs::path(romPath).stem().string())
-        stem += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
-    return stem.empty() ? std::string("game") : stem;
+/// The value an override file may give an option, or false if the option cannot have it. A hand-edited file must not
+/// be able to push a value the interface cannot show, or the emulator cannot use, into a game.
+bool ValidValue(const OptionDef& option, long raw, int* out) {
+    if (raw < -1000000000L || raw > 1000000000L) return false;
+    const int value = static_cast<int>(raw);
+    switch (option.kind) {
+    case OptionKind::Toggle: *out = value != 0 ? 1 : 0; return true;
+    case OptionKind::Slider: *out = std::clamp(value, option.min, option.max); return true;
+    case OptionKind::Choice:
+        if (option.values.empty() ? (value < 0 || value >= static_cast<int>(option.choices.size()))
+                                  : std::find(option.values.begin(), option.values.end(), value) == option.values.end())
+            return false;
+        *out = value;
+        return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -330,7 +394,7 @@ std::string ValueText(const OptionDef& option, int value) {
 }
 
 std::string GameSetup::PathFor(const std::string& romPath) {
-    return (fs::path("settings") / "games" / (Stem(romPath) + ".ini")).generic_string();
+    return (fs::path("settings") / "games" / (GameKey(romPath) + ".ini")).generic_string();
 }
 
 bool GameSetup::Load(const std::string& romPath) {
@@ -347,9 +411,10 @@ bool GameSetup::Load(const std::string& romPath) {
         if (!option || !option->perGame) continue; // an old or hand-edited key: ignore it
         const std::string text = line.substr(eq + 1);
         char* end = nullptr;
-        const long value = std::strtol(text.c_str(), &end, 10);
-        if (end == text.c_str()) continue;
-        m_values[key] = static_cast<int>(value);
+        const long raw = std::strtol(text.c_str(), &end, 10);
+        int value = 0;
+        if (end == text.c_str() || !ValidValue(*option, raw, &value)) continue;
+        m_values[key] = value;
     }
     return true;
 }
@@ -359,14 +424,12 @@ bool GameSetup::Save(const std::string& romPath) const {
     std::error_code ec;
     if (m_values.empty()) {
         fs::remove(path, ec);
-        return true;
+        return !ec;
     }
-    fs::create_directories(fs::path(path).parent_path(), ec);
-    std::ofstream f(path, std::ios::trunc);
-    if (!f) return false;
+    std::ostringstream f;
     f << "# Options this game overrides; anything not listed follows the global settings.\n";
     for (const auto& [id, value] : m_values) f << id << " = " << value << "\n";
-    return true;
+    return WriteFileAtomically(path, f.str());
 }
 
 int GameSetup::Get(const std::string& id, int fallback) const {

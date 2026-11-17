@@ -124,6 +124,16 @@ target_include_directories(nova64 PRIVATE
 # A third-party header: its own warnings are not ours to fix.
 target_include_directories(nova64 SYSTEM PRIVATE ${stb_SOURCE_DIR})
 
+# Tests: `ctest` after a build runs the RSP self-test and the unit tests (they need no ROM, window or GPU).
+option(NOVA64_BUILD_TESTS "Build the unit tests and register them with ctest" ON)
+if(NOVA64_BUILD_TESTS)
+    enable_testing()
+    add_executable(simlab_test tests/SimLabTest.cpp UI/SimLab.cpp UI/GameFiles.cpp)
+    target_link_libraries(simlab_test PRIVATE imgui)
+    add_test(NAME simlab COMMAND simlab_test)
+    add_test(NAME rsp-selftest COMMAND nova64 --rsp-selftest --programs 200)
+endif()
+
 find_package(OpenGL REQUIRED)
 target_link_libraries(nova64 PRIVATE
     asmjit softfloat

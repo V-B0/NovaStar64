@@ -4,6 +4,7 @@
  */
 #include "NovaLauncher.hpp"
 #include "LauncherInternal.hpp"
+#include "GameFiles.hpp"
 #include "GameInfo.hpp"
 #include "UiKit.hpp"
 
@@ -26,6 +27,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <sstream>
 #include <vector>
 
 #ifdef _WIN32
@@ -247,37 +249,67 @@ RomInfo ReadRomInfo(const std::string& path) {
     return info;
 }
 
-// Every game started from the launcher or the command line is kept in roms/.
+namespace {
+
+/// Whether two files are the same game: the same size and the same first 4 KB (the header, with its checksums).
+bool SameGameFile(const fs::path& a, const fs::path& b) {
+    std::error_code ec;
+    if (fs::file_size(a, ec) != fs::file_size(b, ec) || ec) return false;
+    std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
+    char bufA[4096], bufB[4096];
+    fa.read(bufA, sizeof(bufA));
+    fb.read(bufB, sizeof(bufB));
+    return fa.gcount() == fb.gcount() && std::memcmp(bufA, bufB, static_cast<size_t>(fa.gcount())) == 0;
+}
+
+} // namespace
+
+// Every game started from the launcher or the command line is kept in roms/. Two different games with the same file
+// name get different names ("Game.z64", "Game (2).z64") instead of the second replacing the first.
 std::string CopyIntoRomsFolder(const std::string& romPath) {
     std::error_code ec;
     const fs::path src(romPath);
     if (!fs::is_regular_file(src, ec)) return romPath;
     fs::create_directories("roms", ec);
-    const fs::path dst = fs::path("roms") / src.filename();
-    if (fs::equivalent(src, dst, ec)) return dst.string();
+    // Already in roms/: nothing to copy (the same spelling as the library uses)
+    if (fs::equivalent(src.parent_path().empty() ? fs::path(".") : src.parent_path(), "roms", ec))
+        return (fs::path("roms") / src.filename()).string();
 
-    std::error_code sizeEc;
-    const bool upToDate = fs::exists(dst, sizeEc) && fs::file_size(dst, sizeEc) == fs::file_size(src, sizeEc);
-    if (!upToDate) {
-        ec.clear();
-        fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
-        if (ec) return romPath;
+    const fs::path stem = src.stem(), ext = src.extension();
+    for (int n = 1; n <= 99; ++n) {
+        const fs::path name =
+            n == 1 ? src.filename() : fs::path(stem.string() + " (" + std::to_string(n) + ")" + ext.string());
+        const fs::path dst = fs::path("roms") / name;
+        std::error_code existsEc;
+        if (!fs::exists(dst, existsEc)) {
+            // Copy beside it first: a game that was half copied when the program was closed must not be left under its
+            // real name.
+            const fs::path partial = fs::path("roms") / (name.string() + ".part");
+            ec.clear();
+            fs::copy_file(src, partial, fs::copy_options::overwrite_existing, ec);
+            if (!ec) fs::rename(partial, dst, ec);
+            if (ec) {
+                std::error_code ignore;
+                fs::remove(partial, ignore);
+                return romPath;
+            }
+            return dst.string();
+        }
+        if (SameGameFile(src, dst)) return dst.string();
     }
-    return dst.string();
+    return romPath; // a hundred different games with one name: run it from where it is
 }
 
 std::string ShotPathFor(const std::string& romPath) {
-    std::string stem;
-    for (unsigned char c : fs::path(romPath).stem().string())
-        stem += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
-    if (stem.empty()) stem = "game";
-    return (fs::path("shots") / (stem + ".png")).generic_string();
+    return (fs::path("shots") / (GameKey(romPath) + ".png")).generic_string();
 }
 
 } // namespace detail
 
 bool NovaLauncher::IsN64DDDisk(const std::string& path) {
-    std::string ext = fs::path(path).extension().string();
+    const std::u8string ext8 =
+        fs::path(path).extension().u8string(); // does not throw on a name the code page cannot show
+    std::string ext(ext8.begin(), ext8.end());
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext == ".ndd" || ext == ".d64";
@@ -327,10 +359,16 @@ std::string Trim(const char* s) {
 // --- Library ---
 void NovaLauncher::LoadLibrary() {
     m_library.clear();
+    m_removedPaths.clear();
 
     std::ifstream f(detail::kLibraryPath);
     std::string line;
     while (std::getline(f, line)) {
+        constexpr char kRemoved[] = "#removed\t";
+        if (line.rfind(kRemoved, 0) == 0) {
+            m_removedPaths.push_back(Unescape(line.substr(sizeof(kRemoved) - 1)));
+            continue;
+        }
         if (line.empty() || line[0] == '#') continue;
         std::vector<std::string> cols;
         size_t start = 0;
@@ -361,9 +399,11 @@ void NovaLauncher::LoadLibrary() {
         const std::string path = it->path().string();
         std::string title;
         if (!IsN64DDDisk(path) && !detail::ReadN64RomHeader(path, &title)) continue;
-        const bool known = std::any_of(m_library.begin(), m_library.end(),
-                                       [&](const RomMetadata& r) { return SamePath(r.path, path); });
-        if (known) continue;
+        // Not a game the library already has (or has a copy of), and not one the user took out of it
+        if (FindGame(path) >= 0) continue;
+        if (std::any_of(m_removedPaths.begin(), m_removedPaths.end(),
+                        [&](const std::string& r) { return SamePath(r, path); }))
+            continue;
         RomMetadata rom;
         rom.path = path;
         rom.name = title.empty() ? it->path().stem().string() : title;
@@ -374,13 +414,13 @@ void NovaLauncher::LoadLibrary() {
 }
 
 void NovaLauncher::SaveLibrary() const {
-    std::error_code ec;
-    fs::create_directories("settings", ec);
-    std::ofstream f(detail::kLibraryPath, std::ios::trunc);
+    std::ostringstream f;
     f << "# path<TAB>name<TAB>notes<TAB>cover<TAB>favorite<TAB>last played<TAB>plays\n";
+    for (const std::string& removed : m_removedPaths) f << "#removed\t" << Escape(removed) << '\n';
     for (const auto& r : m_library)
         f << Escape(r.path) << '\t' << Escape(r.name) << '\t' << Escape(r.notes) << '\t' << Escape(r.cover) << '\t'
           << (r.favorite ? '1' : '0') << '\t' << r.lastPlayed << '\t' << r.plays << '\n';
+    WriteFileAtomically(detail::kLibraryPath, f.str());
 }
 
 void NovaLauncher::AddToLibrary(const std::string& path, const std::string& name, const std::string& notes,
@@ -388,6 +428,10 @@ void NovaLauncher::AddToLibrary(const std::string& path, const std::string& name
     const bool known =
         std::any_of(m_library.begin(), m_library.end(), [&](const RomMetadata& r) { return SamePath(r.path, path); });
     if (known) return;
+    // Adding a game by hand brings back one that was removed from the library
+    m_removedPaths.erase(std::remove_if(m_removedPaths.begin(), m_removedPaths.end(),
+                                        [&](const std::string& r) { return SamePath(r, path); }),
+                         m_removedPaths.end());
     RomMetadata rom;
     rom.path = path;
     rom.name = name.empty() ? fs::path(path).stem().string() : name;
@@ -434,6 +478,11 @@ std::vector<int> NovaLauncher::RecentGames() const {
 
 void NovaLauncher::RemoveGame(int index) {
     if (index < 0 || index >= static_cast<int>(m_library.size())) return;
+    // A game in roms/ would be picked up again at the next start, so remember that it was taken out.
+    const std::string path = m_library[static_cast<size_t>(index)].path;
+    std::error_code ec;
+    const fs::path parent = fs::path(path).parent_path();
+    if (fs::equivalent(parent.empty() ? fs::path(".") : parent, "roms", ec)) m_removedPaths.push_back(path);
     m_library.erase(m_library.begin() + index);
     if (m_selectedGame == index) m_selectedGame = -1;
     else if (m_selectedGame > index) --m_selectedGame;
@@ -510,17 +559,52 @@ std::vector<uint8_t> ShrinkToFit(const uint8_t* rgba, int w, int h, int limit, i
 
 } // namespace
 
+bool NovaLauncher::FileExistsCached(const std::string& path) {
+    const double now = ImGui::GetTime();
+    auto it = m_existsCache.find(path);
+    if (it != m_existsCache.end() && now - it->second.second < 2.0) return it->second.first;
+    std::error_code ec;
+    const bool exists = !path.empty() && fs::exists(fs::path(path), ec);
+    m_existsCache[path] = {exists, now};
+    return exists;
+}
+
 const NovaLauncher::CoverTexture* NovaLauncher::GetCoverTexture(const std::string& path) {
     if (path.empty()) return nullptr;
+    const double now = ImGui::GetTime();
     auto it = m_coverTextures.find(path);
+    // A picture that couldn't be read is looked at again after a few seconds (it may have been copied in since).
+    if (it != m_coverTextures.end() && it->second.failed && now - it->second.failedAt > 5.0) {
+        m_coverTextures.erase(it);
+        it = m_coverTextures.end();
+    }
     if (it == m_coverTextures.end()) {
+        // Decoding is slow; a few pictures per frame keeps a big library scrolling smoothly. The rest show a
+        // placeholder for a frame or two.
+        constexpr int kLoadsPerFrame = 3;
+        if (m_coverLoadsThisFrame >= kLoadsPerFrame) return nullptr;
+        ++m_coverLoadsThisFrame;
+
+        constexpr std::uintmax_t kMaxFileBytes = 48u * 1024u * 1024u; // a cover is a few hundred kilobytes
+        constexpr int kMaxSide = 16384;
         CoverTexture cover;
-        std::ifstream f(path, std::ios::binary);
-        std::vector<char> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        cover.failedAt = now;
+        std::error_code ec;
+        const std::uintmax_t fileBytes = fs::file_size(fs::path(path), ec);
+        std::vector<char> bytes;
+        if (!ec && fileBytes > 0 && fileBytes <= kMaxFileBytes) {
+            std::ifstream f(fs::path(path), std::ios::binary);
+            bytes.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        }
         int w = 0, h = 0, channels = 0;
-        uint8_t* pixels = bytes.empty() ? nullptr
-                                        : stbi_load_from_memory(reinterpret_cast<const uint8_t*>(bytes.data()),
-                                                                static_cast<int>(bytes.size()), &w, &h, &channels, 4);
+        const uint8_t* data = reinterpret_cast<const uint8_t*>(bytes.data());
+        const int size = static_cast<int>(bytes.size());
+        // Look at the header first so an enormous picture is refused before any memory is spent on it.
+        uint8_t* pixels = nullptr;
+        if (!bytes.empty() && stbi_info_from_memory(data, size, &w, &h, &channels) && w > 0 && h > 0 && w <= kMaxSide &&
+            h <= kMaxSide) {
+            pixels = stbi_load_from_memory(data, size, &w, &h, &channels, 4);
+        }
         if (!pixels || w <= 0 || h <= 0) {
             cover.failed = true;
         } else {
@@ -714,8 +798,7 @@ void NovaLauncher::RenderLibraryPage(Tab tab) {
 
         ImGui::PushID(i);
         BeginCard("GameCard", ImVec2(cellW, cellH), false, ImVec2(pad, pad), 18.0f);
-        std::error_code ec;
-        const bool exists = fs::exists(rom.path, ec);
+        const bool exists = FileExistsCached(rom.path);
         if (DrawCover(rom.cover, rom.name, ImVec2(coverW, coverH), false, 12.0f) && exists) PlayRom(rom.path, rom.name);
         if (ImGui::IsItemHovered() && !exists) ImGui::SetTooltip("The ROM file is missing.");
 
@@ -847,7 +930,8 @@ void NovaLauncher::RenderGameDialogs() {
     auto beginDialog = [&](const char* title, bool* open) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f, 22.0f));
-        const bool visible = ImGui::BeginPopupModal(title, open, ImGuiWindowFlags_AlwaysAutoResize);
+        CenterNextModal();
+        const bool visible = ImGui::BeginPopupModal(title, open, kModalFlags);
         ImGui::PopStyleVar(2);
         return visible;
     };

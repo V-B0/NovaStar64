@@ -85,6 +85,8 @@ public:
     Device* Find(int id);
     const Device* Find(int id) const;
     int Count(DeviceKind kind) const;
+    /// True if a device or a cable already has this id (they share one counter).
+    bool IdInUse(int id) const;
     int First(DeviceKind kind) const;
 
     /// Puts a new device on the workbench; returns its id, or 0 when there are already as many as are allowed.
@@ -155,6 +157,7 @@ struct View {
     bool autoplay = false;
 
     bool fitPending = true;
+    bool saveFailed = false; ///< the last save of the wiring or the setup did not work
 };
 
 } // namespace NovaUI::sim

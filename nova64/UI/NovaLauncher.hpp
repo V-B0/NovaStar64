@@ -49,11 +49,14 @@ struct LaunchOptions {
     bool rewind = true;
     bool pauseOnFocusLoss = false; ///< pause when another application becomes active
     bool showFps = false;
+    int rumbleShake = 25;          ///< how far the window shakes when a game rumbles, 0-100 (0 = not at all)
+    int uiScale = 100;             ///< the size of the whole interface, in percent
     int volume = 100;              ///< 0-100
     bool muted = false;
 
     void Load(const std::string& path);
-    void Save(const std::string& path) const;
+    /// Returns false if the file could not be written.
+    bool Save(const std::string& path) const;
 };
 
 /// GL textures made from state thumbnails, kept for as long as the thumbnail exists.
@@ -88,7 +91,8 @@ private:
     void RenderSidebar();
     void RenderHintBar();
     void RenderHomeTab();
-    void RenderHeroCard(int index);
+    /// Returns true when the game was removed from the library while it was drawn.
+    bool RenderHeroCard(int index);
     void RenderEmptyHero();
     /// The library as a grid of covers: all games, the recently played ones, or the favourites.
     void RenderLibraryPage(Tab tab);
@@ -142,6 +146,10 @@ private:
     void StopEmbedded();
     /// Per-frame bookkeeping: a game that ended, a pending resume, new messages.
     void UpdatePlayState();
+    /// Shakes the window while a game rumbles (or the game picture when the window cannot move).
+    void UpdateShake(SDL_Window* window);
+    /// Stops the shaking and puts the window back where it was. Called before the window changes mode.
+    void EndShake(SDL_Window* window);
     /// Hotkeys while a game runs. Returns true when the key was used.
     bool HandleGameKey(int scancode, bool repeat);
     /// Controller buttons the launcher uses while a game runs (Back opens the
@@ -179,6 +187,11 @@ private:
     void* m_glContext = nullptr; ///< the launcher's SDL_GLContext, while Run() is active
 
     std::vector<RomMetadata> m_library;
+    std::vector<std::string> m_removedPaths; ///< games in roms/ that were removed from the library: not added again
+    /// Whether a file is there, looked at again every two seconds (a stat per card per frame is too many).
+    bool FileExistsCached(const std::string& path);
+    std::unordered_map<std::string, std::pair<bool, double>> m_existsCache;
+    int m_coverLoadsThisFrame = 0; ///< pictures loaded so far this frame; a few per frame keeps a big library smooth
     bool m_showAddModal = false;
     bool m_showEditModal = false;
     int m_editingRomIndex = -1;
@@ -197,7 +210,8 @@ private:
         uint32_t texture = 0;
         int width = 0;
         int height = 0;
-        bool failed = false; ///< the file couldn't be read; don't retry every frame
+        bool failed = false; ///< the file couldn't be read; tried again after a few seconds
+        double failedAt = 0.0;
     };
     std::unordered_map<std::string, CoverTexture> m_coverTextures;
     /// The texture for a cover picture, loading it on first use; null if there is none.
@@ -211,18 +225,19 @@ private:
 
     Nova64::Video::PluginConfig m_gfx;
     LaunchOptions m_launch;
-    LaunchOptions m_running;    ///< m_launch with the running game's own setup applied
+    LaunchOptions m_running;     ///< m_launch with the running game's own setup applied
     NovaInput::KeyBindings m_bindings;
-    int m_rebindTarget = -1;    ///< N64Input index being changed, or -1
+    int m_rebindTarget = -1;     ///< N64Input index being changed, or -1
     NovaInput::ControllerSettings m_padSettings;
-    int m_padRebindTarget = -1; ///< N64Input index waiting for a controller input, or -1
+    int m_padRebindTarget = -1;  ///< N64Input index waiting for a controller input, or -1
 
-    int m_simGame = -1;         ///< the game shown in the Simulator (index into m_library)
-    sim::Lab m_simLab;          ///< the workbench of that game
+    int m_simGame = -1;          ///< the game shown in the Simulator (index into m_library)
+    sim::Lab m_simLab;           ///< the workbench of that game
     sim::View m_simView;
-    int m_simLoaded = -1;       ///< the game m_simSetup and m_simRom were read for
-    GameSetup m_simSetup;       ///< that game's overrides
-    detail::RomInfo m_simRom;   ///< what its ROM header says
+    int m_simLoaded = -1;        ///< the game m_simSetup and m_simRom were read for
+    bool m_simRomExists = false; ///< whether that game's file is there, looked at about once a second
+    GameSetup m_simSetup;        ///< that game's overrides
+    detail::RomInfo m_simRom;    ///< what its ROM header says
 
     float m_windowOpacity = 0.0f;
     enum class AnimState { FadeIn, Stable, FadeOut, MinimizeOut } m_animState = AnimState::FadeIn;
@@ -284,6 +299,18 @@ private:
     };
     std::vector<AutoMouse> m_autoMouse;
     int m_frameCount = 0;
+    std::vector<std::pair<int, int>>
+        m_autoRumble;            ///< launcher frame, how many frames the motor runs (NOVA64_UI_RUMBLE)
+
+    float m_appliedScale = 1.0f; ///< the interface scale the fonts were made for (1 = 100%)
+
+    // ---- Rumble shake ----
+    bool m_shaking = false;
+    int m_shakeBaseX = 0, m_shakeBaseY = 0; ///< where the window was when the shaking began
+    int m_shakeLastX = 0, m_shakeLastY = 0; ///< where the last shake put it
+    uint32_t m_shakeUntil = 0;              ///< SDL tick at which the shaking has died down
+    uint32_t m_shakeSeed = 12345;
+    ImVec2 m_shakeOffset{0.0f, 0.0f};       ///< in the interface's units: how far the game picture is moved
 };
 
 } // namespace NovaUI

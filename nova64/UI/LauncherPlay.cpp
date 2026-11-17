@@ -158,10 +158,10 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
                                                      : N64Types::SaveChipType::Auto;
     // The video plugin reads its settings from a file; a game with graphics overrides gets a file of its own, so
     // the global one is never touched.
-    if (setup.TouchesGraphics() && gfx.SaveToFile(detail::kRunningGraphicsPath)) {
-        Nova64::Video::g_configPath = detail::kRunningGraphicsPath;
-    } else {
-        Nova64::Video::g_configPath.clear();
+    Nova64::Video::g_configPath.clear();
+    if (setup.TouchesGraphics()) {
+        if (gfx.SaveToFile(detail::kRunningGraphicsPath)) Nova64::Video::g_configPath = detail::kRunningGraphicsPath;
+        else ShowStatus("Couldn't write this game's graphics settings; it uses the global ones.");
     }
 
     // "Automatic" must restore whatever the platform default was.
@@ -184,9 +184,8 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     }
 
     const std::string rom = m_emuRomPath;
-    const int speed = m_running.speed;
-    m_emuThread = std::thread([this, rom, speed]() {
-        CN64System::s_TargetFPS = speed;
+    CN64System::s_TargetFPS = m_running.speed; // before the thread starts, so the two never write it at once
+    m_emuThread = std::thread([this, rom]() {
         if (!CN64System::RunFileImage(rom.c_str(), 0)) m_emuStartFailed.store(true);
         m_emuRunning.store(false);
     });
@@ -200,11 +199,11 @@ void NovaLauncher::StopEmbedded() {
         Nova64::Video::g_emuPaused.store(false);
         CN64System::RequestStop();
         m_emuThread.join();
+        // The game may have started the motor again while it was stopping
+        NovaInput::Gamepads::Instance().StopRumble();
         CN64System::CloseSystem();
         // Shutting down the game's renderer can leave no GL context current.
         if (m_window && m_glContext) SDL_GL_MakeCurrent(m_window, static_cast<SDL_GLContext>(m_glContext));
-        // The video plugin rewrites this file when it shuts down.
-        m_gfx.LoadFromFile(detail::kGraphicsPath);
     }
 
     Nova64::StateService::Instance().EndSession();
@@ -233,6 +232,7 @@ void NovaLauncher::StopEmbedded() {
     m_gameTex = 0;
     m_gameTexW = m_gameTexH = 0;
 
+    EndShake(m_window);
     if (m_wentFullscreen && m_window) SDL_SetWindowFullscreen(m_window, 0);
     m_wentFullscreen = false;
 }
@@ -310,7 +310,7 @@ bool NovaLauncher::HandleGameKey(int scancode, bool repeat) {
         return true;
     case SDL_SCANCODE_TAB:
         if (m_showPauseMenu) return false;
-        SetTurbo(!m_turboMode);
+        if (m_running.speed != 0) SetTurbo(!m_turboMode); // unlimited speed has no double
         return true;
     default: return false;
     }
@@ -465,8 +465,8 @@ void NovaLauncher::RenderGameView() {
         imgH = height;
         imgW = imgH * aspect;
     }
-    const float ox = (display.x - imgW) * 0.5f;
-    const float oy = top + (height - imgH) * 0.5f;
+    const float ox = (display.x - imgW) * 0.5f + m_shakeOffset.x;
+    const float oy = top + (height - imgH) * 0.5f + m_shakeOffset.y;
     ImGui::GetBackgroundDrawList()->AddImage(static_cast<ImTextureID>(texture), ImVec2(ox, oy),
                                              ImVec2(ox + imgW, oy + imgH));
 }
@@ -597,7 +597,8 @@ void NovaLauncher::RenderSaveSlots() {
         ImGui::OpenPopup("Replace save state?");
         m_openOverwrite = false;
     }
-    if (ImGui::BeginPopupModal("Replace save state?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    kit::CenterNextModal();
+    if (ImGui::BeginPopupModal("Replace save state?", nullptr, kit::kModalFlags)) {
         ImGui::Text("Slot %d already has a save state. Replace it?", m_overwriteSlot + 1);
         ImGui::Dummy(ImVec2(0.0f, 6.0f));
         if (kit::Button("Replace", kit::ButtonStyle::Primary, kit::Icon::None, ImVec2(120.0f, 40.0f))) {

@@ -18,6 +18,8 @@
 
 namespace NovaUI::kit {
 
+ImU32 Col(const ImVec4& color) { return ImGui::GetColorU32(color); }
+
 namespace {
 
 // The fonts and the background picture, compiled in by CMake as lists of byte values (see assets/fonts/ and
@@ -73,9 +75,6 @@ Texture MakeTexture(const unsigned char* rgba, int w, int h) {
     return t;
 }
 
-// Colour with the current style alpha applied, so disabled widgets fade with everything else.
-ImU32 Col(const ImVec4& c) { return ImGui::GetColorU32(c); }
-
 ImVec4 WithAlpha(ImVec4 c, float a) {
     c.w *= a;
     return c;
@@ -115,12 +114,19 @@ std::string ClampLines(ImFont* font, const std::string& text, float width, int m
     const char* p = text.c_str();
     const char* const end = p + text.size();
     for (int line = 0; line < maxLines && p < end; ++line) {
-        const char* stop = font->CalcWordWrapPositionA(scale, p, end, width);
-        if (stop <= p) stop = p + 1;
+        // A line break in the text ends the line, whatever the width
+        const char* newline = static_cast<const char*>(std::memchr(p, '\n', static_cast<size_t>(end - p)));
+        const char* limit = newline ? newline : end;
+        const char* stop = limit > p ? font->CalcWordWrapPositionA(scale, p, limit, width) : p;
+        if (stop <= p && limit > p) {
+            stop = p + 1; // a word wider than the line: one character at least, a whole one
+            while (stop < limit && (static_cast<unsigned char>(*stop) & 0xC0) == 0x80) ++stop;
+        }
         std::string piece(p, stop);
         while (!piece.empty() && piece.back() == ' ') piece.pop_back();
         p = stop;
         while (p < end && *p == ' ') ++p;
+        if (p < end && *p == '\n') ++p;
         const bool last = (line == maxLines - 1);
         if (last && p < end) piece = Ellipsize(font, piece + " ...", width);
         if (line > 0) out += '\n';
@@ -214,6 +220,7 @@ void ApplyTheme() {
 
 void LoadFonts(float pixelScale) {
     ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear(); // also when the interface size changes: the fonts are made again at the new size
     const float dpi = pixelScale >= 1.0f ? pixelScale : 1.0f;
 
     static const ImWchar kIconRange[] = {0xE000, 0xF8FF, 0};
@@ -255,6 +262,10 @@ void LoadFonts(float pixelScale) {
     io.FontDefault = g_fonts.body;
     io.FontGlobalScale = 1.0f / dpi;
 
+    static bool picturesMade = false; // the pictures are made once, whether or not they could be
+    if (picturesMade) return;
+    picturesMade = true;
+
     int w = 0, h = 0, channels = 0;
     unsigned char* pixels =
         stbi_load_from_memory(kBackgroundJpg, static_cast<int>(sizeof(kBackgroundJpg)), &w, &h, &channels, 4);
@@ -278,49 +289,38 @@ namespace {
 
 unsigned IconCodepoint(Icon icon) {
     switch (icon) {
-    case Icon::Home:         return 0xE2C2;
-    case Icon::Games:        return 0xE26E;
-    case Icon::Recent:       return 0xE1A0;
-    case Icon::Star:         return 0xE46A;
-    case Icon::Settings:     return 0xE270;
-    case Icon::Info:         return 0xE2CE;
-    case Icon::Play:         return 0xE3D0;
-    case Icon::Stop:         return 0xE46C;
-    case Icon::Pause:        return 0xE39E;
-    case Icon::Rewind:       return 0xE6A8;
-    case Icon::FastForward:  return 0xE6A6;
-    case Icon::Plus:         return 0xE3D4;
-    case Icon::Edit:         return 0xE3B4;
-    case Icon::Trash:        return 0xE4A6;
-    case Icon::Folder:       return 0xE256;
-    case Icon::Image:        return 0xE2CA;
-    case Icon::Search:       return 0xE30C;
-    case Icon::Check:        return 0xE182;
-    case Icon::Warning:      return 0xE4E0;
-    case Icon::ChevronRight: return 0xE13A;
-    case Icon::ChevronDown:  return 0xE136;
-    case Icon::ArrowRight:   return 0xE06C;
-    case Icon::ArrowLeft:    return 0xE058;
-    case Icon::Close:        return 0xE4F6;
-    case Icon::Minimize:     return 0xE32A;
-    case Icon::Maximize:     return 0xE45E;
-    case Icon::Restore:      return 0xE1CA;
-    case Icon::Scripts:      return 0xE1BC;
-    case Icon::Memory:       return 0xE610;
-    case Icon::Trophy:       return 0xE67E;
-    case Icon::Simulator:    return 0xE408;
-    case Icon::Heart:        return 0xE2A8;
-    case Icon::More:         return 0xE1FE;
-    case Icon::Calendar:     return 0xE10A;
-    case Icon::Publisher:    return 0xE102;
-    case Icon::Display:      return 0xE32E;
-    case Icon::Sound:        return 0xE44A;
-    case Icon::Keyboard:     return 0xE2D8;
-    case Icon::Lightning:    return 0xE2DE;
-    case Icon::Tag:          return 0xE478;
-    case Icon::Link:         return 0xE2E2;
-    case Icon::Download:     return 0xE20C;
-    case Icon::None:         break;
+    case Icon::Home:        return 0xE2C2;
+    case Icon::Games:       return 0xE26E;
+    case Icon::Recent:      return 0xE1A0;
+    case Icon::Star:        return 0xE46A;
+    case Icon::Settings:    return 0xE270;
+    case Icon::Info:        return 0xE2CE;
+    case Icon::Play:        return 0xE3D0;
+    case Icon::Pause:       return 0xE39E;
+    case Icon::Rewind:      return 0xE6A8;
+    case Icon::FastForward: return 0xE6A6;
+    case Icon::Plus:        return 0xE3D4;
+    case Icon::Folder:      return 0xE256;
+    case Icon::Check:       return 0xE182;
+    case Icon::Warning:     return 0xE4E0;
+    case Icon::ArrowRight:  return 0xE06C;
+    case Icon::Close:       return 0xE4F6;
+    case Icon::Minimize:    return 0xE32A;
+    case Icon::Maximize:    return 0xE45E;
+    case Icon::Restore:     return 0xE1CA;
+    case Icon::Scripts:     return 0xE1BC;
+    case Icon::Memory:      return 0xE610;
+    case Icon::Trophy:      return 0xE67E;
+    case Icon::Simulator:   return 0xE408;
+    case Icon::Heart:       return 0xE2A8;
+    case Icon::More:        return 0xE1FE;
+    case Icon::Calendar:    return 0xE10A;
+    case Icon::Publisher:   return 0xE102;
+    case Icon::Display:     return 0xE32E;
+    case Icon::Lightning:   return 0xE2DE;
+    case Icon::Tag:         return 0xE478;
+    case Icon::Download:    return 0xE20C;
+    case Icon::None:        break;
     }
     return 0;
 }
@@ -386,12 +386,6 @@ void DrawBackground(ImDrawList* draw, ImVec2 min, ImVec2 max) {
     if (g_background.id) DrawImageCover(draw, g_background.id, g_background.width, g_background.height, min, max, 0.0f);
 }
 
-void DrawShade(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding, float strength) {
-    if (!g_ramp.id) return;
-    draw->AddImageRounded(static_cast<ImTextureID>(g_ramp.id), min, max, ImVec2(0, 0), ImVec2(1, 1),
-                          ImGui::GetColorU32(ImVec4(0.02f, 0.02f, 0.06f, strength)), rounding);
-}
-
 void DrawImageCover(ImDrawList* draw, unsigned texture, int texWidth, int texHeight, ImVec2 min, ImVec2 max,
                     float rounding, ImU32 tint) {
     const float boxW = max.x - min.x, boxH = max.y - min.y;
@@ -431,7 +425,6 @@ struct ButtonLook {
     ImVec4 fill;
     ImVec4 border;
     ImVec4 text;
-    bool gloss;
 };
 
 ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
@@ -440,23 +433,23 @@ ButtonLook LookFor(ButtonStyle style, bool hovered, bool held) {
         return {held      ? color::kAccentPressed
                 : hovered ? color::kAccentHover
                           : color::kAccent,
-                ImVec4(0, 0, 0, 0), color::kOnAccent, false};
+                ImVec4(0, 0, 0, 0), color::kOnAccent};
     case ButtonStyle::Ghost:
         return {held      ? Rgb(0xFFEADB, 0.14f)
                 : hovered ? Rgb(0xFFEADB, 0.08f)
                           : ImVec4(0, 0, 0, 0),
-                ImVec4(0, 0, 0, 0), hovered ? color::kText : color::kTextMuted, false};
+                ImVec4(0, 0, 0, 0), hovered ? color::kText : color::kTextMuted};
     case ButtonStyle::Danger:
         return {held      ? WithAlpha(color::kDanger, 0.32f)
                 : hovered ? WithAlpha(color::kDanger, 0.22f)
                           : WithAlpha(color::kDanger, 0.10f),
-                WithAlpha(color::kDanger, hovered ? 0.8f : 0.5f), hovered ? Rgb(0xFFD9DC) : color::kDanger, false};
+                WithAlpha(color::kDanger, hovered ? 0.8f : 0.5f), hovered ? Rgb(0xFFD9DC) : color::kDanger};
     case ButtonStyle::Secondary:
     default:
         return {held      ? Rgb(0xFFEADB, 0.17f)
                 : hovered ? Rgb(0xFFEADB, 0.12f)
                           : Rgb(0xFFEADB, 0.07f),
-                Rgb(0xFFEADB, hovered ? 0.20f : 0.12f), color::kText, false};
+                Rgb(0xFFEADB, hovered ? 0.20f : 0.12f), color::kText};
     }
 }
 
@@ -464,16 +457,19 @@ constexpr float kButtonHeight = 44.0f;
 constexpr float kButtonRounding = radius::kControl;
 
 void Paint(ImDrawList* draw, ImVec2 min, ImVec2 max, const ButtonLook& look, float rounding) {
-    if (look.gloss) DrawGradientFill(draw, min, max, Col(look.fill), rounding);
-    else if (look.fill.w > 0.0f) draw->AddRectFilled(min, max, Col(look.fill), rounding);
+    if (look.fill.w > 0.0f) draw->AddRectFilled(min, max, Col(look.fill), rounding);
     if (look.border.w > 0.0f) draw->AddRect(min, max, Col(look.border), rounding, 0, 1.0f);
 }
 
 void FocusRing(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding) {
     const ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsItemFocused() && io.NavActive && io.NavVisible)
-        draw->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2), Col(color::kAccentHover),
-                      rounding + 2.0f, 0, 2.0f);
+    if (!(ImGui::IsItemFocused() && io.NavActive && io.NavVisible)) return;
+    // The ring sits 2 units outside the item, but is pulled in where the item touches the edge of what can be
+    // drawn (a list that fills its panel), so it is never cut off.
+    const ImVec2 clipMin = draw->GetClipRectMin(), clipMax = draw->GetClipRectMax();
+    const ImVec2 a(std::max(min.x - 2.0f, clipMin.x + 1.0f), std::max(min.y - 2.0f, clipMin.y + 1.0f));
+    const ImVec2 b(std::min(max.x + 2.0f, clipMax.x - 1.0f), std::min(max.y + 2.0f, clipMax.y - 1.0f));
+    draw->AddRect(a, b, Col(color::kAccentHover), rounding + 2.0f, 0, 2.0f);
 }
 
 } // namespace
@@ -561,10 +557,17 @@ bool NavItem(Icon icon, const char* label, bool selected, bool compact) {
     return clicked;
 }
 
+void CenterNextModal() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+}
+
 bool WindowControl(const char* id, Icon icon, bool isClose, const char* tooltip, ImVec2 size) {
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const ImVec2 max(min.x + size.x, min.y + size.y);
+    // These are the first items in the window, but not where a controller should start: that is the page's content
+    ImGui::PushItemFlag(ImGuiItemFlags_NoNavDefaultFocus, true);
     const bool clicked = NavButton(id, size);
+    ImGui::PopItemFlag();
     const bool hovered = ImGui::IsItemHovered();
     const bool held = ImGui::IsItemActive();
 
@@ -659,7 +662,7 @@ bool Segmented(const char* id, const char* const* labels, int count, int* index,
 bool Slider(const char* id, int* value, int min, int max, const char* format, float width) {
     constexpr float kValueWidth = 52.0f;
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float track = width - kValueWidth - space::k3;
+    const float track = std::max(width - kValueWidth - space::k3, 40.0f);
 
     // ImGui's slider does the input, keyboard and controller handling; it is drawn invisibly and replaced here.
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
@@ -677,8 +680,17 @@ bool Slider(const char* id, int* value, int min, int max, const char* format, fl
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const float midY = (a.y + b.y) * 0.5f;
-    const float left = a.x + 8.0f, right = b.x - 8.0f;
-    const float t = max > min ? static_cast<float>(*value - min) / static_cast<float>(max - min) : 0.0f;
+    // The range the grab moves in is ImGui's own: its padding, and for whole numbers a grab that is one step wide
+    // when that is more than the smallest grab. The knob is drawn at the same place so that it is under the pointer.
+    const float padding = 2.0f;
+    const float usable = (b.x - a.x) - padding * 2.0f;
+    const float grab =
+        std::min(std::max(usable / static_cast<float>(std::abs(max - min) + 1), ImGui::GetStyle().GrabMinSize), usable);
+    const float left = a.x + padding + grab * 0.5f, right = b.x - padding - grab * 0.5f;
+    const float t =
+        max > min ? std::clamp((static_cast<float>(*value) - static_cast<float>(min)) / static_cast<float>(max - min),
+                               0.0f, 1.0f)
+                  : 0.0f;
     const float knobX = left + (right - left) * t;
     draw->AddRectFilled(ImVec2(left, midY - 2.0f), ImVec2(right, midY + 2.0f), Col(color::kHover), 2.0f);
     draw->AddRectFilled(ImVec2(left, midY - 2.0f), ImVec2(knobX, midY + 2.0f), Col(color::kAccent), 2.0f);
@@ -856,7 +868,8 @@ std::vector<CardState> g_cards;
 } // namespace
 
 bool BeginCard(const char* id, ImVec2 size, bool autoHeight, ImVec2 padding, float rounding) {
-    // The panel itself is drawn in EndCard, once the final size is known.
+    // The panel itself is drawn in EndCard, from the size the card has by then. (An auto-height card is as tall as
+    // its content was in the previous frame, so for one frame it lags behind when rows come or go.)
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);

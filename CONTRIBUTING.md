@@ -402,6 +402,7 @@ one, add its row.
 | `NOVA64_NO_MIPMAPS=1` | Disable mipmapping, to isolate texture problems |
 | `NOVA64_DUMP_TEXTURES=1` | Write every texture the game uses to `texture_dump/<game name>/` as a Rice-format picture (same as the setting) |
 | `NOVA64_UI_MOUSE=<frame>:<x>:<y>:<move\|down\|up>,...` | Move the pointer and press or release the left button at the given launcher frames (points, not pixels), to drive the launcher from a script |
+| `NOVA64_UI_RUMBLE=<frame>:<frames>` | Make the running game's Rumble Pak run its motor from the given launcher frame for that many frames, to see the window shake |
 | `NOVA64_UI_SAVE=<frame>:<slot>,...` | With a game started by `NOVA64_UI_ROM`, save a state into slot 0-3 at the given launcher frames, so a screenshot of the pause menu shows pictures in its slots |
 | `NOVA64_UI_OPEN=add` / `edit:<index>` | Open the launcher's Add Game or Edit Game dialog on start, for screenshots |
 | `NOVA64_RT=1` | Enable the experimental ray tracer |
@@ -589,8 +590,14 @@ Rules that keep it from looking generated:
 - A custom widget must be reachable from the keyboard and a gamepad: make it with `kit::NavButton` (ImGui skips a
   plain `InvisibleButton`), draw a focus ring when `IsItemFocused() && io.NavVisible`, and make child windows
   `ImGuiChildFlags_NavFlattened` so navigation can cross their borders.
-- Layout is in logical pixels. Fonts are rasterised at the display's pixel density (`LoadFonts`), so text stays
-  sharp on a Retina or scaled display.
+- Layout is in the interface's own units, never in pixels. "Interface size" (100% to 200%) scales everything at
+  once: each frame `NovaLauncher::Run` divides `io.DisplaySize` by the scale, multiplies
+  `io.DisplayFramebufferScale` by it and scales the pointer, and the fonts are rasterised at
+  display density x scale (`kit::LoadFonts`) and made again when either changes. So never write a pixel size
+  that is meant to follow the text, never use `SDL_GetWindowSize` for layout (it is in window points, not in
+  these units), and add any new point-based value, such as a hit area for the window frame, to the scaled
+  ones in `NovaLauncher.cpp` (`g_dragHeight`, `g_dragRightReserve`). Text is sharpest at 100%, 150% and 200% on a
+  Retina display, because a unit is then a whole number of pixels.
 
 | What | Where it comes from |
 |---|---|

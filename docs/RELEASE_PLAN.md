@@ -70,7 +70,7 @@ Correctness and robustness
 ## 2. Tests and continuous integration
 
 - [x] RSP differential selftest (random programs, interpreter versus recompiler)
-- [ ] CTest wired up so `ctest` runs the selftest and any unit tests
+- [x] CTest wired up: `ctest` runs the RSP selftest and the Simulator workbench unit tests (`tests/`)
 - [ ] A few unit tests where they are cheap: byte-swapping and ROM format detection, CRC, save
       type detection, TLB translation, PIF/CIC handling, settings parsing
 - [ ] Golden-frame check for the three games (local only: it needs ROMs, which are not in the
@@ -140,7 +140,19 @@ Correctness and robustness
 - [ ] Check the interface on a Retina display and at Windows scale settings (so far it has only been
       rendered at 1x); add an interface-scale setting
 - [ ] A high-contrast option
-- [ ] Font-size setting
+- [x] Interface size: 100%, 125%, 150%, 200%, applied at once; text, icons and spacing scale together because the
+      whole interface is laid out in its own units. Only sizes whose window fits the screen are offered
+- [x] A Rumble Pak shakes the window while a game rumbles, with a strength setting (and a per-game one); the game
+      picture shakes instead when the window is maximised or fullscreen
+- [x] Launcher code review (four reviewers, then fixes): the window never opens larger than the screen, the pointer is
+      in the interface's units on every frame (also while a controller is moving the focus), the framebuffer scale is
+      set rather than multiplied while minimised, the shake puts the window back before it is maximised or minimised
+      and falls back to shaking the picture where a window cannot be moved, removed games stay removed, a game with the
+      same file name as another no longer replaces its copy in `roms/`, pictures are size-checked and loaded a few per
+      frame, and stat calls are cached
+- [ ] Text is sharpest when one interface unit is a whole number of pixels (100% and 200%, and 150% on a Retina
+      display); at 125% and at 150% on a 1x display it is slightly soft. A fix means laying the interface out in
+      pixels instead of units
 - [ ] First-run welcome: pick a game folder, test the controller
 - [x] About page: version, licence, the keys used while playing, what it is made with
 - [ ] A full list of third-party licences reachable from the About page

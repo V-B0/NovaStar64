@@ -1,4 +1,5 @@
 #include "SimLab.hpp"
+#include "GameFiles.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -48,6 +49,14 @@ const DeviceDef& Def(DeviceKind kind) {
 
 namespace {
 
+/// Ids start at 1, and are kept well below the largest int so that the next one cannot overflow.
+constexpr int kMaxId = 1000000000;
+/// Devices further from the origin than this are put back at the edge; it keeps a hand-edited file from producing
+/// a view that is billions of units wide.
+constexpr float kMaxCoordinate = 100000.0f;
+
+bool ValidId(int id) { return id > 0 && id < kMaxId; }
+
 const char* KindName(DeviceKind kind) {
     switch (kind) {
     case DeviceKind::Console:    return "console";
@@ -84,11 +93,7 @@ Lab Lab::Default() {
 }
 
 std::string Lab::PathFor(const std::string& romPath) {
-    std::string stem;
-    for (unsigned char c : fs::path(romPath).stem().string())
-        stem += (std::isalnum(c) || c == '-' || c == '_') ? static_cast<char>(c) : '_';
-    if (stem.empty()) stem = "game";
-    return (fs::path("settings") / "games" / (stem + ".lab")).generic_string();
+    return (fs::path("settings") / "games" / (GameKey(romPath) + ".lab")).generic_string();
 }
 
 bool Lab::Load(const std::string& romPath) {
@@ -104,15 +109,18 @@ bool Lab::Load(const std::string& romPath) {
             Device d;
             std::string kind;
             int powered = 1;
-            if (!(in >> d.id >> kind >> d.pos.x >> d.pos.y) || !KindFromName(kind, &d.kind) || d.id <= 0) continue;
-            in >> powered;
+            if (!(in >> d.id >> kind >> d.pos.x >> d.pos.y) || !KindFromName(kind, &d.kind) || !ValidId(d.id)) continue;
+            if (!(in >> powered)) powered = 1; // a missing or unreadable switch means on
             d.powered = powered != 0;
-            if (lab.Find(d.id) || lab.Count(d.kind) >= Def(d.kind).maxCount) continue;
+            if (!std::isfinite(d.pos.x) || !std::isfinite(d.pos.y)) continue;
+            d.pos = ImVec2(std::clamp(d.pos.x, -kMaxCoordinate, kMaxCoordinate),
+                           std::clamp(d.pos.y, -kMaxCoordinate, kMaxCoordinate));
+            if (lab.IdInUse(d.id) || lab.Count(d.kind) >= Def(d.kind).maxCount) continue;
             lab.devices.push_back(d);
             lab.m_nextId = std::max(lab.m_nextId, d.id + 1);
         } else if (word == "cable") {
             Cable c;
-            if (!(in >> c.id >> c.a >> c.portA >> c.b >> c.portB)) continue;
+            if (!(in >> c.id >> c.a >> c.portA >> c.b >> c.portB) || !ValidId(c.id) || lab.IdInUse(c.id)) continue;
             const Device* a = lab.Find(c.a);
             const Device* b = lab.Find(c.b);
             if (!a || !b || c.portA < 0 || c.portB < 0 || c.portA >= static_cast<int>(Def(a->kind).ports.size()) ||
@@ -128,18 +136,14 @@ bool Lab::Load(const std::string& romPath) {
 }
 
 bool Lab::Save(const std::string& romPath) const {
-    const std::string path = PathFor(romPath);
-    std::error_code ec;
-    fs::create_directories(fs::path(path).parent_path(), ec);
-    std::ofstream f(path, std::ios::trunc);
-    if (!f) return false;
+    std::ostringstream f;
     f << "# The Simulator's workbench for this game.\n";
     for (const Device& d : devices)
         f << "device " << d.id << ' ' << KindName(d.kind) << ' ' << d.pos.x << ' ' << d.pos.y << ' '
           << (d.powered ? 1 : 0) << '\n';
     for (const Cable& c : cables)
         f << "cable " << c.id << ' ' << c.a << ' ' << c.portA << ' ' << c.b << ' ' << c.portB << '\n';
-    return true;
+    return WriteFileAtomically(PathFor(romPath), f.str());
 }
 
 Device* Lab::Find(int id) {
@@ -159,6 +163,14 @@ int Lab::Count(DeviceKind kind) const {
     for (const Device& d : devices)
         if (d.kind == kind) ++n;
     return n;
+}
+
+bool Lab::IdInUse(int id) const {
+    for (const Device& d : devices)
+        if (d.id == id) return true;
+    for (const Cable& c : cables)
+        if (c.id == id) return true;
+    return false;
 }
 
 int Lab::First(DeviceKind kind) const {

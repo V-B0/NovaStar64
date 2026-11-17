@@ -9,6 +9,7 @@
 #include "KeyBindings.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -113,6 +114,9 @@ public:
     /// the controller settings again.
     void SetAccessoryOverride(int player, int accessory);
     void SetRumble(int player, bool on);
+    /// True while a game is commanding the motor of any player's Rumble Pak, whether or not a controller that can
+    /// rumble is attached. The launcher shakes its window with it. Does not wait for the controller.
+    [[nodiscard]] bool RumbleCommanded();
     void StopRumble();
 
     /// Makes the next read pick up settings saved by the launcher.
@@ -140,8 +144,9 @@ private:
     ControllerSettings m_settings;
     uint32_t m_settingsCheckedAt = 0;
     bool m_settingsChecked = false;
-    long long m_settingsStamp = -1; ///< file time the settings were read at
+    long long m_settingsStamp = -1;             ///< file time the settings were read at
     std::array<int, kMaxPlayers> m_accessoryOverride{-1, -1, -1, -1};
+    std::atomic<unsigned> m_rumbleCommanded{0}; ///< one bit per player; read by the launcher's thread without the lock
 };
 
 } // namespace NovaInput

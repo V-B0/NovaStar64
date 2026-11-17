@@ -512,6 +512,9 @@ void Gamepads::SetAccessoryOverride(int player, int accessory) {
 
 void Gamepads::SetRumble(int player, bool on) {
     if (player < 0 || player >= kMaxPlayers) return;
+    const unsigned bit = 1u << player;
+    if (on) m_rumbleCommanded.fetch_or(bit);
+    else m_rumbleCommanded.fetch_and(~bit);
     std::lock_guard<std::mutex> lock(m_mutex);
     Pad& pad = m_pads[player];
     if (!pad.controller || !pad.canRumble) return;
@@ -524,7 +527,10 @@ void Gamepads::SetRumble(int player, bool on) {
     pad.rumbleSentAt = now;
 }
 
+bool Gamepads::RumbleCommanded() { return m_rumbleCommanded.load() != 0; }
+
 void Gamepads::StopRumble() {
+    m_rumbleCommanded.store(0);
     std::lock_guard<std::mutex> lock(m_mutex);
     for (auto& pad : m_pads) {
         if (pad.controller && pad.rumbling) {

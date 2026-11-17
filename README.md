@@ -73,7 +73,10 @@ The project is under active development. Expect bugs and rough edges — see
   reproducible and makes rewind verifiable.
 - **Game controllers for up to four players** through SDL, with an
   N64-shaped analog range, rebindable buttons, per-controller player slots and
-  a Rumble Pak. A controller also drives the launcher's menus.
+  a Rumble Pak, which also shakes the launcher window a little (you set how much,
+  or turn it off). A controller also drives the launcher's menus.
+- **An interface that scales as one.** Text, icons and spacing grow together from
+  100% to 200% (Settings, Video, Interface size), so nothing overlaps at any size.
 - **A workbench for each game.** The Simulator is a Packet Tracer-style bench: drag a
   Nintendo 64, a TV, controllers, a Rumble Pak and the game's cartridge onto it and join
   them with cables, with link lights that say what works. Click a device to give that game
@@ -81,8 +84,8 @@ The project is under active development. Expect bugs and rough edges — see
   the power-on sequence to see what would go wrong, then press Play. Everything you do not
   change follows Settings.
 - **Built-in tools:** a Lua scripting console and a memory viewer.
-- **Cartridge hardware:** EEPROM, SRAM and FlashRAM saves, Rumble Pak, Transfer
-  Pak and partial N64DD support.
+- **Cartridge hardware:** EEPROM, SRAM and FlashRAM saves, a Rumble Pak and
+  partial N64DD support. There is no Controller Pak or Transfer Pak.
 - **NTSC and PAL timing.** The video field rate, real-time frame pacing and the
   audio DAC clock are all derived from the ROM's region.
 - **Experimental compute ray tracing** over the rasterised image (Settings →

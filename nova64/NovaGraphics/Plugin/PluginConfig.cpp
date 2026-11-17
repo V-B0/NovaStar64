@@ -6,6 +6,7 @@
 #include "PluginConfig.hpp"
 #include "../Common/Logger.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -340,7 +341,9 @@ bool PluginConfig::LoadFromFile(const std::string& path) {
 }
 
 bool PluginConfig::SaveToFile(const std::string& path) const {
-    std::ofstream file(path);
+    // Written beside the file and renamed over it, so a full disk or a crash leaves the old file as it was.
+    const std::string temp = path + ".tmp";
+    std::ofstream file(temp);
     if (!file) return false;
 
     file << "# NovaGraphics Configuration\n";
@@ -376,6 +379,7 @@ bool PluginConfig::SaveToFile(const std::string& path) const {
     file << "fbEmulation = " << (fbEmulation ? "1" : "0") << "\n";
     file << "fbReadAccess = " << (fbReadAccess ? "1" : "0") << "\n";
     file << "fbWriteAccess = " << (fbWriteAccess ? "1" : "0") << "\n";
+    file << "fbReadbackInterval = " << fbReadbackInterval << "\n";
     file << "depthCopy = " << (depthCopy ? "1" : "0") << "\n";
     file << "nativeResFB = " << (nativeResFB ? "1" : "0") << "\n\n";
 
@@ -424,7 +428,14 @@ bool PluginConfig::SaveToFile(const std::string& path) const {
     file << "screenshotPath = " << screenshotPath << "\n";
     file << "screenshotFormat = " << screenshotFormat << "\n";
 
-    return true;
+    file.close();
+    std::error_code ec;
+    if (file.fail()) {
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    std::filesystem::rename(temp, path, ec);
+    return !ec;
 }
 
 } // namespace Nova64::Video
