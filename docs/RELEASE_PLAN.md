@@ -1,4 +1,4 @@
-# Release plan: 0.1.0
+# Release plan: 1.0.0
 
 What stands between the current tree and a first public release, in the order it should be
 done. `[x]` is finished, `[ ]` is open. Each step is small enough to be one commit and says how
@@ -85,7 +85,7 @@ Correctness and robustness
 - [ ] README rewritten to be short: what it is, status table, download, build, screenshots
 - [ ] `docs/ARCHITECTURE.md`: modules (N64SYS, NovaRSP, NovaGraphics, UI), data flow of a frame,
       where Project64-derived code lives
-- [ ] `CHANGELOG.md` (Keep a Changelog), starting with 0.1.0
+- [ ] `CHANGELOG.md` (Keep a Changelog), starting with 1.0.0
 - [ ] `SECURITY.md` (how to report a vulnerability) and `CODE_OF_CONDUCT.md`
 - [ ] Issue templates (bug report with log and system info, game compatibility report) and a
       pull-request template
@@ -202,4 +202,4 @@ Correctness and robustness
    clips.
 2. **App icon.** The current icon stays unless you want it redrawn.
 3. **macOS signing.** Needs your Apple Developer account; nothing can be notarised without it.
-4. **Repository visibility and the release date** (public repository, tag `v0.1.0`).
+4. **Repository visibility and the release date** (public repository, tag `v1.0.0`).

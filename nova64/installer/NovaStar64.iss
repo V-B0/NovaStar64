@@ -1,7 +1,7 @@
 ﻿; NovaStar64 installer for Windows -- built with Inno Setup 6.3 or later
 ; (https://jrsoftware.org/isinfo.php).
 ;
-;   iscc /DAppVersion=0.1.0 /DSourceDir=..\build\RelWithDebInfo /DOutputDir=..\..\dist installer\NovaStar64.iss
+;   iscc /DAppVersion=1.0.0 /DSourceDir=..\build\RelWithDebInfo /DOutputDir=..\..\dist installer\NovaStar64.iss
 ;
 ; The setup wizard asks where to install and whether to add a desktop shortcut, and
 ; offers to start the program at the end. It installs for the current user by default
@@ -10,7 +10,7 @@
 ; uninstalling or reinstalling never touches them.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "1.0.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\build\RelWithDebInfo"

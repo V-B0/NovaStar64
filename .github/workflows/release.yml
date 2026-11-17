@@ -1,7 +1,7 @@
 name: Release builds
 
 # Builds the installers: a .dmg for macOS and a setup wizard plus a portable .zip for
-# Windows. It runs when a version tag is pushed (git tag v0.1.0 && git push origin v0.1.0)
+# Windows. It runs when a version tag is pushed (git tag v1.0.0 && git push origin v1.0.0)
 # or when you press "Run workflow" on the Actions tab. It never runs on ordinary
 # pushes. A tag also creates a DRAFT release with the files attached; nothing is
 # published until you press the button on GitHub.

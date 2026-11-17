@@ -356,7 +356,7 @@ program and the installer have been tried on a Windows machine.
 
 ```bash
 # edit VERSION, commit it, then:
-git tag v0.1.0 && git push origin v0.1.0
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
 `.github/workflows/release.yml` builds both installers and creates a *draft* release
