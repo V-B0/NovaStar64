@@ -126,6 +126,13 @@ void NovaLauncher::PlayRom(const std::string& path, const std::string& name) {
     if (path.empty()) return;
 
     m_emuRomPath = detail::CopyIntoRomsFolder(path);
+    // A game started from the command line is not in the library yet: list it (as its copy in roms/), so it is
+    // there, with its play counted, the next time the launcher is opened.
+    if (FindGame(path) < 0) {
+        std::string title;
+        detail::ReadN64RomHeader(m_emuRomPath, &title);
+        AddToLibrary(m_emuRomPath, name.empty() ? title : name);
+    }
     RecordPlay(path);
     m_emuTitle = name.empty() ? fs::path(m_emuRomPath).stem().string() : name;
     Nova64::StateService::Instance().BeginSession(m_emuRomPath);

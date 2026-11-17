@@ -349,8 +349,8 @@ itself (`xcrun notarytool`) is not scripted.
 script: a standard setup wizard (licence, install folder, optional desktop shortcut,
 launch at the end) that installs for the current user without administrator rights.
 The release workflow builds the program with `-DNOVA64_STATIC_RUNTIME=ON` (so users don't
-need the Visual C++ Redistributable), wraps it in the installer, and also zips a portable copy. None of
-this has been run on Windows yet.
+need the Visual C++ Redistributable), wraps it in the installer, and also zips a portable copy. The
+program and the installer have been tried on a Windows machine.
 
 **Releases.** The version is the one line in `VERSION`. To publish:
 

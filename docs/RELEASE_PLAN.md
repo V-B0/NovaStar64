@@ -164,15 +164,17 @@ Correctness and robustness
 - [ ] macOS: Developer ID signing, notarisation and stapling (needs an Apple Developer account);
       decide between a universal binary and separate ARM64 and Intel downloads
 - [ ] macOS disk image artwork (background, icon placement)
-- [ ] Windows: build and run on a real machine, installer and portable zip, SmartScreen note or
-      code signing
+- [x] Windows: built and run on a real machine, installer and portable zip tried; the README has the SmartScreen note
+- [ ] Windows code signing (so SmartScreen stops warning)
 - [ ] Linux: AppImage (or Flatpak), Vulkan loader and SDL requirements documented
-- [ ] Release notes generated from the changelog; checksums published with every file
+- [x] Checksums published with every file (a `.sha256` for the dmg, the setup wizard and the portable zip)
+- [ ] Release notes generated from the changelog
 - [ ] Crash handling: a log and a "copy diagnostics" button that does not include personal paths
 - [ ] Privacy statement in the README: no telemetry and no network connections (the code has no
       sockets or HTTP at all; the achievements tab is a placeholder). Re-check before each release
-- [ ] Pre-release checklist: clean checkout builds, fresh-home first run, upgrade keeps saves,
-      uninstall keeps saves
+- [x] Fresh-home first run of the packaged macOS app (dmg verified, signature and minimum OS checked, game added,
+      state saved, data kept outside the app, library there on the next start)
+- [ ] Pre-release checklist for every release: clean checkout builds, upgrade keeps saves, uninstall keeps saves
 - [ ] Dry run on a throwaway tag and a draft release before the real one
 
 ## 6. Video footage

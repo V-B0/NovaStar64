@@ -82,12 +82,20 @@ jobs:
           Copy-Item LICENSE, README.md $stage
           Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
           Remove-Item -Recurse $stage
+      - name: Write the checksums
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem dist\*-Setup.exe, dist\*-portable.zip) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)" | Set-Content -Encoding ascii "$($file.FullName).sha256"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: NovaStar64-Windows
           path: |
             dist/*-Setup.exe
             dist/*-portable.zip
+            dist/*.sha256
           if-no-files-found: error
 
   release:

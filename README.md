@@ -13,13 +13,13 @@
   <img alt="License: GPL-2.0" src="https://img.shields.io/badge/license-GPL--2.0-blue">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C">
   <img alt="Graphics: Vulkan and OpenGL" src="https://img.shields.io/badge/graphics-Vulkan%20%7C%20OpenGL-a41e22">
-  <img alt="Tested on macOS (Apple Silicon)" src="https://img.shields.io/badge/tested%20on-macOS%20(Apple%20Silicon)-lightgrey">
+  <img alt="Tested on macOS (Apple Silicon) and Windows" src="https://img.shields.io/badge/tested%20on-macOS%20(Apple%20Silicon)%20%7C%20Windows-lightgrey">
   <img alt="Status: active development" src="https://img.shields.io/badge/status-active%20development-orange">
 </p>
 
 <p align="center">
   <img src="docs/showcase/mm-gameplay.jpg" width="720"
-       alt="The Legend of Zelda: Majora's Mask running in the NovaStar64 launcher window at 60 fps">
+       alt="The Legend of Zelda: Majora's Mask running in the NovaStar64 launcher window">
 </p>
 
 NovaStar64 plays commercial N64 games inside a self-contained launcher window.
@@ -110,7 +110,7 @@ The project is under active development. Expect bugs and rough edges — see
   </tr>
   <tr>
     <td><img src="docs/showcase/mm-dialogue.jpg" alt="Majora's Mask: a Deku Scrub's dialogue box in the launcher window"></td>
-    <td><img src="docs/showcase/sm64-gameplay.jpg" alt="Super Mario 64: Mario near Princess Peach's castle, rendered at 4x internal resolution"></td>
+    <td><img src="docs/showcase/sm64-gameplay.jpg" alt="Super Mario 64: Princess Peach's castle in the opening fly-over, rendered at 4x internal resolution"></td>
   </tr>
   <tr>
     <td align="center"><b>Majora's Mask</b> — in-game text and UI</td>
@@ -126,7 +126,7 @@ The project is under active development. Expect bugs and rough edges — see
   </tr>
   <tr>
     <td><img src="docs/showcase/settings-video.png" alt="The Video settings page: each option with a line of help and its control"></td>
-    <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: players, accessories and button bindings"></td>
+    <td><img src="docs/showcase/settings-controls.png" alt="The Controls settings page: the Rumble Pak window shake, players and their accessories"></td>
   </tr>
   <tr>
     <td align="center"><b>Settings</b> — one row per option, saved at once</td>
@@ -148,7 +148,7 @@ systematically, and there is no automated compatibility suite.
 | Super Mario 64 (NTSC-U) | Playable | Title screen, the opening cutscene with Peach's letter, the castle grounds and the pause screen all work. |
 | The Legend of Zelda: Ocarina of Time (NTSC-U 1.2) | Playable | Name entry, the intro dialogue, Link's house in Kokiri Forest and all four pause-menu pages (items, map, quest status, equipment) work. Opening the pause menu holds the last frame for a few seconds while the game filters it on the CPU. |
 
-macOS on Apple Silicon is the only platform it has been built and run on. The
+It has been built and run on macOS (Apple Silicon) and on Windows; Linux has not been tried. The
 ARM64 recompiler runs the games above but is still incomplete — on Majora's Mask
 its memory state drifts from the interpreter's early in boot (see
 [CONTRIBUTING.md](CONTRIBUTING.md#what-still-differs-between-the-engines)) — so
@@ -175,6 +175,10 @@ then open System Settings → Privacy & Security and click **Open Anyway**. (On 
 14 or earlier, right-click → Open does the same.) You only do this once. Intel Macs
 build from source for now.
 
+On Windows the installer is not code-signed either, so SmartScreen may say "Windows
+protected your PC": click **More info**, then **Run anyway**. Each file has a
+`.sha256` beside it on the release page if you want to check the download.
+
 An installed copy keeps its settings, games and saves in your user data folder —
 `~/Library/Application Support/NovaStar64` on macOS, `%LOCALAPPDATA%\NovaStar64` on
 Windows — so updating or uninstalling the program never touches them. **Settings →
@@ -200,8 +204,7 @@ says where the result is. The first build takes a few minutes; after that only w
 you changed is rebuilt. `./build.sh --help` lists the options.
 
 **Windows:** `build.bat` does the same with CMake and Visual Studio's C++ tools (it
-tells you how to install them if they are missing). It has not been tried on a real
-Windows machine yet.
+tells you how to install them if they are missing).
 
 <details>
 <summary>The same thing by hand</summary>
@@ -428,11 +431,10 @@ diagnostic variables and the failure modes that have already cost time.
 - Ocarina of Time's pause menu holds the last frame for a few seconds while the game
   builds its background on the CPU. The length of the wait has not been compared with
   real hardware.
-- The launcher is written to build on Windows and Linux but has only been built
-  and run on macOS. `build.sh` has only been run on macOS, and `build.bat`, the
-  Windows installer and portable zip, and the release workflow that makes them have
-  not been run on Windows yet; the first release build there may need fixes. Drawing a game inside the launcher with the OpenGL renderer
-  (the default outside macOS) is untested; Vulkan is the tested path.
+- The launcher has been built and run on macOS and on Windows. Linux is untested: the code is written to build
+  there, but `build.sh` has only been run on macOS. Vulkan
+  is the path tested most; drawing a game inside the launcher with the OpenGL renderer (the default outside
+  macOS) has had much less use.
 - Controller support has been exercised with a physical controller on macOS and
   with SDL's virtual controllers; rumble motor output has not been verified. The
   Controller Pak (memory card) is not available.
