@@ -85,13 +85,14 @@ Correctness and robustness
 - [ ] README rewritten to be short: what it is, status table, download, build, screenshots
 - [ ] `docs/ARCHITECTURE.md`: modules (N64SYS, NovaRSP, NovaGraphics, UI), data flow of a frame,
       where Project64-derived code lives
-- [ ] `CHANGELOG.md` (Keep a Changelog), starting with 1.0.0
-- [ ] `SECURITY.md` (how to report a vulnerability) and `CODE_OF_CONDUCT.md`
-- [ ] Issue templates (bug report with log and system info, game compatibility report) and a
-      pull-request template
-- [ ] `THIRD_PARTY_NOTICES.md`: SDL2, Dear ImGui, asmjit, Lua, nlohmann/json, stb, volk, glslang,
-      rcheevos, MoltenVK, Berkeley SoftFloat, plus the Project64 and Mupen64Plus-derived
-      code; the same list reachable from an About dialog in the launcher
+- [x] `CHANGELOG.md` (Keep a Changelog), starting with 1.0.0
+- [x] `SECURITY.md` (how to report a vulnerability)
+- [ ] `CODE_OF_CONDUCT.md`
+- [x] Issue templates (bug report with system info, game compatibility report)
+- [ ] A pull-request template
+- [x] `THIRD_PARTY_NOTICES.md` (components, versions, licence texts), shipped inside the macOS app, the Windows
+      installer and the AppImage
+- [ ] The same list reachable from the launcher's About page
 - [ ] `docs/COMPATIBILITY.md` generated from the game database
 - [ ] `docs/` links checked, every claim in the README checked against the code
 - [ ] GitHub repository settings: description, topics, social preview image, branch protection,
@@ -166,12 +167,13 @@ Correctness and robustness
 - [ ] macOS disk image artwork (background, icon placement)
 - [x] Windows: built and run on a real machine, installer and portable zip tried; the README has the SmartScreen note
 - [ ] Windows code signing (so SmartScreen stops warning)
-- [ ] Linux: AppImage (or Flatpak), Vulkan loader and SDL requirements documented
+- [x] Linux: an AppImage built by the release workflow (`nova64/scripts/package-linux.sh`), requirements in the README
+- [ ] Linux: the AppImage and `build.sh` run on a real machine; a Flatpak
 - [x] Checksums published with every file (a `.sha256` for the dmg, the setup wizard and the portable zip)
-- [ ] Release notes generated from the changelog
+- [x] Hand-written release notes in `docs/release-notes/<version>.md`, used for the draft release
 - [ ] Crash handling: a log and a "copy diagnostics" button that does not include personal paths
-- [ ] Privacy statement in the README: no telemetry and no network connections (the code has no
-      sockets or HTTP at all; the achievements tab is a placeholder). Re-check before each release
+- [x] Privacy statement in the README: no telemetry and no network connections (the code has no sockets or HTTP at
+      all; the achievements tab is a placeholder). Re-check before each release
 - [x] Fresh-home first run of the packaged macOS app (dmg verified, signature and minimum OS checked, game added,
       state saved, data kept outside the app, library there on the next start)
 - [ ] Pre-release checklist for every release: clean checkout builds, upgrade keeps saves, uninstall keeps saves

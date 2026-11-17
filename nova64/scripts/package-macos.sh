@@ -82,6 +82,9 @@ cp -X "$SRC/assets/icon/Novastar.icns" "$APP/Contents/Resources/$APP_NAME.icns"
 cp -X "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/NovaStar64-LICENSE.txt"
 cp -X "$SRC/thirdparty/MoltenVK/LICENSE" "$APP/Contents/Resources/Licenses/MoltenVK-LICENSE.txt"
 cp -X "$ROOT/README.md" "$APP/Contents/Resources/Licenses/README.md"
+cp -X "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/Licenses/THIRD_PARTY_NOTICES.md"
+cp -X "$SRC/assets/fonts/LICENSE-Inter-OFL.txt" "$APP/Contents/Resources/Licenses/Inter-OFL.txt"
+cp -X "$SRC/assets/fonts/LICENSE-Phosphor-MIT.txt" "$APP/Contents/Resources/Licenses/Phosphor-MIT.txt"
 
 cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

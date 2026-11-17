@@ -352,6 +352,13 @@ The release workflow builds the program with `-DNOVA64_STATIC_RUNTIME=ON` (so us
 need the Visual C++ Redistributable), wraps it in the installer, and also zips a portable copy. The
 program and the installer have been tried on a Windows machine.
 
+**Linux.** `nova64/scripts/package-linux.sh` builds an
+[AppImage](https://appimage.org/) (`dist/NovaStar64-<version>-Linux-<arch>.AppImage`): the program,
+`nova64/installer/linux/novastar64.desktop`, the icon and the licences, wrapped by `appimagetool`, which the script
+downloads once at a fixed version and checks against a checksum. There is no `portable.txt` in it, so the data lives
+in `~/.local/share/NovaStar64`. The release workflow builds it on Ubuntu 24.04 (the code needs GCC 13) as a job that
+may fail without stopping the release. It has not been run on a Linux machine yet.
+
 **Releases.** The version is the one line in `VERSION`. To publish:
 
 ```bash

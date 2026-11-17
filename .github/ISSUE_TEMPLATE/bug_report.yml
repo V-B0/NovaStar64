@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. The more of this you can fill in, the sooner it can be fixed.
+        Please do not attach game files. For a security problem, see SECURITY.md instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Numbered steps are best. Say which game and where in the game, if it matters.
+  - type: input
+    id: version
+    attributes:
+      label: NovaStar64 version
+      description: Shown at the bottom right of the launcher.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel, built from source)
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: computer
+    attributes:
+      label: Computer and graphics
+      description: The processor and graphics card, and the driver chosen in Settings → Video (Vulkan or OpenGL).
+      placeholder: "MacBook Air M2, Vulkan"
+  - type: textarea
+    id: log
+    attributes:
+      label: Output
+      description: |
+        If you can, start NovaStar64 from a terminal and paste what it prints around the problem.
+        A screenshot or a short video also helps.
+      render: text

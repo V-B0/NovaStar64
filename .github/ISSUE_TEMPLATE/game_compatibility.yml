@@ -1,0 +1,43 @@
+name: Game compatibility report
+description: Tell us how a game runs, working or not
+labels: ["compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only three games are tested so far, so every report helps. Please do not attach game files.
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: The title and the region and version, if you know them (for example "NTSC-U 1.0").
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: How does it run?
+      options:
+        - Perfect or nearly
+        - Playable, with small problems
+        - Starts, but cannot be played
+        - Does not start
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What goes wrong
+      description: Missing or wrong graphics, sound problems, slowdowns, crashes, and where in the game they happen.
+  - type: input
+    id: version
+    attributes:
+      label: NovaStar64 version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: computer
+    attributes:
+      label: System
+      description: Operating system, processor, graphics card, and the driver (Vulkan or OpenGL), CPU core and resolution you used.

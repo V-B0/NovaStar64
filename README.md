@@ -168,6 +168,7 @@ Each [release](https://github.com/V-B0/NovaStar64/releases) has an installer:
 |---|---|---|
 | macOS (Apple Silicon, macOS 13.3 or later) | `NovaStar64-<version>-macOS.dmg` | Open it and drag NovaStar64 onto Applications. |
 | Windows (64-bit) | `NovaStar64-<version>-Windows-Setup.exe` | Run it and follow the setup wizard. `NovaStar64-<version>-Windows-portable.zip` runs from any folder, with nothing installed. |
+| Linux (x86-64, Ubuntu 24.04 or a distribution as new) | `NovaStar64-<version>-Linux-x86_64.AppImage` | Make it executable (`chmod +x NovaStar64-*.AppImage`) and run it. Nothing is installed. |
 
 macOS asks you to approve the app the first time you open it, because it is not
 signed with a paid Apple developer certificate: try to open it, close the message,
@@ -178,6 +179,13 @@ build from source for now.
 On Windows the installer is not code-signed either, so SmartScreen may say "Windows
 protected your PC": click **More info**, then **Run anyway**. Each file has a
 `.sha256` beside it on the release page if you want to check the download.
+
+The Linux AppImage is one file that keeps its settings, games and saves in
+`~/.local/share/NovaStar64`. It needs a Vulkan or OpenGL driver for your graphics card and,
+to start by double-click, FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04); without
+FUSE, run `./NovaStar64-*.AppImage --appimage-extract-and-run`. It is built on Ubuntu
+24.04 by the release workflow and has not been tried on a Linux machine yet, so please
+say how it goes. Distributions older than that, and ARM64 Linux, build from source.
 
 An installed copy keeps its settings, games and saves in your user data folder —
 `~/Library/Application Support/NovaStar64` on macOS, `%LOCALAPPDATA%\NovaStar64` on
@@ -432,7 +440,8 @@ diagnostic variables and the failure modes that have already cost time.
   builds its background on the CPU. The length of the wait has not been compared with
   real hardware.
 - The launcher has been built and run on macOS and on Windows. Linux is untested: the code is written to build
-  there, but `build.sh` has only been run on macOS. Vulkan
+  there and the release workflow makes an AppImage, but `build.sh` and the AppImage have not been run on a Linux
+  machine. Vulkan
   is the path tested most; drawing a game inside the launcher with the OpenGL renderer (the default outside
   macOS) has had much less use.
 - Controller support has been exercised with a physical controller on macOS and
@@ -487,7 +496,8 @@ genuine clean-room reimplementation — see
 
 ## Third-party software
 
-Each component keeps its own license.
+Each component keeps its own license; [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+lists them with their versions and repeats the common licence texts.
 
 | Component | Used for | License |
 |---|---|---|
@@ -525,6 +535,14 @@ Copyright (C) 2026 Varga Bálint. NovaStar64 is not affiliated with or endorsed 
 Nintendo or the Project64 team. Nintendo 64 and the names of the games shown are trademarks of their
 respective owners. NovaStar64 contains no game images or console firmware; use
 it only with games you own.
+
+## Privacy
+
+NovaStar64 collects nothing and makes no network connections: it doesn't check for
+updates, send crash reports or phone home, and the code contains no networking at all
+(the RetroAchievements tab is a placeholder). It reads and writes only its own data
+folder, the game files you give it, and the files you ask it to save. See
+[SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## Contributing
 
