@@ -181,6 +181,22 @@ during analysis and the dispatcher queries `CodeBlock::is_spin_loop()`. Keep the
 two in step, and if you ever refine the rule, change both engines in the same
 commit.
 
+**5. Elapsed ticks are counted once, and every timer is in `Count` ticks.**
+`UpdateTimers()` and `TimerDone()` turn the ticks that have run since the last
+sync (`last_update_cycles - NextTimer`) into `Count` and into timer decrements. A
+handler that runs inside them can re-arm a timer — the audio DMA starts the next
+buffer — and `set_timer()` syncs first. While the ticks were not yet marked as
+counted, that sync counted them a second time and moved `Count` and every other
+timer forward by up to a whole field at each audio DMA. Both functions now mark
+the ticks as counted before any handler runs. The audio DMA also computed its
+length as if a timer tick were a CPU cycle (93.75 MHz), so each buffer took
+twice as long as its sound. Together the two bugs made the emulated audio chip
+play at a fraction of its rate against the video, the game sent buffers at that
+fraction of the DAC rate, and the output was a stream of short gaps. Video,
+`Count` against the field count and the cross-engine comparison all looked
+right, because only the audio chain was affected; it showed in the audio stats
+(`NOVA64_AUDIO_STATS=1`): a game should deliver about 100% of real time.
+
 **The absolute check.** Cross-engine agreement only proves the engines agree,
 not that they are right (see rule 1). After a run of *N* video fields, `Count`
 must equal *N* × 781,250 on NTSC (× 937,500 on PAL), to within rounding. The
@@ -394,6 +410,7 @@ one, add its row.
 | `NOVA64_SHOT_FRAME=a,b,c` | Save a screenshot on each listed presented frame |
 | `NOVA64_SHOT_EVERY=N` / `NOVA64_SHOT_START=F` | Save one every `N` presented frames, beginning at `F` |
 | `NOVA64_SHOT_PATH=<prefix>` | Screenshot filename prefix (`<prefix>_<frame>.png`) |
+| `NOVA64_AUDIO_STATS=1` | Every two seconds, print how much sound was waiting in the output's buffer each time the game queued more, how many times the output ran dry (a gap in the sound) and how many times queued sound did not fit. Steady play shows about 35 to 60 ms waiting and no gaps (a dummy audio driver's clock is not exact, so read this on a real device) |
 | `NOVA64_AUDIO_DUMP=<file.wav>` | Write everything the game plays to a 16-bit stereo WAV file, for recording footage with its sound (use with a dummy audio driver for a silent capture run) |
 | `NOVA64_UI_SHOT=<path>` `NOVA64_UI_TAB=settings/controls` | Render one launcher page (`home`, `library`, `recent`, `favorites`, `settings`, `about`, `scripts`, `memory`, `achievements`, `simulator`; settings also `/emulation`, `/video`, `/audio`, `/controls`; the simulator also `/simulation` or `/simulation:<step>`) to a PNG and exit |
 | `NOVA64_UI_ROM=<rom>` | Start a game as soon as the launcher window is up |

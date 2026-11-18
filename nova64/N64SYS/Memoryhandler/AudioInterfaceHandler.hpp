@@ -116,6 +116,10 @@ private:
     static constexpr uint32_t AI_CLOCK_NTSC = 48681812;
     static constexpr uint32_t AI_CLOCK_PAL = 49656530;
 
+    /// The system timer's unit is the CP0 Count tick: one per two cycles of the 93.75 MHz CPU clock, so
+    /// 46.875 MHz. A DMA's length in timer ticks and the length read back from AI_LEN both use it.
+    static constexpr uint64_t COUNT_TICK_HZ = 46875000;
+
     /// AI DAC clock for the loaded ROM's region. Resolved on first use because
     /// the handler is constructed before the ROM is loaded.
     uint32_t AIClock() const;

@@ -42,12 +42,17 @@ bool AudioInterfaceHandler::Read32(uint32_t address, uint32_t& value) {
         } else if (index == static_cast<uint32_t>(AI::Register::LEN)) {
             // Calculate remaining length if DMA is busy
             if (m_ai_regs.status() & AI::STATUS_DMA_BUSY) {
-                uint32_t cycles_left = m_system_timer.get_timer(N64System::TimerType::AiTimerDMA);
+                // The timer's stored value is only updated at timer checkpoints; take off the ticks
+                // that have run since the last one, so the game reads how much is really left.
+                int32_t elapsed = static_cast<int32_t>(m_system_timer.get_last_update_cycles()) - m_system.m_NextTimer;
+                if (elapsed < 0) elapsed = 0;
+                const uint32_t stored = m_system_timer.get_timer(N64System::TimerType::AiTimerDMA);
+                const uint32_t cycles_left = stored > static_cast<uint32_t>(elapsed) ? stored - elapsed : 0;
                 uint32_t dac_period = m_ai_regs.dacrate() + 1;
 
-                // len = (cycles * 4 * AI_CLOCK) / (dac_period * CPU_CLOCK)
+                // len = (ticks * 4 * AI_CLOCK) / (dac_period * COUNT_TICK_HZ)
                 uint64_t remaining = (static_cast<uint64_t>(cycles_left) * 4 * AIClock());
-                value = static_cast<uint32_t>(remaining / (static_cast<uint64_t>(dac_period) * 93750000ULL));
+                value = static_cast<uint32_t>(remaining / (static_cast<uint64_t>(dac_period) * COUNT_TICK_HZ));
             } else {
                 value = 0; // Not busy -> 0 bytes remaining
             }
@@ -155,15 +160,16 @@ bool AudioInterfaceHandler::Write32(uint32_t address, uint32_t value, uint32_t m
 }
 
 uint32_t AudioInterfaceHandler::CalculateCycles(uint32_t len) {
-    // Audio DMA duration in CPU cycles.
+    // Audio DMA duration in system timer ticks.
     // Stereo 16-bit PCM = 4 bytes per stereo sample pair.
     // The DAC consumes one stereo sample every (dacRate + 1) video-clock ticks.
-    // AI DAC clock is region-dependent (see AIClock).  CPU clock = 93,750,000 Hz.
-    // Convert: cpu_cycles = video_ticks * CPU_FREQ / VI_FREQ.
+    // AI DAC clock is region-dependent (see AIClock). The system timer counts in CP0 Count ticks,
+    // half the 93.75 MHz CPU clock (see COUNT_TICK_HZ), so the DMA takes
+    // timer_ticks = dac_ticks * COUNT_TICK_HZ / AI_CLOCK.
     uint32_t dac_period = m_ai_regs.dacrate() + 1;
     uint32_t samples = len / 4; // stereo sample pairs
     uint64_t video_ticks = static_cast<uint64_t>(samples) * dac_period;
-    return static_cast<uint32_t>(video_ticks * 93750000ULL / AIClock());
+    return static_cast<uint32_t>(video_ticks * COUNT_TICK_HZ / AIClock());
 }
 
 uint32_t AudioInterfaceHandler::AIClock() const {
@@ -182,8 +188,6 @@ uint32_t AudioInterfaceHandler::GetFrequency() const {
 
 void AudioInterfaceHandler::DMAComplete() {
     ++s_aiDmaCompleteCount;
-
-    // Audio feeding is handled by the dedicated audio thread in CAudioOutput.
 
     // Current DMA finished, trigger interrupt
     m_sys_regs.m_Mips_Interface[MI_INTR_REG_INDEX] |= MI_INTR_AI_BIT;
@@ -210,14 +214,16 @@ void AudioInterfaceHandler::InitAudioOutput() {
     // Don't retry after a failure — avoids busy-loop on broken audio devices
     if (m_audioInitFailed) return;
 
-    if (m_audioInitialized) {
-        m_audioOutput.Shutdown();
-        m_audioInitialized = false;
-    }
-
     uint32_t freq = GetFrequency();
     if (freq < 4000) freq = 4000;
     if (freq > 48000) freq = 48000;
+
+    // The output resamples to the device's own rate, so a new DAC rate is only a new source rate:
+    // keeping the device open avoids a gap in the sound.
+    if (m_audioInitialized) {
+        m_audioOutput.SetSourceRate(freq);
+        return;
+    }
 
     Logging::log(Logging::Level::Info, "AI: Initializing audio output at " + std::to_string(freq) + " Hz");
     ++s_aiAudioInitCount;
@@ -269,4 +275,6 @@ void AudioInterfaceHandler::SerializeState(Nova64::StateArchive& ar) {
     ar.Value(m_pending_dram_addr);
     ar.Value(m_pending_len);
     ar.Value(m_pending_valid);
+    // Sound queued before a state was loaded belongs to the other moment in the game.
+    if (ar.IsLoading() && m_audioInitialized) m_audioOutput.Flush();
 }

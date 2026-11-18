@@ -453,8 +453,9 @@ diagnostic variables and the failure modes that have already cost time.
   window size. Point lights (torches, fires) are only seen in games that switch
   positional lighting on, and haven't been tried in a real game yet.
 - Save states made before rewind was added can't be loaded.
-- The audio plugin's buffer-level and sync calls are accepted but not applied to
-  the output stream.
+- The audio plugin's sync calls (`WaitForBuffer`, `SetSyncMode`) are accepted but
+  not applied: the sound output never makes the emulator wait, it follows the
+  game's pace and drops sound if the game runs far ahead of real time.
 - On case-sensitive filesystems (Linux), cartridge saves are written to
   `Saves/` and save states to `saves/`.
 

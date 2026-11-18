@@ -223,8 +223,9 @@ bool NovaAudioPlugin::IsPlaying() const {
 }
 
 uint32_t NovaAudioPlugin::GetBufferLevel() const {
-    // Always 0: the audio output does not expose its buffer level.
-    return 0;
+    // Stereo frames waiting to be played.
+    if (!m_aiHandler) return 0;
+    return const_cast<AudioInterfaceHandler*>(m_aiHandler)->AudioOutput().FramesWaiting();
 }
 
 void NovaAudioPlugin::WaitForBuffer() {

@@ -265,6 +265,11 @@ void SystemTimer::UpdateTimers() {
     // We compute how many cycles have elapsed and update timers accordingly.
     int32_t nextTimer = system.m_NextTimer;
     int32_t elapsed = static_cast<int32_t>(last_update_cycles) - nextTimer;
+    // These ticks are accounted for from here on. Marking them before the timers run matters: a timer's
+    // handler can re-arm a timer (the audio DMA does, to start the next buffer), and set_timer() flushes
+    // the elapsed ticks first. Done against the old mark, that flush would apply the same ticks a second
+    // time, moving the clock and every other timer forward by the whole interval at each such event.
+    last_update_cycles = static_cast<uint32_t>(nextTimer);
     if (elapsed > 0) {
         // Update CP0 Count register: timer ticks are in Count-tick units (like P64),
         // so elapsed IS the Count increment — no division needed.
@@ -273,7 +278,6 @@ void SystemTimer::UpdateTimers() {
         }
         update_timers(static_cast<uint32_t>(elapsed));
     }
-    last_update_cycles = static_cast<uint32_t>(nextTimer);
 }
 
 void SystemTimer::TimerDone() {
@@ -287,6 +291,9 @@ void SystemTimer::TimerDone() {
 
     if (elapsed32 > 0) {
         uint32_t elapsed = static_cast<uint32_t>(elapsed32);
+
+        // Account for these ticks before any handler runs (see UpdateTimers).
+        last_update_cycles = static_cast<uint32_t>(system.m_NextTimer);
 
         // Update CP0 Count register: timer ticks = Count ticks (like P64)
         if (registers) {

@@ -22,6 +22,8 @@ The first release.
 - Game controllers for up to four players, with rebindable buttons, an N64-shaped analog range and player slots.
   A controller also drives the launcher's menus. A Rumble Pak shakes the window a little, and you set how much.
 - An interface size of 100%, 125%, 150% or 200% that scales text, icons and spacing together.
+- Sound through SDL2 that keeps a cushion of about 60 ms (a little more after short stalls), follows small differences
+  between the emulator's pace and the sound card's clock, and fades instead of clicking if it ever runs dry.
 - EEPROM, SRAM and FlashRAM saves, a Rumble Pak and partial N64DD support. NTSC and PAL timing.
 - A Lua scripting console and a memory viewer.
 - Installers: a `.dmg` for macOS (Apple Silicon), a setup wizard and a portable `.zip` for Windows, and an AppImage for
